@@ -1,0 +1,250 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, for example v0.1.0.
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub release as a prerelease.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: plan
+        shell: sh
+        env:
+          INPUT_TAG: ${{ inputs.tag || '' }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease || 'false' }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          prerelease="false"
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+            prerelease="$INPUT_PRERELEASE"
+          fi
+
+          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Release tag must look like v0.1.0 or v0.1.0-rc.1: $tag" >&2
+            exit 1
+          fi
+
+          git fetch --tags --force
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Tag does not exist: $tag" >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test before release
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Run tests
+        shell: sh
+        run: scripts/test.sh
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs:
+      - plan
+      - test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-24.04
+            package: tar.gz
+          - rid: linux-arm64
+            os: ubuntu-24.04
+            package: tar.gz
+          - rid: win-x64
+            os: ubuntu-24.04
+            package: zip
+          - rid: win-arm64
+            os: ubuntu-24.04
+            package: zip
+          - rid: osx-arm64
+            os: macos-14
+            package: app-zip
+          - rid: osx-x64
+            os: macos-13
+            package: app-zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Publish portable build
+        if: matrix.package != 'app-zip'
+        shell: sh
+        env:
+          RID: ${{ matrix.rid }}
+          PACKAGE: ${{ matrix.package }}
+          VERSION: ${{ needs.plan.outputs.tag }}
+        run: |
+          VERSION="${VERSION#v}"
+          export VERSION
+          scripts/publish.sh "$RID"
+          mkdir -p dist
+          python3 - <<'PY'
+          import os
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          rid = os.environ["RID"]
+          package = os.environ["PACKAGE"]
+          source = Path("out") / f"podlord-{rid}"
+          if not source.is_dir():
+              raise SystemExit(f"missing publish directory: {source}")
+
+          if package == "tar.gz":
+              target = Path("dist") / f"podlord-{rid}.tar.gz"
+              with tarfile.open(target, "w:gz") as archive:
+                  archive.add(source, arcname=f"podlord-{rid}")
+          elif package == "zip":
+              target = Path("dist") / f"podlord-{rid}.zip"
+              with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+                  for path in source.rglob("*"):
+                      if path.is_file():
+                          archive.write(path, Path(f"podlord-{rid}") / path.relative_to(source))
+          else:
+              raise SystemExit(f"unknown package type: {package}")
+
+          print(target)
+          PY
+
+      - name: Publish macOS app bundle
+        if: matrix.package == 'app-zip'
+        shell: sh
+        env:
+          RID: ${{ matrix.rid }}
+          VERSION: ${{ needs.plan.outputs.tag }}
+        run: |
+          mkdir -p dist
+          VERSION="${VERSION#v}"
+          export VERSION
+          bundle="$(scripts/build-macos-app.sh "$RID" | tail -n 1)"
+          ditto -c -k --sequesterRsrc --keepParent "$bundle" "dist/podlord-$RID.zip"
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: podlord-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Create GitHub release
+    needs:
+      - plan
+      - build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Download assets
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: podlord-*
+          merge-multiple: true
+
+      - name: Extract release notes
+        shell: sh
+        run: |
+          version="${RELEASE_TAG#v}"
+          awk -v version="$version" '
+            $0 ~ "^## \\[" version "\\]" { found = 1; next }
+            found && $0 ~ /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            {
+              echo "Podlord $RELEASE_TAG"
+              echo ""
+              echo "See CHANGELOG.md for project history."
+            } > release-notes.md
+          fi
+
+      - name: Create release
+        shell: sh
+        run: |
+          args=""
+          if [ "$PRERELEASE" = "true" ]; then
+            args="$args --prerelease"
+          fi
+
+          # shellcheck disable=SC2086
+          gh release create "$RELEASE_TAG" dist/* \
+            --verify-tag \
+            --title "Podlord $RELEASE_TAG" \
+            --notes-file release-notes.md \
+            $args

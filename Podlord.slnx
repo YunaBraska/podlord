@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Podlord.App/Podlord.App.csproj" />
+    <Project Path="src/Podlord.Core/Podlord.Core.csproj" />
+    <Project Path="src/Podlord.Kubernetes/Podlord.Kubernetes.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Podlord.App.Tests/Podlord.App.Tests.csproj" />
+    <Project Path="tests/Podlord.Core.Tests/Podlord.Core.Tests.csproj" />
+    <Project Path="tests/Podlord.Kubernetes.Tests/Podlord.Kubernetes.Tests.csproj" />
+  </Folder>
+</Solution>

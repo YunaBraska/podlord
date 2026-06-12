@@ -1,0 +1,76 @@
+# Build output
+bin/
+obj/
+out/
+artifacts/
+publish/
+dist/
+release/
+
+# Test and coverage output
+TestResults/
+tests/**/TestResults/
+coverage/
+coverage.*.xml
+*.coverage
+*.coveragexml
+
+# Local toolchains
+.tools/
+.dotnet/
+
+# IDE and editor state
+.idea/
+.vscode/
+.claude/
+.codex/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.sln.DotSettings.user
+*.rsuser
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.pid
+*.seed
+
+# Local Kubernetes and secrets
+.kube/
+*.kubeconfig
+*kubeconfig*.yaml
+*kubeconfig*.yml
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+.env
+.env.*
+!.env.example
+
+# Package artifacts
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.dmg
+*.pkg
+*.msi
+*.exe
+*.AppImage
+*.deb
+*.rpm
+
+# Keep repository metadata
+!.github/
+!.github/**

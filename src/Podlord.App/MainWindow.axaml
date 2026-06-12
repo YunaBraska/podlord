@@ -1,0 +1,1702 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        xmlns:local="using:Podlord.App"
+        mc:Ignorable="d"
+        d:DesignWidth="1440"
+        d:DesignHeight="920"
+        x:Class="Podlord.App.MainWindow"
+        Title="Podlord"
+        Icon="avares://Podlord.App/Assets/Brand/Icons/podlord-icon-256.png"
+        Width="1440"
+        Height="920"
+        MinWidth="1120"
+        MinHeight="720"
+        KeyDown="WindowKeyDown"
+        PointerPressed="WindowPointerPressed">
+    <Grid Background="{StaticResource PlBackdropBrush}">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="hudPanel" Padding="8">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="⌕" Click="ToggleCurrentSearchClicked" ToolTip.Tip="{Binding NavSearchText}" Padding="8,6" />
+                    <Button Content="{Binding NavResourcesText}" Classes="navButton" Classes.active="{Binding IsResourcesNavActive}" Click="ResourcesWorkspaceClicked" />
+                    <Button Content="{Binding NavGraphText}" Classes="navButton" Classes.active="{Binding IsGraphNavActive}" Click="GraphWorkspaceClicked" />
+                    <Button Content="{Binding NavEventsText}" Classes="navButton" Classes.active="{Binding IsEventsNavActive}" Click="EventsWorkspaceClicked" />
+                    <Button Content="{Binding NavPortsText}" Classes="navButton" Classes.active="{Binding IsPortsNavActive}" Click="PortsWorkspaceClicked" />
+                    <Button Content="{Binding NavSettingsText}" Classes="navButton" Classes.active="{Binding IsSettingsNavActive}" Click="SettingsWorkspaceClicked" />
+                </StackPanel>
+                <ScrollViewer Grid.Column="1"
+                              x:Name="PulseStripScroller"
+                              Background="Transparent"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding ClusterPulseItems}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="metricPlaque" Padding="8,3" ToolTip.Tip="{Binding Tooltip}">
+                                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="2"
+                                          MinWidth="0">
+                                        <TextBlock Text="{Binding Label}" Foreground="{StaticResource PlTextMutedBrush}" FontSize="11" />
+                                        <TextBlock Grid.Row="1" Text="{Binding Value}" Foreground="{StaticResource PlTextBrush}" FontWeight="Bold" />
+                                        <ProgressBar Grid.Row="2" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="4" HorizontalAlignment="Stretch" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Grid DockPanel.Dock="Right"
+              x:Name="RightSidebarShell"
+              Width="392"
+              MinWidth="300"
+              MaxWidth="720"
+              ColumnDefinitions="6,*">
+            <Border x:Name="RightSidebarResizeHandle"
+                    Grid.Column="0"
+                    Background="{StaticResource PlBorderStrongBrush}"
+                    Cursor="SizeWestEast"
+                    PointerPressed="RightSidebarResizePressed"
+                    PointerMoved="RightSidebarResizeMoved"
+                    PointerReleased="RightSidebarResizeReleased"
+                    PointerCaptureLost="RightSidebarResizeCaptureLost" />
+            <Border Grid.Column="1" Classes="hudPanel sidebarPanel">
+            <Grid ColumnDefinitions="12,*">
+                <Border Grid.Column="0" Classes="commandConsole" BorderThickness="0,0,2,0">
+                    <ToolTip.Tip>
+                        <Border Padding="8" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{StaticResource PlGoldBorderBrush}" BorderThickness="1">
+                            <TextBlock Text="{Binding HealthSummary}" Foreground="{StaticResource PlTextBrush}" TextWrapping="Wrap" />
+                        </Border>
+                    </ToolTip.Tip>
+                    <Viewbox Stretch="Fill" Margin="3,8,3,8">
+                        <ItemsControl ItemsSource="{Binding HealthSegments}" Width="8" Height="100">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Vertical" VerticalAlignment="Top" Height="100" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Height="{Binding Height}"
+                                            Background="{Binding Brush}"
+                                            BorderBrush="#050806"
+                                            BorderThickness="0"
+                                            Margin="0,0,0,0.7">
+                                        <ToolTip.Tip>
+                                            <Border Padding="8" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Brush}" BorderThickness="1">
+                                                <TextBlock Text="{Binding State}" Foreground="{Binding Brush}" />
+                                            </Border>
+                                        </ToolTip.Tip>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Viewbox>
+                </Border>
+
+                <Grid Grid.Column="1" RowDefinitions="Auto,*">
+                    <Border Grid.Row="0"
+                            Margin="10,10,10,6"
+                            Height="{Binding RadarPanelHeight}"
+                            Classes="minimapFrame">
+                        <Grid RowDefinitions="*,Auto">
+                            <Border Classes="minimapGlass"
+                                    x:Name="RadarViewportHost"
+                                    Classes.idle="{Binding IsRadarIdle}"
+                                    Margin="5"
+                                    SizeChanged="RadarViewportSizeChanged"
+                                    PointerEntered="RadarPointerEntered"
+                                    PointerExited="RadarPointerExited"
+                                    PointerPressed="RadarPointerPressed"
+                                    PointerMoved="RadarPointerMoved"
+                                    PointerReleased="RadarPointerReleased"
+                                    PointerCaptureLost="RadarPointerCaptureLost"
+                                    PointerWheelChanged="RadarPointerWheelChanged">
+                                <Grid ClipToBounds="True">
+                                        <Panel Width="{Binding RadarCanvasW}" Height="{Binding RadarCanvasH}">
+                                            <local:RadarWaterLayer Width="{Binding RadarCanvasW}"
+                                                                   Height="{Binding RadarCanvasH}"
+                                                                   ZIndex="0"
+                                                                   PanX="{Binding RadarPanX}"
+                                                                   PanY="{Binding RadarPanY}"
+                                                                   Zoom="{Binding RadarZoom}"
+                                                                   ActivityRate="{Binding RadarWaterActivityRate}"
+                                                                   SpeedPercent="{Binding RadarWaterSpeedPercent}"
+                                                                   PauseAnimation="{Binding IsRadarWaterPaused}"
+                                                                   IsVisible="{Binding IsRadarWaterVisible}" />
+
+                                            <ItemsControl ItemsSource="{Binding RadarBlocks}"
+                                                          IsVisible="{Binding IsRadarData}"
+                                                          ZIndex="1"
+                                                          Width="{Binding RadarCanvasW}"
+                                                          Height="{Binding RadarCanvasH}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <Canvas />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.Styles>
+                                                    <Style Selector="ContentPresenter">
+                                                        <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                                        <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                                    </Style>
+                                                </ItemsControl.Styles>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Width="{Binding Width}"
+                                                                Height="{Binding Height}"
+                                                                Padding="0"
+                                                                Background="{Binding Brush}"
+                                                                BorderBrush="{Binding BorderBrush}"
+                                                                BorderThickness="{Binding BorderThickness}"
+                                                                Opacity="{Binding Opacity}"
+                                                                Classes="radarTile"
+                                                                Click="RadarResourceClicked">
+                                                            <Grid>
+                                                                <Rectangle Classes="radarAnnouncePulse"
+                                                                           Fill="{Binding AnnounceBrush}"
+                                                                           IsVisible="{Binding IsAnnouncing}" />
+                                                                <local:KindGlyph Kind="{Binding DisplayKind}"
+                                                                                 Fill="{StaticResource PlBgPanelInsetBrush}"
+                                                                                 Stroke="{Binding BorderBrush}"
+                                                                                 Width="14"
+                                                                                 Height="14"
+                                                                                 HorizontalAlignment="Center"
+                                                                                 VerticalAlignment="Center"
+                                                                                 IsVisible="{Binding ShowProblemGlyph}" />
+                                                            </Grid>
+                                                            <ToolTip.Tip>
+                                                                <Border MinWidth="300"
+                                                                        MaxWidth="440"
+                                                                        Padding="10"
+                                                                        Background="{StaticResource PlBgPanelBrush}"
+                                                                        BorderBrush="{Binding Brush}"
+                                                                        BorderThickness="1">
+                                                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                                                                        <TextBlock Text="{Binding ToolTipTitle}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="WrapWithOverflow" />
+                                                                        <TextBlock Grid.Row="1" Text="{Binding ToolTipNamespace}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="WrapWithOverflow" />
+                                                                        <StackPanel Grid.Row="2" Spacing="3">
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
+                                                                                <TextBlock Text="Status" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Status}" Foreground="{Binding Resource.Status, Converter={StaticResource StatusBrushConverter}}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasReadyInfo}">
+                                                                                <TextBlock Text="Ready" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Ready}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasRestartInfo}">
+                                                                                <TextBlock Text="Restarts" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Restarts}" Foreground="{Binding Resource.Restarts, Converter={StaticResource RestartBrushConverter}}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasCpuMetricBar}">
+                                                                                <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="2" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasMemoryMetricBar}">
+                                                                                <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="2" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasStorageMetricBar}">
+                                                                                <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="2" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasCpuMetricTextOnly}">
+                                                                                <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasMemoryMetricTextOnly}">
+                                                                                <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasNetworkMetricInfo}">
+                                                                                <TextBlock Text="Network" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.NetworkDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasStorageMetricTextOnly}">
+                                                                                <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasNodeInfo}">
+                                                                                <TextBlock Text="Node" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Node}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasImageInfo}">
+                                                                                <TextBlock Text="Image" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.ImageSummary}" Foreground="{StaticResource PlTextBrush}" TextWrapping="Wrap" MaxHeight="76" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasOwnerInfo}">
+                                                                                <TextBlock Text="Owner" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Owner}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Problem, Converter={StaticResource HasValueConverter}}">
+                                                                                <TextBlock Text="Issue" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Problem}" Foreground="{Binding Resource, Converter={StaticResource ProblemBrushConverter}}" TextWrapping="Wrap" />
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </ToolTip.Tip>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <ItemsControl ItemsSource="{Binding RadarIdleCells}"
+                                                          IsVisible="{Binding IsRadarIdle}"
+                                                          IsHitTestVisible="False"
+                                                          ZIndex="1"
+                                                          Width="{Binding RadarCanvasW}"
+                                                          Height="{Binding RadarCanvasH}">
+                                                <ToolTip.Tip>
+                                                    <Border Padding="8" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{StaticResource PlBlueGlowBrush}" BorderThickness="1">
+                                                        <TextBlock Foreground="{StaticResource PlBlueGlowBrush}">
+                                                            <Run Text="RADAR IDLE " />
+                                                            <Run Text="{Binding RadarIdleRuleLabel}" />
+                                                            <Run Text=" seed " />
+                                                            <Run Text="{Binding RadarIdleSeed}" />
+                                                        </TextBlock>
+                                                    </Border>
+                                                </ToolTip.Tip>
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <Canvas />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.Styles>
+                                                    <Style Selector="ContentPresenter">
+                                                        <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                                        <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                                    </Style>
+                                                </ItemsControl.Styles>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Rectangle Width="{Binding Width}"
+                                                                   Height="{Binding Height}"
+                                                                   Classes="radarWaterCell"
+                                                                   Fill="{Binding Brush}" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Panel>
+                                </Grid>
+                            </Border>
+                            <Button Grid.Row="1"
+                                    x:Name="RadarSourceButton"
+                                    Classes="radarSourceButton"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="6,0,6,5"
+                                    Click="RadarSourceButtonClicked"
+                                    ToolTip.Tip="{Binding ActiveSessionChipLabel}">
+                                <Button.Content>
+                                    <TextBlock Text="{Binding RadarSourceLabel}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{StaticResource PlBlueGlowBrush}" />
+                                </Button.Content>
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
+                                        <Border Width="360" Padding="8" Classes="hudMenu">
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="{Binding SourcesTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                                <TextBox Text="{Binding SourcePickerSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                         PlaceholderText="search by name or path" />
+                                                <ScrollViewer Height="240" VerticalScrollBarVisibility="Visible">
+                                                    <ItemsControl ItemsSource="{Binding VisibleImportedContexts}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="4" Margin="0,0,0,5">
+                                                                    <TextBox Text="{Binding DisplayName, UpdateSourceTrigger=LostFocus}" />
+                                                                    <Button Grid.Column="1" Content="{Binding ActiveMark}" Command="{Binding ActivateCommand}" Padding="6,2" />
+                                                                    <Button Grid.Column="2" Content="✎" Command="{Binding RenameCommand}" ToolTip.Tip="Rename source" Padding="6,2" />
+                                                                    <Button Grid.Column="3" Content="🗑" Command="{Binding RemoveCommand}" ToolTip.Tip="Delete source" Padding="6,2" />
+                                                                    <TextBlock Grid.Row="1"
+                                                                               Grid.ColumnSpan="4"
+                                                                               Text="{Binding SourceName}"
+                                                                               Foreground="{StaticResource PlTextMutedBrush}"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                                <Button Content="{Binding ManageActionText}" Click="SourcesWorkspaceClicked" HorizontalAlignment="Stretch" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1" Classes="commandConsole" Margin="10,0,10,10" Padding="8">
+                        <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding FiltersTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                            <Grid ColumnDefinitions="*,*,88" ColumnSpacing="8">
+                                <CheckBox Content="{Binding ProblemsText}"
+                                          IsChecked="{Binding ProblemsOnly}"
+                                          ToolTip.Tip="Show resources with degraded status, readiness gaps, restarts, or RBAC issues." />
+                                <CheckBox Grid.Column="1"
+                                          Content="{Binding ActivityText}"
+                                          IsChecked="{Binding ActivityOnly}"
+                                          ToolTip.Tip="Show recent changes, events, and active/problem processes." />
+                                <TextBox Grid.Column="2"
+                                         Text="{Binding LimitText, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="limit" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}"
+                                             PlaceholderText="{Binding FilterNamePlaceholderText}" />
+                                    <Button Grid.Column="1" Content="▾" Padding="8,4" ToolTip.Tip="{Binding SavedFiltersText}">
+                                        <Button.Flyout>
+                                            <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
+                                                <Border Width="344" Padding="8" Classes="hudMenu">
+                                                    <StackPanel Spacing="6">
+                                                        <TextBlock Text="{Binding SavedFiltersText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                                        <TextBox Text="{Binding PresetSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                                 PlaceholderText="{Binding SearchSavedFiltersText}" />
+                                                        <ScrollViewer Height="220" VerticalScrollBarVisibility="Visible">
+                                                            <ItemsControl ItemsSource="{Binding VisibleSavedPresets}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4" Margin="0,0,0,3">
+                                                                            <TextBox Text="{Binding Name, Mode=OneWay}"
+                                                                                     LostFocus="SavedFilterNameLostFocus"
+                                                                                     GotFocus="SavedFilterNameGotFocus"
+                                                                                     KeyDown="SavedFilterNameKeyDown"
+                                                                                     ToolTip.Tip="Edit name, then press Enter or the edit icon." />
+                                                                            <Button Grid.Column="1" Content="✎" Click="RenameSavedFilterClicked" Tag="{Binding}" Padding="6,2" ToolTip.Tip="Rename filter" IsVisible="{Binding CanRename}" />
+                                                                            <Button Grid.Column="2" Content="🗑" Click="DeleteSavedFilterClicked" Tag="{Binding}" Padding="6,2" IsVisible="{Binding CanDelete}" ToolTip.Tip="Delete filter" />
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </ScrollViewer>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <Button Grid.Column="1" Content="{Binding SaveActionText}" Click="SaveFilterClicked" />
+                            </Grid>
+
+                            <ItemsControl ItemsSource="{Binding TextPickers}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Classes="filterButton" Classes.dropdown="True" Margin="0,0,0,6" HorizontalAlignment="Stretch">
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <local:KindGlyph Width="18"
+                                                                 Height="18"
+                                                                 Kind="{Binding GlyphKind}"
+                                                                 Fill="{Binding GlyphKind, Converter={StaticResource DeterministicBrushConverter}}"
+                                                                 VerticalAlignment="Center"
+                                                                 Margin="0,0,8,0" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Summary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="▾" Margin="8,0,0,0" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                                            </Grid>
+                                            <Button.Flyout>
+                                                <Flyout Placement="BottomEdgeAlignedLeft" ShowMode="Standard">
+                                        <Border Width="344" Padding="8" Classes="hudMenu">
+                                                        <StackPanel Spacing="6">
+                                                            <TextBlock Text="{Binding Label}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                                                <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
+                                                                         PlaceholderText="{Binding DataContext.FilterSearchOrCustomText, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                         KeyDown="FilterSearchKeyDown" />
+                                                                <Button Grid.Column="1" Content="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding AddSearchCommand}" Padding="8,4" />
+                                                            </Grid>
+                                                            <TextBlock Text="{Binding DataContext.CustomValuesText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                            <ItemsControl ItemsSource="{Binding CustomValues}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4" Margin="0,0,0,3">
+                                                                            <CheckBox IsChecked="{Binding IsSelected}">
+                                                                                <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
+                                                                            </CheckBox>
+                                                                            <Button Grid.Column="1" Content="{Binding DataContext.DeleteActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding RemoveCommand}" Padding="6,2" />
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <ScrollViewer Height="220" VerticalScrollBarVisibility="Visible">
+                                                                <ItemsControl ItemsSource="{Binding Options}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <CheckBox IsChecked="{Binding IsSelected}" IsVisible="{Binding IsVisible}">
+                                                                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                                                    <local:KindGlyph Kind="{Binding IconKind}"
+                                                                                                     Fill="{Binding IconKind, Converter={StaticResource DeterministicBrushConverter}}"
+                                                                                                     Width="18"
+                                                                                                     Height="18"
+                                                                                                     IsVisible="{Binding IconKind, Converter={StaticResource HasValueConverter}}" />
+                                                                                    <TextBlock Text="{Binding Value}" VerticalAlignment="Center" />
+                                                                                </StackPanel>
+                                                                            </CheckBox>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </ScrollViewer>
+                                                            <TextBlock Text="{Binding DataContext.FilterSyntaxHelpText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="Wrap" />
+                                                            <Button Content="{Binding DataContext.ClearActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding ClearCommand}" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                    </Border>
+                </Grid>
+            </Grid>
+            </Border>
+        </Grid>
+
+        <Border DockPanel.Dock="Bottom" Classes="hudPanel" Padding="8">
+            <TextBlock Text="{Binding FooterLine}" Foreground="{StaticResource PlTextMutedBrush}" TextTrimming="CharacterEllipsis" />
+        </Border>
+
+        <Grid Name="MainContentGrid" RowDefinitions="*,Auto,300" Background="{StaticResource PlBackdropBrush}">
+            <Border Grid.Row="0"
+                    IsHitTestVisible="False"
+                    IsVisible="{Binding IsAppEmpty}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                    <Image Source="avares://Podlord.App/Assets/Brand/Logo/podlord-logo-transparent.png" Width="320" Height="320" />
+                    <TextBlock Text="Podlord" Foreground="{StaticResource PlGoldBrightBrush}" FontSize="32" FontWeight="Bold" HorizontalAlignment="Center" />
+                    <TextBlock Text="Loading. Import a kubeconfig to begin." Foreground="{StaticResource PlTextMutedBrush}" HorizontalAlignment="Center" />
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="0"
+                  IsVisible="{Binding IsResourcesWorkspace}"
+                  RowDefinitions="Auto,*"
+                  Margin="10"
+                  RowSpacing="8">
+                <Border IsVisible="{Binding IsResourceSearchOpen}" Classes="searchPanel" Padding="8">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                        <Button Content="X" Click="ToggleResourceSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <TextBox Grid.Column="1"
+                                 x:Name="ResourceSearchBox"
+                                 Text="{Binding ResourceQuickSearch, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="quick resource search: name kind namespace /regex/ &quot;exact&quot;"
+                                 TextChanged="ResourceSearchTextChanged"
+                                 KeyDown="ResourceSearchKeyDown" />
+                        <Button Grid.Column="2" Content="◀" Click="ResourcePreviousClicked" ToolTip.Tip="Previous match" />
+                        <Button Grid.Column="3" Content="▶" Click="ResourceNextClicked" ToolTip.Tip="Next match" />
+                        <TextBlock Grid.Column="4" Text="{Binding ResourceMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="5" Text="{Binding ResourceSortLabel}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+                <DataGrid Grid.Row="1"
+	                          x:Name="ResourceGrid"
+	                          ItemsSource="{Binding Resources}"
+	                          SelectedItem="{Binding SelectedResourceRow}"
+                          SelectionMode="Single"
+                          AutoGenerateColumns="False"
+                          CanUserSortColumns="False"
+	                          CanUserResizeColumns="True"
+	                          IsReadOnly="True"
+	                          DoubleTapped="ResourceDoubleTapped"
+	                              CellPointerPressed="CopyableTableCellPointerPressed"
+                              PointerReleased="CopyableTablePointerReleased"
+                              PointerCaptureLost="CopyableTablePointerReleased"
+	                          VerticalScrollBarVisibility="Visible"
+	                          HorizontalScrollBarVisibility="Visible">
+                    <DataGrid.Columns>
+		                    <DataGridTemplateColumn Width="52">
+		                        <DataGridTemplateColumn.Header>
+		                            <Button Classes="columnPlaque" Tag="Port Forward" Content="⇄" Padding="4,1" ToolTip.Tip="Port forward" />
+		                        </DataGridTemplateColumn.Header>
+	                        <DataGridTemplateColumn.CellTemplate>
+	                            <DataTemplate>
+	                                <Button Click="PortForwardRowClicked"
+                                            ToolTip.Tip="Prepare port forward"
+                                            Padding="4,1"
+                                            IsVisible="{Binding Converter={StaticResource PortForwardEligibilityConverter}}">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <TextBlock Text="⇄" />
+                                            <TextBlock Foreground="{StaticResource PlGoldBrightBrush}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding Converter="{StaticResource PortForwardBadgeConverter}">
+                                                        <Binding />
+                                                        <Binding Path="DataContext.PortForwards" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                        <Binding Path="DataContext.PortForwardBadgeVersion" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Button>
+	                            </DataTemplate>
+	                        </DataGridTemplateColumn.CellTemplate>
+	                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="140">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Status" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Event" Fill="{StaticResource PlWarningBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Status" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Border Width="4"
+                                            HorizontalAlignment="Left"
+                                            Classes="resourceAnnouncePulse"
+                                            Background="{Binding Status, Converter={StaticResource StatusBrushConverter}}"
+                                            IsVisible="{Binding IsAnnouncing}" />
+                                    <TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" Margin="10,0,6,0" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="150">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Kind" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="CustomResourceDefinition" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Kind" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Classes="metricPlaque" Margin="4,2" Padding="5,1">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <local:KindGlyph Kind="{Binding Kind}"
+                                                         Fill="{Binding Kind, Converter={StaticResource DeterministicBrushConverter}}"
+                                                         Width="24"
+                                                         Height="24" />
+                                        <TextBlock Text="{Binding Kind}" />
+                                    </StackPanel>
+                                    <ToolTip.Tip>
+                                        <Border Width="330" Padding="10" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Status, Converter={StaticResource StatusBrushConverter}}" BorderThickness="1">
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Id}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding ., Converter={StaticResource ProblemReasonConverter}}" Foreground="{Binding ., Converter={StaticResource ProblemBrushConverter}}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                    </ToolTip.Tip>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="280">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Name" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Pod" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Name" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+	                                <TextBlock Text="{Binding Name}" Margin="6,0" TextTrimming="CharacterEllipsis">
+                                    <ToolTip.Tip>
+                                        <Border Width="330" Padding="10" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Status, Converter={StaticResource StatusBrushConverter}}" BorderThickness="1">
+                                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+                                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="Wrap" />
+                                                <TextBlock Grid.Row="1" Text="{Binding Id}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Grid.Row="2" Text="{Binding ImageSummary}" Foreground="{StaticResource PlTextBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Grid.Row="3" Text="{Binding ., Converter={StaticResource ProblemReasonConverter}}" Foreground="{Binding ., Converter={StaticResource ProblemBrushConverter}}" TextWrapping="Wrap" />
+                                            </Grid>
+                                        </Border>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="150">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Namespace" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Namespace" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Namespace" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Namespace}" Margin="6,0" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="180">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Cluster" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Cluster" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Cluster" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Cluster}"
+                                           Margin="6,0"
+                                           Foreground="{Binding Cluster, Converter={StaticResource DeterministicBrushConverter}}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="90">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="CPU" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Node" Fill="{StaticResource PlStatusSuccessBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="CPU" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent"
+                                        Padding="8,3"
+                                        HorizontalAlignment="Stretch"
+                                        ClipToBounds="True"
+                                        ToolTip.Tip="{Binding CpuMetricDetail}">
+                                    <Grid RowDefinitions="Auto,Auto" ClipToBounds="True" MinWidth="0">
+                                        <TextBlock Text="{Binding CpuCompactDisplay}"
+                                                   Foreground="{StaticResource PlTextBrush}"
+                                                   HorizontalAlignment="Right"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <ProgressBar Grid.Row="1"
+                                                     IsVisible="{Binding HasCpuMetricBar}"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="{Binding Pulse.CpuPercent}"
+                                                     Foreground="{Binding Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}"
+                                                     Height="5"
+                                                     MinWidth="0"
+                                                     HorizontalAlignment="Stretch"
+                                                     Margin="0,2,0,0"
+                                                     ClipToBounds="True" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="95">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Memory" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="ConfigMap" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Memory" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent"
+                                        Padding="8,3"
+                                        HorizontalAlignment="Stretch"
+                                        ClipToBounds="True"
+                                        ToolTip.Tip="{Binding MemoryMetricDetail}">
+                                    <Grid RowDefinitions="Auto,Auto" ClipToBounds="True" MinWidth="0">
+                                        <TextBlock Text="{Binding MemoryCompactDisplay}"
+                                                   Foreground="{StaticResource PlTextBrush}"
+                                                   HorizontalAlignment="Right"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <ProgressBar Grid.Row="1"
+                                                     IsVisible="{Binding HasMemoryMetricBar}"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="{Binding Pulse.MemoryPercent}"
+                                                     Foreground="{Binding Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}"
+                                                     Height="5"
+                                                     MinWidth="0"
+                                                     HorizontalAlignment="Stretch"
+                                                     Margin="0,2,0,0"
+                                                     ClipToBounds="True" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="95">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Storage" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="PersistentVolume" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Storage" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent"
+                                        Padding="8,3"
+                                        HorizontalAlignment="Stretch"
+                                        ClipToBounds="True"
+                                        ToolTip.Tip="{Binding StorageMetricDetail}">
+                                    <Grid RowDefinitions="Auto,Auto" ClipToBounds="True" MinWidth="0">
+                                        <TextBlock Text="{Binding StorageCompactDisplay}"
+                                                   Foreground="{StaticResource PlTextBrush}"
+                                                   HorizontalAlignment="Right"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <ProgressBar Grid.Row="1"
+                                                     IsVisible="{Binding HasStorageMetricBar}"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="{Binding Pulse.StoragePercent}"
+                                                     Foreground="{Binding Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}"
+                                                     Height="5"
+                                                     MinWidth="0"
+                                                     HorizontalAlignment="Stretch"
+                                                     Margin="0,2,0,0"
+                                                     ClipToBounds="True" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="90">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Age" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="CronJob" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Age" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Age}" Margin="6,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="90">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Ready" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Service" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Ready" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Ready}" Margin="6,0" Foreground="{Binding ., Converter={StaticResource ProblemBrushConverter}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="95">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Restarts" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Event" Fill="{StaticResource PlWarningBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Restarts" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Restarts}" Margin="6,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="190">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Node" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Node" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Node" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Node}"
+                                           Margin="6,0"
+                                           Foreground="{Binding Node, Converter={StaticResource DeterministicBrushConverter}}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="230">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Image" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="ConfigMap" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Image" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ImageSummary}"
+                                           Margin="6,0"
+                                           Foreground="{Binding ImageSummary, Converter={StaticResource DeterministicBrushConverter}}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="220">
+                        <DataGridTemplateColumn.Header>
+                            <Button Classes="columnPlaque" Tag="Owner" Click="SortResourcesClicked">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <local:KindGlyph Kind="Deployment" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
+                                    <TextBlock Text="Owner" />
+                                </StackPanel>
+                            </Button>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Owner}"
+                                           Margin="6,0"
+                                           Foreground="{Binding Owner, Converter={StaticResource DeterministicBrushConverter}}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+                <Border Grid.Row="1"
+                        IsHitTestVisible="False"
+                        IsVisible="{Binding IsResourceLogoVisible}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        BorderThickness="0">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                        <Image Source="avares://Podlord.App/Assets/Brand/Logo/podlord-logo-transparent.png"
+                               Width="220"
+                               Height="210"
+                               Stretch="Uniform" />
+                        <TextBlock Text="{Binding ResourceLogoTitle}"
+                                   Foreground="{StaticResource PlGoldBrightBrush}"
+                                   FontSize="24"
+                                   FontWeight="Bold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding ResourceLogoMessage}"
+                                   Foreground="{StaticResource PlTextMutedBrush}"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="420" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Row="0"
+                  IsVisible="{Binding IsGraphWorkspace}"
+                  RowDefinitions="Auto,*"
+                  Background="{StaticResource PlBackdropBrush}"
+                  Margin="10"
+                  RowSpacing="8">
+                <Border IsVisible="{Binding IsGraphSearchOpen}" Classes="searchPanel" Padding="8">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                        <Button Content="X" Click="ToggleGraphSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <TextBox Grid.Column="1"
+                                 x:Name="GraphSearchBox"
+                                 Text="{Binding GraphSearch, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="fast graph search: name kind namespace /regex/ &quot;exact&quot;"
+                                 KeyDown="GraphSearchKeyDown" />
+                        <Button Grid.Column="2" Content="◀" Click="GraphPreviousClicked" ToolTip.Tip="Previous match" />
+                        <Button Grid.Column="3" Content="▶" Click="GraphNextClicked" ToolTip.Tip="Next match" />
+                        <TextBlock Grid.Column="4" Text="{Binding GraphMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Visible"
+                              HorizontalScrollBarVisibility="Visible"
+                              Background="{StaticResource PlInsetMaterialBrush}"
+                              Padding="14">
+                    <TreeView x:Name="GraphTree"
+                              ItemsSource="{Binding GraphNodes}"
+                              SelectedItem="{Binding SelectedGraphNode}"
+                              AutoScrollToSelectedItem="True">
+                        <TreeView.ItemTemplate>
+                            <TreeDataTemplate ItemsSource="{Binding Children}">
+                                <Button Click="GraphNodeClicked" Padding="0" Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+                                    <Border Background="{Binding BackgroundBrush}" BorderBrush="{Binding BorderBrush}" BorderThickness="1" Padding="8" Margin="0,2">
+                                        <Grid ColumnDefinitions="42,120,320,160,*" ColumnSpacing="10">
+                                            <local:KindGlyph Kind="{Binding Kind}"
+                                                             Fill="{Binding Kind, Converter={StaticResource DeterministicBrushConverter}}"
+                                                             Width="28"
+                                                             Height="28" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Kind}" Foreground="{StaticResource PlGoldBrightBrush}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="3" Text="{Binding Namespace}" Foreground="{StaticResource PlTextMutedBrush}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="4" Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" TextTrimming="CharacterEllipsis" />
+                                        </Grid>
+                                        <ToolTip.Tip>
+                                            <Border MinWidth="300"
+                                                    MaxWidth="440"
+                                                    Padding="12"
+                                                    Background="{StaticResource PlBgPanelBrush}"
+                                                    BorderBrush="{Binding BorderBrush}"
+                                                    BorderThickness="1"
+                                                    ClipToBounds="False">
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="{Binding Name}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="WrapWithOverflow" />
+                                                    <TextBlock Text="{Binding Resource.Id}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="WrapWithOverflow" IsVisible="{Binding HasResource}" />
+                                                    <TextBlock Text="{Binding Resource.ImageSummary}" Foreground="{StaticResource PlTextBrush}" TextWrapping="WrapWithOverflow" IsVisible="{Binding Resource.HasImageInfo}" />
+                                                    <TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" TextWrapping="WrapWithOverflow" />
+                                                    <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasCpuMetricBar}">
+                                                        <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasCpuMetricTextOnly}">
+                                                        <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasMemoryMetricBar}">
+                                                        <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasMemoryMetricTextOnly}">
+                                                        <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasNetworkMetricInfo}">
+                                                        <TextBlock Text="Network" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Resource.NetworkDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasStorageMetricBar}">
+                                                        <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasStorageMetricTextOnly}">
+                                                        <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+                                        </ToolTip.Tip>
+                                    </Border>
+                                </Button>
+                            </TreeDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Row="0"
+                  IsVisible="{Binding IsEventsWorkspace}"
+                  RowDefinitions="Auto,*"
+                  Margin="10"
+                  RowSpacing="8">
+                <Border IsVisible="{Binding IsEventSearchOpen}" Classes="searchPanel" Padding="8">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+                        <Button Content="X" Click="ToggleEventSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <TextBox Grid.Column="1"
+                                 x:Name="EventSearchBox"
+                                 Text="{Binding EventQuickSearch, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="quick event search: reason object namespace /regex/ &quot;exact&quot;"
+                                 TextChanged="EventSearchTextChanged"
+                                 KeyDown="EventSearchKeyDown" />
+                        <Button Grid.Column="2" Content="◀" Click="EventPreviousClicked" ToolTip.Tip="Previous match" />
+                        <Button Grid.Column="3" Content="▶" Click="EventNextClicked" ToolTip.Tip="Next match" />
+                        <TextBlock Grid.Column="4" Text="{Binding EventMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="5" Text="{Binding EventSortLabel}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+                <DataGrid Grid.Row="1"
+                          x:Name="EventGrid"
+                          ItemsSource="{Binding Events}"
+                          SelectedItem="{Binding SelectedEvent}"
+                          AutoGenerateColumns="False"
+	                          IsReadOnly="True"
+	                          CanUserSortColumns="True"
+	                          CanUserResizeColumns="True"
+	                              CellPointerPressed="CopyableTableCellPointerPressed"
+                              PointerReleased="CopyableTablePointerReleased"
+                              PointerCaptureLost="CopyableTablePointerReleased"
+	                          VerticalScrollBarVisibility="Visible"
+	                          HorizontalScrollBarVisibility="Visible">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Binding="{Binding Status}" Width="120">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Status" Content="Status" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Name}" Width="240">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Name" Content="Name" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Reason}" Width="180">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Reason" Content="Reason" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Object}" Width="220">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Object" Content="Object" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Namespace}" Width="160">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Namespace" Content="Namespace" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Age}" Width="90">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Age" Content="Age" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Message}" Width="*">
+                            <DataGridTextColumn.Header>
+                                <Button Classes="columnPlaque" Tag="Message" Content="Message" Click="SortEventsClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+
+            <Grid Grid.Row="0" IsVisible="{Binding IsPortsWorkspace}" RowDefinitions="Auto,*" Margin="10" RowSpacing="8">
+                <Border Grid.Row="0" IsVisible="{Binding IsPortSearchOpen}" Classes="searchPanel" Padding="8">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                        <Button Content="X" Click="TogglePortSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <TextBox Grid.Column="1"
+                                 x:Name="PortSearchBox"
+                                 Text="{Binding PortQuickSearch, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="quick port search: name kind namespace /regex/ &quot;exact&quot;" />
+                    </Grid>
+                </Border>
+                <DataGrid Grid.Row="1"
+                          ItemsSource="{Binding VisiblePortForwards}"
+                          SelectedItem="{Binding SelectedPortForward}"
+	                          AutoGenerateColumns="False"
+	                          IsReadOnly="True"
+	                          CanUserResizeColumns="True"
+	                              CellPointerPressed="CopyableTableCellPointerPressed"
+                              PointerReleased="CopyableTablePointerReleased"
+                              PointerCaptureLost="CopyableTablePointerReleased"
+	                          VerticalScrollBarVisibility="Visible"
+	                          HorizontalScrollBarVisibility="Visible">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="" Width="74">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="OPEN" Click="OpenPortForwardTaskClicked" Tag="{Binding}" Padding="6,2" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110" />
+                        <DataGridTextColumn Header="Session" Binding="{Binding Session}" Width="180" />
+                        <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90" />
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="220" />
+                        <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="150" />
+                        <DataGridTextColumn Header="Container Port" Binding="{Binding ContainerPort}" Width="155" />
+                        <DataGridTextColumn Header="Local Port" Binding="{Binding LocalPort}" Width="130" />
+                        <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+
+            <Border Grid.Row="0" IsVisible="{Binding IsSettingsWorkspace}" Margin="10" Classes="hudPanel" Padding="14">
+                <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                <Grid RowDefinitions="Auto,*" RowSpacing="12" HorizontalAlignment="Stretch">
+                    <TextBlock Text="{Binding SettingsTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                    <TabControl Grid.Row="1"
+                                Background="{StaticResource PlDetailBrush}"
+                                SelectedIndex="{Binding SelectedSettingsTabIndex}">
+                        <TabItem Header="{Binding SettingsAppearanceText}">
+                            <StackPanel Margin="10" Spacing="0">
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding ThemeText}" />
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding ThemeOptions}" SelectedItem="{Binding ThemeSetting}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding ThemeHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding VariantText}" />
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding ThemeVariantOptions}"
+                                                  SelectedItem="{Binding ThemeVariantSetting}"
+                                                  ToolTip.Tip="Dark and light variants use the same layout and readable density." />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding VariantHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding ThemeIntensityText}" />
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding GraphicsQualityOptions}"
+                                                  SelectedItem="{Binding GraphicsQualitySetting}"
+                                                  ToolTip.Tip="Subtle keeps the app professional; medium and arcade increase glow and texture." />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding ThemeIntensityHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding LanguageText}" />
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding LanguageOptions}" SelectedItem="{Binding LanguageSetting}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding LanguageHelpText}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="{Binding SettingsDiagnosticsText}">
+                            <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="10">
+                                <TextBlock Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                <DataGrid Grid.Row="1"
+                                          ItemsSource="{Binding RequestAuditRows}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserResizeColumns="True"
+                                          HorizontalAlignment="Stretch"
+                                          CellPointerPressed="CopyableTableCellPointerPressed"
+                                          PointerReleased="CopyableTablePointerReleased"
+                                          PointerCaptureLost="CopyableTablePointerReleased"
+                                          Height="360"
+                                          VerticalScrollBarVisibility="Visible"
+                                          HorizontalScrollBarVisibility="Visible">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Time" Binding="{Binding StartedAt}" Width="190" />
+                                        <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="90" />
+                                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="360" />
+                                        <DataGridTextColumn Header="Priority" Binding="{Binding Priority}" Width="110" />
+                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
+                                        <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100" />
+                                        <DataGridTextColumn Header="Outcome" Binding="{Binding Outcome}" Width="*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="{Binding SettingsGraphicsText}">
+                            <StackPanel Margin="10" Spacing="0">
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding RadarWaterText}" />
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding RadarWaterEnabledSetting}" HorizontalAlignment="Left" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding RadarWaterHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*,54" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding RadarWaterSpeedText}" />
+                                        <Slider Grid.Column="1"
+                                                Minimum="0"
+                                                Maximum="100"
+                                                TickFrequency="5"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding RadarWaterSpeedSetting}" />
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding RadarWaterSpeedLabel}"
+                                                   Foreground="{StaticResource PlTextBrush}"
+                                                   HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="settingHelp" Text="{Binding RadarWaterSpeedHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*,54" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding AnimationIntensityText}" />
+                                        <Slider Grid.Column="1"
+                                                Minimum="0"
+                                                Maximum="100"
+                                                TickFrequency="5"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding AnimationIntensitySetting}" />
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding AnimationIntensityLabel}"
+                                                   Foreground="{StaticResource PlTextBrush}"
+                                                   HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="settingHelp" Text="{Binding AnimationHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding RadarAutoFollowText}" />
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding RadarAutoFollowAlertsSetting}" HorizontalAlignment="Left" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding RadarAutoFollowHelpText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding RadarScreensaverText}" />
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding ScreensaverSetting}" HorizontalAlignment="Left" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding GraphicsHelpText}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="{Binding SettingsPrivacyText}">
+                            <StackPanel Margin="10" Spacing="0">
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding TelemetryText}" />
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding TelemetrySetting}" HorizontalAlignment="Left" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding TelemetryHelpText}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="{Binding SettingsSourcesText}">
+                            <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="10" MinHeight="0" ClipToBounds="True">
+                                <Border Classes="commandConsole" Padding="10">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBox Text="{Binding ImportPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 AcceptsReturn="True"
+                                                 MinHeight="42"
+                                                 MaxHeight="110"
+                                                 PlaceholderText="{Binding ImportPlaceholderText}" />
+                                        <Button Grid.Column="1" Content="{Binding ImportActionText}" Click="ImportPathClicked" />
+                                    </Grid>
+                                </Border>
+                                <DataGrid Grid.Row="1"
+                                          ItemsSource="{Binding Sources}"
+                                          SelectedItem="{Binding SelectedSource}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="False"
+                                          CanUserResizeColumns="True"
+                                          CellPointerPressed="CopyableTableCellPointerPressed"
+                                          PointerReleased="CopyableTablePointerReleased"
+                                          PointerCaptureLost="CopyableTablePointerReleased"
+                                          MinHeight="0"
+                                          ClipToBounds="True"
+                                          VerticalScrollBarVisibility="Visible"
+                                          HorizontalScrollBarVisibility="Visible">
+                                    <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="" Width="56" IsReadOnly="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="X"
+                                                            Click="RemoveSourceClicked"
+                                                            Tag="{Binding}"
+                                                            ToolTip.Tip="Remove snapshot"
+                                                            Padding="6,1" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Name" Binding="{Binding Context, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="220" />
+                                        <DataGridTemplateColumn Header="Filter" Width="170">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox ItemsSource="{Binding DataContext.SourceFilterOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              SelectedItem="{Binding FilterName, Mode=TwoWay}"
+                                                              HorizontalAlignment="Stretch" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Imported" Binding="{Binding ImportedAt}" Width="205" IsReadOnly="True" />
+                                        <DataGridTextColumn Header="Cluster" Binding="{Binding Cluster}" Width="220" IsReadOnly="True" />
+                                        <DataGridTextColumn Header="User" Binding="{Binding User}" Width="180" IsReadOnly="True" />
+                                        <DataGridTextColumn Header="Auth" Binding="{Binding AuthType}" Width="110" IsReadOnly="True" />
+                                        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="300" IsReadOnly="True" />
+                                        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*" IsReadOnly="True" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="{Binding SettingsSyncText}">
+                            <StackPanel Margin="10" Spacing="0">
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding InactiveBackgroundSyncText}" />
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding InactiveSyncOptions}" SelectedItem="{Binding InactiveSyncSetting}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding InactiveSyncDescription}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding RequestHardLimitText}" />
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding RequestHardLimitOptions}"
+                                                  SelectedItem="{Binding RequestHardLimitSetting}" />
+                                        <TextBlock Grid.Row="1"
+                                                   Grid.Column="1"
+                                                   Classes="settingHelp"
+                                                   Text="{Binding RequestHardLimitDescription}"
+                                                   ToolTip.Tip="{Binding RequestHardLimitHelpText}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="{Binding SettingsWorkspaceText}">
+                            <StackPanel Margin="10" Spacing="0">
+                                <Border Classes="settingRow">
+                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+                                        <TextBlock Classes="settingLabel" Text="{Binding WorkspaceRestoreText}" />
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding WorkspaceRestoreSetting}" HorizontalAlignment="Left" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding WorkspaceRestoreHelpText}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Row="1"
+                          Height="14"
+                          IsVisible="{Binding IsInspectorVisible}"
+                          HorizontalAlignment="Stretch"
+                          Background="{StaticResource PlPlaqueBrush}"
+                          BorderBrush="{StaticResource PlGoldBorderBrush}"
+                          BorderThickness="0,1"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext"
+                          ToolTip.Tip="Drag to resize inspector" />
+            <Border Grid.Row="1"
+                    IsVisible="{Binding IsInspectorVisible}"
+                    IsHitTestVisible="False"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Width="94"
+                    Height="14"
+                    Background="{StaticResource PlPlaqueBrush}"
+                    BorderBrush="{StaticResource PlGoldBorderBrush}"
+                    BorderThickness="1">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="7">
+                    <TextBlock Text="‹" Foreground="{StaticResource PlGoldBrightBrush}" FontSize="10" />
+                    <Border Width="2" Height="8" Background="{StaticResource PlBronzeBrush}" />
+                    <Border Width="2" Height="8" Background="{StaticResource PlBronzeBrush}" />
+                    <Border Width="2" Height="8" Background="{StaticResource PlBronzeBrush}" />
+                    <TextBlock Text="›" Foreground="{StaticResource PlGoldBrightBrush}" FontSize="10" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2"
+                    MinHeight="160"
+                    IsVisible="{Binding IsInspectorVisible}"
+                    Classes="selectedUnitCard">
+                <Grid RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True">
+                    <Border Classes="selectedUnitHeader" Padding="8">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                            <local:KindGlyph Kind="{Binding SelectedResource.Kind}"
+                                             Fill="{Binding SelectedResourceLabel, Converter={StaticResource DeterministicBrushConverter}}"
+                                             Width="28"
+                                             Height="28" />
+                            <TextBlock Grid.Column="1" Text="{Binding SelectedResourceLabel}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                            <ProgressBar Grid.Column="2" IsVisible="{Binding IsDetailLoading}" IsIndeterminate="True" Width="120" Height="8" VerticalAlignment="Center" />
+                            <Button Grid.Column="3" Content="{Binding PortActionText}" Click="PortForwardSelectedClicked" IsVisible="{Binding CanPortForwardSelectedResource}" Padding="8,2" />
+                            <Button Grid.Column="4" Content="🗑" Click="DeleteSelectedResourceClicked" IsVisible="{Binding CanDeleteSelectedResource}" ToolTip.Tip="{Binding DeleteActionLabel}" Padding="8,2" />
+                            <Button Grid.Column="5" Content="X" Click="CloseInspectorClicked" ToolTip.Tip="{Binding CloseActionText}" Padding="8,2" />
+                        </Grid>
+	                    </Border>
+                    <Grid Grid.Row="1" RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True">
+                        <Border Classes="inspectorTabBar">
+                            <StackPanel Orientation="Horizontal" Spacing="0">
+                                <Button Content="{Binding InspectorOverviewText}" Tag="0" Click="InspectorTabClicked" Classes="inspectorTab" Classes.active="{Binding IsInspectorOverviewActive}" />
+                                <Button Content="{Binding InspectorYamlText}" Tag="1" Click="InspectorTabClicked" Classes="inspectorTab" Classes.active="{Binding IsInspectorYamlActive}" />
+                                <Button Content="{Binding InspectorEventsText}" Tag="2" Click="InspectorTabClicked" Classes="inspectorTab" Classes.active="{Binding IsInspectorEventsActive}" IsVisible="{Binding IsSelectedKubernetesResource}" />
+                                <Button Content="{Binding InspectorLinksText}" Tag="3" Click="InspectorTabClicked" Classes="inspectorTab" Classes.active="{Binding IsInspectorLinksActive}" IsVisible="{Binding IsSelectedKubernetesResource}" />
+                                <Button Content="{Binding InspectorLogsText}" Tag="4" Click="InspectorTabClicked" Classes="inspectorTab" Classes.active="{Binding IsInspectorLogsActive}" IsVisible="{Binding IsSelectedResourceLoggable}" />
+                                <Button Content="{Binding InspectorValuesText}" Tag="5" Click="InspectorTabClicked" Classes="inspectorTab" Classes.active="{Binding IsInspectorValuesActive}" IsVisible="{Binding IsSelectedResourceKeyValueResource}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Grid.Row="1"
+                              x:Name="InspectorTabContentHost"
+                              MinHeight="0"
+                              ClipToBounds="True"
+                              SizeChanged="InspectorTabContentHostSizeChanged">
+                            <Grid IsVisible="{Binding IsInspectorOverviewActive}" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                <Grid IsVisible="{Binding IsSelectedSource}" Margin="8" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                    <DataGrid ItemsSource="{Binding FocusMetrics}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserResizeColumns="True"
+                                              CellPointerPressed="CopyableTableCellPointerPressed"
+                                              PointerReleased="CopyableTablePointerReleased"
+                                              PointerCaptureLost="CopyableTablePointerReleased"
+                                              MinHeight="0"
+                                              ClipToBounds="True"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch"
+                                              VerticalScrollBarVisibility="Visible"
+                                              HorizontalScrollBarVisibility="Visible">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Field" Binding="{Binding Label}" Width="220" />
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                                <DataGrid IsVisible="{Binding IsSelectedKubernetesResource}"
+                                          ItemsSource="{Binding FocusMetrics}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserResizeColumns="True"
+                                          CellPointerPressed="CopyableTableCellPointerPressed"
+                                          PointerReleased="CopyableTablePointerReleased"
+                                          PointerCaptureLost="CopyableTablePointerReleased"
+                                          MinHeight="0"
+                                          ClipToBounds="True"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Stretch"
+                                          VerticalScrollBarVisibility="Visible"
+                                          HorizontalScrollBarVisibility="Visible">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Field" Binding="{Binding Label}" Width="260" />
+                                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+                                        <DataGridTemplateColumn Header="Metric" Width="180">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="Transparent"
+                                                            Padding="8,3"
+                                                            ToolTip.Tip="{Binding MetricTooltip}">
+                                                        <Canvas Width="156" Height="14" ClipToBounds="True">
+                                                            <ProgressBar IsVisible="{Binding HasBar}"
+                                                                         Width="156"
+                                                                         Height="8"
+                                                                         Canvas.Top="3"
+                                                                         Minimum="0"
+                                                                         Maximum="100"
+                                                                         Value="{Binding Percent}"
+                                                                         Foreground="{Binding Percent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                            <Border IsVisible="{Binding HasSuggestion}"
+                                                                    Width="2"
+                                                                    Height="12"
+                                                                    Canvas.Top="1"
+                                                                    Canvas.Left="{Binding SuggestionLeft}"
+                                                                    Background="{StaticResource PlGoldBrightBrush}" />
+                                                        </Canvas>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+
+                            <Grid IsVisible="{Binding IsInspectorYamlActive}" RowDefinitions="Auto,Auto,*" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                <Border x:Name="YamlApplyBar"
+                                        Classes="selectedUnitHeader"
+                                        Padding="8"
+                                        SizeChanged="YamlChromeSizeChanged">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="{Binding YamlApplyStatus}" Foreground="{StaticResource PlTextMutedBrush}" TextTrimming="CharacterEllipsis" />
+                                        <Button Grid.Column="1" Content="{Binding ApplyServerSideActionText}" Click="ApplyYamlClicked" />
+                                        <Button Grid.Column="2" Content="{Binding ResetActionText}" Click="ResetYamlClicked" />
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Row="1"
+                                        x:Name="YamlAssistBar"
+                                        Classes="commandConsole"
+                                        Padding="6"
+                                        SizeChanged="YamlChromeSizeChanged">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                        <TextBlock Text="{Binding YamlAssistStatus}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding YamlTabIndentText}" Foreground="{StaticResource PlTextMutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <avaloniaEdit:TextEditor Grid.Row="2"
+                                                         x:Name="YamlEditor"
+                                                         TextChanged="YamlEditorTextChanged"
+                                                         ShowLineNumbers="True"
+                                                         LineNumbersForeground="{StaticResource PlTextMutedBrush}"
+                                                         VerticalScrollBarVisibility="Visible"
+                                                         HorizontalScrollBarVisibility="Visible"
+                                                         WordWrap="False"
+                                                         IsReadOnly="False"
+                                                         MinHeight="0"
+                                                         ClipToBounds="True"
+                                                         HorizontalAlignment="Stretch"
+                                                         VerticalAlignment="Stretch"
+                                                         FontFamily="Consolas, Menlo, Monaco, monospace"
+                                                         Background="{StaticResource PlBgPanelInsetBrush}"
+                                                         Foreground="{StaticResource PlTextMainBrush}" />
+                            </Grid>
+
+                            <DataGrid IsVisible="{Binding IsInspectorEventsActive}"
+                                      ItemsSource="{Binding FocusedEvents}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserResizeColumns="True"
+                                      CellPointerPressed="CopyableTableCellPointerPressed"
+                                      PointerReleased="CopyableTablePointerReleased"
+                                      PointerCaptureLost="CopyableTablePointerReleased"
+                                      VerticalScrollBarVisibility="Visible"
+                                      MinHeight="0"
+                                      ClipToBounds="True"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
+                                    <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="180" />
+                                    <DataGridTextColumn Header="Age" Binding="{Binding Age}" Width="160" />
+                                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <DataGrid IsVisible="{Binding IsInspectorLinksActive}"
+                                      ItemsSource="{Binding FocusedRelationships}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserResizeColumns="True"
+                                      CellPointerPressed="CopyableTableCellPointerPressed"
+                                      PointerReleased="CopyableTablePointerReleased"
+                                      PointerCaptureLost="CopyableTablePointerReleased"
+                                      VerticalScrollBarVisibility="Visible"
+                                      MinHeight="0"
+                                      ClipToBounds="True"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="From" Binding="{Binding FromName}" Width="240" />
+                                    <DataGridTextColumn Header="" Binding="{Binding Link}" Width="50" />
+                                    <DataGridTextColumn Header="To" Binding="{Binding ToName}" Width="240" />
+                                    <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="160" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="160" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <Grid IsVisible="{Binding IsInspectorLogsActive}" RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                <CheckBox Content="Pause tail"
+                                          IsChecked="{Binding LogsPaused}"
+                                          Margin="8,4"
+                                          ToolTip.Tip="Pause automatic pod log tailing for the focused pod." />
+                                <TextBox Grid.Row="1"
+                                         x:Name="LogTextBox"
+                                         Text="{Binding LogText}"
+                                         TextChanged="LogTextChanged"
+                                         AcceptsReturn="True"
+                                         IsReadOnly="True"
+                                         MinHeight="0"
+                                         ClipToBounds="True"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Stretch"
+                                         FontFamily="Consolas, Menlo, Monaco, monospace" />
+                            </Grid>
+
+                            <DataGrid IsVisible="{Binding IsInspectorValuesActive}"
+                                      ItemsSource="{Binding ResourceValues}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserResizeColumns="True"
+                                      CellPointerPressed="CopyableTableCellPointerPressed"
+                                      PointerReleased="CopyableTablePointerReleased"
+                                      PointerCaptureLost="CopyableTablePointerReleased"
+                                      VerticalScrollBarVisibility="Visible"
+                                      HorizontalScrollBarVisibility="Visible"
+                                      MinHeight="0"
+                                      ClipToBounds="True"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="220" />
+                                    <DataGridTextColumn Header="Encoding" Binding="{Binding Encoding}" Width="110" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding DisplayValue}" Width="*" />
+                                    <DataGridTemplateColumn Header="Copy" Width="190">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <Button Content="KEY"
+                                                            Click="CopyResourceValueKeyClicked"
+                                                            Padding="6,2" />
+                                                    <Button Content="VALUE"
+                                                            Click="CopyResourceValuePreferredClicked"
+                                                            IsVisible="{Binding HasPlainCopy}"
+                                                            Padding="6,2" />
+                                                    <Button Content="RAW"
+                                                            Click="CopyResourceValueRawClicked"
+                                                            IsVisible="{Binding HasBase64Copy}"
+                                                            Padding="6,2" />
+                                                    <Button Content="DEC"
+                                                            Click="CopyResourceValueDecodedClicked"
+                                                            IsVisible="{Binding HasBase64Copy}"
+                                                            Padding="6,2" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="" Width="94">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Content="{Binding RevealLabel}"
+                                                        Click="ToggleResourceValueRevealClicked"
+                                                        IsVisible="{Binding IsSensitive}"
+                                                        Padding="6,2" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+
+    <Border IsVisible="{Binding IsCommandPaletteOpen}"
+            Width="560"
+            VerticalAlignment="Top"
+            HorizontalAlignment="Center"
+            Margin="0,76,0,0"
+            Background="{StaticResource PlInspectorTextureBrush}"
+            BorderBrush="{StaticResource PlGoldBorderBrush}"
+            BorderThickness="1"
+            Padding="10">
+        <StackPanel Spacing="8">
+            <TextBlock Text="COMMAND PALETTE" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+            <TextBox Text="{Binding CommandText, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="resources, graph, events, sources, ports, settings, problems..." />
+            <ItemsControl ItemsSource="{Binding CommandSuggestions}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Foreground="{StaticResource PlTextBrush}" Margin="4,2" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+
+    <Border IsVisible="{Binding IsPortForwardToolOpen}"
+            Width="520"
+            VerticalAlignment="Top"
+            HorizontalAlignment="Right"
+            Margin="0,134,424,0"
+            Background="{StaticResource PlInspectorTextureBrush}"
+            BorderBrush="{StaticResource PlGoldBorderBrush}"
+            BorderThickness="1"
+            Padding="10">
+            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding PortForwardTitleText}"
+                           Foreground="{StaticResource PlGoldBrightBrush}"
+                           FontWeight="Bold" />
+                <Button Grid.Column="1" Content="X" Click="ClosePortForwardToolClicked" ToolTip.Tip="{Binding CloseActionText}" Padding="8,2" />
+            </Grid>
+            <TextBlock Grid.Row="1"
+                       Text="{Binding PortForwardResourceLabel}"
+                       Foreground="{StaticResource PlTextBrush}"
+                       TextTrimming="CharacterEllipsis" />
+            <Grid Grid.Row="2" ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding PortContainerPortText}" Foreground="{StaticResource PlTextMutedBrush}" />
+                    <TextBox Text="{Binding PortContainerPort}" ToolTip.Tip="{Binding PortContainerPortTipText}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="{Binding PortLocalPortText}" Foreground="{StaticResource PlTextMutedBrush}" />
+                    <TextBox Text="{Binding PortLocalPort}" ToolTip.Tip="{Binding PortLocalPortTipText}" />
+                </StackPanel>
+                <Button Grid.Column="2" Content="{Binding PortForwardActionLabel}" Click="RunPortForwardActionClicked" />
+            </Grid>
+        </Grid>
+    </Border>
+    </Grid>
+</Window>

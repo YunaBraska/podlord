@@ -1,0 +1,667 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Podlord.App"
+             x:Class="Podlord.App.App"
+             Name="Podlord"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <!-- Modern-retro design tokens.
+             CSS-style token equivalents:
+             bg-app: PlBgAppBrush; bg-panel: PlBgPanelBrush; bg-panel-raised: PlBgPanelRaisedBrush;
+             bg-panel-inset: PlBgPanelInsetBrush; bg-inspector: PlInspectorBgBrush;
+             bg-sidebar: PlSidebarBgBrush; bg-radar: PlRadarBgBrush; bg-table: PlTableBgBrush;
+             table-header: PlTableHeaderBgBrush; row-hover: PlRowHoverBrush; border-subtle: PlBorderSubtleBrush;
+             border-strong: PlBorderStrongBrush; accent: PlAccentBrush; accent-muted: PlAccentMutedBrush;
+             accent-glow: PlAccentGlowBrush; text-main: PlTextBrush; text-muted: PlTextMutedBrush;
+             text-faint: PlTextFaintBrush; status-success: PlStatusSuccessBrush; status-warning: PlWarningBrush;
+             status-danger: PlDangerBrush; status-unknown: PlStatusUnknownBrush;
+             progress-track: PlProgressTrackBrush; progress-fill: PlProgressFillBrush. -->
+        <SolidColorBrush x:Key="PlBgAppBrush" Color="#090A0A" />
+        <SolidColorBrush x:Key="PlBgPanelBrush" Color="#111315" />
+        <SolidColorBrush x:Key="PlBgPanelRaisedBrush" Color="#181B1E" />
+        <SolidColorBrush x:Key="PlBgPanelInsetBrush" Color="#060707" />
+        <SolidColorBrush x:Key="PlInspectorBgBrush" Color="#111315" />
+        <SolidColorBrush x:Key="PlSidebarBgBrush" Color="#111315" />
+        <SolidColorBrush x:Key="PlRadarBgBrush" Color="#070B08" />
+        <SolidColorBrush x:Key="PlTableBgBrush" Color="#060707" />
+        <SolidColorBrush x:Key="PlTableHeaderBgBrush" Color="#181B1E" />
+        <SolidColorBrush x:Key="PlRowHoverBrush" Color="#2A735B35" />
+        <SolidColorBrush x:Key="PlBorderSubtleBrush" Color="#463A27" />
+        <SolidColorBrush x:Key="PlBorderStrongBrush" Color="#9A743D" />
+        <SolidColorBrush x:Key="PlAccentBrush" Color="#C69246" />
+        <SolidColorBrush x:Key="PlAccentMutedBrush" Color="#735B35" />
+        <SolidColorBrush x:Key="PlAccentGlowBrush" Color="#48E1A94B" />
+        <SolidColorBrush x:Key="PlTextBrush" Color="#E8D3AC" />
+        <SolidColorBrush x:Key="PlTextMutedBrush" Color="#A38E6C" />
+        <SolidColorBrush x:Key="PlTextFaintBrush" Color="#B0A38E6C" />
+        <SolidColorBrush x:Key="PlStatusSuccessBrush" Color="#5CCB7A" />
+        <SolidColorBrush x:Key="PlWarningBrush" Color="#E1B84A" />
+        <SolidColorBrush x:Key="PlDangerBrush" Color="#E26045" />
+        <SolidColorBrush x:Key="PlStatusUnknownBrush" Color="#73736B" />
+        <SolidColorBrush x:Key="PlProgressTrackBrush" Color="#52463A27" />
+        <SolidColorBrush x:Key="PlProgressFillBrush" Color="#C69246" />
+        <SolidColorBrush x:Key="PlTextureOverlayBrush" Color="#0AE8D3AC" />
+        <SolidColorBrush x:Key="PlShadowSoftBrush" Color="#56000000" />
+        <SolidColorBrush x:Key="PlShadowHardBrush" Color="#8A000000" />
+
+        <!-- Compatibility aliases used by existing controls. New styles consume the tokens above. -->
+        <SolidColorBrush x:Key="PlBgDeepBrush" Color="#090A0A" />
+        <SolidColorBrush x:Key="PlBgMetalBrush" Color="#181B1E" />
+        <SolidColorBrush x:Key="PlBlueGlowBrush" Color="#E1A94B" />
+        <SolidColorBrush x:Key="PlGoldBrightBrush" Color="#C69246" />
+        <SolidColorBrush x:Key="PlBronzeBrush" Color="#463A27" />
+        <SolidColorBrush x:Key="PlGoldBorderBrush" Color="#9A743D" />
+        <SolidColorBrush x:Key="PlBevelLoBrush" Color="#050606" />
+        <SolidColorBrush x:Key="PlTextureGrainBrush" Color="#0AE8D3AC" />
+        <SolidColorBrush x:Key="PlTextureScratchBrush" Color="#06000000" />
+        <SolidColorBrush x:Key="PlInsetBrush" Color="#060707" />
+        <SolidColorBrush x:Key="PlInsetAltBrush" Color="#26C69246" />
+        <SolidColorBrush x:Key="PlPlaqueBrush" Color="#181B1E" />
+        <SolidColorBrush x:Key="PlPlaqueEdgeBrush" Color="#9A743D" />
+        <SolidColorBrush x:Key="PlRadarShellBrush" Color="#161815" />
+        <SolidColorBrush x:Key="PlRadarGlassBrush" Color="#070B08" />
+        <SolidColorBrush x:Key="PlRadarWaterBrush" Color="#061621" />
+        <SolidColorBrush x:Key="PlInputBgBrush" Color="#060707" />
+        <SolidColorBrush x:Key="PlGridBgBrush" Color="#060707" />
+        <SolidColorBrush x:Key="PlGridHeaderBrush" Color="#181B1E" />
+        <SolidColorBrush x:Key="PlGridLineBrush" Color="#463A27" />
+        <SolidColorBrush x:Key="PlSelectedRowBrush" Color="#26C69246" />
+        <SolidColorBrush x:Key="PlTooltipBgBrush" Color="#111315" />
+        <SolidColorBrush x:Key="PlLogoSurfaceBrush" Color="#2AE8D3AC" />
+
+        <SolidColorBrush x:Key="SystemAccentColorDark1Brush" Color="#59A33D" />
+        <SolidColorBrush x:Key="SystemAccentColorDark2Brush" Color="#3F7D2D" />
+        <SolidColorBrush x:Key="SystemAccentColorDark3Brush" Color="#2A5E20" />
+        <SolidColorBrush x:Key="SystemAccentColorLight1Brush" Color="#7FE65A" />
+        <SolidColorBrush x:Key="SystemAccentColorLight2Brush" Color="#A6F079" />
+        <SolidColorBrush x:Key="SystemAccentColorLight3Brush" Color="#D1FFB8" />
+
+        <LinearGradientBrush x:Key="PlBackdropBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Offset="0" Color="#090A0A" />
+            <GradientStop Offset="1" Color="#060707" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#181B1E" />
+            <GradientStop Offset="1" Color="#111315" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlButtonHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#80735B35" />
+            <GradientStop Offset="1" Color="#181B1E" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlButtonPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#060707" />
+            <GradientStop Offset="1" Color="#111315" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlPanelBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#111315" />
+            <GradientStop Offset="1" Color="#060707" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlPanelRaisedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#181B1E" />
+            <GradientStop Offset="1" Color="#111315" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlPanelInsetBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#060707" />
+            <GradientStop Offset="1" Color="#090A0A" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlHeaderPlaqueBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#181B1E" />
+            <GradientStop Offset="1" Color="#111315" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlDetailBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#111315" />
+            <GradientStop Offset="1" Color="#060707" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlPanelMaterialBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#111315" />
+            <GradientStop Offset="1" Color="#060707" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlInsetMaterialBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#060707" />
+            <GradientStop Offset="1" Color="#090A0A" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlInspectorMaterialBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#111315" />
+            <GradientStop Offset="1" Color="#060707" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlSidebarMaterialBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#111315" />
+            <GradientStop Offset="1" Color="#101315" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlRadarMaterialBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#161815" />
+            <GradientStop Offset="1" Color="#070B08" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PlTableHeaderBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#181B1E" />
+            <GradientStop Offset="1" Color="#111315" />
+        </LinearGradientBrush>
+
+        <local:StatusBrushConverter x:Key="StatusBrushConverter" />
+        <local:ProblemBrushConverter x:Key="ProblemBrushConverter" />
+        <local:RestartBrushConverter x:Key="RestartBrushConverter" />
+        <local:MetricHealthBrushConverter x:Key="MetricHealthBrushConverter" />
+        <local:ProblemReasonConverter x:Key="ProblemReasonConverter" />
+        <local:DeterministicBrushConverter x:Key="DeterministicBrushConverter" />
+        <local:RadarBrushConverter x:Key="RadarBrushConverter" />
+        <local:PortForwardBadgeConverter x:Key="PortForwardBadgeConverter" />
+        <local:PortForwardEligibilityConverter x:Key="PortForwardEligibilityConverter" />
+        <local:HasValueConverter x:Key="HasValueConverter" />
+
+        <DrawingBrush x:Key="PlRadarGlassTextureBrush"
+                      TileMode="Tile"
+                      SourceRect="0,0,10,10"
+                      DestinationRect="0,0,10,10">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="{StaticResource PlRadarGlassBrush}">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,10,10" />
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="{StaticResource PlAccentGlowBrush}">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="0,0,10,1" />
+                                <RectangleGeometry Rect="0,0,1,10" />
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+        <DrawingBrush x:Key="PlSidebarTextureBrush"
+                      TileMode="Tile"
+                      SourceRect="0,0,32,32"
+                      DestinationRect="0,0,32,32">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="{StaticResource PlSidebarBgBrush}">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,32,32" />
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="{StaticResource PlTextureOverlayBrush}">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="2,4,1,1" />
+                                <RectangleGeometry Rect="17,9,1,1" />
+                                <RectangleGeometry Rect="8,22,1,1" />
+                                <RectangleGeometry Rect="27,27,1,1" />
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+        <DrawingBrush x:Key="PlInspectorTextureBrush"
+                      TileMode="Tile"
+                      SourceRect="0,0,28,28"
+                      DestinationRect="0,0,28,28">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="{StaticResource PlInspectorBgBrush}">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,28,28" />
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="{StaticResource PlTextureOverlayBrush}">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="3,7,1,1" />
+                                <RectangleGeometry Rect="13,15,1,1" />
+                                <RectangleGeometry Rect="22,5,1,1" />
+                                <RectangleGeometry Rect="25,24,1,1" />
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{StaticResource PlBackdropBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="FontFamily" Value="Consolas, Menlo, Monaco, monospace" />
+        </Style>
+
+        <!-- Reduce tooltip cascade: longer initial delay, no between-show shortcut. -->
+        <Style Selector="ToolTip">
+            <Setter Property="ShowDelay" Value="700" />
+            <Setter Property="Background" Value="{StaticResource PlTooltipBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+        </Style>
+
+        <!-- Disable FluentTheme transitions on hover-driven controls to stop the cross-screen flicker
+             that happens when many controls re-animate their Background/BorderBrush at once. -->
+        <Style Selector="DataGridRow">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="DataGridRow /template/ Rectangle">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Border">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Border.logoPlate">
+            <Setter Property="Background" Value="{StaticResource PlLogoSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBorderSubtleBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="22" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="TreeViewItem">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="ScrollBar">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="TabItem">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+
+        <!-- Compact command buttons: modern control, faint RTS edge language. -->
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{StaticResource PlButtonBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlGoldBrightBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource PlButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, inset 0 -1 0 0 #66000000" />
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource PlButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlAccentBrush}" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #30FFFFFF, 0 0 8 0 #33222222" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource PlTextBrush}" />
+        </Style>
+        <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource PlButtonPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlAccentBrush}" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #99000000" />
+        </Style>
+
+        <Style Selector="Button.navButton.active /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource PlButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBlueGlowBrush}" />
+            <Setter Property="BoxShadow" Value="inset 0 0 0 1 #44FFFFFF, 0 0 8 0 #5572D7E7" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource PlTextBrush}" />
+        </Style>
+
+        <Style Selector="Button.filterButton">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
+        </Style>
+        <Style Selector="Button.inspectorTab">
+            <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextMutedBrush}" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="MinHeight" Value="36" />
+        </Style>
+        <Style Selector="Button.inspectorTab.active">
+            <Setter Property="Foreground" Value="{StaticResource PlGoldBrightBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBrightBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlDetailBrush}" />
+        </Style>
+        <Style Selector="Border.inspectorTabBar">
+            <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGridLineBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="Border.settingRow">
+            <Setter Property="Padding" Value="8,7" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGridLineBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="TextBlock.settingLabel">
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MaxWidth" Value="220" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="ToolTip.Tip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        </Style>
+        <Style Selector="TextBlock.settingHelp">
+            <Setter Property="Foreground" Value="{StaticResource PlTextMutedBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style Selector="Button.columnPlaque">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource PlGoldBrightBrush}" />
+        </Style>
+        <Style Selector="Button.columnPlaque TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="Button.columnPlaque TextBlock.sortGlyph">
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{StaticResource PlBlueGlowBrush}" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button.columnPlaque StackPanel">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.columnPlaque /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <!-- Radar tiles: the strongest retro cue; flat blocks with a faint scanner edge. -->
+        <Style Selector="Button.radarTile">
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Button.radarTile /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBgPanelInsetBrush}" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #33FFFFFF" />
+        </Style>
+        <Style Selector="Button.radarTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlAccentBrush}" />
+        </Style>
+        <Style Selector="Button.radarTile:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlTextBrush}" />
+        </Style>
+        <Style Selector="Rectangle.radarAnnouncePulse">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Animations>
+                <Animation Duration="0:0:1.2" IterationCount="3">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="45%">
+                        <Setter Property="Opacity" Value="0.72" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Rectangle.radarWaterCell">
+            <Setter Property="Opacity" Value="0.72" />
+        </Style>
+        <Style Selector="Border.resourceAnnouncePulse">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Animations>
+                <Animation Duration="0:0:1.1" IterationCount="4">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="45%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Button.radarSourceButton">
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.radarSourceButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBlueGlowBrush}" />
+        </Style>
+
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="Padding" Value="4" />
+        </Style>
+
+        <Style Selector="TextBox, ComboBox">
+            <Setter Property="Background" Value="{StaticResource PlInsetMaterialBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBronzeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+        </Style>
+        <Style Selector="TextBox /template/ TextBlock#PART_Watermark">
+            <Setter Property="Foreground" Value="{StaticResource PlTextMutedBrush}" />
+            <Setter Property="Opacity" Value="0.72" />
+        </Style>
+        <Style Selector="ComboBox /template/ TextBlock#PlaceholderTextBlock">
+            <Setter Property="Foreground" Value="{StaticResource PlTextMutedBrush}" />
+            <Setter Property="Opacity" Value="0.72" />
+        </Style>
+
+        <!-- Anchored dropdown menu: same command-console language as the sidebar. -->
+        <Style Selector="FlyoutPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MaxWidth" Value="600" />
+        </Style>
+        <Style Selector="Border.hudMenu">
+            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, 0 8 22 0 #AA000000" />
+        </Style>
+
+        <!-- Layered tactical panels: thin lines, subtle top highlight, dark inset depth. -->
+        <Style Selector="Border.hudPanel">
+            <Setter Property="Background" Value="{StaticResource PlPanelMaterialBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBronzeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, 0 10 26 0 #55000000" />
+        </Style>
+        <Style Selector="Border.hudPanel.sidebarPanel">
+            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+        </Style>
+        <Style Selector="Border.hudPanelTextured">
+            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBronzeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.minimapFrame">
+            <Setter Property="Background" Value="{StaticResource PlRadarMaterialBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #2FFFFFFF, inset 0 0 0 1 #22000000, 0 0 14 0 #33000000" />
+        </Style>
+        <Style Selector="Border.minimapGlass">
+            <Setter Property="Background" Value="{StaticResource PlRadarWaterBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlAccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.minimapGlass.idle">
+            <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBorderSubtleBrush}" />
+            <Setter Property="BoxShadow" Value="inset 0 0 18 0 #33000000" />
+        </Style>
+        <Style Selector="Border.commandConsole">
+            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #1FFFFFFF" />
+        </Style>
+        <Style Selector="Border.searchPanel">
+            <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BoxShadow" Value="0 0 10 0 #22000000" />
+        </Style>
+        <Style Selector="Border.selectedUnitCard">
+            <Setter Property="Background" Value="{StaticResource PlInspectorTextureBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1,1,1,0" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, 0 -8 24 0 #55000000" />
+        </Style>
+        <Style Selector="Border.selectedUnitHeader">
+            <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="Border.metricPlaque">
+            <Setter Property="Background" Value="{StaticResource PlPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF" />
+        </Style>
+        <Style Selector="Border.warningPlaque">
+            <Setter Property="Background" Value="{StaticResource PlPlaqueBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlWarningBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="DataGrid">
+            <Setter Property="Background" Value="{StaticResource PlTableBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="GridLinesVisibility" Value="All" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBronzeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CanUserReorderColumns" Value="True" />
+        </Style>
+        <Style Selector="DataGridColumnHeader">
+            <Setter Property="Background" Value="{StaticResource PlTableHeaderBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlGoldBrightBrush}" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Background" Value="{StaticResource PlTableBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlGridLineBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+        </Style>
+        <Style Selector="DataGridRow:pointerover DataGridCell">
+            <Setter Property="Background" Value="{StaticResource PlRowHoverBrush}" />
+        </Style>
+        <Style Selector="DataGridRow:selected DataGridCell">
+            <Setter Property="Background" Value="{StaticResource PlSelectedRowBrush}" />
+        </Style>
+
+        <Style Selector="TabControl">
+            <Setter Property="Background" Value="{StaticResource PlDetailBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+        </Style>
+        <Style Selector="TabItem">
+            <Setter Property="Foreground" Value="{StaticResource PlTextMutedBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="12,5" />
+        </Style>
+        <Style Selector="TabItem:selected">
+            <Setter Property="Foreground" Value="{StaticResource PlGoldBrightBrush}" />
+        </Style>
+        <Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
+            <Setter Property="Background" Value="{StaticResource PlGoldBrightBrush}" />
+        </Style>
+
+        <Style Selector="ScrollViewer">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+        <Style Selector="ScrollBar">
+            <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
+        </Style>
+        <Style Selector="ProgressBar">
+            <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PlStatusSuccessBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBorderSubtleBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="MinWidth" Value="0" />
+        </Style>
+        <Style Selector="TreeViewItem">
+            <Setter Property="IsExpanded" Value="True" />
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+        </Style>
+    </Application.Styles>
+</Application>

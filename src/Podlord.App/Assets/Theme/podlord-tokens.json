@@ -1,0 +1,50 @@
+{
+  "name": "PodLord Retro RTS Theme",
+  "colors": {
+    "bgDeep": "#0f1110",
+    "bgPanel": "#1b1d1a",
+    "bgMetal": "#2b2f31",
+    "bgEarth": "#3a3324",
+    "blueDark": "#082a5c",
+    "blue": "#0b58b8",
+    "blueBright": "#1d8fff",
+    "blueGlow": "#7fd6ff",
+    "goldDark": "#8a5a00",
+    "gold": "#d99a16",
+    "goldBright": "#ffd34d",
+    "goldPale": "#fff0a8",
+    "steelDark": "#34383a",
+    "steel": "#7d8178",
+    "steelLight": "#d6d0b8",
+    "redDark": "#692114",
+    "red": "#b84522",
+    "redHot": "#ff7540",
+    "text": "#eee5c8",
+    "textMuted": "#aaa081",
+    "textDead": "#5f594a",
+    "borderDark": "#070909",
+    "borderLight": "#6f756d"
+  },
+  "spacing": {
+    "1": 4,
+    "2": 8,
+    "3": 12,
+    "4": 16,
+    "6": 24,
+    "8": 32
+  },
+  "radius": 0,
+  "fonts": {
+    "ui": "JetBrains Mono, IBM Plex Mono, Courier New, monospace",
+    "display": "JetBrains Mono, monospace"
+  },
+  "style": [
+    "retro isometric",
+    "chunky pixel treatment",
+    "dark command console",
+    "beveled panels",
+    "royal blue system accents",
+    "gold hierarchy accents",
+    "red danger states"
+  ]
+}
