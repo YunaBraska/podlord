@@ -151,7 +151,7 @@ jobs:
             os: macos-14
             package: app-zip
           - rid: osx-x64
-            os: macos-13
+            os: macos-15-intel
             package: app-zip
 
     steps:
