@@ -54,7 +54,7 @@ install_k3d() {
   echo "Installing k3d $K3D_VERSION into $TOOL_DIR"
   curl -fsSL "$url" -o "$tmp_file"
   curl -fsSL "$checksums_url" -o "$checksums_file"
-  expected=$(awk -v binary="$binary" '$2 == binary { print $1 }' "$checksums_file" | head -n 1)
+  expected=$(awk -v binary="$binary" '$2 == binary || $2 ~ "/" binary "$" { print $1 }' "$checksums_file" | head -n 1)
   if [ -z "$expected" ]; then
     echo "No checksum found for $binary in $checksums_url" >&2
     exit 1
