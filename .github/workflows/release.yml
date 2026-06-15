@@ -2,16 +2,16 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag, for example v0.1.0.
-        required: true
+        description: Release tag. Empty means today's YYYY.M.D.
+        required: false
         type: string
-      prerelease:
-        description: Mark the GitHub release as a prerelease.
+      dry_run:
+        description: Test and package without pushing release metadata, tag, or GitHub release.
         required: true
         default: false
         type: boolean
@@ -20,7 +20,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name || inputs.tag }}
+  group: release-${{ github.event.pull_request.number || github.ref || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -29,46 +29,83 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
+      release: ${{ steps.plan.outputs.release }}
+      dry_run: ${{ steps.plan.outputs.dry_run }}
       tag: ${{ steps.plan.outputs.tag }}
-      prerelease: ${{ steps.plan.outputs.prerelease }}
+      version: ${{ steps.plan.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
-      - name: Resolve tag
+      - name: Plan run
         id: plan
         shell: sh
         env:
+          HEAD_MESSAGE: ${{ github.event.head_commit.message || '' }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
           INPUT_TAG: ${{ inputs.tag || '' }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease || 'false' }}
         run: |
-          tag="$GITHUB_REF_NAME"
-          prerelease="false"
+          release="false"
+          dry_run="false"
+          release_tag=""
+          version="0.0.0"
 
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            tag="$INPUT_TAG"
-            prerelease="$INPUT_PRERELEASE"
+            release="true"
+            dry_run="$INPUT_DRY_RUN"
+            if [ "$dry_run" != "true" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "Manual releases must run from main. Use dry_run=true for branch validation." >&2
+              exit 1
+            fi
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] \
+            && [ "$GITHUB_REF" = "refs/heads/main" ] \
+            && ! printf '%s\n' "$HEAD_MESSAGE" | grep -Eq '^chore: release '; then
+            release="true"
           fi
 
-          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "Release tag must look like v0.1.0 or v0.1.0-rc.1: $tag" >&2
-            exit 1
+          if [ "$release" = "true" ]; then
+            if [ -n "$INPUT_TAG" ]; then
+              release_tag="$INPUT_TAG"
+            else
+              year="$(date -u +%Y)"
+              month="$(date -u +%m | sed 's/^0//')"
+              day="$(date -u +%d | sed 's/^0//')"
+              release_tag="$year.$month.$day"
+            fi
+
+            if ! printf '%s\n' "$release_tag" | grep -Eq '^[0-9]{4}[.][1-9][0-9]?[.][1-9][0-9]?$'; then
+              echo "Release tag must look like 2026.6.15: $release_tag" >&2
+              exit 1
+            fi
+
+            git fetch --tags --force
+            if git rev-parse -q --verify "refs/tags/$release_tag" >/dev/null; then
+              echo "Tag already exists: $release_tag" >&2
+              exit 1
+            fi
+
+            version="$release_tag"
           fi
 
-          git fetch --tags --force
-          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "Tag does not exist: $tag" >&2
-            exit 1
-          fi
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "branch=${GITHUB_REF_NAME:-unknown}"
+          echo "release=$release"
+          echo "dry_run=$dry_run"
+          echo "tag=$release_tag"
+          echo "version=$version"
 
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   test:
-    name: Test before release
+    name: Test before packaging
     needs: plan
+    if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -76,8 +113,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.plan.outputs.tag }}
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -93,6 +128,7 @@ jobs:
     needs:
       - plan
       - test
+    if: needs.plan.outputs.release == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -121,8 +157,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.plan.outputs.tag }}
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -135,10 +169,8 @@ jobs:
         env:
           RID: ${{ matrix.rid }}
           PACKAGE: ${{ matrix.package }}
-          VERSION: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          VERSION="${VERSION#v}"
-          export VERSION
           scripts/publish.sh "$RID"
           mkdir -p dist
           python3 - <<'PY'
@@ -174,11 +206,9 @@ jobs:
         shell: sh
         env:
           RID: ${{ matrix.rid }}
-          VERSION: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
           mkdir -p dist
-          VERSION="${VERSION#v}"
-          export VERSION
           bundle="$(scripts/build-macos-app.sh "$RID" | tail -n 1)"
           ditto -c -k --sequesterRsrc --keepParent "$bundle" "dist/podlord-$RID.zip"
 
@@ -191,23 +221,77 @@ jobs:
           retention-days: 14
 
   release:
-    name: Create GitHub release
+    name: Tag and publish release
     needs:
       - plan
       - build
+    if: needs.plan.outputs.release == 'true' && needs.plan.outputs.dry_run != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
       RELEASE_TAG: ${{ needs.plan.outputs.tag }}
-      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
-
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.plan.outputs.tag }}
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Prepare release metadata
+        shell: sh
+        run: |
+          release_date="$(date -u +%Y-%m-%d)"
+
+          if grep -Eq "^## \\[$RELEASE_VERSION\\]" CHANGELOG.md; then
+            echo "CHANGELOG.md already contains $RELEASE_VERSION"
+          else
+            awk -v version="$RELEASE_VERSION" -v release_date="$release_date" '
+              /^## \[Unreleased\]/ && !released {
+                print "## [Unreleased]"
+                print ""
+                print "## [" version "] - " release_date
+                released = 1
+                next
+              }
+              { print }
+            ' CHANGELOG.md > CHANGELOG.md.tmp
+            mv CHANGELOG.md.tmp CHANGELOG.md
+          fi
+
+          awk -v tag="$RELEASE_TAG" '
+            /^\[Unreleased\]:/ {
+              print "[Unreleased]: https://github.com/YunaBraska/podlord/compare/" tag "...HEAD"
+              next
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.md.tmp
+          mv CHANGELOG.md.tmp CHANGELOG.md
+
+          if ! grep -Fq "[$RELEASE_VERSION]: https://github.com/YunaBraska/podlord/releases/tag/$RELEASE_TAG" CHANGELOG.md; then
+            printf '[%s]: https://github.com/YunaBraska/podlord/releases/tag/%s\n' "$RELEASE_VERSION" "$RELEASE_TAG" >> CHANGELOG.md
+          fi
+
+          if ! git diff --quiet -- CHANGELOG.md; then
+            git config user.name "Podlord Release Bot"
+            git config user.email "release@podlord.dev"
+            git add CHANGELOG.md
+            git commit -m "chore: release $RELEASE_VERSION [skip ci]"
+          fi
+
+      - name: Push release commit and tag
+        shell: sh
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then
+            git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+
+          git push origin "HEAD:main"
+          git tag -a "$RELEASE_TAG" -m "$RELEASE_TAG [skip ci]"
+          git push origin "refs/tags/$RELEASE_TAG"
 
       - name: Download assets
         uses: actions/download-artifact@v7
@@ -216,35 +300,47 @@ jobs:
           pattern: podlord-*
           merge-multiple: true
 
+      - name: Generate checksums
+        shell: sh
+        run: |
+          find dist -maxdepth 1 -type f ! -name SHA256SUMS | sort | while IFS= read -r asset; do
+            sha256sum "$asset" | sed 's#  dist/#  #'
+          done > dist/SHA256SUMS
+
       - name: Extract release notes
         shell: sh
         run: |
-          version="${RELEASE_TAG#v}"
-          awk -v version="$version" '
+          awk -v version="$RELEASE_VERSION" '
             $0 ~ "^## \\[" version "\\]" { found = 1; next }
             found && $0 ~ /^## / { exit }
             found { print }
           ' CHANGELOG.md > release-notes.md
 
           if [ ! -s release-notes.md ]; then
+            awk '
+              /^## \[Unreleased\]/ { found = 1; next }
+              found && /^## / { exit }
+              found { print }
+            ' CHANGELOG.md > release-notes.md
+          fi
+
+          if [ ! -s release-notes.md ]; then
             {
               echo "Podlord $RELEASE_TAG"
               echo ""
-              echo "See CHANGELOG.md for project history."
+              echo "Cross-platform desktop archives are attached below."
             } > release-notes.md
           fi
 
-      - name: Create release
+      - name: Create GitHub release
         shell: sh
         run: |
-          args=""
-          if [ "$PRERELEASE" = "true" ]; then
-            args="$args --prerelease"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --notes-file release-notes.md
           fi
-
-          # shellcheck disable=SC2086
-          gh release create "$RELEASE_TAG" dist/* \
-            --verify-tag \
-            --title "Podlord $RELEASE_TAG" \
-            --notes-file release-notes.md \
-            $args

@@ -7,7 +7,7 @@ CONFIGURATION=${CONFIGURATION:-Release}
 RID=${1:-}
 APP_NAME=Podlord
 BUNDLE_ID=${BUNDLE_ID:-dev.podlord.app}
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-0.0.0}
 
 if [ ! -x "$DOTNET" ]; then
   DOTNET=dotnet

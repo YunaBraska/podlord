@@ -45,6 +45,8 @@ Release assets are built for:
 | Linux | x64, arm64 | portable `.tar.gz` |
 | Windows | x64, arm64 | portable `.zip` |
 
+Each release also includes `SHA256SUMS` for archive verification.
+
 macOS builds are currently unsigned. Right-click Open may be required until signing and notarization are configured.
 
 ## Run From Source
@@ -77,10 +79,11 @@ scripts/test.sh
 
 The test script:
 
-1. Ensures Docker or Colima, k3d, and kubectl are available for the test harness.
-2. Creates a disposable k3d cluster.
-3. Runs the .NET test suite with coverage.
-4. Enforces coverage gates.
+1. Ensures Docker or Colima is available.
+2. Installs pinned k3d and kubectl versions into `.tools/bin` when missing.
+3. Creates a disposable k3d cluster.
+4. Runs the .NET test suite with coverage.
+5. Enforces coverage gates.
 
 Current gates:
 
@@ -105,6 +108,18 @@ Supported runtime identifiers:
 - `linux-arm64`
 - `win-x64`
 - `win-arm64`
+
+## Release Flow
+
+Merging to `main` runs the release pipeline:
+
+1. test with the k3d-backed suite
+2. create a date version like `2026.6.15`
+3. build platform archives for Linux, macOS, and Windows on x64/arm64
+4. update the changelog release section
+5. push the release commit, create the tag, and publish the GitHub release
+
+Manual workflow dispatch is available for dry runs or a custom date tag, but normal releases are branch-driven.
 
 ## Project Layout
 

@@ -2,7 +2,7 @@
 
 All notable changes to Podlord are documented here.
 
-This project follows semantic versioning once tagged releases begin.
+Podlord uses date-based release tags in the form `YYYY.M.D`.
 
 ## [Unreleased]
 
@@ -13,9 +13,12 @@ This project follows semantic versioning once tagged releases begin.
 
 ### Changed
 
+- Release automation now starts from `main`, tests first, packages every supported runtime, then creates the date tag and GitHub release.
+- Release assets now include SHA256 checksums.
+- k3d integration test bootstrap now installs pinned k3d and kubectl versions when missing.
 - Public repository documentation and release packaging were cleaned up for open-source use.
 
-## [0.1.0] - 2026-06-12
+## Initial Desktop Preview - 2026-06-12
 
 ### Added
 
@@ -28,5 +31,4 @@ This project follows semantic versioning once tagged releases begin.
 - Native Kubernetes port forwarding through the Kubernetes streaming API.
 - k3d-backed integration tests and coverage gate.
 
-[Unreleased]: https://github.com/YunaBraska/podlord/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/YunaBraska/podlord/releases/tag/v0.1.0
+[Unreleased]: https://github.com/YunaBraska/podlord/commits/main

@@ -5,7 +5,7 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DOTNET="$ROOT_DIR/.tools/dotnet/dotnet"
 CONFIGURATION=${CONFIGURATION:-Release}
 REQUESTED_RID=${1:-all}
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-0.0.0}
 
 if [ ! -x "$DOTNET" ]; then
   DOTNET=dotnet
