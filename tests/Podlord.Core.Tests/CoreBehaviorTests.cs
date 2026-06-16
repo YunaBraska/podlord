@@ -191,6 +191,24 @@ users:
     }
 
     [Fact]
+    public void App_state_reimport_with_whitespace_only_yaml_changes_keeps_context_identity()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        var state = AppState.InMemoryWithConfigDirectory(directory, Clock);
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("dev", "http://127.0.0.1:1") + "\n");
+        state.ImportKubeconfig(kubeconfig);
+        var first = Assert.Single(state.Snapshot().ImportedContexts);
+
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("dev", "http://127.0.0.1:1") + "\n\n");
+        state.ImportKubeconfig(kubeconfig);
+
+        var current = Assert.Single(state.Snapshot().ImportedContexts);
+        Assert.Equal(first.ContextId, current.ContextId);
+        Assert.Single(state.Snapshot().Sessions);
+    }
+
+    [Fact]
     public void App_state_load_default_backfills_default_filter_for_legacy_sources()
     {
         var directory = TempDirectory();
@@ -333,6 +351,34 @@ users:
         Assert.Equal(2, problems.Count);
         Assert.DoesNotContain(problems, row => row.Name == "frontend");
         Assert.Contains(active, row => row.Name == "payment-api-7d9");
+    }
+
+    [Fact]
+    public void Age_filter_expressions_parse_directly_and_fallback_to_text_without_stale_state()
+    {
+        var rows = new[]
+        {
+            HealthyRow("fresh") with { Age = "1m" },
+            HealthyRow("old") with { Age = "12m" },
+            HealthyRow("stale") with { Age = "2h" },
+            HealthyRow("raw") with { Age = "weird" }
+        };
+
+        var older = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: ">5m"));
+        var newest = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "<2m"));
+        var exact = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "=1m"));
+        var exactRaw = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "\"weird\""));
+        var broken = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "1x"));
+
+        Assert.Equal(["old", "stale"], older.Select(row => row.Name).ToArray());
+        Assert.Single(newest);
+        Assert.Equal("fresh", newest[0].Name);
+        Assert.Single(exact);
+        Assert.Equal("fresh", exact[0].Name);
+        Assert.Single(exactRaw);
+        Assert.Equal("raw", exactRaw[0].Name);
+        Assert.Empty(broken);
+        Assert.Equal(["old", "stale"], ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: ">5m")).Select(row => row.Name).ToArray());
     }
 
     [Fact]

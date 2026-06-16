@@ -1565,10 +1565,22 @@
                             </DataGrid>
 
                             <Grid IsVisible="{Binding IsInspectorLogsActive}" RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                                <CheckBox Content="Pause tail"
-                                          IsChecked="{Binding LogsPaused}"
-                                          Margin="8,4"
-                                          ToolTip.Tip="Pause automatic pod log tailing for the focused pod." />
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      Margin="8,4"
+                                      ColumnSpacing="8">
+                                    <TextBlock Text="Container"
+                                               VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding PodLogContainerOptions}"
+                                              SelectedItem="{Binding SelectedPodLogContainer}"
+                                              HorizontalAlignment="Stretch"
+                                              MinWidth="180" />
+                                    <CheckBox Grid.Column="2"
+                                              Content="Pause tail"
+                                              IsChecked="{Binding LogsPaused}"
+                                              VerticalAlignment="Center"
+                                              ToolTip.Tip="Pause automatic pod log tailing for the focused pod." />
+                                </Grid>
                                 <TextBox Grid.Row="1"
                                          x:Name="LogTextBox"
                                          Text="{Binding LogText}"

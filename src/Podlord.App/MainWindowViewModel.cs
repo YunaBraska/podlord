@@ -18,6 +18,7 @@ namespace Podlord.App;
 
 public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 {
+    private const string AllPodLogContainersOption = "All containers";
     private const int RadarLifeColumns = 64;
     private const int RadarLifeRows = 28;
 
@@ -73,6 +74,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string yamlAssistStatus = "YAML syntax: waiting for a focused resource.";
     private string? deleteConfirmationResourceId;
     private string logText = "Select a pod to tail logs.";
+    private string selectedPodLogContainer = AllPodLogContainersOption;
     private string requestWorkLabel = "API 0/min";
     private string healthSummary = "No cached resources yet.";
     private int radarWaterActivityRate;
@@ -1322,6 +1324,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             {
                 NotifyInspectorTabStateChanged();
             }
+        }
+    }
+
+    public ObservableCollection<string> PodLogContainerOptions { get; } = [AllPodLogContainersOption];
+
+    public string SelectedPodLogContainer
+    {
+        get => selectedPodLogContainer;
+        set
+        {
+            if (!SetField(ref selectedPodLogContainer, value))
+            {
+                return;
+            }
+
+            MarkUserActivity();
+            UpdateInspectorTabWork();
         }
     }
 
@@ -2930,6 +2949,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         selectedSource = null;
         selectedRadarResourceId = null;
         SelectedGraphNode = null;
+        ResetPodLogContainers();
         ResetDeleteConfirmation();
         SyncCollection(ResourceValues, Array.Empty<ResourceValueRow>());
         NotifyInspectorTargetChanged();
@@ -3611,6 +3631,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         SetDetailItems(detailItems);
+        UpdatePodLogContainers(detailItems);
 
         SyncCollection(FocusedEvents, detail.Events.Select(item => new EventTimelineRow(
                 item.EventType,
@@ -3692,6 +3713,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         SetDetailItems(items);
+        UpdatePodLogContainers(items);
 
         SyncCollection(FocusedEvents, Array.Empty<EventTimelineRow>());
         SyncCollection(FocusedRelationships, Relationships.Where(candidate =>
@@ -3729,6 +3751,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
 
         SetDetailItems(items);
+        ResetPodLogContainers();
         SyncCollection(FocusedEvents, Array.Empty<EventTimelineRow>());
         SyncCollection(FocusedRelationships, Array.Empty<RelationshipRow>());
         SyncCollection(ResourceValues, Array.Empty<ResourceValueRow>());
@@ -4164,13 +4187,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task TailSelectedPodLoop(string ns, string pod, CancellationToken cancellationToken)
     {
-        var request = new PodLogRequest(SelectedSession?.Id, ns, pod, null, 100, false);
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 if (!LogsPaused)
                 {
+                    var container = SelectedPodLogContainer == AllPodLogContainersOption ? null : SelectedPodLogContainer;
+                    var request = new PodLogRequest(SelectedSession?.Id, ns, pod, container, 100, false);
                     var cached = service.GetCachedPodLogs(request);
                     if (cached is not null)
                     {
@@ -4193,6 +4217,36 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
             await Task.Delay(LogTailInterval(), cancellationToken).ConfigureAwait(true);
         }
+    }
+
+    private void UpdatePodLogContainers(IEnumerable<DetailItem> items)
+    {
+        var options = items
+            .Where(item => item.Label.Equals("Containers", StringComparison.Ordinal))
+            .SelectMany(item => ParsePodLogContainers(item.Value))
+            .Distinct(StringComparer.Ordinal)
+            .Prepend(AllPodLogContainersOption)
+            .ToList();
+        SyncCollection(PodLogContainerOptions, options);
+        if (!options.Contains(SelectedPodLogContainer, StringComparer.Ordinal))
+        {
+            SelectedPodLogContainer = AllPodLogContainersOption;
+        }
+    }
+
+    private void ResetPodLogContainers()
+    {
+        SyncCollection(PodLogContainerOptions, [AllPodLogContainersOption]);
+        if (!string.Equals(SelectedPodLogContainer, AllPodLogContainersOption, StringComparison.Ordinal))
+        {
+            SelectedPodLogContainer = AllPodLogContainersOption;
+        }
+    }
+
+    private static IEnumerable<string> ParsePodLogContainers(string value)
+    {
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(name => name.Length > 0 && name != "-");
     }
 
     private ResourceQuery BuildRemoteQuery(bool force)
@@ -6990,7 +7044,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var idle = DateTimeOffset.Now - lastUserActivityAt;
-        return idle < TimeSpan.FromMinutes(1) ? TimeSpan.FromSeconds(3) : TimeSpan.FromSeconds(10);
+        return idle < TimeSpan.FromMinutes(1) ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(15);
     }
 
     private void MarkUserActivity()

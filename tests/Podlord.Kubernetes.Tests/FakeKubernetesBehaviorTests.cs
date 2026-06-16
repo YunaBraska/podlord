@@ -321,6 +321,52 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
     }
 
     [Fact]
+    public async Task Resource_service_shows_queued_requests_under_concurrent_refresh_burst()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
+        var activeRequests = 0;
+        var maxActiveRequests = 0;
+        var queueSamples = new List<int>();
+        var stateLock = new object();
+        KubernetesResourceService? service = null;
+        var handler = new AsyncRecordingHandler(async (_, cancellationToken) =>
+        {
+            var active = Interlocked.Increment(ref activeRequests);
+            lock (stateLock)
+            {
+                if (active > maxActiveRequests)
+                {
+                    maxActiveRequests = active;
+                }
+                queueSamples.Add(service!.RequestTelemetry().QueuedRequests);
+            }
+
+            try
+            {
+                await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+                return JsonResponse(NamespaceList());
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeRequests);
+            }
+        });
+        service = Service(kubeconfig, handler, directory);
+
+        var requests = Enumerable.Range(0, 8)
+            .Select(_ => service.ListClusterResourcesAsync(new ResourceQuery(Kind: "\"Namespace\"", ForceRefresh: true)))
+            .ToArray();
+        var snapshots = await Task.WhenAll(requests);
+
+        Assert.All(snapshots, snapshot => Assert.Empty(snapshot.Failures));
+        Assert.True(maxActiveRequests <= 1, $"Expected at most one concurrent request, observed {maxActiveRequests}.");
+        Assert.Contains(queueSamples, sample => sample > 0);
+        Assert.True(service!.RequestTelemetry().RequestsLastMinute >= requests.Length);
+    }
+
+    [Fact]
     public async Task Configured_request_hard_limit_delays_public_kubernetes_requests()
     {
         var directory = TempDirectory();
@@ -363,6 +409,89 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         Assert.Equal(256, audit.Count);
         Assert.All(audit, entry => Assert.Equal("GET", entry.Method));
         Assert.Contains(audit, entry => entry.Path == "/api/v1/namespaces");
+    }
+
+    [Fact]
+    public async Task Request_audit_log_tracks_success_failed_and_network_outcomes()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
+        var attempt = 0;
+        var handler = new RecordingHandler(_ =>
+        {
+            var call = attempt++;
+            return call switch
+            {
+                0 => JsonResponse(NamespaceList()),
+                1 => new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("invalid request") },
+                _ => throw new HttpRequestException("connection reset"),
+            };
+        });
+        var service = Service(kubeconfig, handler, directory);
+        var query = new ResourceQuery(Kind: "\"Namespace\"", ForceRefresh: true);
+
+        var first = await service.ListClusterResourcesAsync(query);
+        var second = await service.ListClusterResourcesAsync(query);
+        var third = await service.ListClusterResourcesAsync(query);
+
+        Assert.Empty(first.Failures);
+        Assert.Single(second.Failures);
+        Assert.Single(third.Failures);
+        Assert.Equal("Namespace", second.Failures[0].Kind);
+        Assert.Equal("Namespace", third.Failures[0].Kind);
+        Assert.Equal(FreshnessState.Stale, second.Failures[0].Freshness);
+        Assert.Equal(FreshnessState.Stale, third.Failures[0].Freshness);
+
+        var audit = service.RequestAuditLog();
+
+        Assert.Equal(3, audit.Count);
+        var outcomes = audit.Select(entry => entry.Outcome).ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("ok", outcomes);
+        Assert.Contains("failed", outcomes);
+        Assert.Contains("network error", outcomes);
+    }
+
+    [Fact]
+    public async Task Request_audit_log_tracks_queued_and_running_request_states_under_burst()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
+        var queueSamples = new List<int>();
+        var activeRequests = 0;
+        var maxActiveRequests = 0;
+        KubernetesResourceService? service = null;
+        service = Service(
+            kubeconfig,
+            new AsyncRecordingHandler(async (_, cancellationToken) =>
+            {
+                var telemetry = service!.RequestTelemetry();
+                queueSamples.Add(telemetry.QueuedRequests);
+                var active = Interlocked.Increment(ref activeRequests);
+                if (active > maxActiveRequests)
+                {
+                    maxActiveRequests = active;
+                }
+
+                await Task.Delay(160, cancellationToken).ConfigureAwait(false);
+                Interlocked.Decrement(ref activeRequests);
+                return JsonResponse(NamespaceList());
+            }),
+            directory);
+        var query = new ResourceQuery(Kind: "\"Namespace\"", ForceRefresh: true);
+
+        var snapshots = await Task.WhenAll(
+            Enumerable.Range(0, 4).Select(_ => service.ListClusterResourcesAsync(query)));
+
+        Assert.All(snapshots, snapshot => Assert.Empty(snapshot.Failures));
+        var outcomes = service.RequestAuditLog().Select(entry => entry.Outcome).ToHashSet(StringComparer.Ordinal);
+        var queuedSamples = queueSamples.Where(sample => sample > 0).ToList();
+
+        Assert.Contains("ok", outcomes);
+        Assert.All(outcomes, outcome => Assert.Equal("ok", outcome));
+        Assert.True(maxActiveRequests <= 1);
+        Assert.True(queuedSamples.Any());
     }
 
     [Fact]
@@ -459,6 +588,73 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         Assert.Equal(PodlordErrorKind.KubernetesApi, error.Kind);
         Assert.Contains("container=web", Assert.Single(handler.Requests), StringComparison.Ordinal);
         Assert.Contains("previous=true", handler.Requests[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Pod_logs_without_container_fetch_all_pod_containers()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
+        var handler = new RecordingHandler(request =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (path == "/api/v1/namespaces/default/pods/api/log?tailLines=10&timestamps=true")
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("""
+                    {"kind":"Status","apiVersion":"v1","status":"Failure","message":"a container name must be specified for pod api, choose one of: [web sidecar]","reason":"BadRequest","code":400}
+                    """)
+                };
+            }
+
+            if (path == "/api/v1/namespaces/default/pods/api")
+            {
+                return JsonResponse("""
+                {
+                  "kind": "Pod",
+                  "apiVersion": "v1",
+                  "metadata": { "name": "api", "namespace": "default" },
+                  "spec": {
+                    "containers": [
+                      { "name": "web", "image": "repo/web:1" },
+                      { "name": "sidecar", "image": "repo/sidecar:1" }
+                    ]
+                  }
+                }
+                """);
+            }
+
+            if (path.Contains("/log?", StringComparison.Ordinal) && path.Contains("container=web", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("web-line\n")
+                };
+            }
+
+            if (path.Contains("/log?", StringComparison.Ordinal) && path.Contains("container=sidecar", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("sidecar-line\n")
+                };
+            }
+
+            throw new InvalidOperationException($"Unexpected path {path}");
+        });
+        var service = Service(kubeconfig, handler, directory);
+
+        var logs = await service.GetPodLogsAsync(new PodLogRequest(null, "default", "api", null, 10, false));
+
+        Assert.Contains("===== container: web =====", logs.Text, StringComparison.Ordinal);
+        Assert.Contains("web-line", logs.Text, StringComparison.Ordinal);
+        Assert.Contains("===== container: sidecar =====", logs.Text, StringComparison.Ordinal);
+        Assert.Contains("sidecar-line", logs.Text, StringComparison.Ordinal);
+        Assert.Contains(handler.Requests, path => path == "/api/v1/namespaces/default/pods/api");
+        Assert.Contains(handler.Requests, path => path.Contains("container=web", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, path => path.Contains("container=sidecar", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -910,7 +1106,7 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         Assert.Equal(FreshnessState.Forbidden, failure.Freshness);
     }
 
-    private static KubernetesResourceService Service(string kubeconfig, RecordingHandler handler, string directory)
+    private static KubernetesResourceService Service(string kubeconfig, HttpMessageHandler handler, string directory)
     {
         var state = AppState.InMemoryWithConfigDirectory(Path.Combine(directory, "state"));
         state.ImportKubeconfig(kubeconfig);
@@ -1389,6 +1585,14 @@ users:
             Bodies.Add(request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult() ?? string.Empty);
             Authorizations.Add(request.Headers.Authorization);
             return Task.FromResult(respond(request));
+        }
+    }
+
+    private sealed class AsyncRecordingHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return respond(request, cancellationToken);
         }
     }
 }

@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Avalonia.Media;
 using Podlord.App;
@@ -72,6 +74,39 @@ public sealed class AppBehaviorTests
 
         Assert.Equal("RESOURCES", PodlordLocalizer.Text("nav.resources", "definitely-not-real"));
         Assert.Equal("missing.key", PodlordLocalizer.Text("missing.key", "de"));
+    }
+
+    [Fact]
+    public void Localizer_catalog_localization_source_and_runtime_have_complete_key_coverage()
+    {
+        var source = File.ReadAllText(LocatePodlordLocalizerSource());
+        var english = EnglishLocaleKeysFromSource(source);
+        var catalogLocales = CatalogLocaleCodesFromSource(source);
+
+        var supportedLocales = PodlordLocalizer.SupportedLocales
+            .Select(option => option.Code)
+            .Where(code => !code.Equals(PodlordLocalizer.SystemLanguageCode, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var missingCatalogLocales = supportedLocales
+            .Except(catalogLocales, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.True(
+            missingCatalogLocales.Length == 0,
+            $"Catalog is missing locales: {string.Join(", ", missingCatalogLocales)}.");
+        Assert.All(supportedLocales, code => Assert.Contains(code, catalogLocales, StringComparer.OrdinalIgnoreCase));
+
+        foreach (var locale in supportedLocales)
+        {
+            if (!string.Equals(locale, PodlordLocalizer.DefaultLanguageCode, StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.NotEqual(PodlordLocalizer.Text("nav.search", "en"), PodlordLocalizer.Text("nav.search", locale));
+            }
+
+            Assert.All(english, key => Assert.NotEqual(key, PodlordLocalizer.Text(key, locale)));
+        }
+        Assert.NotEqual("Missing", PodlordLocalizer.Text("missing.key", "de"));
     }
 
     [Fact]
@@ -247,6 +282,92 @@ public sealed class AppBehaviorTests
 
         Assert.Equal(0, state.Settings().RequestHardLimitPerMinute);
         Assert.Equal("none", viewModel.RequestHardLimitSetting);
+    }
+
+    [Fact]
+    public void Background_refresh_interval_contracts_cover_focus_cache_and_failure_states()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(45), MainWindowViewModel.BackgroundRefreshIntervalFor(false, true, false, false, TimeSpan.FromMinutes(9)));
+        Assert.Equal(TimeSpan.FromMinutes(4), MainWindowViewModel.BackgroundRefreshIntervalFor(false, true, true, false, TimeSpan.Zero));
+        Assert.Equal(TimeSpan.FromSeconds(90), MainWindowViewModel.BackgroundRefreshIntervalFor(false, false, false, false, TimeSpan.Zero));
+
+        Assert.Equal(TimeSpan.FromSeconds(12), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, false, false, TimeSpan.FromSeconds(10)));
+        Assert.Equal(TimeSpan.FromSeconds(25), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, false, true, TimeSpan.FromSeconds(10)));
+        Assert.Equal(TimeSpan.FromSeconds(20), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, true, false, TimeSpan.FromSeconds(12)));
+        Assert.Equal(TimeSpan.FromSeconds(45), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, true, false, TimeSpan.FromMinutes(1)));
+        Assert.Equal(TimeSpan.FromSeconds(120), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, true, false, TimeSpan.FromMinutes(8)));
+
+        var now = new DateTimeOffset(2026, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        Assert.Equal(TimeSpan.FromSeconds(1), MainWindowViewModel.InactiveBackgroundCheckInterval(5, null, now));
+        Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(10, now, now));
+        Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(10, now.AddMinutes(-2), now));
+    }
+
+    [Fact]
+    public void SetAppFocus_after_dispose_is_exception_free()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.Dispose();
+
+        var error = Record.Exception(() =>
+        {
+            viewModel.SetAppFocus(false);
+            viewModel.SetAppFocus(true);
+            viewModel.SetAppFocus(false);
+        });
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public async Task SetAppFocus_near_dispose_does_not_emit_objectdisposed_from_inflight_refresh()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var inFlight = new AsyncAppRecordingHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"items\":[]}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, inFlight));
+
+        try
+        {
+            viewModel.ReloadSessions();
+            viewModel.KindPicker.SetExpression("\"Pod\"");
+            var refreshTask = viewModel.RefreshResourcesAsync(force: true);
+            await Task.Delay(50);
+
+            viewModel.SetAppFocus(false);
+            viewModel.SetAppFocus(true);
+            viewModel.Dispose();
+
+            var focusError = Record.Exception(() =>
+            {
+                viewModel.SetAppFocus(false);
+                viewModel.SetAppFocus(true);
+            });
+            Assert.Null(focusError);
+
+            var refreshError = await Record.ExceptionAsync(async () => await refreshTask);
+            Assert.False(refreshError is ObjectDisposedException);
+        }
+        finally
+        {
+            viewModel.Dispose();
+        }
     }
 
     [Fact]
@@ -545,6 +666,58 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Source_removal_clears_selected_source_and_related_view_state()
+    {
+        var directory = TempDirectory();
+        var configA = Path.Combine(directory, "a.yaml");
+        var configB = Path.Combine(directory, "b.yaml");
+        File.WriteAllText(configA, OneContextKubeconfig("http://127.0.0.1:1", "dev-a"));
+        File.WriteAllText(configB, OneContextKubeconfig("http://127.0.0.1:2", "dev-b"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(configA);
+        state.ImportKubeconfig(configB);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+        var removed = Assert.Single(viewModel.Sources);
+        viewModel.SelectedSource = removed;
+
+        viewModel.RemoveSource(removed);
+
+        Assert.Null(viewModel.SelectedSource);
+        Assert.True(string.IsNullOrWhiteSpace(viewModel.SelectedSource?.Context));
+        Assert.Null(viewModel.SelectedSession);
+        Assert.False(viewModel.IsSelectedSource);
+        Assert.False(viewModel.IsInspectorVisible);
+        Assert.Empty(viewModel.Sources);
+        Assert.Empty(viewModel.ImportedContextRows);
+        Assert.Contains("Removed source snapshot", viewModel.StatusLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Smart_source_import_scans_directory_with_kube_extension_files()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kube"), OneContextKubeconfig("http://127.0.0.1:1", "kube"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kubeconfig"), OneContextKubeconfig("http://127.0.0.1:2", "kubeconfig"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.cfg"), OneContextKubeconfig("http://127.0.0.1:3", "cfg"));
+        File.WriteAllText(Path.Combine(scanRoot, "notes.yaml"), "not: kubeconfig");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 3 context(s) from 3 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(3, viewModel.Sources.Count);
+        Assert.Contains(viewModel.Sources, source => source.Context == "kube");
+        Assert.Contains(viewModel.Sources, source => source.Context == "kubeconfig");
+        Assert.Contains(viewModel.Sources, source => source.Context == "cfg");
+    }
+
+    [Fact]
     public async Task Source_selection_uses_inspector_and_applies_edited_yaml_without_touching_original_file()
     {
         var directory = TempDirectory();
@@ -618,6 +791,170 @@ public sealed class AppBehaviorTests
         Assert.Contains("Imported 1 context(s) from 1 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
         Assert.Single(viewModel.Sources);
         Assert.Equal("deep", viewModel.Sources[0].Context);
+    }
+
+    [Fact]
+    public void Import_path_empty_input_never_imports_anything()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = "  ";
+        viewModel.ImportPathNow();
+
+        Assert.Empty(viewModel.Sources);
+        Assert.Empty(viewModel.Sessions);
+        Assert.Empty(state.Snapshot().ImportedContexts);
+        Assert.Equal("Choose a kubeconfig file or enter a path, directory, or YAML.", viewModel.StatusLine);
+    }
+
+    [Fact]
+    public void Import_path_single_file_imports_only_that_file_and_updates_status()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "only.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:1", "single"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = kubeconfig;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 1 context(s).", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Single(viewModel.Sources);
+        Assert.Equal("single", viewModel.Sources[0].Context);
+    }
+
+    [Fact]
+    public void Import_path_invalid_kubeconfig_file_reports_error_and_adds_no_contexts()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "invalid.yaml");
+        File.WriteAllText(kubeconfig, "not a valid source");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = kubeconfig;
+        viewModel.ImportPathNow();
+
+        Assert.Equal("Import a kubeconfig that contains contexts.", viewModel.StatusLine);
+        Assert.Empty(viewModel.Sources);
+        Assert.Empty(viewModel.Sessions);
+        Assert.Empty(state.Snapshot().ImportedContexts);
+    }
+
+    [Fact]
+    public void Smart_source_import_respects_max_depth_and_skips_deeper_directories()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        var includeRoot = scanRoot;
+        for (var depth = 1; depth <= 10; depth++)
+        {
+            includeRoot = Path.Combine(includeRoot, $"include-{depth}");
+            Directory.CreateDirectory(includeRoot);
+        }
+
+        var deepRoot = scanRoot;
+        for (var depth = 1; depth <= 34; depth++)
+        {
+            deepRoot = Path.Combine(deepRoot, $"deep-{depth}");
+            Directory.CreateDirectory(deepRoot);
+        }
+
+        File.WriteAllText(Path.Combine(includeRoot, "deep.yaml"), OneContextKubeconfig("http://127.0.0.1:1", "included"));
+        File.WriteAllText(Path.Combine(deepRoot, "deep.yaml"), OneContextKubeconfig("http://127.0.0.1:2", "excluded"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 1 context(s) from 1 kubeconfig file(s); ignored 0", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Single(viewModel.Sources);
+        Assert.Equal("included", viewModel.Sources[0].Context);
+        Assert.DoesNotContain(viewModel.Sources, source => source.Context == "excluded");
+    }
+
+    [Fact]
+    public void App_state_imported_context_dedup_preserves_metadata_when_imported_from_different_paths()
+    {
+        var directory = TempDirectory();
+        var first = Path.Combine(directory, "first.yaml");
+        var second = Path.Combine(directory, "second.yaml");
+        var raw = OneContextKubeconfig("http://127.0.0.1:1", "shared");
+        File.WriteAllText(first, raw);
+        File.WriteAllText(second, raw);
+
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(first);
+
+        var context = Assert.Single(state.Snapshot().ImportedContexts);
+        state.RenameImportedContext(context.ContextId, "Shared Alias");
+        state.SetImportedContextFilter(context.ContextId, "team-a");
+
+        var secondSummary = state.ImportKubeconfig(second);
+        var snapshot = state.Snapshot();
+
+            Assert.Single(snapshot.ImportedContexts);
+        Assert.Equal(0, secondSummary.CreatedSessionCount);
+        Assert.Equal("Shared Alias", snapshot.ImportedContexts[0].DisplayName);
+        Assert.Equal("team-a", snapshot.ImportedContexts[0].FilterName);
+        Assert.Equal(context.ContextId, snapshot.ImportedContexts[0].ContextId);
+        Assert.Single(snapshot.Sessions);
+
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+
+        var source = Assert.Single(viewModel.Sources);
+        Assert.Equal("Shared Alias", source.Context);
+        Assert.Equal("team-a", source.FilterName);
+        Assert.Single(viewModel.Sessions);
+    }
+
+    [Fact]
+    public void Smart_source_import_scans_directory_with_non_yaml_kubeconfig_extensions()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kubeconfig"), OneContextKubeconfig("http://127.0.0.1:1", "kubeconfig"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.cfg"), OneContextKubeconfig("http://127.0.0.1:2", "cfg"));
+        File.WriteAllText(Path.Combine(scanRoot, "notes.yaml"), "not: kubeconfig");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 2 context(s) from 2 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(2, viewModel.Sources.Count);
+        Assert.Contains(viewModel.Sources, source => source.Context == "kubeconfig");
+        Assert.Contains(viewModel.Sources, source => source.Context == "cfg");
+    }
+
+    [Fact]
+    public void Smart_source_import_scans_directory_with_additional_kubeconfig_extensions()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kube"), OneContextKubeconfig("http://127.0.0.1:1", "kube"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.config"), OneContextKubeconfig("http://127.0.0.1:2", "config"));
+        File.WriteAllText(Path.Combine(scanRoot, "notes.txt"), "ignore-me");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 2 context(s) from 2 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(2, viewModel.Sources.Count);
+        Assert.Contains(viewModel.Sources, source => source.Context == "kube");
+        Assert.Contains(viewModel.Sources, source => source.Context == "config");
     }
 
     [Fact]
@@ -737,6 +1074,52 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public async Task Sort_missing_cpu_values_moves_missing_rows_to_expected_side()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                var json = path switch
+                {
+                    "/api/v1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"known","namespace":"payments","uid":"1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}]}}},
+                        {"metadata":{"name":"missing","namespace":"payments","uid":"2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}]}}}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"known","namespace":"payments"},"containers":[{"name":"known","usage":{"cpu":"100m","memory":"128Mi"}}]}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/nodes" => """{"items":[]}""",
+                    _ => """{"items":[]}"""
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal(["known", "missing"], viewModel.Resources.Select(row => row.Name).ToArray());
+
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal(["missing", "known"], viewModel.Resources.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
     public async Task Source_switch_shows_cached_rows_immediately_and_loading_feedback_for_cold_sources()
     {
         var directory = TempDirectory();
@@ -778,6 +1161,245 @@ public sealed class AppBehaviorTests
         Assert.Empty(viewModel.Resources);
         Assert.Contains("Loading resources for prod", viewModel.StatusLine, StringComparison.Ordinal);
         Assert.True(viewModel.IsRefreshing);
+    }
+
+    [Fact]
+    public async Task Source_switch_between_cached_sessions_uses_cached_rows_without_refresh()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(path.EndsWith("/pods", StringComparison.Ordinal)
+                    ? """
+                      {"items":[{"metadata":{"name":"cached-api","namespace":"payments","uid":"cached-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}
+                      """
+                    : """{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
+        var prodSession = state.ListSessions().Single(session => session.DisplayName == "prod");
+
+        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        await service.WarmResourceCacheAsync(new ResourceQuery(prodSession.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        var networkCallsAfterWarm = handler.Requests.Count;
+
+        using var viewModel = new MainWindowViewModel(state, service);
+
+        viewModel.ReloadSessions();
+        viewModel.ProblemsOnly = false;
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == devSession.Id);
+        await viewModel.RefreshResourcesAsync();
+        Assert.DoesNotContain("Loading resources for", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(networkCallsAfterWarm, handler.Requests.Count);
+
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == prodSession.Id);
+        await viewModel.RefreshResourcesAsync();
+
+        Assert.DoesNotContain("Loading resources for", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.True(viewModel.Resources.Count > 0);
+        Assert.Equal(networkCallsAfterWarm, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Refresh_resources_with_identical_query_state_does_not_double_request_under_concurrent_calls()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+
+        var baselineState = AppState.InMemoryWithConfigDirectory(directory);
+        baselineState.ImportKubeconfig(kubeconfig);
+        var baselineHandler = new AsyncAppRecordingHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(180, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using (var baselineViewModel = new MainWindowViewModel(
+            baselineState,
+            new KubernetesResourceService(baselineState, baselineHandler)))
+        {
+            baselineViewModel.ReloadSessions();
+            await baselineViewModel.RefreshResourcesAsync(force: true);
+        }
+
+        var comparisonState = AppState.InMemoryWithConfigDirectory(directory);
+        comparisonState.ImportKubeconfig(kubeconfig);
+        var replayHandler = new AsyncAppRecordingHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(180, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(
+            comparisonState,
+            new KubernetesResourceService(comparisonState, replayHandler));
+
+        viewModel.ReloadSessions();
+        var firstRefresh = viewModel.RefreshResourcesAsync(force: true);
+            await Task.Delay(20);
+        var duplicateRefresh = viewModel.RefreshResourcesAsync();
+
+        await Task.WhenAll(firstRefresh, duplicateRefresh);
+        await Task.Delay(800);
+
+        Assert.Equal(baselineHandler.Requests.Count, replayHandler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Blank_local_filter_expressions_clear_immediately_without_remote_roundtrip()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/pods", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {"items":[
+                          {"metadata":{"name":"api","namespace":"payments","uid":"api","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                          {"metadata":{"name":"worker","namespace":"payments","uid":"worker","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                        ]}
+                        """,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            if (path.Contains("/metrics/", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, handler));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.True(viewModel.Resources.Count >= 2, "Pods should be loaded from the cached display query.");
+        var priorRequests = handler.Requests.Count;
+
+        viewModel.NamePicker.SetExpression("\"api\"");
+
+        Assert.Single(viewModel.Resources);
+        Assert.Equal("api", viewModel.Resources[0].Name);
+        Assert.Equal(priorRequests, handler.Requests.Count);
+
+        viewModel.NamePicker.SetExpression("  ");
+
+        Assert.Equal(2, viewModel.Resources.Count);
+        Assert.Equal(priorRequests, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Selecting_from_table_radar_and_graph_keeps_exactly_one_active_surface_selected()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                return path switch
+                {
+                    "/api/v1/pods" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent(
+                                """
+                                {"items":[
+                                  {"metadata":{"name":"api","namespace":"payments","uid":"1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                                  {"metadata":{"name":"worker","namespace":"payments","uid":"2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                                ]}
+                                """,
+                                Encoding.UTF8,
+                                "application/json")
+                        },
+                    "/apis/metrics.k8s.io/v1beta1/pods" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                        },
+                    "/apis/metrics.k8s.io/v1beta1/nodes" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                        },
+                    _ =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                        }
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        var api = Assert.Single(viewModel.Resources, row => row.Name == "api");
+        viewModel.SelectedResourceRow = api;
+
+        Assert.Same(api, viewModel.SelectedResource);
+        Assert.Same(api, viewModel.SelectedResourceRow);
+        Assert.Null(viewModel.SelectedGraphNode);
+
+        viewModel.ResourceQuickSearch = "worker";
+        viewModel.NextResourceMatch();
+
+        Assert.Null(viewModel.SelectedGraphNode);
+        Assert.Equal("worker", viewModel.SelectedResource?.Name);
+
+        var cluster = Assert.Single(viewModel.RadarBlocks, block => block.DisplayKind == "Cluster").Resource;
+        await viewModel.FocusRadarResourceAsync(cluster);
+
+        Assert.Equal("Cluster", viewModel.SelectedResource?.Kind);
+        Assert.Null(viewModel.SelectedResourceRow);
+        Assert.Null(viewModel.SelectedGraphNode);
+
+        await viewModel.FocusGraphNodeAsync(new GraphNodeViewModel("Namespace", "payments", "cluster", "Ready", null));
+
+        Assert.Null(viewModel.SelectedResource);
+        Assert.Null(viewModel.SelectedResourceRow);
+        Assert.NotNull(viewModel.SelectedGraphNode);
     }
 
     [Fact]
@@ -1060,6 +1682,67 @@ public sealed class AppBehaviorTests
         Assert.Equal(1, viewModel.RadarZoom, precision: 2);
         Assert.Equal(0, viewModel.RadarPanX, precision: 2);
         Assert.Equal(0, viewModel.RadarPanY, precision: 2);
+    }
+
+    [Fact]
+    public async Task Radar_alert_blocks_reenter_announcing_state_on_reappearing_problem_rows()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var alertCycle = 0;
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                if (!path.EndsWith("/pods", StringComparison.Ordinal))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                    };
+                }
+
+                var status = alertCycle switch
+                {
+                    0 => "CrashLoopBackOff",
+                    1 => "Running",
+                    _ => "CrashLoopBackOff"
+                };
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {"items":[
+                          {"metadata":{"name":"api-1","namespace":"payments","uid":"pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"__STATUS__","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                        ]}
+                        """.Replace("__STATUS__", status, StringComparison.Ordinal),
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        var initial = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "api-1");
+        Assert.True(initial.IsAnnouncing);
+
+        alertCycle = 1;
+        await viewModel.RefreshResourcesAsync(force: true);
+        var healthy = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "api-1");
+        Assert.Equal("Running", healthy.Resource.Status);
+        Assert.True(healthy.IsAnnouncing);
+
+        alertCycle = 2;
+        await viewModel.RefreshResourcesAsync(force: true);
+        var returning = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "api-1");
+        Assert.True(returning.IsAnnouncing);
     }
 
     [Fact]
@@ -1353,6 +2036,96 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public async Task Inspector_populates_pod_log_container_options_for_multi_container_pods()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (path == "/api/v1/namespaces/payments/pods/api/log?tailLines=100&timestamps=true")
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("""
+                    {"kind":"Status","apiVersion":"v1","status":"Failure","message":"a container name must be specified for pod api, choose one of: [api sidecar]","reason":"BadRequest","code":400}
+                    """, Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (path == "/api/v1/namespaces/payments/pods/api")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "kind": "Pod",
+                      "apiVersion": "v1",
+                      "metadata": {
+                        "name": "api",
+                        "namespace": "payments",
+                        "uid": "pod-api",
+                        "creationTimestamp": "2026-06-10T08:00:00Z"
+                      },
+                      "spec": {
+                        "nodeName": "node-a",
+                        "containers": [
+                          { "name": "api", "image": "repo/api:1" },
+                          { "name": "sidecar", "image": "repo/sidecar:1" }
+                        ]
+                      },
+                      "status": {
+                        "phase": "Running",
+                        "containerStatuses": [
+                          { "name": "api", "ready": true, "restartCount": 0, "state": { "running": {} } },
+                          { "name": "sidecar", "ready": true, "restartCount": 0, "state": { "running": {} } }
+                        ]
+                      }
+                    }
+                    """, Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (path.Contains("/log?", StringComparison.Ordinal) && path.Contains("container=api", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("api-line\n")
+                };
+            }
+
+            if (path.Contains("/log?", StringComparison.Ordinal) && path.Contains("container=sidecar", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("sidecar-line\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, handler));
+
+        viewModel.SelectedResource = Row("Running", "api", 0, "2/2");
+        await viewModel.OpenSelectedResourceAsync();
+
+        Assert.Equal(["All containers", "api", "sidecar"], viewModel.PodLogContainerOptions);
+        Assert.Equal("All containers", viewModel.SelectedPodLogContainer);
+
+        viewModel.SelectedInspectorTabIndex = 4;
+        await Task.Delay(250);
+
+        Assert.Contains("===== container: api =====", viewModel.LogText, StringComparison.Ordinal);
+        Assert.Contains("===== container: sidecar =====", viewModel.LogText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Inspector_validates_yaml_and_requires_second_click_before_delete()
     {
         var directory = TempDirectory();
@@ -1550,6 +2323,50 @@ public sealed class AppBehaviorTests
         Assert.Equal("stopped", viewModel.PortForwards[1].Status);
         Assert.Equal("START", viewModel.PortForwardActionLabel);
         Assert.Equal(["api"], viewModel.VisiblePortForwards.Select(port => port.Name).ToArray());
+    }
+
+    [Fact]
+    public void Port_forward_is_rejected_for_cluster_scoped_resources()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.SelectedResource = Row("Running", "api", 0, "1/1") with { Namespace = null };
+        viewModel.PrepareSelectedResourcePortForward();
+
+        Assert.False(viewModel.CanPortForwardSelectedResource);
+        Assert.False(viewModel.IsPortForwardToolOpen);
+            Assert.Empty(viewModel.VisiblePortForwards);
+    }
+
+    [Fact]
+    public async Task Port_forward_preflight_rejects_occupied_local_port_before_service_call()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.ReloadSessions();
+
+        var selected = Row("Running", "api", 0, "1/1");
+        viewModel.SelectedResource = selected;
+        viewModel.PrepareSelectedResourcePortForward();
+
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var occupiedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        viewModel.PortLocalPort = occupiedPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        await viewModel.StartPreparedPortForwardAsync();
+
+        Assert.Empty(viewModel.PortForwards);
+        Assert.Equal($"Reachable port {occupiedPort} is already in use on this machine.", viewModel.StatusLine);
     }
 
     [Fact]
@@ -1843,6 +2660,73 @@ users:
         return Math.Abs(grid - Math.Round(grid)) < 0.0001;
     }
 
+    private static string LocatePodlordLocalizerSource()
+    {
+        for (var directory = AppContext.BaseDirectory; !string.IsNullOrWhiteSpace(directory); directory = Path.GetDirectoryName(directory) ?? string.Empty)
+        {
+            var directMatch = Path.Combine(directory, "PodlordLocalizer.cs");
+            if (File.Exists(directMatch))
+            {
+                return directMatch;
+            }
+
+            var sourceMatch = Path.Combine(directory, "src", "Podlord.App", "PodlordLocalizer.cs");
+            if (File.Exists(sourceMatch))
+            {
+                return sourceMatch;
+            }
+
+            if (directory == Path.GetPathRoot(directory))
+            {
+                break;
+            }
+        }
+
+        throw new FileNotFoundException("PodlordLocalizer.cs source file not found.");
+    }
+
+    private static IReadOnlySet<string> CatalogLocaleCodesFromSource(string source)
+    {
+        return Regex.Matches(source, "\\[\"(?<code>[^\"]+)\"\\]\\s*=\\s*(?:English|WithEnglish)", RegexOptions.Multiline)
+            .Select(match => match.Groups["code"].Value)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlySet<string> EnglishLocaleKeysFromSource(string source)
+    {
+        var english = Regex.Match(
+            source,
+            "private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>\\(StringComparer\\.Ordinal\\)\\s*\\{(?<body>[\\s\\S]*?)\\n\\s*\\};",
+            RegexOptions.Multiline);
+        Assert.True(english.Success, "Could not parse English locale block from PodlordLocalizer source.");
+
+        return Regex.Matches(english.Groups["body"].Value, "\\[\"(?<key>[^\"]+)\"\\]\\s*=", RegexOptions.Multiline)
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static IReadOnlySet<string> LocalizerTranslationsFromSource(string source, string locale)
+    {
+        if (string.Equals(locale, "en", StringComparison.OrdinalIgnoreCase))
+        {
+            return EnglishLocaleKeysFromSource(source);
+        }
+
+        var match = Regex.Match(
+            source,
+            "\\[\"" + Regex.Escape(locale) + "\"\\]\\s*=\\s*WithEnglish\\(\"" + Regex.Escape(locale) + "\",\\s*new Dictionary<string, string>\\(StringComparer\\.Ordinal\\)\\s*\\{(?<body>[\\s\\S]*?)\\}\\s*\\)",
+            RegexOptions.Multiline);
+
+        Assert.True(match.Success, $"Could not parse locale block for '{locale}'.");
+
+        return Regex.Matches(match.Groups["body"].Value, "\\[\"(?<key>[^\"]+)\"\\]\\s*=", RegexOptions.Multiline)
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
     private static string TempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), $"podlord-app-test-{Guid.NewGuid():N}");
@@ -1857,9 +2741,23 @@ users:
 
     private sealed class AppRecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
+        public List<string> Requests { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Requests.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
             return Task.FromResult(respond(request));
+        }
+    }
+
+    private sealed class AsyncAppRecordingHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        public List<string> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
+            return respond(request, cancellationToken);
         }
     }
 }
