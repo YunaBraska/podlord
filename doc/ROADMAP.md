@@ -65,6 +65,67 @@ age < 1h
 5. Add radar animation and sound actions.
 6. Add import/export.
 
+## Workspace Views
+
+### Network View
+
+Add a Network workspace alongside the Graph view. Map Services, Endpoints, Ingresses, NetworkPolicies, Gateway/HTTPRoute, and pod-to-pod traffic into a topology that surfaces:
+
+- Service → backing pods fan-out.
+- Ingress/Gateway → Service → pods routing chains.
+- Cross-namespace edges and NetworkPolicy restrictions.
+- Live throughput when metrics sources expose it.
+
+## Custom Automations
+
+Promote the current built-in radar reactions (auto-zoom to next problem, deterministic colors, blink on alerts) into a user-configurable automation engine.
+
+Surface: a rules editor where each rule binds a *trigger* to one or more *actions*.
+
+### Triggers
+
+- Resource status changes (Created, Updated, Deleted, Restart, CrashLoopBackOff, etc.).
+- Metric thresholds crossed (CPU, memory, storage usage or limit-ratio).
+- Event reasons or counts within a window.
+- Filter membership (resource enters or leaves a saved filter).
+- Custom field expressions (same DSL as saved filters).
+
+### Actions
+
+- Radar reactions:
+  - color override
+  - blink / pulse animation
+  - zoom or pan radar to the resource
+  - mark resource with custom glyph
+- Inspector or table reactions:
+  - highlight row
+  - auto-focus the resource
+- Sound reactions: play a chosen sample on trigger.
+- Desktop notifications.
+- Status line banner.
+- Optional debounce, cooldown, and per-source scoping.
+
+### Persistence
+
+- Automations live in app settings; import/export as YAML/JSON shareable presets.
+- A default automation pack ships with the same behaviors users see today.
+- Reset-to-defaults at any time.
+
+This subsumes the [Rule-Based Alerts](#next-rule-based-alerts) work — automations are the unified primitive.
+
+## Sound Gamification
+
+Make the cluster feel like a game using royalty-free sounds and music.
+
+Scope:
+
+- Bundle a default sound pack from CC0 / royalty-free sources (e.g., kenney.nl, freesound.org with CC0 tags) covering: alert, success, restart, deletion, deploy, ambient hum.
+- Add a sound manager UI where each automation event can pick a sample.
+- Allow users to download additional packs from a curated, free-only catalog.
+- Optional ambient music loops gated by activity (calm when healthy, tense on incidents).
+- Mute toggles per category and a global mute.
+- All packs verified for redistribution rights before shipping.
+
 ## Near-Term Reliability
 
 - Continue reducing unnecessary UI redraws.
