@@ -115,16 +115,69 @@ This subsumes the [Rule-Based Alerts](#next-rule-based-alerts) work — automati
 
 ## Sound Gamification
 
-Make the cluster feel like a game using royalty-free sounds and music.
+Make the cluster feel like a late-90s / early-2000s RTS using CC0 / royalty-free sounds and music. We mimic *style only* — no commercial game assets (Blizzard, EA/Westwood, etc.) ever ship in the repo.
 
-Scope:
+Asset framework already in place at `src/Podlord.App/Assets/Audio/` with:
 
-- Bundle a default sound pack from CC0 / royalty-free sources (e.g., kenney.nl, freesound.org with CC0 tags) covering: alert, success, restart, deletion, deploy, ambient hum.
-- Add a sound manager UI where each automation event can pick a sample.
-- Allow users to download additional packs from a curated, free-only catalog.
-- Optional ambient music loops gated by activity (calm when healthy, tense on incidents).
-- Mute toggles per category and a global mute.
-- All packs verified for redistribution rights before shipping.
+- Directory tree: `ui/`, `alerts/`, `events/`, `voice/`, `music/calm/`, `music/energetic/`.
+- `CREDITS.md` table for every file (source URL, author, license).
+- `MANIFEST.json` mapping semantic roles (`ui.click`, `alert.incident`, `event.radar_activated`, etc.) to one or more files. Multiple files per role get shuffled.
+- `manifest.schema.json` describing the manifest format.
+- `scripts/audio/README.md` sourcing guide.
+
+### Planned Roles
+
+| Role | Trigger |
+| ---- | ------- |
+| `ui.click` | Button / tab click |
+| `ui.tab_switch` | Inspector tab switch |
+| `ui.segment_ping` | Health bar segment changes state |
+| `ui.hover` | Subtle hover beep on rare elements |
+| `alert.incident` | New CRITICAL appears |
+| `alert.warning` | New WARNING appears |
+| `alert.recovery` | Critical → healthy |
+| `alert.under_attack` | Many criticals at once |
+| `event.startup` | App launch |
+| `event.load_complete` | Initial resource load done |
+| `event.radar_activated` | Screensaver → live radar |
+| `event.session_switch` | Source switched |
+| `voice.radar_activated` | Voice cue "Radar activated" |
+| `voice.under_attack` | Voice cue "We are under attack" |
+| `voice.load_complete` | Voice cue "Cluster online" |
+| `music.calm` | Healthy cluster ambient loops, shuffled |
+| `music.energetic` | Incident-active loops, shuffled |
+
+### Default Catalog Sources
+
+All listed in `Assets/Audio/CREDITS.md`. Confirmed-free catalogs:
+
+- kenney.nl (CC0)
+- freesound.org filtered to CC0
+- pixabay.com (Pixabay license)
+- opengameart.org filtered to CC0
+- incompetech.com (CC BY, attribution required)
+- fesliyanstudios.com (own free-commercial license)
+
+Voice cues generated locally via Piper TTS (MIT) or espeak-ng (retro RTS HUD timbre). Output is not GPL-encumbered.
+
+### Engine Work
+
+- Avalonia audio playback layer (LibVLCSharp or OpenAL via Silk.NET).
+- Manifest loader + runtime role dispatcher.
+- Settings UI:
+  - Per-category volume slider (UI / alert / voice / music).
+  - Per-role enable/disable + sound picker.
+  - Master mute.
+  - Playlist preview.
+- Music engine:
+  - Cross-fade between calm and energetic when health state changes.
+  - Shuffled playlist with no-immediate-repeat.
+- Asset packs as ZIP bundles users can drop into a config directory; auto-merged into the manifest.
+- In-app credits screen surfaces CC BY attributions.
+
+### Forbidden Sources
+
+Do NOT add files extracted from Blizzard, EA/Westwood, or any commercial game. Style only.
 
 ## Near-Term Reliability
 

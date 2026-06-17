@@ -1,0 +1,43 @@
+{
+  "$schema": "./manifest.schema.json",
+  "version": 1,
+  "description": "Maps semantic sound roles to files. Multiple files per role = shuffled. Empty array = silent.",
+  "sounds": {
+    "ui.click": [],
+    "ui.tab_switch": [],
+    "ui.segment_ping": [],
+    "ui.hover": [],
+    "alert.incident": [],
+    "alert.warning": [],
+    "alert.recovery": [],
+    "alert.under_attack": [],
+    "event.startup": [],
+    "event.load_complete": [],
+    "event.radar_activated": [],
+    "event.session_switch": [],
+    "voice.radar_activated": [],
+    "voice.under_attack": [],
+    "voice.load_complete": []
+  },
+  "music": {
+    "calm": {
+      "shuffle": true,
+      "loop": true,
+      "tracks": []
+    },
+    "energetic": {
+      "shuffle": true,
+      "loop": true,
+      "tracks": []
+    }
+  },
+  "defaults": {
+    "master_volume": 0.6,
+    "ui_volume": 0.5,
+    "alert_volume": 0.8,
+    "voice_volume": 0.7,
+    "music_volume": 0.35,
+    "muted_categories": [],
+    "switch_music_on_incident": true
+  }
+}
