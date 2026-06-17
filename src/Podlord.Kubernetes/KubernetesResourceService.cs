@@ -88,6 +88,27 @@ public sealed class KubernetesResourceService
             BackoffUntil(now));
     }
 
+    public int EstimateListRequestCount(ResourceQuery query)
+    {
+        var specs = PlannedSpecs(query).ToList();
+        var namespaces = PlannedNamespaces(query);
+        var total = 0;
+        foreach (var spec in specs)
+        {
+            var scope = spec.Namespaced && namespaces.Count > 0 ? namespaces.Count : 1;
+            total += scope;
+        }
+        return total;
+    }
+
+    public int CompletedRequestsSinceStart(DateTimeOffset start)
+    {
+        lock (telemetryLock)
+        {
+            return requestStarts.Count(timestamp => timestamp >= start);
+        }
+    }
+
     public IReadOnlyList<KubernetesRequestAuditEntry> RequestAuditLog()
     {
         lock (telemetryLock)
@@ -1371,7 +1392,7 @@ public sealed class KubernetesResourceService
         string outcome)
     {
         var entry = new KubernetesRequestAuditEntry(
-            startedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'"),
+            startedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.ff", System.Globalization.CultureInfo.InvariantCulture),
             method,
             path,
             priority.ToString(),

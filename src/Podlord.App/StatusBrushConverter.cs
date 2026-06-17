@@ -159,6 +159,23 @@ public sealed class HasValueConverter : IValueConverter
     }
 }
 
+public sealed class NodeReferenceConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is string text && !string.IsNullOrWhiteSpace(text) && text != "-")
+        {
+            return $"Node/{text}";
+        }
+        return string.Empty;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException("NodeReferenceConverter is one-way.");
+    }
+}
+
 public sealed class RadarBrushConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

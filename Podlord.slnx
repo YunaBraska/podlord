@@ -6,6 +6,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Podlord.App.Tests/Podlord.App.Tests.csproj" />
+    <Project Path="tests/Podlord.App.LayoutTests/Podlord.App.LayoutTests.csproj" />
     <Project Path="tests/Podlord.Core.Tests/Podlord.Core.Tests.csproj" />
     <Project Path="tests/Podlord.Kubernetes.Tests/Podlord.Kubernetes.Tests.csproj" />
   </Folder>

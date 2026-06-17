@@ -208,6 +208,8 @@ public sealed record EventTimelineRow(
     string ResourceId = "")
 {
     public string Status => Type;
+
+    public string AgeDisplay => Podlord.Core.FlatResourceRow.FormatAgeWithSpaces(Age);
 }
 
 public sealed record FocusMetricRow(
@@ -216,15 +218,66 @@ public sealed record FocusMetricRow(
     double Percent,
     bool HasBar,
     string Suggestion = "",
-    double SuggestionPercent = 0)
+    double SuggestionPercent = 0,
+    bool HealthyWhenFull = false)
 {
     public bool HasSuggestion => !string.IsNullOrWhiteSpace(Suggestion) && SuggestionPercent > 0;
 
     public double SuggestionLeft => Math.Clamp(SuggestionPercent, 0, 100) * 1.54d;
 
+    public bool IsLimitedMetric => Label is "CPU" or "Memory";
+
+    public bool HasMarker => HasSuggestion || (HasBar && !HealthyWhenFull && IsLimitedMetric);
+
+    public double MarkerLeft => HasSuggestion ? SuggestionLeft : 154d;
+
+    public bool IsResourceRef =>
+        Label is "Node" or "Owner" or "Namespace" or "Kind" or "Name"
+        && !string.IsNullOrWhiteSpace(Value)
+        && Value != "-"
+        && Value != "cluster";
+
+    public string ReferenceValue => Label switch
+    {
+        "Node" => $"Node/{Value}",
+        "Namespace" => $"Namespace/{Value}",
+        "Kind" => Value,
+        "Name" => Value,
+        _ => Value
+    };
+
+    public string ColorSeed => string.IsNullOrWhiteSpace(Value) ? Label : Value;
+
     public string MetricTooltip => HasSuggestion
         ? $"{Label}: {Value}{Environment.NewLine}Suggestion: {Suggestion}"
         : $"{Label}: {Value}";
+
+    /// <summary>State key for the bar brush. Readiness/availability rows are healthy when full; utilization rows are critical when full.</summary>
+    public string BarState => BarStateFor(Percent, HealthyWhenFull);
+
+    public IBrush BarBrush => AppThemeCatalog.StatusBrush(BarState);
+
+    /// <summary>
+    /// Maps a metric percentage to a status key. When <paramref name="healthyWhenFull"/> is true the scale is inverted:
+    /// a full bar (e.g. all replicas ready) is healthy and an empty bar is critical. Otherwise high utilization is critical.
+    /// </summary>
+    internal static string BarStateFor(double percent, bool healthyWhenFull)
+    {
+        var clamped = Math.Clamp(percent, 0, 100);
+        return healthyWhenFull
+            ? clamped switch
+            {
+                >= 100 => "HEALTHY",
+                > 0 => "WARNING",
+                _ => "CRITICAL"
+            }
+            : clamped switch
+            {
+                >= 90 => "CRITICAL",
+                >= 70 => "WARNING",
+                _ => "HEALTHY"
+            };
+    }
 }
 
 public sealed record PulseMetricCard(
@@ -232,7 +285,8 @@ public sealed record PulseMetricCard(
     string Value,
     double Percent,
     string Badge,
-    string Tooltip);
+    string Tooltip,
+    bool HasBar = true);
 
 public sealed class ResourceValueRow : INotifyPropertyChanged
 {

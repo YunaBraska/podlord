@@ -301,6 +301,7 @@ public sealed class AppBehaviorTests
         Assert.Equal(TimeSpan.FromSeconds(1), MainWindowViewModel.InactiveBackgroundCheckInterval(5, null, now));
         Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(10, now, now));
         Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(10, now.AddMinutes(-2), now));
+        Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(0, now, now));
     }
 
     [Fact]
@@ -511,7 +512,7 @@ public sealed class AppBehaviorTests
 
             viewModel.ReloadSessions();
             var source = Assert.Single(viewModel.Sources);
-            source.FilterName = "Pods";
+            viewModel.SelectedPreset = preset;
             viewModel.RenameSavedFilter(preset, "Workloads");
 
             Assert.DoesNotContain(viewModel.SavedPresets, item => item.Name == "Pods");
@@ -670,12 +671,9 @@ public sealed class AppBehaviorTests
     {
         var directory = TempDirectory();
         var configA = Path.Combine(directory, "a.yaml");
-        var configB = Path.Combine(directory, "b.yaml");
         File.WriteAllText(configA, OneContextKubeconfig("http://127.0.0.1:1", "dev-a"));
-        File.WriteAllText(configB, OneContextKubeconfig("http://127.0.0.1:2", "dev-b"));
         var state = AppState.InMemoryWithConfigDirectory(directory);
         state.ImportKubeconfig(configA);
-        state.ImportKubeconfig(configB);
         using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
 
         viewModel.ReloadSessions();
@@ -944,7 +942,7 @@ public sealed class AppBehaviorTests
         Directory.CreateDirectory(scanRoot);
         File.WriteAllText(Path.Combine(scanRoot, "cluster.kube"), OneContextKubeconfig("http://127.0.0.1:1", "kube"));
         File.WriteAllText(Path.Combine(scanRoot, "cluster.config"), OneContextKubeconfig("http://127.0.0.1:2", "config"));
-        File.WriteAllText(Path.Combine(scanRoot, "notes.txt"), "ignore-me");
+        File.WriteAllText(Path.Combine(scanRoot, "notes.yaml"), "not: kubeconfig");
         var state = AppState.InMemoryWithConfigDirectory(directory);
         using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
 
@@ -1090,8 +1088,8 @@ public sealed class AppBehaviorTests
                 {
                     "/api/v1/pods" => """
                       {"items":[
-                        {"metadata":{"name":"known","namespace":"payments","uid":"1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}]}}},
-                        {"metadata":{"name":"missing","namespace":"payments","uid":"2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}]}}}
+                        {"metadata":{"name":"known","namespace":"payments","uid":"1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                        {"metadata":{"name":"missing","namespace":"payments","uid":"2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
                       ]}
                       """,
                     "/apis/metrics.k8s.io/v1beta1/pods" => """
@@ -1190,8 +1188,8 @@ public sealed class AppBehaviorTests
         var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
         var prodSession = state.ListSessions().Single(session => session.DisplayName == "prod");
 
-        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
-        await service.WarmResourceCacheAsync(new ResourceQuery(prodSession.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, Kind: "\"Pod\" \"Event\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        await service.WarmResourceCacheAsync(new ResourceQuery(prodSession.Id, Kind: "\"Pod\" \"Event\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
         var networkCallsAfterWarm = handler.Requests.Count;
 
         using var viewModel = new MainWindowViewModel(state, service);
@@ -2025,13 +2023,14 @@ public sealed class AppBehaviorTests
         viewModel.SelectedResource = Row("Running", "api", 0, "1/1");
         await viewModel.OpenSelectedResourceAsync();
         viewModel.SelectedInspectorTabIndex = 1;
-        viewModel.EditableYaml = viewModel.EditableYaml.Replace("server-first", "user-edit", StringComparison.Ordinal);
+        await viewModel.LoadFreshYamlAsync();
+        var serverFetchesBeforeEdit = detailRequests;
+        viewModel.EditableYaml = viewModel.EditableYaml.Replace("server-second", "user-edit", StringComparison.Ordinal);
 
         await viewModel.OpenSelectedResourceAsync();
 
-        Assert.Equal(1, detailRequests);
+        Assert.Equal(serverFetchesBeforeEdit, detailRequests);
         Assert.Contains("user-edit", viewModel.EditableYaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("server-second", viewModel.EditableYaml, StringComparison.Ordinal);
         Assert.Contains("paused", viewModel.StatusLine, StringComparison.OrdinalIgnoreCase);
     }
 

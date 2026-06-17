@@ -47,6 +47,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private FlatResourceRow? selectedResourceRow;
     private SourceStatusRow? selectedSource;
     private string? selectedRadarResourceId;
+    private readonly List<string> inspectorHistoryIds = new();
+    private int inspectorHistoryCursor = -1;
+    private bool suppressInspectorHistory;
+    private const int InspectorHistoryMax = 32;
     private string search = string.Empty;
     private string restartFilter = string.Empty;
     private string limitText = "256";
@@ -100,6 +104,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private bool isDetailLoading;
     private bool isYamlLoaded;
     private bool isAppFocused = true;
+    private bool isWindowVisible = true;
     private DateTimeOffset? lastSyncedAt;
     private DateTimeOffset lastUserActivityAt = DateTimeOffset.Now;
     private FilterPreset? selectedPreset;
@@ -458,6 +463,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string ImportActionText => T("action.import");
 
+    public string ImportFileTipText => T("sources.importFileTip");
+
     public string ManageActionText => T("action.manage");
 
     public string FiltersTitleText => T("filters.title");
@@ -655,6 +662,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
             selectedSession = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsInitialLoading));
             SessionDisplayName = value?.DisplayName ?? string.Empty;
             SessionNamespaceScope = value?.NamespaceScope.Label ?? string.Empty;
             OnPropertyChanged(nameof(ActiveSessionChipLabel));
@@ -662,8 +670,53 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             MarkUserActivity();
             CancelFocusLoad();
             StopLogTail();
+            RestoreLastFilterForSession();
             RestoreSelectedSessionCache();
             ScheduleRefresh();
+        }
+    }
+
+    private bool suppressFilterPersist;
+
+    private void RestoreLastFilterForSession()
+    {
+        if (selectedSession is null)
+        {
+            return;
+        }
+        var context = state.Snapshot().ImportedContexts.FirstOrDefault(c => c.ContextId == selectedSession.ContextId);
+        if (context is null)
+        {
+            return;
+        }
+        var preset = SavedPresets.FirstOrDefault(p => p.Name.Equals(context.FilterName, StringComparison.OrdinalIgnoreCase));
+        if (preset is null || (selectedPreset?.Name.Equals(preset.Name, StringComparison.OrdinalIgnoreCase) == true))
+        {
+            return;
+        }
+        suppressFilterPersist = true;
+        try
+        {
+            SelectedPreset = preset;
+        }
+        finally
+        {
+            suppressFilterPersist = false;
+        }
+    }
+
+    private void PersistFilterForSession(string filterName)
+    {
+        if (suppressFilterPersist || selectedSession is null || string.IsNullOrWhiteSpace(filterName))
+        {
+            return;
+        }
+        try
+        {
+            state.SetImportedContextFilter(selectedSession.ContextId, filterName);
+        }
+        catch (PodlordException)
+        {
         }
     }
 
@@ -823,6 +876,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             if (value is not null)
             {
                 ApplyPreset(value);
+                PersistFilterForSession(value.Name);
             }
         }
     }
@@ -1311,9 +1365,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref isRefreshing, value))
             {
                 NotifyResourceLogoStateChanged();
+                OnPropertyChanged(nameof(IsInitialLoading));
             }
         }
     }
+
+    public bool IsInitialLoading => SelectedSession is not null && cachedRows.Count == 0 && IsRefreshing;
 
     public bool IsInspectorVisible
     {
@@ -1349,6 +1406,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         get => selectedInspectorTabIndex;
         set
         {
+            var wasYaml = IsInspectorYamlActive;
             if (!SetField(ref selectedInspectorTabIndex, value))
             {
                 return;
@@ -1358,6 +1416,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             NotifyInspectorTabStateChanged();
             OnPropertyChanged(nameof(IsInspectorLogsActive));
             UpdateInspectorTabWork();
+            if (!wasYaml && IsInspectorYamlActive)
+            {
+                _ = LoadFreshYamlAsync();
+            }
         }
     }
 
@@ -1482,6 +1544,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         get => state.Settings().RadarAutoFollowAlerts;
         set => SaveSettings(state.Settings() with { RadarAutoFollowAlerts = value });
     }
+
+    public bool AutoHideEmptyColumnsSetting
+    {
+        get => state.Settings().AutoHideEmptyColumns;
+        set
+        {
+            SaveSettings(state.Settings() with { AutoHideEmptyColumns = value });
+            OnPropertyChanged(nameof(AutoHideEmptyColumnsSetting));
+            AutoHideEmptyColumnsRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public event EventHandler? AutoHideEmptyColumnsRequested;
 
     public string InactiveSyncSetting
     {
@@ -1636,22 +1711,95 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 return;
             }
 
-            if (Directory.Exists(value))
+            var resolved = ExpandUserPath(value);
+            if (Directory.Exists(resolved))
             {
-                var (files, contexts, failures) = ImportKubeconfigDirectory(value, maxDepth: 32);
+                var (files, contexts, failures) = ImportKubeconfigDirectory(resolved, maxDepth: 32);
+                ImportPath = string.Empty;
                 ReloadSessions();
                 StatusLine = $"Imported {contexts} context(s) from {files} kubeconfig file(s); ignored {failures} non-kubeconfig YAML file(s).";
                 return;
             }
 
-            var fileSummary = state.ImportKubeconfig(value);
+            var fileSummary = state.ImportKubeconfig(resolved);
+            ImportPath = string.Empty;
             ReloadSessions();
             StatusLine = $"Imported {fileSummary.Contexts.Count} context(s).";
+        }
+        catch (PodlordException ex) when (ex.Kind == PodlordErrorKind.EmptyKubeconfig)
+        {
+            StatusLine = ex.NextAction;
         }
         catch (PodlordException ex)
         {
             StatusLine = ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Imports one or more kubeconfig files or directories selected from the file/folder picker.
+    /// Files and directories are accepted together; directories are scanned recursively.
+    /// </summary>
+    public void ImportPaths(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            StatusLine = "No kubeconfig file or folder selected.";
+            return;
+        }
+
+        var files = 0;
+        var contexts = 0;
+        var failures = 0;
+        var errors = new List<string>();
+        foreach (var raw in paths)
+        {
+            var resolved = ExpandUserPath(raw.Trim());
+            try
+            {
+                if (Directory.Exists(resolved))
+                {
+                    var (dirFiles, dirContexts, dirFailures) = ImportKubeconfigDirectory(resolved, maxDepth: 32);
+                    files += dirFiles;
+                    contexts += dirContexts;
+                    failures += dirFailures;
+                    continue;
+                }
+
+                var summary = state.ImportKubeconfig(resolved);
+                files += 1;
+                contexts += summary.Contexts.Count;
+            }
+            catch (PodlordException ex)
+            {
+                failures += 1;
+                errors.Add(ex.Message);
+            }
+        }
+
+        ImportPath = string.Empty;
+        ReloadSessions();
+        StatusLine = errors.Count == 0
+            ? $"Imported {contexts} context(s) from {files} kubeconfig file(s); ignored {failures} non-kubeconfig file(s)."
+            : $"Imported {contexts} context(s) from {files} file(s); {failures} failed: {errors[0]}";
+    }
+
+    /// <summary>Expands a leading <c>~</c> and environment variables so typed paths like <c>~/.kube</c> resolve.</summary>
+    internal static string ExpandUserPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        var expanded = Environment.ExpandEnvironmentVariables(path);
+        if (expanded == "~" || expanded.StartsWith("~/", StringComparison.Ordinal) || expanded.StartsWith("~\\", StringComparison.Ordinal))
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            expanded = expanded.Length <= 1 ? home : Path.Combine(home, expanded[2..]);
+        }
+
+        return expanded;
     }
 
     public void ImportPasteNow()
@@ -1741,7 +1889,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private (int Files, int Contexts, int Failures) ImportKubeconfigDirectory(string directory, int maxDepth)
     {
-        var files = EnumerateYamlFiles(directory, maxDepth).ToList();
+        var files = EnumerateKubeconfigFiles(directory, maxDepth).ToList();
         var importedFiles = 0;
         var importedContexts = 0;
         var failures = 0;
@@ -1763,7 +1911,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return (importedFiles, importedContexts, failures);
     }
 
-    private static IEnumerable<string> EnumerateYamlFiles(string directory, int maxDepth)
+    private static IEnumerable<string> EnumerateKubeconfigFiles(string directory, int maxDepth)
     {
         var root = Path.GetFullPath(directory);
         var pending = new Stack<(string Directory, int Depth)>();
@@ -1788,9 +1936,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
             foreach (var file in files)
             {
-                var extension = Path.GetExtension(file);
-                if (extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase)
-                    || extension.Equals(".yml", StringComparison.OrdinalIgnoreCase))
+                if (LooksLikeKubeconfigFileName(file))
                 {
                     yield return file;
                 }
@@ -1827,6 +1973,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return value.Contains('\n')
                || value.StartsWith("apiVersion:", StringComparison.OrdinalIgnoreCase)
                || value.Contains("contexts:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Matches files that are plausibly kubeconfigs by name when scanning a directory: common YAML/kubeconfig
+    /// extensions, or the conventional extensionless <c>config</c>/<c>kubeconfig</c> file. Hidden files and
+    /// non-config artifacts (scripts, notes) are skipped; content is still validated on import.
+    /// </summary>
+    internal static bool LooksLikeKubeconfigFileName(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (name.Length == 0 || name.StartsWith('.'))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(name).ToLowerInvariant();
+        if (extension is ".yaml" or ".yml" or ".kubeconfig" or ".conf" or ".config" or ".cfg" or ".kube")
+        {
+            return true;
+        }
+
+        return extension.Length == 0
+               && (name.Equals("config", StringComparison.OrdinalIgnoreCase)
+                   || name.Equals("kubeconfig", StringComparison.OrdinalIgnoreCase));
     }
 
     private void ValidateEditableYaml()
@@ -2215,6 +2385,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateRequestWorkLabel();
     }
 
+    /// <summary>
+    /// Tracks whether the window is actually on screen (not minimized). The radar screensaver keeps running while
+    /// the window is merely inactive, but there is no point animating — and no point repainting — while minimized.
+    /// </summary>
+    public void SetWindowVisible(bool visible)
+    {
+        if (isWindowVisible == visible)
+        {
+            return;
+        }
+
+        isWindowVisible = visible;
+        UpdateRadarIdleTimer();
+    }
+
     public void ClosePortForwardTool()
     {
         IsPortForwardToolOpen = false;
@@ -2444,6 +2629,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 RenderSnapshot(cachedBeforeWarm);
             }
 
+            initialLoadStartedAt = DateTimeOffset.UtcNow;
+            initialLoadExpectedTotal = Math.Max(1, service.EstimateListRequestCount(warmQuery));
             var priority = background ? KubernetesRequestPriority.Background : KubernetesRequestPriority.UserVisible;
             var warm = await service.WarmResourceCacheAsync(warmQuery, priority).ConfigureAwait(true);
             if (!string.Equals(SelectedSession?.Id, sessionId, StringComparison.Ordinal))
@@ -2512,15 +2699,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             if (cached is not null)
             {
                 RenderDetail(cached);
-                if (IsInspectorYamlActive)
-                {
-                    StatusLine = "YAML tab is active; fresh detail refresh is paused to preserve edits.";
-                    return;
-                }
             }
             else
             {
                 RenderCachedResourceSummary(focusedResource);
+            }
+
+            var hasUserEdits = isYamlLoaded
+                && IsInspectorYamlActive
+                && !string.Equals(EditableYaml, DetailYaml, StringComparison.Ordinal);
+            if (cached is not null && hasUserEdits)
+            {
+                StatusLine = "YAML tab has unsaved edits; fresh detail refresh paused.";
+                return;
             }
 
             var detail = await service.GetResourceDetailAsync(identity, true, KubernetesRequestPriority.Foreground, cancellationToken).ConfigureAwait(true);
@@ -2568,6 +2759,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public bool HasKnownResourceReference(string value)
     {
         return ResolveKnownResourceReference(value) is not null;
+    }
+
+    public FlatResourceRow? ResolveResourceReferenceForPreview(string value)
+    {
+        return ResolveKnownResourceReference(value);
     }
 
     public bool OpenKnownResourceReference(string value)
@@ -2959,6 +3155,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void FocusResourceFromSurface(FlatResourceRow row, SelectionSurface surface, bool loadFresh = true)
     {
+        var resourceChanged = selectedResource?.Id != row.Id;
         selectingResource = true;
         try
         {
@@ -2976,7 +3173,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             MarkUserActivity();
             IsInspectorVisible = true;
             IsDetailLoading = loadFresh;
-            RenderCachedResourceSummary(row);
+            ResourceDetail? cachedDetail = null;
+            if (SelectedSession is not null)
+            {
+                try
+                {
+                    var cachedIdentity = new ResourceIdentity(SelectedSession.Id, row.Kind, row.Namespace, row.Name);
+                    cachedDetail = service.GetCachedResourceDetail(cachedIdentity);
+                }
+                catch (PodlordException)
+                {
+                }
+            }
+            if (cachedDetail is not null)
+            {
+                RenderDetail(cachedDetail);
+            }
+            else
+            {
+                RenderCachedResourceSummary(row);
+            }
             UpdateInspectorTabWork();
             UpdateRadarSelection();
             if (loadFresh)
@@ -2988,11 +3204,118 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 CancelFocusLoad();
                 YamlApplyStatus = "Radar grouping node selected from cache; no Kubernetes YAML apply target.";
             }
+            if (!suppressInspectorHistory)
+            {
+                PushInspectorHistory(row.Id);
+            }
+            if (resourceChanged && IsInspectorYamlActive && loadFresh)
+            {
+                _ = LoadFreshYamlAsync();
+            }
         }
         finally
         {
             selectingResource = false;
         }
+    }
+
+    private void PushInspectorHistory(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            return;
+        }
+        if (inspectorHistoryCursor >= 0
+            && inspectorHistoryCursor < inspectorHistoryIds.Count
+            && string.Equals(inspectorHistoryIds[inspectorHistoryCursor], id, StringComparison.Ordinal))
+        {
+            return;
+        }
+        if (inspectorHistoryCursor < 0 || inspectorHistoryCursor >= inspectorHistoryIds.Count - 1)
+        {
+            inspectorHistoryIds.Add(id);
+            inspectorHistoryCursor = inspectorHistoryIds.Count - 1;
+        }
+        else
+        {
+            var insertAt = inspectorHistoryCursor + 1;
+            inspectorHistoryIds.Insert(insertAt, id);
+            inspectorHistoryCursor = insertAt;
+        }
+        while (inspectorHistoryIds.Count > InspectorHistoryMax)
+        {
+            inspectorHistoryIds.RemoveAt(0);
+            if (inspectorHistoryCursor > 0)
+            {
+                inspectorHistoryCursor--;
+            }
+        }
+        NotifyInspectorHistoryChanged();
+    }
+
+    private void NotifyInspectorHistoryChanged()
+    {
+        OnPropertyChanged(nameof(CanGoBackInspector));
+        OnPropertyChanged(nameof(CanGoForwardInspector));
+    }
+
+    public bool CanGoBackInspector => FindPriorReachable(-1) >= 0;
+
+    public bool CanGoForwardInspector => FindPriorReachable(+1) >= 0;
+
+    private int FindPriorReachable(int step)
+    {
+        for (var i = inspectorHistoryCursor + step; i >= 0 && i < inspectorHistoryIds.Count; i += step)
+        {
+            if (ResolveCachedRowById(inspectorHistoryIds[i]) is not null)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private FlatResourceRow? ResolveCachedRowById(string id)
+    {
+        return cachedRows.FirstOrDefault(row => string.Equals(row.Id, id, StringComparison.Ordinal));
+    }
+
+    public async Task GoBackInspectorAsync()
+    {
+        await StepInspectorHistoryAsync(-1).ConfigureAwait(true);
+    }
+
+    public async Task GoForwardInspectorAsync()
+    {
+        await StepInspectorHistoryAsync(+1).ConfigureAwait(true);
+    }
+
+    private Task StepInspectorHistoryAsync(int step)
+    {
+        var target = FindPriorReachable(step);
+        if (target < 0)
+        {
+            return Task.CompletedTask;
+        }
+        var row = ResolveCachedRowById(inspectorHistoryIds[target]);
+        if (row is null)
+        {
+            return Task.CompletedTask;
+        }
+        inspectorHistoryCursor = target;
+        suppressInspectorHistory = true;
+        try
+        {
+            FocusResourceFromSurface(row, SelectionSurface.Resource);
+            focusDebounce?.Cancel();
+            _ = OpenSelectedResourceAsync();
+        }
+        finally
+        {
+            suppressInspectorHistory = false;
+            NotifyInspectorHistoryChanged();
+        }
+        return Task.CompletedTask;
     }
 
     private void NotifyInspectorTargetChanged()
@@ -3175,9 +3498,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         SelectedGraphNode = node;
         if (node.Resource is null)
         {
+            selectedResource = null;
             selectedResourceRow = null;
             selectedRadarResourceId = null;
-            OnPropertyChanged(nameof(SelectedResourceRow));
+            NotifyInspectorTargetChanged();
             UpdateRadarSelection();
             StatusLine = $"{node.Kind}/{node.Name} is a graph grouping node.";
             return;
@@ -3390,8 +3714,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ApplyLocalFilter();
     }
 
+    private bool disposed;
+
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+        disposed = true;
         refreshDebounce?.Cancel();
         filterDebounce?.Cancel();
         focusDebounce?.Cancel();
@@ -3409,6 +3740,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         focusLoad?.Dispose();
         logTail?.Dispose();
         sourceRefreshDebounce?.Dispose();
+        refreshDebounce = null;
+        filterDebounce = null;
+        focusDebounce = null;
+        focusLoad = null;
+        logTail = null;
+        sourceRefreshDebounce = null;
         DisposeSourceWatchers();
         lifetime.Dispose();
     }
@@ -3417,6 +3754,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         OnPropertyChanged(nameof(LastSyncedLabel));
         OnPropertyChanged(nameof(FooterLine));
+        UpdateRequestWorkLabel();
     }
 
     private void RestoreSelectedSessionCache()
@@ -3618,6 +3956,48 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return ResourceFilterMatcher.ParseHumanDuration(row.LastChange) is { } changed
             ? changed <= ttl
             : ResourceFilterMatcher.ParseHumanDuration(row.Age) is { } age && age <= ttl;
+    }
+
+    public async Task LoadFreshYamlAsync()
+    {
+        var focusedResource = SelectedResource;
+        if (focusedResource is null)
+        {
+            return;
+        }
+        var identity = new ResourceIdentity(
+            SelectedSession?.Id,
+            focusedResource.Kind,
+            focusedResource.Namespace,
+            focusedResource.Name);
+        if (string.IsNullOrWhiteSpace(DetailYaml) || DetailYaml.StartsWith("Loading", StringComparison.OrdinalIgnoreCase))
+        {
+            DetailYaml = "Loading fresh YAML through the Kubernetes request queue...";
+        }
+        YamlApplyStatus = "Fetching fresh YAML from the cluster...";
+        try
+        {
+            var detail = await service.GetResourceDetailAsync(identity, true, KubernetesRequestPriority.Foreground, lifetime.Token).ConfigureAwait(true);
+            if (SelectedResource?.Id != focusedResource.Id)
+            {
+                return;
+            }
+            DetailYaml = detail.Yaml;
+            isYamlLoaded = true;
+            YamlApplyStatus = "Fresh YAML loaded. Edit carefully; server-side apply uses field manager podlord.";
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (PodlordException ex)
+        {
+            if (SelectedResource?.Id != focusedResource.Id)
+            {
+                return;
+            }
+            DetailYaml = $"# Could not load YAML: {ex.Message}";
+            YamlApplyStatus = ex.Message;
+        }
     }
 
     private void RenderDetail(ResourceDetail detail, bool forceYamlRefresh = false)
@@ -3954,7 +4334,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 ratio,
                 true,
                 CleanSuggestion(suggestion),
-                SuggestionRatioPercent(item.Label, item.Value, suggestion) ?? 0);
+                SuggestionRatioPercent(item.Label, item.Value, suggestion) ?? 0,
+                IsReadinessLabel(item.Label));
         }
 
         if (item.Label == "Restarts" && int.TryParse(item.Value, out var restarts))
@@ -3973,6 +4354,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private static string CleanSuggestion(string suggestion)
     {
         return suggestion == "-" ? string.Empty : suggestion;
+    }
+
+    /// <summary>Readiness/availability ratios are healthy when full, unlike utilization ratios.</summary>
+    internal static bool IsReadinessLabel(string label)
+    {
+        return label is "Ready" or "Available" or "Up-to-date" or "Availability" or "Readiness";
     }
 
     private static double? SuggestionRatioPercent(string label, string value, string suggestion)
@@ -4395,7 +4782,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 context.ContextId,
                 context.OwnedKubeconfigPath ?? string.Empty,
                 context.Server ?? string.Empty,
-                ResolveFilterName(context.FilterName),
+                string.IsNullOrWhiteSpace(context.FilterName) ? FilterPresetStore.DefaultFilterName : context.FilterName.Trim(),
                 RenameSourceRow,
                 AssignSourceRowFilter);
             sourceRow.PropertyChanged += SourceRowPropertyChanged;
@@ -5344,6 +5731,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(SourcesTitleText),
         nameof(ImportPlaceholderText),
         nameof(ImportActionText),
+        nameof(ImportFileTipText),
         nameof(ManageActionText),
         nameof(FiltersTitleText),
         nameof(ProblemsText),
@@ -5556,6 +5944,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateEventSearchMatches(resetToFirstMatch: true);
         OnPropertyChanged(nameof(ResourceCountLabel));
         OnPropertyChanged(nameof(FooterLine));
+        OnPropertyChanged(nameof(IsInitialLoading));
         NotifyResourceLogoStateChanged();
         StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
     }
@@ -5596,25 +5985,44 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             memoryLimit = pods.Sum(row => row.Pulse.MemoryLimitBytes ?? 0);
         }
 
+        var storageUsed = pulseRows.Sum(row => row.Pulse.StorageUsedBytes ?? 0);
+        var storageLimit = pulseRows.Sum(row => row.Pulse.StorageLimitBytes ?? 0);
         var cpuPercent = Percent(cpuUsed, cpuLimit);
         var memoryPercent = Percent(memoryUsed, memoryLimit);
+        var storagePercent = Percent(storageUsed, storageLimit);
         var scope = PulseScopeTooltip(pulseRows, allRows.Count);
         var cpuSummary = PulseCpuSummary(cpuUsed, cpuLimit);
         var memorySummary = PulseMemorySummary(memoryUsed, memoryLimit);
-        var metrics = new List<PulseMetricCard>
+        var storageSummary = PulseMemorySummary(storageUsed, storageLimit);
+        var metrics = new List<PulseMetricCard>();
+
+        if (cpuUsed > 0 || cpuLimit > 0)
         {
-            new("CPU", cpuSummary, cpuPercent, string.Empty, PulseMetricTooltip("CPU", cpuSummary, scope)),
-            new("Memory", memorySummary, memoryPercent, string.Empty, PulseMetricTooltip("Memory", memorySummary, scope)),
-            new("Pods", pods.Count.ToString(CultureInfo.InvariantCulture), 0, string.Empty, PulseMetricTooltip("Pods", pods.Count.ToString(CultureInfo.InvariantCulture), scope)),
-            new("Nodes", nodes.Count.ToString(CultureInfo.InvariantCulture), 0, string.Empty, PulseMetricTooltip("Nodes", nodes.Count.ToString(CultureInfo.InvariantCulture), scope))
-        };
+            metrics.Add(new PulseMetricCard("CPU", cpuSummary, cpuPercent, string.Empty, PulseMetricTooltip("CPU", cpuSummary, scope)));
+        }
+        if (memoryUsed > 0 || memoryLimit > 0)
+        {
+            metrics.Add(new PulseMetricCard("Memory", memorySummary, memoryPercent, string.Empty, PulseMetricTooltip("Memory", memorySummary, scope)));
+        }
+        if (storageUsed > 0 || storageLimit > 0)
+        {
+            metrics.Add(new PulseMetricCard("Storage", storageSummary, storagePercent, string.Empty, PulseMetricTooltip("Storage", storageSummary, scope)));
+        }
+        if (pods.Count > 0)
+        {
+            metrics.Add(new PulseMetricCard("Pods", pods.Count.ToString(CultureInfo.InvariantCulture), 0, string.Empty, PulseMetricTooltip("Pods", pods.Count.ToString(CultureInfo.InvariantCulture), scope), HasBar: false));
+        }
+        if (nodes.Count > 0)
+        {
+            metrics.Add(new PulseMetricCard("Nodes", nodes.Count.ToString(CultureInfo.InvariantCulture), 0, string.Empty, PulseMetricTooltip("Nodes", nodes.Count.ToString(CultureInfo.InvariantCulture), scope), HasBar: false));
+        }
 
         var networkIn = pulseRows.Sum(row => row.Pulse.NetworkInBytesPerSecond ?? 0);
         var networkOut = pulseRows.Sum(row => row.Pulse.NetworkOutBytesPerSecond ?? 0);
         if (pulseRows.Any(row => row.Pulse.NetworkInBytesPerSecond is not null || row.Pulse.NetworkOutBytesPerSecond is not null))
         {
             var networkSummary = $"↓{FormatBytes(networkIn)}/s ↑{FormatBytes(networkOut)}/s";
-            metrics.Add(new PulseMetricCard("Network", networkSummary, 0, string.Empty, PulseMetricTooltip("Network", networkSummary, scope)));
+            metrics.Add(new PulseMetricCard("Network", networkSummary, 0, string.Empty, PulseMetricTooltip("Network", networkSummary, scope), HasBar: false));
         }
 
         SyncCollection(ClusterPulseItems, metrics);
@@ -5820,17 +6228,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         const int tickCount = 30;
         var ordered = segments.OrderBy(HealthSegmentRank).ToList();
         var heights = ordered.ToDictionary(segment => segment.State, segment => segment.Percent, StringComparer.Ordinal);
-        var extra = 0d;
-        foreach (var segment in ordered.Where(segment => segment.State is "WARNING" or "CRITICAL" && segment.Percent > 0 && segment.Percent < 8))
-        {
-            extra += 8 - segment.Percent;
-            heights[segment.State] = 8;
-        }
-
-        if (extra > 0 && heights.TryGetValue("HEALTHY", out var healthy))
-        {
-            heights["HEALTHY"] = Math.Max(0, healthy - extra);
-        }
 
         var ticksByState = ordered
             .ToDictionary(
@@ -6589,7 +6986,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void UpdateRadarIdleTimer()
     {
-        if (!isAppFocused || !IsRadarIdle || !state.Settings().ScreensaverEnabled)
+        // The radar screensaver intentionally keeps animating while the window is inactive — that is when a
+        // screensaver is most useful. It stops only when there is real radar data, the setting is disabled, or
+        // the window is minimized (nothing is on screen to animate, so there is no reason to repaint).
+        if (!IsRadarIdle || !state.Settings().ScreensaverEnabled || !isWindowVisible)
         {
             radarIdleTimer.Stop();
         }
@@ -6793,6 +7193,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void ScheduleRefresh()
     {
+        if (disposed)
+        {
+            return;
+        }
         refreshDebounce?.Cancel();
         refreshDebounce?.Dispose();
         refreshDebounce = new CancellationTokenSource();
@@ -6962,18 +7366,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var minutes = state.Settings().InactiveSyncMinutes;
-        if (minutes <= 0)
+        if (minutes > 0
+            && (lastSyncedAt is null || DateTimeOffset.Now - lastSyncedAt.Value >= TimeSpan.FromMinutes(minutes)))
         {
-            return false;
+            return true;
         }
 
-        return lastSyncedAt is null || DateTimeOffset.Now - lastSyncedAt.Value >= TimeSpan.FromMinutes(minutes);
+        return lastSyncedAt is null || DateTimeOffset.Now - lastSyncedAt.Value >= MinimumBackgroundCadence;
     }
 
     private bool IsInactiveForBackgroundSync(TimeSpan idle)
     {
         return !isAppFocused || idle >= TimeSpan.FromMinutes(5);
     }
+
+    private static readonly TimeSpan MinimumBackgroundCadence = TimeSpan.FromSeconds(60);
 
     internal static TimeSpan InactiveBackgroundCheckInterval(
         int inactiveSyncMinutes,
@@ -6982,7 +7389,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         if (inactiveSyncMinutes <= 0)
         {
-            return TimeSpan.FromSeconds(60);
+            return MinimumBackgroundCadence;
         }
 
         if (lastSynced is null)
@@ -6996,7 +7403,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             return TimeSpan.FromSeconds(1);
         }
 
-        return remaining < TimeSpan.FromSeconds(60) ? remaining : TimeSpan.FromSeconds(60);
+        return remaining < MinimumBackgroundCadence ? remaining : MinimumBackgroundCadence;
     }
 
     internal static TimeSpan BackgroundRefreshIntervalFor(
@@ -7053,6 +7460,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateRequestWorkLabel();
     }
 
+    private DateTimeOffset initialLoadStartedAt = DateTimeOffset.MinValue;
+    private int initialLoadExpectedTotal;
+
     private void UpdateRequestWorkLabel()
     {
         var telemetry = service.RequestTelemetry();
@@ -7061,12 +7471,74 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             : string.Empty;
         RadarWaterActivityRate = telemetry.RequestsLastMinute;
         RequestWorkLabel = $"API {telemetry.RequestsLastMinute}/min {telemetry.RequestsPerSecond:0.00}/s Q{telemetry.QueuedRequests}{backoff}";
+        if (IsInitialLoading)
+        {
+            UpdateLoadingHealthSegments();
+        }
+        OnPropertyChanged(nameof(InitialLoadPercent));
         if (IsSettingsWorkspace)
         {
             UpdateRequestAuditRows();
         }
 
         OnPropertyChanged(nameof(FooterLine));
+    }
+
+    public double InitialLoadPercent
+    {
+        get
+        {
+            if (!IsInitialLoading || initialLoadExpectedTotal <= 0)
+            {
+                return 0;
+            }
+            var completed = service.CompletedRequestsSinceStart(initialLoadStartedAt);
+            return Math.Clamp(completed / (double)initialLoadExpectedTotal * 100d, 0d, 100d);
+        }
+    }
+
+    internal void SetInitialLoadProgressForTests(DateTimeOffset start, int expectedTotal)
+    {
+        initialLoadStartedAt = start;
+        initialLoadExpectedTotal = expectedTotal;
+    }
+
+    internal void SimulateTimerTickForTests()
+    {
+        RefreshTimeLabels();
+    }
+
+    internal void UpdateLoadingHealthSegments(int _ignored = 0)
+    {
+        const int tickCount = 30;
+        var percent = InitialLoadPercent;
+        var lit = (int)Math.Round(percent / 100d * tickCount);
+        lit = Math.Clamp(lit, 0, tickCount);
+        var litBrush = AppThemeCatalog.StatusBrush("HEALTHY");
+        var unlitBrush = AppThemeCatalog.StatusBrush("UNKNOWN");
+        var tickHeight = 100d / tickCount;
+
+        if (HealthSegments.Count != tickCount)
+        {
+            HealthSegments.Clear();
+            for (var i = 0; i < tickCount; i++)
+            {
+                HealthSegments.Add(new HealthSegmentViewModel("PENDING", 0, 0, tickHeight, unlitBrush));
+            }
+        }
+
+        for (var i = 0; i < tickCount; i++)
+        {
+            var fromBottom = tickCount - i;
+            var isLit = fromBottom <= lit;
+            var desiredState = isLit ? "LOADING" : "PENDING";
+            var desiredBrush = isLit ? litBrush : unlitBrush;
+            if (HealthSegments[i].State != desiredState || !ReferenceEquals(HealthSegments[i].Brush, desiredBrush))
+            {
+                HealthSegments[i] = new HealthSegmentViewModel(desiredState, 0, 0, tickHeight, desiredBrush);
+            }
+        }
+        HealthSummary = $"Loading resources from cluster… {(int)percent}% ({service.CompletedRequestsSinceStart(initialLoadStartedAt)}/{initialLoadExpectedTotal})";
     }
 
     private void RefreshPortForwardBadges()

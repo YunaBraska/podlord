@@ -99,7 +99,8 @@ public sealed record Settings(
     int RequestHardLimitPerMinute = 0,
     string ThemeVariant = "dark",
     string Language = "system",
-    IReadOnlyList<TableColumnLayout>? TableColumnLayouts = null)
+    IReadOnlyList<TableColumnLayout>? TableColumnLayouts = null,
+    bool AutoHideEmptyColumns = false)
 {
     public static Settings Default { get; } = new(
         Theme: "Sirocco Command",
@@ -125,7 +126,8 @@ public sealed record TableColumnLayout(
     string TableId,
     string ColumnId,
     int DisplayIndex,
-    bool IsVisible);
+    bool IsVisible,
+    double Width = 0d);
 
 public sealed record ImportedContext(
     string ContextId,
@@ -292,6 +294,27 @@ public sealed record FlatResourceRow(
     public string MetricSourceBadge => Pulse.SourceBadge;
 
     public string MetricTooltip => Pulse.Tooltip;
+
+    public string AgeDisplay => FormatAgeWithSpaces(Age);
+
+    public static string FormatAgeWithSpaces(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return raw;
+        }
+
+        var sb = new System.Text.StringBuilder(raw.Length + 4);
+        for (var i = 0; i < raw.Length; i++)
+        {
+            sb.Append(raw[i]);
+            if (i + 1 < raw.Length && char.IsLetter(raw[i]) && char.IsDigit(raw[i + 1]))
+            {
+                sb.Append(' ');
+            }
+        }
+        return sb.ToString();
+    }
 }
 
 public sealed record ResourcePulse(

@@ -330,7 +330,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("SelectedSettingsTabIndex = 4;", viewModel, StringComparison.Ordinal);
         Assert.Contains("SelectedItem=\"{Binding SelectedSource}\"", window, StringComparison.Ordinal);
         Assert.Contains("Binding=\"{Binding Context, Mode=TwoWay, UpdateSourceTrigger=LostFocus}\"", window, StringComparison.Ordinal);
-        Assert.Contains("SelectedItem=\"{Binding FilterName, Mode=TwoWay}\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectedItem=\"{Binding FilterName, Mode=TwoWay}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("IsVisible=\"{Binding IsSourcesWorkspace}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"WARNINGS\"", window, StringComparison.Ordinal);
         Assert.Contains("OpenSourcesSettings();", codeBehind, StringComparison.Ordinal);
@@ -445,8 +445,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("flyout.ShowAt(button)", codeBehind, StringComparison.Ordinal);
         Assert.Contains("DataGridColumnHeader.PointerPressedEvent", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ColumnHeaderPointerMoved", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("IsOnColumnResizeEdge", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("position.X <= edgeWidth || position.X >= width - edgeWidth", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ColumnResizeEdge", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("position.X >= width - edgeWidth", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ColumnForHeader", codeBehind, StringComparison.Ordinal);
         Assert.Contains("suppressNextHeaderSortClick", codeBehind, StringComparison.Ordinal);
         Assert.Contains("OpenColumnVisibilityMenu", codeBehind, StringComparison.Ordinal);
@@ -612,9 +612,9 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml", app, StringComparison.Ordinal);
         Assert.Contains("Avalonia.AvaloniaEdit", File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "Podlord.App.csproj")), StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding Cluster, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"{Binding Node, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
+        Assert.Contains("NodeReferenceConverter", window, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding ImageSummary, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"{Binding Owner, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ResourceLinkPointerPressed", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Foreground=\"#050806\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Background=\"{Binding Cluster, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("StackPanel Spacing=\"10\" Width=\"760\"", window, StringComparison.Ordinal);
@@ -662,7 +662,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("BackgroundRefreshIntervalFor", viewModel, StringComparison.Ordinal);
         Assert.Contains("return hasCachedRows ? TimeSpan.FromMinutes(4) : TimeSpan.FromSeconds(45);", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("radarWaterTimer", viewModel, StringComparison.Ordinal);
-        Assert.Contains("if (!isAppFocused || !IsRadarIdle || !state.Settings().ScreensaverEnabled)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("if (!IsRadarIdle || !state.Settings().ScreensaverEnabled || !isWindowVisible)", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("private const double RadarWaterGridStep = RadarGridStep * 2;", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("VisibleRadarWaterCells", viewModel, StringComparison.Ordinal);
         Assert.Contains("RadarLifeBrushes", viewModel, StringComparison.Ordinal);
