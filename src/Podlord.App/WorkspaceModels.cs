@@ -360,10 +360,40 @@ public sealed class ResourceValueRow : INotifyPropertyChanged
 
     private static string Preview(string value)
     {
-        var compact = value
-            .Replace("\r\n", "\\n", StringComparison.Ordinal)
-            .Replace("\n", "\\n", StringComparison.Ordinal);
+        var compact = NormalizeVisibleWhitespace(value);
         return compact.Length <= 180 ? compact : compact[..177] + "...";
+    }
+
+    internal static string NormalizeVisibleWhitespace(string value)
+    {
+        if (value.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var normalized = value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Replace("\t", "    ", StringComparison.Ordinal);
+        var builder = new System.Text.StringBuilder(normalized.Length);
+        foreach (var character in normalized)
+        {
+            if (!char.IsControl(character) || character == '\n')
+            {
+                builder.Append(character);
+                continue;
+            }
+
+            builder.Append(character switch
+            {
+                '\0' => "\\0",
+                '\b' => "\\b",
+                '\f' => "\\f",
+                _ => $"\\u{(int)character:x4}"
+            });
+        }
+
+        return builder.ToString();
     }
 
     public void Hide()

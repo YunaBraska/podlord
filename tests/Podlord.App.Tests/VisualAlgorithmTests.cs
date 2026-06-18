@@ -349,6 +349,12 @@ public sealed class VisualAlgorithmTests
         Assert.True(visible.HasPlainCopy);
         Assert.False(visible.HasBase64Copy);
 
+        var rawStructuredValue = ".:53 {\r\n\terrors\n\thealth {\r\n\t\tlameduck 5s\r\n\t}\n}\u0001";
+        var structured = new ResourceValueRow("Corefile", rawStructuredValue, sensitive: false, base64Encoded: false);
+
+        Assert.Equal(".:53 {\n    errors\n    health {\n        lameduck 5s\n    }\n}\\u0001", structured.DisplayValue);
+        Assert.Equal(rawStructuredValue, structured.PreferredCopyValue);
+
         var port = new PortForwardTaskViewModel("pf", "session", "Pod", "api", "default", 8080, 18080, "native", "starting");
         changes.Clear();
         port.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
