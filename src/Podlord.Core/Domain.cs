@@ -245,7 +245,7 @@ public sealed record FlatResourceRow(
 
     public string CpuMetricDetail => Pulse.CpuMetricDetail;
 
-    public bool HasCpuMetricBar => Pulse.CpuLimitMillicores is > 0;
+    public bool HasCpuMetricBar => Pulse.CpuLimitMillicores is > 0 && Pulse.CpuMillicores is > 0;
 
     public bool HasCpuMetricInfo => Pulse.CpuMillicores is not null || Pulse.CpuLimitMillicores is > 0;
 
@@ -257,9 +257,9 @@ public sealed record FlatResourceRow(
 
     public string MemoryMetricDetail => Pulse.MemoryMetricDetail;
 
-    public bool HasMemoryMetricBar => Pulse.MemoryLimitBytes is > 0;
+    public bool HasMemoryMetricBar => Pulse.MemoryLimitBytes is > 0 && Pulse.MemoryBytes is > 0;
 
-    public bool HasStorageMetricBar => Pulse.StorageLimitBytes is > 0;
+    public bool HasStorageMetricBar => Pulse.StorageLimitBytes is > 0 && Pulse.StorageUsedBytes is > 0;
 
     public string StoragePercentDisplay => Pulse.StoragePercentDisplay;
 

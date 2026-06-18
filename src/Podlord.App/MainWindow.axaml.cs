@@ -1102,7 +1102,40 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+        var hadActiveDrag = isHeaderDragActive;
         EndColumnHeaderDrag(e);
+
+        if (hadActiveDrag || suppressNextHeaderSortClick || e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left)
+        {
+            return;
+        }
+        if (e.Source is not Visual visual)
+        {
+            return;
+        }
+        var header = visual as DataGridColumnHeader
+                     ?? visual.GetVisualAncestors().OfType<DataGridColumnHeader>().FirstOrDefault();
+        if (header is null)
+        {
+            return;
+        }
+        var pos = e.GetCurrentPoint(header).Position;
+        if (ColumnResizeEdge(header, pos) != ColumnResizeEdgeKind.None)
+        {
+            return;
+        }
+        var button = header.GetVisualDescendants().OfType<Button>().FirstOrDefault(candidate => candidate.Classes.Contains("columnPlaque"));
+        if (button is null)
+        {
+            return;
+        }
+        var clickTarget = visual as Button ?? visual.GetVisualAncestors().OfType<Button>().FirstOrDefault();
+        if (ReferenceEquals(clickTarget, button))
+        {
+            return;
+        }
+        var args = new RoutedEventArgs(Button.ClickEvent);
+        button.RaiseEvent(args);
     }
 
     private void ColumnHeaderPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)

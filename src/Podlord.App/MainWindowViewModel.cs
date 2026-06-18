@@ -1440,7 +1440,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public bool IsSelectedResourceKeyValueResource => IsSelectedKubernetesResource
         && SelectedResource?.Kind is "ConfigMap" or "Secret";
 
-    public bool IsSelectedResourceLoggable => IsSelectedKubernetesResource && SelectedResource?.Kind == "Pod";
+    public bool IsSelectedResourceLoggable => IsSelectedKubernetesResource
+        && SelectedResource is { Kind: "Pod" } pod
+        && !IsFinishedPodStatus(pod.Status);
+
+    private static bool IsFinishedPodStatus(string? status)
+    {
+        return status is "Succeeded" or "Failed" or "Completed" or "Evicted" or "OOMKilled";
+    }
 
     public bool IsInspectorOverviewActive => SelectedInspectorTabIndex == 0;
 

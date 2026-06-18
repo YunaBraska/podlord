@@ -661,21 +661,23 @@
                             BorderBrush="{StaticResource PlPlaqueEdgeBrush}"
                             BorderThickness="0,0,1,1">
                         <Panel>
-                            <ContentPresenter Name="PART_ContentPresenter"
-                                              Content="{TemplateBinding Content}"
-                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                              HorizontalContentAlignment="Stretch"
-                                              VerticalContentAlignment="Center"
-                                              Margin="0"
-                                              Padding="10,0,18,0" />
-                            <TextBlock Name="BuiltInSortGlyph"
-                                       HorizontalAlignment="Right"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,6,0"
-                                       FontSize="11"
-                                       Foreground="{StaticResource PlBlueGlowBrush}"
-                                       IsHitTestVisible="False"
-                                       IsVisible="False" />
+                            <DockPanel Margin="10,0,10,0" LastChildFill="True">
+                                <TextBlock Name="BuiltInSortGlyph"
+                                           DockPanel.Dock="Right"
+                                           VerticalAlignment="Center"
+                                           Margin="6,0,0,0"
+                                           FontSize="13"
+                                           Foreground="{StaticResource PlBlueGlowBrush}"
+                                           IsHitTestVisible="False"
+                                           IsVisible="False" />
+                                <ContentPresenter Name="PART_ContentPresenter"
+                                                  Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalContentAlignment="Stretch"
+                                                  VerticalContentAlignment="Center"
+                                                  Margin="0"
+                                                  Padding="0" />
+                            </DockPanel>
                             <Rectangle HorizontalAlignment="Left"
                                        Width="6"
                                        Cursor="SizeWestEast"

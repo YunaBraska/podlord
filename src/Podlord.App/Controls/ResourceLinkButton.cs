@@ -1,7 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.VisualTree;
+using System.Linq;
 
 namespace Podlord.App;
 
@@ -54,5 +57,25 @@ public sealed class ResourceLinkButton : Button
         copy.Tag = Tag;
         PropertyChanged += SyncTags;
         ContextMenu = menu;
+    }
+
+    protected override void OnPointerEntered(PointerEventArgs e)
+    {
+        base.OnPointerEntered(e);
+        SetUnderline(true);
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        SetUnderline(false);
+    }
+
+    private void SetUnderline(bool on)
+    {
+        foreach (var text in this.GetVisualDescendants().OfType<TextBlock>())
+        {
+            text.TextDecorations = on ? TextDecorations.Underline : null;
+        }
     }
 }
