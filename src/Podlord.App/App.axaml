@@ -667,7 +667,15 @@
                                               HorizontalContentAlignment="Stretch"
                                               VerticalContentAlignment="Center"
                                               Margin="0"
-                                              Padding="10,0,10,0" />
+                                              Padding="10,0,18,0" />
+                            <TextBlock Name="BuiltInSortGlyph"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,6,0"
+                                       FontSize="11"
+                                       Foreground="{StaticResource PlBlueGlowBrush}"
+                                       IsHitTestVisible="False"
+                                       IsVisible="False" />
                             <Rectangle HorizontalAlignment="Left"
                                        Width="6"
                                        Cursor="SizeWestEast"
@@ -680,6 +688,14 @@
                     </Border>
                 </ControlTemplate>
             </Setter>
+        </Style>
+        <Style Selector="DataGridColumnHeader:sortascending /template/ TextBlock#BuiltInSortGlyph">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Text" Value="▲" />
+        </Style>
+        <Style Selector="DataGridColumnHeader:sortdescending /template/ TextBlock#BuiltInSortGlyph">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Text" Value="▼" />
         </Style>
         <Style Selector="DataGridCell">
             <Setter Property="Background" Value="{StaticResource PlTableBgBrush}" />
