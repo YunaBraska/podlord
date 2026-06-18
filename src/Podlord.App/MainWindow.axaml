@@ -673,17 +673,17 @@
                                                    Foreground="{StaticResource PlTextBrush}"
                                                    HorizontalAlignment="Right"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <ProgressBar Grid.Row="1"
-                                                     IsVisible="{Binding HasCpuMetricBar}"
-                                                     Minimum="0"
-                                                     Maximum="100"
-                                                     Value="{Binding Pulse.CpuPercent}"
-                                                     Foreground="{Binding Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}"
-                                                     Height="5"
-                                                     MinWidth="0"
-                                                     HorizontalAlignment="Stretch"
-                                                     Margin="0,2,0,0"
-                                                     ClipToBounds="True" />
+                                        <Grid Grid.Row="1" Margin="0,2,0,0" IsVisible="{Binding HasCpuMetricBar}">
+                                            <ProgressBar Minimum="0"
+                                                         Maximum="100"
+                                                         Value="{Binding Pulse.CpuPercent}"
+                                                         Foreground="{Binding Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}"
+                                                         Height="5"
+                                                         MinWidth="0"
+                                                         HorizontalAlignment="Stretch"
+                                                         ClipToBounds="True" />
+                                            <Border Width="2" Height="9" HorizontalAlignment="Right" VerticalAlignment="Center" Background="{StaticResource PlGoldBrightBrush}" IsHitTestVisible="False" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -705,17 +705,17 @@
                                                    Foreground="{StaticResource PlTextBrush}"
                                                    HorizontalAlignment="Right"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <ProgressBar Grid.Row="1"
-                                                     IsVisible="{Binding HasMemoryMetricBar}"
-                                                     Minimum="0"
-                                                     Maximum="100"
-                                                     Value="{Binding Pulse.MemoryPercent}"
-                                                     Foreground="{Binding Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}"
-                                                     Height="5"
-                                                     MinWidth="0"
-                                                     HorizontalAlignment="Stretch"
-                                                     Margin="0,2,0,0"
-                                                     ClipToBounds="True" />
+                                        <Grid Grid.Row="1" Margin="0,2,0,0" IsVisible="{Binding HasMemoryMetricBar}">
+                                            <ProgressBar Minimum="0"
+                                                         Maximum="100"
+                                                         Value="{Binding Pulse.MemoryPercent}"
+                                                         Foreground="{Binding Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}"
+                                                         Height="5"
+                                                         MinWidth="0"
+                                                         HorizontalAlignment="Stretch"
+                                                         ClipToBounds="True" />
+                                            <Border Width="2" Height="9" HorizontalAlignment="Right" VerticalAlignment="Center" Background="{StaticResource PlGoldBrightBrush}" IsHitTestVisible="False" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -737,17 +737,17 @@
                                                    Foreground="{StaticResource PlTextBrush}"
                                                    HorizontalAlignment="Right"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <ProgressBar Grid.Row="1"
-                                                     IsVisible="{Binding HasStorageMetricBar}"
-                                                     Minimum="0"
-                                                     Maximum="100"
-                                                     Value="{Binding Pulse.StoragePercent}"
-                                                     Foreground="{Binding Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}"
-                                                     Height="5"
-                                                     MinWidth="0"
-                                                     HorizontalAlignment="Stretch"
-                                                     Margin="0,2,0,0"
-                                                     ClipToBounds="True" />
+                                        <Grid Grid.Row="1" Margin="0,2,0,0" IsVisible="{Binding HasStorageMetricBar}">
+                                            <ProgressBar Minimum="0"
+                                                         Maximum="100"
+                                                         Value="{Binding Pulse.StoragePercent}"
+                                                         Foreground="{Binding Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}"
+                                                         Height="5"
+                                                         MinWidth="0"
+                                                         HorizontalAlignment="Stretch"
+                                                         ClipToBounds="True" />
+                                            <Border Width="2" Height="9" HorizontalAlignment="Right" VerticalAlignment="Center" Background="{StaticResource PlGoldBrightBrush}" IsHitTestVisible="False" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

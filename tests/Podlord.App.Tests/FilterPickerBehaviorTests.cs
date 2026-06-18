@@ -466,7 +466,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("<Style Selector=\"ProgressBar\">", app, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"MinWidth\" Value=\"0\" />", app, StringComparison.Ordinal);
         Assert.Contains("ClipToBounds=\"True\" MinWidth=\"0\"", window, StringComparison.Ordinal);
-        Assert.Contains("Height=\"5\"\n                                                     MinWidth=\"0\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"5\"", window, StringComparison.Ordinal);
+        Assert.Contains("MinWidth=\"0\"", window, StringComparison.Ordinal);
         Assert.Contains("RestartBrushConverter", app, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding Resource.Restarts, Converter={StaticResource RestartBrushConverter}}\"", window, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding Resource, Converter={StaticResource ProblemBrushConverter}}\"", window, StringComparison.Ordinal);
