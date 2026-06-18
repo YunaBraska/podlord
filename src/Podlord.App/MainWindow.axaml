@@ -543,9 +543,7 @@
                     <DataGrid.Columns>
 		                    <DataGridTemplateColumn Width="52">
 		                        <DataGridTemplateColumn.Header>
-		                            <Button Classes="columnPlaque" Tag="Port Forward" Padding="4,1" ToolTip.Tip="Port forward" HorizontalContentAlignment="Center">
-                                <local:KindGlyph Kind="Swap" Fill="{StaticResource PlGoldBrightBrush}" Width="16" Height="16" />
-                            </Button>
+		                            <local:ColumnPlaqueHeader Tag="Port Forward" Padding="4,1" ToolTip.Tip="Port forward" HorizontalContentAlignment="Center" Kind="Swap" GlyphFill="{StaticResource PlGoldBrightBrush}" GlyphSize="16" />
 		                        </DataGridTemplateColumn.Header>
 	                        <DataGridTemplateColumn.CellTemplate>
 	                            <DataTemplate>
@@ -573,12 +571,7 @@
 	                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="140">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Status" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Event" Fill="{StaticResource PlWarningBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Status" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Status" Click="SortResourcesClicked" Kind="Event" GlyphFill="{StaticResource PlWarningBrush}" Label="Status" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -595,12 +588,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="150">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Kind" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="CustomResourceDefinition" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Kind" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Kind" Click="SortResourcesClicked" Kind="CustomResourceDefinition" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Kind" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -627,12 +615,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="280">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Name" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Pod" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Name" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Name" Click="SortResourcesClicked" Kind="Pod" GlyphFill="{StaticResource PlBlueGlowBrush}" Label="Name" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -653,12 +636,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="150">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Namespace" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Namespace" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Namespace" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Namespace" Click="SortResourcesClicked" Kind="Namespace" GlyphFill="{StaticResource PlAccentBrush}" Label="Namespace" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -668,12 +646,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="180">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Cluster" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Cluster" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Cluster" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Cluster" Click="SortResourcesClicked" Kind="Cluster" GlyphFill="{StaticResource PlBlueGlowBrush}" Label="Cluster" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -686,12 +659,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="90">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="CPU" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Node" Fill="{StaticResource PlStatusSuccessBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="CPU" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="CPU" Click="SortResourcesClicked" Kind="Node" GlyphFill="{StaticResource PlStatusSuccessBrush}" Label="CPU" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -723,12 +691,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="95">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Memory" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="ConfigMap" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Memory" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Memory" Click="SortResourcesClicked" Kind="ConfigMap" GlyphFill="{StaticResource PlAccentBrush}" Label="Memory" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -760,12 +723,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="95">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Storage" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="PersistentVolume" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Storage" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Storage" Click="SortResourcesClicked" Kind="PersistentVolume" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Storage" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -797,12 +755,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="90">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Age" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="CronJob" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Age" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Age" Click="SortResourcesClicked" Kind="CronJob" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Age" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -812,12 +765,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="90">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Ready" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Service" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Ready" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Ready" Click="SortResourcesClicked" Kind="Service" GlyphFill="{StaticResource PlAccentBrush}" Label="Ready" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -827,12 +775,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="95">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Restarts" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Event" Fill="{StaticResource PlWarningBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Restarts" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Restarts" Click="SortResourcesClicked" Kind="Event" GlyphFill="{StaticResource PlWarningBrush}" Label="Restarts" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -842,12 +785,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="190">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Node" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Node" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Node" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Node" Click="SortResourcesClicked" Kind="Node" GlyphFill="{StaticResource PlBlueGlowBrush}" Label="Node" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -860,12 +798,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="230">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Image" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="ConfigMap" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Image" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Image" Click="SortResourcesClicked" Kind="ConfigMap" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Image" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -879,12 +812,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="220">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Owner" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Deployment" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Owner" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Owner" Click="SortResourcesClicked" Kind="Deployment" GlyphFill="{StaticResource PlAccentBrush}" Label="Owner" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -1068,22 +996,22 @@
                     <DataGrid.Columns>
                         <DataGridTextColumn Binding="{Binding Status}" Width="120">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Status" Content="Status" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTextColumn Binding="{Binding Name}" Width="240">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Name" Content="Name" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Name" Label="Name" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTextColumn Binding="{Binding Reason}" Width="180">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Reason" Content="Reason" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Reason" Label="Reason" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTemplateColumn Width="220" SortMemberPath="Object">
                             <DataGridTemplateColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Object" Content="Object" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Object" Label="Object" Click="SortEventsClicked" />
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -1095,17 +1023,17 @@
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Binding="{Binding Namespace}" Width="160">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Namespace" Content="Namespace" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Namespace" Label="Namespace" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTextColumn Binding="{Binding AgeDisplay}" Width="90">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Age" Content="Age" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Age" Label="Age" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTextColumn Binding="{Binding Message}" Width="*" MinWidth="320">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Message" Content="Message" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Message" Label="Message" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                     </DataGrid.Columns>

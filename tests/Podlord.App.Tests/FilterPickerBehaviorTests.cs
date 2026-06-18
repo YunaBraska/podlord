@@ -345,7 +345,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Content=\"◀\"", window, StringComparison.Ordinal);
         Assert.Contains("Content=\"▶\"", window, StringComparison.Ordinal);
         Assert.Contains("Kind=\"{Binding GlyphKind}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"columnPlaque\"", window, StringComparison.Ordinal);
+        Assert.Contains("local:ColumnPlaqueHeader", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"minimapFrame\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"minimapGlass\"", window, StringComparison.Ordinal);
         Assert.Contains("PlRadarWaterBrush", app, StringComparison.Ordinal);
