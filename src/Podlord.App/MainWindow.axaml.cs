@@ -1504,7 +1504,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
 
     private CancellationTokenSource? resourceLinkHoldTimer;
 
-    private void ResourceLinkPointerPressed(object? sender, PointerPressedEventArgs e)
+    internal void ResourceLinkPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not string reference || string.IsNullOrWhiteSpace(reference))
         {
@@ -1529,17 +1529,17 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         _ = OpenResourceReferenceAfterHold(reference, resourceLinkHoldTimer.Token);
     }
 
-    private void ResourceLinkPointerReleased(object? sender, PointerReleasedEventArgs e)
+    internal void ResourceLinkPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         resourceLinkHoldTimer?.Cancel();
     }
 
-    private void ResourceLinkPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    internal void ResourceLinkPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
         resourceLinkHoldTimer?.Cancel();
     }
 
-    private void ResourceLinkPointerEntered(object? sender, PointerEventArgs e)
+    internal void ResourceLinkPointerEntered(object? sender, PointerEventArgs e)
     {
         if (sender is not Button button || button.Tag is not string reference || string.IsNullOrWhiteSpace(reference))
         {
@@ -1658,7 +1658,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         }
     }
 
-    private async void ResourceLinkContextOpenClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    internal async void ResourceLinkContextOpenClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is MenuItem item && item.Tag is string reference && !string.IsNullOrWhiteSpace(reference))
         {
@@ -1667,7 +1667,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         }
     }
 
-    private async void ResourceLinkContextCopyClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    internal async void ResourceLinkContextCopyClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is MenuItem item && item.Tag is string reference && !string.IsNullOrWhiteSpace(reference) && Clipboard is not null)
         {

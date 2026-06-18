@@ -851,23 +851,10 @@
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Button Classes="resourceLink"
-                                        Tag="{Binding Node, Converter={StaticResource NodeReferenceConverter}}"
-                                        Foreground="{Binding Node, Converter={StaticResource DeterministicBrushConverter}}"
-                                        PointerPressed="ResourceLinkPointerPressed"
-                                        PointerReleased="ResourceLinkPointerReleased"
-                                        PointerCaptureLost="ResourceLinkPointerCaptureLost"
-                                        PointerEntered="ResourceLinkPointerEntered"
-                                        Padding="6,0"
-                                        HorizontalContentAlignment="Stretch">
-                                    <Button.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="Open in inspector" Tag="{Binding Node, Converter={StaticResource NodeReferenceConverter}}" Click="ResourceLinkContextOpenClicked" />
-                                            <MenuItem Header="Copy reference" Tag="{Binding Node, Converter={StaticResource NodeReferenceConverter}}" Click="ResourceLinkContextCopyClicked" />
-                                        </ContextMenu>
-                                    </Button.ContextMenu>
+                                <local:ResourceLinkButton Tag="{Binding Node, Converter={StaticResource NodeReferenceConverter}}"
+                                                          Foreground="{Binding Node, Converter={StaticResource DeterministicBrushConverter}}">
                                     <TextBlock Text="{Binding Node}" TextTrimming="CharacterEllipsis" />
-                                </Button>
+                                </local:ResourceLinkButton>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -901,15 +888,9 @@
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Button Classes="resourceLink" Tag="{Binding Owner}" Foreground="{Binding Owner, Converter={StaticResource DeterministicBrushConverter}}" PointerPressed="ResourceLinkPointerPressed" PointerReleased="ResourceLinkPointerReleased" PointerCaptureLost="ResourceLinkPointerCaptureLost" PointerEntered="ResourceLinkPointerEntered" Padding="6,0" HorizontalContentAlignment="Stretch" ToolTip.Tip="{Binding Owner}">
-                                    <Button.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="Open in inspector" Tag="{Binding Owner}" Click="ResourceLinkContextOpenClicked" />
-                                            <MenuItem Header="Copy reference" Tag="{Binding Owner}" Click="ResourceLinkContextCopyClicked" />
-                                        </ContextMenu>
-                                    </Button.ContextMenu>
+                                <local:ResourceLinkButton Tag="{Binding Owner}" Foreground="{Binding Owner, Converter={StaticResource DeterministicBrushConverter}}" ToolTip.Tip="{Binding Owner}">
                                     <TextBlock Text="{Binding Owner}" TextTrimming="CharacterEllipsis" />
-                                </Button>
+                                </local:ResourceLinkButton>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -1106,15 +1087,9 @@
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Classes="resourceLink" Tag="{Binding Object}" Foreground="{Binding Object, Converter={StaticResource DeterministicBrushConverter}}" PointerPressed="ResourceLinkPointerPressed" PointerReleased="ResourceLinkPointerReleased" PointerCaptureLost="ResourceLinkPointerCaptureLost" PointerEntered="ResourceLinkPointerEntered" Padding="6,0" HorizontalContentAlignment="Stretch">
-                                        <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="Open in inspector" Tag="{Binding Object}" Click="ResourceLinkContextOpenClicked" />
-                                                <MenuItem Header="Copy reference" Tag="{Binding Object}" Click="ResourceLinkContextCopyClicked" />
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
+                                    <local:ResourceLinkButton Tag="{Binding Object}" Foreground="{Binding Object, Converter={StaticResource DeterministicBrushConverter}}">
                                         <TextBlock Text="{Binding Object}" TextTrimming="CharacterEllipsis" />
-                                    </Button>
+                                    </local:ResourceLinkButton>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -1526,24 +1501,11 @@
                                                                        Margin="6,0"
                                                                        TextTrimming="CharacterEllipsis"
                                                                        VerticalAlignment="Center" />
-                                                            <Button Classes="resourceLink"
-                                                                    IsVisible="{Binding IsResourceRef}"
-                                                                    Tag="{Binding ReferenceValue}"
-                                                                    Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}"
-                                                                    PointerPressed="ResourceLinkPointerPressed"
-                                                                    PointerReleased="ResourceLinkPointerReleased"
-                                                                    PointerCaptureLost="ResourceLinkPointerCaptureLost"
-                                                                    PointerEntered="ResourceLinkPointerEntered"
-                                                                    Padding="6,0"
-                                                                    HorizontalContentAlignment="Stretch">
-                                                                <Button.ContextMenu>
-                                                                    <ContextMenu>
-                                                                        <MenuItem Header="Open in inspector" Tag="{Binding ReferenceValue}" Click="ResourceLinkContextOpenClicked" />
-                                                                        <MenuItem Header="Copy reference" Tag="{Binding ReferenceValue}" Click="ResourceLinkContextCopyClicked" />
-                                                                    </ContextMenu>
-                                                                </Button.ContextMenu>
+                                                            <local:ResourceLinkButton IsVisible="{Binding IsResourceRef}"
+                                                                                      Tag="{Binding ReferenceValue}"
+                                                                                      Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}">
                                                                 <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
-                                                            </Button>
+                                                            </local:ResourceLinkButton>
                                                         </Panel>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
@@ -1578,24 +1540,11 @@
                                                                    Margin="6,0"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    VerticalAlignment="Center" />
-                                                        <Button Classes="resourceLink"
-                                                                IsVisible="{Binding IsResourceRef}"
-                                                                Tag="{Binding ReferenceValue}"
-                                                                Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}"
-                                                                PointerPressed="ResourceLinkPointerPressed"
-                                                                PointerReleased="ResourceLinkPointerReleased"
-                                                                PointerCaptureLost="ResourceLinkPointerCaptureLost"
-                                                                PointerEntered="ResourceLinkPointerEntered"
-                                                                Padding="6,0"
-                                                                HorizontalContentAlignment="Stretch">
-                                                            <Button.ContextMenu>
-                                                                <ContextMenu>
-                                                                    <MenuItem Header="Open in inspector" Tag="{Binding ReferenceValue}" Click="ResourceLinkContextOpenClicked" />
-                                                                    <MenuItem Header="Copy reference" Tag="{Binding ReferenceValue}" Click="ResourceLinkContextCopyClicked" />
-                                                                </ContextMenu>
-                                                            </Button.ContextMenu>
+                                                        <local:ResourceLinkButton IsVisible="{Binding IsResourceRef}"
+                                                                                  Tag="{Binding ReferenceValue}"
+                                                                                  Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}">
                                                             <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
-                                                        </Button>
+                                                        </local:ResourceLinkButton>
                                                     </Panel>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
@@ -1711,15 +1660,9 @@
                                     <DataGridTemplateColumn Header="From" Width="240" SortMemberPath="FromName">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <Button Classes="resourceLink" Tag="{Binding FromName}" Foreground="{Binding FromName, Converter={StaticResource DeterministicBrushConverter}}" PointerPressed="ResourceLinkPointerPressed" PointerReleased="ResourceLinkPointerReleased" PointerCaptureLost="ResourceLinkPointerCaptureLost" PointerEntered="ResourceLinkPointerEntered" Padding="6,0" HorizontalContentAlignment="Stretch">
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu>
-                                                            <MenuItem Header="Open in inspector" Tag="{Binding FromName}" Click="ResourceLinkContextOpenClicked" />
-                                                            <MenuItem Header="Copy reference" Tag="{Binding FromName}" Click="ResourceLinkContextCopyClicked" />
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
+                                                <local:ResourceLinkButton Tag="{Binding FromName}" Foreground="{Binding FromName, Converter={StaticResource DeterministicBrushConverter}}">
                                                     <TextBlock Text="{Binding FromName}" TextTrimming="CharacterEllipsis" />
-                                                </Button>
+                                                </local:ResourceLinkButton>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
@@ -1727,15 +1670,9 @@
                                     <DataGridTemplateColumn Header="To" Width="240" SortMemberPath="ToName">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <Button Classes="resourceLink" Tag="{Binding ToName}" Foreground="{Binding ToName, Converter={StaticResource DeterministicBrushConverter}}" PointerPressed="ResourceLinkPointerPressed" PointerReleased="ResourceLinkPointerReleased" PointerCaptureLost="ResourceLinkPointerCaptureLost" PointerEntered="ResourceLinkPointerEntered" Padding="6,0" HorizontalContentAlignment="Stretch">
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu>
-                                                            <MenuItem Header="Open in inspector" Tag="{Binding ToName}" Click="ResourceLinkContextOpenClicked" />
-                                                            <MenuItem Header="Copy reference" Tag="{Binding ToName}" Click="ResourceLinkContextCopyClicked" />
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
+                                                <local:ResourceLinkButton Tag="{Binding ToName}" Foreground="{Binding ToName, Converter={StaticResource DeterministicBrushConverter}}">
                                                     <TextBlock Text="{Binding ToName}" TextTrimming="CharacterEllipsis" />
-                                                </Button>
+                                                </local:ResourceLinkButton>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
@@ -1793,7 +1730,17 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="220" />
                                     <DataGridTextColumn Header="Encoding" Binding="{Binding Encoding}" Width="110" />
-                                    <DataGridTextColumn Header="Value" Binding="{Binding DisplayValue}" Width="*" />
+                                    <DataGridTemplateColumn Header="Value" Width="*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayValue}"
+                                                           TextWrapping="Wrap"
+                                                           MaxLines="8"
+                                                           Margin="4,2"
+                                                           ToolTip.Tip="{Binding DisplayValue}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Copy" Width="190">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>

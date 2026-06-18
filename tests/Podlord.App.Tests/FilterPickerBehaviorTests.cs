@@ -522,6 +522,9 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("IsVisible=\"{Binding Converter={StaticResource PortForwardEligibilityConverter}}\"", window, StringComparison.Ordinal);
         Assert.Contains("InspectorValuesText", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding ResourceValues}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding DisplayValue}\"", window, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping=\"Wrap\"", window, StringComparison.Ordinal);
+        Assert.Contains("MaxLines=\"8\"", window, StringComparison.Ordinal);
         Assert.Contains("CopyActionsForCell", codeBehind, StringComparison.Ordinal);
         Assert.Contains("DataGridCellPointerPressedEventArgs", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Open in inspector", codeBehind, StringComparison.Ordinal);
@@ -614,7 +617,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Foreground=\"{Binding Cluster, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
         Assert.Contains("NodeReferenceConverter", window, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding ImageSummary, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
-        Assert.Contains("ResourceLinkPointerPressed", window, StringComparison.Ordinal);
+        Assert.Contains("local:ResourceLinkButton", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Foreground=\"#050806\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Background=\"{Binding Cluster, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("StackPanel Spacing=\"10\" Width=\"760\"", window, StringComparison.Ordinal);

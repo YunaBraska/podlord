@@ -26,7 +26,14 @@ public static class HeadlessAppBuilder
             {
                 return;
             }
-            BuildAvaloniaApp().SetupWithoutStarting();
+            try
+            {
+                BuildAvaloniaApp().SetupWithoutStarting();
+            }
+            catch (InvalidOperationException)
+            {
+                // Another test already configured an Avalonia application in this process.
+            }
             started = true;
         }
     }
