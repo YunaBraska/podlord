@@ -297,7 +297,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.DoesNotContain("Classes=\"logoPlate\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Background=\"#D0070A05\"", window, StringComparison.Ordinal);
         Assert.Contains("BorderThickness=\"0\"", window, StringComparison.Ordinal);
-        Assert.Contains("Header=\"Imported\"", window, StringComparison.Ordinal);
+        Assert.Contains("Label=\"Imported\"", window, StringComparison.Ordinal);
         Assert.True(File.Exists(iconPath));
         Assert.True(File.Exists(logoPath));
         Assert.Equal([0, 0, 1, 0], File.ReadAllBytes(iconPath).Take(4).ToArray());
@@ -509,9 +509,9 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Classes=\"resourceAnnouncePulse\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsAnnouncing}\"", window, StringComparison.Ordinal);
         Assert.Contains("Opacity=\"{Binding Opacity}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Header=\"Name\" Binding=\"{Binding Name}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Header=\"Reason\" Binding=\"{Binding Reason}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Header=\"Message\" Binding=\"{Binding Message}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Label=\"Name\"", window, StringComparison.Ordinal);
+        Assert.Contains("Label=\"Reason\"", window, StringComparison.Ordinal);
+        Assert.Contains("Label=\"Message\"", window, StringComparison.Ordinal);
         Assert.Contains("CellPointerPressed=\"CopyableTableCellPointerPressed\"", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"InspectorTabClicked\"", window + codeBehind, StringComparison.Ordinal);
         Assert.Contains("Classes=\"inspectorTab\"", window, StringComparison.Ordinal);
@@ -592,7 +592,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Content=\"{Binding DataContext.DeleteActionText", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSelectedResourceLoggable}\"", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding FocusMetrics}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Header=\"Metric\"", window, StringComparison.Ordinal);
+        Assert.Contains("Label=\"Metric\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("ItemsSource=\"{Binding YamlSnippets}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("InsertYamlSnippetClicked", window + codeBehind, StringComparison.Ordinal);
         Assert.Contains("YamlAssistStatus", window + viewModel, StringComparison.Ordinal);

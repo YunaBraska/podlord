@@ -1057,7 +1057,7 @@
                           SelectedItem="{Binding SelectedPortForward}"
 	                          AutoGenerateColumns="False"
 	                          IsReadOnly="True"
-	                          CanUserSortColumns="True"
+	                          CanUserSortColumns="False"
 	                          CanUserResizeColumns="True"
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
@@ -1072,14 +1072,46 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110" />
-                        <DataGridTextColumn Header="Session" Binding="{Binding Session}" Width="180" />
-                        <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90" />
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="220" />
-                        <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="150" />
-                        <DataGridTextColumn Header="Container Port" Binding="{Binding ContainerPort}" Width="155" />
-                        <DataGridTextColumn Header="Local Port" Binding="{Binding LocalPort}" Width="130" />
-                        <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="*" MinWidth="320" />
+                        <DataGridTextColumn Binding="{Binding Status}" Width="110" SortMemberPath="Status">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Session}" Width="180" SortMemberPath="Session">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Session" Label="Session" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Kind}" Width="90" SortMemberPath="Kind">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Kind" Label="Kind" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Name}" Width="220" SortMemberPath="Name">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Name" Label="Name" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Namespace}" Width="150" SortMemberPath="Namespace">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Namespace" Label="Namespace" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding ContainerPort}" Width="155" SortMemberPath="ContainerPort">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="ContainerPort" Label="Container Port" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding LocalPort}" Width="130" SortMemberPath="LocalPort">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="LocalPort" Label="Local Port" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Command}" Width="*" MinWidth="320" SortMemberPath="Command">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Command" Label="Command" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
@@ -1136,7 +1168,7 @@
                                           ItemsSource="{Binding RequestAuditRows}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
-                                          CanUserSortColumns="True"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           HorizontalAlignment="Stretch"
                                           CellPointerPressed="CopyableTableCellPointerPressed"
@@ -1148,13 +1180,41 @@
                                           VerticalScrollBarVisibility="Visible"
                                           HorizontalScrollBarVisibility="Visible">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Time" Binding="{Binding StartedAt}" Width="190" />
-                                        <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="90" />
-                                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="360" />
-                                        <DataGridTextColumn Header="Priority" Binding="{Binding Priority}" Width="110" />
-                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
-                                        <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100" />
-                                        <DataGridTextColumn Header="Outcome" Binding="{Binding Outcome}" Width="*" />
+                                        <DataGridTextColumn Binding="{Binding StartedAt}" Width="190" SortMemberPath="StartedAt">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Time" Label="Time" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Method}" Width="90" SortMemberPath="Method">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Method" Label="Method" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Path}" Width="360" SortMemberPath="Path">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Path" Label="Path" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Priority}" Width="110" SortMemberPath="Priority">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Priority" Label="Priority" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Status}" Width="120" SortMemberPath="Status">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Duration}" Width="100" SortMemberPath="Duration">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Duration" Label="Duration" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Outcome}" Width="*" SortMemberPath="Outcome">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Outcome" Label="Outcome" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
@@ -1253,7 +1313,7 @@
                                           SelectedItem="{Binding SelectedSource}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="False"
-                                          CanUserSortColumns="True"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           CellPointerPressed="CopyableTableCellPointerPressed"
                                           PointerReleased="CopyableTablePointerReleased"
@@ -1278,13 +1338,41 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="Name" Binding="{Binding Context, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="220" />
-                                        <DataGridTextColumn Header="Imported" Binding="{Binding ImportedAt}" Width="205" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Cluster" Binding="{Binding Cluster}" Width="220" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="User" Binding="{Binding User}" Width="180" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Auth" Binding="{Binding AuthType}" Width="110" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="300" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*" IsReadOnly="True" />
+                                        <DataGridTextColumn Binding="{Binding Context, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="220" SortMemberPath="Context">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Name" Label="Name" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding ImportedAt}" Width="205" IsReadOnly="True" SortMemberPath="ImportedAt">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Imported" Label="Imported" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Cluster}" Width="220" IsReadOnly="True" SortMemberPath="Cluster">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Cluster" Label="Cluster" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding User}" Width="180" IsReadOnly="True" SortMemberPath="User">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="User" Label="User" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding AuthType}" Width="110" IsReadOnly="True" SortMemberPath="AuthType">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Auth" Label="Auth" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Source}" Width="300" IsReadOnly="True" SortMemberPath="Source">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Source" Label="Source" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Detail}" Width="*" IsReadOnly="True" SortMemberPath="Detail">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Detail" Label="Detail" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
@@ -1406,7 +1494,7 @@
                                     <DataGrid ItemsSource="{Binding FocusMetrics}"
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
-                                              CanUserSortColumns="True"
+                                              CanUserSortColumns="False"
                                               CanUserResizeColumns="True"
                                               CellPointerPressed="CopyableTableCellPointerPressed"
                                               PointerReleased="CopyableTablePointerReleased"
@@ -1418,8 +1506,15 @@
                                               VerticalScrollBarVisibility="Visible"
                                               HorizontalScrollBarVisibility="Visible">
                                         <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Field" Binding="{Binding Label}" Width="220" />
-                                            <DataGridTemplateColumn Header="Value" Width="*" SortMemberPath="Value">
+                                            <DataGridTextColumn Binding="{Binding Label}" Width="220" SortMemberPath="Label">
+                                                <DataGridTextColumn.Header>
+                                                    <local:ColumnPlaqueHeader Tag="Field" Label="Field" Click="SortInspectorColumnClicked" />
+                                                </DataGridTextColumn.Header>
+                                            </DataGridTextColumn>
+                                            <DataGridTemplateColumn Width="*" SortMemberPath="Value">
+                                                <DataGridTemplateColumn.Header>
+                                                    <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                                </DataGridTemplateColumn.Header>
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
                                                         <Panel>
@@ -1445,7 +1540,7 @@
                                           ItemsSource="{Binding FocusMetrics}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
-                                          CanUserSortColumns="True"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           CellPointerPressed="CopyableTableCellPointerPressed"
                                           PointerReleased="CopyableTablePointerReleased"
@@ -1457,8 +1552,15 @@
                                           VerticalScrollBarVisibility="Visible"
                                           HorizontalScrollBarVisibility="Visible">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Field" Binding="{Binding Label}" Width="260" />
-                                        <DataGridTemplateColumn Header="Value" Width="*" SortMemberPath="Value">
+                                        <DataGridTextColumn Binding="{Binding Label}" Width="260" SortMemberPath="Label">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Field" Label="Field" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTemplateColumn Width="*" SortMemberPath="Value">
+                                            <DataGridTemplateColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                            </DataGridTemplateColumn.Header>
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Panel>
@@ -1477,7 +1579,10 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTemplateColumn Header="Metric" Width="180">
+                                        <DataGridTemplateColumn Width="180" SortMemberPath="Percent">
+                                            <DataGridTemplateColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Metric" Label="Metric" Click="SortInspectorColumnClicked" />
+                                            </DataGridTemplateColumn.Header>
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Border Background="Transparent"
@@ -1550,7 +1655,7 @@
                                       ItemsSource="{Binding FocusedEvents}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
-                                      CanUserSortColumns="True"
+                                      CanUserSortColumns="False"
                                       CanUserResizeColumns="True"
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
@@ -1562,10 +1667,26 @@
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
-                                    <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="180" />
-                                    <DataGridTextColumn Header="Age" Binding="{Binding AgeDisplay}" Width="160" />
-                                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
+                                    <DataGridTextColumn Binding="{Binding Status}" Width="100">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Reason}" Width="180">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Reason" Label="Reason" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding AgeDisplay}" Width="160" SortMemberPath="Age">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Age" Label="Age" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Message}" Width="*">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Message" Label="Message" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
 
@@ -1573,7 +1694,7 @@
                                       ItemsSource="{Binding FocusedRelationships}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
-                                      CanUserSortColumns="True"
+                                      CanUserSortColumns="False"
                                       CanUserResizeColumns="True"
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
@@ -1585,7 +1706,10 @@
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTemplateColumn Header="From" Width="240" SortMemberPath="FromName">
+                                    <DataGridTemplateColumn Width="240" SortMemberPath="FromName">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="From" Label="From" Click="SortInspectorColumnClicked" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <local:ResourceLinkButton Tag="{Binding FromName}" Foreground="{Binding FromName, Converter={StaticResource DeterministicBrushConverter}}">
@@ -1594,8 +1718,15 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="" Binding="{Binding Link}" Width="50" />
-                                    <DataGridTemplateColumn Header="To" Width="240" SortMemberPath="ToName">
+                                    <DataGridTextColumn Binding="{Binding Link}" Width="50" SortMemberPath="Link">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Link" Label="" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Width="240" SortMemberPath="ToName">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="To" Label="To" Click="SortInspectorColumnClicked" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <local:ResourceLinkButton Tag="{Binding ToName}" Foreground="{Binding ToName, Converter={StaticResource DeterministicBrushConverter}}">
@@ -1604,8 +1735,16 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="160" />
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="160" />
+                                    <DataGridTextColumn Binding="{Binding Namespace}" Width="160">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Namespace" Label="Namespace" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Status}" Width="160">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
 
@@ -1644,7 +1783,7 @@
                                       ItemsSource="{Binding ResourceValues}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
-                                      CanUserSortColumns="True"
+                                      CanUserSortColumns="False"
                                       CanUserResizeColumns="True"
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
@@ -1656,9 +1795,20 @@
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="220" />
-                                    <DataGridTextColumn Header="Encoding" Binding="{Binding Encoding}" Width="110" />
-                                    <DataGridTemplateColumn Header="Value" Width="*">
+                                    <DataGridTextColumn Binding="{Binding Key}" Width="220" SortMemberPath="Key">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Key" Label="Key" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Encoding}" Width="110" SortMemberPath="Encoding">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Encoding" Label="Encoding" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Width="*" SortMemberPath="DisplayValue">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding DisplayValue}"

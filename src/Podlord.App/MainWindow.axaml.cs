@@ -1466,6 +1466,10 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         menu.Open(owner);
     }
 
+    private enum InspectorSortDir { None, Ascending, Descending }
+
+    private readonly Dictionary<DataGrid, (string Column, InspectorSortDir Direction)> inspectorSortState = new();
+
     private void UpdateSortHeaderIndicators()
     {
         foreach (var button in this.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("columnPlaque")))
@@ -1475,12 +1479,148 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
                 continue;
             }
 
-            var glyph = IsVisualInside(button, ResourceGrid)
-                ? viewModel.ResourceSortGlyphFor(column)
-                : IsVisualInside(button, EventGrid)
-                    ? viewModel.EventSortGlyphFor(column)
-                    : string.Empty;
+            string glyph;
+            if (IsVisualInside(button, ResourceGrid))
+            {
+                glyph = viewModel.ResourceSortGlyphFor(column);
+            }
+            else if (IsVisualInside(button, EventGrid))
+            {
+                glyph = viewModel.EventSortGlyphFor(column);
+            }
+            else if (button.FindAncestorOfType<DataGrid>() is { } grid && inspectorSortState.TryGetValue(grid, out var state) && state.Column == column)
+            {
+                glyph = state.Direction switch
+                {
+                    InspectorSortDir.Ascending => "▲",
+                    InspectorSortDir.Descending => "▼",
+                    _ => string.Empty
+                };
+            }
+            else
+            {
+                glyph = string.Empty;
+            }
             SetSortGlyph(button, glyph);
+        }
+    }
+
+    private void SortInspectorColumnClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string column)
+        {
+            return;
+        }
+        var grid = button.FindAncestorOfType<DataGrid>();
+        if (grid is null)
+        {
+            return;
+        }
+
+        var current = inspectorSortState.GetValueOrDefault(grid);
+        var next = current.Column == column
+            ? current.Direction switch
+            {
+                InspectorSortDir.Ascending => InspectorSortDir.Descending,
+                InspectorSortDir.Descending => InspectorSortDir.None,
+                _ => InspectorSortDir.Ascending
+            }
+            : InspectorSortDir.Ascending;
+
+        if (next == InspectorSortDir.None)
+        {
+            inspectorSortState.Remove(grid);
+            ApplyInspectorSort(grid, ResolveDefaultSortPath(grid), InspectorSortDir.Ascending);
+        }
+        else
+        {
+            var path = ResolveSortPath(grid, column);
+            if (path is null)
+            {
+                return;
+            }
+            inspectorSortState[grid] = (column, next);
+            ApplyInspectorSort(grid, path, next);
+        }
+        UpdateSortHeaderIndicators();
+    }
+
+    private static string? ResolveSortPath(DataGrid grid, string column)
+    {
+        var match = grid.Columns.FirstOrDefault(c => HeaderText(c.Header).Equals(column, StringComparison.Ordinal));
+        if (match is null)
+        {
+            return null;
+        }
+        if (!string.IsNullOrWhiteSpace(match.SortMemberPath))
+        {
+            return match.SortMemberPath;
+        }
+        if (match is DataGridBoundColumn bound && bound.Binding is Avalonia.Data.Binding binding && !string.IsNullOrWhiteSpace(binding.Path))
+        {
+            return binding.Path;
+        }
+        return null;
+    }
+
+    private static string? ResolveDefaultSortPath(DataGrid grid)
+    {
+        foreach (var column in grid.Columns.OrderBy(c => c.DisplayIndex))
+        {
+            if (!string.IsNullOrWhiteSpace(column.SortMemberPath))
+            {
+                return column.SortMemberPath;
+            }
+            if (column is DataGridBoundColumn bound && bound.Binding is Avalonia.Data.Binding binding && !string.IsNullOrWhiteSpace(binding.Path))
+            {
+                return binding.Path;
+            }
+        }
+        return null;
+    }
+
+    private static void ApplyInspectorSort(DataGrid grid, string? path, InspectorSortDir direction)
+    {
+        if (path is null || grid.ItemsSource is not System.Collections.IList list || list.Count < 2)
+        {
+            return;
+        }
+        var items = new List<object?>();
+        foreach (var item in list)
+        {
+            items.Add(item);
+        }
+        var sample = items.FirstOrDefault(i => i is not null);
+        if (sample is null)
+        {
+            return;
+        }
+        var property = sample.GetType().GetProperty(path);
+        if (property is null)
+        {
+            return;
+        }
+        items.Sort((a, b) =>
+        {
+            var av = a is null ? null : property.GetValue(a);
+            var bv = b is null ? null : property.GetValue(b);
+            if (av is null && bv is null) return 0;
+            if (av is null) return -1;
+            if (bv is null) return 1;
+            if (av is IComparable comparable)
+            {
+                return comparable.CompareTo(bv);
+            }
+            return string.Compare(av.ToString(), bv.ToString(), StringComparison.OrdinalIgnoreCase);
+        });
+        if (direction == InspectorSortDir.Descending)
+        {
+            items.Reverse();
+        }
+        list.Clear();
+        foreach (var item in items)
+        {
+            list.Add(item);
         }
     }
 
