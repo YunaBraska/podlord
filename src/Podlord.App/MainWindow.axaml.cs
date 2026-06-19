@@ -1736,6 +1736,9 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
 
         if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
         {
+            contextMenuHold?.Cancel();
+            resourceLinkHoldTimer?.Cancel();
+            e.Handled = true;
             _ = OpenResourceReferenceAsync(reference);
             return;
         }
@@ -1901,6 +1904,11 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         }
 
         if (!point.Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        if ((e.PointerPressedEventArgs.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
         {
             return;
         }

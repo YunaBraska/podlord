@@ -240,7 +240,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         RenderRadarLife(reset: true);
         radarIdleTimer.Interval = TimeSpan.FromMilliseconds(320);
         radarIdleTimer.Tick += (_, _) => AdvanceRadarIdleLife();
-        radarWaterPauseTimer.Interval = TimeSpan.FromMilliseconds(650);
+        radarWaterPauseTimer.Interval = TimeSpan.FromMilliseconds(180);
         radarWaterPauseTimer.Tick += (_, _) =>
         {
             radarWaterPauseTimer.Stop();
@@ -4971,9 +4971,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 item.Label,
                 item.Value,
                 0,
-                true,
+                false,
                 CleanSuggestion(suggestion),
-                SuggestionRatioPercent(item.Label, item.Value, suggestion) ?? 0);
+                0);
         }
 
         if (UnitRatioPercent(item.Label, item.Value) is { } unitRatio)
@@ -5023,7 +5023,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return label is "Ready" or "Available" or "Up-to-date" or "Availability" or "Readiness";
     }
 
-    private static double? SuggestionRatioPercent(string label, string value, string suggestion)
+    internal static double? SuggestionRatioPercent(string label, string value, string suggestion)
     {
         if (string.IsNullOrWhiteSpace(suggestion) || suggestion == "-")
         {

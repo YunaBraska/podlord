@@ -675,8 +675,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.DoesNotContain("MaxHeight=\"520\"", window, StringComparison.Ordinal);
         Assert.Contains("VerticalAlignment=\"Stretch\"", window, StringComparison.Ordinal);
         Assert.Contains("ShowLineNumbers=\"True\"", window, StringComparison.Ordinal);
-        Assert.Contains("VerticalScrollBarVisibility=\"Visible\"", window, StringComparison.Ordinal);
-        Assert.Contains("HorizontalScrollBarVisibility=\"Visible\"", window, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", window, StringComparison.Ordinal);
+        Assert.Contains("HorizontalScrollBarVisibility=\"Auto\"", window, StringComparison.Ordinal);
         Assert.Contains("SelectedInspectorTabIndex == 1", codeBehind, StringComparison.Ordinal);
         Assert.Contains("YamlSyntaxColorizer", codeBehind, StringComparison.Ordinal);
         Assert.Contains("AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml", app, StringComparison.Ordinal);
@@ -761,8 +761,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("AvaloniaProperty.Register<RadarWaterLayer, int>(nameof(SpeedPercent), 45)", radarWaterLayer, StringComparison.Ordinal);
         Assert.Contains("AvaloniaProperty.Register<RadarWaterLayer, bool>(nameof(PauseAnimation))", radarWaterLayer, StringComparison.Ordinal);
         Assert.Contains("WaterIntervalFor(ActivityRate, SpeedPercent)", radarWaterLayer, StringComparison.Ordinal);
-        Assert.Contains("2_800 - speed * 1_450 - activity * 520", radarWaterModel, StringComparison.Ordinal);
-        Assert.Contains("Math.Clamp(milliseconds, 850, 2_800)", radarWaterModel, StringComparison.Ordinal);
+        Assert.Contains("200d - speed * 180d - activity * 24d", radarWaterModel, StringComparison.Ordinal);
+        Assert.Contains("Math.Clamp(milliseconds, 20, 240)", radarWaterModel, StringComparison.Ordinal);
         Assert.Contains("InvalidateVisual();", radarWaterLayer, StringComparison.Ordinal);
         Assert.Contains("SyncTimer();", radarWaterLayer, StringComparison.Ordinal);
         Assert.Contains("context.DrawRectangle", radarWaterLayer, StringComparison.Ordinal);

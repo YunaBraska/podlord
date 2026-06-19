@@ -212,26 +212,25 @@
                                                                             <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasCpuMetricBar}">
                                                                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                                                                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
-                                                                                <Grid Grid.Row="1" Grid.Column="1" Margin="8,2,0,0">
-                                                                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                                                <Border Width="2" Height="10" HorizontalAlignment="Right" Background="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
-                                                                            </Grid>
+                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
+                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                                                    <Border IsVisible="{Binding Resource.Pulse.HasCpuSuggestion}" Width="2" Height="10" Canvas.Top="0" Canvas.Left="{Binding Resource.Pulse.CpuSuggestionLeft}" Background="{StaticResource PlGoldBrightBrush}" />
+                                                                                </Canvas>
                                                                             </Grid>
                                                                             <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasMemoryMetricBar}">
                                                                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                                                                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
-                                                                                <Grid Grid.Row="1" Grid.Column="1" Margin="8,2,0,0">
-                                                                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                                                <Border Width="2" Height="10" HorizontalAlignment="Right" Background="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
-                                                                            </Grid>
+                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
+                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                                                    <Border IsVisible="{Binding Resource.Pulse.HasMemorySuggestion}" Width="2" Height="10" Canvas.Top="0" Canvas.Left="{Binding Resource.Pulse.MemorySuggestionLeft}" Background="{StaticResource PlGoldBrightBrush}" />
+                                                                                </Canvas>
                                                                             </Grid>
                                                                             <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasStorageMetricBar}">
                                                                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                                                                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
-                                                                                <Grid Grid.Row="1" Grid.Column="1" Margin="8,2,0,0">
-                                                                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                                                <Border Width="2" Height="10" HorizontalAlignment="Right" Background="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
-                                                                            </Grid>
+                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
+                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                                                </Canvas>
                                                                             </Grid>
                                                                             <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasCpuMetricTextOnly}">
                                                                                 <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
@@ -331,7 +330,7 @@
                                                     <TextBlock Text="{Binding SourcesTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                                     <TextBox Text="{Binding SourcePickerSearch, UpdateSourceTrigger=PropertyChanged}"
                                                              PlaceholderText="search by name or path" />
-                                                    <ScrollViewer Height="240" VerticalScrollBarVisibility="Visible">
+                                                    <ScrollViewer Height="240" VerticalScrollBarVisibility="Auto">
                                                         <ItemsControl ItemsSource="{Binding VisibleImportedContexts}">
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate>
@@ -375,7 +374,7 @@
                     </Border>
 
                     <Border Grid.Row="1" Classes="commandConsole" Margin="10,0,10,10" Padding="8">
-                        <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="8">
                             <TextBlock Text="{Binding FiltersTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                             <Grid ColumnDefinitions="*,*,88" ColumnSpacing="8">
@@ -403,7 +402,7 @@
                                                         <TextBlock Text="{Binding SavedFiltersText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                                         <TextBox Text="{Binding PresetSearch, UpdateSourceTrigger=PropertyChanged}"
                                                                  PlaceholderText="{Binding SearchSavedFiltersText}" />
-                                                        <ScrollViewer Height="220" VerticalScrollBarVisibility="Visible">
+                                                        <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
                                                             <ItemsControl ItemsSource="{Binding VisibleSavedPresets}">
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate>
@@ -471,7 +470,7 @@
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>
-                                                            <ScrollViewer Height="220" VerticalScrollBarVisibility="Visible">
+                                                            <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
                                                                 <ItemsControl ItemsSource="{Binding Options}">
                                                                     <ItemsControl.ItemTemplate>
                                                                         <DataTemplate>
@@ -560,8 +559,8 @@
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
                               PointerCaptureLost="CopyableTablePointerReleased"
-	                          VerticalScrollBarVisibility="Visible"
-	                          HorizontalScrollBarVisibility="Visible">
+	                          VerticalScrollBarVisibility="Auto"
+	                          HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
 		                    <DataGridTemplateColumn Width="52">
 		                        <DataGridTemplateColumn.Header>
@@ -907,8 +906,8 @@
                     </Grid>
                 </Border>
                 <ScrollViewer Grid.Row="1"
-                              VerticalScrollBarVisibility="Visible"
-                              HorizontalScrollBarVisibility="Visible"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Auto"
                               Background="{StaticResource PlInsetMaterialBrush}"
                               Padding="14">
                     <TreeView x:Name="GraphTree"
@@ -1046,8 +1045,8 @@
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
                               PointerCaptureLost="CopyableTablePointerReleased"
-	                          VerticalScrollBarVisibility="Visible"
-	                          HorizontalScrollBarVisibility="Visible">
+	                          VerticalScrollBarVisibility="Auto"
+	                          HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
                         <DataGridTextColumn Binding="{Binding Status}" Width="120" SortMemberPath="Status">
                             <DataGridTextColumn.Header>
@@ -1118,8 +1117,8 @@
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
                               PointerCaptureLost="CopyableTablePointerReleased"
-	                          VerticalScrollBarVisibility="Visible"
-	                          HorizontalScrollBarVisibility="Visible">
+	                          VerticalScrollBarVisibility="Auto"
+	                          HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="" Width="74">
                             <DataGridTemplateColumn.CellTemplate>
@@ -1173,7 +1172,7 @@
             </Grid>
 
             <Border Grid.Row="0" IsVisible="{Binding IsSettingsWorkspace}" Margin="10" Classes="hudPanel" Padding="14">
-                <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid RowDefinitions="Auto,*" RowSpacing="12" HorizontalAlignment="Stretch">
                     <TextBlock Text="{Binding SettingsTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                     <TabControl Grid.Row="1"
@@ -1189,8 +1188,8 @@
                                           IsReadOnly="False"
                                           CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
                                         <DataGridTemplateColumn Width="46">
                                             <DataGridTemplateColumn.Header>
@@ -1243,7 +1242,7 @@
                                         Classes="commandConsole"
                                         Padding="10"
                                         MinHeight="0">
-                                    <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                         <StackPanel Spacing="12">
                                             <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                                                 <TextBlock Text="{Binding DataContext.AlertNameText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
@@ -1360,7 +1359,7 @@
                                                                     <TextBlock Text="{Binding DataContext.AlertSoundText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                                                     <TextBox Text="{Binding SoundSearch, UpdateSourceTrigger=PropertyChanged}"
                                                                              PlaceholderText="{Binding DataContext.AlertSoundSearchText, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                                                    <ScrollViewer Height="260" VerticalScrollBarVisibility="Visible">
+                                                                    <ScrollViewer Height="260" VerticalScrollBarVisibility="Auto">
                                                                         <ItemsControl ItemsSource="{Binding FilteredSoundItems}">
                                                                             <ItemsControl.ItemTemplate>
                                                                                 <DataTemplate>
@@ -1469,8 +1468,8 @@
                                           MinHeight="240"
                                           MaxHeight="{Binding $parent[ScrollViewer].Bounds.Height}"
                                           VerticalAlignment="Stretch"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Binding="{Binding StartedAt}" Width="190" SortMemberPath="StartedAt">
                                             <DataGridTextColumn.Header>
@@ -1606,8 +1605,8 @@
                                           PointerCaptureLost="CopyableTablePointerReleased"
                                           MinHeight="0"
                                           ClipToBounds="True"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
                                         <DataGridTemplateColumn Header="" Width="56" IsReadOnly="True">
                                             <DataGridTemplateColumn.CellTemplate>
@@ -1864,8 +1863,8 @@
                                               ClipToBounds="True"
                                               HorizontalAlignment="Stretch"
                                               VerticalAlignment="Stretch"
-                                              VerticalScrollBarVisibility="Visible"
-                                              HorizontalScrollBarVisibility="Visible">
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Binding="{Binding Label}" Width="220" SortMemberPath="Label">
                                                 <DataGridTextColumn.Header>
@@ -1911,8 +1910,8 @@
                                           ClipToBounds="True"
                                           HorizontalAlignment="Stretch"
                                           VerticalAlignment="Stretch"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Binding="{Binding Label}" Width="260" SortMemberPath="Label">
                                             <DataGridTextColumn.Header>
@@ -2000,8 +1999,8 @@
                                                          TextChanged="YamlEditorTextChanged"
                                                          ShowLineNumbers="True"
                                                          LineNumbersForeground="{StaticResource PlTextMutedBrush}"
-                                                         VerticalScrollBarVisibility="Visible"
-                                                         HorizontalScrollBarVisibility="Visible"
+                                                         VerticalScrollBarVisibility="Auto"
+                                                         HorizontalScrollBarVisibility="Auto"
                                                          WordWrap="False"
                                                          IsReadOnly="False"
                                                          MinHeight="0"
@@ -2023,8 +2022,8 @@
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
                                       PointerCaptureLost="CopyableTablePointerReleased"
-                                      VerticalScrollBarVisibility="Visible"
-                                      HorizontalScrollBarVisibility="Visible"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto"
                                       MinHeight="0"
                                       ClipToBounds="True"
                                       HorizontalAlignment="Stretch"
@@ -2063,8 +2062,8 @@
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
                                       PointerCaptureLost="CopyableTablePointerReleased"
-                                      VerticalScrollBarVisibility="Visible"
-                                      HorizontalScrollBarVisibility="Visible"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto"
                                       MinHeight="0"
                                       ClipToBounds="True"
                                       HorizontalAlignment="Stretch"
@@ -2138,8 +2137,8 @@
                                                           ClipToBounds="True"
                                                           HorizontalAlignment="Stretch"
                                                           VerticalAlignment="Stretch"
-                                                          HorizontalScrollBarVisibility="Visible"
-                                                          VerticalScrollBarVisibility="Visible"
+                                                          HorizontalScrollBarVisibility="Auto"
+                                                          VerticalScrollBarVisibility="Auto"
                                                           FontFamily="Consolas, Menlo, Monaco, monospace" />
                             </Grid>
 
@@ -2153,8 +2152,8 @@
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
                                       PointerCaptureLost="CopyableTablePointerReleased"
-                                      VerticalScrollBarVisibility="Visible"
-                                      HorizontalScrollBarVisibility="Visible"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto"
                                       MinHeight="0"
                                       ClipToBounds="True"
                                       HorizontalAlignment="Stretch"

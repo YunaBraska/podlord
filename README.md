@@ -12,11 +12,7 @@ It is built with C#/.NET, Avalonia UI, and a direct Kubernetes API client. Norma
 
 ## Screenshots
 
-The previews below use sanitized demo data.
-
-![Podlord resource explorer](docs/screenshots/resource-explorer.svg)
-
-![Podlord inspector and settings](docs/screenshots/inspector-settings.svg)
+Real captures land in `doc/screenshots/` per release. Until then run from source to see the UI in action.
 
 ## Highlights
 
@@ -122,9 +118,9 @@ Merging to `main` runs the release pipeline:
 
 1. test with the k3d-backed suite
 2. create a date version like `2026.6.15`
-3. build platform archives for Linux, macOS, and Windows across supported x64, x86, arm, and arm64 runtimes
-4. update the changelog release section
-5. push the release commit, create the tag, and publish the GitHub release
+3. build platform archives for Linux, macOS, and Windows across the 11 supported runtimes (x64, x86, arm, arm64; glibc and musl)
+4. zip Windows archives, tar.gz everything else, and generate `SHA256SUMS` across the full set
+5. update the changelog release section, push the release commit, create the tag, and publish the GitHub release with notes extracted from the changelog
 
 Manual workflow dispatch is available for dry runs or a custom date tag, but normal releases are branch-driven.
 

@@ -68,9 +68,9 @@ public sealed class VisualAlgorithmTests
     public void Radar_water_interval_and_value_logic_cover_idle_active_and_negative_offsets()
     {
         Assert.Equal(TimeSpan.FromMilliseconds(3_000), RadarWaterModel.WaterIntervalFor(120, 0));
-        Assert.Equal(TimeSpan.FromMilliseconds(2_785.5), RadarWaterModel.WaterIntervalFor(0, 1));
-        Assert.Equal(TimeSpan.FromMilliseconds(850), RadarWaterModel.WaterIntervalFor(240, 100));
-        Assert.Equal(TimeSpan.FromMilliseconds(2_075), RadarWaterModel.WaterIntervalFor(-20, 50));
+        Assert.Equal(TimeSpan.FromMilliseconds(198.2), RadarWaterModel.WaterIntervalFor(0, 1));
+        Assert.Equal(TimeSpan.FromMilliseconds(20), RadarWaterModel.WaterIntervalFor(240, 100));
+        Assert.Equal(TimeSpan.FromMilliseconds(110), RadarWaterModel.WaterIntervalFor(-20, 50));
         Assert.Equal(17.5, RadarWaterModel.PositiveMod(-0.5, 18));
         Assert.Equal(0.5, RadarWaterModel.PositiveMod(18.5, 18));
 

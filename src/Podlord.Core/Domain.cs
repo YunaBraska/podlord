@@ -415,6 +415,22 @@ public sealed record ResourcePulse(
         ? "-"
         : $"{FormatBytes(RoundBytes(MemoryBytes.Value * 1.25, 16, 32))} request / {FormatBytes(RoundBytes(MemoryBytes.Value * 1.8, 32, 64))} limit";
 
+    public double CpuSuggestionPercent => CpuMillicores is null || CpuLimitMillicores is null or <= 0
+        ? 0
+        : Math.Clamp(RoundCpu(CpuMillicores.Value * 2.0, 50, 50) / CpuLimitMillicores.Value * 100d, 0, 100);
+
+    public double MemorySuggestionPercent => MemoryBytes is null || MemoryLimitBytes is null or <= 0
+        ? 0
+        : Math.Clamp((double)RoundBytes(MemoryBytes.Value * 1.8, 32, 64) / MemoryLimitBytes.Value * 100d, 0, 100);
+
+    public bool HasCpuSuggestion => CpuSuggestionPercent > 0;
+
+    public bool HasMemorySuggestion => MemorySuggestionPercent > 0;
+
+    public double CpuSuggestionLeft => CpuSuggestionPercent * 1.54d;
+
+    public double MemorySuggestionLeft => MemorySuggestionPercent * 1.54d;
+
     public ResourcePulse WithLiveUsage(double? cpuMillicores, long? memoryBytes, string sourceBadge, string tooltip)
     {
         return this with

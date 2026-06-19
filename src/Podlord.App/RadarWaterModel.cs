@@ -70,8 +70,8 @@ internal static class RadarWaterModel
 
         var speed = Math.Clamp(speedPercent, 0, 100) / 100d;
         var activity = Math.Clamp(activityRate, 0, 240) / 240d;
-        var milliseconds = 2_800 - speed * 1_450 - activity * 520;
-        return TimeSpan.FromMilliseconds(Math.Clamp(milliseconds, 850, 2_800));
+        var milliseconds = 200d - speed * 180d - activity * 24d;
+        return TimeSpan.FromMilliseconds(Math.Clamp(milliseconds, 20, 240));
     }
 
     public static int StableWaterValue(int column, int row, int phase)

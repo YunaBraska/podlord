@@ -9,69 +9,6 @@ Podlord is built around a flat, cache-first Kubernetes workspace. The current fo
 
 Empty roles play silent today and do not block the first OSS release.
 
-## Next: Rule-Based Alerts
-
-The next major feature is a user-customizable alert system.
-
-Goal: replace hardcoded activity/problem behavior with transparent rules that users can inspect, enable, disable, duplicate, and tune.
-
-### Planned Capabilities
-
-- Rule builder over resource fields, filters, status, events, metrics, namespace, cluster, labels, owners, and age.
-- Built-in example rules matching today’s default behavior:
-  - crash loop
-  - image pull failure
-  - pending too long
-  - terminating too long
-  - warning event burst
-  - restart spike
-  - node not ready
-  - stale API data
-- Per-rule severity: info, warning, error, critical.
-- Per-rule output:
-  - table/radar highlight
-  - radar blink animation
-  - custom radar marker style
-  - optional sound
-  - optional desktop notification
-- Per-rule scope:
-  - all sources
-  - selected sources
-  - namespaces
-  - resource kinds
-  - saved filters
-- Rule presets that can be imported/exported as YAML or JSON.
-- A default ruleset that can be reset after user edits.
-
-### User Experience
-
-Rules should be simple enough for non-experts:
-
-```text
-When Kind is Pod
-and Status contains CrashLoopBackOff
-then show warning animation
-and play warning sound
-```
-
-Power users should still be able to express advanced cases:
-
-```text
-kind = Pod
-namespace in payments,billing
-restarts > 5
-age < 1h
-```
-
-### Migration Plan
-
-1. Add rule data model and persistence.
-2. Convert existing activity/problem classification into built-in rules.
-3. Keep current Problems and Activity switches as UI presets backed by rules.
-4. Add rule editor.
-5. Add radar animation and sound actions.
-6. Add import/export.
-
 ## Workspace Views
 
 ### Network View
@@ -118,7 +55,7 @@ Surface: a rules editor where each rule binds a *trigger* to one or more *action
 - A default automation pack ships with the same behaviors users see today.
 - Reset-to-defaults at any time.
 
-This subsumes the [Rule-Based Alerts](#next-rule-based-alerts) work — automations are the unified primitive.
+Automations build on top of the existing alert rule engine — they are the unified primitive for everything that reacts to cluster state.
 
 ## Sound Gamification
 

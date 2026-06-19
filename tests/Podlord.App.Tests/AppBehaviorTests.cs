@@ -2390,8 +2390,8 @@ public sealed class AppBehaviorTests
             Pulse = new ResourcePulse(null, 500, null, 268_435_456, null, null, null, null, "API", "limits only")
         };
 
-        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "CPU" && row.Value == "-/500m" && row.HasBar);
-        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "Memory" && row.Value == "-/256Mi" && row.HasBar);
+        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "CPU" && row.Value == "-/500m" && !row.HasBar);
+        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "Memory" && row.Value == "-/256Mi" && !row.HasBar);
         Assert.DoesNotContain(viewModel.FocusMetrics, row => row.Label == "CPU %");
         Assert.DoesNotContain(viewModel.FocusMetrics, row => row.Label == "Memory %");
         Assert.DoesNotContain(viewModel.FocusMetrics, row => row.Label == "CPU limit suggestion");
