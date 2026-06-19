@@ -13,9 +13,10 @@ public static class HeadlessAppBuilder
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
+            .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions
             {
-                UseHeadlessDrawing = true
+                UseHeadlessDrawing = false
             });
 
     public static void EnsureStarted()
@@ -26,6 +27,12 @@ public static class HeadlessAppBuilder
             {
                 return;
             }
+
+            var sandbox = Path.Combine(Path.GetTempPath(), $"podlord-layout-tests-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(sandbox);
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", sandbox);
+            Environment.SetEnvironmentVariable("PODLORD_HOME", sandbox);
+
             try
             {
                 BuildAvaloniaApp().SetupWithoutStarting();

@@ -430,6 +430,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public bool IsRadarData => !IsRadarIdle;
 
+    internal void ForceRadarLiveForTesting() => IsRadarIdle = false;
+
+    internal void SeedCachedRowsForTesting(IEnumerable<FlatResourceRow> rows)
+    {
+        cachedRows.Clear();
+        cachedRows.AddRange(rows);
+        restartOutlierThreshold = ResourceFilterMatcher.RestartOutlierThreshold(cachedRows);
+        UpdateHealthSegments(cachedRows);
+        ApplyLocalFilter();
+    }
+
     public bool IsRadarWaterVisible => IsRadarData && state.Settings().RadarWaterEnabled && state.Settings().RadarWaterSpeed > 0;
 
     public int RadarIdleSeed => radarLifeSeed;

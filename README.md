@@ -12,7 +12,11 @@ It is built with C#/.NET, Avalonia UI, and a direct Kubernetes API client. Norma
 
 ## Screenshots
 
-Real captures land in `doc/screenshots/` per release. Until then run from source to see the UI in action.
+![Podlord resource explorer](doc/screenshots/resource-explorer.png)
+
+![Podlord inspector and filters](doc/screenshots/inspector-settings.png)
+
+Captures are produced from a real Avalonia render via `PODLORD_CAPTURE_SCREENSHOTS=1 dotnet test tests/Podlord.App.LayoutTests/Podlord.App.LayoutTests.csproj --filter Capture_resource_explorer`.
 
 ## Highlights
 
