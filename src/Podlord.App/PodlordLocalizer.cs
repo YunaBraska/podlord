@@ -87,7 +87,6 @@ public static class PodlordLocalizer
         ["tooltip.nextMatch"] = "Next match",
         ["tooltip.previousResource"] = "Previous resource",
         ["tooltip.nextResource"] = "Next resource",
-        ["tooltip.portForward"] = "Port forward",
         ["tooltip.preparePortForward"] = "Prepare port forward",
         ["tooltip.removeSnapshot"] = "Remove snapshot",
         ["tooltip.resizeInspector"] = "Drag to resize inspector",
