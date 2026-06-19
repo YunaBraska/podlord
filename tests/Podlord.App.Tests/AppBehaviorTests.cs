@@ -234,6 +234,33 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Inspector_history_inserts_after_cursor_and_caps_at_thirty_two()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.PushInspectorHistoryForTesting("a");
+        viewModel.PushInspectorHistoryForTesting("b");
+        viewModel.PushInspectorHistoryForTesting("c");
+        Assert.Equal(new[] { "a", "b", "c" }, viewModel.InspectorHistoryIdsForTesting);
+        Assert.Equal(2, viewModel.InspectorHistoryCursorForTesting);
+
+        var historyField = typeof(MainWindowViewModel).GetField("inspectorHistoryCursor", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        historyField!.SetValue(viewModel, 1);
+        viewModel.PushInspectorHistoryForTesting("d");
+        Assert.Equal(new[] { "a", "b", "d", "c" }, viewModel.InspectorHistoryIdsForTesting);
+        Assert.Equal(2, viewModel.InspectorHistoryCursorForTesting);
+
+        for (var index = 0; index < 64; index++)
+        {
+            viewModel.PushInspectorHistoryForTesting($"id{index}");
+        }
+        Assert.Equal(32, viewModel.InspectorHistoryIdsForTesting.Count);
+        Assert.InRange(viewModel.InspectorHistoryCursorForTesting, 0, 31);
+    }
+
+    [Fact]
     public void Resource_sort_cycles_descending_ascending_none_and_glyph_clears_when_switching_column()
     {
         var directory = TempDirectory();

@@ -3879,6 +3879,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    internal IReadOnlyList<string> InspectorHistoryIdsForTesting => inspectorHistoryIds;
+
+    internal int InspectorHistoryCursorForTesting => inspectorHistoryCursor;
+
+    internal void PushInspectorHistoryForTesting(string id) => PushInspectorHistory(id);
+
     private void PushInspectorHistory(string id)
     {
         if (string.IsNullOrEmpty(id))
@@ -6686,13 +6692,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void EvaluateAlertRules()
     {
-        var rules = AlertRules.Select(rule => rule.ToRule()).ToList();
+        var rules = new List<AlertRule>(AlertRules.Count);
+        var enabledRuleIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rule in AlertRules)
+        {
+            var resolved = rule.ToRule();
+            rules.Add(resolved);
+            if (resolved.Enabled)
+            {
+                enabledRuleIds.Add(resolved.Id);
+            }
+        }
         var evaluations = AlertRuleEvaluator.Evaluate(cachedRows, rules);
         var now = DateTimeOffset.Now;
-        var rowsById = cachedRows
-            .GroupBy(row => row.Id, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        var enabledRuleIds = rules.Where(rule => rule.Enabled).Select(rule => rule.Id).ToHashSet(StringComparer.Ordinal);
+        var rowsById = new Dictionary<string, FlatResourceRow>(cachedRows.Count, StringComparer.Ordinal);
+        foreach (var row in cachedRows)
+        {
+            rowsById[row.Id] = row;
+        }
         activeAlertActionsByResourceId.Clear();
         activeRadarAlertMatches.Clear();
         RemoveExpiredAlertDurations(enabledRuleIds, rowsById, now);
@@ -6782,12 +6799,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private string AlertRowsStateKey(IEnumerable<FlatResourceRow> rows)
     {
-        return string.Join("|", rows
-            .OrderBy(row => row.Id, StringComparer.Ordinal)
-            .Select(row =>
+        var ordered = rows is IList<FlatResourceRow> list ? new List<FlatResourceRow>(list) : rows.ToList();
+        ordered.Sort((left, right) => string.CompareOrdinal(left.Id, right.Id));
+        if (ordered.Count == 0)
+        {
+            return string.Empty;
+        }
+        var builder = new System.Text.StringBuilder(ordered.Count * 64);
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            if (index > 0)
             {
-                return $"{row.Id}:{AlertRowStateKey(row)}";
-            }));
+                builder.Append('|');
+            }
+            var row = ordered[index];
+            builder.Append(row.Id).Append(':').Append(AlertRowStateKey(row));
+        }
+        return builder.ToString();
     }
 
     private string AlertRowStateKey(FlatResourceRow row)
@@ -7212,9 +7240,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private static string PulseScopeTooltip(IReadOnlyList<FlatResourceRow> rows, int totalCachedRows)
     {
-        var clusters = rows.Select(row => row.Cluster).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Count();
-        var namespaces = rows.Select(row => row.Namespace ?? "cluster").Distinct(StringComparer.Ordinal).Count();
-        return $"Scope: {rows.Count.ToString(CultureInfo.InvariantCulture)} visible of {totalCachedRows.ToString(CultureInfo.InvariantCulture)} cached resources across {clusters.ToString(CultureInfo.InvariantCulture)} cluster(s) and {namespaces.ToString(CultureInfo.InvariantCulture)} namespace sector(s).";
+        var clusters = new HashSet<string>(StringComparer.Ordinal);
+        var namespaces = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            if (!string.IsNullOrWhiteSpace(row.Cluster))
+            {
+                clusters.Add(row.Cluster);
+            }
+            namespaces.Add(row.Namespace ?? "cluster");
+        }
+        return $"Scope: {rows.Count.ToString(CultureInfo.InvariantCulture)} visible of {totalCachedRows.ToString(CultureInfo.InvariantCulture)} cached resources across {clusters.Count.ToString(CultureInfo.InvariantCulture)} cluster(s) and {namespaces.Count.ToString(CultureInfo.InvariantCulture)} namespace sector(s).";
     }
 
     private static string PulseMetricTooltip(string label, string value, string scope)

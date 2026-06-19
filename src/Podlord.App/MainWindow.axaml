@@ -2161,7 +2161,10 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Copy" Width="190">
+                                    <DataGridTemplateColumn Width="190">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Copy" Label="Copy" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Spacing="4">
@@ -2184,7 +2187,10 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="" Width="94">
+                                    <DataGridTemplateColumn Width="94">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Reveal" Label="Reveal" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Button Content="{Binding RevealLabel}"
