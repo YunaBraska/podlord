@@ -4659,6 +4659,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    internal void RenderDetailForTesting(ResourceDetail detail, bool forceYamlRefresh = false) => RenderDetail(detail, forceYamlRefresh);
+
     private void RenderDetail(ResourceDetail detail, bool forceYamlRefresh = false)
     {
         var detailItems = detail.Summary

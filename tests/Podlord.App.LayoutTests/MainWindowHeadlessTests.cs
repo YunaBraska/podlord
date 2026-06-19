@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input.Platform;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -94,6 +95,66 @@ public sealed class MainWindowHeadlessTests
                 .OfType<AvaloniaEdit.TextEditor>()
                 .Any(editor => editor.Name == "LogEditor");
             Assert.True(editorByName, "LogEditor TextEditor not found in MainWindow");
+        });
+    }
+
+    [Fact]
+    public void Resource_link_context_menu_copies_reference_to_clipboard_and_opens_in_inspector()
+    {
+        Dispatcher.UIThread.Invoke(async () =>
+        {
+            var window = new MainWindow([]);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var row = new Podlord.Core.FlatResourceRow(
+                Id: "ses:Pod:default:test-pod:uid",
+                Status: "Running",
+                Kind: "Pod",
+                Name: "test-pod",
+                Namespace: "default",
+                Cluster: "cluster",
+                Age: "1m",
+                Ready: "1/1",
+                Restarts: 0,
+                Node: "node-a",
+                ImageSummary: "img:1",
+                Owner: "ReplicaSet/test",
+                LastChange: "now",
+                Freshness: Podlord.Core.FreshnessState.Fresh);
+            var vm = window.ViewModel;
+            vm.Resources.Add(row);
+            Dispatcher.UIThread.RunJobs();
+
+            var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
+                       ?? window.GetVisualDescendants().OfType<StackPanel>().First();
+            var link = new ResourceLinkButton { Tag = "Pod/test-pod", Content = new TextBlock { Text = "Pod/test-pod" } };
+            host.Children.Add(link);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(link.ContextMenu);
+            var open = link.ContextMenu!.Items.OfType<MenuItem>().First(item => string.Equals(item.Header as string, vm.T("ref.menuOpen"), StringComparison.Ordinal));
+            var copy = link.ContextMenu!.Items.OfType<MenuItem>().First(item => string.Equals(item.Header as string, vm.T("ref.menuCopy"), StringComparison.Ordinal));
+
+            Assert.Equal("Pod/test-pod", open.Tag);
+            Assert.Equal("Pod/test-pod", copy.Tag);
+
+            copy.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(50);
+            Dispatcher.UIThread.RunJobs();
+
+            if (window.Clipboard is not null)
+            {
+                var clipboardText = await window.Clipboard.TryGetTextAsync();
+                Assert.Equal("Pod/test-pod", clipboardText);
+            }
+
+            open.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(50);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(string.IsNullOrEmpty(vm.StatusLine) || !vm.StatusLine.Contains("No cached resource matches"));
         });
     }
 

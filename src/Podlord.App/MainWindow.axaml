@@ -395,7 +395,7 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBox Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}"
                                              PlaceholderText="{Binding FilterNamePlaceholderText}" />
-                                    <Button Grid.Column="1" Content="▾" Padding="8,4" ToolTip.Tip="{Binding SavedFiltersText}">
+                                    <Button Grid.Column="1" Content="▾" Padding="{StaticResource PlPaddingButtonTight}" ToolTip.Tip="{Binding SavedFiltersText}">
                                         <Button.Flyout>
                                             <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
                                                 <Border Width="344" Padding="8" Classes="hudMenu">
@@ -456,7 +456,7 @@
                                                                 <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                                                                          PlaceholderText="{Binding DataContext.FilterSearchOrCustomText, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                          KeyDown="FilterSearchKeyDown" />
-                                                                <Button Grid.Column="1" Content="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding AddSearchCommand}" Padding="8,4" />
+                                                                <Button Grid.Column="1" Content="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding AddSearchCommand}" Padding="{StaticResource PlPaddingButtonTight}" />
                                                             </Grid>
                                                             <TextBlock Text="{Binding DataContext.CustomValuesText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlTextMutedBrush}" />
                                                             <ItemsControl ItemsSource="{Binding CustomValues}">
@@ -532,7 +532,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsResourceSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleResourceSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="ToggleResourceSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -893,7 +893,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsGraphSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleGraphSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="ToggleGraphSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -952,7 +952,7 @@
                                         <ToolTip.Tip>
                                             <Border MinWidth="300"
                                                     MaxWidth="440"
-                                                    Padding="12"
+                                                    Padding="{StaticResource PlPaddingPanel}"
                                                     Background="{StaticResource PlBgPanelBrush}"
                                                     BorderBrush="{Binding BorderBrush}"
                                                     BorderThickness="1"
@@ -1020,7 +1020,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsEventSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleEventSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="ToggleEventSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1098,7 +1098,7 @@
             <Grid Grid.Row="0" IsVisible="{Binding IsPortsWorkspace}" RowDefinitions="Auto,*" Margin="10" RowSpacing="8">
                 <Border Grid.Row="0" IsVisible="{Binding IsPortSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                        <Button Click="TogglePortSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="TogglePortSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1723,7 +1723,7 @@
                                     <Border Background="{StaticResource PlPlaqueBrush}"
                                             BorderBrush="{StaticResource PlGoldBorderBrush}"
                                             BorderThickness="1"
-                                            Padding="16"
+                                            Padding="{StaticResource PlPaddingPanelLg}"
                                             CornerRadius="2">
                                         <TextBlock Name="AboutBlock"
                                                    Text="{Binding AboutBlockText}"

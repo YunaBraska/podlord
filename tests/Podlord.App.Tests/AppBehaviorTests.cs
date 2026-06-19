@@ -234,6 +234,74 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Yaml_editor_restores_to_new_resource_yaml_when_yaml_tab_inactive()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.SelectedInspectorTabIndex = 0;
+
+        var first = new ResourceDetail(
+            new ResourceIdentity(null, "Pod", "ns", "first"),
+            "Running",
+            FreshnessState.Fresh,
+            "apiVersion: v1\nkind: Pod\nmetadata:\n  name: first\n",
+            Array.Empty<DetailItem>(),
+            Array.Empty<DetailItem>(),
+            Array.Empty<EventSummary>(),
+            Array.Empty<ResourceValueItem>());
+        viewModel.RenderDetailForTesting(first);
+        Assert.Contains("name: first", viewModel.EditableYaml, StringComparison.Ordinal);
+
+        viewModel.EditableYaml = viewModel.EditableYaml + "\n# user scribble\n";
+        var dirty = viewModel.EditableYaml;
+        Assert.Contains("# user scribble", dirty, StringComparison.Ordinal);
+
+        var second = first with
+        {
+            Identity = new ResourceIdentity(null, "Pod", "ns", "second"),
+            Yaml = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: second\n"
+        };
+        viewModel.RenderDetailForTesting(second);
+
+        Assert.Contains("name: second", viewModel.EditableYaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("# user scribble", viewModel.EditableYaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Yaml_editor_preserves_unsaved_edits_when_yaml_tab_active_and_resource_changes()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.SelectedInspectorTabIndex = 0;
+
+        var first = new ResourceDetail(
+            new ResourceIdentity(null, "Pod", "ns", "first"),
+            "Running",
+            FreshnessState.Fresh,
+            "apiVersion: v1\nkind: Pod\nmetadata:\n  name: first\n",
+            Array.Empty<DetailItem>(),
+            Array.Empty<DetailItem>(),
+            Array.Empty<EventSummary>(),
+            Array.Empty<ResourceValueItem>());
+        viewModel.RenderDetailForTesting(first);
+
+        viewModel.SelectedInspectorTabIndex = 1;
+        viewModel.EditableYaml = viewModel.EditableYaml + "\n# scribble\n";
+
+        var second = first with
+        {
+            Identity = new ResourceIdentity(null, "Pod", "ns", "second"),
+            Yaml = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: second\n"
+        };
+        viewModel.RenderDetailForTesting(second);
+
+        Assert.Contains("# scribble", viewModel.EditableYaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("name: second", viewModel.EditableYaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Open_known_resource_reference_returns_false_for_unmatched_value_and_sets_status()
     {
         var directory = TempDirectory();
