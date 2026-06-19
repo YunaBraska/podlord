@@ -1,6 +1,10 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Input.Raw;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -95,6 +99,37 @@ public sealed class MainWindowHeadlessTests
                 .OfType<AvaloniaEdit.TextEditor>()
                 .Any(editor => editor.Name == "LogEditor");
             Assert.True(editorByName, "LogEditor TextEditor not found in MainWindow");
+        });
+    }
+
+    [Fact]
+    public void Resource_link_right_click_opens_context_menu_through_real_pointer_input()
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            var window = new MainWindow([]);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
+                       ?? window.GetVisualDescendants().OfType<StackPanel>().First();
+            var link = new ResourceLinkButton { Tag = "Pod/test-pod", Content = new TextBlock { Text = "Pod/test-pod" }, Width = 160, Height = 28 };
+            host.Children.Add(link);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(link.ContextMenu);
+            var menu = link.ContextMenu!;
+            Assert.False(menu.IsOpen);
+
+            var origin = link.TranslatePoint(new Point(link.Bounds.Width / 2, link.Bounds.Height / 2), window) ?? new Point(0, 0);
+            window.MouseDown(origin, MouseButton.Right);
+            Dispatcher.UIThread.RunJobs();
+            window.MouseUp(origin, MouseButton.Right);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(2, menu.Items.OfType<MenuItem>().Count());
         });
     }
 
