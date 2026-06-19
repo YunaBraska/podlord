@@ -174,6 +174,21 @@ public sealed class K3dKubernetesBehaviorTests
     }
 
     [Fact]
+    public async Task Detail_summary_reports_local_creation_timestamp_and_age_for_real_pod()
+    {
+        var brokenPod = await cluster.BrokenPodName();
+
+        var detail = await cluster.AdminService.GetResourceDetailAsync(
+            new ResourceIdentity(null, "Pod", "broken-zone", brokenPod));
+
+        var created = Assert.Single(detail.Summary, item => item.Label == "Created");
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$", created.Value);
+        var age = Assert.Single(detail.Summary, item => item.Label == "Age");
+        Assert.False(string.IsNullOrWhiteSpace(age.Value));
+        Assert.NotEqual("-", age.Value);
+    }
+
+    [Fact]
     public async Task Pod_logs_fetch_real_tail_from_running_pod()
     {
         var logPod = await cluster.LogPodName();

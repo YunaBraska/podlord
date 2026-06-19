@@ -234,6 +234,19 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Open_known_resource_reference_returns_false_for_unmatched_value_and_sets_status()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        Assert.False(viewModel.HasKnownResourceReference("Pod/missing"));
+        Assert.Null(viewModel.ResolveResourceReferenceForPreview("Pod/missing"));
+        Assert.False(viewModel.OpenKnownResourceReference("Pod/missing"));
+        Assert.Contains("Pod/missing", viewModel.StatusLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Inspector_history_inserts_after_cursor_and_caps_at_thirty_two()
     {
         var directory = TempDirectory();

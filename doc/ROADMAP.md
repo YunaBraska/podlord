@@ -2,6 +2,13 @@
 
 Podlord is built around a flat, cache-first Kubernetes workspace. The current focus is making the desktop app reliable, readable, and safe before adding larger orchestration features.
 
+## Deferred Audio Polish
+
+- Record CC0 voice cues for `voice/radar-activated.ogg`, `voice/under-attack.ogg`, `voice/load-complete.ogg` (free TTS such as Piper, Coqui-TTS, macOS `say`).
+- Source CC0 calm ambient or industrial loops for `music/calm/`. Energetic loops already shipped.
+
+Empty roles play silent today and do not block the first OSS release.
+
 ## Next: Rule-Based Alerts
 
 The next major feature is a user-customizable alert system.

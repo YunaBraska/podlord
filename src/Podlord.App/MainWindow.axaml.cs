@@ -1617,9 +1617,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         return canvas;
     }
 
-    private enum InspectorSortDir { None, Ascending, Descending }
-
-    private readonly Dictionary<DataGrid, (string Column, InspectorSortDir Direction)> inspectorSortState = new();
+    private readonly InspectorSortManager inspectorSort = new();
 
     private void UpdateSortHeaderIndicators()
     {
@@ -1639,14 +1637,11 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             {
                 glyph = viewModel.EventSortGlyphFor(column);
             }
-            else if (button.FindAncestorOfType<DataGrid>() is { } grid && inspectorSortState.TryGetValue(grid, out var state) && state.Column == column)
+            else if (button.FindAncestorOfType<DataGrid>() is { } grid
+                     && inspectorSort.TryGetSort(grid, out var state)
+                     && state.Column == column)
             {
-                glyph = state.Direction switch
-                {
-                    InspectorSortDir.Ascending => "▲",
-                    InspectorSortDir.Descending => "▼",
-                    _ => string.Empty
-                };
+                glyph = InspectorSortManager.GlyphFor(state.Direction);
             }
             else
             {
@@ -1667,111 +1662,9 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         {
             return;
         }
-
-        var current = inspectorSortState.GetValueOrDefault(grid);
-        var next = current.Column == column
-            ? current.Direction switch
-            {
-                InspectorSortDir.Ascending => InspectorSortDir.Descending,
-                InspectorSortDir.Descending => InspectorSortDir.None,
-                _ => InspectorSortDir.Ascending
-            }
-            : InspectorSortDir.Ascending;
-
-        if (next == InspectorSortDir.None)
+        if (inspectorSort.CycleSort(grid, column))
         {
-            inspectorSortState.Remove(grid);
-            ApplyInspectorSort(grid, ResolveDefaultSortPath(grid), InspectorSortDir.Ascending);
-        }
-        else
-        {
-            var path = ResolveSortPath(grid, column);
-            if (path is null)
-            {
-                return;
-            }
-            inspectorSortState[grid] = (column, next);
-            ApplyInspectorSort(grid, path, next);
-        }
-        UpdateSortHeaderIndicators();
-    }
-
-    private static string? ResolveSortPath(DataGrid grid, string column)
-    {
-        var match = grid.Columns.FirstOrDefault(c => HeaderText(c.Header).Equals(column, StringComparison.Ordinal));
-        if (match is null)
-        {
-            return null;
-        }
-        if (!string.IsNullOrWhiteSpace(match.SortMemberPath))
-        {
-            return match.SortMemberPath;
-        }
-        if (match is DataGridBoundColumn bound && bound.Binding is Avalonia.Data.Binding binding && !string.IsNullOrWhiteSpace(binding.Path))
-        {
-            return binding.Path;
-        }
-        return null;
-    }
-
-    private static string? ResolveDefaultSortPath(DataGrid grid)
-    {
-        foreach (var column in grid.Columns.OrderBy(c => c.DisplayIndex))
-        {
-            if (!string.IsNullOrWhiteSpace(column.SortMemberPath))
-            {
-                return column.SortMemberPath;
-            }
-            if (column is DataGridBoundColumn bound && bound.Binding is Avalonia.Data.Binding binding && !string.IsNullOrWhiteSpace(binding.Path))
-            {
-                return binding.Path;
-            }
-        }
-        return null;
-    }
-
-    private static void ApplyInspectorSort(DataGrid grid, string? path, InspectorSortDir direction)
-    {
-        if (path is null || grid.ItemsSource is not System.Collections.IList list || list.Count < 2)
-        {
-            return;
-        }
-        var items = new List<object?>();
-        foreach (var item in list)
-        {
-            items.Add(item);
-        }
-        var sample = items.FirstOrDefault(i => i is not null);
-        if (sample is null)
-        {
-            return;
-        }
-        var property = sample.GetType().GetProperty(path);
-        if (property is null)
-        {
-            return;
-        }
-        items.Sort((a, b) =>
-        {
-            var av = a is null ? null : property.GetValue(a);
-            var bv = b is null ? null : property.GetValue(b);
-            if (av is null && bv is null) return 0;
-            if (av is null) return -1;
-            if (bv is null) return 1;
-            if (av is IComparable comparable)
-            {
-                return comparable.CompareTo(bv);
-            }
-            return string.Compare(av.ToString(), bv.ToString(), StringComparison.OrdinalIgnoreCase);
-        });
-        if (direction == InspectorSortDir.Descending)
-        {
-            items.Reverse();
-        }
-        list.Clear();
-        foreach (var item in items)
-        {
-            list.Add(item);
+            UpdateSortHeaderIndicators();
         }
     }
 
@@ -1873,90 +1766,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         ToolTip.SetShowDelay(button, 400);
     }
 
-    private Control BuildResourceReferenceTooltip(string reference)
-    {
-        var hint = viewModel.T("ref.triggerHint");
-        var row = viewModel.ResolveResourceReferenceForPreview(reference);
-        var goldBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlGoldBrightBrush")!;
-        var mutedBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlTextMutedBrush")!;
-        var textBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlTextBrush")!;
-        var panelBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlBgPanelBrush")!;
-        var edgeBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlPlaqueEdgeBrush")!;
-
-        var stack = new Avalonia.Controls.StackPanel { Spacing = 4 };
-        if (row is null)
-        {
-            stack.Children.Add(new Avalonia.Controls.TextBlock
-            {
-                Text = reference,
-                Foreground = goldBrush,
-                FontWeight = Avalonia.Media.FontWeight.Bold,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap
-            });
-            stack.Children.Add(new Avalonia.Controls.TextBlock
-            {
-                Text = viewModel.T("ref.notInCache"),
-                Foreground = mutedBrush
-            });
-        }
-        else
-        {
-            stack.Children.Add(new Avalonia.Controls.TextBlock
-            {
-                Text = $"{row.Kind}/{row.Name}",
-                Foreground = goldBrush,
-                FontWeight = Avalonia.Media.FontWeight.Bold,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap
-            });
-            stack.Children.Add(new Avalonia.Controls.TextBlock
-            {
-                Text = row.Namespace ?? "cluster",
-                Foreground = mutedBrush
-            });
-            AddKvRow(stack, "Status", row.Status, textBrush, mutedBrush);
-            if (row.HasReadyInfo) AddKvRow(stack, "Ready", row.Ready, textBrush, mutedBrush);
-            if (row.HasRestartInfo) AddKvRow(stack, "Restarts", row.Restarts.ToString(CultureInfo.InvariantCulture), textBrush, mutedBrush);
-            if (row.HasCpuMetricInfo) AddKvRow(stack, "CPU", row.CpuSummaryDisplay, textBrush, mutedBrush);
-            if (row.HasMemoryMetricInfo) AddKvRow(stack, "Memory", row.MemorySummaryDisplay, textBrush, mutedBrush);
-            if (row.HasNodeInfo) AddKvRow(stack, "Node", row.Node ?? "-", textBrush, mutedBrush);
-            if (row.HasImageInfo) AddKvRow(stack, "Image", row.ImageSummary, textBrush, mutedBrush);
-            if (row.HasOwnerInfo) AddKvRow(stack, "Owner", row.Owner ?? "-", textBrush, mutedBrush);
-        }
-        stack.Children.Add(new Avalonia.Controls.Border
-        {
-            Margin = new Avalonia.Thickness(0, 6, 0, 0),
-            Padding = new Avalonia.Thickness(0, 4, 0, 0),
-            BorderBrush = edgeBrush,
-            BorderThickness = new Avalonia.Thickness(0, 1, 0, 0),
-            Child = new Avalonia.Controls.TextBlock
-            {
-                Text = hint,
-                Foreground = mutedBrush,
-                FontSize = 11
-            }
-        });
-        return new Avalonia.Controls.Border
-        {
-            MinWidth = 280,
-            MaxWidth = 420,
-            Padding = new Avalonia.Thickness(10),
-            Background = panelBrush,
-            BorderBrush = edgeBrush,
-            BorderThickness = new Avalonia.Thickness(1),
-            Child = stack
-        };
-    }
-
-    private static void AddKvRow(Avalonia.Controls.StackPanel parent, string label, string value, Avalonia.Media.IBrush valueBrush, Avalonia.Media.IBrush labelBrush)
-    {
-        var grid = new Avalonia.Controls.Grid { ColumnDefinitions = new Avalonia.Controls.ColumnDefinitions("76,*") };
-        var k = new Avalonia.Controls.TextBlock { Text = label, Foreground = labelBrush };
-        var v = new Avalonia.Controls.TextBlock { Text = value, Foreground = valueBrush, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
-        Avalonia.Controls.Grid.SetColumn(v, 1);
-        grid.Children.Add(k);
-        grid.Children.Add(v);
-        parent.Children.Add(grid);
-    }
+    private Control BuildResourceReferenceTooltip(string reference) => ResourceReferenceTooltipBuilder.Build(viewModel, reference);
 
     private async Task OpenResourceReferenceAfterHold(string reference, CancellationToken cancellationToken)
     {
@@ -2484,7 +2294,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         return task is null ? string.Empty : task.LocalPort.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string HeaderText(object? header)
+    internal static string HeaderText(object? header)
     {
         return header switch
         {

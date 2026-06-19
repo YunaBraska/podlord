@@ -1187,12 +1187,15 @@
                                           SelectedItem="{Binding SelectedAlertRule}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="False"
-                                          CanUserSortColumns="True"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           VerticalScrollBarVisibility="Visible"
                                           HorizontalScrollBarVisibility="Visible">
                                     <DataGrid.Columns>
-                                        <DataGridTemplateColumn Header="" Width="46">
+                                        <DataGridTemplateColumn Width="46">
+                                            <DataGridTemplateColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Activation" Label="On" />
+                                            </DataGridTemplateColumn.Header>
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Button Click="ToggleAlertRuleClicked" Padding="5" ToolTip.Tip="{Binding ActivationActionText}">
@@ -1201,11 +1204,31 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="{Binding AlertActiveText}" Binding="{Binding ActiveStateText}" Width="110" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="{Binding AlertNameText}" Binding="{Binding Name}" Width="210" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="{Binding AlertWhenText}" Binding="{Binding MatcherSummary}" Width="*" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="{Binding AlertActionsText}" Binding="{Binding ActionSummary}" Width="260" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="{Binding AlertSoundText}" Binding="{Binding SoundLabel}" Width="220" IsReadOnly="True" />
+                                        <DataGridTextColumn Binding="{Binding ActiveStateText}" Width="110" IsReadOnly="True" SortMemberPath="ActiveStateText">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Active" Label="{Binding AlertActiveText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Name}" Width="210" IsReadOnly="True" SortMemberPath="Name">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Name" Label="{Binding AlertNameText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding MatcherSummary}" Width="*" IsReadOnly="True" SortMemberPath="MatcherSummary">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="When" Label="{Binding AlertWhenText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding ActionSummary}" Width="260" IsReadOnly="True" SortMemberPath="ActionSummary">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Actions" Label="{Binding AlertActionsText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding SoundLabel}" Width="220" IsReadOnly="True" SortMemberPath="SoundLabel">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Sound" Label="{Binding AlertSoundText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6">
@@ -1714,19 +1737,19 @@
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutSponsorsUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutSponsorsButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutBuyMeACoffeeUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutBuyMeACoffeeButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutKoFiUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutKoFiButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutLiberapayUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutLiberapayButtonText}" />
                                     </WrapPanel>
                                     <TextBlock Text="{Binding AboutProjectHeadingText}"
@@ -1735,15 +1758,15 @@
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutStarUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutStarRepoButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutRepoUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutGithubRepoButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutIssueUrl}"
-                                                Padding="10,6"
+                                                Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutCreateIssueButtonText}" />
                                     </WrapPanel>
                                 </StackPanel>
