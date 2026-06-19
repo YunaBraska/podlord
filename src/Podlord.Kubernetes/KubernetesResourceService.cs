@@ -88,6 +88,27 @@ public sealed class KubernetesResourceService
             BackoffUntil(now));
     }
 
+    public int EstimateListRequestCount(ResourceQuery query)
+    {
+        var specs = PlannedSpecs(query).ToList();
+        var namespaces = PlannedNamespaces(query);
+        var total = 0;
+        foreach (var spec in specs)
+        {
+            var scope = spec.Namespaced && namespaces.Count > 0 ? namespaces.Count : 1;
+            total += scope;
+        }
+        return total;
+    }
+
+    public int CompletedRequestsSinceStart(DateTimeOffset start)
+    {
+        lock (telemetryLock)
+        {
+            return requestStarts.Count(timestamp => timestamp >= start);
+        }
+    }
+
     public IReadOnlyList<KubernetesRequestAuditEntry> RequestAuditLog()
     {
         lock (telemetryLock)
@@ -285,20 +306,9 @@ public sealed class KubernetesResourceService
         }
 
         using var client = CreateClient(connection);
-        var path = $"/api/v1/namespaces/{Escape(request.Namespace)}/pods/{Escape(request.PodName)}/log?tailLines={Math.Max(1, request.TailLines)}&timestamps=true";
-        if (!string.IsNullOrWhiteSpace(request.Container))
-        {
-            path += $"&container={Escape(request.Container)}";
-        }
-
-        if (request.Previous)
-        {
-            path += "&previous=true";
-        }
-
         try
         {
-            var text = await GetTextQueuedAsync(client, path, priority, cancellationToken).ConfigureAwait(false);
+            var text = await FetchPodLogsAsync(client, request, priority, cancellationToken).ConfigureAwait(false);
             var snapshot = new PodLogSnapshot(
                 new ResourceIdentity(request.SessionId, "Pod", request.Namespace, request.PodName),
                 request.Container,
@@ -317,6 +327,59 @@ public sealed class KubernetesResourceService
         {
             throw PodlordException.KubernetesApi(connection.Context.Name, "Pod logs", HttpFailureMessage(ex), ex);
         }
+    }
+
+    private async Task<string> FetchPodLogsAsync(
+        HttpClient client,
+        PodLogRequest request,
+        KubernetesRequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Container))
+        {
+            return await GetTextQueuedAsync(client, PodLogPath(request, request.Container), priority, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await GetTextQueuedAsync(client, PodLogPath(request, null), priority, cancellationToken).ConfigureAwait(false);
+        }
+        catch (KubernetesStatusException ex) when (IsMultiContainerLogSelectionRequired(ex))
+        {
+            var podPath = $"/api/v1/namespaces/{Escape(request.Namespace)}/pods/{Escape(request.PodName)}";
+            var pod = await GetJsonQueuedAsync(client, podPath, priority, cancellationToken).ConfigureAwait(false);
+            var containers = ContainerNames(pod).ToArray();
+            if (containers.Length <= 1)
+            {
+                var singleContainer = containers.Length == 1 ? containers[0] : null;
+                return await GetTextQueuedAsync(client, PodLogPath(request, singleContainer), priority, cancellationToken).ConfigureAwait(false);
+            }
+
+            var logBlocks = new List<string>(containers.Length);
+            foreach (var container in containers)
+            {
+                var text = await GetTextQueuedAsync(client, PodLogPath(request, container), priority, cancellationToken).ConfigureAwait(false);
+                logBlocks.Add($"===== container: {container} =====\n{text.TrimEnd()}");
+            }
+
+            return string.Join("\n\n", logBlocks);
+        }
+    }
+
+    private static string PodLogPath(PodLogRequest request, string? container)
+    {
+        var path = $"/api/v1/namespaces/{Escape(request.Namespace)}/pods/{Escape(request.PodName)}/log?tailLines={Math.Max(1, request.TailLines)}&timestamps=true";
+        if (!string.IsNullOrWhiteSpace(container))
+        {
+            path += $"&container={Escape(container)}";
+        }
+
+        if (request.Previous)
+        {
+            path += "&previous=true";
+        }
+
+        return path;
     }
 
     public async Task<PodlordPortForward> StartPortForwardAsync(
@@ -1329,7 +1392,7 @@ public sealed class KubernetesResourceService
         string outcome)
     {
         var entry = new KubernetesRequestAuditEntry(
-            startedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'"),
+            startedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.ff", System.Globalization.CultureInfo.InvariantCulture),
             method,
             path,
             priority.ToString(),
@@ -1779,6 +1842,22 @@ public sealed class KubernetesResourceService
         return images.Count == 0 ? "-" : string.Join(", ", images);
     }
 
+    private static IEnumerable<string> ContainerNames(JsonObject pod)
+    {
+        return pod["spec"]?["containers"]?.AsArray()
+            .OfType<JsonObject>()
+            .Select(container => OptionalText(container, "/name"))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            ?? Array.Empty<string>();
+    }
+
+    private static bool IsMultiContainerLogSelectionRequired(KubernetesStatusException ex)
+    {
+        return ex.StatusCode == HttpStatusCode.BadRequest
+               && ex.Message.Contains("a container name must be specified", StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static string? Owner(string kind, JsonObject item)
     {
         if (kind == "Event")
@@ -1839,6 +1918,8 @@ public sealed class KubernetesResourceService
             new DetailItem("Name", row.Name),
             new DetailItem("Namespace", row.Namespace ?? "cluster"),
             new DetailItem("Status", row.Status),
+            new DetailItem("Created", PodlordText.HumanTimestamp(Date(item, "/metadata/creationTimestamp"))),
+            new DetailItem("Age", row.AgeDisplay),
             new DetailItem("Ready", row.Ready),
             new DetailItem("Restarts", row.Restarts.ToString()),
             new DetailItem("CPU", row.CpuSummaryDisplay),
@@ -1885,6 +1966,12 @@ public sealed class KubernetesResourceService
                 new DetailItem("Replicas fully labeled", Int(item, "/status/fullyLabeledReplicas").ToString(CultureInfo.InvariantCulture)),
                 new DetailItem("Observed generation", Int(item, "/status/observedGeneration").ToString(CultureInfo.InvariantCulture))
             });
+        }
+
+        if (row.Kind == "Pod")
+        {
+            var containers = ContainerNames(item).ToArray();
+            summary.Add(new DetailItem("Containers", containers.Length == 0 ? "-" : string.Join(", ", containers)));
         }
 
         return DetailItemFilter.Available(summary);

@@ -12,11 +12,11 @@ It is built with C#/.NET, Avalonia UI, and a direct Kubernetes API client. Norma
 
 ## Screenshots
 
-The previews below use sanitized demo data.
+![Podlord resource explorer](doc/screenshots/resource-explorer.png)
 
-![Podlord resource explorer](docs/screenshots/resource-explorer.svg)
+![Podlord inspector and filters](doc/screenshots/inspector-settings.png)
 
-![Podlord inspector and settings](docs/screenshots/inspector-settings.svg)
+Captures are produced from a real Avalonia render via `PODLORD_CAPTURE_SCREENSHOTS=1 dotnet test tests/Podlord.App.LayoutTests/Podlord.App.LayoutTests.csproj --filter Capture_resource_explorer`.
 
 ## Highlights
 
@@ -44,6 +44,8 @@ Release assets are built for:
 | macOS | arm64, x64 | `.app` bundle inside `.zip` |
 | Linux | x64, arm64 | portable `.tar.gz` |
 | Windows | x64, arm64 | portable `.zip` |
+
+Each release also includes `SHA256SUMS` for archive verification.
 
 macOS builds are currently unsigned. Right-click Open may be required until signing and notarization are configured.
 
@@ -77,15 +79,18 @@ scripts/test.sh
 
 The test script:
 
-1. Ensures Docker or Colima, k3d, and kubectl are available for the test harness.
-2. Creates a disposable k3d cluster.
-3. Runs the .NET test suite with coverage.
-4. Enforces coverage gates.
+1. Ensures Docker or Colima is available.
+2. Installs pinned k3d and kubectl versions into `.tools/bin` when missing.
+3. Creates a disposable k3d cluster.
+4. Runs the .NET test suite with coverage.
+5. Enforces coverage gates.
 
 Current gates:
 
 - Line coverage: 95%
 - Branch coverage: 80%
+
+The gate targets domain, persistence, Kubernetes, filtering, sync, and alert-rule behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and covered by focused behavior/layout tests where useful.
 
 The k3d scenario map is documented in [doc/spec/k3d-test-map.md](doc/spec/k3d-test-map.md).
 
@@ -94,6 +99,8 @@ The k3d scenario map is documented in [doc/spec/k3d-test-map.md](doc/spec/k3d-te
 ```sh
 scripts/publish.sh all
 scripts/publish.sh linux-x64
+scripts/publish.sh linux-musl-arm64
+scripts/publish.sh win-x86
 scripts/build-macos-app.sh osx-arm64
 ```
 
@@ -103,8 +110,25 @@ Supported runtime identifiers:
 - `osx-x64`
 - `linux-x64`
 - `linux-arm64`
+- `linux-arm`
+- `linux-musl-x64`
+- `linux-musl-arm64`
+- `linux-musl-arm`
 - `win-x64`
+- `win-x86`
 - `win-arm64`
+
+## Release Flow
+
+Merging to `main` runs the release pipeline:
+
+1. test with the k3d-backed suite
+2. create a date version like `2026.6.15`
+3. build platform archives for Linux, macOS, and Windows across the 11 supported runtimes (x64, x86, arm, arm64; glibc and musl)
+4. zip Windows archives, tar.gz everything else, and generate `SHA256SUMS` across the full set
+5. update the changelog release section, push the release commit, create the tag, and publish the GitHub release with notes extracted from the changelog
+
+Manual workflow dispatch is available for dry runs or a custom date tag, but normal releases are branch-driven.
 
 ## Project Layout
 
@@ -144,6 +168,19 @@ See [doc/ROADMAP.md](doc/ROADMAP.md) for the full plan.
 ## Contributing
 
 Pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before sending one. The short version: keep behavior explicit, test through public boundaries, do not leak secrets, and do not bypass the Kubernetes request queue.
+
+By contributing you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Support The Project
+
+Podlord is a one-human side project with no funding or corporate backer. If it earned a place on your dock, the easiest way to help is a star on the repository. If you want to fuel a coffee, any of these work:
+
+- [GitHub Sponsors](https://github.com/sponsors/YunaBraska)
+- [Buy Me a Coffee](https://buymeacoffee.com/YunaBraska)
+- [Ko-fi](https://ko-fi.com/YunaBraska)
+- [Liberapay](https://liberapay.com/YunaBraska)
+
+Bugs, ideas, and rants are equally welcome on the [issue tracker](https://github.com/YunaBraska/podlord/issues/new).
 
 ## License
 

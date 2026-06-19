@@ -191,6 +191,24 @@ users:
     }
 
     [Fact]
+    public void App_state_reimport_with_whitespace_only_yaml_changes_keeps_context_identity()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        var state = AppState.InMemoryWithConfigDirectory(directory, Clock);
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("dev", "http://127.0.0.1:1") + "\n");
+        state.ImportKubeconfig(kubeconfig);
+        var first = Assert.Single(state.Snapshot().ImportedContexts);
+
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("dev", "http://127.0.0.1:1") + "\n\n");
+        state.ImportKubeconfig(kubeconfig);
+
+        var current = Assert.Single(state.Snapshot().ImportedContexts);
+        Assert.Equal(first.ContextId, current.ContextId);
+        Assert.Single(state.Snapshot().Sessions);
+    }
+
+    [Fact]
     public void App_state_load_default_backfills_default_filter_for_legacy_sources()
     {
         var directory = TempDirectory();
@@ -333,6 +351,34 @@ users:
         Assert.Equal(2, problems.Count);
         Assert.DoesNotContain(problems, row => row.Name == "frontend");
         Assert.Contains(active, row => row.Name == "payment-api-7d9");
+    }
+
+    [Fact]
+    public void Age_filter_expressions_parse_directly_and_fallback_to_text_without_stale_state()
+    {
+        var rows = new[]
+        {
+            HealthyRow("fresh") with { Age = "1m" },
+            HealthyRow("old") with { Age = "12m" },
+            HealthyRow("stale") with { Age = "2h" },
+            HealthyRow("raw") with { Age = "weird" }
+        };
+
+        var older = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: ">5m"));
+        var newest = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "<2m"));
+        var exact = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "=1m"));
+        var exactRaw = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "\"weird\""));
+        var broken = ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: "1x"));
+
+        Assert.Equal(["old", "stale"], older.Select(row => row.Name).ToArray());
+        Assert.Single(newest);
+        Assert.Equal("fresh", newest[0].Name);
+        Assert.Single(exact);
+        Assert.Equal("fresh", exact[0].Name);
+        Assert.Single(exactRaw);
+        Assert.Equal("raw", exactRaw[0].Name);
+        Assert.Empty(broken);
+        Assert.Equal(["old", "stale"], ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: ">5m")).Select(row => row.Name).ToArray());
     }
 
     [Fact]
@@ -599,6 +645,367 @@ users:
                 "2m",
                 FreshnessState.Fresh)
         ];
+    }
+
+    [Fact]
+    public void Alert_rule_catalog_has_locked_defaults_for_old_radar_behavior()
+    {
+        Assert.Equal(
+            ["default-problem-color", "default-recent-change-color", "default-active-view-pulse"],
+            AlertRuleCatalog.DefaultRules.Select(rule => rule.Id).ToArray());
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-problem-color" && rule.BuiltIn && !rule.CanEdit);
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-problem-color"
+            && rule.Actions.RadarColorValue == "status"
+            && !rule.Actions.RadarBlink
+            && rule.Actions.RadarZoom
+            && rule.Actions.RadarFocus
+            && rule.Actions.RadarZoomPercent == 100
+            && rule.Actions.PlaySound
+            && rule.Actions.SoundMinimumMatches == 1
+            && rule.SoundId == "warning-ping");
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-recent-change-color" && rule.Actions.RadarColorValue == "fresh" && !rule.Actions.RadarBlink);
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-active-view-pulse"
+            && rule.Actions.RadarBlink
+            && rule.Actions.RadarAnimation == "pulse"
+            && rule.Actions.RadarAnimationUntilMode == AlertUntilModes.NewInView
+            && rule.Actions.RadarAnimationUntilDuration == "5s"
+            && rule.MatcherGroups?.Single().Criteria.Select(criterion => criterion.Field).Order(StringComparer.Ordinal).ToArray() is ["Active", "New in view"]);
+        Assert.All(AlertRuleCatalog.DefaultRules.Where(rule => rule.Id != "default-problem-color"), rule => Assert.Equal("none", rule.SoundId));
+        Assert.All(AlertRuleCatalog.DefaultRules, rule => Assert.True(rule.Enabled));
+        var groupIds = AlertRuleCatalog.DefaultRules.SelectMany(rule => rule.MatcherGroups ?? []).Select(group => group.Id).ToArray();
+        var criterionIds = AlertRuleCatalog.DefaultRules.SelectMany(rule => rule.MatcherGroups ?? []).SelectMany(group => group.Criteria).Select(criterion => criterion.Id).ToArray();
+        Assert.Equal(groupIds.Length, groupIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(criterionIds.Length, criterionIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(groupIds, id => Assert.StartsWith("default-", id, StringComparison.Ordinal));
+        Assert.All(criterionIds, id => Assert.StartsWith("default-", id, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_reuses_filter_matchers_and_respects_disabled_rules()
+    {
+        var rows = SampleRows();
+        var rule = new AlertRule(
+            "custom-pod",
+            "Pod restarts",
+            "Pod restart alert",
+            true,
+            false,
+            "warning",
+            new AlertRuleMatchers(Kind: "\"Pod\"", Restarts: ">1", Namespace: "\"payments\""),
+            new AlertRuleActions(),
+            new AlertRuleUntil());
+
+        var active = AlertRuleEvaluator.EvaluateRule(rows, rule);
+        var disabled = AlertRuleEvaluator.EvaluateRule(rows, rule with { Enabled = false });
+
+        Assert.True(active.Triggered);
+        Assert.Equal(["payment-api-7d9"], active.Matches.Select(row => row.Name).ToArray());
+        Assert.False(disabled.Triggered);
+        Assert.Empty(disabled.Matches);
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_active_alias_for_activity_matcher()
+    {
+        var rows = new[]
+        {
+            HealthyRow("old") with { Status = "Succeeded", Age = "2h", LastChange = "2h" },
+            HealthyRow("fresh") with { Status = "Succeeded", Age = "20s", LastChange = "20s" },
+            HealthyRow("rollout") with { Status = "Progressing", Age = "2h", LastChange = "2h" }
+        };
+        var activeRule = new AlertRule(
+            "active",
+            "Active rows",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups: [new AlertMatcherGroup("active", [new AlertMatcherCriterion("active", "Active", "true")])]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, activeRule);
+
+        Assert.Equal(["fresh", "rollout"], result.Matches.Select(row => row.Name).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_old_radar_virtual_matchers()
+    {
+        var rows = new[]
+        {
+            new FlatResourceRow(
+                "recent",
+                "Running",
+                "Pod",
+                "recent",
+                "payments",
+                "prod",
+                "2h",
+                "1/1",
+                0,
+                null,
+                "api:1",
+                null,
+                "now",
+                FreshnessState.Fresh),
+            new FlatResourceRow(
+                "error",
+                "CrashLoopBackOff",
+                "Pod",
+                "broken",
+                "payments",
+                "prod",
+                "2h",
+                "0/1",
+                1,
+                null,
+                "api:1",
+                null,
+                "2h",
+                FreshnessState.Fresh)
+        };
+        var recent = new AlertRule(
+            "recent",
+            "Recent",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups: [new AlertMatcherGroup("recent", [new AlertMatcherCriterion("recent", "Recently changed", "true")])]);
+        var error = recent with
+        {
+            Id = "error",
+            MatcherGroups = [new AlertMatcherGroup("error", [new AlertMatcherCriterion("error", "Error", "true")])]
+        };
+        var newInView = recent with
+        {
+            Id = "new-in-view",
+            MatcherGroups = [new AlertMatcherGroup("new-in-view", [new AlertMatcherCriterion("new-in-view", "New in view", "true")])]
+        };
+
+        Assert.Equal(["recent"], AlertRuleEvaluator.EvaluateRule(rows, recent).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["broken"], AlertRuleEvaluator.EvaluateRule(rows, error).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["recent", "broken"], AlertRuleEvaluator.EvaluateRule(rows, newInView).Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_outlier_and_p95_matchers()
+    {
+        var rows = new[]
+        {
+            HealthyRow("quiet-a") with { Restarts = 0, Age = "1m", Pulse = ResourcePulse.Empty with { CpuMillicores = 20 } },
+            HealthyRow("quiet-b") with { Restarts = 1, Age = "2m", Pulse = ResourcePulse.Empty with { CpuMillicores = 30 } },
+            HealthyRow("quiet-c") with { Restarts = 2, Age = "3m", Pulse = ResourcePulse.Empty with { CpuMillicores = 40 } },
+            HealthyRow("noisy") with { Restarts = 80, Age = "2h", Pulse = ResourcePulse.Empty with { CpuMillicores = 900 } }
+        };
+        var restartRule = new AlertRule(
+            "restart-outlier",
+            "Restart outlier",
+            "",
+            true,
+            false,
+            "warning",
+            new AlertRuleMatchers(Restarts: "outlier"),
+            new AlertRuleActions(),
+            new AlertRuleUntil());
+        var cpuRule = restartRule with { Id = "cpu-p95", Matchers = new AlertRuleMatchers(Cpu: "p95") };
+        var ageRule = restartRule with { Id = "age-p95", Matchers = new AlertRuleMatchers(Age: "p95") };
+
+        Assert.Equal(["noisy"], AlertRuleEvaluator.EvaluateRule(rows, restartRule).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["noisy"], AlertRuleEvaluator.EvaluateRule(rows, cpuRule).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["noisy"], AlertRuleEvaluator.EvaluateRule(rows, ageRule).Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_or_groups_with_and_criteria()
+    {
+        var rows = new[]
+        {
+            HealthyRow("api-a") with { Namespace = "payments", Restarts = 0, Pulse = ResourcePulse.Empty with { CpuMillicores = 50 } },
+            HealthyRow("api-b") with { Namespace = "payments", Restarts = 4, Pulse = ResourcePulse.Empty with { CpuMillicores = 90 } },
+            HealthyRow("worker-a") with { Namespace = "jobs", Restarts = 0, Pulse = ResourcePulse.Empty with { CpuMillicores = 900 } },
+            HealthyRow("worker-b") with { Namespace = "jobs", Restarts = 0, Pulse = ResourcePulse.Empty with { CpuMillicores = 40 } }
+        };
+        var rule = new AlertRule(
+            "custom-groups",
+            "Grouped alert",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(Kind: "\"NeverUsed\""),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("restart-payments", [
+                    new AlertMatcherCriterion("restart-kind", "Kind", "\"Pod\""),
+                    new AlertMatcherCriterion("restart-ns", "Namespace", "\"payments\""),
+                    new AlertMatcherCriterion("restart-count", "Restarts", ">1")
+                ]),
+                new AlertMatcherGroup("cpu-jobs", [
+                    new AlertMatcherCriterion("cpu-ns", "Namespace", "\"jobs\""),
+                    new AlertMatcherCriterion("cpu-value", "CPU", ">500m")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.True(result.Triggered);
+        Assert.Equal(["api-b", "worker-a"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_false_boolean_virtual_matchers()
+    {
+        var rows = new[]
+        {
+            HealthyRow("old") with { Status = "Succeeded", Age = "2h", LastChange = "2h" },
+            HealthyRow("fresh") with { Status = "Running", Age = "15s", LastChange = "15s" },
+            HealthyRow("broken") with { Status = "CrashLoopBackOff", Ready = "0/1", Restarts = 10, LastChange = "2h" }
+        };
+        var rule = new AlertRule(
+            "quiet",
+            "Quiet rows",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("quiet", [
+                    new AlertMatcherCriterion("no-problem", "Problems", "false"),
+                    new AlertMatcherCriterion("no-error", "Errors", "no"),
+                    new AlertMatcherCriterion("not-recent", "Recently changed", "0"),
+                    new AlertMatcherCriterion("not-active", "Active", "false")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.True(result.Triggered);
+        Assert.Equal(["old"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_unknown_field_fallbacks()
+    {
+        var row = HealthyRow("api") with
+        {
+            LastChange = "12s",
+            EventReason = "BackOff",
+            EventMessage = "container restarted"
+        };
+        var rows = new[] { row };
+        var rule = new AlertRule(
+            "fallbacks",
+            "Fallback fields",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("fallbacks", [
+                    new AlertMatcherCriterion("last-change", "Last Change", "12s"),
+                    new AlertMatcherCriterion("event-reason", "Event Reason", "\"BackOff\""),
+                    new AlertMatcherCriterion("event-message", "Event Message", "restarted"),
+                    new AlertMatcherCriterion("missing", "Not a real field", "")
+                ]),
+                new AlertMatcherGroup("owner", [
+                    new AlertMatcherCriterion("owner", "Owner", "")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.True(result.Triggered);
+        Assert.Equal(["api"], result.Matches.Select(item => item.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_handles_missing_special_stat_values()
+    {
+        var rows = new[]
+        {
+            HealthyRow("without-age") with { Age = "unknown" },
+            HealthyRow("without-metrics") with { Pulse = ResourcePulse.Empty },
+            HealthyRow("with-metrics") with
+            {
+                Age = "10m",
+                Pulse = ResourcePulse.Empty with
+                {
+                    MemoryBytes = 512 * 1024 * 1024,
+                    MemoryLimitBytes = 1024 * 1024 * 1024,
+                    StorageUsedBytes = 5L * 1024 * 1024 * 1024,
+                    StorageLimitBytes = 10L * 1024 * 1024 * 1024
+                }
+            }
+        };
+        var age = RuleWithGroup("age", "Age", "p95");
+        var memory = RuleWithGroup("memory", "Memory", "p95");
+        var storage = RuleWithGroup("storage", "Storage", "outlier");
+
+        Assert.Equal(["with-metrics"], AlertRuleEvaluator.EvaluateRule(rows, age).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["with-metrics"], AlertRuleEvaluator.EvaluateRule(rows, memory).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["with-metrics"], AlertRuleEvaluator.EvaluateRule(rows, storage).Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_treats_blank_groups_as_legacy_matchers()
+    {
+        var rows = new[]
+        {
+            HealthyRow("pod") with { Kind = "Pod" },
+            HealthyRow("deployment") with { Kind = "Deployment" }
+        };
+        var rule = new AlertRule(
+            "legacy",
+            "Legacy fallback",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(Kind: "\"Pod\""),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("blank", [
+                    new AlertMatcherCriterion("blank-field", "", "Pod"),
+                    new AlertMatcherCriterion("blank-expression", "Kind", "")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.Equal(["pod"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
+    private static AlertRule RuleWithGroup(string id, string field, string expression)
+    {
+        return new AlertRule(
+            id,
+            id,
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups: [new AlertMatcherGroup(id, [new AlertMatcherCriterion(id, field, expression)])]);
     }
 
     private static FlatResourceRow HealthyRow(string name)

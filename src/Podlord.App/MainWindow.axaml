@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        xmlns:colorPicker="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
         xmlns:local="using:Podlord.App"
         mc:Ignorable="d"
         d:DesignWidth="1440"
@@ -42,12 +43,11 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Classes="metricPlaque" Padding="8,3" ToolTip.Tip="{Binding Tooltip}">
-                                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="2"
-                                          MinWidth="0">
+                                    <StackPanel Spacing="2">
                                         <TextBlock Text="{Binding Label}" Foreground="{StaticResource PlTextMutedBrush}" FontSize="11" />
-                                        <TextBlock Grid.Row="1" Text="{Binding Value}" Foreground="{StaticResource PlTextBrush}" FontWeight="Bold" />
-                                        <ProgressBar Grid.Row="2" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="4" HorizontalAlignment="Stretch" />
-                                    </Grid>
+                                        <TextBlock Text="{Binding Value}" Foreground="{StaticResource PlTextBrush}" FontWeight="Bold" />
+                                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="4" HorizontalAlignment="Stretch" IsVisible="{Binding HasBar}" />
+                                    </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -163,9 +163,20 @@
                                                                 Classes="radarTile"
                                                                 Click="RadarResourceClicked">
                                                             <Grid>
+                                                                <Rectangle Classes="radarAnnounceBlink"
+                                                                           Fill="{Binding AnnounceBrush}"
+                                                                           IsVisible="{Binding IsBlinkAnimation}" />
                                                                 <Rectangle Classes="radarAnnouncePulse"
                                                                            Fill="{Binding AnnounceBrush}"
-                                                                           IsVisible="{Binding IsAnnouncing}" />
+                                                                           IsVisible="{Binding IsPulseAnimation}" />
+                                                                <Rectangle Classes="radarAnnounceSweep"
+                                                                           Fill="{Binding AnnounceBrush}"
+                                                                           IsVisible="{Binding IsSweepAnimation}"
+                                                                           Width="2"
+                                                                           HorizontalAlignment="Left" />
+                                                                <Border Classes="radarAnnounceOutline"
+                                                                        BorderBrush="{Binding AnnounceBrush}"
+                                                                        IsVisible="{Binding IsOutlineAnimation}" />
                                                                 <local:KindGlyph Kind="{Binding DisplayKind}"
                                                                                  Fill="{StaticResource PlBgPanelInsetBrush}"
                                                                                  Stroke="{Binding BorderBrush}"
@@ -198,20 +209,28 @@
                                                                                 <TextBlock Text="Restarts" Foreground="{StaticResource PlTextMutedBrush}" />
                                                                                 <TextBlock Grid.Column="1" Text="{Binding Resource.Restarts}" Foreground="{Binding Resource.Restarts, Converter={StaticResource RestartBrushConverter}}" TextTrimming="CharacterEllipsis" />
                                                                             </Grid>
-                                                                            <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasCpuMetricBar}">
-                                                                                <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="2" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasCpuMetricBar}">
+                                                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
+                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
+                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                                                    <Border IsVisible="{Binding Resource.Pulse.HasCpuSuggestion}" Width="2" Height="10" Canvas.Top="0" Canvas.Left="{Binding Resource.Pulse.CpuSuggestionLeft}" Background="{StaticResource PlGoldBrightBrush}" />
+                                                                                </Canvas>
                                                                             </Grid>
-                                                                            <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasMemoryMetricBar}">
-                                                                                <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="2" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasMemoryMetricBar}">
+                                                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
+                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
+                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                                                    <Border IsVisible="{Binding Resource.Pulse.HasMemorySuggestion}" Width="2" Height="10" Canvas.Top="0" Canvas.Left="{Binding Resource.Pulse.MemorySuggestionLeft}" Background="{StaticResource PlGoldBrightBrush}" />
+                                                                                </Canvas>
                                                                             </Grid>
-                                                                            <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasStorageMetricBar}">
-                                                                                <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="2" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasStorageMetricBar}">
+                                                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
+                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
+                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" />
+                                                                                </Canvas>
                                                                             </Grid>
                                                                             <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasCpuMetricTextOnly}">
                                                                                 <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
@@ -293,65 +312,79 @@
                                         </Panel>
                                 </Grid>
                             </Border>
-                            <Button Grid.Row="1"
-                                    x:Name="RadarSourceButton"
-                                    Classes="radarSourceButton"
-                                    HorizontalAlignment="Stretch"
-                                    Margin="6,0,6,5"
-                                    Click="RadarSourceButtonClicked"
-                                    ToolTip.Tip="{Binding ActiveSessionChipLabel}">
-                                <Button.Content>
-                                    <TextBlock Text="{Binding RadarSourceLabel}"
-                                               TextTrimming="CharacterEllipsis"
-                                               Foreground="{StaticResource PlBlueGlowBrush}" />
-                                </Button.Content>
-                                <Button.Flyout>
-                                    <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
-                                        <Border Width="360" Padding="8" Classes="hudMenu">
-                                            <StackPanel Spacing="6">
-                                                <TextBlock Text="{Binding SourcesTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
-                                                <TextBox Text="{Binding SourcePickerSearch, UpdateSourceTrigger=PropertyChanged}"
-                                                         PlaceholderText="search by name or path" />
-                                                <ScrollViewer Height="240" VerticalScrollBarVisibility="Visible">
-                                                    <ItemsControl ItemsSource="{Binding VisibleImportedContexts}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="4" Margin="0,0,0,5">
-                                                                    <TextBox Text="{Binding DisplayName, UpdateSourceTrigger=LostFocus}" />
-                                                                    <Button Grid.Column="1" Content="{Binding ActiveMark}" Command="{Binding ActivateCommand}" Padding="6,2" />
-                                                                    <Button Grid.Column="2" Content="✎" Command="{Binding RenameCommand}" ToolTip.Tip="Rename source" Padding="6,2" />
-                                                                    <Button Grid.Column="3" Content="🗑" Command="{Binding RemoveCommand}" ToolTip.Tip="Delete source" Padding="6,2" />
-                                                                    <TextBlock Grid.Row="1"
-                                                                               Grid.ColumnSpan="4"
-                                                                               Text="{Binding SourceName}"
-                                                                               Foreground="{StaticResource PlTextMutedBrush}"
-                                                                               TextTrimming="CharacterEllipsis" />
-                                                                </Grid>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </ScrollViewer>
-                                                <Button Content="{Binding ManageActionText}" Click="SourcesWorkspaceClicked" HorizontalAlignment="Stretch" />
-                                            </StackPanel>
-                                        </Border>
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="5" Margin="6,0,6,5">
+                                <Button x:Name="RadarSourceButton"
+                                        Classes="radarSourceButton"
+                                        HorizontalAlignment="Stretch"
+                                        Click="RadarSourceButtonClicked"
+                                        ToolTip.Tip="{Binding ActiveSessionChipLabel}">
+                                    <Button.Content>
+                                        <TextBlock Text="{Binding RadarSourceLabel}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{StaticResource PlBlueGlowBrush}" />
+                                    </Button.Content>
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
+                                            <Border Width="360" Padding="8" Classes="hudMenu">
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="{Binding SourcesTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                                    <TextBox Text="{Binding SourcePickerSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                             PlaceholderText="search by name or path" />
+                                                    <ScrollViewer Height="240" VerticalScrollBarVisibility="Auto">
+                                                        <ItemsControl ItemsSource="{Binding VisibleImportedContexts}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="4" Margin="0,0,0,5">
+                                                                        <TextBox Text="{Binding DisplayName, UpdateSourceTrigger=LostFocus}" />
+                                                                        <Button Grid.Column="1" Content="{Binding ActiveMark}" Command="{Binding ActivateCommand}" Padding="6,2" />
+                                                                        <Button Grid.Column="2" Command="{Binding RenameCommand}" ToolTip.Tip="{Binding RenameSourceTooltipText}" Padding="6,2">
+                                                                            <local:KindGlyph Kind="Pencil" Fill="{StaticResource PlTextBrush}" Width="14" Height="14" />
+                                                                        </Button>
+                                                                        <Button Grid.Column="3" Command="{Binding RemoveCommand}" ToolTip.Tip="{Binding DeleteSourceTooltipText}" Padding="6,2">
+                                                                            <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
+                                                                        </Button>
+                                                                        <TextBlock Grid.Row="1"
+                                                                                   Grid.ColumnSpan="4"
+                                                                                   Text="{Binding SourceName}"
+                                                                                   Foreground="{StaticResource PlTextMutedBrush}"
+                                                                                   TextTrimming="CharacterEllipsis" />
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                    <Button Content="{Binding ManageActionText}" Click="SourcesWorkspaceClicked" HorizontalAlignment="Stretch" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <Button Grid.Column="1"
+                                        Width="34"
+                                        Classes="radarSourceButton"
+                                        Click="ToggleAudioMuteClicked"
+                                        ToolTip.Tip="{Binding AudioMuteText}">
+                                    <local:KindGlyph Kind="{Binding AudioMuteGlyph}"
+                                                     Fill="{StaticResource PlGoldBrightBrush}"
+                                                     Width="16"
+                                                     Height="16" />
+                                </Button>
+                            </Grid>
                         </Grid>
                     </Border>
 
                     <Border Grid.Row="1" Classes="commandConsole" Margin="10,0,10,10" Padding="8">
-                        <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="8">
                             <TextBlock Text="{Binding FiltersTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                             <Grid ColumnDefinitions="*,*,88" ColumnSpacing="8">
                                 <CheckBox Content="{Binding ProblemsText}"
                                           IsChecked="{Binding ProblemsOnly}"
-                                          ToolTip.Tip="Show resources with degraded status, readiness gaps, restarts, or RBAC issues." />
+                                          ToolTip.Tip="{Binding FilterProblemsTooltipText}" />
                                 <CheckBox Grid.Column="1"
                                           Content="{Binding ActivityText}"
                                           IsChecked="{Binding ActivityOnly}"
-                                          ToolTip.Tip="Show recent changes, events, and active/problem processes." />
+                                          ToolTip.Tip="{Binding FilterActivityTooltipText}" />
                                 <TextBox Grid.Column="2"
                                          Text="{Binding LimitText, UpdateSourceTrigger=PropertyChanged}"
                                          PlaceholderText="limit" />
@@ -361,7 +394,7 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBox Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}"
                                              PlaceholderText="{Binding FilterNamePlaceholderText}" />
-                                    <Button Grid.Column="1" Content="▾" Padding="8,4" ToolTip.Tip="{Binding SavedFiltersText}">
+                                    <Button Grid.Column="1" Content="▾" Padding="{StaticResource PlPaddingButtonTight}" ToolTip.Tip="{Binding SavedFiltersText}">
                                         <Button.Flyout>
                                             <Flyout Placement="BottomEdgeAlignedRight" ShowMode="Standard">
                                                 <Border Width="344" Padding="8" Classes="hudMenu">
@@ -369,7 +402,7 @@
                                                         <TextBlock Text="{Binding SavedFiltersText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                                         <TextBox Text="{Binding PresetSearch, UpdateSourceTrigger=PropertyChanged}"
                                                                  PlaceholderText="{Binding SearchSavedFiltersText}" />
-                                                        <ScrollViewer Height="220" VerticalScrollBarVisibility="Visible">
+                                                        <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
                                                             <ItemsControl ItemsSource="{Binding VisibleSavedPresets}">
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate>
@@ -378,9 +411,13 @@
                                                                                      LostFocus="SavedFilterNameLostFocus"
                                                                                      GotFocus="SavedFilterNameGotFocus"
                                                                                      KeyDown="SavedFilterNameKeyDown"
-                                                                                     ToolTip.Tip="Edit name, then press Enter or the edit icon." />
-                                                                            <Button Grid.Column="1" Content="✎" Click="RenameSavedFilterClicked" Tag="{Binding}" Padding="6,2" ToolTip.Tip="Rename filter" IsVisible="{Binding CanRename}" />
-                                                                            <Button Grid.Column="2" Content="🗑" Click="DeleteSavedFilterClicked" Tag="{Binding}" Padding="6,2" IsVisible="{Binding CanDelete}" ToolTip.Tip="Delete filter" />
+                                                                                     ToolTip.Tip="{Binding EditFilterNameTooltipText}" />
+                                                                            <Button Grid.Column="1" Click="RenameSavedFilterClicked" Tag="{Binding}" Padding="6,2" ToolTip.Tip="{Binding RenameFilterTooltipText}" IsVisible="{Binding CanRename}">
+                                                                                <local:KindGlyph Kind="Pencil" Fill="{StaticResource PlTextBrush}" Width="14" Height="14" />
+                                                                            </Button>
+                                                                            <Button Grid.Column="2" Click="DeleteSavedFilterClicked" Tag="{Binding}" Padding="6,2" IsVisible="{Binding CanDelete}" ToolTip.Tip="{Binding DeleteFilterTooltipText}">
+                                                                                <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
+                                                                            </Button>
                                                                         </Grid>
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
@@ -418,7 +455,7 @@
                                                                 <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                                                                          PlaceholderText="{Binding DataContext.FilterSearchOrCustomText, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                          KeyDown="FilterSearchKeyDown" />
-                                                                <Button Grid.Column="1" Content="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding AddSearchCommand}" Padding="8,4" />
+                                                                <Button Grid.Column="1" Content="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding AddSearchCommand}" Padding="{StaticResource PlPaddingButtonTight}" />
                                                             </Grid>
                                                             <TextBlock Text="{Binding DataContext.CustomValuesText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlTextMutedBrush}" />
                                                             <ItemsControl ItemsSource="{Binding CustomValues}">
@@ -433,7 +470,7 @@
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>
-                                                            <ScrollViewer Height="220" VerticalScrollBarVisibility="Visible">
+                                                            <ScrollViewer Height="220" VerticalScrollBarVisibility="Auto">
                                                                 <ItemsControl ItemsSource="{Binding Options}">
                                                                     <ItemsControl.ItemTemplate>
                                                                         <DataTemplate>
@@ -494,15 +531,17 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsResourceSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Content="X" Click="ToggleResourceSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <Button Click="ToggleResourceSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                            <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
+                        </Button>
                         <TextBox Grid.Column="1"
                                  x:Name="ResourceSearchBox"
                                  Text="{Binding ResourceQuickSearch, UpdateSourceTrigger=PropertyChanged}"
                                  PlaceholderText="quick resource search: name kind namespace /regex/ &quot;exact&quot;"
                                  TextChanged="ResourceSearchTextChanged"
                                  KeyDown="ResourceSearchKeyDown" />
-                        <Button Grid.Column="2" Content="◀" Click="ResourcePreviousClicked" ToolTip.Tip="Previous match" />
-                        <Button Grid.Column="3" Content="▶" Click="ResourceNextClicked" ToolTip.Tip="Next match" />
+                        <Button Grid.Column="2" Content="◀" Click="ResourcePreviousClicked" ToolTip.Tip="{Binding PreviousMatchTooltipText}" />
+                        <Button Grid.Column="3" Content="▶" Click="ResourceNextClicked" ToolTip.Tip="{Binding NextMatchTooltipText}" />
                         <TextBlock Grid.Column="4" Text="{Binding ResourceMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="5" Text="{Binding ResourceSortLabel}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                     </Grid>
@@ -520,21 +559,23 @@
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
                               PointerCaptureLost="CopyableTablePointerReleased"
-	                          VerticalScrollBarVisibility="Visible"
-	                          HorizontalScrollBarVisibility="Visible">
+	                          VerticalScrollBarVisibility="Auto"
+	                          HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
 		                    <DataGridTemplateColumn Width="52">
 		                        <DataGridTemplateColumn.Header>
-		                            <Button Classes="columnPlaque" Tag="Port Forward" Content="⇄" Padding="4,1" ToolTip.Tip="Port forward" />
+		                            <local:ColumnPlaqueHeader Tag="Port Forward" Padding="4,1" ToolTip.Tip="{Binding PortForwardColumnTooltipText}" HorizontalContentAlignment="Center" Kind="Swap" GlyphFill="{StaticResource PlGoldBrightBrush}" GlyphSize="16" />
 		                        </DataGridTemplateColumn.Header>
 	                        <DataGridTemplateColumn.CellTemplate>
 	                            <DataTemplate>
 	                                <Button Click="PortForwardRowClicked"
-                                            ToolTip.Tip="Prepare port forward"
+                                            ToolTip.Tip="{Binding PreparePortForwardTooltipText}"
                                             Padding="4,1"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
                                             IsVisible="{Binding Converter={StaticResource PortForwardEligibilityConverter}}">
                                         <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <TextBlock Text="⇄" />
+                                            <local:KindGlyph Kind="Swap" Fill="{StaticResource PlGoldBrightBrush}" Width="15" Height="15" />
                                             <TextBlock Foreground="{StaticResource PlGoldBrightBrush}">
                                                 <TextBlock.Text>
                                                     <MultiBinding Converter="{StaticResource PortForwardBadgeConverter}">
@@ -551,21 +592,29 @@
 	                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="140">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Status" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Event" Fill="{StaticResource PlWarningBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Status" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Status" Click="SortResourcesClicked" Kind="Event" GlyphFill="{StaticResource PlWarningBrush}" Label="Status" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Grid>
                                     <Border Width="4"
                                             HorizontalAlignment="Left"
+                                            Classes="resourceAnnounceBlink"
+                                            Background="{Binding Converter={StaticResource AlertResourceBrushConverter}}"
+                                            IsVisible="{Binding IsBlinkAnimation}" />
+                                    <Border Width="4"
+                                            HorizontalAlignment="Left"
                                             Classes="resourceAnnouncePulse"
-                                            Background="{Binding Status, Converter={StaticResource StatusBrushConverter}}"
-                                            IsVisible="{Binding IsAnnouncing}" />
+                                            Background="{Binding Converter={StaticResource AlertResourceBrushConverter}}"
+                                            IsVisible="{Binding IsPulseAnimation}" />
+                                    <Border Width="4"
+                                            HorizontalAlignment="Left"
+                                            Classes="resourceAnnounceSweep"
+                                            Background="{Binding Converter={StaticResource AlertResourceBrushConverter}}"
+                                            IsVisible="{Binding IsSweepAnimation}" />
+                                    <Border Classes="resourceAnnounceOutline"
+                                            BorderBrush="{Binding Converter={StaticResource AlertResourceBrushConverter}}"
+                                            IsVisible="{Binding IsOutlineAnimation}" />
                                     <TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" Margin="10,0,6,0" />
                                 </Grid>
                             </DataTemplate>
@@ -573,12 +622,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="150">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Kind" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="CustomResourceDefinition" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Kind" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Kind" Click="SortResourcesClicked" Kind="CustomResourceDefinition" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Kind" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -591,7 +635,7 @@
                                         <TextBlock Text="{Binding Kind}" />
                                     </StackPanel>
                                     <ToolTip.Tip>
-                                        <Border Width="330" Padding="10" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Status, Converter={StaticResource StatusBrushConverter}}" BorderThickness="1">
+                                        <Border MaxWidth="360" Padding="10" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Status, Converter={StaticResource StatusBrushConverter}}" BorderThickness="1">
                                             <StackPanel Spacing="3">
                                                 <TextBlock Text="{Binding Name}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="Wrap" />
                                                 <TextBlock Text="{Binding Id}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="Wrap" />
@@ -605,18 +649,13 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="280">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Name" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Pod" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Name" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Name" Click="SortResourcesClicked" Kind="Pod" GlyphFill="{StaticResource PlBlueGlowBrush}" Label="Name" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
 	                                <TextBlock Text="{Binding Name}" Margin="6,0" TextTrimming="CharacterEllipsis">
                                     <ToolTip.Tip>
-                                        <Border Width="330" Padding="10" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Status, Converter={StaticResource StatusBrushConverter}}" BorderThickness="1">
+                                        <Border MaxWidth="360" Padding="10" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{Binding Status, Converter={StaticResource StatusBrushConverter}}" BorderThickness="1">
                                             <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
                                                 <TextBlock Text="{Binding Name}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="Wrap" />
                                                 <TextBlock Grid.Row="1" Text="{Binding Id}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="Wrap" />
@@ -631,27 +670,17 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="150">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Namespace" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Namespace" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Namespace" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Namespace" Click="SortResourcesClicked" Kind="Namespace" GlyphFill="{StaticResource PlAccentBrush}" Label="Namespace" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Namespace}" Margin="6,0" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Namespace}" Margin="6,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Namespace}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="180">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Cluster" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Cluster" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Cluster" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Cluster" Click="SortResourcesClicked" Kind="Cluster" GlyphFill="{StaticResource PlBlueGlowBrush}" Label="Cluster" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -664,12 +693,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="90">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="CPU" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Node" Fill="{StaticResource PlStatusSuccessBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="CPU" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="CPU" Click="SortResourcesClicked" Kind="Node" GlyphFill="{StaticResource PlStatusSuccessBrush}" Label="CPU" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -701,12 +725,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="95">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Memory" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="ConfigMap" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Memory" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Memory" Click="SortResourcesClicked" Kind="ConfigMap" GlyphFill="{StaticResource PlAccentBrush}" Label="Memory" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -738,12 +757,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="95">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Storage" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="PersistentVolume" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Storage" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Storage" Click="SortResourcesClicked" Kind="PersistentVolume" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Storage" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -775,27 +789,17 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="90">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Age" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="CronJob" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Age" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Age" Click="SortResourcesClicked" Kind="CronJob" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Age" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Age}" Margin="6,0" />
+                                <TextBlock Text="{Binding AgeDisplay}" Margin="6,0" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="90">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Ready" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Service" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Ready" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Ready" Click="SortResourcesClicked" Kind="Service" GlyphFill="{StaticResource PlAccentBrush}" Label="Ready" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -805,12 +809,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="95">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Restarts" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Event" Fill="{StaticResource PlWarningBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Restarts" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Restarts" Click="SortResourcesClicked" Kind="Event" GlyphFill="{StaticResource PlWarningBrush}" Label="Restarts" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -820,55 +819,40 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="190">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Node" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Node" Fill="{StaticResource PlBlueGlowBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Node" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Node" Click="SortResourcesClicked" Kind="Node" GlyphFill="{StaticResource PlBlueGlowBrush}" Label="Node" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Node}"
-                                           Margin="6,0"
-                                           Foreground="{Binding Node, Converter={StaticResource DeterministicBrushConverter}}"
-                                           TextTrimming="CharacterEllipsis" />
+                                <local:ResourceLinkButton Tag="{Binding Node, Converter={StaticResource NodeReferenceConverter}}"
+                                                          Foreground="{Binding Node, Converter={StaticResource DeterministicBrushConverter}}">
+                                    <TextBlock Text="{Binding Node}" TextTrimming="CharacterEllipsis" />
+                                </local:ResourceLinkButton>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="230">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Image" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="ConfigMap" Fill="{StaticResource PlGoldBrightBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Image" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Image" Click="SortResourcesClicked" Kind="ConfigMap" GlyphFill="{StaticResource PlGoldBrightBrush}" Label="Image" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding ImageSummary}"
                                            Margin="6,0"
                                            Foreground="{Binding ImageSummary, Converter={StaticResource DeterministicBrushConverter}}"
-                                           TextTrimming="CharacterEllipsis" />
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding ImageSummary}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn Width="220">
                         <DataGridTemplateColumn.Header>
-                            <Button Classes="columnPlaque" Tag="Owner" Click="SortResourcesClicked">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <local:KindGlyph Kind="Deployment" Fill="{StaticResource PlAccentBrush}" Width="18" Height="18" />
-                                    <TextBlock Text="Owner" />
-                                </StackPanel>
-                            </Button>
+                            <local:ColumnPlaqueHeader Tag="Owner" Click="SortResourcesClicked" Kind="Deployment" GlyphFill="{StaticResource PlAccentBrush}" Label="Owner" />
                         </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Owner}"
-                                           Margin="6,0"
-                                           Foreground="{Binding Owner, Converter={StaticResource DeterministicBrushConverter}}"
-                                           TextTrimming="CharacterEllipsis" />
+                                <local:ResourceLinkButton Tag="{Binding Owner}" Foreground="{Binding Owner, Converter={StaticResource DeterministicBrushConverter}}" ToolTip.Tip="{Binding Owner}">
+                                    <TextBlock Text="{Binding Owner}" TextTrimming="CharacterEllipsis" />
+                                </local:ResourceLinkButton>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -908,20 +892,22 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsGraphSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Content="X" Click="ToggleGraphSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <Button Click="ToggleGraphSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                            <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
+                        </Button>
                         <TextBox Grid.Column="1"
                                  x:Name="GraphSearchBox"
                                  Text="{Binding GraphSearch, UpdateSourceTrigger=PropertyChanged}"
                                  PlaceholderText="fast graph search: name kind namespace /regex/ &quot;exact&quot;"
                                  KeyDown="GraphSearchKeyDown" />
-                        <Button Grid.Column="2" Content="◀" Click="GraphPreviousClicked" ToolTip.Tip="Previous match" />
-                        <Button Grid.Column="3" Content="▶" Click="GraphNextClicked" ToolTip.Tip="Next match" />
+                        <Button Grid.Column="2" Content="◀" Click="GraphPreviousClicked" ToolTip.Tip="{Binding PreviousMatchTooltipText}" />
+                        <Button Grid.Column="3" Content="▶" Click="GraphNextClicked" ToolTip.Tip="{Binding NextMatchTooltipText}" />
                         <TextBlock Grid.Column="4" Text="{Binding GraphMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
                 <ScrollViewer Grid.Row="1"
-                              VerticalScrollBarVisibility="Visible"
-                              HorizontalScrollBarVisibility="Visible"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Auto"
                               Background="{StaticResource PlInsetMaterialBrush}"
                               Padding="14">
                     <TreeView x:Name="GraphTree"
@@ -932,20 +918,40 @@
                             <TreeDataTemplate ItemsSource="{Binding Children}">
                                 <Button Click="GraphNodeClicked" Padding="0" Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
                                     <Border Background="{Binding BackgroundBrush}" BorderBrush="{Binding BorderBrush}" BorderThickness="1" Padding="8" Margin="0,2">
-                                        <Grid ColumnDefinitions="42,120,320,160,*" ColumnSpacing="10">
-                                            <local:KindGlyph Kind="{Binding Kind}"
-                                                             Fill="{Binding Kind, Converter={StaticResource DeterministicBrushConverter}}"
-                                                             Width="28"
-                                                             Height="28" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Kind}" Foreground="{StaticResource PlGoldBrightBrush}" />
-                                            <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="3" Text="{Binding Namespace}" Foreground="{StaticResource PlTextMutedBrush}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="4" Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" TextTrimming="CharacterEllipsis" />
+                                        <Grid>
+                                            <Border Width="4"
+                                                    HorizontalAlignment="Left"
+                                                    Classes="resourceAnnounceBlink"
+                                                    Background="{Binding Resource, Converter={StaticResource AlertResourceBrushConverter}}"
+                                                    IsVisible="{Binding Resource.IsBlinkAnimation}" />
+                                            <Border Width="4"
+                                                    HorizontalAlignment="Left"
+                                                    Classes="resourceAnnouncePulse"
+                                                    Background="{Binding Resource, Converter={StaticResource AlertResourceBrushConverter}}"
+                                                    IsVisible="{Binding Resource.IsPulseAnimation}" />
+                                            <Border Width="4"
+                                                    HorizontalAlignment="Left"
+                                                    Classes="resourceAnnounceSweep"
+                                                    Background="{Binding Resource, Converter={StaticResource AlertResourceBrushConverter}}"
+                                                    IsVisible="{Binding Resource.IsSweepAnimation}" />
+                                            <Border Classes="resourceAnnounceOutline"
+                                                    BorderBrush="{Binding Resource, Converter={StaticResource AlertResourceBrushConverter}}"
+                                                    IsVisible="{Binding Resource.IsOutlineAnimation}" />
+                                            <Grid ColumnDefinitions="42,120,320,160,*" ColumnSpacing="10" Margin="8,0,0,0">
+                                                <local:KindGlyph Kind="{Binding Kind}"
+                                                                 Fill="{Binding Kind, Converter={StaticResource DeterministicBrushConverter}}"
+                                                                 Width="28"
+                                                                 Height="28" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Kind}" Foreground="{StaticResource PlGoldBrightBrush}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Namespace}" Foreground="{StaticResource PlTextMutedBrush}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="4" Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" TextTrimming="CharacterEllipsis" />
+                                            </Grid>
                                         </Grid>
                                         <ToolTip.Tip>
                                             <Border MinWidth="300"
                                                     MaxWidth="440"
-                                                    Padding="12"
+                                                    Padding="{StaticResource PlPaddingPanel}"
                                                     Background="{StaticResource PlBgPanelBrush}"
                                                     BorderBrush="{Binding BorderBrush}"
                                                     BorderThickness="1"
@@ -955,19 +961,25 @@
                                                     <TextBlock Text="{Binding Resource.Id}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="WrapWithOverflow" IsVisible="{Binding HasResource}" />
                                                     <TextBlock Text="{Binding Resource.ImageSummary}" Foreground="{StaticResource PlTextBrush}" TextWrapping="WrapWithOverflow" IsVisible="{Binding Resource.HasImageInfo}" />
                                                     <TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrushConverter}}" TextWrapping="WrapWithOverflow" />
-                                                    <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasCpuMetricBar}">
-                                                        <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasCpuMetricBar}">
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
+                                                        <Grid Grid.Row="1" Grid.Column="1" Margin="8,2,0,0">
+                                                                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                                                <Border Width="2" Height="10" HorizontalAlignment="Right" Background="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                                                                            </Grid>
                                                     </Grid>
                                                     <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasCpuMetricTextOnly}">
                                                         <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
                                                         <TextBlock Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
                                                     </Grid>
-                                                    <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasMemoryMetricBar}">
-                                                        <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasMemoryMetricBar}">
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
+                                                        <Grid Grid.Row="1" Grid.Column="1" Margin="8,2,0,0">
+                                                                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                                                <Border Width="2" Height="10" HorizontalAlignment="Right" Background="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                                                                            </Grid>
                                                     </Grid>
                                                     <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasMemoryMetricTextOnly}">
                                                         <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
@@ -977,10 +989,13 @@
                                                         <TextBlock Text="Network" Foreground="{StaticResource PlTextMutedBrush}" />
                                                         <TextBlock Grid.Column="1" Text="{Binding Resource.NetworkDisplay}" Foreground="{StaticResource PlTextBrush}" />
                                                     </Grid>
-                                                    <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="6" IsVisible="{Binding Resource.HasStorageMetricBar}">
-                                                        <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" />
+                                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasStorageMetricBar}">
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
+                                                        <Grid Grid.Row="1" Grid.Column="1" Margin="8,2,0,0">
+                                                                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" Height="6" VerticalAlignment="Center" />
+                                                                                <Border Width="2" Height="10" HorizontalAlignment="Right" Background="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                                                                            </Grid>
                                                     </Grid>
                                                     <Grid ColumnDefinitions="64,*" ColumnSpacing="6" IsVisible="{Binding Resource.HasStorageMetricTextOnly}">
                                                         <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
@@ -1004,15 +1019,17 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsEventSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Content="X" Click="ToggleEventSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <Button Click="ToggleEventSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                            <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
+                        </Button>
                         <TextBox Grid.Column="1"
                                  x:Name="EventSearchBox"
                                  Text="{Binding EventQuickSearch, UpdateSourceTrigger=PropertyChanged}"
                                  PlaceholderText="quick event search: reason object namespace /regex/ &quot;exact&quot;"
                                  TextChanged="EventSearchTextChanged"
                                  KeyDown="EventSearchKeyDown" />
-                        <Button Grid.Column="2" Content="◀" Click="EventPreviousClicked" ToolTip.Tip="Previous match" />
-                        <Button Grid.Column="3" Content="▶" Click="EventNextClicked" ToolTip.Tip="Next match" />
+                        <Button Grid.Column="2" Content="◀" Click="EventPreviousClicked" ToolTip.Tip="{Binding PreviousMatchTooltipText}" />
+                        <Button Grid.Column="3" Content="▶" Click="EventNextClicked" ToolTip.Tip="{Binding NextMatchTooltipText}" />
                         <TextBlock Grid.Column="4" Text="{Binding EventMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="5" Text="{Binding EventSortLabel}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                     </Grid>
@@ -1023,47 +1040,54 @@
                           SelectedItem="{Binding SelectedEvent}"
                           AutoGenerateColumns="False"
 	                          IsReadOnly="True"
-	                          CanUserSortColumns="True"
+	                          CanUserSortColumns="False"
 	                          CanUserResizeColumns="True"
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
                               PointerCaptureLost="CopyableTablePointerReleased"
-	                          VerticalScrollBarVisibility="Visible"
-	                          HorizontalScrollBarVisibility="Visible">
+	                          VerticalScrollBarVisibility="Auto"
+	                          HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Binding="{Binding Status}" Width="120">
+                        <DataGridTextColumn Binding="{Binding Status}" Width="120" SortMemberPath="Status">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Status" Content="Status" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTextColumn Binding="{Binding Name}" Width="240">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Name" Content="Name" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Name" Label="Name" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                         <DataGridTextColumn Binding="{Binding Reason}" Width="180">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Reason" Content="Reason" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Reason" Label="Reason" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding Object}" Width="220">
-                            <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Object" Content="Object" Click="SortEventsClicked" />
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
+                        <DataGridTemplateColumn Width="220" SortMemberPath="Object">
+                            <DataGridTemplateColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Object" Label="Object" Click="SortEventsClicked" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <local:ResourceLinkButton Tag="{Binding Object}" Foreground="{Binding Object, Converter={StaticResource DeterministicBrushConverter}}">
+                                        <TextBlock Text="{Binding Object}" TextTrimming="CharacterEllipsis" />
+                                    </local:ResourceLinkButton>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Binding="{Binding Namespace}" Width="160">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Namespace" Content="Namespace" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Namespace" Label="Namespace" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding Age}" Width="90">
+                        <DataGridTextColumn Binding="{Binding AgeDisplay}" Width="90">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Age" Content="Age" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Age" Label="Age" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding Message}" Width="*">
+                        <DataGridTextColumn Binding="{Binding Message}" Width="*" MinWidth="320">
                             <DataGridTextColumn.Header>
-                                <Button Classes="columnPlaque" Tag="Message" Content="Message" Click="SortEventsClicked" />
+                                <local:ColumnPlaqueHeader Tag="Message" Label="Message" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
                         </DataGridTextColumn>
                     </DataGrid.Columns>
@@ -1073,7 +1097,9 @@
             <Grid Grid.Row="0" IsVisible="{Binding IsPortsWorkspace}" RowDefinitions="Auto,*" Margin="10" RowSpacing="8">
                 <Border Grid.Row="0" IsVisible="{Binding IsPortSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                        <Button Content="X" Click="TogglePortSearchClicked" ToolTip.Tip="Close search" Padding="8,4" />
+                        <Button Click="TogglePortSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                            <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
+                        </Button>
                         <TextBox Grid.Column="1"
                                  x:Name="PortSearchBox"
                                  Text="{Binding PortQuickSearch, UpdateSourceTrigger=PropertyChanged}"
@@ -1081,43 +1107,312 @@
                     </Grid>
                 </Border>
                 <DataGrid Grid.Row="1"
+                          x:Name="PortForwardGrid"
                           ItemsSource="{Binding VisiblePortForwards}"
                           SelectedItem="{Binding SelectedPortForward}"
 	                          AutoGenerateColumns="False"
 	                          IsReadOnly="True"
+	                          CanUserSortColumns="False"
 	                          CanUserResizeColumns="True"
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
                               PointerCaptureLost="CopyableTablePointerReleased"
-	                          VerticalScrollBarVisibility="Visible"
-	                          HorizontalScrollBarVisibility="Visible">
+	                          VerticalScrollBarVisibility="Auto"
+	                          HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="" Width="74">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Content="OPEN" Click="OpenPortForwardTaskClicked" Tag="{Binding}" Padding="6,2" />
+                                    <Button Content="OPEN" Click="OpenPortForwardTaskClicked" Tag="{Binding}" Padding="6,2" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110" />
-                        <DataGridTextColumn Header="Session" Binding="{Binding Session}" Width="180" />
-                        <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90" />
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="220" />
-                        <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="150" />
-                        <DataGridTextColumn Header="Container Port" Binding="{Binding ContainerPort}" Width="155" />
-                        <DataGridTextColumn Header="Local Port" Binding="{Binding LocalPort}" Width="130" />
-                        <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="*" />
+                        <DataGridTextColumn Binding="{Binding Status}" Width="110" SortMemberPath="Status">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Session}" Width="180" SortMemberPath="Session">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Session" Label="Session" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Kind}" Width="90" SortMemberPath="Kind">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Kind" Label="Kind" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Name}" Width="220" SortMemberPath="Name">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Name" Label="Name" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Namespace}" Width="150" SortMemberPath="Namespace">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Namespace" Label="Namespace" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding ContainerPort}" Width="155" SortMemberPath="ContainerPort">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="ContainerPort" Label="Container Port" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding LocalPort}" Width="130" SortMemberPath="LocalPort">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="LocalPort" Label="Local Port" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Binding="{Binding Command}" Width="*" MinWidth="320" SortMemberPath="Command">
+                            <DataGridTextColumn.Header>
+                                <local:ColumnPlaqueHeader Tag="Command" Label="Command" Click="SortInspectorColumnClicked" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
 
             <Border Grid.Row="0" IsVisible="{Binding IsSettingsWorkspace}" Margin="10" Classes="hudPanel" Padding="14">
-                <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid RowDefinitions="Auto,*" RowSpacing="12" HorizontalAlignment="Stretch">
                     <TextBlock Text="{Binding SettingsTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                     <TabControl Grid.Row="1"
                                 Background="{StaticResource PlDetailBrush}"
                                 SelectedIndex="{Binding SelectedSettingsTabIndex}">
+                        <TabItem Header="{Binding SettingsAlertsText}">
+                            <Grid Margin="10" RowDefinitions="220,Auto,*" RowSpacing="8" MinHeight="0">
+                                <DataGrid Grid.Row="0"
+                                          x:Name="AlertRulesGrid"
+                                          ItemsSource="{Binding AlertRules}"
+                                          SelectedItem="{Binding SelectedAlertRule}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="False"
+                                          CanUserSortColumns="False"
+                                          CanUserResizeColumns="True"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
+                                    <DataGrid.Columns>
+                                        <DataGridTemplateColumn Width="46">
+                                            <DataGridTemplateColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Activation" Label="On" />
+                                            </DataGridTemplateColumn.Header>
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Click="ToggleAlertRuleClicked" Padding="5" ToolTip.Tip="{Binding ActivationActionText}">
+                                                        <local:KindGlyph Kind="{Binding ActivationGlyphKind}" Fill="{StaticResource PlGoldBrightBrush}" Width="16" Height="16" />
+                                                    </Button>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Binding="{Binding ActiveStateText}" Width="110" IsReadOnly="True" SortMemberPath="ActiveStateText">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Active" Label="{Binding AlertActiveText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Name}" Width="210" IsReadOnly="True" SortMemberPath="Name">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Name" Label="{Binding AlertNameText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding MatcherSummary}" Width="*" IsReadOnly="True" SortMemberPath="MatcherSummary">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="When" Label="{Binding AlertWhenText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding ActionSummary}" Width="260" IsReadOnly="True" SortMemberPath="ActionSummary">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Actions" Label="{Binding AlertActionsText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding SoundLabel}" Width="220" IsReadOnly="True" SortMemberPath="SoundLabel">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Sound" Label="{Binding AlertSoundText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6">
+                                    <Button Content="{Binding AddActionText}" Click="AddAlertRuleClicked" />
+                                    <Button Content="{Binding DuplicateActionText}" Click="DuplicateAlertRuleClicked" IsEnabled="{Binding IsAlertRuleSelected}" />
+                                    <Button Content="{Binding DeleteActionText}" Click="DeleteAlertRuleClicked" IsEnabled="{Binding CanDeleteSelectedAlertRule}" />
+                                    <Button Content="{Binding SaveActionText}" Click="SaveAlertRulesClicked" />
+                                </StackPanel>
+                                <Border Grid.Row="2"
+                                        DataContext="{Binding SelectedAlertRule}"
+                                        IsVisible="{Binding DataContext.IsAlertRuleSelected, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Classes="commandConsole"
+                                        Padding="10"
+                                        MinHeight="0">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel Spacing="12">
+                                            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                                                <TextBlock Text="{Binding DataContext.AlertNameText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" />
+                                                <TextBlock Grid.Row="1" Text="{Binding DataContext.AlertDescriptionText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" />
+                                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LockState}" Classes="settingHelp" />
+                                            </Grid>
+
+                                            <TextBlock Text="{Binding DataContext.AlertMatchersText, RelativeSource={RelativeSource AncestorType=Window}}" FontWeight="Bold" Foreground="{StaticResource PlGoldBrightBrush}" />
+                                            <ItemsControl ItemsSource="{Binding MatcherGroups}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Classes="hudPanel" Padding="8" Margin="0,0,0,8">
+                                                            <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+                                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                                                                    <TextBlock Text="{Binding DataContext.AlertOrMatcherText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                                                    <Button Grid.Column="2" Tag="{Binding}" Click="AddAlertMatcherCriterionClicked" Padding="5" ToolTip.Tip="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" IsEnabled="{Binding CanEdit}">
+                                                                        <local:KindGlyph Kind="Add" Fill="{StaticResource PlSuccessBrush}" Width="14" Height="14" />
+                                                                    </Button>
+                                                                    <Button Grid.Column="3" Tag="{Binding}" Click="RemoveAlertMatcherGroupClicked" Padding="5" ToolTip.Tip="{Binding DataContext.AlertRemoveMatcherBlockText, RelativeSource={RelativeSource AncestorType=Window}}" IsEnabled="{Binding CanEdit}">
+                                                                        <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
+                                                                    </Button>
+                                                                </Grid>
+                                                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Criteria}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Grid ColumnDefinitions="42,170,80,*,36" ColumnSpacing="6" Margin="0,2">
+                                                                                <TextBlock Text="{Binding DataContext.AlertAndText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" VerticalAlignment="Center" />
+                                                                                <ComboBox Grid.Column="1"
+                                                                                          ItemsSource="{Binding FieldChoices}"
+                                                                                          SelectedItem="{Binding Field}"
+                                                                                          IsEnabled="{Binding CanEdit}" />
+                                                                                <TextBlock Grid.Column="2" Text="{Binding FieldType}" Classes="settingHelp" VerticalAlignment="Center" />
+                                                                                <ComboBox Grid.Column="3"
+                                                                                          IsEditable="True"
+                                                                                          ItemsSource="{Binding ExampleOptions}"
+                                                                                          Text="{Binding Expression, UpdateSourceTrigger=PropertyChanged}"
+                                                                                          IsEnabled="{Binding CanEdit}" />
+                                                                                <Button Grid.Column="4" Tag="{Binding}" Click="RemoveAlertMatcherCriterionClicked" Padding="5" ToolTip.Tip="{Binding DataContext.AlertRemoveMatcherText, RelativeSource={RelativeSource AncestorType=Window}}" IsEnabled="{Binding CanEdit}">
+                                                                                    <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="12" Height="12" />
+                                                                                </Button>
+                                                                            </Grid>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Button Click="AddAlertMatcherGroupClicked"
+                                                    Width="34"
+                                                    HorizontalAlignment="Left"
+                                                    Padding="5"
+                                                    ToolTip.Tip="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    IsEnabled="{Binding CanEdit}">
+                                                <local:KindGlyph Kind="Add" Fill="{StaticResource PlSuccessBrush}" Width="16" Height="16" />
+                                            </Button>
+
+                                            <Grid ColumnDefinitions="130,90,90,56,170,80" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                                                <TextBlock Text="{Binding DataContext.AlertColorText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <Button Grid.Column="1" Content="X" Click="AlertColorNoneClicked" IsEnabled="{Binding CanEdit}" />
+                                                <Button Grid.Column="2" Content="{Binding DataContext.AlertStatusColorText, RelativeSource={RelativeSource AncestorType=Window}}" Click="AlertColorStatusClicked" IsEnabled="{Binding CanEdit}" Classes.active="{Binding IsStatusColor}" />
+                                                <colorPicker:ColorPicker Grid.Column="3"
+                                                                         Width="46"
+                                                                         Height="28"
+                                                                         Color="{Binding SelectedColor, Mode=TwoWay}"
+                                                                         IsAlphaEnabled="False"
+                                                                         IsAlphaVisible="False"
+                                                                         IsEnabled="{Binding CanEdit}" />
+                                                <ComboBox Grid.Column="4" ItemsSource="{Binding DurationChoices}" SelectedItem="{Binding ColorDurationChoice}" IsEnabled="{Binding CanEdit}" />
+                                                <Border Grid.Column="5" Width="40" Height="22" Background="{Binding ColorPreviewBrush}" BorderBrush="{StaticResource PlGoldBorderBrush}" BorderThickness="1">
+                                                    <ToolTip.Tip>
+                                                        <TextBlock Text="{Binding ColorModeLabel}" />
+                                                    </ToolTip.Tip>
+                                                </Border>
+
+                                                <TextBlock Grid.Row="1" Text="{Binding DataContext.AlertAnimationText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" ItemsSource="{Binding AnimationChoices}" SelectedItem="{Binding AnimationChoice}" IsEnabled="{Binding CanEdit}" />
+                                                <ComboBox Grid.Row="1" Grid.Column="4" ItemsSource="{Binding DurationChoices}" SelectedItem="{Binding AnimationDurationChoice}" IsEnabled="{Binding CanEdit}" />
+                                                <Border Grid.Row="1" Grid.Column="5" Width="40" Height="22" Background="{Binding AnimationPreviewBrush}" BorderBrush="{StaticResource PlGoldBorderBrush}" BorderThickness="1" IsVisible="{Binding IsAnimationEnabled}">
+                                                    <Rectangle Classes="radarAnnouncePulse" Fill="{Binding AnimationPreviewBrush}" />
+                                                </Border>
+
+                                                <TextBlock Grid.Row="2" Text="{Binding DataContext.AlertZoomText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" ItemsSource="{Binding ZoomChoices}" SelectedItem="{Binding ZoomChoice}" IsEnabled="{Binding CanEdit}" />
+                                                <Button Grid.Row="2" Grid.Column="4" Click="PreviewAlertZoomClicked" Padding="6,3" ToolTip.Tip="{Binding DataContext.AlertPreviewZoomText, RelativeSource={RelativeSource AncestorType=Window}}" IsVisible="{Binding HasZoom}">
+                                                    <local:KindGlyph Kind="Play" Fill="{StaticResource PlGoldBrightBrush}" Width="16" Height="16" />
+                                                </Button>
+
+                                                <TextBlock Grid.Row="3" Text="{Binding DataContext.AlertSoundText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <Button Grid.Row="3"
+                                                        Grid.Column="1"
+                                                        Grid.ColumnSpan="5"
+                                                        Classes="filterButton"
+                                                        Classes.dropdown="True"
+                                                        HorizontalAlignment="Stretch"
+                                                        IsEnabled="{Binding CanEdit}">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                                        <local:KindGlyph Width="18"
+                                                                         Height="18"
+                                                                         Kind="Sound"
+                                                                         Fill="{StaticResource PlGoldBrightBrush}"
+                                                                         VerticalAlignment="Center"
+                                                                         Margin="0,0,8,0" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding SoundLabel}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Column="2" Text="▾" Margin="8,0,0,0" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="BottomEdgeAlignedLeft" ShowMode="Standard">
+                                                            <Border Width="420" Padding="8" Classes="hudMenu">
+                                                                <StackPanel Spacing="6">
+                                                                    <TextBlock Text="{Binding DataContext.AlertSoundText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                                                    <TextBox Text="{Binding SoundSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                                             PlaceholderText="{Binding DataContext.AlertSoundSearchText, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                                    <ScrollViewer Height="260" VerticalScrollBarVisibility="Auto">
+                                                                        <ItemsControl ItemsSource="{Binding FilteredSoundItems}">
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate>
+                                                                                    <Button Tag="{Binding}"
+                                                                                            Click="SelectAlertSoundClicked"
+                                                                                            HorizontalAlignment="Stretch"
+                                                                                            HorizontalContentAlignment="Stretch"
+                                                                                            Padding="6,4"
+                                                                                            Margin="0,0,0,4">
+                                                                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                                                            <local:KindGlyph Kind="Sound"
+                                                                                                             Fill="{StaticResource PlGoldBrightBrush}"
+                                                                                                             Width="16"
+                                                                                                             Height="16"
+                                                                                                             VerticalAlignment="Center" />
+                                                                                            <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                                            <TextBlock Grid.Column="2" Text="{Binding License}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
+                                                                                        </Grid>
+                                                                                    </Button>
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </ScrollViewer>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                                <Button Grid.Row="3" Grid.Column="5" Click="PreviewAlertSoundClicked" Padding="6,3" ToolTip.Tip="{Binding DataContext.AlertPreviewSoundText, RelativeSource={RelativeSource AncestorType=Window}}" IsVisible="{Binding HasSound}">
+                                                    <local:KindGlyph Kind="Play" Fill="{StaticResource PlGoldBrightBrush}" Width="16" Height="16" />
+                                                </Button>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto" RowSpacing="3" ColumnSpacing="8" IsVisible="{Binding HasSound}">
+                                                <TextBlock Text="{Binding DataContext.AlertAuthorText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <TextBlock Grid.Column="1" Text="{Binding SoundAttribution}" TextWrapping="Wrap" />
+                                                <TextBlock Grid.Row="1" Text="{Binding DataContext.AlertSourceText, RelativeSource={RelativeSource AncestorType=Window}}" Classes="settingHelp" />
+                                                <Button Grid.Row="1" Grid.Column="1"
+                                                        Click="OpenAlertSoundSourceClicked"
+                                                        HorizontalAlignment="Left"
+                                                        Padding="0"
+                                                        Background="Transparent"
+                                                        BorderThickness="0">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <TextBlock Text="{Binding SoundSourceUrl}" TextWrapping="Wrap" Foreground="{StaticResource PlBlueGlowBrush}" />
+                                                        <local:KindGlyph Kind="Open" Fill="{StaticResource PlGoldBrightBrush}" Width="13" Height="13" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </Grid>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </TabItem>
                         <TabItem Header="{Binding SettingsAppearanceText}">
                             <StackPanel Margin="10" Spacing="0">
                                 <Border Classes="settingRow">
@@ -1133,7 +1428,7 @@
                                         <ComboBox Grid.Column="1"
                                                   ItemsSource="{Binding ThemeVariantOptions}"
                                                   SelectedItem="{Binding ThemeVariantSetting}"
-                                                  ToolTip.Tip="Dark and light variants use the same layout and readable density." />
+                                                  ToolTip.Tip="{Binding VariantTooltipText}" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding VariantHelpText}" />
                                     </Grid>
                                 </Border>
@@ -1143,7 +1438,7 @@
                                         <ComboBox Grid.Column="1"
                                                   ItemsSource="{Binding GraphicsQualityOptions}"
                                                   SelectedItem="{Binding GraphicsQualitySetting}"
-                                                  ToolTip.Tip="Subtle keeps the app professional; medium and arcade increase glow and texture." />
+                                                  ToolTip.Tip="{Binding ThemeIntensityTooltipText}" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding ThemeIntensityHelpText}" />
                                     </Grid>
                                 </Border>
@@ -1160,25 +1455,57 @@
                             <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="10">
                                 <TextBlock Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                 <DataGrid Grid.Row="1"
+                                          x:Name="RequestAuditGrid"
                                           ItemsSource="{Binding RequestAuditRows}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           HorizontalAlignment="Stretch"
                                           CellPointerPressed="CopyableTableCellPointerPressed"
                                           PointerReleased="CopyableTablePointerReleased"
                                           PointerCaptureLost="CopyableTablePointerReleased"
-                                          Height="360"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          MinHeight="240"
+                                          MaxHeight="{Binding $parent[ScrollViewer].Bounds.Height}"
+                                          VerticalAlignment="Stretch"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Time" Binding="{Binding StartedAt}" Width="190" />
-                                        <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="90" />
-                                        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="360" />
-                                        <DataGridTextColumn Header="Priority" Binding="{Binding Priority}" Width="110" />
-                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
-                                        <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="100" />
-                                        <DataGridTextColumn Header="Outcome" Binding="{Binding Outcome}" Width="*" />
+                                        <DataGridTextColumn Binding="{Binding StartedAt}" Width="190" SortMemberPath="StartedAt">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Time" Label="Time" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Method}" Width="90" SortMemberPath="Method">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Method" Label="Method" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Path}" Width="360" SortMemberPath="Path">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Path" Label="Path" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Priority}" Width="110" SortMemberPath="Priority">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Priority" Label="Priority" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Status}" Width="120" SortMemberPath="Status">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Duration}" Width="100" SortMemberPath="Duration">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Duration" Label="Duration" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Outcome}" Width="*" SortMemberPath="Outcome">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Outcome" Label="Outcome" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
@@ -1262,50 +1589,75 @@
                                                  MinHeight="42"
                                                  MaxHeight="110"
                                                  PlaceholderText="{Binding ImportPlaceholderText}" />
-                                        <Button Grid.Column="1" Content="{Binding ImportActionText}" Click="ImportPathClicked" />
+                                        <Button Grid.Column="1" Content="{Binding ImportActionText}" Click="ImportPathClicked" ToolTip.Tip="{Binding ImportFileTipText}" />
                                     </Grid>
                                 </Border>
                                 <DataGrid Grid.Row="1"
+                                          x:Name="SourcesGrid"
                                           ItemsSource="{Binding Sources}"
                                           SelectedItem="{Binding SelectedSource}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="False"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           CellPointerPressed="CopyableTableCellPointerPressed"
                                           PointerReleased="CopyableTablePointerReleased"
                                           PointerCaptureLost="CopyableTablePointerReleased"
                                           MinHeight="0"
                                           ClipToBounds="True"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
                                         <DataGridTemplateColumn Header="" Width="56" IsReadOnly="True">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
-                                                    <Button Content="X"
-                                                            Click="RemoveSourceClicked"
+                                                    <Button Click="RemoveSourceClicked"
                                                             Tag="{Binding}"
-                                                            ToolTip.Tip="Remove snapshot"
-                                                            Padding="6,1" />
+                                                            ToolTip.Tip="{Binding RemoveSnapshotTooltipText}"
+                                                            Padding="6,1"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            HorizontalContentAlignment="Center">
+                                                        <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
+                                                    </Button>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="Name" Binding="{Binding Context, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="220" />
-                                        <DataGridTemplateColumn Header="Filter" Width="170">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <ComboBox ItemsSource="{Binding DataContext.SourceFilterOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding FilterName, Mode=TwoWay}"
-                                                              HorizontalAlignment="Stretch" />
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="Imported" Binding="{Binding ImportedAt}" Width="205" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Cluster" Binding="{Binding Cluster}" Width="220" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="User" Binding="{Binding User}" Width="180" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Auth" Binding="{Binding AuthType}" Width="110" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="300" IsReadOnly="True" />
-                                        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*" IsReadOnly="True" />
+                                        <DataGridTextColumn Binding="{Binding Context, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="220" SortMemberPath="Context">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Name" Label="Name" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding ImportedAt}" Width="205" IsReadOnly="True" SortMemberPath="ImportedAt">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Imported" Label="Imported" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Cluster}" Width="220" IsReadOnly="True" SortMemberPath="Cluster">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Cluster" Label="Cluster" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding User}" Width="180" IsReadOnly="True" SortMemberPath="User">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="User" Label="User" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding AuthType}" Width="110" IsReadOnly="True" SortMemberPath="AuthType">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Auth" Label="Auth" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Source}" Width="300" IsReadOnly="True" SortMemberPath="Source">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Source" Label="Source" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Detail}" Width="*" IsReadOnly="True" SortMemberPath="Detail">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Detail" Label="Detail" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
@@ -1345,6 +1697,80 @@
                                 </Border>
                             </StackPanel>
                         </TabItem>
+                        <TabItem Header="{Binding SettingsAboutText}">
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Name="AboutSection"
+                                            Margin="14"
+                                            Spacing="16"
+                                            MaxWidth="640"
+                                            HorizontalAlignment="Left"
+                                            Loaded="AboutSectionLoaded">
+                                    <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                                        <Image Source="avares://Podlord.App/Assets/Brand/Logo/podlord-logo-transparent.png"
+                                               Width="96"
+                                               Height="96" />
+                                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock Text="PODLORD"
+                                                       FontSize="24"
+                                                       FontWeight="Bold"
+                                                       Foreground="{StaticResource PlGoldBrightBrush}" />
+                                            <TextBlock Text="{Binding AboutTaglineText}"
+                                                       FontStyle="Italic"
+                                                       Foreground="{StaticResource PlTextMutedBrush}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Border Background="{StaticResource PlPlaqueBrush}"
+                                            BorderBrush="{StaticResource PlGoldBorderBrush}"
+                                            BorderThickness="1"
+                                            Padding="{StaticResource PlPaddingPanelLg}"
+                                            CornerRadius="2">
+                                        <TextBlock Name="AboutBlock"
+                                                   Text="{Binding AboutBlockText}"
+                                                   TextWrapping="Wrap"
+                                                   LineHeight="22"
+                                                   FontStyle="Italic" />
+                                    </Border>
+                                    <TextBlock Text="{Binding AboutSupportHeadingText}"
+                                               FontWeight="Bold"
+                                               Foreground="{StaticResource PlGoldBrightBrush}" />
+                                    <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutSponsorsUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutSponsorsButtonText}" />
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutBuyMeACoffeeUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutBuyMeACoffeeButtonText}" />
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutKoFiUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutKoFiButtonText}" />
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutLiberapayUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutLiberapayButtonText}" />
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding AboutProjectHeadingText}"
+                                               FontWeight="Bold"
+                                               Foreground="{StaticResource PlGoldBrightBrush}" />
+                                    <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutStarUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutStarRepoButtonText}" />
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutRepoUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutGithubRepoButtonText}" />
+                                        <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutIssueUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutCreateIssueButtonText}" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
                     </TabControl>
                 </Grid>
                 </ScrollViewer>
@@ -1359,7 +1785,7 @@
                           BorderThickness="0,1"
                           ResizeDirection="Rows"
                           ResizeBehavior="PreviousAndNext"
-                          ToolTip.Tip="Drag to resize inspector" />
+                          ToolTip.Tip="{Binding ResizeInspectorTooltipText}" />
             <Border Grid.Row="1"
                     IsVisible="{Binding IsInspectorVisible}"
                     IsHitTestVisible="False"
@@ -1385,16 +1811,24 @@
                     Classes="selectedUnitCard">
                 <Grid RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True">
                     <Border Classes="selectedUnitHeader" Padding="8">
-                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                            <local:KindGlyph Kind="{Binding SelectedResource.Kind}"
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6" VerticalAlignment="Center">
+                            <Button Grid.Column="0" Content="◄" Click="InspectorBackClicked" IsEnabled="{Binding CanGoBackInspector}" ToolTip.Tip="{Binding PreviousResourceTooltipText}" Padding="8,2" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="►" Click="InspectorForwardClicked" IsEnabled="{Binding CanGoForwardInspector}" ToolTip.Tip="{Binding NextResourceTooltipText}" Padding="8,2" VerticalAlignment="Center" />
+                            <local:KindGlyph Grid.Column="2"
+                                             Kind="{Binding SelectedResource.Kind}"
                                              Fill="{Binding SelectedResourceLabel, Converter={StaticResource DeterministicBrushConverter}}"
                                              Width="28"
-                                             Height="28" />
-                            <TextBlock Grid.Column="1" Text="{Binding SelectedResourceLabel}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
-                            <ProgressBar Grid.Column="2" IsVisible="{Binding IsDetailLoading}" IsIndeterminate="True" Width="120" Height="8" VerticalAlignment="Center" />
-                            <Button Grid.Column="3" Content="{Binding PortActionText}" Click="PortForwardSelectedClicked" IsVisible="{Binding CanPortForwardSelectedResource}" Padding="8,2" />
-                            <Button Grid.Column="4" Content="🗑" Click="DeleteSelectedResourceClicked" IsVisible="{Binding CanDeleteSelectedResource}" ToolTip.Tip="{Binding DeleteActionLabel}" Padding="8,2" />
-                            <Button Grid.Column="5" Content="X" Click="CloseInspectorClicked" ToolTip.Tip="{Binding CloseActionText}" Padding="8,2" />
+                                             Height="28"
+                                             VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="3" Text="{Binding SelectedResourceLabel}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <ProgressBar Grid.Column="4" IsVisible="{Binding IsDetailLoading}" IsIndeterminate="{Binding IsDetailLoading}" Width="120" Height="8" VerticalAlignment="Center" />
+                            <Button Grid.Column="5" Content="{Binding PortActionText}" Click="PortForwardSelectedClicked" IsVisible="{Binding CanPortForwardSelectedResource}" Padding="8,2" VerticalAlignment="Center" />
+                            <Button Grid.Column="6" Click="DeleteSelectedResourceClicked" IsVisible="{Binding CanDeleteSelectedResource}" ToolTip.Tip="{Binding DeleteActionLabel}" Padding="8,2" HorizontalContentAlignment="Center" VerticalAlignment="Center">
+                                <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
+                            </Button>
+                            <Button Grid.Column="7" Click="CloseInspectorClicked" ToolTip.Tip="{Binding CloseActionText}" Padding="8,2" HorizontalContentAlignment="Center" VerticalAlignment="Center">
+                                <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
+                            </Button>
                         </Grid>
 	                    </Border>
                     <Grid Grid.Row="1" RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True">
@@ -1416,9 +1850,11 @@
                               SizeChanged="InspectorTabContentHostSizeChanged">
                             <Grid IsVisible="{Binding IsInspectorOverviewActive}" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                                 <Grid IsVisible="{Binding IsSelectedSource}" Margin="8" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                                    <DataGrid ItemsSource="{Binding FocusMetrics}"
+                                    <DataGrid x:Name="FocusMetricsGrid"
+                                              ItemsSource="{Binding FocusMetrics}"
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
+                                              CanUserSortColumns="False"
                                               CanUserResizeColumns="True"
                                               CellPointerPressed="CopyableTableCellPointerPressed"
                                               PointerReleased="CopyableTablePointerReleased"
@@ -1427,18 +1863,45 @@
                                               ClipToBounds="True"
                                               HorizontalAlignment="Stretch"
                                               VerticalAlignment="Stretch"
-                                              VerticalScrollBarVisibility="Visible"
-                                              HorizontalScrollBarVisibility="Visible">
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
                                         <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Field" Binding="{Binding Label}" Width="220" />
-                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+                                            <DataGridTextColumn Binding="{Binding Label}" Width="220" SortMemberPath="Label">
+                                                <DataGridTextColumn.Header>
+                                                    <local:ColumnPlaqueHeader Tag="Field" Label="Field" Click="SortInspectorColumnClicked" />
+                                                </DataGridTextColumn.Header>
+                                            </DataGridTextColumn>
+                                            <DataGridTemplateColumn Width="*" SortMemberPath="Value">
+                                                <DataGridTemplateColumn.Header>
+                                                    <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                                </DataGridTemplateColumn.Header>
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Panel>
+                                                            <TextBlock Text="{Binding Value}"
+                                                                       IsVisible="{Binding !IsResourceRef}"
+                                                                       Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}"
+                                                                       Margin="6,0"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       VerticalAlignment="Center" />
+                                                            <local:ResourceLinkButton IsVisible="{Binding IsResourceRef}"
+                                                                                      Tag="{Binding ReferenceValue}"
+                                                                                      Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}">
+                                                                <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
+                                                            </local:ResourceLinkButton>
+                                                        </Panel>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
                                         </DataGrid.Columns>
                                     </DataGrid>
                                 </Grid>
-                                <DataGrid IsVisible="{Binding IsSelectedKubernetesResource}"
+                                <DataGrid x:Name="KubernetesFocusMetricsGrid"
+                                          IsVisible="{Binding IsSelectedKubernetesResource}"
                                           ItemsSource="{Binding FocusMetrics}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
+                                          CanUserSortColumns="False"
                                           CanUserResizeColumns="True"
                                           CellPointerPressed="CopyableTableCellPointerPressed"
                                           PointerReleased="CopyableTablePointerReleased"
@@ -1447,12 +1910,40 @@
                                           ClipToBounds="True"
                                           HorizontalAlignment="Stretch"
                                           VerticalAlignment="Stretch"
-                                          VerticalScrollBarVisibility="Visible"
-                                          HorizontalScrollBarVisibility="Visible">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Field" Binding="{Binding Label}" Width="260" />
-                                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
-                                        <DataGridTemplateColumn Header="Metric" Width="180">
+                                        <DataGridTextColumn Binding="{Binding Label}" Width="260" SortMemberPath="Label">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Field" Label="Field" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTemplateColumn Width="*" SortMemberPath="Value">
+                                            <DataGridTemplateColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                            </DataGridTemplateColumn.Header>
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Panel>
+                                                        <TextBlock Text="{Binding Value}"
+                                                                   IsVisible="{Binding !IsResourceRef}"
+                                                                   Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}"
+                                                                   Margin="6,0"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center" />
+                                                        <local:ResourceLinkButton IsVisible="{Binding IsResourceRef}"
+                                                                                  Tag="{Binding ReferenceValue}"
+                                                                                  Foreground="{Binding ColorSeed, Converter={StaticResource DeterministicBrushConverter}}">
+                                                            <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
+                                                        </local:ResourceLinkButton>
+                                                    </Panel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTemplateColumn Width="180" SortMemberPath="Percent">
+                                            <DataGridTemplateColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Metric" Label="Metric" Click="SortInspectorColumnClicked" />
+                                            </DataGridTemplateColumn.Header>
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Border Background="Transparent"
@@ -1466,12 +1957,12 @@
                                                                          Minimum="0"
                                                                          Maximum="100"
                                                                          Value="{Binding Percent}"
-                                                                         Foreground="{Binding Percent, Converter={StaticResource MetricHealthBrushConverter}}" />
-                                                            <Border IsVisible="{Binding HasSuggestion}"
+                                                                         Foreground="{Binding BarBrush}" />
+                                                            <Border IsVisible="{Binding HasMarker}"
                                                                     Width="2"
                                                                     Height="12"
                                                                     Canvas.Top="1"
-                                                                    Canvas.Left="{Binding SuggestionLeft}"
+                                                                    Canvas.Left="{Binding MarkerLeft}"
                                                                     Background="{StaticResource PlGoldBrightBrush}" />
                                                         </Canvas>
                                                     </Border>
@@ -1508,8 +1999,8 @@
                                                          TextChanged="YamlEditorTextChanged"
                                                          ShowLineNumbers="True"
                                                          LineNumbersForeground="{StaticResource PlTextMutedBrush}"
-                                                         VerticalScrollBarVisibility="Visible"
-                                                         HorizontalScrollBarVisibility="Visible"
+                                                         VerticalScrollBarVisibility="Auto"
+                                                         HorizontalScrollBarVisibility="Auto"
                                                          WordWrap="False"
                                                          IsReadOnly="False"
                                                          MinHeight="0"
@@ -1518,89 +2009,184 @@
                                                          VerticalAlignment="Stretch"
                                                          FontFamily="Consolas, Menlo, Monaco, monospace"
                                                          Background="{StaticResource PlBgPanelInsetBrush}"
-                                                         Foreground="{StaticResource PlTextMainBrush}" />
+                                                         Foreground="{StaticResource PlTextBrush}" />
                             </Grid>
 
-                            <DataGrid IsVisible="{Binding IsInspectorEventsActive}"
+                            <DataGrid x:Name="FocusedEventsGrid"
+                                      IsVisible="{Binding IsInspectorEventsActive}"
                                       ItemsSource="{Binding FocusedEvents}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
+                                      CanUserSortColumns="False"
                                       CanUserResizeColumns="True"
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
                                       PointerCaptureLost="CopyableTablePointerReleased"
-                                      VerticalScrollBarVisibility="Visible"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto"
                                       MinHeight="0"
                                       ClipToBounds="True"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
-                                    <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="180" />
-                                    <DataGridTextColumn Header="Age" Binding="{Binding Age}" Width="160" />
-                                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
+                                    <DataGridTextColumn Binding="{Binding Status}" Width="100" SortMemberPath="Status">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Reason}" Width="180" SortMemberPath="Reason">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Reason" Label="Reason" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding AgeDisplay}" Width="160" SortMemberPath="Age">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Age" Label="Age" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Message}" Width="*" SortMemberPath="Message">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Message" Label="Message" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <DataGrid IsVisible="{Binding IsInspectorLinksActive}"
+                            <DataGrid x:Name="RelationshipsGrid"
+                                      IsVisible="{Binding IsInspectorLinksActive}"
                                       ItemsSource="{Binding FocusedRelationships}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
+                                      CanUserSortColumns="False"
                                       CanUserResizeColumns="True"
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
                                       PointerCaptureLost="CopyableTablePointerReleased"
-                                      VerticalScrollBarVisibility="Visible"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto"
                                       MinHeight="0"
                                       ClipToBounds="True"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="From" Binding="{Binding FromName}" Width="240" />
-                                    <DataGridTextColumn Header="" Binding="{Binding Link}" Width="50" />
-                                    <DataGridTextColumn Header="To" Binding="{Binding ToName}" Width="240" />
-                                    <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="160" />
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="160" />
+                                    <DataGridTemplateColumn Width="240" SortMemberPath="FromName">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="From" Label="From" Click="SortInspectorColumnClicked" />
+                                        </DataGridTemplateColumn.Header>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <local:ResourceLinkButton Tag="{Binding FromName}" Foreground="{Binding FromName, Converter={StaticResource DeterministicBrushConverter}}">
+                                                    <TextBlock Text="{Binding FromName}" TextTrimming="CharacterEllipsis" />
+                                                </local:ResourceLinkButton>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Binding="{Binding Link}" Width="50" SortMemberPath="Link">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Link" Label="Link" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Width="240" SortMemberPath="ToName">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="To" Label="To" Click="SortInspectorColumnClicked" />
+                                        </DataGridTemplateColumn.Header>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <local:ResourceLinkButton Tag="{Binding ToName}" Foreground="{Binding ToName, Converter={StaticResource DeterministicBrushConverter}}">
+                                                    <TextBlock Text="{Binding ToName}" TextTrimming="CharacterEllipsis" />
+                                                </local:ResourceLinkButton>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Binding="{Binding Namespace}" Width="160">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Namespace" Label="Namespace" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Status}" Width="160">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
 
                             <Grid IsVisible="{Binding IsInspectorLogsActive}" RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                                <CheckBox Content="Pause tail"
-                                          IsChecked="{Binding LogsPaused}"
-                                          Margin="8,4"
-                                          ToolTip.Tip="Pause automatic pod log tailing for the focused pod." />
-                                <TextBox Grid.Row="1"
-                                         x:Name="LogTextBox"
-                                         Text="{Binding LogText}"
-                                         TextChanged="LogTextChanged"
-                                         AcceptsReturn="True"
-                                         IsReadOnly="True"
-                                         MinHeight="0"
-                                         ClipToBounds="True"
-                                         HorizontalAlignment="Stretch"
-                                         VerticalAlignment="Stretch"
-                                         FontFamily="Consolas, Menlo, Monaco, monospace" />
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      Margin="8,4"
+                                      ColumnSpacing="8">
+                                    <TextBlock Text="{Binding LogContainerLabelText}"
+                                               VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding PodLogContainerOptions}"
+                                              SelectedItem="{Binding SelectedPodLogContainer}"
+                                              HorizontalAlignment="Stretch"
+                                              MinWidth="180" />
+                                    <CheckBox Grid.Column="2"
+                                              Content="{Binding LogPauseTailText}"
+                                              IsChecked="{Binding LogsPaused}"
+                                              VerticalAlignment="Center"
+                                              ToolTip.Tip="{Binding LogPauseTailHelpText}" />
+                                </Grid>
+                                <avaloniaEdit:TextEditor Grid.Row="1"
+                                                          x:Name="LogEditor"
+                                                          IsReadOnly="True"
+                                                          ShowLineNumbers="False"
+                                                          WordWrap="False"
+                                                          MinHeight="0"
+                                                          ClipToBounds="True"
+                                                          HorizontalAlignment="Stretch"
+                                                          VerticalAlignment="Stretch"
+                                                          HorizontalScrollBarVisibility="Auto"
+                                                          VerticalScrollBarVisibility="Auto"
+                                                          FontFamily="Consolas, Menlo, Monaco, monospace" />
                             </Grid>
 
-                            <DataGrid IsVisible="{Binding IsInspectorValuesActive}"
+                            <DataGrid x:Name="ResourceValuesGrid"
+                                      IsVisible="{Binding IsInspectorValuesActive}"
                                       ItemsSource="{Binding ResourceValues}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
+                                      CanUserSortColumns="False"
                                       CanUserResizeColumns="True"
                                       CellPointerPressed="CopyableTableCellPointerPressed"
                                       PointerReleased="CopyableTablePointerReleased"
                                       PointerCaptureLost="CopyableTablePointerReleased"
-                                      VerticalScrollBarVisibility="Visible"
-                                      HorizontalScrollBarVisibility="Visible"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto"
                                       MinHeight="0"
                                       ClipToBounds="True"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="220" />
-                                    <DataGridTextColumn Header="Encoding" Binding="{Binding Encoding}" Width="110" />
-                                    <DataGridTextColumn Header="Value" Binding="{Binding DisplayValue}" Width="*" />
-                                    <DataGridTemplateColumn Header="Copy" Width="190">
+                                    <DataGridTextColumn Binding="{Binding Key}" Width="220" SortMemberPath="Key">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Key" Label="Key" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Binding="{Binding Encoding}" Width="110" SortMemberPath="Encoding">
+                                        <DataGridTextColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Encoding" Label="Encoding" Click="SortInspectorColumnClicked" />
+                                        </DataGridTextColumn.Header>
+                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Width="*" SortMemberPath="DisplayValue">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                        </DataGridTemplateColumn.Header>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayValue}"
+                                                           TextWrapping="Wrap"
+                                                           MaxLines="8"
+                                                           Margin="4,2"
+                                                           ToolTip.Tip="{Binding DisplayValue}" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Width="190">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Copy" Label="Copy" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Spacing="4">
@@ -1623,7 +2209,10 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="" Width="94">
+                                    <DataGridTemplateColumn Width="94">
+                                        <DataGridTemplateColumn.Header>
+                                            <local:ColumnPlaqueHeader Tag="Reveal" Label="Reveal" />
+                                        </DataGridTemplateColumn.Header>
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Button Content="{Binding RevealLabel}"
@@ -1679,7 +2268,9 @@
                 <TextBlock Text="{Binding PortForwardTitleText}"
                            Foreground="{StaticResource PlGoldBrightBrush}"
                            FontWeight="Bold" />
-                <Button Grid.Column="1" Content="X" Click="ClosePortForwardToolClicked" ToolTip.Tip="{Binding CloseActionText}" Padding="8,2" />
+                <Button Grid.Column="1" Click="ClosePortForwardToolClicked" ToolTip.Tip="{Binding CloseActionText}" Padding="8,2" HorizontalContentAlignment="Center">
+                    <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
+                </Button>
             </Grid>
             <TextBlock Grid.Row="1"
                        Text="{Binding PortForwardResourceLabel}"

@@ -6,5 +6,16 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CA1707</NoWarn>
+
+    <Version>0.1.0</Version>
+    <Authors>Yuna Morgenstern</Authors>
+    <Company>Podlord</Company>
+    <Product>Podlord</Product>
+    <PackageProjectUrl>https://github.com/YunaBraska/podlord</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/YunaBraska/podlord</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 Yuna Morgenstern</Copyright>
+    <Description>Podlord is a desktop console for the kubernetes-aware human.</Description>
   </PropertyGroup>
 </Project>

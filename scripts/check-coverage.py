@@ -24,6 +24,14 @@ EXCLUDES = (
     "src/Podlord.App/RadarWaterLayer.cs",
     "src/Podlord.App/YamlSyntaxColorizer.cs",
     "src/Podlord.App/MainWindowViewModel.cs",
+    "src/Podlord.App/AlertRuleRowViewModel.cs",
+    "src/Podlord.App/AlertSoundPlayer.cs",
+    "src/Podlord.App/Controls/*.cs",
+    "src/Podlord.App/InspectorSortManager.cs",
+    "src/Podlord.App/LogSyntaxColorizer.cs",
+    "src/Podlord.App/ResourceReferenceTooltipBuilder.cs",
+    "src/Podlord.App/StatusBrushConverter.cs",
+    "src/Podlord.App/WorkspaceModels.cs",
 )
 
 

@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private sealed record CopyMenuAction(string Header, string Value);
 
     private readonly MainWindowViewModel viewModel;
+
+    internal MainWindowViewModel ViewModel => viewModel;
     private CancellationTokenSource? contextMenuHold;
     private ContextMenu? activeContextMenu;
     private Control? activeContextMenuOwner;
@@ -36,6 +38,12 @@ public partial class MainWindow : Window
     private bool isHeaderDragActive;
     private bool applyingTableLayout;
     private bool suppressNextHeaderSortClick;
+    private DataGrid? resizingGrid;
+    private DataGridColumn? resizingColumn;
+    private DataGridColumnHeader? resizingHeader;
+    private double resizeStartX;
+    private double resizeStartWidth;
+    private bool isResizingColumn;
     private GridLength lastOpenInspectorHeight = new(300, GridUnitType.Pixel);
     private bool isRightSidebarResizing;
     private Point? rightSidebarResizeStart;
@@ -54,6 +62,7 @@ public partial class MainWindow : Window
         viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModelPropertyChanged;
+        AddHandler(PointerPressedEvent, GlobalPointerPressedDismissMenus, RoutingStrategies.Tunnel);
         AddHandler(DataGridColumnHeader.PointerPressedEvent, ColumnHeaderPointerPressed, RoutingStrategies.Tunnel);
         AddHandler(DataGridColumnHeader.PointerMovedEvent, ColumnHeaderPointerMoved, RoutingStrategies.Tunnel);
         AddHandler(DataGridColumnHeader.PointerReleasedEvent, ColumnHeaderPointerReleased, RoutingStrategies.Tunnel);
@@ -65,7 +74,10 @@ public partial class MainWindow : Window
         PulseStripScroller.AddHandler(PointerCaptureLostEvent, PulseStripPointerCaptureLost, RoutingStrategies.Tunnel);
         PulseStripScroller.AddHandler(PointerWheelChangedEvent, PulseStripPointerWheelChanged, RoutingStrategies.Tunnel);
         ConfigureYamlEditor();
+        ConfigureLogEditor();
         SyncYamlEditorFromViewModel();
+        SyncLogEditorFromViewModel();
+        viewModel.Resources.CollectionChanged += (_, _) => Dispatcher.UIThread.Post(ApplyAutoHideEmptyColumns, DispatcherPriority.Background);
         viewModel.SetRadarPanelWidth(RightSidebarShell.Width);
         UpdateInspectorLayout();
         UpdateYamlEditorHeight();
@@ -75,10 +87,59 @@ public partial class MainWindow : Window
             InitializeTableLayouts();
             UpdateSortHeaderIndicators();
         });
-        Activated += (_, _) => viewModel.SetAppFocus(true);
-        Deactivated += (_, _) => viewModel.SetAppFocus(false);
-        SizeChanged += (_, _) => UpdateYamlEditorHeight();
-        Closed += (_, _) => viewModel.Dispose();
+        EventHandler activated = (_, _) => viewModel.SetAppFocus(true);
+        EventHandler deactivated = (_, _) => viewModel.SetAppFocus(false);
+        EventHandler<SizeChangedEventArgs> sizeChanged = (_, _) => UpdateYamlEditorHeight();
+        EventHandler<AvaloniaPropertyChangedEventArgs> windowStateChanged = (_, e) =>
+        {
+            if (e.Property == WindowStateProperty)
+            {
+                viewModel.SetWindowVisible(WindowState != WindowState.Minimized);
+            }
+        };
+        Activated += activated;
+        Deactivated += deactivated;
+        SizeChanged += sizeChanged;
+        PropertyChanged += windowStateChanged;
+        Closed += (_, _) =>
+        {
+            viewModel.PropertyChanged -= ViewModelPropertyChanged;
+            RemoveHandler(PointerPressedEvent, GlobalPointerPressedDismissMenus);
+            RemoveHandler(DataGridColumnHeader.PointerPressedEvent, ColumnHeaderPointerPressed);
+            RemoveHandler(DataGridColumnHeader.PointerMovedEvent, ColumnHeaderPointerMoved);
+            RemoveHandler(DataGridColumnHeader.PointerReleasedEvent, ColumnHeaderPointerReleased);
+            RemoveHandler(DataGridColumnHeader.PointerCaptureLostEvent, ColumnHeaderPointerCaptureLost);
+            RemoveHandler(DataGridCell.PointerEnteredEvent, DataGridCellPointerEntered);
+            PulseStripScroller.RemoveHandler(PointerPressedEvent, PulseStripPointerPressed);
+            PulseStripScroller.RemoveHandler(PointerMovedEvent, PulseStripPointerMoved);
+            PulseStripScroller.RemoveHandler(PointerReleasedEvent, PulseStripPointerReleased);
+            PulseStripScroller.RemoveHandler(PointerCaptureLostEvent, PulseStripPointerCaptureLost);
+            PulseStripScroller.RemoveHandler(PointerWheelChangedEvent, PulseStripPointerWheelChanged);
+            Activated -= activated;
+            Deactivated -= deactivated;
+            SizeChanged -= sizeChanged;
+            PropertyChanged -= windowStateChanged;
+            DetachEditorHandlers();
+            viewModel.Dispose();
+        };
+    }
+
+    private void DetachEditorHandlers()
+    {
+        if (YamlEditor is { TextArea: { TextView: { } yamlTextView } })
+        {
+            yamlTextView.PointerPressed -= YamlEditorTextViewPointerPressed;
+            yamlTextView.PointerReleased -= EditorRefPointerReleased;
+            yamlTextView.PointerCaptureLost -= EditorRefPointerCaptureLost;
+            yamlTextView.PointerMoved -= YamlEditorRefPointerMoved;
+        }
+        if (LogEditor is { TextArea: { TextView: { } logTextView } })
+        {
+            logTextView.PointerPressed -= LogEditorTextViewPointerPressed;
+            logTextView.PointerReleased -= EditorRefPointerReleased;
+            logTextView.PointerCaptureLost -= EditorRefPointerCaptureLost;
+            logTextView.PointerMoved -= LogEditorRefPointerMoved;
+        }
     }
 
     private void ViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -96,6 +157,10 @@ public partial class MainWindow : Window
         {
             SyncYamlEditorFromViewModel();
         }
+        else if (e.PropertyName == nameof(MainWindowViewModel.LogText))
+        {
+            SyncLogEditorFromViewModel();
+        }
         else if (e.PropertyName == nameof(MainWindowViewModel.SelectedInspectorTabIndex)
                  && viewModel.SelectedInspectorTabIndex == 1)
         {
@@ -104,45 +169,40 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ImportHomeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ImportHome();
-    }
+    private void ImportHomeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ImportHome();
 
     private async void ImportPathClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(viewModel.ImportPath))
+        if (!string.IsNullOrWhiteSpace(viewModel.ImportPath))
         {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Import kubeconfig",
-                AllowMultiple = false,
-                FileTypeFilter =
-                [
-                    new FilePickerFileType("Kubeconfig YAML")
-                    {
-                        Patterns = ["*.yaml", "*.yml", "config"]
-                    },
-                    FilePickerFileTypes.All
-                ]
-            }).ConfigureAwait(true);
-            if (files.Count == 0)
-            {
-                return;
-            }
-
-            viewModel.ImportPath = files[0].Path.LocalPath;
+            viewModel.ImportPathNow();
+            return;
         }
 
-        viewModel.ImportPathNow();
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = viewModel.T("import.dialogTitle"),
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType(viewModel.T("import.kubeconfigFilter"))
+                {
+                    Patterns = ["*.yaml", "*.yml", "*.kubeconfig", "*.conf", "config", "kubeconfig*"]
+                },
+                FilePickerFileTypes.All
+            ]
+        }).ConfigureAwait(true);
+
+        var paths = files.Select(file => file.Path.LocalPath).ToList();
+        if (paths.Count > 0)
+        {
+            viewModel.ImportPaths(paths);
+        }
     }
 
     private void RemoveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: SourceStatusRow row })
-        {
-            viewModel.RemoveSource(row);
-        }
+        if (sender is Button { Tag: SourceStatusRow row }) viewModel.RemoveSource(row);
     }
 
     private async void ImportK3dClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -159,8 +219,13 @@ public partial class MainWindow : Window
     {
         if (sender is Button { Tag: string rawIndex } && int.TryParse(rawIndex, out var index))
         {
+            var wasYaml = viewModel.IsInspectorYamlActive;
             viewModel.SelectedInspectorTabIndex = index;
             Dispatcher.UIThread.Post(UpdateYamlEditorHeight, DispatcherPriority.Background);
+            if (wasYaml && index == 1)
+            {
+                _ = viewModel.LoadFreshYamlAsync();
+            }
         }
     }
 
@@ -192,7 +257,99 @@ public partial class MainWindow : Window
         YamlEditor.TextArea.TextView.LineTransformers.Add(new YamlSyntaxColorizer());
         YamlEditor.Options.ConvertTabsToSpaces = true;
         YamlEditor.Options.IndentationSize = 2;
+        YamlEditor.TextArea.TextView.PointerPressed += YamlEditorTextViewPointerPressed;
+        YamlEditor.TextArea.TextView.PointerReleased += EditorRefPointerReleased;
+        YamlEditor.TextArea.TextView.PointerCaptureLost += EditorRefPointerCaptureLost;
+        YamlEditor.TextArea.TextView.PointerMoved += YamlEditorRefPointerMoved;
         YamlEditor.TextArea.TextView.Redraw();
+    }
+
+    private CancellationTokenSource? editorRefHoldTimer;
+
+    private void YamlEditorTextViewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        HandleEditorRefPointerPressed(e, YamlEditor, ExtractYamlRefAtPoint);
+    }
+
+    private string? ExtractYamlRefAtPoint(TextEditor editor, Avalonia.Point point)
+    {
+        var view = editor.TextArea.TextView;
+        var position = view.GetPosition(point + view.ScrollOffset);
+        if (position is not { } pos)
+        {
+            return null;
+        }
+        var document = editor.Document;
+        if (document is null || pos.Line <= 0 || pos.Line > document.LineCount)
+        {
+            return null;
+        }
+        var line = document.GetLineByNumber(pos.Line);
+        var lineText = document.GetText(line);
+        var column = Math.Max(0, pos.Column - 1);
+        foreach (var token in YamlSyntaxAnalyzer.AnalyzeLine(lineText))
+        {
+            if (token.Kind != YamlTokenKind.ResourceRef)
+            {
+                continue;
+            }
+            if (column < token.Start || column > token.End)
+            {
+                continue;
+            }
+            var value = lineText[token.Start..token.End].Trim();
+            return string.IsNullOrEmpty(value) ? null : value;
+        }
+        return null;
+    }
+
+    private void HandleEditorRefPointerPressed(PointerPressedEventArgs e, TextEditor editor, Func<TextEditor, Avalonia.Point, string?> extractRef)
+    {
+        var localPoint = e.GetPosition(editor);
+        var props = e.GetCurrentPoint(editor).Properties;
+        var reference = extractRef(editor, localPoint);
+        if (string.IsNullOrEmpty(reference))
+        {
+            return;
+        }
+        if (props.IsRightButtonPressed)
+        {
+            ShowEditorRefContextMenu(editor, reference);
+            e.Handled = true;
+            return;
+        }
+        if (!props.IsLeftButtonPressed)
+        {
+            return;
+        }
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+        {
+            _ = OpenResourceReferenceAsync(reference);
+            e.Handled = true;
+            return;
+        }
+        editorRefHoldTimer?.Cancel();
+        editorRefHoldTimer?.Dispose();
+        editorRefHoldTimer = new CancellationTokenSource();
+        _ = OpenResourceReferenceAfterHold(reference, editorRefHoldTimer.Token);
+    }
+
+    private void ShowEditorRefContextMenu(Control owner, string reference)
+    {
+        CloseActiveContextMenu(cancelPendingHold: true);
+        var menu = new ContextMenu();
+        var open = new MenuItem { Header = viewModel.T("ref.menuOpen"), Tag = reference };
+        open.Click += ResourceLinkContextOpenClicked;
+        menu.Items.Add(open);
+        var copy = new MenuItem { Header = viewModel.T("ref.menuCopy"), Tag = reference };
+        copy.Click += ResourceLinkContextCopyClicked;
+        menu.Items.Add(copy);
+        menu.Closed += (_, _) => ClearActiveContextMenu(menu, owner);
+        owner.ContextMenu = menu;
+        activeContextMenu = menu;
+        activeContextMenuOwner = owner;
+        menu.PlacementTarget = owner;
+        menu.Open(owner);
     }
 
     private void SyncYamlEditorFromViewModel()
@@ -229,15 +386,70 @@ public partial class MainWindow : Window
         YamlEditor.Height = editorHeight;
     }
 
-    private void SaveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void SaveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveCurrentFilter();
+
+    private void RemoveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RemoveSelectedFilter();
+
+    private void AboutSectionLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        viewModel.SaveCurrentFilter();
+        viewModel.PickAboutBlock();
     }
 
-    private void RemoveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void AboutOpenLinkClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        viewModel.RemoveSelectedFilter();
+        if (sender is Control control && control.Tag is string url)
+        {
+            viewModel.OpenAboutUrl(url);
+        }
     }
+
+    private void AddAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.AddAlertRule();
+
+    private void DuplicateAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DuplicateSelectedAlertRule();
+
+    private void DeleteAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DeleteSelectedAlertRule();
+
+    private void SaveAlertRulesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveAlertRules();
+
+    private void ToggleAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: AlertRuleRowViewModel rule }) viewModel.ToggleAlertRule(rule);
+    }
+
+    private void RemoveAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertMatcherGroupViewModel group }) viewModel.RemoveAlertMatcherGroup(group);
+    }
+
+    private void AddAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.AddAlertMatcherGroup();
+
+    private void AddAlertMatcherCriterionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertMatcherGroupViewModel group }) viewModel.AddAlertMatcherCriterion(group);
+    }
+
+    private void RemoveAlertMatcherCriterionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertMatcherCriterionViewModel criterion }) viewModel.RemoveAlertMatcherCriterion(criterion);
+    }
+
+    private void PreviewAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.PreviewSelectedAlertSound();
+
+    private void SelectAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertSoundDefinition sound })
+        {
+            viewModel.SelectSelectedAlertSound(sound.Id);
+        }
+    }
+
+    private void OpenAlertSoundSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenSelectedAlertSoundSource();
+
+    private void PreviewAlertZoomClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.PreviewSelectedAlertZoom();
+
+    private void AlertColorStatusClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SetSelectedAlertColorToStatus();
+
+    private void AlertColorNoneClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SetSelectedAlertColorToNone();
 
     private void LoadFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -249,10 +461,7 @@ public partial class MainWindow : Window
 
     private void DeleteSavedFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: FilterPreset preset })
-        {
-            viewModel.DeleteSavedFilter(preset);
-        }
+        if (sender is Button { Tag: FilterPreset preset }) viewModel.DeleteSavedFilter(preset);
     }
 
     private void RenameSavedFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -299,10 +508,7 @@ public partial class MainWindow : Window
         viewModel.RenameSavedFilter(preset, requestedName);
     }
 
-    private void ResourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("resources");
-    }
+    private void ResourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("resources");
 
     private void ToggleCurrentSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -310,25 +516,13 @@ public partial class MainWindow : Window
         FocusCurrentSearch();
     }
 
-    private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("graph");
-    }
+    private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("graph");
 
-    private void EventsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("events");
-    }
+    private void EventsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("events");
 
-    private void PortsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("ports");
-    }
+    private void PortsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("ports");
 
-    private void SourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.OpenSourcesSettings();
-    }
+    private void SourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenSourcesSettings();
 
     private void RadarSourceButtonClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -338,35 +532,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SettingsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("settings");
-    }
+    private void ToggleAudioMuteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ToggleAudioMute();
 
-    private void ImportPasteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ImportPasteNow();
-    }
+    private void SettingsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("settings");
 
-    private void RefreshSourcesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.RefreshSourcesNow();
-    }
+    private void ImportPasteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ImportPasteNow();
 
-    private void SaveSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SaveSelectedSession();
-    }
+    private void RefreshSourcesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RefreshSourcesNow();
 
-    private void SaveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SaveSelectedSource();
-    }
+    private void SaveSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveSelectedSession();
 
-    private void DuplicateSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.DuplicateSelectedSession();
-    }
+    private void SaveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveSelectedSource();
+
+    private void DuplicateSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DuplicateSelectedSession();
 
     private void PortForwardRowClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -646,43 +824,25 @@ public partial class MainWindow : Window
         }
     }
 
-    private void StartPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.StartPreparedPortForward();
-    }
+    private void StartPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.StartPreparedPortForward();
 
-    private void RunPortForwardActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.RunPreparedPortForwardAction();
-    }
+    private void RunPortForwardActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RunPreparedPortForwardAction();
 
     private async void ApplyYamlClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         await viewModel.ApplyEditedYamlAsync().ConfigureAwait(true);
     }
 
-    private void ResetYamlClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ResetEditedYaml();
-    }
+    private void ResetYamlClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ResetEditedYaml();
 
-    private void StopPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.StopSelectedPortForward();
-    }
+    private void StopPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.StopSelectedPortForward();
 
     private void OpenPortForwardTaskClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: PortForwardTaskViewModel task })
-        {
-            viewModel.OpenPortForwardTask(task);
-        }
+        if (sender is Button { Tag: PortForwardTaskViewModel task }) viewModel.OpenPortForwardTask(task);
     }
 
-    private void ClosePortForwardToolClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ClosePortForwardTool();
-    }
+    private void ClosePortForwardToolClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ClosePortForwardTool();
 
     private void FilterSearchKeyDown(object? sender, KeyEventArgs e)
     {
@@ -861,14 +1021,25 @@ public partial class MainWindow : Window
 
         if (point.Properties.IsLeftButtonPressed)
         {
-            if (IsOnColumnResizeEdge(header, point.Position))
+            var edge = ColumnResizeEdge(header, point.Position);
+            if (edge != ColumnResizeEdgeKind.None)
             {
-                headerDragGrid = null;
-                headerDragColumn = null;
-                headerDragHeader = null;
-                lastHeaderDragPoint = null;
-                isHeaderDragActive = false;
-                suppressNextHeaderSortClick = false;
+                var targetColumn = edge == ColumnResizeEdgeKind.Right
+                    ? ColumnForHeader(grid, header)
+                    : PreviousVisibleColumn(grid, ColumnForHeader(grid, header));
+                if (targetColumn is null)
+                {
+                    return;
+                }
+                resizingGrid = grid;
+                resizingColumn = targetColumn;
+                resizingHeader = header;
+                resizeStartX = e.GetCurrentPoint(grid).Position.X;
+                resizeStartWidth = targetColumn.ActualWidth;
+                isResizingColumn = true;
+                e.Pointer.Capture(header);
+                e.Handled = true;
+                suppressNextHeaderSortClick = true;
                 return;
             }
 
@@ -898,6 +1069,17 @@ public partial class MainWindow : Window
 
     private void ColumnHeaderPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (isResizingColumn && resizingGrid is not null && resizingColumn is not null)
+        {
+            var current = e.GetCurrentPoint(resizingGrid).Position.X;
+            var delta = current - resizeStartX;
+            var newWidth = Math.Clamp(resizeStartWidth + delta, 36d, 1200d);
+            resizingColumn.Width = new DataGridLength(newWidth);
+            e.Handled = true;
+            return;
+        }
+
+
         if (headerDragGrid is null || headerDragColumn is null || lastHeaderDragPoint is not { } previous)
         {
             return;
@@ -954,16 +1136,172 @@ public partial class MainWindow : Window
 
     private void ColumnHeaderPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (isResizingColumn)
+        {
+            FinishColumnResize(e.Pointer);
+            e.Handled = true;
+            return;
+        }
+        var hadActiveDrag = isHeaderDragActive;
         EndColumnHeaderDrag(e);
+
+        if (hadActiveDrag || suppressNextHeaderSortClick || e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left)
+        {
+            return;
+        }
+        if (e.Source is not Visual visual)
+        {
+            return;
+        }
+        var header = visual as DataGridColumnHeader
+                     ?? visual.GetVisualAncestors().OfType<DataGridColumnHeader>().FirstOrDefault();
+        if (header is null)
+        {
+            return;
+        }
+        var pos = e.GetCurrentPoint(header).Position;
+        if (ColumnResizeEdge(header, pos) != ColumnResizeEdgeKind.None)
+        {
+            return;
+        }
+        var button = header.GetVisualDescendants().OfType<Button>().FirstOrDefault(candidate => candidate.Classes.Contains("columnPlaque"));
+        if (button is null)
+        {
+            return;
+        }
+        var clickTarget = visual as Button ?? visual.GetVisualAncestors().OfType<Button>().FirstOrDefault();
+        if (ReferenceEquals(clickTarget, button))
+        {
+            return;
+        }
+        var args = new RoutedEventArgs(Button.ClickEvent);
+        button.RaiseEvent(args);
     }
 
     private void ColumnHeaderPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
+        if (isResizingColumn)
+        {
+            FinishColumnResize(null);
+        }
         headerDragGrid = null;
         headerDragColumn = null;
         headerDragHeader = null;
         lastHeaderDragPoint = null;
         isHeaderDragActive = false;
+    }
+
+    private void FinishColumnResize(IPointer? pointer)
+    {
+        var grid = resizingGrid;
+        pointer?.Capture(null);
+        resizingGrid = null;
+        resizingColumn = null;
+        resizingHeader = null;
+        isResizingColumn = false;
+        if (grid is not null)
+        {
+            SaveTableLayout(grid);
+        }
+        Dispatcher.UIThread.Post(() => suppressNextHeaderSortClick = false, DispatcherPriority.Background);
+    }
+
+    private enum ColumnResizeEdgeKind { None, Left, Right }
+
+    private static ColumnResizeEdgeKind ColumnResizeEdge(DataGridColumnHeader header, Point position)
+    {
+        const double edgeWidth = 6;
+        var width = header.Bounds.Width;
+        if (width <= 0)
+        {
+            return ColumnResizeEdgeKind.None;
+        }
+        if (position.X >= width - edgeWidth)
+        {
+            return ColumnResizeEdgeKind.Right;
+        }
+        if (position.X <= edgeWidth)
+        {
+            return ColumnResizeEdgeKind.Left;
+        }
+        return ColumnResizeEdgeKind.None;
+    }
+
+
+    private void ApplyAutoHideEmptyColumns()
+    {
+        var grid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault(candidate => candidate.Name == "ResourceGrid");
+        if (grid is null)
+        {
+            return;
+        }
+        var tableId = TableId(grid);
+        var pinnedSet = pinnedColumns.GetValueOrDefault(tableId);
+        foreach (var column in grid.Columns)
+        {
+            var header = HeaderText(column.Header);
+            var hasData = ColumnHasData(header, viewModel.Resources);
+            var userVisible = !IsColumnHiddenByLayout(grid, column);
+            var pinned = pinnedSet is not null && pinnedSet.Contains(ColumnId(grid, column));
+            var desiredVisible = ResolveColumnVisibility(pinned, userVisible, hasData);
+            if (column.IsVisible != desiredVisible)
+            {
+                applyingTableLayout = true;
+                try
+                {
+                    column.IsVisible = desiredVisible;
+                }
+                finally
+                {
+                    applyingTableLayout = false;
+                }
+            }
+        }
+    }
+
+    internal static bool ResolveColumnVisibility(bool pinned, bool userVisible, bool? hasData)
+    {
+        return pinned || (userVisible && hasData is not false);
+    }
+
+    private bool IsColumnHiddenByLayout(DataGrid grid, DataGridColumn column)
+    {
+        var layout = viewModel.TableColumnLayout(TableId(grid));
+        if (layout.Count == 0)
+        {
+            return false;
+        }
+        var byColumn = layout.ToDictionary(item => item.ColumnId, StringComparer.Ordinal);
+        return LayoutForColumn(byColumn, grid, column) is { IsVisible: false };
+    }
+
+    private static bool? ColumnHasData(string header, IEnumerable<FlatResourceRow> rows)
+    {
+        return header switch
+        {
+            "Ready" => rows.Any(row => row.HasReadyInfo),
+            "Restarts" => rows.Any(row => row.HasRestartInfo),
+            "Node" => rows.Any(row => row.HasNodeInfo),
+            "Image" => rows.Any(row => row.HasImageInfo),
+            "Owner" => rows.Any(row => row.HasOwnerInfo),
+            "CPU" => rows.Any(row => row.HasCpuMetricInfo),
+            "Memory" => rows.Any(row => row.HasMemoryMetricInfo),
+            "Storage" => rows.Any(row => row.HasStorageMetricInfo),
+            "Namespace" => rows.Any(row => !string.IsNullOrEmpty(row.Namespace) && row.Namespace != "cluster"),
+            _ => null
+        };
+    }
+
+    private static DataGridColumn? PreviousVisibleColumn(DataGrid grid, DataGridColumn? column)
+    {
+        if (column is null)
+        {
+            return null;
+        }
+        return grid.Columns
+            .Where(c => c.IsVisible && c.DisplayIndex < column.DisplayIndex)
+            .OrderByDescending(c => c.DisplayIndex)
+            .FirstOrDefault();
     }
 
     private void EndColumnHeaderDrag(PointerEventArgs e)
@@ -1002,6 +1340,8 @@ public partial class MainWindow : Window
         }
     }
 
+    private readonly Dictionary<string, HashSet<string>> pinnedColumns = new(StringComparer.Ordinal);
+
     private void ApplyTableLayout(DataGrid grid, string tableId)
     {
         var layout = viewModel.TableColumnLayout(tableId);
@@ -1014,13 +1354,23 @@ public partial class MainWindow : Window
         try
         {
             var byColumn = layout.ToDictionary(item => item.ColumnId, StringComparer.Ordinal);
+            var pinnedSet = new HashSet<string>(StringComparer.Ordinal);
             foreach (var column in grid.Columns)
             {
                 if (LayoutForColumn(byColumn, grid, column) is { } item)
                 {
                     column.IsVisible = item.IsVisible;
+                    if (item.Width > 0d)
+                    {
+                        column.Width = new DataGridLength(item.Width);
+                    }
+                    if (item.Pinned)
+                    {
+                        pinnedSet.Add(ColumnId(grid, column));
+                    }
                 }
             }
+            pinnedColumns[tableId] = pinnedSet;
 
             if (!grid.Columns.Any(column => column.IsVisible) && grid.Columns.Count > 0)
             {
@@ -1050,8 +1400,13 @@ public partial class MainWindow : Window
         }
 
         var tableId = TableId(grid);
+        var pinnedSet = pinnedColumns.GetValueOrDefault(tableId) ?? new HashSet<string>(StringComparer.Ordinal);
         var layout = grid.Columns
-            .Select(column => new TableColumnLayout(tableId, ColumnId(grid, column), column.DisplayIndex, column.IsVisible))
+            .Select(column =>
+            {
+                var columnId = ColumnId(grid, column);
+                return new TableColumnLayout(tableId, columnId, column.DisplayIndex, column.IsVisible, column.ActualWidth, pinnedSet.Contains(columnId));
+            })
             .OrderBy(item => item.DisplayIndex)
             .ToList();
         viewModel.SaveTableColumnLayout(tableId, layout);
@@ -1121,20 +1476,18 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private static bool IsOnColumnResizeEdge(DataGridColumnHeader header, Point position)
-    {
-        const double edgeWidth = 10;
-        var width = header.Bounds.Width;
-        return width > 0 && (position.X <= edgeWidth || position.X >= width - edgeWidth);
-    }
-
-    private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
+private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
     {
         CloseActiveContextMenu(cancelPendingHold: true);
         var menu = new ContextMenu
         {
             MaxHeight = 360
         };
+
+        var tableId = TableId(grid);
+        var pinnedSet = pinnedColumns.TryGetValue(tableId, out var existing)
+            ? existing
+            : pinnedColumns[tableId] = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var column in grid.Columns.OrderBy(column => column.DisplayIndex))
         {
@@ -1144,26 +1497,58 @@ public partial class MainWindow : Window
                 label = $"Column {column.DisplayIndex + 1}";
             }
 
-            var item = new MenuItem
-            {
-                Header = label,
-                ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = column.IsVisible
-            };
+            var columnId = ColumnId(grid, column);
+            var item = new MenuItem();
+            menu.Items.Add(item);
+            RenderColumnPinMenuItem(item, label, column, pinnedSet.Contains(columnId));
             item.Click += (_, _) =>
             {
-                var visibleCount = grid.Columns.Count(candidate => candidate.IsVisible);
-                if (column.IsVisible && visibleCount <= 1)
+                var pinned = pinnedSet.Contains(columnId);
+                var state = pinned ? ColumnPinState.Pinned : column.IsVisible ? ColumnPinState.Auto : ColumnPinState.Hidden;
+                var next = state switch
                 {
-                    item.IsChecked = true;
-                    return;
+                    ColumnPinState.Auto => ColumnPinState.Pinned,
+                    ColumnPinState.Pinned => ColumnPinState.Hidden,
+                    _ => ColumnPinState.Auto
+                };
+
+                if (next == ColumnPinState.Hidden)
+                {
+                    var visibleCount = grid.Columns.Count(candidate => candidate.IsVisible);
+                    if (column.IsVisible && visibleCount <= 1)
+                    {
+                        return;
+                    }
                 }
 
-                column.IsVisible = !column.IsVisible;
+                applyingTableLayout = true;
+                try
+                {
+                    switch (next)
+                    {
+                        case ColumnPinState.Auto:
+                            pinnedSet.Remove(columnId);
+                            column.IsVisible = true;
+                            break;
+                        case ColumnPinState.Pinned:
+                            pinnedSet.Add(columnId);
+                            column.IsVisible = true;
+                            break;
+                        case ColumnPinState.Hidden:
+                            pinnedSet.Remove(columnId);
+                            column.IsVisible = false;
+                            break;
+                    }
+                }
+                finally
+                {
+                    applyingTableLayout = false;
+                }
+
                 SaveTableLayout(grid);
-                CloseActiveContextMenu(cancelPendingHold: true);
+                ApplyAutoHideEmptyColumns();
+                RenderColumnPinMenuItem(item, label, column, pinnedSet.Contains(columnId));
             };
-            menu.Items.Add(item);
         }
 
         menu.Closed += (_, _) => ClearActiveContextMenu(menu, owner);
@@ -1174,6 +1559,66 @@ public partial class MainWindow : Window
         menu.Open(owner);
     }
 
+    private enum ColumnPinState { Auto, Pinned, Hidden }
+
+    private static void RenderColumnPinMenuItem(MenuItem item, string label, DataGridColumn column, bool pinned)
+    {
+        var state = pinned ? ColumnPinState.Pinned : column.IsVisible ? ColumnPinState.Auto : ColumnPinState.Hidden;
+        item.Header = label;
+        item.ToggleType = MenuItemToggleType.None;
+        item.Icon = ColumnPinIcon(state);
+    }
+
+    private static Control? ColumnPinIcon(ColumnPinState state)
+    {
+        return state switch
+        {
+            ColumnPinState.Auto => new TextBlock
+            {
+                Text = "✓",
+                FontSize = 13,
+                Foreground = Avalonia.Media.Brushes.LightSeaGreen,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            },
+            ColumnPinState.Pinned => BuildLockGlyph(),
+            _ => null
+        };
+    }
+
+    private static Control BuildLockGlyph()
+    {
+        var canvas = new Canvas
+        {
+            Width = 12,
+            Height = 14,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        var shackle = new Avalonia.Controls.Shapes.Path
+        {
+            Stroke = Avalonia.Media.Brushes.Goldenrod,
+            StrokeThickness = 1.6,
+            Fill = null,
+            Data = Avalonia.Media.Geometry.Parse("M3,6 V4 a3,3 0 0 1 6,0 V6")
+        };
+        var body = new Avalonia.Controls.Shapes.Rectangle
+        {
+            Width = 10,
+            Height = 7,
+            RadiusX = 1.2,
+            RadiusY = 1.2,
+            Fill = Avalonia.Media.Brushes.Goldenrod
+        };
+        Canvas.SetLeft(body, 1);
+        Canvas.SetTop(body, 6);
+        canvas.Children.Add(shackle);
+        canvas.Children.Add(body);
+        return canvas;
+    }
+
+    private readonly InspectorSortManager inspectorSort = new();
+
     private void UpdateSortHeaderIndicators()
     {
         foreach (var button in this.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("columnPlaque")))
@@ -1183,12 +1628,43 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var glyph = IsVisualInside(button, ResourceGrid)
-                ? viewModel.ResourceSortGlyphFor(column)
-                : IsVisualInside(button, EventGrid)
-                    ? viewModel.EventSortGlyphFor(column)
-                    : string.Empty;
+            string glyph;
+            if (IsVisualInside(button, ResourceGrid))
+            {
+                glyph = viewModel.ResourceSortGlyphFor(column);
+            }
+            else if (IsVisualInside(button, EventGrid))
+            {
+                glyph = viewModel.EventSortGlyphFor(column);
+            }
+            else if (button.FindAncestorOfType<DataGrid>() is { } grid
+                     && inspectorSort.TryGetSort(grid, out var state)
+                     && state.Column == column)
+            {
+                glyph = InspectorSortManager.GlyphFor(state.Direction);
+            }
+            else
+            {
+                glyph = string.Empty;
+            }
             SetSortGlyph(button, glyph);
+        }
+    }
+
+    private void SortInspectorColumnClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string column)
+        {
+            return;
+        }
+        var grid = button.FindAncestorOfType<DataGrid>();
+        if (grid is null)
+        {
+            return;
+        }
+        if (inspectorSort.CycleSort(grid, column))
+        {
+            UpdateSortHeaderIndicators();
         }
     }
 
@@ -1233,10 +1709,138 @@ public partial class MainWindow : Window
         UpdateInspectorLayout();
     }
 
-    private void PortForwardSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void InspectorBackClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        viewModel.PrepareSelectedResourcePortForward();
+        await viewModel.GoBackInspectorAsync();
     }
+
+    private async void InspectorForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        await viewModel.GoForwardInspectorAsync();
+    }
+
+    private CancellationTokenSource? resourceLinkHoldTimer;
+
+    internal void ResourceLinkPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string reference || string.IsNullOrWhiteSpace(reference))
+        {
+            return;
+        }
+
+        var props = e.GetCurrentPoint(button).Properties;
+        if (!props.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+        {
+            contextMenuHold?.Cancel();
+            resourceLinkHoldTimer?.Cancel();
+            e.Handled = true;
+            _ = OpenResourceReferenceAsync(reference);
+            return;
+        }
+
+        resourceLinkHoldTimer?.Cancel();
+        resourceLinkHoldTimer?.Dispose();
+        resourceLinkHoldTimer = new CancellationTokenSource();
+        _ = OpenResourceReferenceAfterHold(reference, resourceLinkHoldTimer.Token);
+    }
+
+    internal void ResourceLinkPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        resourceLinkHoldTimer?.Cancel();
+    }
+
+    internal void ResourceLinkPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        resourceLinkHoldTimer?.Cancel();
+    }
+
+    internal void ResourceLinkPointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string reference || string.IsNullOrWhiteSpace(reference))
+        {
+            return;
+        }
+        ToolTip.SetTip(button, BuildResourceReferenceTooltip(reference));
+        ToolTip.SetShowDelay(button, 400);
+    }
+
+    private Control BuildResourceReferenceTooltip(string reference) => ResourceReferenceTooltipBuilder.Build(viewModel, reference);
+
+    private async Task OpenResourceReferenceAfterHold(string reference, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            await Dispatcher.UIThread.InvokeAsync(async () => await OpenResourceReferenceAsync(reference));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task OpenResourceReferenceAsync(string reference)
+    {
+        if (viewModel.OpenKnownResourceReference(reference))
+        {
+            await viewModel.OpenSelectedResourceAsync();
+        }
+    }
+
+    internal async void ResourceLinkContextOpenClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is MenuItem item && item.Tag is string reference && !string.IsNullOrWhiteSpace(reference))
+        {
+            CloseMenuItemHostMenu(item);
+            await OpenResourceReferenceAsync(reference);
+        }
+    }
+
+    internal async void ResourceLinkContextCopyClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is MenuItem item && item.Tag is string reference && !string.IsNullOrWhiteSpace(reference) && Clipboard is not null)
+        {
+            CloseMenuItemHostMenu(item);
+            await Clipboard.SetTextAsync(reference);
+        }
+    }
+
+    private static void CloseMenuItemHostMenu(MenuItem item)
+    {
+        var current = item.GetVisualAncestors().OfType<ContextMenu>().FirstOrDefault();
+        current?.Close();
+    }
+
+    private void GlobalPointerPressedDismissMenus(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is not Visual visual)
+        {
+            return;
+        }
+        if (visual.GetVisualAncestors().OfType<ContextMenu>().Any()
+            || visual.GetVisualAncestors().OfType<MenuItem>().Any())
+        {
+            return;
+        }
+        CloseActiveContextMenu(cancelPendingHold: false);
+        foreach (var menu in this.GetVisualDescendants().OfType<ContextMenu>())
+        {
+            if (menu.IsOpen)
+            {
+                menu.Close();
+            }
+        }
+    }
+
+    private void PortForwardSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.PrepareSelectedResourcePortForward();
 
     private void ToggleResourceValueRevealClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -1304,6 +1908,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        if ((e.PointerPressedEventArgs.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+        {
+            return;
+        }
+
         contextMenuHold?.Cancel();
         contextMenuHold?.Dispose();
         contextMenuHold = new CancellationTokenSource();
@@ -1331,7 +1940,29 @@ public partial class MainWindow : Window
         }
 
         var value = CopyValueForCell(cell, column);
-        ToolTip.SetTip(cell, string.IsNullOrWhiteSpace(value) ? null : value);
+        if (string.IsNullOrWhiteSpace(value) || !CellTextOverflows(cell))
+        {
+            ToolTip.SetTip(cell, null);
+            return;
+        }
+        ToolTip.SetTip(cell, value);
+        ToolTip.SetShowDelay(cell, 700);
+    }
+
+    private static bool CellTextOverflows(DataGridCell cell)
+    {
+        foreach (var text in cell.GetVisualDescendants().OfType<TextBlock>())
+        {
+            if (text.Bounds.Width <= 0 || text.DesiredSize.Width <= 0)
+            {
+                continue;
+            }
+            if (text.DesiredSize.Width > text.Bounds.Width + 0.5)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static DataGridColumn? ColumnForCell(DataGridCell? cell)
@@ -1417,7 +2048,7 @@ public partial class MainWindow : Window
         var referenceValue = actions[0].Value;
         if (viewModel.HasKnownResourceReference(referenceValue))
         {
-            var openItem = new MenuItem { Header = "Open in inspector" };
+            var openItem = new MenuItem { Header = viewModel.T("ref.menuOpen") };
             openItem.Click += (_, _) =>
             {
                 try
@@ -1495,7 +2126,7 @@ public partial class MainWindow : Window
         var value = CopyValueForCell(cell, column);
         return string.IsNullOrWhiteSpace(value)
             ? Array.Empty<CopyMenuAction>()
-            : [new CopyMenuAction("Copy value", value)];
+            : [new CopyMenuAction(viewModel.T("copy.value"), value)];
     }
 
     private string CopyValueForCell(DataGridCell cell, DataGridColumn column)
@@ -1514,22 +2145,22 @@ public partial class MainWindow : Window
         };
     }
 
-    private static IReadOnlyList<CopyMenuAction> CopyResourceValueActions(ResourceValueRow row, string header)
+    private IReadOnlyList<CopyMenuAction> CopyResourceValueActions(ResourceValueRow row, string header)
     {
         return header switch
         {
-            "Key" => [new CopyMenuAction("Copy key", row.Key)],
-            "Encoding" => [new CopyMenuAction("Copy encoding", row.Encoding)],
+            "Key" => [new CopyMenuAction(viewModel.T("copy.key"), row.Key)],
+            "Encoding" => [new CopyMenuAction(viewModel.T("copy.encoding"), row.Encoding)],
             "Value" when row.IsBase64Encoded && row.IsSensitive => [
-                new CopyMenuAction("Copy raw base64 secret value", row.RawValue),
-                new CopyMenuAction("Copy decoded secret value", row.DecodedValue)
+                new CopyMenuAction(viewModel.T("copy.rawBase64Secret"), row.RawValue),
+                new CopyMenuAction(viewModel.T("copy.decodedSecret"), row.DecodedValue)
             ],
             "Value" when row.IsBase64Encoded => [
-                new CopyMenuAction("Copy decoded value", row.DecodedValue),
-                new CopyMenuAction("Copy raw base64 value", row.RawValue)
+                new CopyMenuAction(viewModel.T("copy.decodedValue"), row.DecodedValue),
+                new CopyMenuAction(viewModel.T("copy.rawBase64"), row.RawValue)
             ],
-            "Value" => [new CopyMenuAction(row.IsSensitive ? "Copy secret value" : "Copy value", row.RawValue)],
-            _ => [new CopyMenuAction("Copy value", row.PreferredCopyValue)]
+            "Value" => [new CopyMenuAction(viewModel.T(row.IsSensitive ? "copy.secretValue" : "copy.value"), row.RawValue)],
+            _ => [new CopyMenuAction(viewModel.T("copy.value"), row.PreferredCopyValue)]
         };
     }
 
@@ -1671,7 +2302,7 @@ public partial class MainWindow : Window
         return task is null ? string.Empty : task.LocalPort.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string HeaderText(object? header)
+    internal static string HeaderText(object? header)
     {
         return header switch
         {
@@ -1682,14 +2313,87 @@ public partial class MainWindow : Window
         };
     }
 
-    private void LogTextChanged(object? sender, TextChangedEventArgs e)
+    private void ConfigureLogEditor()
     {
-        if (viewModel.LogsPaused || sender is not TextBox textBox)
+        LogEditor.TextArea.TextView.LineTransformers.Add(new LogSyntaxColorizer(viewModel.HasKnownResourceReference));
+        LogEditor.TextArea.TextView.PointerPressed += LogEditorTextViewPointerPressed;
+        LogEditor.TextArea.TextView.PointerReleased += EditorRefPointerReleased;
+        LogEditor.TextArea.TextView.PointerCaptureLost += EditorRefPointerCaptureLost;
+        LogEditor.TextArea.TextView.PointerMoved += LogEditorRefPointerMoved;
+    }
+
+    private void SyncLogEditorFromViewModel()
+    {
+        var newText = viewModel.LogText ?? string.Empty;
+        if (LogEditor.Text == newText)
         {
             return;
         }
 
-        textBox.CaretIndex = textBox.Text?.Length ?? 0;
+        LogEditor.Text = newText;
+        if (!viewModel.LogsPaused)
+        {
+            LogEditor.CaretOffset = newText.Length;
+            LogEditor.ScrollToEnd();
+        }
+        LogEditor.TextArea.TextView.Redraw();
+    }
+
+    private void LogEditorTextViewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        HandleEditorRefPointerPressed(e, LogEditor, ExtractLogRefAtPoint);
+    }
+
+    private string? ExtractLogRefAtPoint(TextEditor editor, Avalonia.Point point)
+    {
+        var view = editor.TextArea.TextView;
+        var position = view.GetPosition(point + view.ScrollOffset);
+        if (position is not { } pos)
+        {
+            return null;
+        }
+        var document = editor.Document;
+        if (document is null || pos.Line <= 0 || pos.Line > document.LineCount)
+        {
+            return null;
+        }
+        var line = document.GetLineByNumber(pos.Line);
+        var lineText = document.GetText(line);
+        var column = Math.Max(0, pos.Column - 1);
+        return LogSyntaxColorizer.FindResourceRefAt(lineText, column);
+    }
+
+    private void YamlEditorRefPointerMoved(object? sender, PointerEventArgs e)
+    {
+        UpdateEditorRefTooltip(YamlEditor, ExtractYamlRefAtPoint, e);
+    }
+
+    private void LogEditorRefPointerMoved(object? sender, PointerEventArgs e)
+    {
+        UpdateEditorRefTooltip(LogEditor, ExtractLogRefAtPoint, e);
+    }
+
+    private void UpdateEditorRefTooltip(TextEditor editor, Func<TextEditor, Avalonia.Point, string?> extractRef, PointerEventArgs e)
+    {
+        var view = editor.TextArea.TextView;
+        var reference = extractRef(editor, e.GetPosition(editor));
+        if (string.IsNullOrEmpty(reference))
+        {
+            ToolTip.SetTip(view, null);
+            return;
+        }
+        ToolTip.SetTip(view, BuildResourceReferenceTooltip(reference));
+        ToolTip.SetShowDelay(view, 400);
+    }
+
+    private void EditorRefPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        editorRefHoldTimer?.Cancel();
+    }
+
+    private void EditorRefPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        editorRefHoldTimer?.Cancel();
     }
 
     private void UpdateInspectorLayout()
@@ -1895,40 +2599,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private void TogglePortSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.TogglePortSearch();
-    }
+    private void TogglePortSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.TogglePortSearch();
 
-    private void FocusPortSearch()
-    {
-        if (viewModel.IsPortSearchOpen)
-        {
-            PortSearchBox.Focus();
-        }
-    }
+    private void FocusPortSearch() => FocusSearchBox(viewModel.IsPortSearchOpen, PortSearchBox);
 
-    private void FocusResourceSearch()
-    {
-        if (viewModel.IsResourceSearchOpen)
-        {
-            ResourceSearchBox.Focus();
-        }
-    }
+    private void FocusResourceSearch() => FocusSearchBox(viewModel.IsResourceSearchOpen, ResourceSearchBox);
 
-    private void FocusGraphSearch()
-    {
-        if (viewModel.IsGraphSearchOpen)
-        {
-            GraphSearchBox.Focus();
-        }
-    }
+    private void FocusGraphSearch() => FocusSearchBox(viewModel.IsGraphSearchOpen, GraphSearchBox);
 
-    private void FocusEventSearch()
+    private void FocusEventSearch() => FocusSearchBox(viewModel.IsEventSearchOpen, EventSearchBox);
+
+    private static void FocusSearchBox(bool isOpen, Control box)
     {
-        if (viewModel.IsEventSearchOpen)
+        if (isOpen)
         {
-            EventSearchBox.Focus();
+            box.Focus();
         }
     }
 }

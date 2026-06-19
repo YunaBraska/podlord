@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Avalonia.Media;
 using Podlord.App;
@@ -72,6 +75,39 @@ public sealed class AppBehaviorTests
 
         Assert.Equal("RESOURCES", PodlordLocalizer.Text("nav.resources", "definitely-not-real"));
         Assert.Equal("missing.key", PodlordLocalizer.Text("missing.key", "de"));
+    }
+
+    [Fact]
+    public void Localizer_catalog_localization_source_and_runtime_have_complete_key_coverage()
+    {
+        var source = File.ReadAllText(LocatePodlordLocalizerSource());
+        var english = EnglishLocaleKeysFromSource(source);
+        var catalogLocales = CatalogLocaleCodesFromSource(source);
+
+        var supportedLocales = PodlordLocalizer.SupportedLocales
+            .Select(option => option.Code)
+            .Where(code => !code.Equals(PodlordLocalizer.SystemLanguageCode, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var missingCatalogLocales = supportedLocales
+            .Except(catalogLocales, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.True(
+            missingCatalogLocales.Length == 0,
+            $"Catalog is missing locales: {string.Join(", ", missingCatalogLocales)}.");
+        Assert.All(supportedLocales, code => Assert.Contains(code, catalogLocales, StringComparer.OrdinalIgnoreCase));
+
+        foreach (var locale in supportedLocales)
+        {
+            if (!string.Equals(locale, PodlordLocalizer.DefaultLanguageCode, StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.NotEqual(PodlordLocalizer.Text("nav.search", "en"), PodlordLocalizer.Text("nav.search", locale));
+            }
+
+            Assert.All(english, key => Assert.NotEqual(key, PodlordLocalizer.Text(key, locale)));
+        }
+        Assert.NotEqual("Missing", PodlordLocalizer.Text("missing.key", "de"));
     }
 
     [Fact]
@@ -154,6 +190,192 @@ public sealed class AppBehaviorTests
         Assert.Equal("18080", badge.Convert([pod, forwards], typeof(string), null, culture));
         Assert.Equal(string.Empty, badge.Convert([pod, Array.Empty<PortForwardTaskViewModel>()], typeof(string), null, culture));
         Assert.Equal(string.Empty, badge.Convert([null, forwards], typeof(string), null, culture));
+    }
+
+    [Fact]
+    public void About_section_exposes_donation_links_repo_actions_and_nerd_rotation()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        Assert.Equal("https://github.com/YunaBraska/podlord", viewModel.AboutRepoUrl);
+        Assert.Equal("https://github.com/YunaBraska/podlord/issues/new", viewModel.AboutIssueUrl);
+        Assert.Equal("https://github.com/YunaBraska/podlord/stargazers", viewModel.AboutStarUrl);
+        Assert.Equal("https://github.com/sponsors/YunaBraska", viewModel.AboutSponsorsUrl);
+        Assert.Equal("https://buymeacoffee.com/YunaBraska", viewModel.AboutBuyMeACoffeeUrl);
+        Assert.Equal("https://ko-fi.com/YunaBraska", viewModel.AboutKoFiUrl);
+        Assert.Equal("https://liberapay.com/YunaBraska", viewModel.AboutLiberapayUrl);
+
+        Assert.True(MainWindowViewModel.AboutBlockCatalog.Count >= 32, $"AboutBlockCatalog should have at least 32 entries but has {MainWindowViewModel.AboutBlockCatalog.Count}.");
+        Assert.All(MainWindowViewModel.AboutBlockCatalog, block =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(block));
+            Assert.DoesNotContain("—", block, StringComparison.Ordinal);
+            Assert.DoesNotContain("–", block, StringComparison.Ordinal);
+        });
+        var first = viewModel.AboutBlockText;
+        Assert.Contains(first, MainWindowViewModel.AboutBlockCatalog);
+        var changed = false;
+        for (var attempt = 0; attempt < MainWindowViewModel.AboutBlockCatalog.Count * 4; attempt++)
+        {
+            viewModel.PickAboutBlock();
+            if (!string.Equals(viewModel.AboutBlockText, first, StringComparison.Ordinal))
+            {
+                changed = true;
+                break;
+            }
+        }
+        Assert.True(changed, "PickAboutBlock should eventually move to a different catalog entry.");
+
+        viewModel.OpenAboutUrl(null);
+        viewModel.OpenAboutUrl(string.Empty);
+        viewModel.OpenAboutUrl("not a url");
+    }
+
+    [Fact]
+    public void Yaml_editor_restores_to_new_resource_yaml_when_yaml_tab_inactive()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.SelectedInspectorTabIndex = 0;
+
+        var first = new ResourceDetail(
+            new ResourceIdentity(null, "Pod", "ns", "first"),
+            "Running",
+            FreshnessState.Fresh,
+            "apiVersion: v1\nkind: Pod\nmetadata:\n  name: first\n",
+            Array.Empty<DetailItem>(),
+            Array.Empty<DetailItem>(),
+            Array.Empty<EventSummary>(),
+            Array.Empty<ResourceValueItem>());
+        viewModel.RenderDetailForTesting(first);
+        Assert.Contains("name: first", viewModel.EditableYaml, StringComparison.Ordinal);
+
+        viewModel.EditableYaml = viewModel.EditableYaml + "\n# user scribble\n";
+        var dirty = viewModel.EditableYaml;
+        Assert.Contains("# user scribble", dirty, StringComparison.Ordinal);
+
+        var second = first with
+        {
+            Identity = new ResourceIdentity(null, "Pod", "ns", "second"),
+            Yaml = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: second\n"
+        };
+        viewModel.RenderDetailForTesting(second);
+
+        Assert.Contains("name: second", viewModel.EditableYaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("# user scribble", viewModel.EditableYaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Yaml_editor_preserves_unsaved_edits_when_yaml_tab_active_and_resource_changes()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.SelectedInspectorTabIndex = 0;
+
+        var first = new ResourceDetail(
+            new ResourceIdentity(null, "Pod", "ns", "first"),
+            "Running",
+            FreshnessState.Fresh,
+            "apiVersion: v1\nkind: Pod\nmetadata:\n  name: first\n",
+            Array.Empty<DetailItem>(),
+            Array.Empty<DetailItem>(),
+            Array.Empty<EventSummary>(),
+            Array.Empty<ResourceValueItem>());
+        viewModel.RenderDetailForTesting(first);
+
+        viewModel.SelectedInspectorTabIndex = 1;
+        viewModel.EditableYaml = viewModel.EditableYaml + "\n# scribble\n";
+
+        var second = first with
+        {
+            Identity = new ResourceIdentity(null, "Pod", "ns", "second"),
+            Yaml = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: second\n"
+        };
+        viewModel.RenderDetailForTesting(second);
+
+        Assert.Contains("# scribble", viewModel.EditableYaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("name: second", viewModel.EditableYaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Open_known_resource_reference_returns_false_for_unmatched_value_and_sets_status()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        Assert.False(viewModel.HasKnownResourceReference("Pod/missing"));
+        Assert.Null(viewModel.ResolveResourceReferenceForPreview("Pod/missing"));
+        Assert.False(viewModel.OpenKnownResourceReference("Pod/missing"));
+        Assert.Contains("Pod/missing", viewModel.StatusLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inspector_history_inserts_after_cursor_and_caps_at_thirty_two()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.PushInspectorHistoryForTesting("a");
+        viewModel.PushInspectorHistoryForTesting("b");
+        viewModel.PushInspectorHistoryForTesting("c");
+        Assert.Equal(new[] { "a", "b", "c" }, viewModel.InspectorHistoryIdsForTesting);
+        Assert.Equal(2, viewModel.InspectorHistoryCursorForTesting);
+
+        var historyField = typeof(MainWindowViewModel).GetField("inspectorHistoryCursor", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        historyField!.SetValue(viewModel, 1);
+        viewModel.PushInspectorHistoryForTesting("d");
+        Assert.Equal(new[] { "a", "b", "d", "c" }, viewModel.InspectorHistoryIdsForTesting);
+        Assert.Equal(2, viewModel.InspectorHistoryCursorForTesting);
+
+        for (var index = 0; index < 64; index++)
+        {
+            viewModel.PushInspectorHistoryForTesting($"id{index}");
+        }
+        Assert.Equal(32, viewModel.InspectorHistoryIdsForTesting.Count);
+        Assert.InRange(viewModel.InspectorHistoryCursorForTesting, 0, 31);
+    }
+
+    [Fact]
+    public void Resource_sort_cycles_descending_ascending_none_and_glyph_clears_when_switching_column()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal("▼", viewModel.ResourceSortGlyphFor("CPU"));
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal("▲", viewModel.ResourceSortGlyphFor("CPU"));
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+
+        viewModel.SortResourcesBy("Memory");
+        Assert.Equal("▼", viewModel.ResourceSortGlyphFor("Memory"));
+        Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+    }
+
+    [Fact]
+    public void About_block_never_repeats_the_same_entry_in_consecutive_picks()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        var last = viewModel.AboutBlockText;
+        for (var iteration = 0; iteration < 25; iteration++)
+        {
+            viewModel.PickAboutBlock();
+            var current = viewModel.AboutBlockText;
+            Assert.NotEqual(last, current);
+            last = current;
+        }
     }
 
     [Fact]
@@ -247,6 +469,93 @@ public sealed class AppBehaviorTests
 
         Assert.Equal(0, state.Settings().RequestHardLimitPerMinute);
         Assert.Equal("none", viewModel.RequestHardLimitSetting);
+    }
+
+    [Fact]
+    public void Background_refresh_interval_contracts_cover_focus_cache_and_failure_states()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(45), MainWindowViewModel.BackgroundRefreshIntervalFor(false, true, false, false, TimeSpan.FromMinutes(9)));
+        Assert.Equal(TimeSpan.FromMinutes(4), MainWindowViewModel.BackgroundRefreshIntervalFor(false, true, true, false, TimeSpan.Zero));
+        Assert.Equal(TimeSpan.FromSeconds(90), MainWindowViewModel.BackgroundRefreshIntervalFor(false, false, false, false, TimeSpan.Zero));
+
+        Assert.Equal(TimeSpan.FromSeconds(12), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, false, false, TimeSpan.FromSeconds(10)));
+        Assert.Equal(TimeSpan.FromSeconds(25), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, false, true, TimeSpan.FromSeconds(10)));
+        Assert.Equal(TimeSpan.FromSeconds(20), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, true, false, TimeSpan.FromSeconds(12)));
+        Assert.Equal(TimeSpan.FromSeconds(45), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, true, false, TimeSpan.FromMinutes(1)));
+        Assert.Equal(TimeSpan.FromSeconds(120), MainWindowViewModel.BackgroundRefreshIntervalFor(true, true, true, false, TimeSpan.FromMinutes(8)));
+
+        var now = new DateTimeOffset(2026, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        Assert.Equal(TimeSpan.FromSeconds(1), MainWindowViewModel.InactiveBackgroundCheckInterval(5, null, now));
+        Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(10, now, now));
+        Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(10, now.AddMinutes(-2), now));
+        Assert.Equal(TimeSpan.FromSeconds(60), MainWindowViewModel.InactiveBackgroundCheckInterval(0, now, now));
+    }
+
+    [Fact]
+    public void SetAppFocus_after_dispose_is_exception_free()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.Dispose();
+
+        var error = Record.Exception(() =>
+        {
+            viewModel.SetAppFocus(false);
+            viewModel.SetAppFocus(true);
+            viewModel.SetAppFocus(false);
+        });
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public async Task SetAppFocus_near_dispose_does_not_emit_objectdisposed_from_inflight_refresh()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var inFlight = new AsyncAppRecordingHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"items\":[]}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, inFlight));
+
+        try
+        {
+            viewModel.ReloadSessions();
+            viewModel.KindPicker.SetExpression("\"Pod\"");
+            var refreshTask = viewModel.RefreshResourcesAsync(force: true);
+            await Task.Delay(50);
+
+            viewModel.SetAppFocus(false);
+            viewModel.SetAppFocus(true);
+            viewModel.Dispose();
+
+            var focusError = Record.Exception(() =>
+            {
+                viewModel.SetAppFocus(false);
+                viewModel.SetAppFocus(true);
+            });
+            Assert.Null(focusError);
+
+            var refreshError = await Record.ExceptionAsync(async () => await refreshTask);
+            Assert.False(refreshError is ObjectDisposedException);
+        }
+        finally
+        {
+            viewModel.Dispose();
+        }
     }
 
     [Fact]
@@ -390,7 +699,7 @@ public sealed class AppBehaviorTests
 
             viewModel.ReloadSessions();
             var source = Assert.Single(viewModel.Sources);
-            source.FilterName = "Pods";
+            viewModel.SelectedPreset = preset;
             viewModel.RenameSavedFilter(preset, "Workloads");
 
             Assert.DoesNotContain(viewModel.SavedPresets, item => item.Name == "Pods");
@@ -545,6 +854,55 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Source_removal_clears_selected_source_and_related_view_state()
+    {
+        var directory = TempDirectory();
+        var configA = Path.Combine(directory, "a.yaml");
+        File.WriteAllText(configA, OneContextKubeconfig("http://127.0.0.1:1", "dev-a"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(configA);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+        var removed = Assert.Single(viewModel.Sources);
+        viewModel.SelectedSource = removed;
+
+        viewModel.RemoveSource(removed);
+
+        Assert.Null(viewModel.SelectedSource);
+        Assert.True(string.IsNullOrWhiteSpace(viewModel.SelectedSource?.Context));
+        Assert.Null(viewModel.SelectedSession);
+        Assert.False(viewModel.IsSelectedSource);
+        Assert.False(viewModel.IsInspectorVisible);
+        Assert.Empty(viewModel.Sources);
+        Assert.Empty(viewModel.ImportedContextRows);
+        Assert.Contains("Removed source snapshot", viewModel.StatusLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Smart_source_import_scans_directory_with_kube_extension_files()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kube"), OneContextKubeconfig("http://127.0.0.1:1", "kube"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kubeconfig"), OneContextKubeconfig("http://127.0.0.1:2", "kubeconfig"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.cfg"), OneContextKubeconfig("http://127.0.0.1:3", "cfg"));
+        File.WriteAllText(Path.Combine(scanRoot, "notes.yaml"), "not: kubeconfig");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 3 context(s) from 3 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(3, viewModel.Sources.Count);
+        Assert.Contains(viewModel.Sources, source => source.Context == "kube");
+        Assert.Contains(viewModel.Sources, source => source.Context == "kubeconfig");
+        Assert.Contains(viewModel.Sources, source => source.Context == "cfg");
+    }
+
+    [Fact]
     public async Task Source_selection_uses_inspector_and_applies_edited_yaml_without_touching_original_file()
     {
         var directory = TempDirectory();
@@ -618,6 +976,170 @@ public sealed class AppBehaviorTests
         Assert.Contains("Imported 1 context(s) from 1 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
         Assert.Single(viewModel.Sources);
         Assert.Equal("deep", viewModel.Sources[0].Context);
+    }
+
+    [Fact]
+    public void Import_path_empty_input_never_imports_anything()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = "  ";
+        viewModel.ImportPathNow();
+
+        Assert.Empty(viewModel.Sources);
+        Assert.Empty(viewModel.Sessions);
+        Assert.Empty(state.Snapshot().ImportedContexts);
+        Assert.Equal("Choose a kubeconfig file or enter a path, directory, or YAML.", viewModel.StatusLine);
+    }
+
+    [Fact]
+    public void Import_path_single_file_imports_only_that_file_and_updates_status()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "only.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:1", "single"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = kubeconfig;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 1 context(s).", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Single(viewModel.Sources);
+        Assert.Equal("single", viewModel.Sources[0].Context);
+    }
+
+    [Fact]
+    public void Import_path_invalid_kubeconfig_file_reports_error_and_adds_no_contexts()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "invalid.yaml");
+        File.WriteAllText(kubeconfig, "not a valid source");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = kubeconfig;
+        viewModel.ImportPathNow();
+
+        Assert.Equal("Import a kubeconfig that contains contexts.", viewModel.StatusLine);
+        Assert.Empty(viewModel.Sources);
+        Assert.Empty(viewModel.Sessions);
+        Assert.Empty(state.Snapshot().ImportedContexts);
+    }
+
+    [Fact]
+    public void Smart_source_import_respects_max_depth_and_skips_deeper_directories()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        var includeRoot = scanRoot;
+        for (var depth = 1; depth <= 10; depth++)
+        {
+            includeRoot = Path.Combine(includeRoot, $"include-{depth}");
+            Directory.CreateDirectory(includeRoot);
+        }
+
+        var deepRoot = scanRoot;
+        for (var depth = 1; depth <= 34; depth++)
+        {
+            deepRoot = Path.Combine(deepRoot, $"deep-{depth}");
+            Directory.CreateDirectory(deepRoot);
+        }
+
+        File.WriteAllText(Path.Combine(includeRoot, "deep.yaml"), OneContextKubeconfig("http://127.0.0.1:1", "included"));
+        File.WriteAllText(Path.Combine(deepRoot, "deep.yaml"), OneContextKubeconfig("http://127.0.0.1:2", "excluded"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 1 context(s) from 1 kubeconfig file(s); ignored 0", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Single(viewModel.Sources);
+        Assert.Equal("included", viewModel.Sources[0].Context);
+        Assert.DoesNotContain(viewModel.Sources, source => source.Context == "excluded");
+    }
+
+    [Fact]
+    public void App_state_imported_context_dedup_preserves_metadata_when_imported_from_different_paths()
+    {
+        var directory = TempDirectory();
+        var first = Path.Combine(directory, "first.yaml");
+        var second = Path.Combine(directory, "second.yaml");
+        var raw = OneContextKubeconfig("http://127.0.0.1:1", "shared");
+        File.WriteAllText(first, raw);
+        File.WriteAllText(second, raw);
+
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(first);
+
+        var context = Assert.Single(state.Snapshot().ImportedContexts);
+        state.RenameImportedContext(context.ContextId, "Shared Alias");
+        state.SetImportedContextFilter(context.ContextId, "team-a");
+
+        var secondSummary = state.ImportKubeconfig(second);
+        var snapshot = state.Snapshot();
+
+            Assert.Single(snapshot.ImportedContexts);
+        Assert.Equal(0, secondSummary.CreatedSessionCount);
+        Assert.Equal("Shared Alias", snapshot.ImportedContexts[0].DisplayName);
+        Assert.Equal("team-a", snapshot.ImportedContexts[0].FilterName);
+        Assert.Equal(context.ContextId, snapshot.ImportedContexts[0].ContextId);
+        Assert.Single(snapshot.Sessions);
+
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+
+        var source = Assert.Single(viewModel.Sources);
+        Assert.Equal("Shared Alias", source.Context);
+        Assert.Equal("team-a", source.FilterName);
+        Assert.Single(viewModel.Sessions);
+    }
+
+    [Fact]
+    public void Smart_source_import_scans_directory_with_non_yaml_kubeconfig_extensions()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kubeconfig"), OneContextKubeconfig("http://127.0.0.1:1", "kubeconfig"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.cfg"), OneContextKubeconfig("http://127.0.0.1:2", "cfg"));
+        File.WriteAllText(Path.Combine(scanRoot, "notes.yaml"), "not: kubeconfig");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 2 context(s) from 2 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(2, viewModel.Sources.Count);
+        Assert.Contains(viewModel.Sources, source => source.Context == "kubeconfig");
+        Assert.Contains(viewModel.Sources, source => source.Context == "cfg");
+    }
+
+    [Fact]
+    public void Smart_source_import_scans_directory_with_additional_kubeconfig_extensions()
+    {
+        var directory = TempDirectory();
+        var scanRoot = Path.Combine(directory, "scan");
+        Directory.CreateDirectory(scanRoot);
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.kube"), OneContextKubeconfig("http://127.0.0.1:1", "kube"));
+        File.WriteAllText(Path.Combine(scanRoot, "cluster.config"), OneContextKubeconfig("http://127.0.0.1:2", "config"));
+        File.WriteAllText(Path.Combine(scanRoot, "notes.yaml"), "not: kubeconfig");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ImportPath = scanRoot;
+        viewModel.ImportPathNow();
+
+        Assert.Contains("Imported 2 context(s) from 2 kubeconfig file(s); ignored 1", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(2, viewModel.Sources.Count);
+        Assert.Contains(viewModel.Sources, source => source.Context == "kube");
+        Assert.Contains(viewModel.Sources, source => source.Context == "config");
     }
 
     [Fact]
@@ -737,6 +1259,52 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public async Task Sort_missing_cpu_values_moves_missing_rows_to_expected_side()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                var json = path switch
+                {
+                    "/api/v1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"known","namespace":"payments","uid":"1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                        {"metadata":{"name":"missing","namespace":"payments","uid":"2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"known","namespace":"payments"},"containers":[{"name":"known","usage":{"cpu":"100m","memory":"128Mi"}}]}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/nodes" => """{"items":[]}""",
+                    _ => """{"items":[]}"""
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal(["known", "missing"], viewModel.Resources.Select(row => row.Name).ToArray());
+
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal(["missing", "known"], viewModel.Resources.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
     public async Task Source_switch_shows_cached_rows_immediately_and_loading_feedback_for_cold_sources()
     {
         var directory = TempDirectory();
@@ -778,6 +1346,245 @@ public sealed class AppBehaviorTests
         Assert.Empty(viewModel.Resources);
         Assert.Contains("Loading resources for prod", viewModel.StatusLine, StringComparison.Ordinal);
         Assert.True(viewModel.IsRefreshing);
+    }
+
+    [Fact]
+    public async Task Source_switch_between_cached_sessions_uses_cached_rows_without_refresh()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(path.EndsWith("/pods", StringComparison.Ordinal)
+                    ? """
+                      {"items":[{"metadata":{"name":"cached-api","namespace":"payments","uid":"cached-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}
+                      """
+                    : """{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
+        var prodSession = state.ListSessions().Single(session => session.DisplayName == "prod");
+
+        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, Kind: "\"Pod\" \"Event\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        await service.WarmResourceCacheAsync(new ResourceQuery(prodSession.Id, Kind: "\"Pod\" \"Event\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        var networkCallsAfterWarm = handler.Requests.Count;
+
+        using var viewModel = new MainWindowViewModel(state, service);
+
+        viewModel.ReloadSessions();
+        viewModel.ProblemsOnly = false;
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == devSession.Id);
+        await viewModel.RefreshResourcesAsync();
+        Assert.DoesNotContain("Loading resources for", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.Equal(networkCallsAfterWarm, handler.Requests.Count);
+
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == prodSession.Id);
+        await viewModel.RefreshResourcesAsync();
+
+        Assert.DoesNotContain("Loading resources for", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.True(viewModel.Resources.Count > 0);
+        Assert.Equal(networkCallsAfterWarm, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Refresh_resources_with_identical_query_state_does_not_double_request_under_concurrent_calls()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+
+        var baselineState = AppState.InMemoryWithConfigDirectory(directory);
+        baselineState.ImportKubeconfig(kubeconfig);
+        var baselineHandler = new AsyncAppRecordingHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(180, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using (var baselineViewModel = new MainWindowViewModel(
+            baselineState,
+            new KubernetesResourceService(baselineState, baselineHandler)))
+        {
+            baselineViewModel.ReloadSessions();
+            await baselineViewModel.RefreshResourcesAsync(force: true);
+        }
+
+        var comparisonState = AppState.InMemoryWithConfigDirectory(directory);
+        comparisonState.ImportKubeconfig(kubeconfig);
+        var replayHandler = new AsyncAppRecordingHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(180, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(
+            comparisonState,
+            new KubernetesResourceService(comparisonState, replayHandler));
+
+        viewModel.ReloadSessions();
+        var firstRefresh = viewModel.RefreshResourcesAsync(force: true);
+            await Task.Delay(20);
+        var duplicateRefresh = viewModel.RefreshResourcesAsync();
+
+        await Task.WhenAll(firstRefresh, duplicateRefresh);
+        await Task.Delay(800);
+
+        Assert.Equal(baselineHandler.Requests.Count, replayHandler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Blank_local_filter_expressions_clear_immediately_without_remote_roundtrip()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/pods", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {"items":[
+                          {"metadata":{"name":"api","namespace":"payments","uid":"api","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                          {"metadata":{"name":"worker","namespace":"payments","uid":"worker","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                        ]}
+                        """,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            if (path.Contains("/metrics/", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, handler));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.True(viewModel.Resources.Count >= 2, "Pods should be loaded from the cached display query.");
+        var priorRequests = handler.Requests.Count;
+
+        viewModel.NamePicker.SetExpression("\"api\"");
+
+        Assert.Single(viewModel.Resources);
+        Assert.Equal("api", viewModel.Resources[0].Name);
+        Assert.Equal(priorRequests, handler.Requests.Count);
+
+        viewModel.NamePicker.SetExpression("  ");
+
+        Assert.Equal(2, viewModel.Resources.Count);
+        Assert.Equal(priorRequests, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Selecting_from_table_radar_and_graph_keeps_exactly_one_active_surface_selected()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                return path switch
+                {
+                    "/api/v1/pods" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent(
+                                """
+                                {"items":[
+                                  {"metadata":{"name":"api","namespace":"payments","uid":"1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                                  {"metadata":{"name":"worker","namespace":"payments","uid":"2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                                ]}
+                                """,
+                                Encoding.UTF8,
+                                "application/json")
+                        },
+                    "/apis/metrics.k8s.io/v1beta1/pods" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                        },
+                    "/apis/metrics.k8s.io/v1beta1/nodes" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                        },
+                    _ =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                        }
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        var api = Assert.Single(viewModel.Resources, row => row.Name == "api");
+        viewModel.SelectedResourceRow = api;
+
+        Assert.Same(api, viewModel.SelectedResource);
+        Assert.Same(api, viewModel.SelectedResourceRow);
+        Assert.Null(viewModel.SelectedGraphNode);
+
+        viewModel.ResourceQuickSearch = "worker";
+        viewModel.NextResourceMatch();
+
+        Assert.Null(viewModel.SelectedGraphNode);
+        Assert.Equal("worker", viewModel.SelectedResource?.Name);
+
+        var cluster = Assert.Single(viewModel.RadarBlocks, block => block.DisplayKind == "Cluster").Resource;
+        await viewModel.FocusRadarResourceAsync(cluster);
+
+        Assert.Equal("Cluster", viewModel.SelectedResource?.Kind);
+        Assert.Null(viewModel.SelectedResourceRow);
+        Assert.Null(viewModel.SelectedGraphNode);
+
+        await viewModel.FocusGraphNodeAsync(new GraphNodeViewModel("Namespace", "payments", "cluster", "Ready", null));
+
+        Assert.Null(viewModel.SelectedResource);
+        Assert.Null(viewModel.SelectedResourceRow);
+        Assert.NotNull(viewModel.SelectedGraphNode);
     }
 
     [Fact]
@@ -1063,6 +1870,67 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public async Task Radar_alert_blocks_reenter_announcing_state_on_reappearing_problem_rows()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var alertCycle = 0;
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                if (!path.EndsWith("/pods", StringComparison.Ordinal))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+                    };
+                }
+
+                var status = alertCycle switch
+                {
+                    0 => "CrashLoopBackOff",
+                    1 => "Running",
+                    _ => "CrashLoopBackOff"
+                };
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {"items":[
+                          {"metadata":{"name":"api-1","namespace":"payments","uid":"pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"__STATUS__","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                        ]}
+                        """.Replace("__STATUS__", status, StringComparison.Ordinal),
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        var initial = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "api-1");
+        Assert.True(initial.IsAnnouncing);
+
+        alertCycle = 1;
+        await viewModel.RefreshResourcesAsync(force: true);
+        var healthy = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "api-1");
+        Assert.Equal("Running", healthy.Resource.Status);
+        Assert.True(healthy.IsAnnouncing);
+
+        alertCycle = 2;
+        await viewModel.RefreshResourcesAsync(force: true);
+        var returning = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "api-1");
+        Assert.True(returning.IsAnnouncing);
+    }
+
+    [Fact]
     public async Task Resource_and_radar_views_remove_old_resources_and_add_new_ones_after_refresh()
     {
         var directory = TempDirectory();
@@ -1342,14 +2210,105 @@ public sealed class AppBehaviorTests
         viewModel.SelectedResource = Row("Running", "api", 0, "1/1");
         await viewModel.OpenSelectedResourceAsync();
         viewModel.SelectedInspectorTabIndex = 1;
-        viewModel.EditableYaml = viewModel.EditableYaml.Replace("server-first", "user-edit", StringComparison.Ordinal);
+        await viewModel.LoadFreshYamlAsync();
+        var serverFetchesBeforeEdit = detailRequests;
+        viewModel.EditableYaml = viewModel.EditableYaml.Replace("server-second", "user-edit", StringComparison.Ordinal);
 
         await viewModel.OpenSelectedResourceAsync();
 
-        Assert.Equal(1, detailRequests);
+        Assert.Equal(serverFetchesBeforeEdit, detailRequests);
         Assert.Contains("user-edit", viewModel.EditableYaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("server-second", viewModel.EditableYaml, StringComparison.Ordinal);
         Assert.Contains("paused", viewModel.StatusLine, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Inspector_populates_pod_log_container_options_for_multi_container_pods()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (path == "/api/v1/namespaces/payments/pods/api/log?tailLines=100&timestamps=true")
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("""
+                    {"kind":"Status","apiVersion":"v1","status":"Failure","message":"a container name must be specified for pod api, choose one of: [api sidecar]","reason":"BadRequest","code":400}
+                    """, Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (path == "/api/v1/namespaces/payments/pods/api")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "kind": "Pod",
+                      "apiVersion": "v1",
+                      "metadata": {
+                        "name": "api",
+                        "namespace": "payments",
+                        "uid": "pod-api",
+                        "creationTimestamp": "2026-06-10T08:00:00Z"
+                      },
+                      "spec": {
+                        "nodeName": "node-a",
+                        "containers": [
+                          { "name": "api", "image": "repo/api:1" },
+                          { "name": "sidecar", "image": "repo/sidecar:1" }
+                        ]
+                      },
+                      "status": {
+                        "phase": "Running",
+                        "containerStatuses": [
+                          { "name": "api", "ready": true, "restartCount": 0, "state": { "running": {} } },
+                          { "name": "sidecar", "ready": true, "restartCount": 0, "state": { "running": {} } }
+                        ]
+                      }
+                    }
+                    """, Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (path.Contains("/log?", StringComparison.Ordinal) && path.Contains("container=api", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("api-line\n")
+                };
+            }
+
+            if (path.Contains("/log?", StringComparison.Ordinal) && path.Contains("container=sidecar", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("sidecar-line\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, handler));
+
+        viewModel.SelectedResource = Row("Running", "api", 0, "2/2");
+        await viewModel.OpenSelectedResourceAsync();
+
+        Assert.Equal(["All containers", "api", "sidecar"], viewModel.PodLogContainerOptions);
+        Assert.Equal("All containers", viewModel.SelectedPodLogContainer);
+
+        viewModel.SelectedInspectorTabIndex = 4;
+        await Task.Delay(250);
+
+        Assert.Contains("===== container: api =====", viewModel.LogText, StringComparison.Ordinal);
+        Assert.Contains("===== container: sidecar =====", viewModel.LogText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1431,8 +2390,8 @@ public sealed class AppBehaviorTests
             Pulse = new ResourcePulse(null, 500, null, 268_435_456, null, null, null, null, "API", "limits only")
         };
 
-        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "CPU" && row.Value == "-/500m" && row.HasBar);
-        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "Memory" && row.Value == "-/256Mi" && row.HasBar);
+        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "CPU" && row.Value == "-/500m" && !row.HasBar);
+        Assert.Contains(viewModel.FocusMetrics, row => row.Label == "Memory" && row.Value == "-/256Mi" && !row.HasBar);
         Assert.DoesNotContain(viewModel.FocusMetrics, row => row.Label == "CPU %");
         Assert.DoesNotContain(viewModel.FocusMetrics, row => row.Label == "Memory %");
         Assert.DoesNotContain(viewModel.FocusMetrics, row => row.Label == "CPU limit suggestion");
@@ -1550,6 +2509,50 @@ public sealed class AppBehaviorTests
         Assert.Equal("stopped", viewModel.PortForwards[1].Status);
         Assert.Equal("START", viewModel.PortForwardActionLabel);
         Assert.Equal(["api"], viewModel.VisiblePortForwards.Select(port => port.Name).ToArray());
+    }
+
+    [Fact]
+    public void Port_forward_is_rejected_for_cluster_scoped_resources()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.SelectedResource = Row("Running", "api", 0, "1/1") with { Namespace = null };
+        viewModel.PrepareSelectedResourcePortForward();
+
+        Assert.False(viewModel.CanPortForwardSelectedResource);
+        Assert.False(viewModel.IsPortForwardToolOpen);
+            Assert.Empty(viewModel.VisiblePortForwards);
+    }
+
+    [Fact]
+    public async Task Port_forward_preflight_rejects_occupied_local_port_before_service_call()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.ReloadSessions();
+
+        var selected = Row("Running", "api", 0, "1/1");
+        viewModel.SelectedResource = selected;
+        viewModel.PrepareSelectedResourcePortForward();
+
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var occupiedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        viewModel.PortLocalPort = occupiedPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        await viewModel.StartPreparedPortForwardAsync();
+
+        Assert.Empty(viewModel.PortForwards);
+        Assert.Equal($"Reachable port {occupiedPort} is already in use on this machine.", viewModel.StatusLine);
     }
 
     [Fact]
@@ -1727,9 +2730,1032 @@ public sealed class AppBehaviorTests
         Assert.Equal("••••••••••••", secret.DisplayValue);
     }
 
+    [Fact]
+    public void Alert_rule_store_merges_defaults_preserves_default_enabled_state_and_keeps_custom_rules()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var defaultRule = AlertRuleCatalog.DefaultRules[0] with { Enabled = false };
+            var custom = new AlertRule(
+                "custom-memory",
+                "Memory pressure",
+                "Custom memory alert",
+                true,
+                false,
+                "warning",
+                new AlertRuleMatchers(Memory: "p95"),
+                new AlertRuleActions(PlaySound: true),
+                new AlertRuleUntil(AlertUntilModes.Duration, "10s"),
+                "warning-ping");
+            var grouped = custom with
+            {
+                Id = "custom-grouped",
+                Name = "Grouped",
+                MatcherGroups =
+                [
+                    new AlertMatcherGroup("one", [new AlertMatcherCriterion("kind", "Kind", "\"Pod\"")]),
+                    new AlertMatcherGroup("two", [new AlertMatcherCriterion("cpu", "CPU", "p95")])
+                ]
+            };
+
+            AlertRuleStore.Save([defaultRule, custom, grouped]);
+            var loaded = AlertRuleStore.Load();
+
+            Assert.Contains(loaded, rule => rule.Id == defaultRule.Id && !rule.Enabled && rule.BuiltIn);
+            Assert.Contains(loaded, rule => rule.Id == "custom-memory" && !rule.BuiltIn && rule.Matchers.Memory == "p95");
+            var loadedGrouped = Assert.Single(loaded, rule => rule.Id == "custom-grouped");
+            Assert.Equal(2, loadedGrouped.MatcherGroups?.Count);
+            Assert.Equal(["one", "two"], loadedGrouped.MatcherGroups!.Select(group => group.Id).ToArray());
+            Assert.Equal(AlertRuleCatalog.DefaultRules.Count + 2, loaded.Count);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_editor_adds_custom_rule_saves_it_and_evaluates_cached_rows()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Restarted pods";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.RadarBlink = true;
+            custom.RadarZoom = false;
+            custom.PlaySound = true;
+            custom.SoundChoice = AlertSoundCatalog.Resolve("warning-ping").Label;
+            InjectCachedRows(viewModel, [
+                Row("Running", "quiet", 0, "1/1"),
+                Row("Running", "noisy", 2, "1/1")
+            ]);
+
+            viewModel.SaveAlertRules();
+
+            var active = Assert.Single(viewModel.ActiveAlerts);
+            Assert.Equal("Restarted pods", active.Rule);
+            Assert.Contains("Pod/noisy", active.Matches, StringComparison.Ordinal);
+            Assert.Contains("blink", active.Actions, StringComparison.Ordinal);
+            Assert.Contains("Warning ping", active.Sound, StringComparison.Ordinal);
+            Assert.Contains(AlertRuleStore.Load(), rule => rule.Name == "Restarted pods" && rule.Matchers.Restarts == ">1");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_rule_row_blocks_builtin_edits_and_exposes_sound_attribution()
+    {
+        var builtInRule = AlertRuleCatalog.DefaultRules.First(rule => rule.Id == "default-active-view-pulse");
+        var builtIn = new AlertRuleRowViewModel(builtInRule);
+        var custom = new AlertRuleRowViewModel(builtInRule with
+        {
+            Id = "custom-copy",
+            BuiltIn = false,
+            Name = "Custom copy"
+        });
+        var changedProperties = new List<string>();
+        custom.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changedProperties.Add(args.PropertyName);
+            }
+        };
+
+        builtIn.Name = "Changed";
+        builtIn.Kind = "\"Deployment\"";
+        builtIn.Enabled = false;
+        custom.Kind = "\"Deployment\"";
+        custom.Restarts = ">5";
+        custom.PlaySound = true;
+        custom.SoundChoice = AlertSoundCatalog.Resolve("critical-klaxon").Label;
+        custom.SelectedColor = Color.Parse("#123456");
+        custom.UseStatusColor();
+        custom.UseNoColor();
+        custom.SoundSearch = "metal";
+
+        Assert.NotEqual("Changed", builtIn.Name);
+        Assert.Equal("", builtIn.Kind);
+        Assert.False(builtIn.Enabled);
+        Assert.Contains("Kind=\"Deployment\"", custom.MatcherSummary, StringComparison.Ordinal);
+        Assert.Contains("Restarts=>5", custom.MatcherSummary, StringComparison.Ordinal);
+        Assert.Contains("sound:critical-klaxon", custom.ActionSummary, StringComparison.Ordinal);
+        Assert.Equal("none", custom.ColorChoice);
+        Assert.True(builtIn.IsNoColor);
+        Assert.Equal("5s", builtIn.AnimationUntilDuration);
+        Assert.Equal("5s", builtIn.AnimationDurationChoice);
+        Assert.False(builtIn.HasSound);
+        Assert.False(builtIn.HasZoom);
+        Assert.Equal(string.Empty, builtIn.SoundAttribution);
+        Assert.Equal(string.Empty, builtIn.SoundSourceUrl);
+        Assert.NotNull(builtIn.AnimationPreviewBrush);
+        Assert.Contains(custom.FilteredSoundChoices, choice => choice.Contains("Metal", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(custom.FilteredSoundItems, choice => choice.Name.Contains("Metal", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(custom.FilteredSoundChoices, choice => choice.Contains("Radar activated", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("Kenney", custom.SoundAttribution);
+        Assert.Equal("https://kenney.nl/assets/sci-fi-sounds", custom.SoundSourceUrl);
+        Assert.Contains(nameof(AlertRuleRowViewModel.MatcherSummary), changedProperties);
+        Assert.Contains(nameof(AlertRuleRowViewModel.ActionSummary), changedProperties);
+    }
+
+    [Fact]
+    public void Alert_rule_row_guided_editor_builds_or_matchers_actions_and_sound_metadata()
+    {
+        var row = new AlertRuleRowViewModel(new AlertRule(
+            "custom-guided",
+            "Guided alert",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(RadarFocus: false, RadarZoom: false, RadarBlink: false, RadarColor: false, PlaySound: false),
+            new AlertRuleUntil("none"),
+            "none"));
+
+        row.MatcherGroups[0].Criteria[0].Field = "Kind";
+        row.MatcherGroups[0].Criteria[0].Expression = "\"Pod\"";
+        row.AddCriterion(row.MatcherGroups[0]);
+        row.MatcherGroups[0].Criteria[1].Field = "Restarts";
+        row.MatcherGroups[0].Criteria[1].Expression = ">1";
+        row.AddMatcherGroup();
+        row.MatcherGroups[1].Criteria[0].Field = "CPU";
+        row.MatcherGroups[1].Criteria[0].Expression = "p95";
+        row.ColorChoice = "red";
+        row.ColorDurationChoice = "10s";
+        row.AnimationChoice = "blink";
+        row.AnimationDurationChoice = "until change";
+        row.ZoomChoice = "150%";
+        row.SoundChoice = AlertSoundCatalog.Resolve("critical-klaxon").Label;
+
+        var rule = row.ToRule();
+
+        Assert.Contains("once", row.DurationChoices);
+        Assert.Contains("1s", row.DurationChoices);
+        Assert.Contains("60s", row.DurationChoices);
+        Assert.Equal(2, rule.MatcherGroups?.Count);
+        Assert.Equal(["Kind", "Restarts"], rule.MatcherGroups![0].Criteria.Select(criterion => criterion.Field).ToArray());
+        Assert.Equal(["CPU"], rule.MatcherGroups[1].Criteria.Select(criterion => criterion.Field).ToArray());
+        Assert.True(rule.Actions.RadarColor);
+        Assert.Equal("red", rule.Actions.RadarColorValue);
+        Assert.Equal(AlertUntilModes.Duration, rule.Actions.RadarColorUntilMode);
+        Assert.Equal("10s", rule.Actions.RadarColorUntilDuration);
+        Assert.True(rule.Actions.RadarBlink);
+        Assert.Equal("blink", rule.Actions.RadarAnimation);
+        Assert.True(rule.Actions.RadarZoom);
+        Assert.Equal(150, rule.Actions.RadarZoomPercent);
+        Assert.True(rule.Actions.PlaySound);
+        Assert.Equal("critical-klaxon", rule.SoundId);
+        Assert.Contains("color:red", row.ActionSummary, StringComparison.Ordinal);
+        Assert.Contains("animation:blink", row.ActionSummary, StringComparison.Ordinal);
+        Assert.Contains("zoom:150%", row.ActionSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Alert_sound_catalog_uses_traceable_bundled_cc0_assets()
+    {
+        var projectRoot = LocateProjectRoot();
+        foreach (var sound in AlertSoundCatalog.BuiltIn.Where(sound => sound.Id != "none"))
+        {
+            Assert.Equal("Kenney", sound.Author);
+            Assert.Equal("CC0-1.0", sound.License);
+            Assert.StartsWith("https://kenney.nl/assets/", sound.SourceUrl, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(projectRoot, "src", "Podlord.App", sound.Asset)), $"{sound.Asset} is missing.");
+        }
+
+        Assert.True(AlertSoundCatalog.BuiltIn.Count >= 100);
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "radar-activated");
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "panel-segment-load");
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "kenney-interface-error-008" && sound.SourceUrl == "https://kenney.nl/assets/interface-sounds");
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "command-ambient-loop" && sound.IsMusic);
+    }
+
+    [Fact]
+    public void Default_alert_rules_recreate_old_radar_colors_and_view_pulse()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Running", "recent", 0, "1/1") with { Age = "2h", LastChange = "now" },
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+
+            ApplyLocalFilter(viewModel);
+
+            var quiet = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "quiet");
+            var recent = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "recent");
+            var waiting = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "waiting");
+            var broken = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "broken");
+
+            Assert.Equal("none", quiet.AlertColor);
+            Assert.False(quiet.IsPulseAnimation);
+            Assert.Equal("fresh", recent.AlertColor);
+            Assert.True(recent.IsPulseAnimation);
+            Assert.Equal("status", waiting.AlertColor);
+            Assert.True(waiting.IsPulseAnimation);
+            Assert.Equal("status", broken.AlertColor);
+            Assert.True(broken.IsPulseAnimation);
+            var graphBroken = FlattenGraph(viewModel.GraphNodes).First(node => node.Resource?.Name == "broken");
+            Assert.True(graphBroken.Resource?.IsPulseAnimation);
+            var waitingRow = Assert.Single(viewModel.Resources, row => row.Name == "waiting");
+            var problemBrush = new AlertResourceBrushConverter().Convert(waitingRow, typeof(IBrush), null, CultureInfo.InvariantCulture);
+            Assert.Equal(BrushColor(AppThemeCatalog.StatusBrush("WARNING")), BrushColor(problemBrush));
+
+            var recentBroken = Row("CrashLoopBackOff", "recent-broken", 1, "0/1") with { Age = "2h", LastChange = "now" };
+            InjectCachedRows(viewModel, [recentBroken]);
+            ApplyLocalFilter(viewModel);
+            Assert.Equal("status", Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "recent-broken").AlertColor);
+            Assert.Contains(player.PlayedPaths, path => path.EndsWith("warning-ping.ogg", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Problem_color_default_zooms_to_matching_center_and_plays_warning_once_per_update()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+            Assert.InRange(ReadPrivate<double>(viewModel, "radarAutoFollowTargetZoom"), 0.99, 1.01);
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+            ApplyLocalFilter(viewModel);
+
+            var targets = viewModel.RadarBlocks
+                .Where(block => block.Resource.Name is "waiting" or "broken")
+                .ToList();
+            var expectedPanX = -targets.Average(block => block.X + block.Width / 2d - 480d / 2d);
+            var expectedPanY = -targets.Average(block => block.Y + block.Height / 2d - 220d / 2d);
+
+            viewModel.PlayNextQueuedAlertSoundForTests();
+            Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+            Assert.Equal(1, viewModel.RadarAutoFollowQueueCountForTests);
+            for (var i = 0; i < 18; i++)
+            {
+                viewModel.StepRadarAutoFollowForTests();
+            }
+
+            Assert.Equal(0, viewModel.RadarAutoFollowQueueCountForTests);
+            Assert.Equal(expectedPanX, ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanX"), precision: 2);
+            Assert.Equal(expectedPanY, ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanY"), precision: 2);
+
+            ApplyLocalFilter(viewModel);
+            Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 2, "0/1") with { Age = "2h", LastChange = "1s" }
+            ]);
+            ApplyLocalFilter(viewModel);
+
+            viewModel.PlayNextQueuedAlertSoundForTests();
+            Assert.Equal(3, CountPlayed(player, "warning-ping.ogg"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Reactivating_problem_color_default_replays_warning_for_existing_problem_match()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }]);
+
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+            var problemRule = Assert.Single(viewModel.AlertRules, rule => rule.Id == "default-problem-color");
+
+            viewModel.ToggleAlertRule(problemRule);
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+
+            viewModel.ToggleAlertRule(problemRule);
+            viewModel.PlayNextQueuedAlertSoundForTests();
+
+            Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Muting_app_audio_blocks_automatic_alert_sounds()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.ToggleAudioMute();
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel,
+            [
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+
+            ApplyLocalFilter(viewModel);
+
+            Assert.True(viewModel.IsAudioMuted);
+            Assert.Empty(player.PlayedPaths);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Multiple_alert_sounds_are_played_in_sequence_instead_of_collapsing()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.AddAlertRule();
+            var warning = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            warning.Name = "Restart warning";
+            warning.Restarts = ">1";
+            warning.SoundChoice = AlertSoundCatalog.Resolve("warning-ping").Label;
+            warning.ColorChoice = "none";
+            warning.AnimationChoice = "none";
+            warning.ZoomChoice = "none";
+
+            viewModel.AddAlertRule();
+            var critical = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            critical.Name = "Restart critical";
+            critical.Restarts = ">1";
+            critical.SoundChoice = AlertSoundCatalog.Resolve("critical-klaxon").Label;
+            critical.ColorChoice = "none";
+            critical.AnimationChoice = "none";
+            critical.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+
+            viewModel.SaveAlertRules();
+
+            Assert.Single(player.PlayedPaths);
+            Assert.EndsWith("warning-ping.ogg", player.PlayedPaths[0], StringComparison.Ordinal);
+
+            viewModel.PlayNextQueuedAlertSoundForTests();
+
+            Assert.Equal(2, player.PlayedPaths.Count);
+            Assert.EndsWith("critical-klaxon.ogg", player.PlayedPaths[1], StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Multiple_alert_zoom_actions_are_queued_in_rule_order()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            var first = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            first.Name = "First zoom";
+            first.NameFilter = "\"first\"";
+            first.ColorChoice = "none";
+            first.AnimationChoice = "none";
+            first.ZoomChoice = "100%";
+
+            viewModel.AddAlertRule();
+            var second = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            second.Name = "Second zoom";
+            second.NameFilter = "\"second\"";
+            second.ColorChoice = "none";
+            second.AnimationChoice = "none";
+            second.ZoomChoice = "100%";
+
+            InjectCachedRows(viewModel,
+            [
+                Row("Running", "first", 0, "1/1") with { Age = "2h", LastChange = "2h" },
+                Row("Running", "second", 0, "1/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+
+            viewModel.SaveAlertRules();
+
+            Assert.Equal(1, viewModel.RadarAutoFollowQueueCountForTests);
+            var firstTargetPanX = ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanX");
+            for (var i = 0; i < 18; i++)
+            {
+                viewModel.StepRadarAutoFollowForTests();
+            }
+
+            Assert.Equal(0, viewModel.RadarAutoFollowQueueCountForTests);
+            Assert.NotEqual(firstTargetPanX, ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanX"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Audio_backend_failures_do_not_break_alert_rendering()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), new ThrowingAlertSoundPlayer());
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }]);
+
+            ApplyLocalFilter(viewModel);
+
+            var block = Assert.Single(viewModel.RadarBlocks, item => item.Resource.Name == "waiting");
+            Assert.Equal("status", block.AlertColor);
+            Assert.NotEmpty(viewModel.ActiveAlerts);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Default_audio_player_can_be_disabled_for_headless_test_runs()
+    {
+        var previous = Environment.GetEnvironmentVariable("PODLORD_DISABLE_AUDIO");
+        Environment.SetEnvironmentVariable("PODLORD_DISABLE_AUDIO", "1");
+        try
+        {
+            using var player = AlertSoundPlayerFactory.CreateDefault();
+
+            Assert.IsType<NoOpAlertSoundPlayer>(player);
+            Assert.True(player.Play("missing.wav", out var error));
+            Assert.Equal(string.Empty, error);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_DISABLE_AUDIO", previous);
+        }
+    }
+
+    [Fact]
+    public void Disabling_default_alert_rules_removes_old_hidden_radar_and_table_fallbacks()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel,
+            [
+                Row("CrashLoopBackOff", "broken", 1, "0/1"),
+                Row("Running", "recent", 0, "1/1") with { LastChange = "now" }
+            ]);
+
+            ApplyLocalFilter(viewModel);
+
+            Assert.All(viewModel.RadarBlocks.Where(block => block.Resource.Kind == "Pod"), block =>
+            {
+                Assert.Equal("none", block.AlertColor);
+                Assert.False(block.IsAnnouncing);
+            });
+            Assert.All(viewModel.Resources, row =>
+            {
+                Assert.False(row.IsAnnouncing);
+                Assert.Equal("", row.AlertAnimation);
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Default_active_view_pulse_expires_without_restarting_while_resource_stays_visible()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [Row("Running", "active", 0, "1/1") with { Age = "2h", LastChange = "2h" }]);
+
+            ApplyLocalFilter(viewModel);
+
+            var firstRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.True(firstRadar.IsPulseAnimation);
+            Assert.True(Assert.Single(viewModel.Resources, row => row.Name == "active").IsPulseAnimation);
+
+            ExpireAlertTimers(viewModel, firstRadar.Resource.Id);
+            viewModel.ExpireAlertAnimationsForTests();
+
+            var secondRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.False(secondRadar.IsAnnouncing);
+            Assert.False(Assert.Single(viewModel.Resources, row => row.Name == "active").IsAnnouncing);
+
+            viewModel.PanRadar(10_000, 10_000);
+            Assert.DoesNotContain(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+
+            viewModel.PanRadar(-10_000, -10_000);
+            var returningRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.True(returningRadar.IsPulseAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_sound_preview_uses_embedded_audio_player_without_shelling_to_browser()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.AddAlertRule();
+            viewModel.SelectedAlertRule!.SoundChoice = AlertSoundCatalog.Resolve("warning-ping").Label;
+
+            viewModel.PreviewSelectedAlertSound();
+
+            var playedPath = Assert.Single(player.PlayedPaths);
+            Assert.EndsWith("warning-ping.ogg", playedPath, StringComparison.Ordinal);
+            Assert.True(File.Exists(playedPath));
+            Assert.Contains("Previewing Warning ping", viewModel.StatusLine, StringComparison.Ordinal);
+            Assert.False(player.DisposedBeforePlay);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_actions_control_radar_blink_and_color_from_cached_rows()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 2)]);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Silent visual rule";
+            custom.Kind = "\"Pod\"";
+            custom.RadarBlink = false;
+            custom.RadarColor = false;
+            custom.RadarFocus = false;
+            custom.RadarZoom = false;
+            viewModel.SaveAlertRules();
+
+            var quietBlock = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var quietBrush = quietBlock.Brush;
+            Assert.False(quietBlock.IsAnnouncing);
+
+            custom.RadarBlink = true;
+            custom.RadarColor = true;
+            custom.ColorChoice = "#123456";
+            viewModel.SaveAlertRules();
+
+            var activeBlock = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            Assert.True(activeBlock.IsAnnouncing);
+            Assert.False(ReferenceEquals(quietBrush, activeBlock.Brush));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_duration_keeps_action_active_after_match_clears()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Restart hold";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.RadarBlink = true;
+            custom.RadarColor = false;
+            custom.UntilMode = AlertUntilModes.Duration;
+            custom.UntilDuration = "10s";
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 2)]);
+            viewModel.SaveAlertRules();
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsAnnouncing);
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 0)]);
+            viewModel.SaveAlertRules();
+
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsAnnouncing);
+            Assert.Contains(viewModel.ActiveAlerts, alert => alert.Rule == "Restart hold");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_color_duration_holds_color_after_match_clears_without_forcing_animation()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Color hold";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "#123456";
+            custom.ColorUntilMode = AlertUntilModes.Duration;
+            custom.ColorUntilDuration = "10s";
+            custom.AnimationChoice = "none";
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 2)]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            var active = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var activeRow = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+
+            Assert.Equal("#123456", active.AlertColor);
+            Assert.False(active.IsAnnouncing);
+            Assert.False(activeRow.IsAnnouncing);
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 0)]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            var held = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var heldRow = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+
+            Assert.Equal("#123456", held.AlertColor);
+            Assert.False(held.IsAnnouncing);
+            Assert.False(heldRow.IsAnnouncing);
+
+            custom.ColorUntilMode = "none";
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal("none", Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").AlertColor);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("blink")]
+    [InlineData("pulse")]
+    [InlineData("sweep")]
+    [InlineData("outline")]
+    public void Alert_animation_choice_reaches_radar_and_resource_rows_as_distinct_state(string animation)
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Animation state";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "none";
+            custom.AnimationChoice = animation;
+            custom.AnimationUntilMode = AlertUntilModes.NoMatch;
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            var radar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var resource = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+            Assert.True(radar.IsAnnouncing);
+            Assert.True(resource.IsAnnouncing);
+            Assert.Equal(animation, radar.AlertAnimation);
+            Assert.Equal(animation, resource.AlertAnimation);
+            Assert.Equal(animation == "blink", radar.IsBlinkAnimation);
+            Assert.Equal(animation == "pulse", radar.IsPulseAnimation);
+            Assert.Equal(animation == "sweep", radar.IsSweepAnimation);
+            Assert.Equal(animation == "outline", radar.IsOutlineAnimation);
+            Assert.Equal(animation == "blink", resource.IsBlinkAnimation);
+            Assert.Equal(animation == "pulse", resource.IsPulseAnimation);
+            Assert.Equal(animation == "sweep", resource.IsSweepAnimation);
+            Assert.Equal(animation == "outline", resource.IsOutlineAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_animation_duration_holds_animation_after_match_clears()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Animation hold";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "none";
+            custom.AnimationChoice = "sweep";
+            custom.AnimationDurationChoice = "10s";
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsSweepAnimation);
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 0, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            var heldRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var heldResource = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+
+            Assert.True(heldRadar.IsSweepAnimation);
+            Assert.True(heldResource.IsSweepAnimation);
+            Assert.Contains(viewModel.ActiveAlerts, alert => alert.Rule == "Animation hold");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Finite_alert_animation_expires_and_restarts_only_when_matched_resource_changes()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            var custom = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            custom.Name = "Finite pulse";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "none";
+            custom.AnimationChoice = "pulse";
+            custom.AnimationDurationChoice = "2s";
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            var rowId = Assert.Single(viewModel.Resources, row => row.Name == "noisy").Id;
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsPulseAnimation);
+
+            ExpireAlertHold(viewModel, "alertAnimationUntilByRuleResource", custom.Id, rowId);
+            viewModel.ExpireAlertAnimationsForTests();
+
+            Assert.False(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsAnnouncing);
+            Assert.False(Assert.Single(viewModel.Resources, row => row.Name == "noisy").IsAnnouncing);
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 3, "1/1") with { LastChange = "1s" }]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsPulseAnimation);
+            Assert.True(Assert.Single(viewModel.Resources, row => row.Name == "noisy").IsPulseAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static FilterPreset Preset(string name, bool problems)
     {
         return new FilterPreset(name, problems, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "256");
+    }
+
+    private sealed class RecordingAlertSoundPlayer : IAlertSoundPlayer
+    {
+        private bool disposed;
+
+        public List<string> PlayedPaths { get; } = [];
+
+        public bool DisposedBeforePlay { get; private set; }
+
+        public bool Play(string path, out string error)
+        {
+            DisposedBeforePlay = disposed;
+            PlayedPaths.Add(path);
+            error = string.Empty;
+            return true;
+        }
+
+        public void Dispose()
+        {
+            disposed = true;
+        }
+    }
+
+    private sealed class ThrowingAlertSoundPlayer : IAlertSoundPlayer
+    {
+        public bool Play(string path, out string error)
+        {
+            throw new InvalidOperationException("no audio device");
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private static string OneContextKubeconfig(string server, string name = "dev")
@@ -1769,6 +3795,82 @@ users:
             "ReplicaSet/api",
             "now",
             FreshnessState.Fresh);
+    }
+
+    private static FlatResourceRow QuietAlertRow(string name, int restarts)
+    {
+        return Row("Succeeded", name, restarts, "1/1") with { Age = "2h", LastChange = "2h" };
+    }
+
+    private static void InjectCachedRows(MainWindowViewModel viewModel, IReadOnlyList<FlatResourceRow> rows)
+    {
+        var field = typeof(MainWindowViewModel).GetField("cachedRows", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException("cachedRows field missing");
+        var cached = (List<FlatResourceRow>)(field.GetValue(viewModel)
+                    ?? throw new InvalidOperationException("cachedRows field was null"));
+        cached.Clear();
+        cached.AddRange(rows);
+    }
+
+    private static void ApplyLocalFilter(MainWindowViewModel viewModel)
+    {
+        var method = typeof(MainWindowViewModel).GetMethod("ApplyLocalFilter", BindingFlags.NonPublic | BindingFlags.Instance)
+                     ?? throw new InvalidOperationException("ApplyLocalFilter method missing");
+        method.Invoke(viewModel, null);
+    }
+
+    private static void ExpireAlertTimers(MainWindowViewModel viewModel, string rowId)
+    {
+        ExpireTimer(viewModel, "resourceAlertBlinkUntil", rowId);
+        ExpireTimer(viewModel, "radarAlertBlinkUntil", rowId);
+    }
+
+    private static void ExpireTimer(MainWindowViewModel viewModel, string fieldName, string rowId)
+    {
+        var field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        var timers = (Dictionary<string, DateTimeOffset>)(field.GetValue(viewModel)
+                     ?? throw new InvalidOperationException($"{fieldName} field is null"));
+        timers[rowId] = DateTimeOffset.Now.Subtract(TimeSpan.FromSeconds(1));
+    }
+
+    private static void ExpireAlertHold(MainWindowViewModel viewModel, string fieldName, string ruleId, string rowId)
+    {
+        var field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        var timers = (Dictionary<(string RuleId, string RowId), DateTimeOffset>)(field.GetValue(viewModel)
+                     ?? throw new InvalidOperationException($"{fieldName} field is null"));
+        timers[(ruleId, rowId)] = DateTimeOffset.Now.Subtract(TimeSpan.FromSeconds(1));
+    }
+
+    private static T ReadPrivate<T>(MainWindowViewModel viewModel, string fieldName)
+    {
+        var field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        return (T)(field.GetValue(viewModel)
+                   ?? throw new InvalidOperationException($"{fieldName} field is null"));
+    }
+
+    private static int CountPlayed(RecordingAlertSoundPlayer player, string fileName)
+    {
+        return player.PlayedPaths.Count(path => path.EndsWith(fileName, StringComparison.Ordinal));
+    }
+
+    private static Color BrushColor(object brush)
+    {
+        return Assert.IsType<SolidColorBrush>(brush).Color;
+    }
+
+    private static IEnumerable<GraphNodeViewModel> FlattenGraph(IEnumerable<GraphNodeViewModel> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var child in FlattenGraph(node.Children))
+            {
+                yield return child;
+            }
+        }
     }
 
     private static string RadarFixtureFor(string path)
@@ -1843,6 +3945,92 @@ users:
         return Math.Abs(grid - Math.Round(grid)) < 0.0001;
     }
 
+    private static string LocatePodlordLocalizerSource()
+    {
+        for (var directory = AppContext.BaseDirectory; !string.IsNullOrWhiteSpace(directory); directory = Path.GetDirectoryName(directory) ?? string.Empty)
+        {
+            var directMatch = Path.Combine(directory, "PodlordLocalizer.cs");
+            if (File.Exists(directMatch))
+            {
+                return directMatch;
+            }
+
+            var sourceMatch = Path.Combine(directory, "src", "Podlord.App", "PodlordLocalizer.cs");
+            if (File.Exists(sourceMatch))
+            {
+                return sourceMatch;
+            }
+
+            if (directory == Path.GetPathRoot(directory))
+            {
+                break;
+            }
+        }
+
+        throw new FileNotFoundException("PodlordLocalizer.cs source file not found.");
+    }
+
+    private static string LocateProjectRoot()
+    {
+        for (var directory = AppContext.BaseDirectory; !string.IsNullOrWhiteSpace(directory); directory = Path.GetDirectoryName(directory) ?? string.Empty)
+        {
+            if (File.Exists(Path.Combine(directory, "Podlord.slnx"))
+                && Directory.Exists(Path.Combine(directory, "src", "Podlord.App")))
+            {
+                return directory;
+            }
+
+            if (directory == Path.GetPathRoot(directory))
+            {
+                break;
+            }
+        }
+
+        throw new DirectoryNotFoundException("Podlord project root not found.");
+    }
+
+    private static IReadOnlySet<string> CatalogLocaleCodesFromSource(string source)
+    {
+        return Regex.Matches(source, "\\[\"(?<code>[^\"]+)\"\\]\\s*=\\s*(?:English|WithEnglish)", RegexOptions.Multiline)
+            .Select(match => match.Groups["code"].Value)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlySet<string> EnglishLocaleKeysFromSource(string source)
+    {
+        var english = Regex.Match(
+            source,
+            "private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>\\(StringComparer\\.Ordinal\\)\\s*\\{(?<body>[\\s\\S]*?)\\n\\s*\\};",
+            RegexOptions.Multiline);
+        Assert.True(english.Success, "Could not parse English locale block from PodlordLocalizer source.");
+
+        return Regex.Matches(english.Groups["body"].Value, "\\[\"(?<key>[^\"]+)\"\\]\\s*=", RegexOptions.Multiline)
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static IReadOnlySet<string> LocalizerTranslationsFromSource(string source, string locale)
+    {
+        if (string.Equals(locale, "en", StringComparison.OrdinalIgnoreCase))
+        {
+            return EnglishLocaleKeysFromSource(source);
+        }
+
+        var match = Regex.Match(
+            source,
+            "\\[\"" + Regex.Escape(locale) + "\"\\]\\s*=\\s*WithEnglish\\(\"" + Regex.Escape(locale) + "\",\\s*new Dictionary<string, string>\\(StringComparer\\.Ordinal\\)\\s*\\{(?<body>[\\s\\S]*?)\\}\\s*\\)",
+            RegexOptions.Multiline);
+
+        Assert.True(match.Success, $"Could not parse locale block for '{locale}'.");
+
+        return Regex.Matches(match.Groups["body"].Value, "\\[\"(?<key>[^\"]+)\"\\]\\s*=", RegexOptions.Multiline)
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
     private static string TempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), $"podlord-app-test-{Guid.NewGuid():N}");
@@ -1857,9 +4045,23 @@ users:
 
     private sealed class AppRecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
+        public List<string> Requests { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Requests.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
             return Task.FromResult(respond(request));
+        }
+    }
+
+    private sealed class AsyncAppRecordingHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        public List<string> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
+            return respond(request, cancellationToken);
         }
     }
 }

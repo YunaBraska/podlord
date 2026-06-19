@@ -5,17 +5,24 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DOTNET="$ROOT_DIR/.tools/dotnet/dotnet"
 CONFIGURATION=${CONFIGURATION:-Release}
 REQUESTED_RID=${1:-all}
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-0.0.0}
 
 if [ ! -x "$DOTNET" ]; then
   DOTNET=dotnet
 fi
 
 if [ "$REQUESTED_RID" = "all" ]; then
-  RIDS="osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64 win-arm64"
+  RIDS="osx-arm64 osx-x64 linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm win-x64 win-x86 win-arm64"
 else
   RIDS="$REQUESTED_RID"
 fi
+
+for rid in $RIDS; do
+  case "$rid" in
+    osx-arm64|osx-x64|linux-x64|linux-arm64|linux-arm|linux-musl-x64|linux-musl-arm64|linux-musl-arm|win-x64|win-x86|win-arm64) ;;
+    *) echo "Unsupported runtime '$rid'." >&2; exit 1 ;;
+  esac
+done
 
 cd "$ROOT_DIR"
 

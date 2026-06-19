@@ -38,6 +38,60 @@ public sealed class KindGlyph : Control
         set => SetValue(StrokeProperty, value);
     }
 
+    private AvaloniaObject? observedFill;
+    private AvaloniaObject? observedStroke;
+
+    /// <summary>
+    /// Theme switching mutates the color of shared brush instances in place (e.g. <see cref="SolidColorBrush.Color"/>)
+    /// rather than swapping the brush reference, so a bound <see cref="Fill"/> brush raises no change on this control.
+    /// We observe the brush object's property changes and repaint so the glyph follows the active light/dark palette.
+    /// </summary>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == FillProperty)
+        {
+            Resubscribe(ref observedFill, Fill);
+        }
+        else if (change.Property == StrokeProperty)
+        {
+            Resubscribe(ref observedStroke, Stroke);
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Resubscribe(ref observedFill, Fill);
+        Resubscribe(ref observedStroke, Stroke);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        Resubscribe(ref observedFill, null);
+        Resubscribe(ref observedStroke, null);
+    }
+
+    private void Resubscribe(ref AvaloniaObject? current, IBrush? brush)
+    {
+        if (current is not null)
+        {
+            current.PropertyChanged -= OnBrushPropertyChanged;
+        }
+
+        current = brush as AvaloniaObject;
+        if (current is not null)
+        {
+            current.PropertyChanged += OnBrushPropertyChanged;
+        }
+    }
+
+    private void OnBrushPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -112,6 +166,36 @@ public sealed class KindGlyph : Control
                 break;
             case "CustomResourceDefinition":
                 DrawCube(context, rect, pen);
+                break;
+            case "Trash":
+                DrawTrash(context, rect, pen);
+                break;
+            case "Pencil":
+                DrawPencil(context, rect, pen);
+                break;
+            case "Close":
+                DrawClose(context, rect, pen);
+                break;
+            case "Swap":
+                DrawSwap(context, rect, pen);
+                break;
+            case "Visible":
+                DrawVisible(context, rect, pen);
+                break;
+            case "Hidden":
+                DrawHidden(context, rect, pen);
+                break;
+            case "Play":
+                DrawPlay(context, rect, pen);
+                break;
+            case "Add":
+                DrawAdd(context, rect);
+                break;
+            case "Sound":
+                DrawSound(context, rect, pen);
+                break;
+            case "Open":
+                DrawOpen(context, rect);
                 break;
             default:
                 DrawDiamond(context, rect, pen);
@@ -309,6 +393,113 @@ public sealed class KindGlyph : Control
     private void DrawDiamond(DrawingContext context, Rect r, Pen pen)
     {
         context.DrawGeometry(Fill, pen, Polygon(P(r, 0.5, 0.06), P(r, 0.94, 0.5), P(r, 0.5, 0.94), P(r, 0.06, 0.5)));
+    }
+
+    private void DrawTrash(DrawingContext context, Rect r, Pen pen)
+    {
+        // Lid and handle.
+        context.DrawLine(pen, P(r, 0.16, 0.26), P(r, 0.84, 0.26));
+        context.DrawLine(pen, P(r, 0.4, 0.26), P(r, 0.44, 0.14));
+        context.DrawLine(pen, P(r, 0.44, 0.14), P(r, 0.56, 0.14));
+        context.DrawLine(pen, P(r, 0.56, 0.14), P(r, 0.6, 0.26));
+        // Can body as a tapered bin.
+        context.DrawGeometry(Fill, pen, Polygon(
+            P(r, 0.24, 0.3),
+            P(r, 0.76, 0.3),
+            P(r, 0.7, 0.9),
+            P(r, 0.3, 0.9)));
+        // Vertical ribs.
+        context.DrawLine(pen, P(r, 0.42, 0.38), P(r, 0.42, 0.82));
+        context.DrawLine(pen, P(r, 0.58, 0.38), P(r, 0.58, 0.82));
+    }
+
+    private void DrawPencil(DrawingContext context, Rect r, Pen pen)
+    {
+        // Diagonal pencil body from top-right to bottom-left.
+        context.DrawGeometry(Fill, pen, Polygon(
+            P(r, 0.66, 0.12),
+            P(r, 0.88, 0.34),
+            P(r, 0.34, 0.88),
+            P(r, 0.12, 0.66)));
+        // Tip.
+        context.DrawGeometry(Stroke, pen, Polygon(
+            P(r, 0.12, 0.66),
+            P(r, 0.34, 0.88),
+            P(r, 0.12, 0.88)));
+    }
+
+    private void DrawClose(DrawingContext context, Rect r, Pen pen)
+    {
+        // Line-only glyph: stroke with the Fill colour so it stays visible in both light and dark themes
+        // (the default Stroke is near-black and disappears on dark surfaces).
+        var stroke = FillPen(r);
+        context.DrawLine(stroke, P(r, 0.22, 0.22), P(r, 0.78, 0.78));
+        context.DrawLine(stroke, P(r, 0.78, 0.22), P(r, 0.22, 0.78));
+    }
+
+    private void DrawSwap(DrawingContext context, Rect r, Pen pen)
+    {
+        var stroke = FillPen(r);
+        // Top arrow pointing right.
+        context.DrawLine(stroke, P(r, 0.16, 0.34), P(r, 0.84, 0.34));
+        context.DrawLine(stroke, P(r, 0.7, 0.2), P(r, 0.84, 0.34));
+        context.DrawLine(stroke, P(r, 0.7, 0.48), P(r, 0.84, 0.34));
+        // Bottom arrow pointing left.
+        context.DrawLine(stroke, P(r, 0.84, 0.66), P(r, 0.16, 0.66));
+        context.DrawLine(stroke, P(r, 0.3, 0.52), P(r, 0.16, 0.66));
+        context.DrawLine(stroke, P(r, 0.3, 0.8), P(r, 0.16, 0.66));
+    }
+
+    private void DrawVisible(DrawingContext context, Rect r, Pen pen)
+    {
+        var stroke = FillPen(r);
+        context.DrawGeometry(null, stroke, Polygon(P(r, 0.08, 0.5), P(r, 0.28, 0.28), P(r, 0.5, 0.2), P(r, 0.72, 0.28), P(r, 0.92, 0.5), P(r, 0.72, 0.72), P(r, 0.5, 0.8), P(r, 0.28, 0.72)));
+        context.DrawEllipse(Fill, null, P(r, 0.5, 0.5), r.Width * 0.13, r.Height * 0.13);
+    }
+
+    private void DrawHidden(DrawingContext context, Rect r, Pen pen)
+    {
+        DrawVisible(context, r, pen);
+        var stroke = new Pen(Stroke, Math.Max(1.4, Math.Min(r.Width, r.Height) * 0.12), lineCap: PenLineCap.Round);
+        context.DrawLine(stroke, P(r, 0.16, 0.84), P(r, 0.84, 0.16));
+    }
+
+    private void DrawPlay(DrawingContext context, Rect r, Pen pen)
+    {
+        context.DrawGeometry(Fill, pen, Polygon(P(r, 0.28, 0.16), P(r, 0.82, 0.5), P(r, 0.28, 0.84)));
+    }
+
+    private void DrawAdd(DrawingContext context, Rect r)
+    {
+        var stroke = FillPen(r);
+        context.DrawLine(stroke, P(r, 0.5, 0.18), P(r, 0.5, 0.82));
+        context.DrawLine(stroke, P(r, 0.18, 0.5), P(r, 0.82, 0.5));
+    }
+
+    private void DrawSound(DrawingContext context, Rect r, Pen pen)
+    {
+        context.DrawGeometry(Fill, pen, Polygon(P(r, 0.12, 0.42), P(r, 0.32, 0.42), P(r, 0.56, 0.22), P(r, 0.56, 0.78), P(r, 0.32, 0.58), P(r, 0.12, 0.58)));
+        var stroke = FillPen(r);
+        context.DrawLine(stroke, P(r, 0.66, 0.34), P(r, 0.76, 0.42));
+        context.DrawLine(stroke, P(r, 0.76, 0.42), P(r, 0.76, 0.58));
+        context.DrawLine(stroke, P(r, 0.76, 0.58), P(r, 0.66, 0.66));
+        context.DrawLine(stroke, P(r, 0.82, 0.24), P(r, 0.92, 0.36));
+        context.DrawLine(stroke, P(r, 0.92, 0.36), P(r, 0.92, 0.64));
+        context.DrawLine(stroke, P(r, 0.92, 0.64), P(r, 0.82, 0.76));
+    }
+
+    private void DrawOpen(DrawingContext context, Rect r)
+    {
+        var stroke = FillPen(r);
+        context.DrawRectangle(null, stroke, R(r, 0.16, 0.3, 0.5, 0.54));
+        context.DrawLine(stroke, P(r, 0.48, 0.18), P(r, 0.84, 0.18));
+        context.DrawLine(stroke, P(r, 0.84, 0.18), P(r, 0.84, 0.54));
+        context.DrawLine(stroke, P(r, 0.84, 0.18), P(r, 0.44, 0.58));
+    }
+
+    private Pen FillPen(Rect r)
+    {
+        return new Pen(Fill, Math.Max(1.4, Math.Min(r.Width, r.Height) * 0.1), lineCap: PenLineCap.Round);
     }
 
     private static Point P(Rect r, double x, double y)

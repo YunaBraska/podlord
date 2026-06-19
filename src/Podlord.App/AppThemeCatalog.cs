@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Podlord.App;
@@ -72,12 +73,10 @@ public static class AppThemeCatalog
             ? themeEntry.Light
             : themeEntry.Dark;
         currentPalette = palette;
-        if (Application.Current is { } application)
-        {
+        MutateApplication(application =>
             application.RequestedThemeVariant = normalizedVariant == "light"
                 ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-        }
+                : ThemeVariant.Dark);
 
         var noiseAlpha = pixelEffectIntensity switch
         {
@@ -423,40 +422,69 @@ public static class AppThemeCatalog
     [ExcludeFromCodeCoverage(Justification = "Avalonia Application.Current is framework-owned; XAML compilation verifies resource keys, pure palette behavior is tested.")]
     private static void SetBrush(string key, string color)
     {
-        if (Application.Current?.Resources.TryGetResource(key, null, out var value) == true
-            && value is SolidColorBrush brush)
+        MutateApplication(application =>
         {
-            brush.Color = Color.Parse(color);
-        }
+            if (application.Resources.TryGetResource(key, null, out var value)
+                && value is SolidColorBrush brush)
+            {
+                brush.Color = Color.Parse(color);
+            }
+        });
     }
 
     [ExcludeFromCodeCoverage(Justification = "Avalonia Application.Current is framework-owned; XAML compilation verifies resource keys, pure palette behavior is tested.")]
     private static void SetGradient(string key, IReadOnlyList<string> colors)
     {
-        if (Application.Current?.Resources.TryGetResource(key, null, out var value) != true
-            || value is not LinearGradientBrush brush)
+        MutateApplication(application =>
+        {
+            if (!application.Resources.TryGetResource(key, null, out var value)
+                || value is not LinearGradientBrush brush)
+            {
+                return;
+            }
+
+            brush.GradientStops.Clear();
+            if (colors.Count == 0)
+            {
+                return;
+            }
+
+            if (colors.Count == 1)
+            {
+                brush.GradientStops.Add(new GradientStop(Color.Parse(colors[0]), 0));
+                return;
+            }
+
+            for (var index = 0; index < colors.Count; index++)
+            {
+                brush.GradientStops.Add(new GradientStop(
+                    Color.Parse(colors[index]),
+                    index / (double)(colors.Count - 1)));
+            }
+        });
+    }
+
+    private static void MutateApplication(Action<Application> mutation)
+    {
+        var application = Application.Current;
+        if (application is null)
         {
             return;
         }
 
-        brush.GradientStops.Clear();
-        if (colors.Count == 0)
+        if (Dispatcher.UIThread.CheckAccess())
         {
+            mutation(application);
             return;
         }
 
-        if (colors.Count == 1)
+        Dispatcher.UIThread.Post(() =>
         {
-            brush.GradientStops.Add(new GradientStop(Color.Parse(colors[0]), 0));
-            return;
-        }
-
-        for (var index = 0; index < colors.Count; index++)
-        {
-            brush.GradientStops.Add(new GradientStop(
-                Color.Parse(colors[index]),
-                index / (double)(colors.Count - 1)));
-        }
+            if (Application.Current is { } current)
+            {
+                mutation(current);
+            }
+        });
     }
 
     private static string WithAlpha(string color, int alpha)

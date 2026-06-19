@@ -68,9 +68,9 @@ public sealed class VisualAlgorithmTests
     public void Radar_water_interval_and_value_logic_cover_idle_active_and_negative_offsets()
     {
         Assert.Equal(TimeSpan.FromMilliseconds(3_000), RadarWaterModel.WaterIntervalFor(120, 0));
-        Assert.Equal(TimeSpan.FromMilliseconds(2_785.5), RadarWaterModel.WaterIntervalFor(0, 1));
-        Assert.Equal(TimeSpan.FromMilliseconds(850), RadarWaterModel.WaterIntervalFor(240, 100));
-        Assert.Equal(TimeSpan.FromMilliseconds(2_075), RadarWaterModel.WaterIntervalFor(-20, 50));
+        Assert.Equal(TimeSpan.FromMilliseconds(456.2), RadarWaterModel.WaterIntervalFor(0, 1));
+        Assert.Equal(TimeSpan.FromMilliseconds(60), RadarWaterModel.WaterIntervalFor(240, 100));
+        Assert.Equal(TimeSpan.FromMilliseconds(270), RadarWaterModel.WaterIntervalFor(-20, 50));
         Assert.Equal(17.5, RadarWaterModel.PositiveMod(-0.5, 18));
         Assert.Equal(0.5, RadarWaterModel.PositiveMod(18.5, 18));
 
@@ -349,6 +349,12 @@ public sealed class VisualAlgorithmTests
         Assert.True(visible.HasPlainCopy);
         Assert.False(visible.HasBase64Copy);
 
+        var rawStructuredValue = ".:53 {\r\n\terrors\n\thealth {\r\n\t\tlameduck 5s\r\n\t}\n}\u0001";
+        var structured = new ResourceValueRow("Corefile", rawStructuredValue, sensitive: false, base64Encoded: false);
+
+        Assert.Equal(".:53 {\n    errors\n    health {\n        lameduck 5s\n    }\n}\\u0001", structured.DisplayValue);
+        Assert.Equal(rawStructuredValue, structured.PreferredCopyValue);
+
         var port = new PortForwardTaskViewModel("pf", "session", "Pod", "api", "default", 8080, 18080, "native", "starting");
         changes.Clear();
         port.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
@@ -375,5 +381,64 @@ public sealed class VisualAlgorithmTests
         Assert.Contains("Suggestion: 160m request / 250m limit", suggested.MetricTooltip, StringComparison.Ordinal);
         Assert.False(plain.HasSuggestion);
         Assert.Equal("Memory: 128Mi", plain.MetricTooltip);
+    }
+
+    [Fact]
+    public void Readiness_bar_is_healthy_when_full_while_utilization_bar_is_critical_when_full()
+    {
+        // Utilization: high is bad.
+        Assert.Equal("HEALTHY", FocusMetricRow.BarStateFor(10, healthyWhenFull: false));
+        Assert.Equal("WARNING", FocusMetricRow.BarStateFor(75, healthyWhenFull: false));
+        Assert.Equal("CRITICAL", FocusMetricRow.BarStateFor(100, healthyWhenFull: false));
+
+        // Readiness/availability: full is good (regression: 1/1 ready must not be red).
+        Assert.Equal("HEALTHY", FocusMetricRow.BarStateFor(100, healthyWhenFull: true));
+        Assert.Equal("WARNING", FocusMetricRow.BarStateFor(50, healthyWhenFull: true));
+        Assert.Equal("CRITICAL", FocusMetricRow.BarStateFor(0, healthyWhenFull: true));
+
+        var ready = new FocusMetricRow("Ready", "1/1", 100, true, HealthyWhenFull: true);
+        Assert.Equal("HEALTHY", ready.BarState);
+        Assert.True(MainWindowViewModel.IsReadinessLabel("Ready"));
+        Assert.True(MainWindowViewModel.IsReadinessLabel("Available"));
+        Assert.False(MainWindowViewModel.IsReadinessLabel("CPU"));
+    }
+
+    [Fact]
+    public void Import_path_expansion_resolves_tilde_to_user_profile()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        Assert.Equal(Path.Combine(home, ".kube"), MainWindowViewModel.ExpandUserPath("~/.kube"));
+        Assert.Equal(home, MainWindowViewModel.ExpandUserPath("~"));
+        Assert.Equal("/etc/kube", MainWindowViewModel.ExpandUserPath("/etc/kube"));
+        Assert.Equal(string.Empty, MainWindowViewModel.ExpandUserPath(string.Empty));
+    }
+
+    [Fact]
+    public void Directory_scan_matches_kubeconfig_files_not_just_yaml()
+    {
+        // Regression: a ~/.kube folder full of *.kubeconfig / config files imported nothing.
+        Assert.True(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/cluster-1.kubeconfig"));
+        Assert.True(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/mgmt-osl2-0.kubeconfig"));
+        Assert.True(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/config"));
+        Assert.True(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/prod.yaml"));
+        Assert.True(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/staging.yml"));
+
+        Assert.False(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/download-safespring-kubeconfigs.sh"));
+        Assert.False(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/.hidden"));
+        Assert.False(MainWindowViewModel.LooksLikeKubeconfigFileName("/h/.kube/notes.md"));
+    }
+
+    [Fact]
+    public void Localized_chrome_keeps_diacritics_for_latin_locales()
+    {
+        Assert.Equal("Språk", PodlordLocalizer.Text("settings.language", "sv"));
+        Assert.Equal("INSTÄLLNINGAR", PodlordLocalizer.Text("settings.title", "sv"));
+        Assert.Equal("Sprache", PodlordLocalizer.Text("settings.language", "de"));
+        Assert.Equal("PARAMÈTRES", PodlordLocalizer.Text("settings.title", "fr"));
+        Assert.Equal("Configurações salvas.", PodlordLocalizer.Text("status.settingsSaved", "pt-BR"));
+
+        // Unknown keys fall back to English, never the raw key.
+        Assert.Equal("RESOURCES", PodlordLocalizer.Text("nav.resources", "en"));
     }
 }

@@ -1,0 +1,45 @@
+{
+  "$schema": "./manifest.schema.json",
+  "version": 1,
+  "description": "Maps semantic sound roles to files. Multiple files per role = shuffled. Empty array = silent.",
+  "sounds": {
+    "ui.click": ["ui/metal-click.ogg", "interface/click_001.ogg", "interface/click_003.ogg"],
+    "ui.tab_switch": ["interface/switch_001.ogg", "interface/switch_004.ogg"],
+    "ui.segment_ping": ["ui/panel-segment-load.ogg", "interface/tick_002.ogg"],
+    "ui.hover": ["interface/tick_001.ogg", "interface/tick_004.ogg"],
+    "alert.incident": ["alerts/critical-klaxon.ogg", "alerts/metal-impact.ogg"],
+    "alert.warning": ["alerts/warning-ping.ogg", "alerts/electro-warning.ogg", "alerts/bell-alert.ogg"],
+    "alert.recovery": ["interface/confirmation_001.ogg", "interface/confirmation_004.ogg"],
+    "alert.under_attack": ["interface/error_006.ogg", "interface/error_008.ogg"],
+    "event.startup": ["interface/open_001.ogg", "interface/bong_001.ogg"],
+    "event.load_complete": ["events/power-up.ogg", "interface/confirmation_002.ogg"],
+    "event.radar_activated": ["events/radar-activated.ogg"],
+    "event.session_switch": ["events/three-tone.ogg", "interface/switch_002.ogg"],
+    "event.activity_tick": ["events/activity-tick.ogg"],
+    "event.power_down": ["events/power-down.ogg"],
+    "voice.radar_activated": [],
+    "voice.under_attack": [],
+    "voice.load_complete": []
+  },
+  "music": {
+    "calm": {
+      "shuffle": true,
+      "loop": true,
+      "tracks": []
+    },
+    "energetic": {
+      "shuffle": true,
+      "loop": true,
+      "tracks": ["music/energetic/command-jingle.ogg", "music/energetic/steel-command.ogg", "music/energetic/bit-command.ogg"]
+    }
+  },
+  "defaults": {
+    "master_volume": 0.6,
+    "ui_volume": 0.5,
+    "alert_volume": 0.8,
+    "voice_volume": 0.7,
+    "music_volume": 0.35,
+    "muted_categories": [],
+    "switch_music_on_incident": true
+  }
+}

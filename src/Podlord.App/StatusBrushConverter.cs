@@ -60,6 +60,80 @@ public sealed class ProblemBrushConverter : IValueConverter
     }
 }
 
+public sealed class AlertResourceBrushConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not FlatResourceRow row)
+        {
+            return Brushes.Transparent;
+        }
+
+        var alertColor = row.AlertColor;
+        if (string.IsNullOrWhiteSpace(alertColor) || alertColor.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return new StatusBrushConverter().Convert(row.Status, targetType, parameter, culture);
+        }
+
+        if (TryParseBrush(alertColor, out var brush))
+        {
+            return brush;
+        }
+
+        return alertColor.ToLowerInvariant() switch
+        {
+            "status" => ProblemAwareStatusBrush(row),
+            "fresh" or "cyan" or "green" => AppThemeCatalog.StatusBrush("HEALTHY"),
+            "amber" or "yellow" => AppThemeCatalog.StatusBrush("WARNING"),
+            "red" => AppThemeCatalog.StatusBrush("CRITICAL"),
+            "blue" => SolidColorBrush.Parse("#58A6FF"),
+            "violet" => SolidColorBrush.Parse("#B58CFF"),
+            _ => new StatusBrushConverter().Convert(row.Status, targetType, parameter, culture)
+        };
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException("Alert resource brush conversion is one-way.");
+    }
+
+    private static bool TryParseBrush(string value, out IBrush brush)
+    {
+        brush = Brushes.Transparent;
+        if (!value.StartsWith('#') || value.Length is not (7 or 9))
+        {
+            return false;
+        }
+
+        try
+        {
+            brush = SolidColorBrush.Parse(value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static IBrush ProblemAwareStatusBrush(FlatResourceRow row)
+    {
+        var problem = ResourceFilterMatcher.ProblemReason(row);
+        if (problem.Length == 0)
+        {
+            return AppThemeCatalog.StatusBrush(row.Status);
+        }
+
+        return row.Status is "CrashLoopBackOff" or "CreateContainerConfigError" or "CreateContainerError" or "ErrImagePull" or "Error" or "Failed" or "ImagePullBackOff" or "NotReady" or "OOMKilled" or "Unavailable"
+               || problem.Contains("Crash", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Error", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Failed", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Unavailable", StringComparison.OrdinalIgnoreCase)
+            ? AppThemeCatalog.StatusBrush("CRITICAL")
+            : AppThemeCatalog.StatusBrush("WARNING");
+    }
+}
+
 public sealed class RestartBrushConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -156,6 +230,23 @@ public sealed class HasValueConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         throw new NotSupportedException("HasValueConverter is one-way.");
+    }
+}
+
+public sealed class NodeReferenceConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is string text && !string.IsNullOrWhiteSpace(text) && text != "-")
+        {
+            return $"Node/{text}";
+        }
+        return string.Empty;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException("NodeReferenceConverter is one-way.");
     }
 }
 

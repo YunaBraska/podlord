@@ -50,9 +50,21 @@ public sealed class KubeconfigImporter
         {
             document = deserializer.Deserialize<KubeconfigDocument>(raw) ?? new KubeconfigDocument();
         }
-        catch (Exception ex) when (ex is YamlDotNet.Core.YamlException or InvalidOperationException)
+        catch (YamlDotNet.Core.YamlException ex)
         {
-            throw PodlordException.KubeconfigParse(sourcePath, ex.Message, ex);
+            if (ex.InnerException is InvalidCastException or InvalidOperationException
+                || ex.Message.Contains("Expected", StringComparison.Ordinal))
+            {
+                document = new KubeconfigDocument();
+            }
+            else
+            {
+                throw PodlordException.KubeconfigParse(sourcePath, ex.Message, ex);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            document = new KubeconfigDocument();
         }
 
         if (document.Contexts.Count == 0)

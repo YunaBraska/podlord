@@ -41,6 +41,60 @@ public static class PodlordText
         return Convert.ToHexString(bytes).ToLowerInvariant()[..16];
     }
 
+    public static string HumanTimestamp(DateTimeOffset? timestamp)
+    {
+        return HumanTimestamp(timestamp, TimeZoneInfo.Local);
+    }
+
+    public static string HumanTimestamp(DateTimeOffset? timestamp, TimeZoneInfo zone)
+    {
+        if (timestamp is null)
+        {
+            return "-";
+        }
+
+        var moment = TimeZoneInfo.ConvertTime(timestamp.Value, zone);
+        var abbreviation = ZoneAbbreviation(zone, timestamp.Value);
+        return $"{moment:yyyy-MM-dd HH:mm} {abbreviation}";
+    }
+
+    public static string ZoneAbbreviation(TimeZoneInfo zone, DateTimeOffset moment)
+    {
+        if (zone.Id is "UTC" or "Etc/UTC" or "Etc/GMT")
+        {
+            return "UTC";
+        }
+
+        var dst = zone.IsDaylightSavingTime(moment);
+        var name = dst ? zone.DaylightName : zone.StandardName;
+        var abbreviation = BuildZoneAbbreviation(name);
+        if (abbreviation.Length is >= 2 and <= 5)
+        {
+            return abbreviation;
+        }
+
+        var offset = TimeZoneInfo.ConvertTime(moment, zone).Offset;
+        return offset == TimeSpan.Zero ? "UTC" : $"UTC{offset.Hours:+00;-00}:{Math.Abs(offset.Minutes):00}";
+    }
+
+    public static string BuildZoneAbbreviation(string zoneName)
+    {
+        if (string.IsNullOrWhiteSpace(zoneName))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(6);
+        foreach (var word in zoneName.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (char.IsLetter(word[0]))
+            {
+                builder.Append(char.ToUpperInvariant(word[0]));
+            }
+        }
+        return builder.ToString();
+    }
+
     public static string HumanAge(DateTimeOffset? timestamp, IPodlordClock clock)
     {
         if (timestamp is null)

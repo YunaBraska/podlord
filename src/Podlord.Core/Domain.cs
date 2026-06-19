@@ -125,7 +125,9 @@ public sealed record TableColumnLayout(
     string TableId,
     string ColumnId,
     int DisplayIndex,
-    bool IsVisible);
+    bool IsVisible,
+    double Width = 0d,
+    bool Pinned = false);
 
 public sealed record ImportedContext(
     string ContextId,
@@ -225,9 +227,19 @@ public sealed record FlatResourceRow(
     string EventReason = "",
     string EventMessage = "",
     string EventObject = "",
-    bool IsAnnouncing = false)
+    bool IsAnnouncing = false,
+    string AlertAnimation = "",
+    string AlertColor = "")
 {
     public ResourcePulse Pulse { get; init; } = ResourcePulse.Empty;
+
+    public bool IsBlinkAnimation => IsAnnouncing && AlertAnimation.Equals("blink", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPulseAnimation => IsAnnouncing && (AlertAnimation.Length == 0 || AlertAnimation.Equals("pulse", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsSweepAnimation => IsAnnouncing && AlertAnimation.Equals("sweep", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsOutlineAnimation => IsAnnouncing && AlertAnimation.Equals("outline", StringComparison.OrdinalIgnoreCase);
 
     public string CpuDisplay => Pulse.CpuDisplay;
 
@@ -243,7 +255,7 @@ public sealed record FlatResourceRow(
 
     public string CpuMetricDetail => Pulse.CpuMetricDetail;
 
-    public bool HasCpuMetricBar => Pulse.CpuLimitMillicores is > 0;
+    public bool HasCpuMetricBar => Pulse.CpuLimitMillicores is > 0 && Pulse.CpuMillicores is > 0;
 
     public bool HasCpuMetricInfo => Pulse.CpuMillicores is not null || Pulse.CpuLimitMillicores is > 0;
 
@@ -255,9 +267,9 @@ public sealed record FlatResourceRow(
 
     public string MemoryMetricDetail => Pulse.MemoryMetricDetail;
 
-    public bool HasMemoryMetricBar => Pulse.MemoryLimitBytes is > 0;
+    public bool HasMemoryMetricBar => Pulse.MemoryLimitBytes is > 0 && Pulse.MemoryBytes is > 0;
 
-    public bool HasStorageMetricBar => Pulse.StorageLimitBytes is > 0;
+    public bool HasStorageMetricBar => Pulse.StorageLimitBytes is > 0 && Pulse.StorageUsedBytes is > 0;
 
     public string StoragePercentDisplay => Pulse.StoragePercentDisplay;
 
@@ -292,6 +304,27 @@ public sealed record FlatResourceRow(
     public string MetricSourceBadge => Pulse.SourceBadge;
 
     public string MetricTooltip => Pulse.Tooltip;
+
+    public string AgeDisplay => FormatAgeWithSpaces(Age);
+
+    public static string FormatAgeWithSpaces(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return raw;
+        }
+
+        var sb = new System.Text.StringBuilder(raw.Length + 4);
+        for (var i = 0; i < raw.Length; i++)
+        {
+            sb.Append(raw[i]);
+            if (i + 1 < raw.Length && char.IsLetter(raw[i]) && char.IsDigit(raw[i + 1]))
+            {
+                sb.Append(' ');
+            }
+        }
+        return sb.ToString();
+    }
 }
 
 public sealed record ResourcePulse(
@@ -381,6 +414,22 @@ public sealed record ResourcePulse(
     public string MemoryLimitSuggestion => MemoryBytes is null
         ? "-"
         : $"{FormatBytes(RoundBytes(MemoryBytes.Value * 1.25, 16, 32))} request / {FormatBytes(RoundBytes(MemoryBytes.Value * 1.8, 32, 64))} limit";
+
+    public double CpuSuggestionPercent => CpuMillicores is null || CpuLimitMillicores is null or <= 0
+        ? 0
+        : Math.Clamp(RoundCpu(CpuMillicores.Value * 2.0, 50, 50) / CpuLimitMillicores.Value * 100d, 0, 100);
+
+    public double MemorySuggestionPercent => MemoryBytes is null || MemoryLimitBytes is null or <= 0
+        ? 0
+        : Math.Clamp((double)RoundBytes(MemoryBytes.Value * 1.8, 32, 64) / MemoryLimitBytes.Value * 100d, 0, 100);
+
+    public bool HasCpuSuggestion => CpuSuggestionPercent > 0;
+
+    public bool HasMemorySuggestion => MemorySuggestionPercent > 0;
+
+    public double CpuSuggestionLeft => CpuSuggestionPercent * 1.54d;
+
+    public double MemorySuggestionLeft => MemorySuggestionPercent * 1.54d;
 
     public ResourcePulse WithLiveUsage(double? cpuMillicores, long? memoryBytes, string sourceBadge, string tooltip)
     {

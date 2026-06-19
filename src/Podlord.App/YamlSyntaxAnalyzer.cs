@@ -43,19 +43,31 @@ internal static class YamlSyntaxAnalyzer
         if (colon > first)
         {
             tokens.Add(new YamlToken(first, colon, YamlTokenKind.Key));
+            var keyName = text[first..colon].Trim();
             var valueStart = FirstNonWhiteSpace(text, contentEnd, colon + 1);
             if (valueStart >= 0)
             {
-                AddScalar(tokens, text, valueStart, contentEnd);
+                AddScalar(tokens, text, valueStart, contentEnd, keyName);
             }
 
             AddCommentToken(tokens, comment);
             return tokens;
         }
 
-        AddScalar(tokens, text, first, contentEnd);
+        AddScalar(tokens, text, first, contentEnd, null);
         AddCommentToken(tokens, comment);
         return tokens;
+    }
+
+    public static bool IsResourceRefKey(string? keyName)
+    {
+        if (string.IsNullOrEmpty(keyName))
+        {
+            return false;
+        }
+        return keyName.Equals("name", StringComparison.OrdinalIgnoreCase)
+               || keyName.Equals("namespace", StringComparison.OrdinalIgnoreCase)
+               || keyName.Equals("kind", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void AddCommentToken(ICollection<YamlToken> tokens, YamlToken? comment)
@@ -66,7 +78,7 @@ internal static class YamlSyntaxAnalyzer
         }
     }
 
-    private static void AddScalar(ICollection<YamlToken> tokens, string text, int start, int end)
+    private static void AddScalar(ICollection<YamlToken> tokens, string text, int start, int end, string? keyName)
     {
         var value = text[start..end].Trim();
         if (value.Length == 0)
@@ -74,11 +86,23 @@ internal static class YamlSyntaxAnalyzer
             return;
         }
 
-        var kind = IsYamlKeyword(value)
-            ? YamlTokenKind.Keyword
-            : IsNumber(value)
-                ? YamlTokenKind.Number
-                : YamlTokenKind.Scalar;
+        YamlTokenKind kind;
+        if (IsYamlKeyword(value))
+        {
+            kind = YamlTokenKind.Keyword;
+        }
+        else if (IsNumber(value))
+        {
+            kind = YamlTokenKind.Number;
+        }
+        else if (IsResourceRefKey(keyName))
+        {
+            kind = YamlTokenKind.ResourceRef;
+        }
+        else
+        {
+            kind = YamlTokenKind.Scalar;
+        }
         tokens.Add(new YamlToken(start, end, kind));
     }
 
@@ -155,7 +179,8 @@ internal enum YamlTokenKind
     Number,
     Keyword,
     Comment,
-    Marker
+    Marker,
+    ResourceRef
 }
 
 internal readonly record struct YamlToken(int Start, int End, YamlTokenKind Kind);
