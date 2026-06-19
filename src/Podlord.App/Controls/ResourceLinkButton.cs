@@ -38,8 +38,8 @@ public sealed class ResourceLinkButton : Button
         PointerEntered += window.ResourceLinkPointerEntered;
 
         var menu = new ContextMenu();
-        var open = new MenuItem { Header = "Open in inspector" };
-        var copy = new MenuItem { Header = "Copy reference" };
+        var open = new MenuItem { Header = window.ViewModel.T("ref.menuOpen") };
+        var copy = new MenuItem { Header = window.ViewModel.T("ref.menuCopy") };
         menu.Items.Add(open);
         menu.Items.Add(copy);
         open.Click += window.ResourceLinkContextOpenClicked;

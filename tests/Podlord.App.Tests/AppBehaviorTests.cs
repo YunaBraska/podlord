@@ -234,6 +234,43 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Resource_sort_cycles_descending_ascending_none_and_glyph_clears_when_switching_column()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal("▼", viewModel.ResourceSortGlyphFor("CPU"));
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal("▲", viewModel.ResourceSortGlyphFor("CPU"));
+        viewModel.SortResourcesBy("CPU");
+        Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+
+        viewModel.SortResourcesBy("Memory");
+        Assert.Equal("▼", viewModel.ResourceSortGlyphFor("Memory"));
+        Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+    }
+
+    [Fact]
+    public void About_block_never_repeats_the_same_entry_in_consecutive_picks()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        var last = viewModel.AboutBlockText;
+        for (var iteration = 0; iteration < 25; iteration++)
+        {
+            viewModel.PickAboutBlock();
+            var current = viewModel.AboutBlockText;
+            Assert.NotEqual(last, current);
+            last = current;
+        }
+    }
+
+    [Fact]
     public void Graphics_settings_update_effects_and_radar_options()
     {
         var directory = TempDirectory();

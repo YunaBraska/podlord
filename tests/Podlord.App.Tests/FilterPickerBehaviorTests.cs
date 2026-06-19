@@ -322,8 +322,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("RadarSourceLabel", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"radarSourceButton\"", window, StringComparison.Ordinal);
         Assert.Contains("SourcesTitleText", window, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"Rename source\"", window, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"Delete source\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding RenameSourceTooltipText}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding DeleteSourceTooltipText}\"", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"SourcesWorkspaceClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("Header=\"{Binding SettingsSourcesText}\"", window, StringComparison.Ordinal);
         Assert.Contains("SelectedIndex=\"{Binding SelectedSettingsTabIndex}\"", window, StringComparison.Ordinal);
@@ -594,9 +594,9 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("MaxLines=\"8\"", window, StringComparison.Ordinal);
         Assert.Contains("CopyActionsForCell", codeBehind, StringComparison.Ordinal);
         Assert.Contains("DataGridCellPointerPressedEventArgs", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("Open in inspector", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("Copy decoded secret value", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("Copy raw base64 secret value", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ref.menuOpen", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("copy.decodedSecret", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("copy.rawBase64Secret", codeBehind, StringComparison.Ordinal);
         Assert.Contains("CopyResourceValueRawClicked", codeBehind, StringComparison.Ordinal);
         Assert.Contains("CopyResourceValueDecodedClicked", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Content=\"RAW\"", window, StringComparison.Ordinal);

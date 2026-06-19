@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private sealed record CopyMenuAction(string Header, string Value);
 
     private readonly MainWindowViewModel viewModel;
+
+    internal MainWindowViewModel ViewModel => viewModel;
     private CancellationTokenSource? contextMenuHold;
     private ContextMenu? activeContextMenu;
     private Control? activeContextMenuOwner;
@@ -85,17 +87,59 @@ public partial class MainWindow : Window
             InitializeTableLayouts();
             UpdateSortHeaderIndicators();
         });
-        Activated += (_, _) => viewModel.SetAppFocus(true);
-        Deactivated += (_, _) => viewModel.SetAppFocus(false);
-        SizeChanged += (_, _) => UpdateYamlEditorHeight();
-        Closed += (_, _) => viewModel.Dispose();
-        PropertyChanged += (_, e) =>
+        EventHandler activated = (_, _) => viewModel.SetAppFocus(true);
+        EventHandler deactivated = (_, _) => viewModel.SetAppFocus(false);
+        EventHandler<SizeChangedEventArgs> sizeChanged = (_, _) => UpdateYamlEditorHeight();
+        EventHandler<AvaloniaPropertyChangedEventArgs> windowStateChanged = (_, e) =>
         {
             if (e.Property == WindowStateProperty)
             {
                 viewModel.SetWindowVisible(WindowState != WindowState.Minimized);
             }
         };
+        Activated += activated;
+        Deactivated += deactivated;
+        SizeChanged += sizeChanged;
+        PropertyChanged += windowStateChanged;
+        Closed += (_, _) =>
+        {
+            viewModel.PropertyChanged -= ViewModelPropertyChanged;
+            RemoveHandler(PointerPressedEvent, GlobalPointerPressedDismissMenus);
+            RemoveHandler(DataGridColumnHeader.PointerPressedEvent, ColumnHeaderPointerPressed);
+            RemoveHandler(DataGridColumnHeader.PointerMovedEvent, ColumnHeaderPointerMoved);
+            RemoveHandler(DataGridColumnHeader.PointerReleasedEvent, ColumnHeaderPointerReleased);
+            RemoveHandler(DataGridColumnHeader.PointerCaptureLostEvent, ColumnHeaderPointerCaptureLost);
+            RemoveHandler(DataGridCell.PointerEnteredEvent, DataGridCellPointerEntered);
+            PulseStripScroller.RemoveHandler(PointerPressedEvent, PulseStripPointerPressed);
+            PulseStripScroller.RemoveHandler(PointerMovedEvent, PulseStripPointerMoved);
+            PulseStripScroller.RemoveHandler(PointerReleasedEvent, PulseStripPointerReleased);
+            PulseStripScroller.RemoveHandler(PointerCaptureLostEvent, PulseStripPointerCaptureLost);
+            PulseStripScroller.RemoveHandler(PointerWheelChangedEvent, PulseStripPointerWheelChanged);
+            Activated -= activated;
+            Deactivated -= deactivated;
+            SizeChanged -= sizeChanged;
+            PropertyChanged -= windowStateChanged;
+            DetachEditorHandlers();
+            viewModel.Dispose();
+        };
+    }
+
+    private void DetachEditorHandlers()
+    {
+        if (YamlEditor is { TextArea: { TextView: { } yamlTextView } })
+        {
+            yamlTextView.PointerPressed -= YamlEditorTextViewPointerPressed;
+            yamlTextView.PointerReleased -= EditorRefPointerReleased;
+            yamlTextView.PointerCaptureLost -= EditorRefPointerCaptureLost;
+            yamlTextView.PointerMoved -= YamlEditorRefPointerMoved;
+        }
+        if (LogEditor is { TextArea: { TextView: { } logTextView } })
+        {
+            logTextView.PointerPressed -= LogEditorTextViewPointerPressed;
+            logTextView.PointerReleased -= EditorRefPointerReleased;
+            logTextView.PointerCaptureLost -= EditorRefPointerCaptureLost;
+            logTextView.PointerMoved -= LogEditorRefPointerMoved;
+        }
     }
 
     private void ViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -140,11 +184,11 @@ public partial class MainWindow : Window
 
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Import kubeconfig file(s)",
+            Title = viewModel.T("import.dialogTitle"),
             AllowMultiple = true,
             FileTypeFilter =
             [
-                new FilePickerFileType("Kubeconfig")
+                new FilePickerFileType(viewModel.T("import.kubeconfigFilter"))
                 {
                     Patterns = ["*.yaml", "*.yml", "*.kubeconfig", "*.conf", "config", "kubeconfig*"]
                 },
@@ -300,10 +344,10 @@ public partial class MainWindow : Window
     {
         CloseActiveContextMenu(cancelPendingHold: true);
         var menu = new ContextMenu();
-        var open = new MenuItem { Header = "Open in inspector", Tag = reference };
+        var open = new MenuItem { Header = viewModel.T("ref.menuOpen"), Tag = reference };
         open.Click += ResourceLinkContextOpenClicked;
         menu.Items.Add(open);
-        var copy = new MenuItem { Header = "Copy reference", Tag = reference };
+        var copy = new MenuItem { Header = viewModel.T("ref.menuCopy"), Tag = reference };
         copy.Click += ResourceLinkContextCopyClicked;
         menu.Items.Add(copy);
         menu.Closed += (_, _) => ClearActiveContextMenu(menu, owner);
@@ -1942,7 +1986,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
 
     private Control BuildResourceReferenceTooltip(string reference)
     {
-        const string hint = "Long-press · ⌘/Ctrl+Click · Right-click → Open";
+        var hint = viewModel.T("ref.triggerHint");
         var row = viewModel.ResolveResourceReferenceForPreview(reference);
         var goldBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlGoldBrightBrush")!;
         var mutedBrush = (Avalonia.Media.IBrush)Application.Current!.FindResource("PlTextMutedBrush")!;
@@ -1962,7 +2006,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             });
             stack.Children.Add(new Avalonia.Controls.TextBlock
             {
-                Text = "(not in cache)",
+                Text = viewModel.T("ref.notInCache"),
                 Foreground = mutedBrush
             });
         }
@@ -2300,7 +2344,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         var referenceValue = actions[0].Value;
         if (viewModel.HasKnownResourceReference(referenceValue))
         {
-            var openItem = new MenuItem { Header = "Open in inspector" };
+            var openItem = new MenuItem { Header = viewModel.T("ref.menuOpen") };
             openItem.Click += (_, _) =>
             {
                 try
@@ -2378,7 +2422,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         var value = CopyValueForCell(cell, column);
         return string.IsNullOrWhiteSpace(value)
             ? Array.Empty<CopyMenuAction>()
-            : [new CopyMenuAction("Copy value", value)];
+            : [new CopyMenuAction(viewModel.T("copy.value"), value)];
     }
 
     private string CopyValueForCell(DataGridCell cell, DataGridColumn column)
@@ -2397,22 +2441,22 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         };
     }
 
-    private static IReadOnlyList<CopyMenuAction> CopyResourceValueActions(ResourceValueRow row, string header)
+    private IReadOnlyList<CopyMenuAction> CopyResourceValueActions(ResourceValueRow row, string header)
     {
         return header switch
         {
-            "Key" => [new CopyMenuAction("Copy key", row.Key)],
-            "Encoding" => [new CopyMenuAction("Copy encoding", row.Encoding)],
+            "Key" => [new CopyMenuAction(viewModel.T("copy.key"), row.Key)],
+            "Encoding" => [new CopyMenuAction(viewModel.T("copy.encoding"), row.Encoding)],
             "Value" when row.IsBase64Encoded && row.IsSensitive => [
-                new CopyMenuAction("Copy raw base64 secret value", row.RawValue),
-                new CopyMenuAction("Copy decoded secret value", row.DecodedValue)
+                new CopyMenuAction(viewModel.T("copy.rawBase64Secret"), row.RawValue),
+                new CopyMenuAction(viewModel.T("copy.decodedSecret"), row.DecodedValue)
             ],
             "Value" when row.IsBase64Encoded => [
-                new CopyMenuAction("Copy decoded value", row.DecodedValue),
-                new CopyMenuAction("Copy raw base64 value", row.RawValue)
+                new CopyMenuAction(viewModel.T("copy.decodedValue"), row.DecodedValue),
+                new CopyMenuAction(viewModel.T("copy.rawBase64"), row.RawValue)
             ],
-            "Value" => [new CopyMenuAction(row.IsSensitive ? "Copy secret value" : "Copy value", row.RawValue)],
-            _ => [new CopyMenuAction("Copy value", row.PreferredCopyValue)]
+            "Value" => [new CopyMenuAction(viewModel.T(row.IsSensitive ? "copy.secretValue" : "copy.value"), row.RawValue)],
+            _ => [new CopyMenuAction(viewModel.T("copy.value"), row.PreferredCopyValue)]
         };
     }
 
@@ -2856,35 +2900,19 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         viewModel.TogglePortSearch();
     }
 
-    private void FocusPortSearch()
-    {
-        if (viewModel.IsPortSearchOpen)
-        {
-            PortSearchBox.Focus();
-        }
-    }
+    private void FocusPortSearch() => FocusSearchBox(viewModel.IsPortSearchOpen, PortSearchBox);
 
-    private void FocusResourceSearch()
-    {
-        if (viewModel.IsResourceSearchOpen)
-        {
-            ResourceSearchBox.Focus();
-        }
-    }
+    private void FocusResourceSearch() => FocusSearchBox(viewModel.IsResourceSearchOpen, ResourceSearchBox);
 
-    private void FocusGraphSearch()
-    {
-        if (viewModel.IsGraphSearchOpen)
-        {
-            GraphSearchBox.Focus();
-        }
-    }
+    private void FocusGraphSearch() => FocusSearchBox(viewModel.IsGraphSearchOpen, GraphSearchBox);
 
-    private void FocusEventSearch()
+    private void FocusEventSearch() => FocusSearchBox(viewModel.IsEventSearchOpen, EventSearchBox);
+
+    private static void FocusSearchBox(bool isOpen, Control box)
     {
-        if (viewModel.IsEventSearchOpen)
+        if (isOpen)
         {
-            EventSearchBox.Focus();
+            box.Focus();
         }
     }
 }

@@ -338,10 +338,10 @@
                                                                     <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="4" Margin="0,0,0,5">
                                                                         <TextBox Text="{Binding DisplayName, UpdateSourceTrigger=LostFocus}" />
                                                                         <Button Grid.Column="1" Content="{Binding ActiveMark}" Command="{Binding ActivateCommand}" Padding="6,2" />
-                                                                        <Button Grid.Column="2" Command="{Binding RenameCommand}" ToolTip.Tip="Rename source" Padding="6,2">
+                                                                        <Button Grid.Column="2" Command="{Binding RenameCommand}" ToolTip.Tip="{Binding RenameSourceTooltipText}" Padding="6,2">
                                                                             <local:KindGlyph Kind="Pencil" Fill="{StaticResource PlTextBrush}" Width="14" Height="14" />
                                                                         </Button>
-                                                                        <Button Grid.Column="3" Command="{Binding RemoveCommand}" ToolTip.Tip="Delete source" Padding="6,2">
+                                                                        <Button Grid.Column="3" Command="{Binding RemoveCommand}" ToolTip.Tip="{Binding DeleteSourceTooltipText}" Padding="6,2">
                                                                             <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
                                                                         </Button>
                                                                         <TextBlock Grid.Row="1"
@@ -532,7 +532,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsResourceSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleResourceSearchClicked" ToolTip.Tip="Close search" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="ToggleResourceSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -541,8 +541,8 @@
                                  PlaceholderText="quick resource search: name kind namespace /regex/ &quot;exact&quot;"
                                  TextChanged="ResourceSearchTextChanged"
                                  KeyDown="ResourceSearchKeyDown" />
-                        <Button Grid.Column="2" Content="◀" Click="ResourcePreviousClicked" ToolTip.Tip="Previous match" />
-                        <Button Grid.Column="3" Content="▶" Click="ResourceNextClicked" ToolTip.Tip="Next match" />
+                        <Button Grid.Column="2" Content="◀" Click="ResourcePreviousClicked" ToolTip.Tip="{Binding PreviousMatchTooltipText}" />
+                        <Button Grid.Column="3" Content="▶" Click="ResourceNextClicked" ToolTip.Tip="{Binding NextMatchTooltipText}" />
                         <TextBlock Grid.Column="4" Text="{Binding ResourceMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="5" Text="{Binding ResourceSortLabel}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                     </Grid>
@@ -893,7 +893,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsGraphSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleGraphSearchClicked" ToolTip.Tip="Close search" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="ToggleGraphSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -901,8 +901,8 @@
                                  Text="{Binding GraphSearch, UpdateSourceTrigger=PropertyChanged}"
                                  PlaceholderText="fast graph search: name kind namespace /regex/ &quot;exact&quot;"
                                  KeyDown="GraphSearchKeyDown" />
-                        <Button Grid.Column="2" Content="◀" Click="GraphPreviousClicked" ToolTip.Tip="Previous match" />
-                        <Button Grid.Column="3" Content="▶" Click="GraphNextClicked" ToolTip.Tip="Next match" />
+                        <Button Grid.Column="2" Content="◀" Click="GraphPreviousClicked" ToolTip.Tip="{Binding PreviousMatchTooltipText}" />
+                        <Button Grid.Column="3" Content="▶" Click="GraphNextClicked" ToolTip.Tip="{Binding NextMatchTooltipText}" />
                         <TextBlock Grid.Column="4" Text="{Binding GraphMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
@@ -1020,7 +1020,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsEventSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleEventSearchClicked" ToolTip.Tip="Close search" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="ToggleEventSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1029,8 +1029,8 @@
                                  PlaceholderText="quick event search: reason object namespace /regex/ &quot;exact&quot;"
                                  TextChanged="EventSearchTextChanged"
                                  KeyDown="EventSearchKeyDown" />
-                        <Button Grid.Column="2" Content="◀" Click="EventPreviousClicked" ToolTip.Tip="Previous match" />
-                        <Button Grid.Column="3" Content="▶" Click="EventNextClicked" ToolTip.Tip="Next match" />
+                        <Button Grid.Column="2" Content="◀" Click="EventPreviousClicked" ToolTip.Tip="{Binding PreviousMatchTooltipText}" />
+                        <Button Grid.Column="3" Content="▶" Click="EventNextClicked" ToolTip.Tip="{Binding NextMatchTooltipText}" />
                         <TextBlock Grid.Column="4" Text="{Binding EventMatchLabel}" Foreground="{StaticResource PlGoldBrightBrush}" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="5" Text="{Binding EventSortLabel}" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
                     </Grid>
@@ -1041,7 +1041,7 @@
                           SelectedItem="{Binding SelectedEvent}"
                           AutoGenerateColumns="False"
 	                          IsReadOnly="True"
-	                          CanUserSortColumns="True"
+	                          CanUserSortColumns="False"
 	                          CanUserResizeColumns="True"
 	                              CellPointerPressed="CopyableTableCellPointerPressed"
                               PointerReleased="CopyableTablePointerReleased"
@@ -1049,7 +1049,7 @@
 	                          VerticalScrollBarVisibility="Visible"
 	                          HorizontalScrollBarVisibility="Visible">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Binding="{Binding Status}" Width="120">
+                        <DataGridTextColumn Binding="{Binding Status}" Width="120" SortMemberPath="Status">
                             <DataGridTextColumn.Header>
                                 <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortEventsClicked" />
                             </DataGridTextColumn.Header>
@@ -1098,7 +1098,7 @@
             <Grid Grid.Row="0" IsVisible="{Binding IsPortsWorkspace}" RowDefinitions="Auto,*" Margin="10" RowSpacing="8">
                 <Border Grid.Row="0" IsVisible="{Binding IsPortSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                        <Button Click="TogglePortSearchClicked" ToolTip.Tip="Close search" Padding="8,4" HorizontalContentAlignment="Center">
+                        <Button Click="TogglePortSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="8,4" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1108,6 +1108,7 @@
                     </Grid>
                 </Border>
                 <DataGrid Grid.Row="1"
+                          x:Name="PortForwardGrid"
                           ItemsSource="{Binding VisiblePortForwards}"
                           SelectedItem="{Binding SelectedPortForward}"
 	                          AutoGenerateColumns="False"
@@ -1181,6 +1182,7 @@
                         <TabItem Header="{Binding SettingsAlertsText}">
                             <Grid Margin="10" RowDefinitions="220,Auto,*" RowSpacing="8" MinHeight="0">
                                 <DataGrid Grid.Row="0"
+                                          x:Name="AlertRulesGrid"
                                           ItemsSource="{Binding AlertRules}"
                                           SelectedItem="{Binding SelectedAlertRule}"
                                           AutoGenerateColumns="False"
@@ -1431,6 +1433,7 @@
                             <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="10">
                                 <TextBlock Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                 <DataGrid Grid.Row="1"
+                                          x:Name="RequestAuditGrid"
                                           ItemsSource="{Binding RequestAuditRows}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
@@ -1568,6 +1571,7 @@
                                     </Grid>
                                 </Border>
                                 <DataGrid Grid.Row="1"
+                                          x:Name="SourcesGrid"
                                           ItemsSource="{Binding Sources}"
                                           SelectedItem="{Binding SelectedSource}"
                                           AutoGenerateColumns="False"
@@ -1687,10 +1691,10 @@
                                             <TextBlock Text="PODLORD"
                                                        FontSize="24"
                                                        FontWeight="Bold"
-                                                       Foreground="{StaticResource PlGoldBrush}" />
-                                            <TextBlock Text="A desktop console for the kubernetes aware human."
+                                                       Foreground="{StaticResource PlGoldBrightBrush}" />
+                                            <TextBlock Text="{Binding AboutTaglineText}"
                                                        FontStyle="Italic"
-                                                       Foreground="{StaticResource PlSecondaryTextBrush}" />
+                                                       Foreground="{StaticResource PlTextMutedBrush}" />
                                         </StackPanel>
                                     </StackPanel>
                                     <Border Background="{StaticResource PlPlaqueBrush}"
@@ -1704,43 +1708,43 @@
                                                    LineHeight="22"
                                                    FontStyle="Italic" />
                                     </Border>
-                                    <TextBlock Text="Support &amp; love"
+                                    <TextBlock Text="{Binding AboutSupportHeadingText}"
                                                FontWeight="Bold"
-                                               Foreground="{StaticResource PlGoldBrush}" />
+                                               Foreground="{StaticResource PlGoldBrightBrush}" />
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutSponsorsUrl}"
                                                 Padding="10,6"
-                                                Content="GitHub Sponsors" />
+                                                Content="{Binding AboutSponsorsButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutBuyMeACoffeeUrl}"
                                                 Padding="10,6"
-                                                Content="Buy Me a Coffee" />
+                                                Content="{Binding AboutBuyMeACoffeeButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutKoFiUrl}"
                                                 Padding="10,6"
-                                                Content="Ko-fi" />
+                                                Content="{Binding AboutKoFiButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutLiberapayUrl}"
                                                 Padding="10,6"
-                                                Content="Liberapay" />
+                                                Content="{Binding AboutLiberapayButtonText}" />
                                     </WrapPanel>
-                                    <TextBlock Text="Project"
+                                    <TextBlock Text="{Binding AboutProjectHeadingText}"
                                                FontWeight="Bold"
-                                               Foreground="{StaticResource PlGoldBrush}" />
+                                               Foreground="{StaticResource PlGoldBrightBrush}" />
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutStarUrl}"
                                                 Padding="10,6"
-                                                Content="★ Star the repo" />
+                                                Content="{Binding AboutStarRepoButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutRepoUrl}"
                                                 Padding="10,6"
-                                                Content="GitHub repository" />
+                                                Content="{Binding AboutGithubRepoButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutIssueUrl}"
                                                 Padding="10,6"
-                                                Content="Create issue" />
+                                                Content="{Binding AboutCreateIssueButtonText}" />
                                     </WrapPanel>
                                 </StackPanel>
                             </ScrollViewer>
@@ -1759,7 +1763,7 @@
                           BorderThickness="0,1"
                           ResizeDirection="Rows"
                           ResizeBehavior="PreviousAndNext"
-                          ToolTip.Tip="Drag to resize inspector" />
+                          ToolTip.Tip="{Binding ResizeInspectorTooltipText}" />
             <Border Grid.Row="1"
                     IsVisible="{Binding IsInspectorVisible}"
                     IsHitTestVisible="False"
@@ -1786,8 +1790,8 @@
                 <Grid RowDefinitions="Auto,*" MinHeight="0" ClipToBounds="True">
                     <Border Classes="selectedUnitHeader" Padding="8">
                         <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6" VerticalAlignment="Center">
-                            <Button Grid.Column="0" Content="◄" Click="InspectorBackClicked" IsEnabled="{Binding CanGoBackInspector}" ToolTip.Tip="Previous resource" Padding="8,2" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="►" Click="InspectorForwardClicked" IsEnabled="{Binding CanGoForwardInspector}" ToolTip.Tip="Next resource" Padding="8,2" VerticalAlignment="Center" />
+                            <Button Grid.Column="0" Content="◄" Click="InspectorBackClicked" IsEnabled="{Binding CanGoBackInspector}" ToolTip.Tip="{Binding PreviousResourceTooltipText}" Padding="8,2" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="►" Click="InspectorForwardClicked" IsEnabled="{Binding CanGoForwardInspector}" ToolTip.Tip="{Binding NextResourceTooltipText}" Padding="8,2" VerticalAlignment="Center" />
                             <local:KindGlyph Grid.Column="2"
                                              Kind="{Binding SelectedResource.Kind}"
                                              Fill="{Binding SelectedResourceLabel, Converter={StaticResource DeterministicBrushConverter}}"
@@ -1824,7 +1828,8 @@
                               SizeChanged="InspectorTabContentHostSizeChanged">
                             <Grid IsVisible="{Binding IsInspectorOverviewActive}" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                                 <Grid IsVisible="{Binding IsSelectedSource}" Margin="8" MinHeight="0" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                                    <DataGrid ItemsSource="{Binding FocusMetrics}"
+                                    <DataGrid x:Name="FocusMetricsGrid"
+                                              ItemsSource="{Binding FocusMetrics}"
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
                                               CanUserSortColumns="False"
@@ -1869,7 +1874,8 @@
                                         </DataGrid.Columns>
                                     </DataGrid>
                                 </Grid>
-                                <DataGrid IsVisible="{Binding IsSelectedKubernetesResource}"
+                                <DataGrid x:Name="KubernetesFocusMetricsGrid"
+                                          IsVisible="{Binding IsSelectedKubernetesResource}"
                                           ItemsSource="{Binding FocusMetrics}"
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
@@ -1981,10 +1987,11 @@
                                                          VerticalAlignment="Stretch"
                                                          FontFamily="Consolas, Menlo, Monaco, monospace"
                                                          Background="{StaticResource PlBgPanelInsetBrush}"
-                                                         Foreground="{StaticResource PlTextMainBrush}" />
+                                                         Foreground="{StaticResource PlTextBrush}" />
                             </Grid>
 
-                            <DataGrid IsVisible="{Binding IsInspectorEventsActive}"
+                            <DataGrid x:Name="FocusedEventsGrid"
+                                      IsVisible="{Binding IsInspectorEventsActive}"
                                       ItemsSource="{Binding FocusedEvents}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
@@ -2000,12 +2007,12 @@
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Binding="{Binding Status}" Width="100">
+                                    <DataGridTextColumn Binding="{Binding Status}" Width="100" SortMemberPath="Status">
                                         <DataGridTextColumn.Header>
                                             <local:ColumnPlaqueHeader Tag="Status" Label="Status" Click="SortInspectorColumnClicked" />
                                         </DataGridTextColumn.Header>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Binding="{Binding Reason}" Width="180">
+                                    <DataGridTextColumn Binding="{Binding Reason}" Width="180" SortMemberPath="Reason">
                                         <DataGridTextColumn.Header>
                                             <local:ColumnPlaqueHeader Tag="Reason" Label="Reason" Click="SortInspectorColumnClicked" />
                                         </DataGridTextColumn.Header>
@@ -2015,7 +2022,7 @@
                                             <local:ColumnPlaqueHeader Tag="Age" Label="Age" Click="SortInspectorColumnClicked" />
                                         </DataGridTextColumn.Header>
                                     </DataGridTextColumn>
-                                    <DataGridTextColumn Binding="{Binding Message}" Width="*">
+                                    <DataGridTextColumn Binding="{Binding Message}" Width="*" SortMemberPath="Message">
                                         <DataGridTextColumn.Header>
                                             <local:ColumnPlaqueHeader Tag="Message" Label="Message" Click="SortInspectorColumnClicked" />
                                         </DataGridTextColumn.Header>
@@ -2023,7 +2030,8 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <DataGrid IsVisible="{Binding IsInspectorLinksActive}"
+                            <DataGrid x:Name="RelationshipsGrid"
+                                      IsVisible="{Binding IsInspectorLinksActive}"
                                       ItemsSource="{Binding FocusedRelationships}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
@@ -2053,7 +2061,7 @@
                                     </DataGridTemplateColumn>
                                     <DataGridTextColumn Binding="{Binding Link}" Width="50" SortMemberPath="Link">
                                         <DataGridTextColumn.Header>
-                                            <local:ColumnPlaqueHeader Tag="Link" Label="" Click="SortInspectorColumnClicked" />
+                                            <local:ColumnPlaqueHeader Tag="Link" Label="Link" Click="SortInspectorColumnClicked" />
                                         </DataGridTextColumn.Header>
                                     </DataGridTextColumn>
                                     <DataGridTemplateColumn Width="240" SortMemberPath="ToName">
@@ -2085,7 +2093,7 @@
                                 <Grid ColumnDefinitions="Auto,*,Auto"
                                       Margin="8,4"
                                       ColumnSpacing="8">
-                                    <TextBlock Text="Container"
+                                    <TextBlock Text="{Binding LogContainerLabelText}"
                                                VerticalAlignment="Center" />
                                     <ComboBox Grid.Column="1"
                                               ItemsSource="{Binding PodLogContainerOptions}"
@@ -2093,10 +2101,10 @@
                                               HorizontalAlignment="Stretch"
                                               MinWidth="180" />
                                     <CheckBox Grid.Column="2"
-                                              Content="Pause tail"
+                                              Content="{Binding LogPauseTailText}"
                                               IsChecked="{Binding LogsPaused}"
                                               VerticalAlignment="Center"
-                                              ToolTip.Tip="Pause automatic pod log tailing for the focused pod." />
+                                              ToolTip.Tip="{Binding LogPauseTailHelpText}" />
                                 </Grid>
                                 <avaloniaEdit:TextEditor Grid.Row="1"
                                                           x:Name="LogEditor"
@@ -2112,7 +2120,8 @@
                                                           FontFamily="Consolas, Menlo, Monaco, monospace" />
                             </Grid>
 
-                            <DataGrid IsVisible="{Binding IsInspectorValuesActive}"
+                            <DataGrid x:Name="ResourceValuesGrid"
+                                      IsVisible="{Binding IsInspectorValuesActive}"
                                       ItemsSource="{Binding ResourceValues}"
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"

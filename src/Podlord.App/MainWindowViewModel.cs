@@ -569,6 +569,48 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string SettingsAboutText => T("settings.about");
 
+    public string AboutTaglineText => T("about.tagline");
+
+    public string AboutSupportHeadingText => T("about.supportHeading");
+
+    public string AboutProjectHeadingText => T("about.projectHeading");
+
+    public string AboutStarRepoButtonText => T("about.starRepo");
+
+    public string AboutGithubRepoButtonText => T("about.githubRepo");
+
+    public string AboutCreateIssueButtonText => T("about.createIssue");
+
+    public string AboutSponsorsButtonText => T("about.sponsors");
+
+    public string AboutBuyMeACoffeeButtonText => T("about.bmc");
+
+    public string AboutKoFiButtonText => T("about.kofi");
+
+    public string AboutLiberapayButtonText => T("about.liberapay");
+
+    public string LogContainerLabelText => T("logs.container");
+
+    public string LogPauseTailText => T("logs.pauseTail");
+
+    public string LogPauseTailHelpText => T("logs.pauseTailHelp");
+
+    public string ResizeInspectorTooltipText => T("tooltip.resizeInspector");
+
+    public string PreviousResourceTooltipText => T("tooltip.previousResource");
+
+    public string NextResourceTooltipText => T("tooltip.nextResource");
+
+    public string CloseSearchTooltipText => T("tooltip.closeSearch");
+
+    public string PreviousMatchTooltipText => T("tooltip.previousMatch");
+
+    public string NextMatchTooltipText => T("tooltip.nextMatch");
+
+    public string RenameSourceTooltipText => T("tooltip.renameSource");
+
+    public string DeleteSourceTooltipText => T("tooltip.deleteSource");
+
     public string AboutRepoUrl => "https://github.com/YunaBraska/podlord";
 
     public string AboutIssueUrl => "https://github.com/YunaBraska/podlord/issues/new";
@@ -5349,6 +5391,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void ReloadSources()
     {
+        foreach (var previous in Sources)
+        {
+            previous.PropertyChanged -= SourceRowPropertyChanged;
+        }
         Sources.Clear();
         ImportedContextRows.Clear();
         foreach (var context in DisplayImportedContexts(state.Snapshot().ImportedContexts)
@@ -6332,7 +6378,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         StatusLine = T("status.settingsSaved");
     }
 
-    private string T(string key)
+    internal string T(string key)
     {
         return PodlordLocalizer.Text(key, state.Settings().Language);
     }
@@ -7061,25 +7107,53 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void UpdatePulseLayer(IReadOnlyList<FlatResourceRow> allRows, IReadOnlyList<FlatResourceRow> scopedRows)
     {
-        var pulseRows = scopedRows.ToList();
-        var pods = pulseRows.Where(row => row.Kind == "Pod").ToList();
-        var nodes = pulseRows.Where(row => row.Kind == "Node").ToList();
-        var cpuUsed = pods.Sum(row => row.Pulse.CpuMillicores ?? 0) + nodes.Sum(row => row.Kind == "Node" ? row.Pulse.CpuMillicores ?? 0 : 0);
-        var cpuLimit = nodes.Sum(row => row.Pulse.CpuLimitMillicores ?? 0);
-        if (cpuLimit <= 0)
+        var pulseRows = scopedRows as IReadOnlyList<FlatResourceRow> ?? scopedRows.ToList();
+        var pods = new List<FlatResourceRow>();
+        var nodes = new List<FlatResourceRow>();
+        double cpuUsed = 0;
+        double podCpuLimit = 0;
+        double nodeCpuLimit = 0;
+        long memoryUsed = 0;
+        long podMemoryLimit = 0;
+        long nodeMemoryLimit = 0;
+        long storageUsed = 0;
+        long storageLimit = 0;
+        var hasNetwork = false;
+        long networkIn = 0;
+        long networkOut = 0;
+        foreach (var row in pulseRows)
         {
-            cpuLimit = pods.Sum(row => row.Pulse.CpuLimitMillicores ?? 0);
+            var pulse = row.Pulse;
+            cpuUsed += pulse.CpuMillicores ?? 0;
+            memoryUsed += pulse.MemoryBytes ?? 0;
+            storageUsed += pulse.StorageUsedBytes ?? 0;
+            storageLimit += pulse.StorageLimitBytes ?? 0;
+            if (pulse.NetworkInBytesPerSecond is { } inBytes)
+            {
+                hasNetwork = true;
+                networkIn += inBytes;
+            }
+            if (pulse.NetworkOutBytesPerSecond is { } outBytes)
+            {
+                hasNetwork = true;
+                networkOut += outBytes;
+            }
+            switch (row.Kind)
+            {
+                case "Pod":
+                    pods.Add(row);
+                    podCpuLimit += pulse.CpuLimitMillicores ?? 0;
+                    podMemoryLimit += pulse.MemoryLimitBytes ?? 0;
+                    break;
+                case "Node":
+                    nodes.Add(row);
+                    nodeCpuLimit += pulse.CpuLimitMillicores ?? 0;
+                    nodeMemoryLimit += pulse.MemoryLimitBytes ?? 0;
+                    break;
+            }
         }
-
-        var memoryUsed = pods.Sum(row => row.Pulse.MemoryBytes ?? 0) + nodes.Sum(row => row.Kind == "Node" ? row.Pulse.MemoryBytes ?? 0 : 0);
-        var memoryLimit = nodes.Sum(row => row.Pulse.MemoryLimitBytes ?? 0);
-        if (memoryLimit <= 0)
-        {
-            memoryLimit = pods.Sum(row => row.Pulse.MemoryLimitBytes ?? 0);
-        }
-
-        var storageUsed = pulseRows.Sum(row => row.Pulse.StorageUsedBytes ?? 0);
-        var storageLimit = pulseRows.Sum(row => row.Pulse.StorageLimitBytes ?? 0);
+        var cpuLimit = nodeCpuLimit > 0 ? nodeCpuLimit : podCpuLimit;
+        var memoryLimit = nodeMemoryLimit > 0 ? nodeMemoryLimit : podMemoryLimit;
         var cpuPercent = Percent(cpuUsed, cpuLimit);
         var memoryPercent = Percent(memoryUsed, memoryLimit);
         var storagePercent = Percent(storageUsed, storageLimit);
@@ -7103,16 +7177,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         if (pods.Count > 0)
         {
-            metrics.Add(new PulseMetricCard("Pods", pods.Count.ToString(CultureInfo.InvariantCulture), 0, string.Empty, PulseMetricTooltip("Pods", pods.Count.ToString(CultureInfo.InvariantCulture), scope), HasBar: false));
+            var podCount = pods.Count.ToString(CultureInfo.InvariantCulture);
+            metrics.Add(new PulseMetricCard("Pods", podCount, 0, string.Empty, PulseMetricTooltip("Pods", podCount, scope), HasBar: false));
         }
         if (nodes.Count > 0)
         {
-            metrics.Add(new PulseMetricCard("Nodes", nodes.Count.ToString(CultureInfo.InvariantCulture), 0, string.Empty, PulseMetricTooltip("Nodes", nodes.Count.ToString(CultureInfo.InvariantCulture), scope), HasBar: false));
+            var nodeCount = nodes.Count.ToString(CultureInfo.InvariantCulture);
+            metrics.Add(new PulseMetricCard("Nodes", nodeCount, 0, string.Empty, PulseMetricTooltip("Nodes", nodeCount, scope), HasBar: false));
         }
 
-        var networkIn = pulseRows.Sum(row => row.Pulse.NetworkInBytesPerSecond ?? 0);
-        var networkOut = pulseRows.Sum(row => row.Pulse.NetworkOutBytesPerSecond ?? 0);
-        if (pulseRows.Any(row => row.Pulse.NetworkInBytesPerSecond is not null || row.Pulse.NetworkOutBytesPerSecond is not null))
+        if (hasNetwork)
         {
             var networkSummary = $"↓{FormatBytes(networkIn)}/s ↑{FormatBytes(networkOut)}/s";
             metrics.Add(new PulseMetricCard("Network", networkSummary, 0, string.Empty, PulseMetricTooltip("Network", networkSummary, scope), HasBar: false));
