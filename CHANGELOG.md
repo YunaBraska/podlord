@@ -6,6 +6,8 @@ Podlord uses date-based release tags in the form `YYYY.M.D`.
 
 ## [Unreleased]
 
+## [2026.6.19] - 2026-06-19
+
 ### Added
 
 - About tab in Settings with a randomly rotating short text block, the project manifesto, donation links (GitHub Sponsors, Buy Me a Coffee, Ko-fi, Liberapay), star repo, and create issue shortcuts.
@@ -43,4 +45,5 @@ Podlord uses date-based release tags in the form `YYYY.M.D`.
 - Native Kubernetes port forwarding through the Kubernetes streaming API.
 - k3d-backed integration tests and coverage gate.
 
-[Unreleased]: https://github.com/YunaBraska/podlord/commits/main
+[Unreleased]: https://github.com/YunaBraska/podlord/compare/2026.6.19...HEAD
+[2026.6.19]: https://github.com/YunaBraska/podlord/releases/tag/2026.6.19
