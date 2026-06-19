@@ -1,5 +1,7 @@
 # Audio Asset Credits
 
+Roles marked `_pending_` map to empty arrays in `MANIFEST.json`, so the app plays them silent. They are optional enhancements, not release blockers; new assets can land row-by-row without code changes.
+
 Every audio file shipped under `Assets/Audio/` must be licensed for free redistribution and modification. Acceptable licenses:
 
 - CC0 / public domain

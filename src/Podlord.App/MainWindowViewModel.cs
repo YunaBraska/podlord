@@ -4334,44 +4334,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void SortResourcesBy(string column)
     {
-        if (!resourceSortColumn.Equals(column, StringComparison.Ordinal))
-        {
-            resourceSortColumn = column;
-            resourceSortDirection = ResourceSortDirection.Descending;
-        }
-        else
-        {
-            resourceSortDirection = resourceSortDirection switch
-            {
-                ResourceSortDirection.None => ResourceSortDirection.Descending,
-                ResourceSortDirection.Descending => ResourceSortDirection.Ascending,
-                _ => ResourceSortDirection.None
-            };
-        }
-
+        (resourceSortColumn, resourceSortDirection) = AdvanceSortState(resourceSortColumn, resourceSortDirection, column);
         OnPropertyChanged(nameof(ResourceSortLabel));
         ApplyLocalFilter();
     }
 
     public void SortEventsBy(string column)
     {
-        if (!eventSortColumn.Equals(column, StringComparison.Ordinal))
-        {
-            eventSortColumn = column;
-            eventSortDirection = ResourceSortDirection.Descending;
-        }
-        else
-        {
-            eventSortDirection = eventSortDirection switch
-            {
-                ResourceSortDirection.None => ResourceSortDirection.Descending,
-                ResourceSortDirection.Descending => ResourceSortDirection.Ascending,
-                _ => ResourceSortDirection.None
-            };
-        }
-
+        (eventSortColumn, eventSortDirection) = AdvanceSortState(eventSortColumn, eventSortDirection, column);
         OnPropertyChanged(nameof(EventSortLabel));
         ApplyLocalFilter();
+    }
+
+    private static (string Column, ResourceSortDirection Direction) AdvanceSortState(string currentColumn, ResourceSortDirection currentDirection, string requestedColumn)
+    {
+        if (!currentColumn.Equals(requestedColumn, StringComparison.Ordinal))
+        {
+            return (requestedColumn, ResourceSortDirection.Descending);
+        }
+        var next = currentDirection switch
+        {
+            ResourceSortDirection.None => ResourceSortDirection.Descending,
+            ResourceSortDirection.Descending => ResourceSortDirection.Ascending,
+            _ => ResourceSortDirection.None
+        };
+        return (currentColumn, next);
     }
 
     private bool disposed;

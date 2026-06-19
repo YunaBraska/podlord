@@ -413,10 +413,7 @@ public partial class MainWindow : Window
 
     private void ToggleAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { DataContext: AlertRuleRowViewModel rule })
-        {
-            viewModel.ToggleAlertRule(rule);
-        }
+        if (sender is Button { DataContext: AlertRuleRowViewModel rule }) viewModel.ToggleAlertRule(rule);
     }
 
     private void RemoveAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -511,10 +508,7 @@ public partial class MainWindow : Window
         viewModel.RenameSavedFilter(preset, requestedName);
     }
 
-    private void ResourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("resources");
-    }
+    private void ResourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("resources");
 
     private void ToggleCurrentSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -522,20 +516,11 @@ public partial class MainWindow : Window
         FocusCurrentSearch();
     }
 
-    private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("graph");
-    }
+    private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("graph");
 
-    private void EventsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("events");
-    }
+    private void EventsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("events");
 
-    private void PortsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("ports");
-    }
+    private void PortsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("ports");
 
     private void SourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenSourcesSettings();
 
@@ -549,10 +534,7 @@ public partial class MainWindow : Window
 
     private void ToggleAudioMuteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ToggleAudioMute();
 
-    private void SettingsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SelectWorkspace("settings");
-    }
+    private void SettingsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("settings");
 
     private void ImportPasteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ImportPasteNow();
 
