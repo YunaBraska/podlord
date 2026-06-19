@@ -381,11 +381,11 @@
                             <Grid ColumnDefinitions="*,*,88" ColumnSpacing="8">
                                 <CheckBox Content="{Binding ProblemsText}"
                                           IsChecked="{Binding ProblemsOnly}"
-                                          ToolTip.Tip="Show resources with degraded status, readiness gaps, restarts, or RBAC issues." />
+                                          ToolTip.Tip="{Binding FilterProblemsTooltipText}" />
                                 <CheckBox Grid.Column="1"
                                           Content="{Binding ActivityText}"
                                           IsChecked="{Binding ActivityOnly}"
-                                          ToolTip.Tip="Show recent changes, events, and active/problem processes." />
+                                          ToolTip.Tip="{Binding FilterActivityTooltipText}" />
                                 <TextBox Grid.Column="2"
                                          Text="{Binding LimitText, UpdateSourceTrigger=PropertyChanged}"
                                          PlaceholderText="limit" />
@@ -412,11 +412,11 @@
                                                                                      LostFocus="SavedFilterNameLostFocus"
                                                                                      GotFocus="SavedFilterNameGotFocus"
                                                                                      KeyDown="SavedFilterNameKeyDown"
-                                                                                     ToolTip.Tip="Edit name, then press Enter or the edit icon." />
-                                                                            <Button Grid.Column="1" Click="RenameSavedFilterClicked" Tag="{Binding}" Padding="6,2" ToolTip.Tip="Rename filter" IsVisible="{Binding CanRename}">
+                                                                                     ToolTip.Tip="{Binding EditFilterNameTooltipText}" />
+                                                                            <Button Grid.Column="1" Click="RenameSavedFilterClicked" Tag="{Binding}" Padding="6,2" ToolTip.Tip="{Binding RenameFilterTooltipText}" IsVisible="{Binding CanRename}">
                                                                                 <local:KindGlyph Kind="Pencil" Fill="{StaticResource PlTextBrush}" Width="14" Height="14" />
                                                                             </Button>
-                                                                            <Button Grid.Column="2" Click="DeleteSavedFilterClicked" Tag="{Binding}" Padding="6,2" IsVisible="{Binding CanDelete}" ToolTip.Tip="Delete filter">
+                                                                            <Button Grid.Column="2" Click="DeleteSavedFilterClicked" Tag="{Binding}" Padding="6,2" IsVisible="{Binding CanDelete}" ToolTip.Tip="{Binding DeleteFilterTooltipText}">
                                                                                 <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="14" Height="14" />
                                                                             </Button>
                                                                         </Grid>
@@ -565,12 +565,12 @@
                     <DataGrid.Columns>
 		                    <DataGridTemplateColumn Width="52">
 		                        <DataGridTemplateColumn.Header>
-		                            <local:ColumnPlaqueHeader Tag="Port Forward" Padding="4,1" ToolTip.Tip="Port forward" HorizontalContentAlignment="Center" Kind="Swap" GlyphFill="{StaticResource PlGoldBrightBrush}" GlyphSize="16" />
+		                            <local:ColumnPlaqueHeader Tag="Port Forward" Padding="4,1" ToolTip.Tip="{Binding PortForwardColumnTooltipText}" HorizontalContentAlignment="Center" Kind="Swap" GlyphFill="{StaticResource PlGoldBrightBrush}" GlyphSize="16" />
 		                        </DataGridTemplateColumn.Header>
 	                        <DataGridTemplateColumn.CellTemplate>
 	                            <DataTemplate>
 	                                <Button Click="PortForwardRowClicked"
-                                            ToolTip.Tip="Prepare port forward"
+                                            ToolTip.Tip="{Binding PreparePortForwardTooltipText}"
                                             Padding="4,1"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center"
@@ -1406,7 +1406,7 @@
                                         <ComboBox Grid.Column="1"
                                                   ItemsSource="{Binding ThemeVariantOptions}"
                                                   SelectedItem="{Binding ThemeVariantSetting}"
-                                                  ToolTip.Tip="Dark and light variants use the same layout and readable density." />
+                                                  ToolTip.Tip="{Binding VariantTooltipText}" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding VariantHelpText}" />
                                     </Grid>
                                 </Border>
@@ -1416,7 +1416,7 @@
                                         <ComboBox Grid.Column="1"
                                                   ItemsSource="{Binding GraphicsQualityOptions}"
                                                   SelectedItem="{Binding GraphicsQualitySetting}"
-                                                  ToolTip.Tip="Subtle keeps the app professional; medium and arcade increase glow and texture." />
+                                                  ToolTip.Tip="{Binding ThemeIntensityTooltipText}" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding ThemeIntensityHelpText}" />
                                     </Grid>
                                 </Border>
@@ -1591,7 +1591,7 @@
                                                 <DataTemplate>
                                                     <Button Click="RemoveSourceClicked"
                                                             Tag="{Binding}"
-                                                            ToolTip.Tip="Remove snapshot"
+                                                            ToolTip.Tip="{Binding RemoveSnapshotTooltipText}"
                                                             Padding="6,1"
                                                             HorizontalAlignment="Center"
                                                             VerticalAlignment="Center"

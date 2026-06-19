@@ -611,6 +611,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string DeleteSourceTooltipText => T("tooltip.deleteSource");
 
+    public string FilterProblemsTooltipText => T("tooltip.filterProblems");
+
+    public string FilterActivityTooltipText => T("tooltip.filterActivity");
+
+    public string EditFilterNameTooltipText => T("tooltip.editFilterName");
+
+    public string RenameFilterTooltipText => T("tooltip.renameFilter");
+
+    public string DeleteFilterTooltipText => T("tooltip.deleteFilter");
+
+    public string PreparePortForwardTooltipText => T("tooltip.preparePortForward");
+
+    public string VariantTooltipText => T("tooltip.variantHelp");
+
+    public string ThemeIntensityTooltipText => T("tooltip.themeIntensityHelp");
+
+    public string RemoveSnapshotTooltipText => T("tooltip.removeSnapshot");
+
+    public string PortForwardColumnTooltipText => T("tooltip.portForwardColumn");
+
     public string AboutRepoUrl => "https://github.com/YunaBraska/podlord";
 
     public string AboutIssueUrl => "https://github.com/YunaBraska/podlord/issues/new";

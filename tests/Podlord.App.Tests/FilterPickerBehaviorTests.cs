@@ -643,7 +643,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.DoesNotContain("PortDeclaredPortsLabel", window, StringComparison.Ordinal);
         Assert.DoesNotContain("PortForwardStatusLine", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"RemoveSourceClicked\"", window + codeBehind, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"Remove snapshot\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding RemoveSnapshotTooltipText}\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding PresetName, UpdateSourceTrigger=PropertyChanged}\"", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding VisibleSavedPresets}\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding Name, Mode=OneWay}\"", window, StringComparison.Ordinal);
@@ -653,8 +653,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("RenameSavedFilter(preset", codeBehind + viewModel, StringComparison.Ordinal);
         Assert.Contains("Click=\"RenameSavedFilterClicked\"", window + codeBehind, StringComparison.Ordinal);
         Assert.Contains("Click=\"DeleteSavedFilterClicked\"", window, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"Rename filter\"", window, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"Delete filter\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding RenameFilterTooltipText}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding DeleteFilterTooltipText}\"", window, StringComparison.Ordinal);
         Assert.Contains("Content=\"{Binding DataContext.DeleteActionText", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSelectedResourceLoggable}\"", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding FocusMetrics}\"", window, StringComparison.Ordinal);
