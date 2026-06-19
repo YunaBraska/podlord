@@ -17,11 +17,11 @@ When adding a file, fill in a row in the table and update `MANIFEST.json`.
 
 | File | Role | Source | Author | License |
 | ---- | ---- | ------ | ------ | ------- |
-| `ui/click.ogg` | Tab + button click | _pending_ | _pending_ | _pending_ |
-| `ui/tab-switch.ogg` | Inspector tab switch | _pending_ | _pending_ | _pending_ |
 | `ui/panel-segment-load.ogg` | Health bar / panel segment lit | https://kenney.nl/assets/ui-audio (`switch1.ogg`) | Kenney | CC0-1.0 |
 | `ui/metal-click.ogg` | Mechanical UI click | https://kenney.nl/assets/rpg-audio (`metalClick.ogg`) | Kenney | CC0-1.0 |
-| `ui/hover.ogg` | Subtle hover beep | _pending_ | _pending_ | _pending_ |
+| `interface/click_001.ogg`, `click_003.ogg` | UI click variants (shuffled with `ui/metal-click.ogg`) | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
+| `interface/switch_001.ogg`, `switch_004.ogg` | Inspector tab switch | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
+| `interface/tick_001.ogg`, `tick_004.ogg` | Subtle hover beep | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
 
 ## Interface Pack
 
@@ -38,21 +38,21 @@ When adding a file, fill in a row in the table and update `MANIFEST.json`.
 | `alerts/electro-warning.ogg` | Electronic warning chirp | https://kenney.nl/assets/digital-audio (`zapThreeToneUp.ogg`) | Kenney | CC0-1.0 |
 | `alerts/bell-alert.ogg` | Metallic command bell | https://kenney.nl/assets/impact-sounds (`impactBell_heavy_002.ogg`) | Kenney | CC0-1.0 |
 | `alerts/metal-impact.ogg` | Heavy incident impact | https://kenney.nl/assets/impact-sounds (`impactMetal_medium_004.ogg`) | Kenney | CC0-1.0 |
-| `alerts/recovery.ogg` | Critical → healthy | _pending_ | _pending_ | _pending_ |
-| `alerts/under-attack.ogg` | Many criticals at once | _pending_ | _pending_ | _pending_ |
+| `interface/confirmation_001.ogg`, `confirmation_004.ogg` | Critical → healthy (alert recovery) | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
+| `interface/error_006.ogg`, `error_008.ogg` | Many criticals at once (under attack) | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
 
 ## Events
 
 | File | Role | Source | Author | License |
 | ---- | ---- | ------ | ------ | ------- |
-| `events/startup.ogg` | App launch | _pending_ | _pending_ | _pending_ |
-| `events/load-complete.ogg` | Initial resource load done | _pending_ | _pending_ | _pending_ |
+| `interface/open_001.ogg`, `interface/bong_001.ogg` | App launch | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
+| `interface/confirmation_002.ogg` | Initial resource load done (paired with `events/power-up.ogg`) | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
 | `events/radar-activated.ogg` | Screensaver → live radar | https://kenney.nl/assets/interface-sounds (`open_001.ogg`) | Kenney | CC0-1.0 |
 | `events/activity-tick.ogg` | New non-critical activity | https://kenney.nl/assets/interface-sounds (`tick_001.ogg`) | Kenney | CC0-1.0 |
 | `events/power-up.ogg` | Positive activation | https://kenney.nl/assets/digital-audio (`powerUp8.ogg`) | Kenney | CC0-1.0 |
 | `events/power-down.ogg` | Descending deactivation | https://kenney.nl/assets/digital-audio (`lowDown.ogg`) | Kenney | CC0-1.0 |
 | `events/three-tone.ogg` | Neutral system notification | https://kenney.nl/assets/digital-audio (`threeTone1.ogg`) | Kenney | CC0-1.0 |
-| `events/session-switch.ogg` | Source switched | _pending_ | _pending_ | _pending_ |
+| `interface/switch_002.ogg` | Source switched (paired with `events/three-tone.ogg`) | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
 
 ## Fantasy
 
