@@ -90,6 +90,8 @@ Current gates:
 - Line coverage: 95%
 - Branch coverage: 80%
 
+The gate targets domain, persistence, Kubernetes, filtering, sync, and alert-rule behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and covered by focused behavior/layout tests where useful.
+
 The k3d scenario map is documented in [doc/spec/k3d-test-map.md](doc/spec/k3d-test-map.md).
 
 ## Build Release Archives Locally

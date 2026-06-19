@@ -860,6 +860,154 @@ users:
         Assert.Equal(["api-b", "worker-a"], result.Matches.Select(row => row.Name).ToArray());
     }
 
+    [Fact]
+    public void Alert_rule_evaluator_supports_false_boolean_virtual_matchers()
+    {
+        var rows = new[]
+        {
+            HealthyRow("old") with { Status = "Succeeded", Age = "2h", LastChange = "2h" },
+            HealthyRow("fresh") with { Status = "Running", Age = "15s", LastChange = "15s" },
+            HealthyRow("broken") with { Status = "CrashLoopBackOff", Ready = "0/1", Restarts = 10, LastChange = "2h" }
+        };
+        var rule = new AlertRule(
+            "quiet",
+            "Quiet rows",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("quiet", [
+                    new AlertMatcherCriterion("no-problem", "Problems", "false"),
+                    new AlertMatcherCriterion("no-error", "Errors", "no"),
+                    new AlertMatcherCriterion("not-recent", "Recently changed", "0"),
+                    new AlertMatcherCriterion("not-active", "Active", "false")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.True(result.Triggered);
+        Assert.Equal(["old"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_unknown_field_fallbacks()
+    {
+        var row = HealthyRow("api") with
+        {
+            LastChange = "12s",
+            EventReason = "BackOff",
+            EventMessage = "container restarted"
+        };
+        var rows = new[] { row };
+        var rule = new AlertRule(
+            "fallbacks",
+            "Fallback fields",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("fallbacks", [
+                    new AlertMatcherCriterion("last-change", "Last Change", "12s"),
+                    new AlertMatcherCriterion("event-reason", "Event Reason", "\"BackOff\""),
+                    new AlertMatcherCriterion("event-message", "Event Message", "restarted"),
+                    new AlertMatcherCriterion("missing", "Not a real field", "")
+                ]),
+                new AlertMatcherGroup("owner", [
+                    new AlertMatcherCriterion("owner", "Owner", "")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.True(result.Triggered);
+        Assert.Equal(["api"], result.Matches.Select(item => item.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_handles_missing_special_stat_values()
+    {
+        var rows = new[]
+        {
+            HealthyRow("without-age") with { Age = "unknown" },
+            HealthyRow("without-metrics") with { Pulse = ResourcePulse.Empty },
+            HealthyRow("with-metrics") with
+            {
+                Age = "10m",
+                Pulse = ResourcePulse.Empty with
+                {
+                    MemoryBytes = 512 * 1024 * 1024,
+                    MemoryLimitBytes = 1024 * 1024 * 1024,
+                    StorageUsedBytes = 5L * 1024 * 1024 * 1024,
+                    StorageLimitBytes = 10L * 1024 * 1024 * 1024
+                }
+            }
+        };
+        var age = RuleWithGroup("age", "Age", "p95");
+        var memory = RuleWithGroup("memory", "Memory", "p95");
+        var storage = RuleWithGroup("storage", "Storage", "outlier");
+
+        Assert.Equal(["with-metrics"], AlertRuleEvaluator.EvaluateRule(rows, age).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["with-metrics"], AlertRuleEvaluator.EvaluateRule(rows, memory).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["with-metrics"], AlertRuleEvaluator.EvaluateRule(rows, storage).Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_treats_blank_groups_as_legacy_matchers()
+    {
+        var rows = new[]
+        {
+            HealthyRow("pod") with { Kind = "Pod" },
+            HealthyRow("deployment") with { Kind = "Deployment" }
+        };
+        var rule = new AlertRule(
+            "legacy",
+            "Legacy fallback",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(Kind: "\"Pod\""),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("blank", [
+                    new AlertMatcherCriterion("blank-field", "", "Pod"),
+                    new AlertMatcherCriterion("blank-expression", "Kind", "")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.Equal(["pod"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
+    private static AlertRule RuleWithGroup(string id, string field, string expression)
+    {
+        return new AlertRule(
+            id,
+            id,
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups: [new AlertMatcherGroup(id, [new AlertMatcherCriterion(id, field, expression)])]);
+    }
+
     private static FlatResourceRow HealthyRow(string name)
     {
         return new FlatResourceRow(

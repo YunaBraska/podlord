@@ -16,7 +16,15 @@
             **/KindGlyph.cs,
             **/RadarWaterLayer.cs,
             **/YamlSyntaxColorizer.cs,
-            **/MainWindowViewModel.cs
+            **/MainWindowViewModel.cs,
+            **/AlertRuleRowViewModel.cs,
+            **/AlertSoundPlayer.cs,
+            **/Controls/*.cs,
+            **/InspectorSortManager.cs,
+            **/LogSyntaxColorizer.cs,
+            **/ResourceReferenceTooltipBuilder.cs,
+            **/StatusBrushConverter.cs,
+            **/WorkspaceModels.cs
           </ExcludeByFile>
           <SkipAutoProps>true</SkipAutoProps>
         </Configuration>

@@ -33,6 +33,8 @@ Coverage gates:
 - Line coverage: 95%
 - Branch coverage: 80%
 
+The coverage gate targets domain/runtime behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and should be covered with focused behavior or layout tests when they carry logic.
+
 ## Architecture Rules
 
 - `Podlord.Core` owns persisted state, kubeconfig import, filters, health, and command-risk classification.
