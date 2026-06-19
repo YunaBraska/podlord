@@ -29,6 +29,7 @@ public static class PodlordLocalizer
         ["action.manage"] = "MANAGE...",
         ["action.save"] = "SAVE",
         ["action.delete"] = "DEL",
+        ["action.duplicate"] = "DUPLICATE",
         ["action.add"] = "ADD",
         ["action.clear"] = "CLEAR",
         ["action.close"] = "CLOSE",
@@ -45,6 +46,7 @@ public static class PodlordLocalizer
         ["filters.customValues"] = "Custom values",
         ["filters.syntaxHelp"] = "Text: contains, \"exact\", ~starts, ends~. Numbers: =5, >5, <5, =<5, =>5.",
         ["settings.title"] = "SETTINGS",
+        ["settings.alerts"] = "Alerts",
         ["settings.sources"] = "Sources",
         ["settings.appearance"] = "Appearance",
         ["settings.graphics"] = "Graphics",
@@ -52,6 +54,7 @@ public static class PodlordLocalizer
         ["settings.workspace"] = "Workspace",
         ["settings.privacy"] = "Privacy",
         ["settings.diagnostics"] = "Diagnostics",
+        ["settings.about"] = "About",
         ["settings.theme"] = "Theme",
         ["settings.variant"] = "Variant",
         ["settings.themeIntensity"] = "Theme intensity",
@@ -78,6 +81,50 @@ public static class PodlordLocalizer
         ["settings.telemetry"] = "Telemetry enabled",
         ["settings.telemetryHelp"] = "Telemetry should remain disabled unless a future explicit privacy design is added.",
         ["settings.requestAuditTitle"] = "REQUEST AUDIT LOG (LAST 256)",
+        ["alert.active"] = "Active",
+        ["alert.type"] = "Type",
+        ["alert.name"] = "Name",
+        ["alert.description"] = "Description",
+        ["alert.when"] = "When",
+        ["alert.actions"] = "Actions",
+        ["alert.sound"] = "Sound",
+        ["alert.matchers"] = "Matchers",
+        ["alert.orMatcher"] = "or matcher",
+        ["alert.matcherBlockHelp"] = "all rows inside this block must match",
+        ["alert.and"] = "and",
+        ["alert.removeMatcherBlock"] = "Remove matcher block",
+        ["alert.removeMatcher"] = "Remove matcher",
+        ["alert.color"] = "Color",
+        ["alert.noColor"] = "X",
+        ["alert.statusColor"] = "STATUS",
+        ["alert.animation"] = "Animation",
+        ["alert.zoom"] = "Zoom",
+        ["alert.previewZoom"] = "Preview zoom",
+        ["alert.soundSearch"] = "search sounds",
+        ["alert.previewSound"] = "Preview sound",
+        ["alert.author"] = "Author",
+        ["alert.source"] = "Source",
+        ["alert.asset"] = "Asset",
+        ["alert.selectFirst"] = "Select an alert first.",
+        ["alert.noSoundSelected"] = "No sound selected.",
+        ["alert.soundMissing"] = "Sound asset not found: {0}.",
+        ["alert.previewingSound"] = "Previewing {0}.",
+        ["alert.soundPreviewFailed"] = "Could not preview {0}: {1}",
+        ["alert.openedSoundSource"] = "Opened sound source: {0}.",
+        ["alert.openSoundSourceFailed"] = "Could not open sound source: {0}.",
+        ["alert.noZoomTarget"] = "No radar target matched this alert.",
+        ["alert.previewingZoom"] = "Previewing zoom for {0}/{1}.",
+        ["alert.added"] = "Added custom alert. Adjust matchers and save.",
+        ["alert.duplicated"] = "Duplicated alert '{0}'.",
+        ["alert.deleted"] = "Deleted alert '{0}'.",
+        ["alert.builtinNoDelete"] = "Built-in alerts can be disabled but not deleted.",
+        ["alert.enabled"] = "Enabled alert '{0}'.",
+        ["alert.disabled"] = "Disabled alert '{0}'.",
+        ["alert.saved"] = "Saved alert rules.",
+        ["audio.mute"] = "Mute app audio",
+        ["audio.unmute"] = "Unmute app audio",
+        ["audio.muted"] = "App audio muted.",
+        ["audio.enabled"] = "App audio enabled.",
         ["inspector.overview"] = "Overview",
         ["inspector.yaml"] = "YAML",
         ["inspector.events"] = "Events",
@@ -336,6 +383,7 @@ public static class PodlordLocalizer
         Dictionary<string, string> translations)
     {
         ApplyCommonUiPack(languageCode, translations);
+        ApplyAlertUiPack(languageCode, translations);
         foreach (var (key, value) in English)
         {
             translations.TryAdd(key, value);
@@ -395,6 +443,60 @@ public static class PodlordLocalizer
         "port.containerPort",
         "port.localPort"
     ];
+
+    private static void ApplyAlertUiPack(string languageCode, IDictionary<string, string> translations)
+    {
+        if (!AlertUiPacks().TryGetValue(languageCode, out var values))
+        {
+            return;
+        }
+
+        foreach (var (key, value) in values)
+        {
+            translations.TryAdd(key, value);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> LabelPack(params string[] values)
+    {
+        var keys = new[]
+        {
+            "action.duplicate", "alert.active", "alert.type", "alert.name", "alert.description", "alert.when",
+            "alert.actions", "alert.sound", "alert.matchers", "alert.orMatcher", "alert.matcherBlockHelp",
+            "alert.and", "alert.color", "alert.noColor", "alert.statusColor", "alert.animation", "alert.zoom",
+            "alert.previewZoom", "alert.soundSearch", "alert.previewSound", "alert.author", "alert.source", "alert.asset"
+        };
+        return keys
+            .Zip(values, static (key, value) => new KeyValuePair<string, string>(key, value))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> AlertUiPacks() =>
+        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = LabelPack("DUPLIZIEREN", "Aktiv", "Typ", "Name", "Beschreibung", "Wenn", "Aktionen", "Sound", "Matcher", "oder Matcher", "alle Zeilen in diesem Block müssen passen", "und", "Farbe", "KEINE", "STATUS", "Animation", "Zoom", "Zoom testen", "Sounds suchen", "Sound testen", "Autor", "Quelle", "Asset"),
+            ["es"] = LabelPack("DUPLICAR", "Activo", "Tipo", "Nombre", "Descripción", "Cuando", "Acciones", "Sonido", "Reglas", "o regla", "todas las filas de este bloque deben coincidir", "y", "Color", "NINGUNO", "ESTADO", "Animación", "Zoom", "Probar zoom", "buscar sonidos", "Probar sonido", "Autor", "Fuente", "Archivo"),
+            ["fr"] = LabelPack("DUPLIQUER", "Actif", "Type", "Nom", "Description", "Quand", "Actions", "Son", "Filtres", "ou filtre", "toutes les lignes de ce bloc doivent correspondre", "et", "Couleur", "AUCUNE", "ÉTAT", "Animation", "Zoom", "Tester zoom", "chercher sons", "Tester son", "Auteur", "Source", "Fichier"),
+            ["pt-BR"] = LabelPack("DUPLICAR", "Ativo", "Tipo", "Nome", "Descrição", "Quando", "Ações", "Som", "Regras", "ou regra", "todas as linhas deste bloco devem combinar", "e", "Cor", "NENHUMA", "STATUS", "Animação", "Zoom", "Testar zoom", "buscar sons", "Testar som", "Autor", "Fonte", "Arquivo"),
+            ["it"] = LabelPack("DUPLICA", "Attivo", "Tipo", "Nome", "Descrizione", "Quando", "Azioni", "Suono", "Matcher", "o matcher", "tutte le righe del blocco devono corrispondere", "e", "Colore", "NESSUNO", "STATO", "Animazione", "Zoom", "Prova zoom", "cerca suoni", "Prova suono", "Autore", "Fonte", "Asset"),
+            ["nl"] = LabelPack("DUPLICEREN", "Actief", "Type", "Naam", "Beschrijving", "Wanneer", "Acties", "Geluid", "Matchers", "of matcher", "alle rijen in dit blok moeten matchen", "en", "Kleur", "GEEN", "STATUS", "Animatie", "Zoom", "Zoom testen", "geluiden zoeken", "Geluid testen", "Auteur", "Bron", "Asset"),
+            ["pl"] = LabelPack("DUPLIKUJ", "Aktywny", "Typ", "Nazwa", "Opis", "Kiedy", "Akcje", "Dźwięk", "Dopasowania", "lub dopasowanie", "wszystkie wiersze w bloku muszą pasować", "i", "Kolor", "BRAK", "STATUS", "Animacja", "Zoom", "Test zoomu", "szukaj dźwięków", "Test dźwięku", "Autor", "Źródło", "Plik"),
+            ["ru"] = LabelPack("ДУБЛИРОВАТЬ", "Активно", "Тип", "Имя", "Описание", "Когда", "Действия", "Звук", "Условия", "или условие", "все строки блока должны совпасть", "и", "Цвет", "НЕТ", "СТАТУС", "Анимация", "Масштаб", "Проверить масштаб", "поиск звуков", "Проверить звук", "Автор", "Источник", "Файл"),
+            ["uk"] = LabelPack("ДУБЛЮВАТИ", "Активно", "Тип", "Назва", "Опис", "Коли", "Дії", "Звук", "Умови", "або умова", "усі рядки блоку мають збігатися", "і", "Колір", "НЕМАЄ", "СТАТУС", "Анімація", "Масштаб", "Тест масштабу", "шукати звуки", "Тест звуку", "Автор", "Джерело", "Файл"),
+            ["tr"] = LabelPack("ÇOĞALT", "Aktif", "Tür", "Ad", "Açıklama", "Ne zaman", "Eylemler", "Ses", "Eşleşmeler", "veya eşleşme", "bu bloktaki tüm satırlar eşleşmeli", "ve", "Renk", "YOK", "DURUM", "Animasyon", "Yakınlaştırma", "Yakınlaştırmayı dene", "ses ara", "Sesi dene", "Yazar", "Kaynak", "Varlık"),
+            ["ar"] = LabelPack("نسخ", "نشط", "النوع", "الاسم", "الوصف", "متى", "الإجراءات", "الصوت", "المطابقات", "أو مطابقة", "كل الصفوف داخل هذا المربع يجب أن تطابق", "و", "اللون", "لا شيء", "الحالة", "حركة", "تكبير", "اختبار التكبير", "بحث الأصوات", "اختبار الصوت", "المؤلف", "المصدر", "الملف"),
+            ["hi"] = LabelPack("डुप्लिकेट", "सक्रिय", "प्रकार", "नाम", "विवरण", "कब", "क्रियाएँ", "ध्वनि", "मैचर", "या मैचर", "इस ब्लॉक की सभी पंक्तियाँ मेल खाएँ", "और", "रंग", "कोई नहीं", "स्थिति", "एनीमेशन", "ज़ूम", "ज़ूम टेस्ट", "ध्वनि खोजें", "ध्वनि टेस्ट", "लेखक", "स्रोत", "एसेट"),
+            ["bn"] = LabelPack("ডুপ্লিকেট", "সক্রিয়", "ধরন", "নাম", "বিবরণ", "কখন", "অ্যাকশন", "শব্দ", "ম্যাচার", "বা ম্যাচার", "এই ব্লকের সব সারি মিলতে হবে", "এবং", "রং", "নেই", "স্ট্যাটাস", "অ্যানিমেশন", "জুম", "জুম পরীক্ষা", "শব্দ খুঁজুন", "শব্দ পরীক্ষা", "লেখক", "উৎস", "অ্যাসেট"),
+            ["pa"] = LabelPack("ਡੁਪਲੀਕੇਟ", "ਸਰਗਰਮ", "ਕਿਸਮ", "ਨਾਮ", "ਵੇਰਵਾ", "ਕਦੋਂ", "ਕਾਰਵਾਈਆਂ", "ਧੁਨੀ", "ਮੈਚਰ", "ਜਾਂ ਮੈਚਰ", "ਇਸ ਬਲਾਕ ਦੀਆਂ ਸਾਰੀਆਂ ਕਤਾਰਾਂ ਮਿਲਣ", "ਅਤੇ", "ਰੰਗ", "ਕੋਈ ਨਹੀਂ", "ਹਾਲਤ", "ਐਨੀਮੇਸ਼ਨ", "ਜ਼ੂਮ", "ਜ਼ੂਮ ਟੈਸਟ", "ਧੁਨੀਆਂ ਖੋਜੋ", "ਧੁਨੀ ਟੈਸਟ", "ਲੇਖਕ", "ਸਰੋਤ", "ਐਸੈਟ"),
+            ["ur"] = LabelPack("نقل", "فعال", "قسم", "نام", "تفصیل", "کب", "اعمال", "آواز", "میچر", "یا میچر", "اس بلاک کی سب قطاریں ملنی چاہئیں", "اور", "رنگ", "کوئی نہیں", "حالت", "اینیمیشن", "زوم", "زوم ٹیسٹ", "آوازیں تلاش", "آواز ٹیسٹ", "مصنف", "ماخذ", "اثاثہ"),
+            ["id"] = LabelPack("DUPLIKAT", "Aktif", "Tipe", "Nama", "Deskripsi", "Saat", "Aksi", "Suara", "Pencocok", "atau pencocok", "semua baris dalam blok ini harus cocok", "dan", "Warna", "TIDAK ADA", "STATUS", "Animasi", "Zoom", "Uji zoom", "cari suara", "Uji suara", "Penulis", "Sumber", "Aset"),
+            ["vi"] = LabelPack("NHÂN BẢN", "Đang bật", "Loại", "Tên", "Mô tả", "Khi", "Hành động", "Âm thanh", "Bộ khớp", "hoặc bộ khớp", "mọi dòng trong khối này phải khớp", "và", "Màu", "KHÔNG", "TRẠNG THÁI", "Hoạt ảnh", "Zoom", "Thử zoom", "tìm âm thanh", "Thử âm", "Tác giả", "Nguồn", "Tệp"),
+            ["th"] = LabelPack("ทำซ้ำ", "เปิดใช้", "ชนิด", "ชื่อ", "คำอธิบาย", "เมื่อ", "การกระทำ", "เสียง", "ตัวจับคู่", "หรือตัวจับคู่", "ทุกแถวในบล็อกนี้ต้องตรงกัน", "และ", "สี", "ไม่มี", "สถานะ", "แอนิเมชัน", "ซูม", "ทดสอบซูม", "ค้นหาเสียง", "ทดสอบเสียง", "ผู้เขียน", "แหล่งที่มา", "ไฟล์"),
+            ["zh-Hans"] = LabelPack("复制", "活动", "类型", "名称", "描述", "何时", "动作", "声音", "匹配器", "或匹配器", "此块中的所有行都必须匹配", "并且", "颜色", "无", "状态", "动画", "缩放", "测试缩放", "搜索声音", "测试声音", "作者", "来源", "资源"),
+            ["ja"] = LabelPack("複製", "有効", "種別", "名前", "説明", "条件", "アクション", "音", "マッチャー", "またはマッチャー", "このブロックの全行が一致する必要があります", "かつ", "色", "なし", "状態", "アニメーション", "ズーム", "ズーム確認", "音を検索", "音を確認", "作者", "出典", "アセット"),
+            ["ko"] = LabelPack("복제", "활성", "유형", "이름", "설명", "조건", "동작", "소리", "매처", "또는 매처", "이 블록의 모든 행이 일치해야 합니다", "그리고", "색상", "없음", "상태", "애니메이션", "줌", "줌 테스트", "소리 검색", "소리 테스트", "작성자", "출처", "자산"),
+            ["sv"] = LabelPack("DUPLICERA", "Aktiv", "Typ", "Namn", "Beskrivning", "När", "Åtgärder", "Ljud", "Matchare", "eller matchare", "alla rader i blocket måste matcha", "och", "Färg", "INGEN", "STATUS", "Animation", "Zoom", "Testa zoom", "sök ljud", "Testa ljud", "Skapare", "Källa", "Tillgång")
+        };
 
     private static IReadOnlyDictionary<string, string[]> CommonUiPacks() =>
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)

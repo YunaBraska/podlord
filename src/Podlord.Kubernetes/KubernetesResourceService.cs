@@ -1392,7 +1392,7 @@ public sealed class KubernetesResourceService
         string outcome)
     {
         var entry = new KubernetesRequestAuditEntry(
-            startedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.ff", System.Globalization.CultureInfo.InvariantCulture),
+            startedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.ff", System.Globalization.CultureInfo.InvariantCulture),
             method,
             path,
             priority.ToString(),
@@ -1918,6 +1918,8 @@ public sealed class KubernetesResourceService
             new DetailItem("Name", row.Name),
             new DetailItem("Namespace", row.Namespace ?? "cluster"),
             new DetailItem("Status", row.Status),
+            new DetailItem("Created", PodlordText.HumanTimestamp(Date(item, "/metadata/creationTimestamp"))),
+            new DetailItem("Age", row.AgeDisplay),
             new DetailItem("Ready", row.Ready),
             new DetailItem("Restarts", row.Restarts.ToString()),
             new DetailItem("CPU", row.CpuSummaryDisplay),

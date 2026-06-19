@@ -17,15 +17,25 @@ When adding a file, fill in a row in the table and update `MANIFEST.json`.
 | ---- | ---- | ------ | ------ | ------- |
 | `ui/click.ogg` | Tab + button click | _pending_ | _pending_ | _pending_ |
 | `ui/tab-switch.ogg` | Inspector tab switch | _pending_ | _pending_ | _pending_ |
-| `ui/segment-ping.ogg` | Health bar segment lit | _pending_ | _pending_ | _pending_ |
+| `ui/panel-segment-load.ogg` | Health bar / panel segment lit | https://kenney.nl/assets/ui-audio (`switch1.ogg`) | Kenney | CC0-1.0 |
+| `ui/metal-click.ogg` | Mechanical UI click | https://kenney.nl/assets/rpg-audio (`metalClick.ogg`) | Kenney | CC0-1.0 |
 | `ui/hover.ogg` | Subtle hover beep | _pending_ | _pending_ | _pending_ |
+
+## Interface Pack
+
+| Path | Role | Source | Author | License |
+| ---- | ---- | ------ | ------ | ------- |
+| `interface/*.ogg` | 100 searchable UI and alert candidate sounds | https://kenney.nl/assets/interface-sounds | Kenney | CC0-1.0 |
 
 ## Alerts
 
 | File | Role | Source | Author | License |
 | ---- | ---- | ------ | ------ | ------- |
-| `alerts/incident.ogg` | New CRITICAL appears | _pending_ | _pending_ | _pending_ |
-| `alerts/warning.ogg` | New WARNING appears | _pending_ | _pending_ | _pending_ |
+| `alerts/critical-klaxon.ogg` | New CRITICAL appears | https://kenney.nl/assets/sci-fi-sounds (`lowFrequency_explosion_001.ogg`) | Kenney | CC0-1.0 |
+| `alerts/warning-ping.ogg` | New WARNING appears | https://kenney.nl/assets/interface-sounds (`error_002.ogg`) | Kenney | CC0-1.0 |
+| `alerts/electro-warning.ogg` | Electronic warning chirp | https://kenney.nl/assets/digital-audio (`zapThreeToneUp.ogg`) | Kenney | CC0-1.0 |
+| `alerts/bell-alert.ogg` | Metallic command bell | https://kenney.nl/assets/impact-sounds (`impactBell_heavy_002.ogg`) | Kenney | CC0-1.0 |
+| `alerts/metal-impact.ogg` | Heavy incident impact | https://kenney.nl/assets/impact-sounds (`impactMetal_medium_004.ogg`) | Kenney | CC0-1.0 |
 | `alerts/recovery.ogg` | Critical → healthy | _pending_ | _pending_ | _pending_ |
 | `alerts/under-attack.ogg` | Many criticals at once | _pending_ | _pending_ | _pending_ |
 
@@ -35,8 +45,18 @@ When adding a file, fill in a row in the table and update `MANIFEST.json`.
 | ---- | ---- | ------ | ------ | ------- |
 | `events/startup.ogg` | App launch | _pending_ | _pending_ | _pending_ |
 | `events/load-complete.ogg` | Initial resource load done | _pending_ | _pending_ | _pending_ |
-| `events/radar-activated.ogg` | Screensaver → live radar | _pending_ | _pending_ | _pending_ |
+| `events/radar-activated.ogg` | Screensaver → live radar | https://kenney.nl/assets/interface-sounds (`open_001.ogg`) | Kenney | CC0-1.0 |
+| `events/activity-tick.ogg` | New non-critical activity | https://kenney.nl/assets/interface-sounds (`tick_001.ogg`) | Kenney | CC0-1.0 |
+| `events/power-up.ogg` | Positive activation | https://kenney.nl/assets/digital-audio (`powerUp8.ogg`) | Kenney | CC0-1.0 |
+| `events/power-down.ogg` | Descending deactivation | https://kenney.nl/assets/digital-audio (`lowDown.ogg`) | Kenney | CC0-1.0 |
+| `events/three-tone.ogg` | Neutral system notification | https://kenney.nl/assets/digital-audio (`threeTone1.ogg`) | Kenney | CC0-1.0 |
 | `events/session-switch.ogg` | Source switched | _pending_ | _pending_ | _pending_ |
+
+## Fantasy
+
+| File | Role | Source | Author | License |
+| ---- | ---- | ------ | ------ | ------- |
+| `fantasy/book-open.ogg` | War-room page cue | https://kenney.nl/assets/rpg-audio (`bookOpen.ogg`) | Kenney | CC0-1.0 |
 
 ## Voice
 
@@ -64,7 +84,9 @@ Background loops when incidents present. Aim for tense percussion / cinematic / 
 
 | File | Mood | Duration | Source | Author | License |
 | ---- | ---- | -------- | ------ | ------ | ------- |
-| `music/energetic/01.ogg` | Battle drums | _pending_ | _pending_ | _pending_ | _pending_ |
+| `music/energetic/command-jingle.ogg` | Short command jingle | <1s | https://kenney.nl/assets/music-jingles (`jingles_HIT00.ogg`) | Kenney | CC0-1.0 |
+| `music/energetic/steel-command.ogg` | Metallic command jingle | <1s | https://kenney.nl/assets/music-jingles (`jingles_STEEL03.ogg`) | Kenney | CC0-1.0 |
+| `music/energetic/bit-command.ogg` | 8-bit command jingle | <1s | https://kenney.nl/assets/music-jingles (`jingles_NES04.ogg`) | Kenney | CC0-1.0 |
 | `music/energetic/02.ogg` | Industrial percussion | _pending_ | _pending_ | _pending_ | _pending_ |
 | `music/energetic/03.ogg` | Tense cinematic | _pending_ | _pending_ | _pending_ | _pending_ |
 

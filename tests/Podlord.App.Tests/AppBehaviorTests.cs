@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -189,6 +190,47 @@ public sealed class AppBehaviorTests
         Assert.Equal("18080", badge.Convert([pod, forwards], typeof(string), null, culture));
         Assert.Equal(string.Empty, badge.Convert([pod, Array.Empty<PortForwardTaskViewModel>()], typeof(string), null, culture));
         Assert.Equal(string.Empty, badge.Convert([null, forwards], typeof(string), null, culture));
+    }
+
+    [Fact]
+    public void About_section_exposes_donation_links_repo_actions_and_nerd_rotation()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        Assert.Equal("https://github.com/YunaBraska/podlord", viewModel.AboutRepoUrl);
+        Assert.Equal("https://github.com/YunaBraska/podlord/issues/new", viewModel.AboutIssueUrl);
+        Assert.Equal("https://github.com/YunaBraska/podlord/stargazers", viewModel.AboutStarUrl);
+        Assert.Equal("https://github.com/sponsors/YunaBraska", viewModel.AboutSponsorsUrl);
+        Assert.Equal("https://buymeacoffee.com/YunaBraska", viewModel.AboutBuyMeACoffeeUrl);
+        Assert.Equal("https://ko-fi.com/YunaBraska", viewModel.AboutKoFiUrl);
+        Assert.Equal("https://liberapay.com/YunaBraska", viewModel.AboutLiberapayUrl);
+
+        Assert.True(MainWindowViewModel.AboutBlockCatalog.Count >= 32, $"AboutBlockCatalog should have at least 32 entries but has {MainWindowViewModel.AboutBlockCatalog.Count}.");
+        Assert.All(MainWindowViewModel.AboutBlockCatalog, block =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(block));
+            Assert.DoesNotContain("—", block, StringComparison.Ordinal);
+            Assert.DoesNotContain("–", block, StringComparison.Ordinal);
+        });
+        var first = viewModel.AboutBlockText;
+        Assert.Contains(first, MainWindowViewModel.AboutBlockCatalog);
+        var changed = false;
+        for (var attempt = 0; attempt < MainWindowViewModel.AboutBlockCatalog.Count * 4; attempt++)
+        {
+            viewModel.PickAboutBlock();
+            if (!string.Equals(viewModel.AboutBlockText, first, StringComparison.Ordinal))
+            {
+                changed = true;
+                break;
+            }
+        }
+        Assert.True(changed, "PickAboutBlock should eventually move to a different catalog entry.");
+
+        viewModel.OpenAboutUrl(null);
+        viewModel.OpenAboutUrl(string.Empty);
+        viewModel.OpenAboutUrl("not a url");
     }
 
     [Fact]
@@ -2543,9 +2585,975 @@ public sealed class AppBehaviorTests
         Assert.Equal("••••••••••••", secret.DisplayValue);
     }
 
+    [Fact]
+    public void Alert_rule_store_merges_defaults_preserves_default_enabled_state_and_keeps_custom_rules()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var defaultRule = AlertRuleCatalog.DefaultRules[0] with { Enabled = false };
+            var custom = new AlertRule(
+                "custom-memory",
+                "Memory pressure",
+                "Custom memory alert",
+                true,
+                false,
+                "warning",
+                new AlertRuleMatchers(Memory: "p95"),
+                new AlertRuleActions(PlaySound: true),
+                new AlertRuleUntil(AlertUntilModes.Duration, "10s"),
+                "warning-ping");
+            var grouped = custom with
+            {
+                Id = "custom-grouped",
+                Name = "Grouped",
+                MatcherGroups =
+                [
+                    new AlertMatcherGroup("one", [new AlertMatcherCriterion("kind", "Kind", "\"Pod\"")]),
+                    new AlertMatcherGroup("two", [new AlertMatcherCriterion("cpu", "CPU", "p95")])
+                ]
+            };
+
+            AlertRuleStore.Save([defaultRule, custom, grouped]);
+            var loaded = AlertRuleStore.Load();
+
+            Assert.Contains(loaded, rule => rule.Id == defaultRule.Id && !rule.Enabled && rule.BuiltIn);
+            Assert.Contains(loaded, rule => rule.Id == "custom-memory" && !rule.BuiltIn && rule.Matchers.Memory == "p95");
+            var loadedGrouped = Assert.Single(loaded, rule => rule.Id == "custom-grouped");
+            Assert.Equal(2, loadedGrouped.MatcherGroups?.Count);
+            Assert.Equal(["one", "two"], loadedGrouped.MatcherGroups!.Select(group => group.Id).ToArray());
+            Assert.Equal(AlertRuleCatalog.DefaultRules.Count + 2, loaded.Count);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_editor_adds_custom_rule_saves_it_and_evaluates_cached_rows()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Restarted pods";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.RadarBlink = true;
+            custom.RadarZoom = false;
+            custom.PlaySound = true;
+            custom.SoundChoice = AlertSoundCatalog.Resolve("warning-ping").Label;
+            InjectCachedRows(viewModel, [
+                Row("Running", "quiet", 0, "1/1"),
+                Row("Running", "noisy", 2, "1/1")
+            ]);
+
+            viewModel.SaveAlertRules();
+
+            var active = Assert.Single(viewModel.ActiveAlerts);
+            Assert.Equal("Restarted pods", active.Rule);
+            Assert.Contains("Pod/noisy", active.Matches, StringComparison.Ordinal);
+            Assert.Contains("blink", active.Actions, StringComparison.Ordinal);
+            Assert.Contains("Warning ping", active.Sound, StringComparison.Ordinal);
+            Assert.Contains(AlertRuleStore.Load(), rule => rule.Name == "Restarted pods" && rule.Matchers.Restarts == ">1");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_rule_row_blocks_builtin_edits_and_exposes_sound_attribution()
+    {
+        var builtInRule = AlertRuleCatalog.DefaultRules.First(rule => rule.Id == "default-active-view-pulse");
+        var builtIn = new AlertRuleRowViewModel(builtInRule);
+        var custom = new AlertRuleRowViewModel(builtInRule with
+        {
+            Id = "custom-copy",
+            BuiltIn = false,
+            Name = "Custom copy"
+        });
+        var changedProperties = new List<string>();
+        custom.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changedProperties.Add(args.PropertyName);
+            }
+        };
+
+        builtIn.Name = "Changed";
+        builtIn.Kind = "\"Deployment\"";
+        builtIn.Enabled = false;
+        custom.Kind = "\"Deployment\"";
+        custom.Restarts = ">5";
+        custom.PlaySound = true;
+        custom.SoundChoice = AlertSoundCatalog.Resolve("critical-klaxon").Label;
+        custom.SelectedColor = Color.Parse("#123456");
+        custom.UseStatusColor();
+        custom.UseNoColor();
+        custom.SoundSearch = "metal";
+
+        Assert.NotEqual("Changed", builtIn.Name);
+        Assert.Equal("", builtIn.Kind);
+        Assert.False(builtIn.Enabled);
+        Assert.Contains("Kind=\"Deployment\"", custom.MatcherSummary, StringComparison.Ordinal);
+        Assert.Contains("Restarts=>5", custom.MatcherSummary, StringComparison.Ordinal);
+        Assert.Contains("sound:critical-klaxon", custom.ActionSummary, StringComparison.Ordinal);
+        Assert.Equal("none", custom.ColorChoice);
+        Assert.True(builtIn.IsNoColor);
+        Assert.Equal("5s", builtIn.AnimationUntilDuration);
+        Assert.Equal("5s", builtIn.AnimationDurationChoice);
+        Assert.False(builtIn.HasSound);
+        Assert.False(builtIn.HasZoom);
+        Assert.Equal(string.Empty, builtIn.SoundAttribution);
+        Assert.Equal(string.Empty, builtIn.SoundSourceUrl);
+        Assert.NotNull(builtIn.AnimationPreviewBrush);
+        Assert.Contains(custom.FilteredSoundChoices, choice => choice.Contains("Metal", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(custom.FilteredSoundItems, choice => choice.Name.Contains("Metal", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(custom.FilteredSoundChoices, choice => choice.Contains("Radar activated", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("Kenney", custom.SoundAttribution);
+        Assert.Equal("https://kenney.nl/assets/sci-fi-sounds", custom.SoundSourceUrl);
+        Assert.Contains(nameof(AlertRuleRowViewModel.MatcherSummary), changedProperties);
+        Assert.Contains(nameof(AlertRuleRowViewModel.ActionSummary), changedProperties);
+    }
+
+    [Fact]
+    public void Alert_rule_row_guided_editor_builds_or_matchers_actions_and_sound_metadata()
+    {
+        var row = new AlertRuleRowViewModel(new AlertRule(
+            "custom-guided",
+            "Guided alert",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(RadarFocus: false, RadarZoom: false, RadarBlink: false, RadarColor: false, PlaySound: false),
+            new AlertRuleUntil("none"),
+            "none"));
+
+        row.MatcherGroups[0].Criteria[0].Field = "Kind";
+        row.MatcherGroups[0].Criteria[0].Expression = "\"Pod\"";
+        row.AddCriterion(row.MatcherGroups[0]);
+        row.MatcherGroups[0].Criteria[1].Field = "Restarts";
+        row.MatcherGroups[0].Criteria[1].Expression = ">1";
+        row.AddMatcherGroup();
+        row.MatcherGroups[1].Criteria[0].Field = "CPU";
+        row.MatcherGroups[1].Criteria[0].Expression = "p95";
+        row.ColorChoice = "red";
+        row.ColorDurationChoice = "10s";
+        row.AnimationChoice = "blink";
+        row.AnimationDurationChoice = "until change";
+        row.ZoomChoice = "150%";
+        row.SoundChoice = AlertSoundCatalog.Resolve("critical-klaxon").Label;
+
+        var rule = row.ToRule();
+
+        Assert.Contains("once", row.DurationChoices);
+        Assert.Contains("1s", row.DurationChoices);
+        Assert.Contains("60s", row.DurationChoices);
+        Assert.Equal(2, rule.MatcherGroups?.Count);
+        Assert.Equal(["Kind", "Restarts"], rule.MatcherGroups![0].Criteria.Select(criterion => criterion.Field).ToArray());
+        Assert.Equal(["CPU"], rule.MatcherGroups[1].Criteria.Select(criterion => criterion.Field).ToArray());
+        Assert.True(rule.Actions.RadarColor);
+        Assert.Equal("red", rule.Actions.RadarColorValue);
+        Assert.Equal(AlertUntilModes.Duration, rule.Actions.RadarColorUntilMode);
+        Assert.Equal("10s", rule.Actions.RadarColorUntilDuration);
+        Assert.True(rule.Actions.RadarBlink);
+        Assert.Equal("blink", rule.Actions.RadarAnimation);
+        Assert.True(rule.Actions.RadarZoom);
+        Assert.Equal(150, rule.Actions.RadarZoomPercent);
+        Assert.True(rule.Actions.PlaySound);
+        Assert.Equal("critical-klaxon", rule.SoundId);
+        Assert.Contains("color:red", row.ActionSummary, StringComparison.Ordinal);
+        Assert.Contains("animation:blink", row.ActionSummary, StringComparison.Ordinal);
+        Assert.Contains("zoom:150%", row.ActionSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Alert_sound_catalog_uses_traceable_bundled_cc0_assets()
+    {
+        var projectRoot = LocateProjectRoot();
+        foreach (var sound in AlertSoundCatalog.BuiltIn.Where(sound => sound.Id != "none"))
+        {
+            Assert.Equal("Kenney", sound.Author);
+            Assert.Equal("CC0-1.0", sound.License);
+            Assert.StartsWith("https://kenney.nl/assets/", sound.SourceUrl, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(projectRoot, "src", "Podlord.App", sound.Asset)), $"{sound.Asset} is missing.");
+        }
+
+        Assert.True(AlertSoundCatalog.BuiltIn.Count >= 100);
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "radar-activated");
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "panel-segment-load");
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "kenney-interface-error-008" && sound.SourceUrl == "https://kenney.nl/assets/interface-sounds");
+        Assert.Contains(AlertSoundCatalog.BuiltIn, sound => sound.Id == "command-ambient-loop" && sound.IsMusic);
+    }
+
+    [Fact]
+    public void Default_alert_rules_recreate_old_radar_colors_and_view_pulse()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Running", "recent", 0, "1/1") with { Age = "2h", LastChange = "now" },
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+
+            ApplyLocalFilter(viewModel);
+
+            var quiet = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "quiet");
+            var recent = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "recent");
+            var waiting = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "waiting");
+            var broken = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "broken");
+
+            Assert.Equal("none", quiet.AlertColor);
+            Assert.False(quiet.IsPulseAnimation);
+            Assert.Equal("fresh", recent.AlertColor);
+            Assert.True(recent.IsPulseAnimation);
+            Assert.Equal("status", waiting.AlertColor);
+            Assert.True(waiting.IsPulseAnimation);
+            Assert.Equal("status", broken.AlertColor);
+            Assert.True(broken.IsPulseAnimation);
+            var graphBroken = FlattenGraph(viewModel.GraphNodes).First(node => node.Resource?.Name == "broken");
+            Assert.True(graphBroken.Resource?.IsPulseAnimation);
+            var waitingRow = Assert.Single(viewModel.Resources, row => row.Name == "waiting");
+            var problemBrush = new AlertResourceBrushConverter().Convert(waitingRow, typeof(IBrush), null, CultureInfo.InvariantCulture);
+            Assert.Equal(BrushColor(AppThemeCatalog.StatusBrush("WARNING")), BrushColor(problemBrush));
+
+            var recentBroken = Row("CrashLoopBackOff", "recent-broken", 1, "0/1") with { Age = "2h", LastChange = "now" };
+            InjectCachedRows(viewModel, [recentBroken]);
+            ApplyLocalFilter(viewModel);
+            Assert.Equal("status", Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "recent-broken").AlertColor);
+            Assert.Contains(player.PlayedPaths, path => path.EndsWith("warning-ping.ogg", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Problem_color_default_zooms_to_matching_center_and_plays_warning_once_per_update()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+            Assert.InRange(ReadPrivate<double>(viewModel, "radarAutoFollowTargetZoom"), 0.99, 1.01);
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+            ApplyLocalFilter(viewModel);
+
+            var targets = viewModel.RadarBlocks
+                .Where(block => block.Resource.Name is "waiting" or "broken")
+                .ToList();
+            var expectedPanX = -targets.Average(block => block.X + block.Width / 2d - 480d / 2d);
+            var expectedPanY = -targets.Average(block => block.Y + block.Height / 2d - 220d / 2d);
+
+            viewModel.PlayNextQueuedAlertSoundForTests();
+            Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+            Assert.Equal(1, viewModel.RadarAutoFollowQueueCountForTests);
+            for (var i = 0; i < 18; i++)
+            {
+                viewModel.StepRadarAutoFollowForTests();
+            }
+
+            Assert.Equal(0, viewModel.RadarAutoFollowQueueCountForTests);
+            Assert.Equal(expectedPanX, ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanX"), precision: 2);
+            Assert.Equal(expectedPanY, ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanY"), precision: 2);
+
+            ApplyLocalFilter(viewModel);
+            Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 2, "0/1") with { Age = "2h", LastChange = "1s" }
+            ]);
+            ApplyLocalFilter(viewModel);
+
+            viewModel.PlayNextQueuedAlertSoundForTests();
+            Assert.Equal(3, CountPlayed(player, "warning-ping.ogg"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Reactivating_problem_color_default_replays_warning_for_existing_problem_match()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }]);
+
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+            var problemRule = Assert.Single(viewModel.AlertRules, rule => rule.Id == "default-problem-color");
+
+            viewModel.ToggleAlertRule(problemRule);
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+
+            viewModel.ToggleAlertRule(problemRule);
+            viewModel.PlayNextQueuedAlertSoundForTests();
+
+            Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Muting_app_audio_blocks_automatic_alert_sounds()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.ToggleAudioMute();
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel,
+            [
+                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+
+            ApplyLocalFilter(viewModel);
+
+            Assert.True(viewModel.IsAudioMuted);
+            Assert.Empty(player.PlayedPaths);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Multiple_alert_sounds_are_played_in_sequence_instead_of_collapsing()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.AddAlertRule();
+            var warning = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            warning.Name = "Restart warning";
+            warning.Restarts = ">1";
+            warning.SoundChoice = AlertSoundCatalog.Resolve("warning-ping").Label;
+            warning.ColorChoice = "none";
+            warning.AnimationChoice = "none";
+            warning.ZoomChoice = "none";
+
+            viewModel.AddAlertRule();
+            var critical = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            critical.Name = "Restart critical";
+            critical.Restarts = ">1";
+            critical.SoundChoice = AlertSoundCatalog.Resolve("critical-klaxon").Label;
+            critical.ColorChoice = "none";
+            critical.AnimationChoice = "none";
+            critical.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+
+            viewModel.SaveAlertRules();
+
+            Assert.Single(player.PlayedPaths);
+            Assert.EndsWith("warning-ping.ogg", player.PlayedPaths[0], StringComparison.Ordinal);
+
+            viewModel.PlayNextQueuedAlertSoundForTests();
+
+            Assert.Equal(2, player.PlayedPaths.Count);
+            Assert.EndsWith("critical-klaxon.ogg", player.PlayedPaths[1], StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Multiple_alert_zoom_actions_are_queued_in_rule_order()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            var first = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            first.Name = "First zoom";
+            first.NameFilter = "\"first\"";
+            first.ColorChoice = "none";
+            first.AnimationChoice = "none";
+            first.ZoomChoice = "100%";
+
+            viewModel.AddAlertRule();
+            var second = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            second.Name = "Second zoom";
+            second.NameFilter = "\"second\"";
+            second.ColorChoice = "none";
+            second.AnimationChoice = "none";
+            second.ZoomChoice = "100%";
+
+            InjectCachedRows(viewModel,
+            [
+                Row("Running", "first", 0, "1/1") with { Age = "2h", LastChange = "2h" },
+                Row("Running", "second", 0, "1/1") with { Age = "2h", LastChange = "2h" }
+            ]);
+
+            viewModel.SaveAlertRules();
+
+            Assert.Equal(1, viewModel.RadarAutoFollowQueueCountForTests);
+            var firstTargetPanX = ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanX");
+            for (var i = 0; i < 18; i++)
+            {
+                viewModel.StepRadarAutoFollowForTests();
+            }
+
+            Assert.Equal(0, viewModel.RadarAutoFollowQueueCountForTests);
+            Assert.NotEqual(firstTargetPanX, ReadPrivate<double>(viewModel, "radarAutoFollowTargetPanX"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Disabling_default_alert_rules_removes_old_hidden_radar_and_table_fallbacks()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel,
+            [
+                Row("CrashLoopBackOff", "broken", 1, "0/1"),
+                Row("Running", "recent", 0, "1/1") with { LastChange = "now" }
+            ]);
+
+            ApplyLocalFilter(viewModel);
+
+            Assert.All(viewModel.RadarBlocks.Where(block => block.Resource.Kind == "Pod"), block =>
+            {
+                Assert.Equal("none", block.AlertColor);
+                Assert.False(block.IsAnnouncing);
+            });
+            Assert.All(viewModel.Resources, row =>
+            {
+                Assert.False(row.IsAnnouncing);
+                Assert.Equal("", row.AlertAnimation);
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Default_active_view_pulse_expires_without_restarting_while_resource_stays_visible()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [Row("Running", "active", 0, "1/1") with { Age = "2h", LastChange = "2h" }]);
+
+            ApplyLocalFilter(viewModel);
+
+            var firstRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.True(firstRadar.IsPulseAnimation);
+            Assert.True(Assert.Single(viewModel.Resources, row => row.Name == "active").IsPulseAnimation);
+
+            ExpireAlertTimers(viewModel, firstRadar.Resource.Id);
+            viewModel.ExpireAlertAnimationsForTests();
+
+            var secondRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.False(secondRadar.IsAnnouncing);
+            Assert.False(Assert.Single(viewModel.Resources, row => row.Name == "active").IsAnnouncing);
+
+            viewModel.PanRadar(10_000, 10_000);
+            Assert.DoesNotContain(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+
+            viewModel.PanRadar(-10_000, -10_000);
+            var returningRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.True(returningRadar.IsPulseAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_sound_preview_uses_embedded_audio_player_without_shelling_to_browser()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.AddAlertRule();
+            viewModel.SelectedAlertRule!.SoundChoice = AlertSoundCatalog.Resolve("warning-ping").Label;
+
+            viewModel.PreviewSelectedAlertSound();
+
+            var playedPath = Assert.Single(player.PlayedPaths);
+            Assert.EndsWith("warning-ping.ogg", playedPath, StringComparison.Ordinal);
+            Assert.True(File.Exists(playedPath));
+            Assert.Contains("Previewing Warning ping", viewModel.StatusLine, StringComparison.Ordinal);
+            Assert.False(player.DisposedBeforePlay);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_actions_control_radar_blink_and_color_from_cached_rows()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 2)]);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Silent visual rule";
+            custom.Kind = "\"Pod\"";
+            custom.RadarBlink = false;
+            custom.RadarColor = false;
+            custom.RadarFocus = false;
+            custom.RadarZoom = false;
+            viewModel.SaveAlertRules();
+
+            var quietBlock = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var quietBrush = quietBlock.Brush;
+            Assert.False(quietBlock.IsAnnouncing);
+
+            custom.RadarBlink = true;
+            custom.RadarColor = true;
+            custom.ColorChoice = "#123456";
+            viewModel.SaveAlertRules();
+
+            var activeBlock = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            Assert.True(activeBlock.IsAnnouncing);
+            Assert.False(ReferenceEquals(quietBrush, activeBlock.Brush));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_duration_keeps_action_active_after_match_clears()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Restart hold";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.RadarBlink = true;
+            custom.RadarColor = false;
+            custom.UntilMode = AlertUntilModes.Duration;
+            custom.UntilDuration = "10s";
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 2)]);
+            viewModel.SaveAlertRules();
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsAnnouncing);
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 0)]);
+            viewModel.SaveAlertRules();
+
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsAnnouncing);
+            Assert.Contains(viewModel.ActiveAlerts, alert => alert.Rule == "Restart hold");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_color_duration_holds_color_after_match_clears_without_forcing_animation()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Color hold";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "#123456";
+            custom.ColorUntilMode = AlertUntilModes.Duration;
+            custom.ColorUntilDuration = "10s";
+            custom.AnimationChoice = "none";
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 2)]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            var active = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var activeRow = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+
+            Assert.Equal("#123456", active.AlertColor);
+            Assert.False(active.IsAnnouncing);
+            Assert.False(activeRow.IsAnnouncing);
+
+            InjectCachedRows(viewModel, [QuietAlertRow("noisy", 0)]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            var held = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var heldRow = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+
+            Assert.Equal("#123456", held.AlertColor);
+            Assert.False(held.IsAnnouncing);
+            Assert.False(heldRow.IsAnnouncing);
+
+            custom.ColorUntilMode = "none";
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal("none", Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").AlertColor);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("blink")]
+    [InlineData("pulse")]
+    [InlineData("sweep")]
+    [InlineData("outline")]
+    public void Alert_animation_choice_reaches_radar_and_resource_rows_as_distinct_state(string animation)
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Animation state";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "none";
+            custom.AnimationChoice = animation;
+            custom.AnimationUntilMode = AlertUntilModes.NoMatch;
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            var radar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var resource = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+            Assert.True(radar.IsAnnouncing);
+            Assert.True(resource.IsAnnouncing);
+            Assert.Equal(animation, radar.AlertAnimation);
+            Assert.Equal(animation, resource.AlertAnimation);
+            Assert.Equal(animation == "blink", radar.IsBlinkAnimation);
+            Assert.Equal(animation == "pulse", radar.IsPulseAnimation);
+            Assert.Equal(animation == "sweep", radar.IsSweepAnimation);
+            Assert.Equal(animation == "outline", radar.IsOutlineAnimation);
+            Assert.Equal(animation == "blink", resource.IsBlinkAnimation);
+            Assert.Equal(animation == "pulse", resource.IsPulseAnimation);
+            Assert.Equal(animation == "sweep", resource.IsSweepAnimation);
+            Assert.Equal(animation == "outline", resource.IsOutlineAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Alert_animation_duration_holds_animation_after_match_clears()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            Assert.NotNull(viewModel.SelectedAlertRule);
+            var custom = viewModel.SelectedAlertRule!;
+            custom.Name = "Animation hold";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "none";
+            custom.AnimationChoice = "sweep";
+            custom.AnimationDurationChoice = "10s";
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsSweepAnimation);
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 0, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+            var heldRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy");
+            var heldResource = Assert.Single(viewModel.Resources, row => row.Name == "noisy");
+
+            Assert.True(heldRadar.IsSweepAnimation);
+            Assert.True(heldResource.IsSweepAnimation);
+            Assert.Contains(viewModel.ActiveAlerts, alert => alert.Rule == "Animation hold");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Finite_alert_animation_expires_and_restarts_only_when_matched_resource_changes()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            foreach (var rule in viewModel.AlertRules.Where(rule => rule.BuiltIn))
+            {
+                rule.Enabled = false;
+            }
+
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.AddAlertRule();
+            var custom = Assert.IsType<AlertRuleRowViewModel>(viewModel.SelectedAlertRule);
+            custom.Name = "Finite pulse";
+            custom.Kind = "\"Pod\"";
+            custom.Restarts = ">1";
+            custom.ColorChoice = "none";
+            custom.AnimationChoice = "pulse";
+            custom.AnimationDurationChoice = "2s";
+            custom.ZoomChoice = "none";
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 2, "1/1")]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            var rowId = Assert.Single(viewModel.Resources, row => row.Name == "noisy").Id;
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsPulseAnimation);
+
+            ExpireAlertHold(viewModel, "alertAnimationUntilByRuleResource", custom.Id, rowId);
+            viewModel.ExpireAlertAnimationsForTests();
+
+            Assert.False(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsAnnouncing);
+            Assert.False(Assert.Single(viewModel.Resources, row => row.Name == "noisy").IsAnnouncing);
+
+            InjectCachedRows(viewModel, [Row("Running", "noisy", 3, "1/1") with { LastChange = "1s" }]);
+            viewModel.SaveAlertRules();
+            ApplyLocalFilter(viewModel);
+
+            Assert.True(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "noisy").IsPulseAnimation);
+            Assert.True(Assert.Single(viewModel.Resources, row => row.Name == "noisy").IsPulseAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static FilterPreset Preset(string name, bool problems)
     {
         return new FilterPreset(name, problems, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "256");
+    }
+
+    private sealed class RecordingAlertSoundPlayer : IAlertSoundPlayer
+    {
+        private bool disposed;
+
+        public List<string> PlayedPaths { get; } = [];
+
+        public bool DisposedBeforePlay { get; private set; }
+
+        public bool Play(string path, out string error)
+        {
+            DisposedBeforePlay = disposed;
+            PlayedPaths.Add(path);
+            error = string.Empty;
+            return true;
+        }
+
+        public void Dispose()
+        {
+            disposed = true;
+        }
     }
 
     private static string OneContextKubeconfig(string server, string name = "dev")
@@ -2585,6 +3593,82 @@ users:
             "ReplicaSet/api",
             "now",
             FreshnessState.Fresh);
+    }
+
+    private static FlatResourceRow QuietAlertRow(string name, int restarts)
+    {
+        return Row("Succeeded", name, restarts, "1/1") with { Age = "2h", LastChange = "2h" };
+    }
+
+    private static void InjectCachedRows(MainWindowViewModel viewModel, IReadOnlyList<FlatResourceRow> rows)
+    {
+        var field = typeof(MainWindowViewModel).GetField("cachedRows", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException("cachedRows field missing");
+        var cached = (List<FlatResourceRow>)(field.GetValue(viewModel)
+                    ?? throw new InvalidOperationException("cachedRows field was null"));
+        cached.Clear();
+        cached.AddRange(rows);
+    }
+
+    private static void ApplyLocalFilter(MainWindowViewModel viewModel)
+    {
+        var method = typeof(MainWindowViewModel).GetMethod("ApplyLocalFilter", BindingFlags.NonPublic | BindingFlags.Instance)
+                     ?? throw new InvalidOperationException("ApplyLocalFilter method missing");
+        method.Invoke(viewModel, null);
+    }
+
+    private static void ExpireAlertTimers(MainWindowViewModel viewModel, string rowId)
+    {
+        ExpireTimer(viewModel, "resourceAlertBlinkUntil", rowId);
+        ExpireTimer(viewModel, "radarAlertBlinkUntil", rowId);
+    }
+
+    private static void ExpireTimer(MainWindowViewModel viewModel, string fieldName, string rowId)
+    {
+        var field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        var timers = (Dictionary<string, DateTimeOffset>)(field.GetValue(viewModel)
+                     ?? throw new InvalidOperationException($"{fieldName} field is null"));
+        timers[rowId] = DateTimeOffset.Now.Subtract(TimeSpan.FromSeconds(1));
+    }
+
+    private static void ExpireAlertHold(MainWindowViewModel viewModel, string fieldName, string ruleId, string rowId)
+    {
+        var field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        var timers = (Dictionary<(string RuleId, string RowId), DateTimeOffset>)(field.GetValue(viewModel)
+                     ?? throw new InvalidOperationException($"{fieldName} field is null"));
+        timers[(ruleId, rowId)] = DateTimeOffset.Now.Subtract(TimeSpan.FromSeconds(1));
+    }
+
+    private static T ReadPrivate<T>(MainWindowViewModel viewModel, string fieldName)
+    {
+        var field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        return (T)(field.GetValue(viewModel)
+                   ?? throw new InvalidOperationException($"{fieldName} field is null"));
+    }
+
+    private static int CountPlayed(RecordingAlertSoundPlayer player, string fileName)
+    {
+        return player.PlayedPaths.Count(path => path.EndsWith(fileName, StringComparison.Ordinal));
+    }
+
+    private static Color BrushColor(object brush)
+    {
+        return Assert.IsType<SolidColorBrush>(brush).Color;
+    }
+
+    private static IEnumerable<GraphNodeViewModel> FlattenGraph(IEnumerable<GraphNodeViewModel> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var child in FlattenGraph(node.Children))
+            {
+                yield return child;
+            }
+        }
     }
 
     private static string RadarFixtureFor(string path)
@@ -2682,6 +3766,25 @@ users:
         }
 
         throw new FileNotFoundException("PodlordLocalizer.cs source file not found.");
+    }
+
+    private static string LocateProjectRoot()
+    {
+        for (var directory = AppContext.BaseDirectory; !string.IsNullOrWhiteSpace(directory); directory = Path.GetDirectoryName(directory) ?? string.Empty)
+        {
+            if (File.Exists(Path.Combine(directory, "Podlord.slnx"))
+                && Directory.Exists(Path.Combine(directory, "src", "Podlord.App")))
+            {
+                return directory;
+            }
+
+            if (directory == Path.GetPathRoot(directory))
+            {
+                break;
+            }
+        }
+
+        throw new DirectoryNotFoundException("Podlord project root not found.");
     }
 
     private static IReadOnlySet<string> CatalogLocaleCodesFromSource(string source)

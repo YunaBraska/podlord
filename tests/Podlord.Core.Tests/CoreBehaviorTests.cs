@@ -647,6 +647,219 @@ users:
         ];
     }
 
+    [Fact]
+    public void Alert_rule_catalog_has_locked_defaults_for_old_radar_behavior()
+    {
+        Assert.Equal(
+            ["default-problem-color", "default-recent-change-color", "default-active-view-pulse"],
+            AlertRuleCatalog.DefaultRules.Select(rule => rule.Id).ToArray());
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-problem-color" && rule.BuiltIn && !rule.CanEdit);
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-problem-color"
+            && rule.Actions.RadarColorValue == "status"
+            && !rule.Actions.RadarBlink
+            && rule.Actions.RadarZoom
+            && rule.Actions.RadarFocus
+            && rule.Actions.RadarZoomPercent == 100
+            && rule.Actions.PlaySound
+            && rule.Actions.SoundMinimumMatches == 1
+            && rule.SoundId == "warning-ping");
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-recent-change-color" && rule.Actions.RadarColorValue == "fresh" && !rule.Actions.RadarBlink);
+        Assert.Contains(AlertRuleCatalog.DefaultRules, rule => rule.Id == "default-active-view-pulse"
+            && rule.Actions.RadarBlink
+            && rule.Actions.RadarAnimation == "pulse"
+            && rule.Actions.RadarAnimationUntilMode == AlertUntilModes.NewInView
+            && rule.Actions.RadarAnimationUntilDuration == "5s"
+            && rule.MatcherGroups?.Single().Criteria.Select(criterion => criterion.Field).Order(StringComparer.Ordinal).ToArray() is ["Active", "New in view"]);
+        Assert.All(AlertRuleCatalog.DefaultRules.Where(rule => rule.Id != "default-problem-color"), rule => Assert.Equal("none", rule.SoundId));
+        Assert.All(AlertRuleCatalog.DefaultRules, rule => Assert.True(rule.Enabled));
+        var groupIds = AlertRuleCatalog.DefaultRules.SelectMany(rule => rule.MatcherGroups ?? []).Select(group => group.Id).ToArray();
+        var criterionIds = AlertRuleCatalog.DefaultRules.SelectMany(rule => rule.MatcherGroups ?? []).SelectMany(group => group.Criteria).Select(criterion => criterion.Id).ToArray();
+        Assert.Equal(groupIds.Length, groupIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(criterionIds.Length, criterionIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(groupIds, id => Assert.StartsWith("default-", id, StringComparison.Ordinal));
+        Assert.All(criterionIds, id => Assert.StartsWith("default-", id, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_reuses_filter_matchers_and_respects_disabled_rules()
+    {
+        var rows = SampleRows();
+        var rule = new AlertRule(
+            "custom-pod",
+            "Pod restarts",
+            "Pod restart alert",
+            true,
+            false,
+            "warning",
+            new AlertRuleMatchers(Kind: "\"Pod\"", Restarts: ">1", Namespace: "\"payments\""),
+            new AlertRuleActions(),
+            new AlertRuleUntil());
+
+        var active = AlertRuleEvaluator.EvaluateRule(rows, rule);
+        var disabled = AlertRuleEvaluator.EvaluateRule(rows, rule with { Enabled = false });
+
+        Assert.True(active.Triggered);
+        Assert.Equal(["payment-api-7d9"], active.Matches.Select(row => row.Name).ToArray());
+        Assert.False(disabled.Triggered);
+        Assert.Empty(disabled.Matches);
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_active_alias_for_activity_matcher()
+    {
+        var rows = new[]
+        {
+            HealthyRow("old") with { Status = "Succeeded", Age = "2h", LastChange = "2h" },
+            HealthyRow("fresh") with { Status = "Succeeded", Age = "20s", LastChange = "20s" },
+            HealthyRow("rollout") with { Status = "Progressing", Age = "2h", LastChange = "2h" }
+        };
+        var activeRule = new AlertRule(
+            "active",
+            "Active rows",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups: [new AlertMatcherGroup("active", [new AlertMatcherCriterion("active", "Active", "true")])]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, activeRule);
+
+        Assert.Equal(["fresh", "rollout"], result.Matches.Select(row => row.Name).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_old_radar_virtual_matchers()
+    {
+        var rows = new[]
+        {
+            new FlatResourceRow(
+                "recent",
+                "Running",
+                "Pod",
+                "recent",
+                "payments",
+                "prod",
+                "2h",
+                "1/1",
+                0,
+                null,
+                "api:1",
+                null,
+                "now",
+                FreshnessState.Fresh),
+            new FlatResourceRow(
+                "error",
+                "CrashLoopBackOff",
+                "Pod",
+                "broken",
+                "payments",
+                "prod",
+                "2h",
+                "0/1",
+                1,
+                null,
+                "api:1",
+                null,
+                "2h",
+                FreshnessState.Fresh)
+        };
+        var recent = new AlertRule(
+            "recent",
+            "Recent",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups: [new AlertMatcherGroup("recent", [new AlertMatcherCriterion("recent", "Recently changed", "true")])]);
+        var error = recent with
+        {
+            Id = "error",
+            MatcherGroups = [new AlertMatcherGroup("error", [new AlertMatcherCriterion("error", "Error", "true")])]
+        };
+        var newInView = recent with
+        {
+            Id = "new-in-view",
+            MatcherGroups = [new AlertMatcherGroup("new-in-view", [new AlertMatcherCriterion("new-in-view", "New in view", "true")])]
+        };
+
+        Assert.Equal(["recent"], AlertRuleEvaluator.EvaluateRule(rows, recent).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["broken"], AlertRuleEvaluator.EvaluateRule(rows, error).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["recent", "broken"], AlertRuleEvaluator.EvaluateRule(rows, newInView).Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_outlier_and_p95_matchers()
+    {
+        var rows = new[]
+        {
+            HealthyRow("quiet-a") with { Restarts = 0, Age = "1m", Pulse = ResourcePulse.Empty with { CpuMillicores = 20 } },
+            HealthyRow("quiet-b") with { Restarts = 1, Age = "2m", Pulse = ResourcePulse.Empty with { CpuMillicores = 30 } },
+            HealthyRow("quiet-c") with { Restarts = 2, Age = "3m", Pulse = ResourcePulse.Empty with { CpuMillicores = 40 } },
+            HealthyRow("noisy") with { Restarts = 80, Age = "2h", Pulse = ResourcePulse.Empty with { CpuMillicores = 900 } }
+        };
+        var restartRule = new AlertRule(
+            "restart-outlier",
+            "Restart outlier",
+            "",
+            true,
+            false,
+            "warning",
+            new AlertRuleMatchers(Restarts: "outlier"),
+            new AlertRuleActions(),
+            new AlertRuleUntil());
+        var cpuRule = restartRule with { Id = "cpu-p95", Matchers = new AlertRuleMatchers(Cpu: "p95") };
+        var ageRule = restartRule with { Id = "age-p95", Matchers = new AlertRuleMatchers(Age: "p95") };
+
+        Assert.Equal(["noisy"], AlertRuleEvaluator.EvaluateRule(rows, restartRule).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["noisy"], AlertRuleEvaluator.EvaluateRule(rows, cpuRule).Matches.Select(row => row.Name).ToArray());
+        Assert.Equal(["noisy"], AlertRuleEvaluator.EvaluateRule(rows, ageRule).Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_supports_or_groups_with_and_criteria()
+    {
+        var rows = new[]
+        {
+            HealthyRow("api-a") with { Namespace = "payments", Restarts = 0, Pulse = ResourcePulse.Empty with { CpuMillicores = 50 } },
+            HealthyRow("api-b") with { Namespace = "payments", Restarts = 4, Pulse = ResourcePulse.Empty with { CpuMillicores = 90 } },
+            HealthyRow("worker-a") with { Namespace = "jobs", Restarts = 0, Pulse = ResourcePulse.Empty with { CpuMillicores = 900 } },
+            HealthyRow("worker-b") with { Namespace = "jobs", Restarts = 0, Pulse = ResourcePulse.Empty with { CpuMillicores = 40 } }
+        };
+        var rule = new AlertRule(
+            "custom-groups",
+            "Grouped alert",
+            "",
+            true,
+            false,
+            "",
+            new AlertRuleMatchers(Kind: "\"NeverUsed\""),
+            new AlertRuleActions(),
+            new AlertRuleUntil(),
+            MatcherGroups:
+            [
+                new AlertMatcherGroup("restart-payments", [
+                    new AlertMatcherCriterion("restart-kind", "Kind", "\"Pod\""),
+                    new AlertMatcherCriterion("restart-ns", "Namespace", "\"payments\""),
+                    new AlertMatcherCriterion("restart-count", "Restarts", ">1")
+                ]),
+                new AlertMatcherGroup("cpu-jobs", [
+                    new AlertMatcherCriterion("cpu-ns", "Namespace", "\"jobs\""),
+                    new AlertMatcherCriterion("cpu-value", "CPU", ">500m")
+                ])
+            ]);
+
+        var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
+
+        Assert.True(result.Triggered);
+        Assert.Equal(["api-b", "worker-a"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
     private static FlatResourceRow HealthyRow(string name)
     {
         return new FlatResourceRow(

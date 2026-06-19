@@ -3,18 +3,20 @@
   "version": 1,
   "description": "Maps semantic sound roles to files. Multiple files per role = shuffled. Empty array = silent.",
   "sounds": {
-    "ui.click": [],
+    "ui.click": ["ui/metal-click.ogg"],
     "ui.tab_switch": [],
-    "ui.segment_ping": [],
+    "ui.segment_ping": ["ui/panel-segment-load.ogg"],
     "ui.hover": [],
-    "alert.incident": [],
-    "alert.warning": [],
+    "alert.incident": ["alerts/critical-klaxon.ogg", "alerts/metal-impact.ogg"],
+    "alert.warning": ["alerts/warning-ping.ogg", "alerts/electro-warning.ogg", "alerts/bell-alert.ogg"],
     "alert.recovery": [],
     "alert.under_attack": [],
     "event.startup": [],
-    "event.load_complete": [],
-    "event.radar_activated": [],
-    "event.session_switch": [],
+    "event.load_complete": ["events/power-up.ogg"],
+    "event.radar_activated": ["events/radar-activated.ogg"],
+    "event.session_switch": ["events/three-tone.ogg"],
+    "event.activity_tick": ["events/activity-tick.ogg"],
+    "event.power_down": ["events/power-down.ogg"],
     "voice.radar_activated": [],
     "voice.under_attack": [],
     "voice.load_complete": []
@@ -28,7 +30,7 @@
     "energetic": {
       "shuffle": true,
       "loop": true,
-      "tracks": []
+      "tracks": ["music/energetic/command-jingle.ogg", "music/energetic/steel-command.ogg", "music/energetic/bit-command.ogg"]
     }
   },
   "defaults": {

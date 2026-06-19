@@ -139,6 +139,7 @@
         </LinearGradientBrush>
 
         <local:StatusBrushConverter x:Key="StatusBrushConverter" />
+        <local:AlertResourceBrushConverter x:Key="AlertResourceBrushConverter" />
         <local:ProblemBrushConverter x:Key="ProblemBrushConverter" />
         <local:RestartBrushConverter x:Key="RestartBrushConverter" />
         <local:MetricHealthBrushConverter x:Key="MetricHealthBrushConverter" />
@@ -224,6 +225,7 @@
 
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 
@@ -486,10 +488,26 @@
             <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlTextBrush}" />
         </Style>
+        <Style Selector="Rectangle.radarAnnounceBlink">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Animations>
+                <Animation Duration="0:0:0.62" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0.08" />
+                    </KeyFrame>
+                    <KeyFrame Cue="48%">
+                        <Setter Property="Opacity" Value="0.95" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0.08" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
         <Style Selector="Rectangle.radarAnnouncePulse">
             <Setter Property="Opacity" Value="0" />
             <Style.Animations>
-                <Animation Duration="0:0:1.2" IterationCount="3">
+                <Animation Duration="0:0:1.35" IterationCount="INFINITE">
                     <KeyFrame Cue="0%">
                         <Setter Property="Opacity" Value="0" />
                     </KeyFrame>
@@ -498,6 +516,42 @@
                     </KeyFrame>
                     <KeyFrame Cue="100%">
                         <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Rectangle.radarAnnounceSweep">
+            <Setter Property="Opacity" Value="0.82" />
+            <Setter Property="Margin" Value="-7,0,0,0" />
+            <Style.Animations>
+                <Animation Duration="0:0:1.1" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Margin" Value="-7,0,0,0" />
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="45%">
+                        <Setter Property="Opacity" Value="0.88" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Margin" Value="8,0,0,0" />
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.radarAnnounceOutline">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Opacity" Value="0.85" />
+            <Style.Animations>
+                <Animation Duration="0:0:1.55" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0.35" />
+                    </KeyFrame>
+                    <KeyFrame Cue="50%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0.35" />
                     </KeyFrame>
                 </Animation>
             </Style.Animations>
@@ -520,6 +574,42 @@
                     </KeyFrame>
                 </Animation>
             </Style.Animations>
+        </Style>
+        <Style Selector="Border.resourceAnnounceBlink">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Animations>
+                <Animation Duration="0:0:0.62" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0.18" />
+                    </KeyFrame>
+                    <KeyFrame Cue="48%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0.18" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.resourceAnnounceSweep">
+            <Setter Property="Opacity" Value="0" />
+            <Style.Animations>
+                <Animation Duration="0:0:1.1" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="45%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.resourceAnnounceOutline">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Opacity" Value="0.75" />
         </Style>
         <Style Selector="Button.radarSourceButton">
             <Setter Property="Padding" Value="4,2" />

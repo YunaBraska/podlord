@@ -24,6 +24,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private readonly AppState state;
     private readonly KubernetesResourceService service;
+    private readonly IAlertSoundPlayer soundPlayer;
     private readonly List<FlatResourceRow> cachedRows = [];
     private readonly List<FileSystemWatcher> sourceWatchers = [];
     private readonly HashSet<RadarLifeCell> radarLifeCells = [];
@@ -32,6 +33,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly DispatcherTimer radarIdleTimer = new();
     private readonly DispatcherTimer radarWaterPauseTimer = new();
     private readonly DispatcherTimer radarAutoFollowTimer = new();
+    private readonly DispatcherTimer alertSoundQueueTimer = new();
+    private readonly DispatcherTimer alertAnimationExpiryTimer = new();
     private readonly DispatcherTimer footerTimer = new();
     private readonly CancellationTokenSource lifetime = new();
     private CancellationTokenSource? refreshDebounce;
@@ -103,11 +106,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private bool isInspectorVisible;
     private bool isDetailLoading;
     private bool isYamlLoaded;
+    private bool isAudioMuted;
     private bool isAppFocused = true;
     private bool isWindowVisible = true;
     private DateTimeOffset? lastSyncedAt;
     private DateTimeOffset lastUserActivityAt = DateTimeOffset.Now;
     private FilterPreset? selectedPreset;
+    private AlertRuleRowViewModel? selectedAlertRule;
     private FlatResourceRow? portForwardResource;
     private PortForwardTaskViewModel? selectedPortForward;
     private GraphNodeViewModel? selectedGraphNode;
@@ -145,16 +150,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private double radarAutoFollowStartPanX;
     private double radarAutoFollowStartPanY;
     private double radarAutoFollowStartZoom;
+    private double radarAutoFollowTargetZoom;
     private double radarAutoFollowTargetPanX;
     private double radarAutoFollowTargetPanY;
     private string lastRadarAutoFollowAlertKey = string.Empty;
+    private readonly Queue<RadarAutoFollowRequest> radarAutoFollowQueue = new();
     private readonly HashSet<string> previousVisibleRadarAlertIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> radarAlertBlinkUntil = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AlertRuleActions> activeAlertActionsByResourceId = new(StringComparer.Ordinal);
+    private readonly List<ActiveRadarAlertMatch> activeRadarAlertMatches = [];
+    private readonly Dictionary<(string RuleId, string RowId), DateTimeOffset> alertDurationUntilByRuleResource = [];
+    private readonly Dictionary<(string RuleId, string RowId), DateTimeOffset> alertColorUntilByRuleResource = [];
+    private readonly Dictionary<(string RuleId, string RowId), DateTimeOffset> alertAnimationUntilByRuleResource = [];
+    private readonly Dictionary<string, string> lastAlertSoundKeysByRuleId = new(StringComparer.Ordinal);
+    private readonly Queue<string> priorityAlertSoundQueue = new();
+    private readonly Queue<string> alertSoundQueue = new();
+    private readonly HashSet<(string RuleId, string RowId)> previousAlertRuleMatches = [];
+    private readonly Dictionary<(string RuleId, string RowId), string> previousAlertRuleRowStates = [];
+    private readonly HashSet<string> previousVisibleResourceAlertIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> resourceAlertBlinkUntil = new(StringComparer.Ordinal);
 
-    public MainWindowViewModel(AppState state, KubernetesResourceService service)
+    public MainWindowViewModel(AppState state, KubernetesResourceService service, IAlertSoundPlayer? soundPlayer = null)
     {
         this.state = state;
         this.service = service;
+        this.soundPlayer = soundPlayer ?? new MiniAudioAlertSoundPlayer();
         AppThemeCatalog.Apply(state.Settings().Theme, state.Settings().PixelEffectIntensity, state.Settings().ThemeVariant);
         IssuePicker = new FilterPickerViewModel("Event", "Issue", OnLocalFilterChanged);
         IdPicker = new FilterPickerViewModel("Secret", "ID", OnLocalFilterChanged);
@@ -195,6 +215,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             SavedPresets.Add(preset);
         }
 
+        foreach (var rule in AlertRuleStore.Load())
+        {
+            AlertRules.Add(new AlertRuleRowViewModel(rule));
+        }
+
+        selectedAlertRule = AlertRules.FirstOrDefault();
+
         var defaultPreset = SavedPresets.First(preset => preset.Name.Equals(FilterPresetStore.DefaultFilterName, StringComparison.OrdinalIgnoreCase));
         selectedPreset = defaultPreset;
         presetName = defaultPreset.Name;
@@ -213,6 +240,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
         radarAutoFollowTimer.Interval = TimeSpan.FromMilliseconds(24);
         radarAutoFollowTimer.Tick += (_, _) => StepRadarAutoFollow();
+        alertSoundQueueTimer.Interval = TimeSpan.FromMilliseconds(650);
+        alertSoundQueueTimer.Tick += (_, _) => PlayNextQueuedAlertSound();
+        alertAnimationExpiryTimer.Interval = TimeSpan.FromMilliseconds(250);
+        alertAnimationExpiryTimer.Tick += (_, _) => ExpireAlertAnimations();
         if (state.Settings().ScreensaverEnabled)
         {
             radarIdleTimer.Start();
@@ -283,6 +314,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<ResourceListFailure> Failures { get; } = [];
 
     public ObservableCollection<FilterPreset> SavedPresets { get; } = [];
+
+    public ObservableCollection<AlertRuleRowViewModel> AlertRules { get; } = [];
+
+    public ObservableCollection<ActiveAlertRow> ActiveAlerts { get; } = [];
 
     public ObservableCollection<SourceStatusRow> Sources { get; } = [];
 
@@ -413,6 +448,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         private set => SetField(ref isRadarWaterPaused, value);
     }
 
+    public bool IsAudioMuted
+    {
+        get => isAudioMuted;
+        private set
+        {
+            if (SetField(ref isAudioMuted, value))
+            {
+                OnPropertyChanged(nameof(AudioMuteGlyph));
+                OnPropertyChanged(nameof(AudioMuteText));
+            }
+        }
+    }
+
+    public string AudioMuteGlyph => IsAudioMuted ? "Hidden" : "Sound";
+
+    public string AudioMuteText => IsAudioMuted ? T("audio.unmute") : T("audio.mute");
+
     public double RadarPanelHeight
     {
         get => radarPanelHeight;
@@ -483,6 +535,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string DeleteActionText => T("action.delete");
 
+    public string DuplicateActionText => T("action.duplicate");
+
     public string AddActionText => T("action.add");
 
     public string ClearActionText => T("action.clear");
@@ -497,6 +551,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string SettingsTitleText => T("settings.title");
 
+    public string SettingsAlertsText => T("settings.alerts");
+
     public string SettingsSourcesText => T("settings.sources");
 
     public string SettingsAppearanceText => T("settings.appearance");
@@ -510,6 +566,114 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public string SettingsPrivacyText => T("settings.privacy");
 
     public string SettingsDiagnosticsText => T("settings.diagnostics");
+
+    public string SettingsAboutText => T("settings.about");
+
+    public string AboutRepoUrl => "https://github.com/YunaBraska/podlord";
+
+    public string AboutIssueUrl => "https://github.com/YunaBraska/podlord/issues/new";
+
+    public string AboutStarUrl => "https://github.com/YunaBraska/podlord/stargazers";
+
+    public string AboutSponsorsUrl => "https://github.com/sponsors/YunaBraska";
+
+    public string AboutBuyMeACoffeeUrl => "https://buymeacoffee.com/YunaBraska";
+
+    public string AboutKoFiUrl => "https://ko-fi.com/YunaBraska";
+
+    public string AboutLiberapayUrl => "https://liberapay.com/YunaBraska";
+
+    private static readonly string[] AboutBlocks =
+    {
+        "kubectl shouts. etcd whispers. Podlord listens.\nBuilt with heart, not equity.\nStar the repo if it survived your Monday. Fuel me if it survived your week.",
+        "Pods come and go. Your sanity should not.\nOne human built this between deploys and despair.\nStar it. Donate when it spares you another describe.",
+        "YAML stands for Yet Another Misindented Line.\nPodlord stands for whatever you needed it to.\nHit the star if we agree. Coffee link is right there.",
+        "There are 10 kinds of people. The other 2 wrote this.\nNo VC, no roadmap, just stubborn craftsmanship.\nUse it, star it. Love it, fuel it.",
+        "Kubernetes has no developer experience.\nSo I built one. Open source, single maintainer, dangerously caffeinated.\nA star costs nothing. A coffee buys a feature.",
+        "Sidecars exist because containers can't keep their lanes.\nThis UI exists because dashboards can't keep yours.\nIf it helped, leave a star. If it shipped, leave a tip.",
+        "RBAC: Role Based Annoyance Constructs.\nPodlord: small joy in a heavy stack.\nStar it after use. Donate if it earned its rent on your dock.",
+        "Helm chart. Helm fault. Same energy.\nMade late at night because the alternative was rage.\nStar it, fund it, file an issue. Whichever feels right.",
+        "Liveness probes were named by an optimist.\nPodlord was named after stubbornness.\nIf this UI is in your week, drop a star. If it's in your day, drop a coffee.",
+        "The cloud is somebody else's panic.\nThis console is mine, shared with you.\nA star lowers it by one bar. A donation by two.",
+        "ConfigMap: a love letter from past you to future you, half redacted.\nPodlord just reads it back without the suffering.\nStar if useful, fuel if essential.",
+        "There is no SRE. Only severely resigned engineers.\nThis was built by one of them, for the rest of you.\nStar the repo. Buy the coffee. Keep the lights on.",
+        "Crashloop: a feature of consistency.\nPodlord: a feature of restraint.\nStar if you noticed the difference. Donate if you appreciate it.",
+        "Operators wake up at 3 AM so you don't have to.\nThis UI wakes up at the speed of your click.\nLeave a star before the next page.",
+        "The control plane is fine. It said so itself.\nPodlord checks anyway, then shows you the truth.\nIf the truth helped, send back a coffee.",
+        "Service mesh: yet another layer of indirection.\nPodlord: one less layer between you and the pod.\nStar earned. Coffee earned. Trust earned.",
+        "Day 1: hello world.\nDay 712: namespace not found.\nPodlord was built between those two days. A star says thanks.",
+        "Init containers run first, finish first, are forgotten first.\nThis maintainer kind of relates.\nA star or a coffee fixes it both.",
+        "Eventually consistent means eventually correct, possibly never.\nPodlord aims for now consistent, now visible.\nIf you saw the difference, leave a tip.",
+        "Resource limits are a suggestion. So is sleep.\nThis app was built ignoring both.\nReturn the favor with a star or a small donation.",
+        "Logs: 90% noise, 9% noise, 1% truth.\nPodlord finds the 1% faster.\nStar the repo. Buy the coffee. Skip the next outage.",
+        "Pod disruption budget: your patience.\nMaintainer disruption budget: the donation jar.\nKeep both topped up.",
+        "Stateful sets are stateful. Maintainers are tired.\nPodlord makes both more bearable.\nStar if you used it twice today.",
+        "Annotations are post it notes nobody reads.\nPodlord reads them so you don't have to.\nA coffee says thanks.",
+        "There is no cloud. Only computers you cry over.\nThis console makes the crying shorter.\nStar the repo, fuel the maintainer.",
+        "Probes lie. Metrics lie. Pods occasionally tell the truth.\nPodlord lets you watch the truth happen.\nIf that mattered today, leave a star.",
+        "kubectl get pods solves nothing.\nkubectl get pods on repeat solves less.\nPodlord solves the repeat. Coffee link below.",
+        "Distributed systems: you knew the risks.\nDistributed sanity: nobody warned you.\nA donation keeps the second one online.",
+        "Reconcile: a verb done by the system, a noun done by the maintainer.\nPodlord does the first. Your star does the second.",
+        "Latency is a feeling.\nThis UI tries to feel quick.\nIf it did today, drop a star or a coffee on the way out.",
+        "OOMKilled: out of memory, killed.\nMaintainer of Podlord: out of money, still alive.\nA donation keeps the second statement true.",
+        "If Kubernetes were easy, you would not be reading this.\nThis console makes hard things visible.\nStar it. Fuel it. Send it to a friend."
+    };
+
+    private int aboutBlockIndex = -1;
+
+    public string AboutBlockText
+    {
+        get
+        {
+            if (aboutBlockIndex < 0 || aboutBlockIndex >= AboutBlocks.Length)
+            {
+                aboutBlockIndex = PickAboutBlockIndex(aboutBlockIndex);
+            }
+            return AboutBlocks[aboutBlockIndex];
+        }
+    }
+
+    public void PickAboutBlock()
+    {
+        aboutBlockIndex = PickAboutBlockIndex(aboutBlockIndex);
+        OnPropertyChanged(nameof(AboutBlockText));
+    }
+
+    private static int PickAboutBlockIndex(int previous)
+    {
+        if (AboutBlocks.Length <= 1)
+        {
+            return 0;
+        }
+        var seed = unchecked((int)((uint)DateTime.Now.Ticks ^ (uint)Environment.TickCount));
+        var pick = Math.Abs(seed) % AboutBlocks.Length;
+        if (pick == previous)
+        {
+            pick = (pick + 1) % AboutBlocks.Length;
+        }
+        return pick;
+    }
+
+    public void OpenAboutUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.ToString()) { UseShellExecute = true });
+            StatusLine = $"Opened {uri.Host}";
+        }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
+    }
+
+    public static IReadOnlyList<string> AboutBlockCatalog => AboutBlocks;
 
     public string ThemeText => T("settings.theme");
 
@@ -562,6 +726,54 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public string TelemetryHelpText => T("settings.telemetryHelp");
 
     public string RequestAuditTitleText => T("settings.requestAuditTitle");
+
+    public string AlertActiveText => T("alert.active");
+
+    public string AlertTypeText => T("alert.type");
+
+    public string AlertNameText => T("alert.name");
+
+    public string AlertDescriptionText => T("alert.description");
+
+    public string AlertWhenText => T("alert.when");
+
+    public string AlertActionsText => T("alert.actions");
+
+    public string AlertSoundText => T("alert.sound");
+
+    public string AlertMatchersText => T("alert.matchers");
+
+    public string AlertOrMatcherText => T("alert.orMatcher");
+
+    public string AlertMatcherBlockHelpText => T("alert.matcherBlockHelp");
+
+    public string AlertAndText => T("alert.and");
+
+    public string AlertRemoveMatcherBlockText => T("alert.removeMatcherBlock");
+
+    public string AlertRemoveMatcherText => T("alert.removeMatcher");
+
+    public string AlertColorText => T("alert.color");
+
+    public string AlertNoColorText => T("alert.noColor");
+
+    public string AlertStatusColorText => T("alert.statusColor");
+
+    public string AlertAnimationText => T("alert.animation");
+
+    public string AlertZoomText => T("alert.zoom");
+
+    public string AlertPreviewZoomText => T("alert.previewZoom");
+
+    public string AlertSoundSearchText => T("alert.soundSearch");
+
+    public string AlertPreviewSoundText => T("alert.previewSound");
+
+    public string AlertAuthorText => T("alert.author");
+
+    public string AlertSourceText => T("alert.source");
+
+    public string AlertAssetText => T("alert.asset");
 
     public string FilterSearchOrCustomText => T("filters.searchOrCustom");
 
@@ -881,6 +1093,33 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    public AlertRuleRowViewModel? SelectedAlertRule
+    {
+        get => selectedAlertRule;
+        set
+        {
+            if (ReferenceEquals(selectedAlertRule, value))
+            {
+                return;
+            }
+
+            selectedAlertRule = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsAlertRuleSelected));
+            OnPropertyChanged(nameof(CanDeleteSelectedAlertRule));
+        }
+    }
+
+    public bool IsAlertRuleSelected => SelectedAlertRule is not null;
+
+    public bool CanDeleteSelectedAlertRule => SelectedAlertRule?.CanDelete == true;
+
+    public IReadOnlyList<string> AlertUntilOptions { get; } = [AlertUntilModes.NoMatch, AlertUntilModes.Duration];
+
+    public IReadOnlyList<AlertSoundDefinition> AlertSoundOptions => AlertSoundCatalog.BuiltIn;
+
+    public IReadOnlyList<string> AlertSoundChoices => AlertSoundCatalog.BuiltIn.Select(sound => sound.Label).ToList();
+
     public bool ProblemsOnly
     {
         get => problemsOnly;
@@ -1018,7 +1257,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public void OpenSourcesSettings()
     {
         SelectedWorkspace = "settings";
-        SelectedSettingsTabIndex = 4;
+        SelectedSettingsTabIndex = 5;
         IsCommandPaletteOpen = false;
         MarkUserActivity();
     }
@@ -1551,19 +1790,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         get => state.Settings().RadarAutoFollowAlerts;
         set => SaveSettings(state.Settings() with { RadarAutoFollowAlerts = value });
     }
-
-    public bool AutoHideEmptyColumnsSetting
-    {
-        get => state.Settings().AutoHideEmptyColumns;
-        set
-        {
-            SaveSettings(state.Settings() with { AutoHideEmptyColumns = value });
-            OnPropertyChanged(nameof(AutoHideEmptyColumnsSetting));
-            AutoHideEmptyColumnsRequested?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    public event EventHandler? AutoHideEmptyColumnsRequested;
 
     public string InactiveSyncSetting
     {
@@ -2230,6 +2456,363 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         FilterPresetStore.Save(SavedPresets);
         OnPropertyChanged(nameof(SourceFilterOptions));
         StatusLine = $"Removed filter '{preset.Name}'.";
+    }
+
+    public void AddAlertRule()
+    {
+        var rule = new AlertRuleRowViewModel(new AlertRule(
+            $"custom-{Guid.NewGuid():N}",
+            "New alert",
+            "Custom alert rule.",
+            true,
+            false,
+            string.Empty,
+            new AlertRuleMatchers(Kind: "\"Pod\""),
+            new AlertRuleActions(RadarFocus: false, RadarZoom: false, RadarBlink: false, RadarColor: false, PlaySound: false),
+            new AlertRuleUntil("none"),
+            "none"));
+        AlertRules.Add(rule);
+        SelectedAlertRule = rule;
+        StatusLine = T("alert.added");
+    }
+
+    public void DuplicateSelectedAlertRule()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        var source = SelectedAlertRule.ToRule();
+        var copy = new AlertRuleRowViewModel(source with
+        {
+            Id = $"custom-{Guid.NewGuid():N}",
+            Name = $"{source.Name} copy",
+            BuiltIn = false
+        });
+        AlertRules.Add(copy);
+        SelectedAlertRule = copy;
+        StatusLine = TF("alert.duplicated", source.Name);
+    }
+
+    public void DeleteSelectedAlertRule()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        if (!SelectedAlertRule.CanDelete)
+        {
+            StatusLine = T("alert.builtinNoDelete");
+            return;
+        }
+
+        var removed = SelectedAlertRule;
+        if (AlertRules.Remove(removed))
+        {
+            SelectedAlertRule = AlertRules.FirstOrDefault();
+            SaveAlertRules();
+            StatusLine = TF("alert.deleted", removed.Name);
+        }
+    }
+
+    public void ToggleAlertRule(AlertRuleRowViewModel rule)
+    {
+        rule.Enabled = !rule.Enabled;
+        SaveAlertRules();
+        StatusLine = rule.Enabled ? TF("alert.enabled", rule.Name) : TF("alert.disabled", rule.Name);
+    }
+
+    public void RemoveAlertMatcherGroup(AlertMatcherGroupViewModel group)
+    {
+        SelectedAlertRule?.RemoveGroup(group);
+        SaveAlertRules();
+    }
+
+    public void AddAlertMatcherGroup()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        SelectedAlertRule.AddMatcherGroup();
+        SaveAlertRules();
+    }
+
+    public void AddAlertMatcherCriterion(AlertMatcherGroupViewModel group)
+    {
+        SelectedAlertRule?.AddCriterion(group);
+        SaveAlertRules();
+    }
+
+    public void RemoveAlertMatcherCriterion(AlertMatcherCriterionViewModel criterion)
+    {
+        SelectedAlertRule?.RemoveCriterion(criterion);
+        SaveAlertRules();
+    }
+
+    public void SetSelectedAlertColorToStatus()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        SelectedAlertRule.UseStatusColor();
+        SaveAlertRules();
+    }
+
+    public void SetSelectedAlertColorToNone()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        SelectedAlertRule.UseNoColor();
+        SaveAlertRules();
+    }
+
+    public void PreviewSelectedAlertSound()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        var sound = AlertSoundCatalog.Resolve(SelectedAlertRule.SoundId);
+        if (sound.Id == "none")
+        {
+            StatusLine = T("alert.noSoundSelected");
+            return;
+        }
+
+        var path = ResolveAlertSoundAssetPath(sound.Asset);
+        if (path is null)
+        {
+            StatusLine = TF("alert.soundMissing", sound.Asset);
+            return;
+        }
+
+        if (soundPlayer.Play(path, out var error))
+        {
+            StatusLine = TF("alert.previewingSound", sound.Name);
+        }
+        else
+        {
+            StatusLine = TF("alert.soundPreviewFailed", sound.Name, error);
+        }
+    }
+
+    public void SelectSelectedAlertSound(string soundId)
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        SelectedAlertRule.SoundId = soundId;
+        SelectedAlertRule.SoundSearch = string.Empty;
+    }
+
+    public void ToggleAudioMute()
+    {
+        IsAudioMuted = !IsAudioMuted;
+        StatusLine = IsAudioMuted ? T("audio.muted") : T("audio.enabled");
+    }
+
+    public void OpenSelectedAlertSoundSource()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        var source = AlertSoundCatalog.Resolve(SelectedAlertRule.SoundId).SourceUrl;
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri))
+        {
+            StatusLine = T("alert.noSoundSelected");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.ToString()) { UseShellExecute = true });
+            StatusLine = TF("alert.openedSoundSource", uri.Host);
+        }
+        catch (InvalidOperationException)
+        {
+            StatusLine = TF("alert.openSoundSourceFailed", source);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            StatusLine = TF("alert.openSoundSourceFailed", source);
+        }
+    }
+
+    public void PreviewSelectedAlertZoom()
+    {
+        if (SelectedAlertRule is null)
+        {
+            StatusLine = T("alert.selectFirst");
+            return;
+        }
+
+        var rule = SelectedAlertRule.ToRule();
+        var match = AlertRuleEvaluator.EvaluateRule(cachedRows, rule)
+            .Matches
+            .FirstOrDefault(row => RadarBlocks.Any(block => block.Resource.Id.Equals(row.Id, StringComparison.Ordinal)));
+        var target = match is null
+            ? RadarBlocks.FirstOrDefault(block => block.IsClickable && !block.IsPlaceholder)?.Resource
+            : match;
+        if (target is null)
+        {
+            StatusLine = T("alert.noZoomTarget");
+            return;
+        }
+
+        var block = RadarBlocks.FirstOrDefault(item => item.Resource.Id.Equals(target.Id, StringComparison.Ordinal));
+        if (block is null)
+        {
+            StatusLine = T("alert.noZoomTarget");
+            return;
+        }
+
+        var zoomPercent = Math.Max(100, rule.Actions.RadarZoomPercent);
+        var screenCenterX = block.X + block.Width / 2d;
+        var screenCenterY = block.Y + block.Height / 2d;
+        var worldCenter = new RadarPoint(
+            (screenCenterX - radarCanvasWidth / 2d) / radarZoom - radarPanX,
+            (screenCenterY - radarCanvasHeight / 2d) / radarZoom - radarPanY);
+        StartRadarAutoFollow(worldCenter, zoomPercent / 100d);
+        StatusLine = TF("alert.previewingZoom", target.Kind, target.Name);
+    }
+
+    public void SaveAlertRules()
+    {
+        AlertRuleStore.Save(AlertRules.Select(rule => rule.ToRule()));
+        EvaluateAlertRules();
+        UpdateRadarFromCache(BuildLocalQuery());
+        StatusLine = T("alert.saved");
+    }
+
+    private static string? ResolveAlertSoundAssetPath(string asset)
+    {
+        if (asset.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, asset),
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "Podlord.App", asset),
+            Path.Combine(Directory.GetCurrentDirectory(), asset)
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private bool TryPlayAutomaticSound(string soundId, bool priority = false)
+    {
+        if (IsAudioMuted)
+        {
+            priorityAlertSoundQueue.Clear();
+            alertSoundQueue.Clear();
+            alertSoundQueueTimer.Stop();
+            return false;
+        }
+
+        if (alertSoundQueueTimer.IsEnabled || priorityAlertSoundQueue.Count > 0 || alertSoundQueue.Count > 0)
+        {
+            if (CanResolveAlertSound(soundId))
+            {
+                if (priority)
+                {
+                    priorityAlertSoundQueue.Enqueue(soundId);
+                }
+                else
+                {
+                    alertSoundQueue.Enqueue(soundId);
+                }
+
+                if (!alertSoundQueueTimer.IsEnabled)
+                {
+                    alertSoundQueueTimer.Start();
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        var played = TryPlayAlertSoundNow(soundId);
+        if (played)
+        {
+            alertSoundQueueTimer.Start();
+        }
+
+        return played;
+    }
+
+    private bool CanResolveAlertSound(string soundId)
+    {
+        var sound = AlertSoundCatalog.Resolve(soundId);
+        return !sound.Id.Equals("none", StringComparison.OrdinalIgnoreCase)
+               && ResolveAlertSoundAssetPath(sound.Asset) is not null;
+    }
+
+    private bool TryPlayAlertSoundNow(string soundId)
+    {
+        var sound = AlertSoundCatalog.Resolve(soundId);
+        if (sound.Id.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var path = ResolveAlertSoundAssetPath(sound.Asset);
+        return path is not null && soundPlayer.Play(path, out _);
+    }
+
+    private void PlayNextQueuedAlertSound()
+    {
+        if (disposed || IsAudioMuted)
+        {
+            priorityAlertSoundQueue.Clear();
+            alertSoundQueue.Clear();
+            alertSoundQueueTimer.Stop();
+            return;
+        }
+
+        string soundId;
+        if (priorityAlertSoundQueue.TryDequeue(out var prioritySoundId))
+        {
+            soundId = prioritySoundId;
+        }
+        else if (alertSoundQueue.TryDequeue(out var normalSoundId))
+        {
+            soundId = normalSoundId;
+        }
+        else
+        {
+            alertSoundQueueTimer.Stop();
+            return;
+        }
+
+        TryPlayAlertSoundNow(soundId);
+        if (priorityAlertSoundQueue.Count == 0 && alertSoundQueue.Count == 0)
+        {
+            alertSoundQueueTimer.Stop();
+        }
     }
 
     private void UpdateSourceFilterAssignments(string oldName, string newName)
@@ -3739,7 +4322,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         radarIdleTimer.Stop();
         radarWaterPauseTimer.Stop();
         radarAutoFollowTimer.Stop();
+        alertSoundQueueTimer.Stop();
+        alertAnimationExpiryTimer.Stop();
         footerTimer.Stop();
+        radarAutoFollowQueue.Clear();
+        priorityAlertSoundQueue.Clear();
+        alertSoundQueue.Clear();
         lifetime.Cancel();
         refreshDebounce?.Dispose();
         filterDebounce?.Dispose();
@@ -3755,6 +4343,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         sourceRefreshDebounce = null;
         DisposeSourceWatchers();
         lifetime.Dispose();
+        soundPlayer.Dispose();
     }
 
     private void RefreshTimeLabels()
@@ -5563,21 +6152,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         SolidColorBrush.Parse("#5AA7D6"),
         SolidColorBrush.Parse("#82C977")
     ];
-    private static IBrush RadarBrush(FlatResourceRow row, string problem, bool isFilteredOut)
+    private static IBrush RadarBrush(FlatResourceRow row, string problem, bool isFilteredOut, string colorAlert)
     {
         if (isFilteredOut)
         {
             return RadarFilteredBrush;
         }
 
-        if (problem.Length > 0)
+        if (!colorAlert.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
-            return IsSevere(row, problem) ? UnitProblemSevere : UnitProblemWarning;
-        }
-
-        if (!IsVirtualRadarResource(row) && IsRecentlyChanged(row))
-        {
-            return UnitFreshChange;
+            return AlertColorBrush(colorAlert, row, problem);
         }
 
         return RadarTerrainBrush(row);
@@ -5598,14 +6182,55 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
     }
 
-    private static IBrush RadarBorderBrush(FlatResourceRow row, string problem, bool eventShallow, bool isFilteredOut)
+    private static IBrush AlertColorBrush(string color, FlatResourceRow row, string problem)
+    {
+        if (TryParseBrush(color, out var brush))
+        {
+            return brush;
+        }
+
+        return color.ToLowerInvariant() switch
+        {
+            "status" => problem.Length > 0
+                ? IsSevere(row, problem) ? UnitProblemSevere : UnitProblemWarning
+                : IsRecentlyChanged(row) ? UnitFreshChange : RadarTerrainBrush(row),
+            "fresh" or "cyan" => UnitFreshChange,
+            "green" => AppThemeCatalog.StatusBrush("HEALTHY"),
+            "amber" => AppThemeCatalog.StatusBrush("WARNING"),
+            "red" => AppThemeCatalog.StatusBrush("CRITICAL"),
+            "blue" => SolidColorBrush.Parse("#58A6FF"),
+            "violet" => SolidColorBrush.Parse("#B58CFF"),
+            _ => RadarTerrainBrush(row)
+        };
+    }
+
+    private static bool TryParseBrush(string value, out IBrush brush)
+    {
+        brush = Brushes.Transparent;
+        if (!value.StartsWith('#') || value.Length is not (7 or 9))
+        {
+            return false;
+        }
+
+        try
+        {
+            brush = SolidColorBrush.Parse(value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static IBrush RadarBorderBrush(FlatResourceRow row, string problem, bool eventShallow, bool isFilteredOut, bool colorAlert)
     {
         if (isFilteredOut)
         {
             return RadarFilteredBorderBrush;
         }
 
-        if (problem.Length > 0)
+        if (colorAlert && problem.Length > 0)
         {
             return IsSevere(row, problem) ? UnitProblemSevere : UnitProblemWarning;
         }
@@ -5613,14 +6238,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return eventShallow ? RadarCliffEdge : RadarShoreEdge;
     }
 
-    private static IBrush RadarAnnounceBrush(FlatResourceRow row, string problem, bool isFilteredOut)
+    private static IBrush RadarAnnounceBrush(FlatResourceRow row, string problem, bool isFilteredOut, bool colorAlert)
     {
         if (isFilteredOut)
         {
             return RadarFilteredBorderBrush;
         }
 
-        if (problem.Length > 0)
+        if (colorAlert && problem.Length > 0)
         {
             return IsSevere(row, problem) ? RadarAnnounceDanger : RadarAnnounceWarning;
         }
@@ -5748,6 +6373,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(FilterNamePlaceholderText),
         nameof(SaveActionText),
         nameof(DeleteActionText),
+        nameof(DuplicateActionText),
         nameof(AddActionText),
         nameof(ClearActionText),
         nameof(CloseActionText),
@@ -5755,6 +6381,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(ApplyServerSideActionText),
         nameof(ResetActionText),
         nameof(SettingsTitleText),
+        nameof(SettingsAlertsText),
         nameof(SettingsSourcesText),
         nameof(SettingsAppearanceText),
         nameof(SettingsGraphicsText),
@@ -5788,6 +6415,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(TelemetryText),
         nameof(TelemetryHelpText),
         nameof(RequestAuditTitleText),
+        nameof(AlertActiveText),
+        nameof(AlertTypeText),
+        nameof(AlertNameText),
+        nameof(AlertDescriptionText),
+        nameof(AlertWhenText),
+        nameof(AlertActionsText),
+        nameof(AlertSoundText),
+        nameof(AlertMatchersText),
+        nameof(AlertOrMatcherText),
+        nameof(AlertMatcherBlockHelpText),
+        nameof(AlertAndText),
+        nameof(AlertRemoveMatcherBlockText),
+        nameof(AlertRemoveMatcherText),
+        nameof(AlertColorText),
+        nameof(AlertNoColorText),
+        nameof(AlertStatusColorText),
+        nameof(AlertAnimationText),
+        nameof(AlertZoomText),
+        nameof(AlertPreviewZoomText),
+        nameof(AlertSoundSearchText),
+        nameof(AlertPreviewSoundText),
+        nameof(AlertAuthorText),
+        nameof(AlertSourceText),
+        nameof(AlertAssetText),
+        nameof(AudioMuteText),
         nameof(FilterSearchOrCustomText),
         nameof(CustomValuesText),
         nameof(FilterSyntaxHelpText),
@@ -5933,18 +6585,33 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void ApplyLocalFilter()
     {
         var localQuery = BuildLocalQuery();
+        var now = DateTimeOffset.Now;
         var filteredForViews = SortRows(ResourceFilterMatcher.FilterRows(cachedRows, localQuery with { Limit = 5_000 }))
             .ToList();
-        var visibleRows = filteredForViews
+        var visibleBaseRows = filteredForViews
             .Take(ResourceFilterMatcher.NormalizeLimit(localQuery.Limit))
-            .Select(row => row with { IsAnnouncing = ShouldAnnounceResourceRow(row) })
+            .ToList();
+        var visibleResourceIds = visibleBaseRows.Select(row => row.Id).ToHashSet(StringComparer.Ordinal);
+        EvaluateAlertRules();
+        var visibleRows = visibleBaseRows
+            .Select(row =>
+            {
+                var announce = ShouldAnnounceResourceRow(row, visibleResourceIds, now);
+                return row with
+                {
+                    IsAnnouncing = announce,
+                    AlertAnimation = announce ? AlertAnimationFor(row.Id) : string.Empty,
+                    AlertColor = AlertColorFor(row.Id, isFilteredOut: false)
+                };
+            })
             .ToList();
 
         SyncResourcesPreservingSelection(visibleRows);
+        SyncPreviousVisibleResourceAlertIds(visibleResourceIds);
 
         UpdateEvents(EventRowsForCurrentFilter(localQuery));
         UpdateRelationships(filteredForViews);
-        UpdateGraphNodes(filteredForViews);
+        UpdateGraphNodes(visibleRows);
         UpdateRadarFromCache(localQuery);
         UpdatePulseLayer(cachedRows, filteredForViews);
         UpdateResourceSearchMatches(resetToFirstMatch: true);
@@ -5954,6 +6621,425 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(IsInitialLoading));
         NotifyResourceLogoStateChanged();
         StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
+    }
+
+    private void EvaluateAlertRules()
+    {
+        var rules = AlertRules.Select(rule => rule.ToRule()).ToList();
+        var evaluations = AlertRuleEvaluator.Evaluate(cachedRows, rules);
+        var now = DateTimeOffset.Now;
+        var rowsById = cachedRows
+            .GroupBy(row => row.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var enabledRuleIds = rules.Where(rule => rule.Enabled).Select(rule => rule.Id).ToHashSet(StringComparer.Ordinal);
+        activeAlertActionsByResourceId.Clear();
+        activeRadarAlertMatches.Clear();
+        RemoveExpiredAlertDurations(enabledRuleIds, rowsById, now);
+        ClearSoundDeduplicationForInactiveRules(enabledRuleIds);
+        foreach (var rule in AlertRules)
+        {
+            rule.SetActiveSummary(string.Empty);
+        }
+
+        var activeAlerts = new List<ActiveAlertRow>();
+        var currentAlertRuleMatches = new HashSet<(string RuleId, string RowId)>();
+        var currentAlertRuleRowStates = new Dictionary<(string RuleId, string RowId), string>();
+        foreach (var evaluation in evaluations)
+        {
+            var activeRows = ApplyAlertEvaluation(evaluation, rowsById, now, currentAlertRuleMatches, currentAlertRuleRowStates);
+            if (activeRows.Count == 0)
+            {
+                lastAlertSoundKeysByRuleId.Remove(evaluation.Rule.Id);
+                continue;
+            }
+
+            MaybePlayAlertSound(evaluation.Rule, activeRows);
+            if (evaluation.Rule.Actions.RadarFocus || evaluation.Rule.Actions.RadarZoom)
+            {
+                activeRadarAlertMatches.Add(new ActiveRadarAlertMatch(
+                    evaluation.Rule.Id,
+                    activeRows.ToList(),
+                    evaluation.Rule.Actions));
+            }
+            AlertRules.FirstOrDefault(rule => rule.Id.Equals(evaluation.Rule.Id, StringComparison.Ordinal))
+                ?.SetActiveSummary(AlertSummary(activeRows));
+            activeAlerts.Add(new ActiveAlertRow(
+                evaluation.Rule.Name,
+                AlertSummary(activeRows),
+                ActionSummary(evaluation.Rule.Actions),
+                AlertSoundCatalog.Resolve(evaluation.Rule.SoundId).Name));
+        }
+
+        SyncCollection(ActiveAlerts, activeAlerts);
+        previousAlertRuleMatches.Clear();
+        foreach (var key in currentAlertRuleMatches)
+        {
+            previousAlertRuleMatches.Add(key);
+        }
+        previousAlertRuleRowStates.Clear();
+        foreach (var (key, value) in currentAlertRuleRowStates)
+        {
+            previousAlertRuleRowStates[key] = value;
+        }
+    }
+
+    private void ClearSoundDeduplicationForInactiveRules(IReadOnlySet<string> enabledRuleIds)
+    {
+        foreach (var ruleId in lastAlertSoundKeysByRuleId.Keys
+                     .Where(ruleId => !enabledRuleIds.Contains(ruleId))
+                     .ToArray())
+        {
+            lastAlertSoundKeysByRuleId.Remove(ruleId);
+        }
+    }
+
+    private void MaybePlayAlertSound(AlertRule rule, IReadOnlyList<FlatResourceRow> rows)
+    {
+        if (!rule.Actions.PlaySound || rows.Count < Math.Max(1, rule.Actions.SoundMinimumMatches))
+        {
+            lastAlertSoundKeysByRuleId.Remove(rule.Id);
+            return;
+        }
+
+        var key = AlertRowsStateKey(rows);
+        if (lastAlertSoundKeysByRuleId.TryGetValue(rule.Id, out var previous)
+            && previous.Equals(key, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lastAlertSoundKeysByRuleId[rule.Id] = key;
+        TryPlayAutomaticSound(rule.SoundId, priority: true);
+    }
+
+    private static string AlertSummary(IReadOnlyList<FlatResourceRow> rows)
+    {
+        return rows.Count == 0
+            ? "no matches"
+            : $"{rows.Count} match(es): {string.Join(", ", rows.Take(3).Select(row => $"{row.Kind}/{row.Name}"))}";
+    }
+
+    private string AlertRowsStateKey(IEnumerable<FlatResourceRow> rows)
+    {
+        return string.Join("|", rows
+            .OrderBy(row => row.Id, StringComparer.Ordinal)
+            .Select(row =>
+            {
+                return $"{row.Id}:{AlertRowStateKey(row)}";
+            }));
+    }
+
+    private string AlertRowStateKey(FlatResourceRow row)
+    {
+        var problem = ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold);
+        return $"{row.Status}:{row.Ready}:{row.Restarts}:{row.LastChange}:{problem}";
+    }
+
+    private void AddAlertAction(FlatResourceRow row, AlertRuleActions actions)
+    {
+        activeAlertActionsByResourceId[row.Id] = activeAlertActionsByResourceId.TryGetValue(row.Id, out var existing)
+            ? MergeAlertActions(existing, actions)
+            : actions;
+    }
+
+    private IReadOnlyList<FlatResourceRow> ApplyAlertEvaluation(
+        AlertEvaluation evaluation,
+        IReadOnlyDictionary<string, FlatResourceRow> rowsById,
+        DateTimeOffset now,
+        ISet<(string RuleId, string RowId)> currentAlertRuleMatches,
+        IDictionary<(string RuleId, string RowId), string> currentAlertRuleRowStates)
+    {
+        var currentMatches = evaluation.Matches.ToDictionary(row => row.Id, row => row, StringComparer.Ordinal);
+        ClearStaleHoldsForDisabledDurations(evaluation.Rule);
+        foreach (var row in currentMatches.Values)
+        {
+            var key = (evaluation.Rule.Id, row.Id);
+            var rowState = AlertRowStateKey(row);
+            currentAlertRuleMatches.Add(key);
+            currentAlertRuleRowStates[key] = rowState;
+            AddAlertAction(row, MatchingActions(evaluation.Rule.Actions));
+            var changedMatch = !previousAlertRuleRowStates.TryGetValue(key, out var previousState)
+                               || !previousState.Equals(rowState, StringComparison.Ordinal);
+            StartAlertActionHolds(evaluation.Rule, row, now, shouldStart: !previousAlertRuleMatches.Contains(key) || changedMatch);
+        }
+
+        AddHeldAlertActions(evaluation.Rule.Id, rowsById, currentMatches, now, alertDurationUntilByRuleResource, evaluation.Rule.Actions);
+        AddHeldAlertActions(evaluation.Rule.Id, rowsById, currentMatches, now, alertColorUntilByRuleResource, ColorOnly(evaluation.Rule.Actions));
+        AddHeldAlertActions(evaluation.Rule.Id, rowsById, currentMatches, now, alertAnimationUntilByRuleResource, AnimationOnly(evaluation.Rule.Actions));
+        return currentMatches.Values.ToList();
+    }
+
+    private void ClearStaleHoldsForDisabledDurations(AlertRule rule)
+    {
+        if (DurationFrom(rule.Until.Mode, rule.Until.Duration) <= TimeSpan.Zero)
+        {
+            ClearAlertHoldForRule(rule.Id, alertDurationUntilByRuleResource);
+        }
+        if (!rule.Actions.RadarColor || DurationFrom(rule.Actions.RadarColorUntilMode, rule.Actions.RadarColorUntilDuration) <= TimeSpan.Zero)
+        {
+            ClearAlertHoldForRule(rule.Id, alertColorUntilByRuleResource);
+        }
+        if (!rule.Actions.RadarBlink || DurationFrom(rule.Actions.RadarAnimationUntilMode, rule.Actions.RadarAnimationUntilDuration) <= TimeSpan.Zero)
+        {
+            ClearAlertHoldForRule(rule.Id, alertAnimationUntilByRuleResource);
+        }
+    }
+
+    private static void ClearAlertHoldForRule(
+        string ruleId,
+        IDictionary<(string RuleId, string RowId), DateTimeOffset> target)
+    {
+        foreach (var key in target.Keys.Where(key => key.RuleId.Equals(ruleId, StringComparison.Ordinal)).ToArray())
+        {
+            target.Remove(key);
+        }
+    }
+
+    private void StartAlertActionHolds(AlertRule rule, FlatResourceRow row, DateTimeOffset now, bool shouldStart)
+    {
+        if (!shouldStart)
+        {
+            return;
+        }
+
+        var startedTimedHold = StartAlertHold(rule.Id, row.Id, DurationFrom(rule.Until.Mode, rule.Until.Duration), now, alertDurationUntilByRuleResource);
+        if (rule.Actions.RadarColor)
+        {
+            startedTimedHold |= StartAlertHold(rule.Id, row.Id, DurationFrom(rule.Actions.RadarColorUntilMode, rule.Actions.RadarColorUntilDuration), now, alertColorUntilByRuleResource);
+        }
+        if (rule.Actions.RadarBlink)
+        {
+            startedTimedHold |= StartAlertHold(rule.Id, row.Id, DurationFrom(rule.Actions.RadarAnimationUntilMode, rule.Actions.RadarAnimationUntilDuration), now, alertAnimationUntilByRuleResource);
+        }
+
+        if (startedTimedHold)
+        {
+            StartAlertAnimationExpiryTimer();
+        }
+    }
+
+    private static bool StartAlertHold(
+        string ruleId,
+        string rowId,
+        TimeSpan duration,
+        DateTimeOffset now,
+        IDictionary<(string RuleId, string RowId), DateTimeOffset> target)
+    {
+        if (duration > TimeSpan.Zero)
+        {
+            return target.TryAdd((ruleId, rowId), now.Add(duration));
+        }
+
+        return false;
+    }
+
+    private void AddHeldAlertActions(
+        string ruleId,
+        IReadOnlyDictionary<string, FlatResourceRow> rowsById,
+        IDictionary<string, FlatResourceRow> activeRows,
+        DateTimeOffset now,
+        IDictionary<(string RuleId, string RowId), DateTimeOffset> source,
+        AlertRuleActions heldActions)
+    {
+        if (!heldActions.RadarColor && !heldActions.RadarBlink && !heldActions.RadarZoom && !heldActions.RadarFocus && !heldActions.PlaySound)
+        {
+            return;
+        }
+
+        foreach (var ((heldRuleId, rowId), until) in source.ToArray())
+        {
+            if (!heldRuleId.Equals(ruleId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (until <= now || !rowsById.TryGetValue(rowId, out var cachedRow))
+            {
+                source.Remove((heldRuleId, rowId));
+                continue;
+            }
+
+            activeRows.TryAdd(rowId, cachedRow);
+            AddAlertAction(cachedRow, heldActions);
+        }
+    }
+
+    private bool RemoveExpiredAlertDurations(
+        IReadOnlySet<string> enabledRuleIds,
+        IReadOnlyDictionary<string, FlatResourceRow> rowsById,
+        DateTimeOffset now)
+    {
+        var removed = false;
+        foreach (var ((ruleId, rowId), until) in alertDurationUntilByRuleResource.ToArray())
+        {
+            if (!enabledRuleIds.Contains(ruleId) || until <= now || !rowsById.ContainsKey(rowId))
+            {
+                alertDurationUntilByRuleResource.Remove((ruleId, rowId));
+                removed = true;
+            }
+        }
+        foreach (var ((ruleId, rowId), until) in alertColorUntilByRuleResource.ToArray())
+        {
+            if (!enabledRuleIds.Contains(ruleId) || until <= now || !rowsById.ContainsKey(rowId))
+            {
+                alertColorUntilByRuleResource.Remove((ruleId, rowId));
+                removed = true;
+            }
+        }
+        foreach (var ((ruleId, rowId), until) in alertAnimationUntilByRuleResource.ToArray())
+        {
+            if (!enabledRuleIds.Contains(ruleId) || until <= now || !rowsById.ContainsKey(rowId))
+            {
+                alertAnimationUntilByRuleResource.Remove((ruleId, rowId));
+                removed = true;
+            }
+        }
+
+        return removed;
+    }
+
+    private void ClearAlertDurationForRule(string ruleId)
+    {
+        foreach (var key in alertDurationUntilByRuleResource.Keys.Where(key => key.RuleId.Equals(ruleId, StringComparison.Ordinal)).ToArray())
+        {
+            alertDurationUntilByRuleResource.Remove(key);
+        }
+        foreach (var key in alertColorUntilByRuleResource.Keys.Where(key => key.RuleId.Equals(ruleId, StringComparison.Ordinal)).ToArray())
+        {
+            alertColorUntilByRuleResource.Remove(key);
+        }
+        foreach (var key in alertAnimationUntilByRuleResource.Keys.Where(key => key.RuleId.Equals(ruleId, StringComparison.Ordinal)).ToArray())
+        {
+            alertAnimationUntilByRuleResource.Remove(key);
+        }
+    }
+
+    private static AlertRuleActions ColorOnly(AlertRuleActions actions)
+    {
+        return actions with
+        {
+            RadarFocus = false,
+            RadarZoom = false,
+            RadarBlink = false,
+            PlaySound = false,
+            RadarZoomPercent = 0
+        };
+    }
+
+    private static AlertRuleActions MatchingActions(AlertRuleActions actions)
+    {
+        return actions with
+        {
+            RadarColor = actions.RadarColor && !IsFiniteAlertMode(actions.RadarColorUntilMode),
+            RadarBlink = actions.RadarBlink && !IsFiniteAlertMode(actions.RadarAnimationUntilMode)
+        };
+    }
+
+    private static AlertRuleActions AnimationOnly(AlertRuleActions actions)
+    {
+        return actions with
+        {
+            RadarFocus = false,
+            RadarZoom = false,
+            RadarColor = false,
+            PlaySound = false,
+            RadarZoomPercent = 0
+        };
+    }
+
+    private static TimeSpan DurationFrom(string mode, string expression)
+    {
+        if (mode.Equals(AlertUntilModes.Once, StringComparison.OrdinalIgnoreCase))
+        {
+            return TimeSpan.FromMilliseconds(1350);
+        }
+
+        if (mode.Equals(AlertUntilModes.Duration, StringComparison.OrdinalIgnoreCase))
+        {
+            return ResourceFilterMatcher.ParseHumanDuration(expression) ?? TimeSpan.Zero;
+        }
+
+        return TimeSpan.Zero;
+    }
+
+    private static bool IsFiniteAlertMode(string mode)
+    {
+        return mode.Equals(AlertUntilModes.Once, StringComparison.OrdinalIgnoreCase)
+               || mode.Equals(AlertUntilModes.Duration, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ActionSummary(AlertRuleActions actions)
+    {
+        var values = new[]
+        {
+            actions.RadarColor ? $"color:{actions.RadarColorValue}" : "",
+            actions.RadarBlink ? $"animation:{actions.RadarAnimation}" : "",
+            actions.RadarZoom ? $"zoom:{actions.RadarZoomPercent}%" : "",
+            actions.PlaySound ? actions.SoundMinimumMatches > 1 ? $"sound>={actions.SoundMinimumMatches}" : "sound" : ""
+        }.Where(value => value.Length > 0);
+        return string.Join(", ", values);
+    }
+
+    private static AlertRuleActions MergeAlertActions(AlertRuleActions left, AlertRuleActions right)
+    {
+        var useRightColor = AlertColorPriority(right) >= AlertColorPriority(left);
+        var useRightAnimation = AlertAnimationPriority(right) >= AlertAnimationPriority(left);
+        return new AlertRuleActions(
+            RadarFocus: left.RadarFocus || right.RadarFocus,
+            RadarZoom: left.RadarZoom || right.RadarZoom,
+            RadarBlink: left.RadarBlink || right.RadarBlink,
+            RadarColor: left.RadarColor || right.RadarColor,
+            RadarColorMode: right.RadarColorMode.Length > 0 ? right.RadarColorMode : left.RadarColorMode,
+            HealthSegment: false,
+            PlaySound: left.PlaySound || right.PlaySound,
+            RadarColorValue: useRightColor ? right.RadarColorValue : left.RadarColorValue,
+            RadarColorUntilMode: useRightColor ? right.RadarColorUntilMode : left.RadarColorUntilMode,
+            RadarColorUntilDuration: useRightColor ? right.RadarColorUntilDuration : left.RadarColorUntilDuration,
+            RadarAnimation: useRightAnimation ? right.RadarAnimation : left.RadarAnimation,
+            RadarAnimationUntilMode: useRightAnimation ? right.RadarAnimationUntilMode : left.RadarAnimationUntilMode,
+            RadarAnimationUntilDuration: useRightAnimation ? right.RadarAnimationUntilDuration : left.RadarAnimationUntilDuration,
+            RadarZoomPercent: Math.Max(left.RadarZoomPercent, right.RadarZoomPercent),
+            SoundMinimumMatches: Math.Min(Math.Max(1, left.SoundMinimumMatches), Math.Max(1, right.SoundMinimumMatches)));
+    }
+
+    private static int AlertColorPriority(AlertRuleActions actions)
+    {
+        if (!actions.RadarColor || actions.RadarColorValue.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        var color = actions.RadarColorValue.Trim().ToLowerInvariant();
+        if (color.StartsWith('#'))
+        {
+            return 50;
+        }
+
+        return color switch
+        {
+            "red" => 45,
+            "status" or "amber" or "yellow" => 40,
+            "blue" or "violet" => 25,
+            "fresh" or "cyan" or "green" => 10,
+            _ => 20
+        };
+    }
+
+    private static int AlertAnimationPriority(AlertRuleActions actions)
+    {
+        if (!actions.RadarBlink || actions.RadarAnimation.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        return NormalizeAlertAnimation(actions.RadarAnimation) switch
+        {
+            "blink" => 40,
+            "sweep" => 30,
+            "outline" => 20,
+            "pulse" => 10,
+            _ => 1
+        };
     }
 
     private void SyncResourcesPreservingSelection(IReadOnlyList<FlatResourceRow> visibleRows)
@@ -6088,10 +7174,73 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return unit == 0 ? $"{value:0}{units[unit]}" : $"{value:0.#}{units[unit]}";
     }
 
-    private bool ShouldAnnounceResourceRow(FlatResourceRow row)
+    private bool ShouldAnnounceResourceRow(FlatResourceRow row, IReadOnlySet<string> visibleResourceIds, DateTimeOffset now)
     {
-        return ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold).Length > 0
-               || IsRecentlyChanged(row);
+        if (!activeAlertActionsByResourceId.TryGetValue(row.Id, out var actions) || !actions.RadarBlink)
+        {
+            resourceAlertBlinkUntil.Remove(row.Id);
+            return false;
+        }
+
+        if (actions.RadarAnimationUntilMode.Equals(AlertUntilModes.NewInView, StringComparison.OrdinalIgnoreCase))
+        {
+            return IsResourceViewPulseActive(row.Id, visibleResourceIds, actions, now);
+        }
+
+        return true;
+    }
+
+    private bool IsResourceViewPulseActive(string rowId, IReadOnlySet<string> visibleResourceIds, AlertRuleActions actions, DateTimeOffset now)
+    {
+        if (!visibleResourceIds.Contains(rowId))
+        {
+            resourceAlertBlinkUntil.Remove(rowId);
+            return false;
+        }
+
+        if (!previousVisibleResourceAlertIds.Contains(rowId))
+        {
+            resourceAlertBlinkUntil[rowId] = now.Add(AlertViewDuration(actions));
+            StartAlertAnimationExpiryTimer();
+        }
+
+        if (resourceAlertBlinkUntil.TryGetValue(rowId, out var until) && until > now)
+        {
+            return true;
+        }
+
+        resourceAlertBlinkUntil.Remove(rowId);
+        return false;
+    }
+
+    private void SyncPreviousVisibleResourceAlertIds(IReadOnlySet<string> visibleResourceIds)
+    {
+        previousVisibleResourceAlertIds.Clear();
+        foreach (var id in visibleResourceIds)
+        {
+            previousVisibleResourceAlertIds.Add(id);
+        }
+
+        foreach (var id in resourceAlertBlinkUntil.Keys.Where(id => !visibleResourceIds.Contains(id)).ToArray())
+        {
+            resourceAlertBlinkUntil.Remove(id);
+        }
+    }
+
+    private string AlertAnimationFor(string rowId)
+    {
+        if (!activeAlertActionsByResourceId.TryGetValue(rowId, out var actions) || !actions.RadarBlink)
+        {
+            return "pulse";
+        }
+
+        return NormalizeAlertAnimation(actions.RadarAnimation);
+    }
+
+    private static string NormalizeAlertAnimation(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized is "blink" or "pulse" or "sweep" or "outline" ? normalized : "pulse";
     }
 
     private void UpdateRadarFromCache(ResourceQuery? localQuery = null)
@@ -6416,6 +7565,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var visibleAlertIds = new HashSet<string>(StringComparer.Ordinal);
         var now = DateTimeOffset.Now;
         var capped = rows.ToList();
+        var wasIdle = IsRadarIdle;
         if (capped.Count == 0)
         {
             previousVisibleRadarAlertIds.Clear();
@@ -6514,6 +7664,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         IsRadarIdle = false;
+        if (wasIdle)
+        {
+            TryPlayAutomaticSound("kenney-interface-maximize-001");
+        }
         UpdateRadarIdleTimer();
     }
 
@@ -6595,7 +7749,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var problem = ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold);
+        var colorAlert = AlertColorFor(row.Id, isFilteredOut);
         var announce = ShouldAnnounceRadarAlert(row, problem, isFilteredOut, visibleAlertIds, now);
+        var alertAnimation = announce ? AlertAnimationFor(row.Id) : string.Empty;
         desired.Add(new RadarBlockViewModel(
             row,
             groupKey,
@@ -6603,18 +7759,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             projected.Y,
             Math.Max(0, projected.W),
             Math.Max(0, projected.H),
-            RadarBrush(row, problem, isFilteredOut),
+            RadarBrush(row, problem, isFilteredOut, colorAlert),
             problem,
             RadarMetrics(row),
             isSelected: row.Id == selectedRadarResourceId,
-            borderBrush: RadarBorderBrush(row, problem, eventShallow, isFilteredOut),
-            announceBrush: RadarAnnounceBrush(row, problem, isFilteredOut),
+            borderBrush: RadarBorderBrush(row, problem, eventShallow, isFilteredOut, !colorAlert.Equals("none", StringComparison.OrdinalIgnoreCase)),
+            announceBrush: RadarAnnounceBrush(row, problem, isFilteredOut, !colorAlert.Equals("none", StringComparison.OrdinalIgnoreCase)),
             showProblemGlyph: false,
             isEventShallow: eventShallow,
             displayKind: displayKind ?? row.Kind,
             displayName: row.Name,
             isClickable: isClickable,
             isAnnouncing: announce,
+            alertAnimation: alertAnimation,
+            alertColor: colorAlert,
             isDimmed: isFilteredOut));
         return worldCenter;
     }
@@ -6626,37 +7784,142 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         HashSet<string> visibleAlertIds,
         DateTimeOffset now)
     {
-        if (state.Settings().AnimationIntensity == 0 || !IsRadarAlert(row, problem, isFilteredOut))
+        if (state.Settings().AnimationIntensity == 0
+            || isFilteredOut
+            || IsVirtualRadarResource(row))
+        {
+            radarAlertBlinkUntil.Remove(row.Id);
+            return false;
+        }
+
+        if (!activeAlertActionsByResourceId.TryGetValue(row.Id, out var actions) || !actions.RadarBlink)
         {
             radarAlertBlinkUntil.Remove(row.Id);
             return false;
         }
 
         visibleAlertIds.Add(row.Id);
-        if (!previousVisibleRadarAlertIds.Contains(row.Id))
+        if (actions.RadarAnimationUntilMode.Equals(AlertUntilModes.NoMatch, StringComparison.OrdinalIgnoreCase))
         {
-            radarAlertBlinkUntil[row.Id] = now.AddMilliseconds(RadarBlinkDurationMilliseconds());
-        }
-
-        if (radarAlertBlinkUntil.TryGetValue(row.Id, out var until) && until > now)
-        {
+            radarAlertBlinkUntil.Remove(row.Id);
             return true;
         }
 
+        if (actions.RadarAnimationUntilMode.Equals(AlertUntilModes.NewInView, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!previousVisibleRadarAlertIds.Contains(row.Id))
+            {
+                radarAlertBlinkUntil[row.Id] = now.Add(AlertViewDuration(actions));
+                StartAlertAnimationExpiryTimer();
+            }
+
+            if (radarAlertBlinkUntil.TryGetValue(row.Id, out var viewUntil) && viewUntil > now)
+            {
+                return true;
+            }
+
+            radarAlertBlinkUntil.Remove(row.Id);
+            return false;
+        }
+
         radarAlertBlinkUntil.Remove(row.Id);
-        return false;
+        return true;
     }
 
     private int RadarBlinkDurationMilliseconds()
     {
-        return 850 + Math.Clamp((int)state.Settings().AnimationIntensity, 0, 100) * 28;
+        return 650 + Math.Clamp((int)state.Settings().AnimationIntensity, 0, 100) * 8;
     }
 
-    private bool IsRadarAlert(FlatResourceRow row, string problem, bool isFilteredOut)
+    private TimeSpan AlertViewDuration(AlertRuleActions actions)
+    {
+        if (ResourceFilterMatcher.ParseHumanDuration(actions.RadarAnimationUntilDuration) is { } parsed && parsed > TimeSpan.Zero)
+        {
+            return parsed;
+        }
+
+        return TimeSpan.FromMilliseconds(RadarBlinkDurationMilliseconds());
+    }
+
+    private void StartAlertAnimationExpiryTimer()
+    {
+        if (!alertAnimationExpiryTimer.IsEnabled)
+        {
+            alertAnimationExpiryTimer.Start();
+        }
+    }
+
+    private void ExpireAlertAnimations()
+    {
+        var now = DateTimeOffset.Now;
+        var expired = false;
+        if (HasDueAlertHold(now))
+        {
+            EvaluateAlertRules();
+            expired = true;
+        }
+
+        foreach (var id in resourceAlertBlinkUntil.Where(pair => pair.Value <= now).Select(pair => pair.Key).ToArray())
+        {
+            resourceAlertBlinkUntil.Remove(id);
+            expired = true;
+        }
+
+        foreach (var id in radarAlertBlinkUntil.Where(pair => pair.Value <= now).Select(pair => pair.Key).ToArray())
+        {
+            radarAlertBlinkUntil.Remove(id);
+            expired = true;
+        }
+
+        if (resourceAlertBlinkUntil.Count == 0
+            && radarAlertBlinkUntil.Count == 0
+            && !HasPendingAlertHold(now))
+        {
+            alertAnimationExpiryTimer.Stop();
+        }
+
+        if (expired)
+        {
+            ApplyLocalFilter();
+        }
+    }
+
+    private bool HasDueAlertHold(DateTimeOffset now)
+    {
+        return alertDurationUntilByRuleResource.Values.Any(until => until <= now)
+               || alertColorUntilByRuleResource.Values.Any(until => until <= now)
+               || alertAnimationUntilByRuleResource.Values.Any(until => until <= now);
+    }
+
+    private bool HasPendingAlertHold(DateTimeOffset now)
+    {
+        return alertDurationUntilByRuleResource.Values.Any(until => until > now)
+               || alertColorUntilByRuleResource.Values.Any(until => until > now)
+               || alertAnimationUntilByRuleResource.Values.Any(until => until > now);
+    }
+
+    private bool IsRadarAlert(FlatResourceRow row, bool isFilteredOut, Func<AlertRuleActions, bool> hasAction)
     {
         return !isFilteredOut
                && !IsVirtualRadarResource(row)
-               && (problem.Length > 0 || IsRecentlyChanged(row) || ResourceFilterMatcher.IsActivity(row));
+               && activeAlertActionsByResourceId.TryGetValue(row.Id, out var actions)
+               && hasAction(actions);
+    }
+
+    private bool HasAlertAction(string rowId, Func<AlertRuleActions, bool> hasAction)
+    {
+        return activeAlertActionsByResourceId.TryGetValue(rowId, out var actions)
+               && hasAction(actions);
+    }
+
+    private string AlertColorFor(string rowId, bool isFilteredOut)
+    {
+        if (isFilteredOut || !activeAlertActionsByResourceId.TryGetValue(rowId, out var actions) || !actions.RadarColor)
+        {
+            return "none";
+        }
+
+        return string.IsNullOrWhiteSpace(actions.RadarColorValue) ? "status" : actions.RadarColorValue;
     }
 
     private void MaybeStartRadarAutoFollow(
@@ -6666,37 +7929,73 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         if (!state.Settings().RadarAutoFollowAlerts || rows.Count == 0 || worldCenters.Count == 0)
         {
+            lastRadarAutoFollowAlertKey = string.Empty;
+            radarAutoFollowQueue.Clear();
             return;
         }
 
-        var target = rows
-            .Where(row => worldCenters.ContainsKey(row.Id))
-            .Where(row =>
-            {
-                var problem = ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold);
-                return IsRadarAlert(row, problem, !filterScope.IsActive(row));
-            })
-            .OrderBy(row => RadarAlertPriority(row, ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold)))
-            .ThenBy(row => RadarAlertAge(row))
-            .ThenBy(row => row.Cluster, StringComparer.Ordinal)
-            .ThenBy(row => row.Namespace ?? string.Empty, StringComparer.Ordinal)
-            .ThenBy(row => row.Kind, StringComparer.Ordinal)
-            .ThenBy(row => row.Name, StringComparer.Ordinal)
-            .FirstOrDefault();
-        if (target is null)
+        var rowIds = rows.Select(row => row.Id).ToHashSet(StringComparer.Ordinal);
+        var candidates = new List<(string Key, RadarAutoFollowRequest Request)>();
+        foreach (var match in activeRadarAlertMatches)
         {
+            if (!match.Actions.RadarFocus && !match.Actions.RadarZoom)
+            {
+                continue;
+            }
+
+            var targets = match.Rows
+                .Where(row => rowIds.Contains(row.Id))
+                .Where(row => worldCenters.ContainsKey(row.Id))
+                .Where(row => filterScope.IsActive(row))
+                .Where(row => !IsVirtualRadarResource(row))
+                .OrderBy(row => RadarAlertPriority(row, ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold)))
+                .ThenBy(row => RadarAlertAge(row))
+                .ThenBy(row => row.Cluster, StringComparer.Ordinal)
+                .ThenBy(row => row.Namespace ?? string.Empty, StringComparer.Ordinal)
+                .ThenBy(row => row.Kind, StringComparer.Ordinal)
+                .ThenBy(row => row.Name, StringComparer.Ordinal)
+                .ToList();
+            if (targets.Count == 0)
+            {
+                continue;
+            }
+
+            var candidateKey = $"{match.RuleId}:{AlertRowsStateKey(targets)}";
+            var worldCenter = new RadarPoint(
+                targets.Average(row => worldCenters[row.Id].X),
+                targets.Average(row => worldCenters[row.Id].Y));
+            var zoomPercent = match.Actions is { RadarZoom: true, RadarZoomPercent: > 0 }
+                ? match.Actions.RadarZoomPercent
+                : 100;
+            candidates.Add((candidateKey, new RadarAutoFollowRequest(worldCenter, Math.Max(1d, zoomPercent / 100d))));
+        }
+
+        if (candidates.Count == 0)
+        {
+            var anyUnfilteredRadarAlert = rows.Any(row =>
+                activeAlertActionsByResourceId.TryGetValue(row.Id, out var actions)
+                && (actions.RadarFocus || actions.RadarZoom));
+            if (!anyUnfilteredRadarAlert)
+            {
+                lastRadarAutoFollowAlertKey = string.Empty;
+                radarAutoFollowQueue.Clear();
+            }
             return;
         }
 
-        var problem = ResourceFilterMatcher.ProblemReason(target, restartOutlierThreshold);
-        var key = $"{target.Id}:{target.Status}:{target.Ready}:{target.Restarts}:{target.LastChange}:{problem}";
+        var key = string.Join("||", candidates.Select(candidate => candidate.Key));
         if (key.Equals(lastRadarAutoFollowAlertKey, StringComparison.Ordinal))
         {
             return;
         }
 
         lastRadarAutoFollowAlertKey = key;
-        StartRadarAutoFollow(worldCenters[target.Id]);
+        radarAutoFollowQueue.Clear();
+        StartOrQueueRadarAutoFollow(candidates[0].Request);
+        foreach (var candidate in candidates.Skip(1))
+        {
+            radarAutoFollowQueue.Enqueue(candidate.Request);
+        }
     }
 
     private static int RadarAlertPriority(FlatResourceRow row, string problem)
@@ -6716,21 +8015,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                ?? TimeSpan.MaxValue;
     }
 
-    private void StartRadarAutoFollow(RadarPoint worldCenter)
+    private bool StartRadarAutoFollow(RadarPoint worldCenter, double targetZoom)
     {
-        const double targetZoom = 1d;
         var nextPanX = -worldCenter.X;
         var nextPanY = -worldCenter.Y;
         if (Math.Abs(radarZoom - targetZoom) < 0.001
             && Math.Abs(radarPanX - nextPanX) < 0.001
             && Math.Abs(radarPanY - nextPanY) < 0.001)
         {
-            return;
+            return false;
         }
 
         radarAutoFollowStartPanX = radarPanX;
         radarAutoFollowStartPanY = radarPanY;
         radarAutoFollowStartZoom = radarZoom;
+        radarAutoFollowTargetZoom = targetZoom;
         radarAutoFollowTargetPanX = nextPanX;
         radarAutoFollowTargetPanY = nextPanY;
         radarAutoFollowStep = 0;
@@ -6738,6 +8037,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         radarWaterPauseTimer.Stop();
         radarAutoFollowTimer.Stop();
         radarAutoFollowTimer.Start();
+        return true;
+    }
+
+    private void StartOrQueueRadarAutoFollow(RadarAutoFollowRequest request)
+    {
+        if (radarAutoFollowTimer.IsEnabled)
+        {
+            radarAutoFollowQueue.Enqueue(request);
+            return;
+        }
+
+        if (!StartRadarAutoFollow(request.WorldCenter, request.TargetZoom)
+            && radarAutoFollowQueue.TryDequeue(out var next))
+        {
+            StartRadarAutoFollow(next.WorldCenter, next.TargetZoom);
+        }
     }
 
     private void StepRadarAutoFollow()
@@ -6748,7 +8063,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var eased = 1 - Math.Pow(1 - progress, 3);
         radarPanX = Lerp(radarAutoFollowStartPanX, radarAutoFollowTargetPanX, eased);
         radarPanY = Lerp(radarAutoFollowStartPanY, radarAutoFollowTargetPanY, eased);
-        radarZoom = Lerp(radarAutoFollowStartZoom, 1d, eased);
+        radarZoom = Lerp(radarAutoFollowStartZoom, radarAutoFollowTargetZoom, eased);
         OnPropertyChanged(nameof(RadarPanX));
         OnPropertyChanged(nameof(RadarPanY));
         OnPropertyChanged(nameof(RadarZoom));
@@ -6760,6 +8075,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         radarAutoFollowTimer.Stop();
+        while (radarAutoFollowQueue.TryDequeue(out var next))
+        {
+            if (StartRadarAutoFollow(next.WorldCenter, next.TargetZoom))
+            {
+                return;
+            }
+        }
+
         IsRadarWaterPaused = false;
     }
 
@@ -7515,6 +8838,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         RefreshTimeLabels();
     }
 
+    internal void ExpireAlertAnimationsForTests()
+    {
+        ExpireAlertAnimations();
+    }
+
+    internal void PlayNextQueuedAlertSoundForTests()
+    {
+        PlayNextQueuedAlertSound();
+    }
+
+    internal int RadarAutoFollowQueueCountForTests => radarAutoFollowQueue.Count;
+
+    internal void StepRadarAutoFollowForTests()
+    {
+        StepRadarAutoFollow();
+    }
+
     internal void UpdateLoadingHealthSegments(int _ignored = 0)
     {
         const int tickCount = 30;
@@ -7524,7 +8864,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var litBrush = AppThemeCatalog.StatusBrush("HEALTHY");
         var unlitBrush = AppThemeCatalog.StatusBrush("UNKNOWN");
         var tickHeight = 100d / tickCount;
-
         if (HealthSegments.Count != tickCount)
         {
             HealthSegments.Clear();
@@ -7540,7 +8879,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             var isLit = fromBottom <= lit;
             var desiredState = isLit ? "LOADING" : "PENDING";
             var desiredBrush = isLit ? litBrush : unlitBrush;
-            if (HealthSegments[i].State != desiredState || !ReferenceEquals(HealthSegments[i].Brush, desiredBrush))
+            if (HealthSegments[i].State != desiredState)
             {
                 HealthSegments[i] = new HealthSegmentViewModel(desiredState, 0, 0, tickHeight, desiredBrush);
             }
@@ -7757,6 +9096,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         Radar,
         Graph
     }
+
+    private sealed record ActiveRadarAlertMatch(
+        string RuleId,
+        IReadOnlyList<FlatResourceRow> Rows,
+        AlertRuleActions Actions);
+
+    private readonly record struct RadarAutoFollowRequest(RadarPoint WorldCenter, double TargetZoom);
 
     private sealed class ResourceSortValueComparer : IComparer<IComparable>
     {

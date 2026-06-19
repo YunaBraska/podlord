@@ -179,6 +179,24 @@ public sealed class KindGlyph : Control
             case "Swap":
                 DrawSwap(context, rect, pen);
                 break;
+            case "Visible":
+                DrawVisible(context, rect, pen);
+                break;
+            case "Hidden":
+                DrawHidden(context, rect, pen);
+                break;
+            case "Play":
+                DrawPlay(context, rect, pen);
+                break;
+            case "Add":
+                DrawAdd(context, rect);
+                break;
+            case "Sound":
+                DrawSound(context, rect, pen);
+                break;
+            case "Open":
+                DrawOpen(context, rect);
+                break;
             default:
                 DrawDiamond(context, rect, pen);
                 break;
@@ -430,6 +448,53 @@ public sealed class KindGlyph : Control
         context.DrawLine(stroke, P(r, 0.84, 0.66), P(r, 0.16, 0.66));
         context.DrawLine(stroke, P(r, 0.3, 0.52), P(r, 0.16, 0.66));
         context.DrawLine(stroke, P(r, 0.3, 0.8), P(r, 0.16, 0.66));
+    }
+
+    private void DrawVisible(DrawingContext context, Rect r, Pen pen)
+    {
+        var stroke = FillPen(r);
+        context.DrawGeometry(null, stroke, Polygon(P(r, 0.08, 0.5), P(r, 0.28, 0.28), P(r, 0.5, 0.2), P(r, 0.72, 0.28), P(r, 0.92, 0.5), P(r, 0.72, 0.72), P(r, 0.5, 0.8), P(r, 0.28, 0.72)));
+        context.DrawEllipse(Fill, null, P(r, 0.5, 0.5), r.Width * 0.13, r.Height * 0.13);
+    }
+
+    private void DrawHidden(DrawingContext context, Rect r, Pen pen)
+    {
+        DrawVisible(context, r, pen);
+        var stroke = new Pen(Stroke, Math.Max(1.4, Math.Min(r.Width, r.Height) * 0.12), lineCap: PenLineCap.Round);
+        context.DrawLine(stroke, P(r, 0.16, 0.84), P(r, 0.84, 0.16));
+    }
+
+    private void DrawPlay(DrawingContext context, Rect r, Pen pen)
+    {
+        context.DrawGeometry(Fill, pen, Polygon(P(r, 0.28, 0.16), P(r, 0.82, 0.5), P(r, 0.28, 0.84)));
+    }
+
+    private void DrawAdd(DrawingContext context, Rect r)
+    {
+        var stroke = FillPen(r);
+        context.DrawLine(stroke, P(r, 0.5, 0.18), P(r, 0.5, 0.82));
+        context.DrawLine(stroke, P(r, 0.18, 0.5), P(r, 0.82, 0.5));
+    }
+
+    private void DrawSound(DrawingContext context, Rect r, Pen pen)
+    {
+        context.DrawGeometry(Fill, pen, Polygon(P(r, 0.12, 0.42), P(r, 0.32, 0.42), P(r, 0.56, 0.22), P(r, 0.56, 0.78), P(r, 0.32, 0.58), P(r, 0.12, 0.58)));
+        var stroke = FillPen(r);
+        context.DrawLine(stroke, P(r, 0.66, 0.34), P(r, 0.76, 0.42));
+        context.DrawLine(stroke, P(r, 0.76, 0.42), P(r, 0.76, 0.58));
+        context.DrawLine(stroke, P(r, 0.76, 0.58), P(r, 0.66, 0.66));
+        context.DrawLine(stroke, P(r, 0.82, 0.24), P(r, 0.92, 0.36));
+        context.DrawLine(stroke, P(r, 0.92, 0.36), P(r, 0.92, 0.64));
+        context.DrawLine(stroke, P(r, 0.92, 0.64), P(r, 0.82, 0.76));
+    }
+
+    private void DrawOpen(DrawingContext context, Rect r)
+    {
+        var stroke = FillPen(r);
+        context.DrawRectangle(null, stroke, R(r, 0.16, 0.3, 0.5, 0.54));
+        context.DrawLine(stroke, P(r, 0.48, 0.18), P(r, 0.84, 0.18));
+        context.DrawLine(stroke, P(r, 0.84, 0.18), P(r, 0.84, 0.54));
+        context.DrawLine(stroke, P(r, 0.84, 0.18), P(r, 0.44, 0.58));
     }
 
     private Pen FillPen(Rect r)

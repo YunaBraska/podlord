@@ -496,15 +496,61 @@ public sealed class GraphNodeViewModel : INotifyPropertyChanged
 
     public IBrush BorderBrush => IsCurrentSearchMatch
         ? AppThemeCatalog.StatusBrush("WARNING")
-        : IsSearchMatch ? AppThemeCatalog.StatusBrush("HEALTHY") : AppThemeCatalog.StatusBrush("UNKNOWN");
+        : IsSearchMatch ? AppThemeCatalog.StatusBrush("HEALTHY")
+        : Resource is { AlertColor.Length: > 0 } row && !row.AlertColor.Equals("none", StringComparison.OrdinalIgnoreCase) ? AlertBrush(row)
+        : Resource is { IsAnnouncing: true } ? AppThemeCatalog.StatusBrush("HEALTHY")
+        : AppThemeCatalog.StatusBrush("UNKNOWN");
 
     public IBrush BackgroundBrush => IsCurrentSearchMatch
         ? SolidColorBrush.Parse("#332A190C")
-        : IsSearchMatch ? SolidColorBrush.Parse("#26141D12") : SolidColorBrush.Parse("#18000000");
+        : IsSearchMatch ? SolidColorBrush.Parse("#26141D12")
+        : Resource is { IsAnnouncing: true } ? SolidColorBrush.Parse("#24141D12")
+        : SolidColorBrush.Parse("#18000000");
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private static IBrush AlertBrush(FlatResourceRow row)
+    {
+        if (row.AlertColor.StartsWith('#') && row.AlertColor.Length is 7 or 9)
+        {
+            try
+            {
+                return SolidColorBrush.Parse(row.AlertColor);
+            }
+            catch (FormatException)
+            {
+                return AppThemeCatalog.StatusBrush(row.Status);
+            }
+        }
+
+        return row.AlertColor.ToLowerInvariant() switch
+        {
+            "fresh" or "cyan" or "green" => AppThemeCatalog.StatusBrush("HEALTHY"),
+            "amber" or "yellow" => AppThemeCatalog.StatusBrush("WARNING"),
+            "red" => AppThemeCatalog.StatusBrush("CRITICAL"),
+            "status" => ProblemAwareStatusBrush(row),
+            _ => AppThemeCatalog.StatusBrush(row.Status)
+        };
+    }
+
+    private static IBrush ProblemAwareStatusBrush(FlatResourceRow row)
+    {
+        var problem = ResourceFilterMatcher.ProblemReason(row);
+        if (problem.Length == 0)
+        {
+            return AppThemeCatalog.StatusBrush(row.Status);
+        }
+
+        return row.Status is "CrashLoopBackOff" or "CreateContainerConfigError" or "CreateContainerError" or "ErrImagePull" or "Error" or "Failed" or "ImagePullBackOff" or "NotReady" or "OOMKilled" or "Unavailable"
+               || problem.Contains("Crash", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Error", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Failed", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Unavailable", StringComparison.OrdinalIgnoreCase)
+            ? AppThemeCatalog.StatusBrush("CRITICAL")
+            : AppThemeCatalog.StatusBrush("WARNING");
     }
 }
 
@@ -557,6 +603,8 @@ public sealed class RadarBlockViewModel(
     string? displayName = null,
     bool isClickable = true,
     bool isAnnouncing = false,
+    string alertAnimation = "",
+    string alertColor = "",
     bool isDimmed = false) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -599,6 +647,18 @@ public sealed class RadarBlockViewModel(
 
     public bool IsAnnouncing { get; private set; } = isAnnouncing;
 
+    public string AlertAnimation { get; private set; } = NormalizeAlertAnimation(alertAnimation);
+
+    public string AlertColor { get; private set; } = alertColor;
+
+    public bool IsBlinkAnimation => IsAnnouncing && AlertAnimation.Equals("blink", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPulseAnimation => IsAnnouncing && (AlertAnimation.Length == 0 || AlertAnimation.Equals("pulse", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsSweepAnimation => IsAnnouncing && AlertAnimation.Equals("sweep", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsOutlineAnimation => IsAnnouncing && AlertAnimation.Equals("outline", StringComparison.OrdinalIgnoreCase);
+
     public bool IsDimmed { get; private set; } = isDimmed;
 
     public double Opacity => IsDimmed ? 0.72 : 1;
@@ -630,6 +690,8 @@ public sealed class RadarBlockViewModel(
             && IsEventShallow == source.IsEventShallow
             && IsClickable == source.IsClickable
             && IsAnnouncing == source.IsAnnouncing
+            && AlertAnimation.Equals(source.AlertAnimation, StringComparison.Ordinal)
+            && AlertColor.Equals(source.AlertColor, StringComparison.Ordinal)
             && IsDimmed == source.IsDimmed)
         {
             return;
@@ -654,6 +716,8 @@ public sealed class RadarBlockViewModel(
         IsEventShallow = source.IsEventShallow;
         IsClickable = source.IsClickable;
         IsAnnouncing = source.IsAnnouncing;
+        AlertAnimation = source.AlertAnimation;
+        AlertColor = source.AlertColor;
         IsDimmed = source.IsDimmed;
         OnPropertyChanged(string.Empty);
     }
@@ -673,6 +737,12 @@ public sealed class RadarBlockViewModel(
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private static string NormalizeAlertAnimation(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized is "blink" or "pulse" or "sweep" or "outline" ? normalized : "pulse";
     }
 }
 

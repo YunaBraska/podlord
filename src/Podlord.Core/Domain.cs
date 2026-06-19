@@ -99,8 +99,7 @@ public sealed record Settings(
     int RequestHardLimitPerMinute = 0,
     string ThemeVariant = "dark",
     string Language = "system",
-    IReadOnlyList<TableColumnLayout>? TableColumnLayouts = null,
-    bool AutoHideEmptyColumns = false)
+    IReadOnlyList<TableColumnLayout>? TableColumnLayouts = null)
 {
     public static Settings Default { get; } = new(
         Theme: "Sirocco Command",
@@ -127,7 +126,8 @@ public sealed record TableColumnLayout(
     string ColumnId,
     int DisplayIndex,
     bool IsVisible,
-    double Width = 0d);
+    double Width = 0d,
+    bool Pinned = false);
 
 public sealed record ImportedContext(
     string ContextId,
@@ -227,9 +227,19 @@ public sealed record FlatResourceRow(
     string EventReason = "",
     string EventMessage = "",
     string EventObject = "",
-    bool IsAnnouncing = false)
+    bool IsAnnouncing = false,
+    string AlertAnimation = "",
+    string AlertColor = "")
 {
     public ResourcePulse Pulse { get; init; } = ResourcePulse.Empty;
+
+    public bool IsBlinkAnimation => IsAnnouncing && AlertAnimation.Equals("blink", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPulseAnimation => IsAnnouncing && (AlertAnimation.Length == 0 || AlertAnimation.Equals("pulse", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsSweepAnimation => IsAnnouncing && AlertAnimation.Equals("sweep", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsOutlineAnimation => IsAnnouncing && AlertAnimation.Equals("outline", StringComparison.OrdinalIgnoreCase);
 
     public string CpuDisplay => Pulse.CpuDisplay;
 

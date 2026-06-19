@@ -155,6 +155,16 @@ public static class ResourceFilterMatcher
         return ProblemReason(row, restartOutlierThreshold).Length > 0;
     }
 
+    public static bool IsError(FlatResourceRow row, int restartOutlierThreshold)
+    {
+        var problem = ProblemReason(row, restartOutlierThreshold);
+        return problem.Contains("Crash", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Error", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Failed", StringComparison.OrdinalIgnoreCase)
+               || problem.Contains("Unavailable", StringComparison.OrdinalIgnoreCase)
+               || row.Status is "CrashLoopBackOff" or "CreateContainerConfigError" or "CreateContainerError" or "ErrImagePull" or "Error" or "Failed" or "ImagePullBackOff" or "NotReady" or "OOMKilled" or "Unavailable";
+    }
+
     public static bool IsActivity(FlatResourceRow row)
     {
         if (row.Kind == "Event")

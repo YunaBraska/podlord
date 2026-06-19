@@ -493,18 +493,64 @@ public sealed class CoreEdgeCaseTests
         state.ImportKubeconfigText("one", OneContextKubeconfig("dev"));
         var context = state.Snapshot().ImportedContexts[0];
         var layout = new TableColumnLayout("ResourceGrid", "2:Name", 1, false);
+        var pinned = new TableColumnLayout("ResourceGrid", "Status", 0, true, 120d, Pinned: true);
         var settings = Settings.Default with
         {
             Theme = "Ironwood Warroom",
             ScreensaverEnabled = false,
-            TableColumnLayouts = [layout]
+            TableColumnLayouts = [layout, pinned]
         };
 
         Assert.Equal(settings, state.SaveSettings(settings));
         Assert.Equal("Ironwood Warroom", state.Settings().Theme);
-        Assert.Equal(layout, Assert.Single(state.Settings().TableColumnLayouts ?? Array.Empty<TableColumnLayout>()));
+        var stored = state.Settings().TableColumnLayouts ?? Array.Empty<TableColumnLayout>();
+        Assert.Equal(2, stored.Count);
+        Assert.Contains(stored, item => item.ColumnId == "2:Name" && item.Pinned is false);
+        Assert.Contains(stored, item => item.ColumnId == "Status" && item.Pinned);
         Assert.Equal(context.DisplayName, state.RenameImportedContext(context.ContextId, " ").DisplayName);
         Assert.Equal("Production", state.RenameImportedContext(context.ContextId, "Production").DisplayName);
+    }
+
+    [Fact]
+    public void Human_timestamp_formats_local_zone_with_abbreviation_and_handles_null()
+    {
+        Assert.Equal("-", PodlordText.HumanTimestamp(null));
+
+        var berlin = TimeZoneInfo.CreateCustomTimeZone(
+            "Europe/Berlin",
+            TimeSpan.FromHours(1),
+            "Central European",
+            "Central European Standard Time",
+            "Central European Summer Time",
+            adjustmentRules: null,
+            disableDaylightSavingTime: true);
+
+        var moment = new DateTimeOffset(2026, 3, 2, 14, 32, 0, TimeSpan.Zero);
+        Assert.Equal("2026-03-02 15:32 CEST", PodlordText.HumanTimestamp(moment, berlin));
+        Assert.Equal("2026-03-02 14:32 UTC", PodlordText.HumanTimestamp(moment, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public void Build_zone_abbreviation_compacts_word_initials_and_handles_unknown()
+    {
+        Assert.Equal("CEST", PodlordText.BuildZoneAbbreviation("Central European Summer Time"));
+        Assert.Equal("PST", PodlordText.BuildZoneAbbreviation("Pacific Standard Time"));
+        Assert.Equal(string.Empty, PodlordText.BuildZoneAbbreviation(string.Empty));
+    }
+
+    [Fact]
+    public void Zone_abbreviation_falls_back_to_offset_when_name_unparseable()
+    {
+        var custom = TimeZoneInfo.CreateCustomTimeZone(
+            "Etc/CustomNarnia",
+            TimeSpan.FromMinutes(345),
+            "Narnia",
+            "Narnia",
+            "Narnia",
+            adjustmentRules: null,
+            disableDaylightSavingTime: true);
+        var moment = new DateTimeOffset(2026, 3, 2, 14, 32, 0, TimeSpan.Zero);
+        Assert.Equal("UTC+05:45", PodlordText.ZoneAbbreviation(custom, moment));
     }
 
     [Fact]

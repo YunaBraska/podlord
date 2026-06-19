@@ -76,7 +76,6 @@ public partial class MainWindow : Window
         SyncYamlEditorFromViewModel();
         SyncLogEditorFromViewModel();
         viewModel.Resources.CollectionChanged += (_, _) => Dispatcher.UIThread.Post(ApplyAutoHideEmptyColumns, DispatcherPriority.Background);
-        viewModel.AutoHideEmptyColumnsRequested += (_, _) => Dispatcher.UIThread.Post(ApplyAutoHideEmptyColumns, DispatcherPriority.Background);
         viewModel.SetRadarPanelWidth(RightSidebarShell.Width);
         UpdateInspectorLayout();
         UpdateYamlEditorHeight();
@@ -359,6 +358,109 @@ public partial class MainWindow : Window
         viewModel.RemoveSelectedFilter();
     }
 
+    private void AboutSectionLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.PickAboutBlock();
+    }
+
+    private void AboutOpenLinkClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control control && control.Tag is string url)
+        {
+            viewModel.OpenAboutUrl(url);
+        }
+    }
+
+    private void AddAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.AddAlertRule();
+    }
+
+    private void DuplicateAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.DuplicateSelectedAlertRule();
+    }
+
+    private void DeleteAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.DeleteSelectedAlertRule();
+    }
+
+    private void SaveAlertRulesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.SaveAlertRules();
+    }
+
+    private void ToggleAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: AlertRuleRowViewModel rule })
+        {
+            viewModel.ToggleAlertRule(rule);
+        }
+    }
+
+    private void RemoveAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertMatcherGroupViewModel group })
+        {
+            viewModel.RemoveAlertMatcherGroup(group);
+        }
+    }
+
+    private void AddAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.AddAlertMatcherGroup();
+    }
+
+    private void AddAlertMatcherCriterionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertMatcherGroupViewModel group })
+        {
+            viewModel.AddAlertMatcherCriterion(group);
+        }
+    }
+
+    private void RemoveAlertMatcherCriterionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertMatcherCriterionViewModel criterion })
+        {
+            viewModel.RemoveAlertMatcherCriterion(criterion);
+        }
+    }
+
+    private void PreviewAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.PreviewSelectedAlertSound();
+    }
+
+    private void SelectAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AlertSoundDefinition sound })
+        {
+            viewModel.SelectSelectedAlertSound(sound.Id);
+        }
+    }
+
+    private void OpenAlertSoundSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.OpenSelectedAlertSoundSource();
+    }
+
+    private void PreviewAlertZoomClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.PreviewSelectedAlertZoom();
+    }
+
+    private void AlertColorStatusClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.SetSelectedAlertColorToStatus();
+    }
+
+    private void AlertColorNoneClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.SetSelectedAlertColorToNone();
+    }
+
     private void LoadFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { Tag: FilterPreset preset })
@@ -456,6 +558,11 @@ public partial class MainWindow : Window
         {
             flyout.ShowAt(button);
         }
+    }
+
+    private void ToggleAudioMuteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.ToggleAudioMute();
     }
 
     private void SettingsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1195,17 +1302,15 @@ public partial class MainWindow : Window
         {
             return;
         }
-        var autoHide = viewModel.AutoHideEmptyColumnsSetting;
+        var tableId = TableId(grid);
+        var pinnedSet = pinnedColumns.GetValueOrDefault(tableId);
         foreach (var column in grid.Columns)
         {
             var header = HeaderText(column.Header);
             var hasData = ColumnHasData(header, viewModel.Resources);
             var userVisible = !IsColumnHiddenByLayout(grid, column);
-            var desiredVisible = userVisible;
-            if (autoHide && hasData is false && userVisible)
-            {
-                desiredVisible = false;
-            }
+            var pinned = pinnedSet is not null && pinnedSet.Contains(ColumnId(grid, column));
+            var desiredVisible = ResolveColumnVisibility(pinned, userVisible, hasData);
             if (column.IsVisible != desiredVisible)
             {
                 applyingTableLayout = true;
@@ -1219,6 +1324,11 @@ public partial class MainWindow : Window
                 }
             }
         }
+    }
+
+    internal static bool ResolveColumnVisibility(bool pinned, bool userVisible, bool? hasData)
+    {
+        return pinned || (userVisible && hasData is not false);
     }
 
     private bool IsColumnHiddenByLayout(DataGrid grid, DataGridColumn column)
@@ -1297,6 +1407,8 @@ public partial class MainWindow : Window
         }
     }
 
+    private readonly Dictionary<string, HashSet<string>> pinnedColumns = new(StringComparer.Ordinal);
+
     private void ApplyTableLayout(DataGrid grid, string tableId)
     {
         var layout = viewModel.TableColumnLayout(tableId);
@@ -1309,6 +1421,7 @@ public partial class MainWindow : Window
         try
         {
             var byColumn = layout.ToDictionary(item => item.ColumnId, StringComparer.Ordinal);
+            var pinnedSet = new HashSet<string>(StringComparer.Ordinal);
             foreach (var column in grid.Columns)
             {
                 if (LayoutForColumn(byColumn, grid, column) is { } item)
@@ -1318,8 +1431,13 @@ public partial class MainWindow : Window
                     {
                         column.Width = new DataGridLength(item.Width);
                     }
+                    if (item.Pinned)
+                    {
+                        pinnedSet.Add(ColumnId(grid, column));
+                    }
                 }
             }
+            pinnedColumns[tableId] = pinnedSet;
 
             if (!grid.Columns.Any(column => column.IsVisible) && grid.Columns.Count > 0)
             {
@@ -1349,8 +1467,13 @@ public partial class MainWindow : Window
         }
 
         var tableId = TableId(grid);
+        var pinnedSet = pinnedColumns.GetValueOrDefault(tableId) ?? new HashSet<string>(StringComparer.Ordinal);
         var layout = grid.Columns
-            .Select(column => new TableColumnLayout(tableId, ColumnId(grid, column), column.DisplayIndex, column.IsVisible, column.ActualWidth))
+            .Select(column =>
+            {
+                var columnId = ColumnId(grid, column);
+                return new TableColumnLayout(tableId, columnId, column.DisplayIndex, column.IsVisible, column.ActualWidth, pinnedSet.Contains(columnId));
+            })
             .OrderBy(item => item.DisplayIndex)
             .ToList();
         viewModel.SaveTableColumnLayout(tableId, layout);
@@ -1428,6 +1551,11 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             MaxHeight = 360
         };
 
+        var tableId = TableId(grid);
+        var pinnedSet = pinnedColumns.TryGetValue(tableId, out var existing)
+            ? existing
+            : pinnedColumns[tableId] = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var column in grid.Columns.OrderBy(column => column.DisplayIndex))
         {
             var label = HeaderText(column.Header);
@@ -1436,26 +1564,58 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
                 label = $"Column {column.DisplayIndex + 1}";
             }
 
-            var item = new MenuItem
-            {
-                Header = label,
-                ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = column.IsVisible
-            };
+            var columnId = ColumnId(grid, column);
+            var item = new MenuItem();
+            menu.Items.Add(item);
+            RenderColumnPinMenuItem(item, label, column, pinnedSet.Contains(columnId));
             item.Click += (_, _) =>
             {
-                var visibleCount = grid.Columns.Count(candidate => candidate.IsVisible);
-                if (column.IsVisible && visibleCount <= 1)
+                var pinned = pinnedSet.Contains(columnId);
+                var state = pinned ? ColumnPinState.Pinned : column.IsVisible ? ColumnPinState.Auto : ColumnPinState.Hidden;
+                var next = state switch
                 {
-                    item.IsChecked = true;
-                    return;
+                    ColumnPinState.Auto => ColumnPinState.Pinned,
+                    ColumnPinState.Pinned => ColumnPinState.Hidden,
+                    _ => ColumnPinState.Auto
+                };
+
+                if (next == ColumnPinState.Hidden)
+                {
+                    var visibleCount = grid.Columns.Count(candidate => candidate.IsVisible);
+                    if (column.IsVisible && visibleCount <= 1)
+                    {
+                        return;
+                    }
                 }
 
-                column.IsVisible = !column.IsVisible;
+                applyingTableLayout = true;
+                try
+                {
+                    switch (next)
+                    {
+                        case ColumnPinState.Auto:
+                            pinnedSet.Remove(columnId);
+                            column.IsVisible = true;
+                            break;
+                        case ColumnPinState.Pinned:
+                            pinnedSet.Add(columnId);
+                            column.IsVisible = true;
+                            break;
+                        case ColumnPinState.Hidden:
+                            pinnedSet.Remove(columnId);
+                            column.IsVisible = false;
+                            break;
+                    }
+                }
+                finally
+                {
+                    applyingTableLayout = false;
+                }
+
                 SaveTableLayout(grid);
-                CloseActiveContextMenu(cancelPendingHold: true);
+                ApplyAutoHideEmptyColumns();
+                RenderColumnPinMenuItem(item, label, column, pinnedSet.Contains(columnId));
             };
-            menu.Items.Add(item);
         }
 
         menu.Closed += (_, _) => ClearActiveContextMenu(menu, owner);
@@ -1464,6 +1624,64 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         activeContextMenuOwner = owner;
         menu.PlacementTarget = owner;
         menu.Open(owner);
+    }
+
+    private enum ColumnPinState { Auto, Pinned, Hidden }
+
+    private static void RenderColumnPinMenuItem(MenuItem item, string label, DataGridColumn column, bool pinned)
+    {
+        var state = pinned ? ColumnPinState.Pinned : column.IsVisible ? ColumnPinState.Auto : ColumnPinState.Hidden;
+        item.Header = label;
+        item.ToggleType = MenuItemToggleType.None;
+        item.Icon = ColumnPinIcon(state);
+    }
+
+    private static Control? ColumnPinIcon(ColumnPinState state)
+    {
+        return state switch
+        {
+            ColumnPinState.Auto => new TextBlock
+            {
+                Text = "✓",
+                FontSize = 13,
+                Foreground = Avalonia.Media.Brushes.LightSeaGreen,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            },
+            ColumnPinState.Pinned => BuildLockGlyph(),
+            _ => null
+        };
+    }
+
+    private static Control BuildLockGlyph()
+    {
+        var canvas = new Canvas
+        {
+            Width = 12,
+            Height = 14,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        var shackle = new Avalonia.Controls.Shapes.Path
+        {
+            Stroke = Avalonia.Media.Brushes.Goldenrod,
+            StrokeThickness = 1.6,
+            Fill = null,
+            Data = Avalonia.Media.Geometry.Parse("M3,6 V4 a3,3 0 0 1 6,0 V6")
+        };
+        var body = new Avalonia.Controls.Shapes.Rectangle
+        {
+            Width = 10,
+            Height = 7,
+            RadiusX = 1.2,
+            RadiusY = 1.2,
+            Fill = Avalonia.Media.Brushes.Goldenrod
+        };
+        Canvas.SetLeft(body, 1);
+        Canvas.SetTop(body, 6);
+        canvas.Children.Add(shackle);
+        canvas.Children.Add(body);
+        return canvas;
     }
 
     private enum InspectorSortDir { None, Ascending, Descending }
