@@ -167,6 +167,19 @@ See [doc/ROADMAP.md](doc/ROADMAP.md) for the full plan.
 
 Pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before sending one. The short version: keep behavior explicit, test through public boundaries, do not leak secrets, and do not bypass the Kubernetes request queue.
 
+By contributing you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Support The Project
+
+Podlord is a one-human side project with no funding or corporate backer. If it earned a place on your dock, the easiest way to help is a star on the repository. If you want to fuel a coffee, any of these work:
+
+- [GitHub Sponsors](https://github.com/sponsors/YunaBraska)
+- [Buy Me a Coffee](https://buymeacoffee.com/YunaBraska)
+- [Ko-fi](https://ko-fi.com/YunaBraska)
+- [Liberapay](https://liberapay.com/YunaBraska)
+
+Bugs, ideas, and rants are equally welcome on the [issue tracker](https://github.com/YunaBraska/podlord/issues/new).
+
 ## License
 
 Podlord is licensed under the [MIT License](LICENSE).
