@@ -2861,7 +2861,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var path = ResolveAlertSoundAssetPath(sound.Asset);
-        return path is not null && soundPlayer.Play(path, out _);
+        if (path is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return soundPlayer.Play(path, out _);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private void PlayNextQueuedAlertSound()

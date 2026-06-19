@@ -3252,6 +3252,32 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Audio_backend_failures_do_not_break_alert_rendering()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), new ThrowingAlertSoundPlayer());
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }]);
+
+            ApplyLocalFilter(viewModel);
+
+            var block = Assert.Single(viewModel.RadarBlocks, item => item.Resource.Name == "waiting");
+            Assert.Equal("status", block.AlertColor);
+            Assert.NotEmpty(viewModel.ActiveAlerts);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Disabling_default_alert_rules_removes_old_hidden_radar_and_table_fallbacks()
     {
         var directory = TempDirectory();
@@ -3698,6 +3724,18 @@ public sealed class AppBehaviorTests
         public void Dispose()
         {
             disposed = true;
+        }
+    }
+
+    private sealed class ThrowingAlertSoundPlayer : IAlertSoundPlayer
+    {
+        public bool Play(string path, out string error)
+        {
+            throw new InvalidOperationException("no audio device");
+        }
+
+        public void Dispose()
+        {
         }
     }
 

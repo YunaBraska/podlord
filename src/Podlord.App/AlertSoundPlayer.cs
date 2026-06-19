@@ -53,7 +53,7 @@ public sealed class MiniAudioAlertSoundPlayer : IAlertSoundPlayer
                 error = string.Empty;
                 return true;
             }
-            catch (Exception ex) when (ex is InvalidOperationException or IOException or ArgumentException)
+            catch (Exception ex)
             {
                 error = ex.Message;
                 return false;
