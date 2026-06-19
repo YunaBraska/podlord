@@ -141,7 +141,22 @@ jobs:
           - rid: linux-arm64
             os: ubuntu-24.04
             package: tar.gz
+          - rid: linux-arm
+            os: ubuntu-24.04
+            package: tar.gz
+          - rid: linux-musl-x64
+            os: ubuntu-24.04
+            package: tar.gz
+          - rid: linux-musl-arm64
+            os: ubuntu-24.04
+            package: tar.gz
+          - rid: linux-musl-arm
+            os: ubuntu-24.04
+            package: tar.gz
           - rid: win-x64
+            os: ubuntu-24.04
+            package: zip
+          - rid: win-x86
             os: ubuntu-24.04
             package: zip
           - rid: win-arm64

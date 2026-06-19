@@ -97,6 +97,8 @@ The k3d scenario map is documented in [doc/spec/k3d-test-map.md](doc/spec/k3d-te
 ```sh
 scripts/publish.sh all
 scripts/publish.sh linux-x64
+scripts/publish.sh linux-musl-arm64
+scripts/publish.sh win-x86
 scripts/build-macos-app.sh osx-arm64
 ```
 
@@ -106,7 +108,12 @@ Supported runtime identifiers:
 - `osx-x64`
 - `linux-x64`
 - `linux-arm64`
+- `linux-arm`
+- `linux-musl-x64`
+- `linux-musl-arm64`
+- `linux-musl-arm`
 - `win-x64`
+- `win-x86`
 - `win-arm64`
 
 ## Release Flow
@@ -115,7 +122,7 @@ Merging to `main` runs the release pipeline:
 
 1. test with the k3d-backed suite
 2. create a date version like `2026.6.15`
-3. build platform archives for Linux, macOS, and Windows on x64/arm64
+3. build platform archives for Linux, macOS, and Windows across supported x64, x86, arm, and arm64 runtimes
 4. update the changelog release section
 5. push the release commit, create the tag, and publish the GitHub release
 
