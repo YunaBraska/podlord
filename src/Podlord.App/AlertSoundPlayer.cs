@@ -8,6 +8,31 @@ public interface IAlertSoundPlayer : IDisposable
     bool Play(string path, out string error);
 }
 
+public static class AlertSoundPlayerFactory
+{
+    public static IAlertSoundPlayer CreateDefault()
+    {
+        var disabled = Environment.GetEnvironmentVariable("PODLORD_DISABLE_AUDIO");
+        return string.Equals(disabled, "1", StringComparison.Ordinal)
+            || string.Equals(disabled, "true", StringComparison.OrdinalIgnoreCase)
+            ? new NoOpAlertSoundPlayer()
+            : new MiniAudioAlertSoundPlayer();
+    }
+}
+
+public sealed class NoOpAlertSoundPlayer : IAlertSoundPlayer
+{
+    public bool Play(string path, out string error)
+    {
+        error = string.Empty;
+        return true;
+    }
+
+    public void Dispose()
+    {
+    }
+}
+
 public sealed class MiniAudioAlertSoundPlayer : IAlertSoundPlayer
 {
     private const uint SampleRate = 44_100;

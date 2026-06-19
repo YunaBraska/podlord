@@ -174,7 +174,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         this.state = state;
         this.service = service;
-        this.soundPlayer = soundPlayer ?? new MiniAudioAlertSoundPlayer();
+        this.soundPlayer = soundPlayer ?? AlertSoundPlayerFactory.CreateDefault();
         portForwardStatusLine = T("status.portForwardLine");
         statusLine = T("status.appReady");
         detailYaml = T("status.selectResource");

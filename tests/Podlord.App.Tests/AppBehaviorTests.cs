@@ -3278,6 +3278,25 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Default_audio_player_can_be_disabled_for_headless_test_runs()
+    {
+        var previous = Environment.GetEnvironmentVariable("PODLORD_DISABLE_AUDIO");
+        Environment.SetEnvironmentVariable("PODLORD_DISABLE_AUDIO", "1");
+        try
+        {
+            using var player = AlertSoundPlayerFactory.CreateDefault();
+
+            Assert.IsType<NoOpAlertSoundPlayer>(player);
+            Assert.True(player.Play("missing.wav", out var error));
+            Assert.Equal(string.Empty, error);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_DISABLE_AUDIO", previous);
+        }
+    }
+
+    [Fact]
     public void Disabling_default_alert_rules_removes_old_hidden_radar_and_table_fallbacks()
     {
         var directory = TempDirectory();
