@@ -169,10 +169,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ImportHomeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ImportHome();
-    }
+    private void ImportHomeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ImportHome();
 
     private async void ImportPathClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -205,10 +202,7 @@ public partial class MainWindow : Window
 
     private void RemoveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: SourceStatusRow row })
-        {
-            viewModel.RemoveSource(row);
-        }
+        if (sender is Button { Tag: SourceStatusRow row }) viewModel.RemoveSource(row);
     }
 
     private async void ImportK3dClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -392,15 +386,9 @@ public partial class MainWindow : Window
         YamlEditor.Height = editorHeight;
     }
 
-    private void SaveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SaveCurrentFilter();
-    }
+    private void SaveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveCurrentFilter();
 
-    private void RemoveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.RemoveSelectedFilter();
-    }
+    private void RemoveFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RemoveSelectedFilter();
 
     private void AboutSectionLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -415,25 +403,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AddAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.AddAlertRule();
-    }
+    private void AddAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.AddAlertRule();
 
-    private void DuplicateAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.DuplicateSelectedAlertRule();
-    }
+    private void DuplicateAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DuplicateSelectedAlertRule();
 
-    private void DeleteAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.DeleteSelectedAlertRule();
-    }
+    private void DeleteAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DeleteSelectedAlertRule();
 
-    private void SaveAlertRulesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SaveAlertRules();
-    }
+    private void SaveAlertRulesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveAlertRules();
 
     private void ToggleAlertRuleClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -445,37 +421,22 @@ public partial class MainWindow : Window
 
     private void RemoveAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: AlertMatcherGroupViewModel group })
-        {
-            viewModel.RemoveAlertMatcherGroup(group);
-        }
+        if (sender is Button { Tag: AlertMatcherGroupViewModel group }) viewModel.RemoveAlertMatcherGroup(group);
     }
 
-    private void AddAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.AddAlertMatcherGroup();
-    }
+    private void AddAlertMatcherGroupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.AddAlertMatcherGroup();
 
     private void AddAlertMatcherCriterionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: AlertMatcherGroupViewModel group })
-        {
-            viewModel.AddAlertMatcherCriterion(group);
-        }
+        if (sender is Button { Tag: AlertMatcherGroupViewModel group }) viewModel.AddAlertMatcherCriterion(group);
     }
 
     private void RemoveAlertMatcherCriterionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: AlertMatcherCriterionViewModel criterion })
-        {
-            viewModel.RemoveAlertMatcherCriterion(criterion);
-        }
+        if (sender is Button { Tag: AlertMatcherCriterionViewModel criterion }) viewModel.RemoveAlertMatcherCriterion(criterion);
     }
 
-    private void PreviewAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.PreviewSelectedAlertSound();
-    }
+    private void PreviewAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.PreviewSelectedAlertSound();
 
     private void SelectAlertSoundClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -485,25 +446,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenAlertSoundSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.OpenSelectedAlertSoundSource();
-    }
+    private void OpenAlertSoundSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenSelectedAlertSoundSource();
 
-    private void PreviewAlertZoomClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.PreviewSelectedAlertZoom();
-    }
+    private void PreviewAlertZoomClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.PreviewSelectedAlertZoom();
 
-    private void AlertColorStatusClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SetSelectedAlertColorToStatus();
-    }
+    private void AlertColorStatusClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SetSelectedAlertColorToStatus();
 
-    private void AlertColorNoneClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SetSelectedAlertColorToNone();
-    }
+    private void AlertColorNoneClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SetSelectedAlertColorToNone();
 
     private void LoadFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -515,10 +464,7 @@ public partial class MainWindow : Window
 
     private void DeleteSavedFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: FilterPreset preset })
-        {
-            viewModel.DeleteSavedFilter(preset);
-        }
+        if (sender is Button { Tag: FilterPreset preset }) viewModel.DeleteSavedFilter(preset);
     }
 
     private void RenameSavedFilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -591,10 +537,7 @@ public partial class MainWindow : Window
         viewModel.SelectWorkspace("ports");
     }
 
-    private void SourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.OpenSourcesSettings();
-    }
+    private void SourcesWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenSourcesSettings();
 
     private void RadarSourceButtonClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -604,40 +547,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ToggleAudioMuteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ToggleAudioMute();
-    }
+    private void ToggleAudioMuteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ToggleAudioMute();
 
     private void SettingsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         viewModel.SelectWorkspace("settings");
     }
 
-    private void ImportPasteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ImportPasteNow();
-    }
+    private void ImportPasteClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ImportPasteNow();
 
-    private void RefreshSourcesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.RefreshSourcesNow();
-    }
+    private void RefreshSourcesClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RefreshSourcesNow();
 
-    private void SaveSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SaveSelectedSession();
-    }
+    private void SaveSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveSelectedSession();
 
-    private void SaveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.SaveSelectedSource();
-    }
+    private void SaveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveSelectedSource();
 
-    private void DuplicateSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.DuplicateSelectedSession();
-    }
+    private void DuplicateSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DuplicateSelectedSession();
 
     private void PortForwardRowClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -917,43 +842,25 @@ public partial class MainWindow : Window
         }
     }
 
-    private void StartPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.StartPreparedPortForward();
-    }
+    private void StartPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.StartPreparedPortForward();
 
-    private void RunPortForwardActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.RunPreparedPortForwardAction();
-    }
+    private void RunPortForwardActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RunPreparedPortForwardAction();
 
     private async void ApplyYamlClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         await viewModel.ApplyEditedYamlAsync().ConfigureAwait(true);
     }
 
-    private void ResetYamlClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ResetEditedYaml();
-    }
+    private void ResetYamlClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ResetEditedYaml();
 
-    private void StopPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.StopSelectedPortForward();
-    }
+    private void StopPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.StopSelectedPortForward();
 
     private void OpenPortForwardTaskClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: PortForwardTaskViewModel task })
-        {
-            viewModel.OpenPortForwardTask(task);
-        }
+        if (sender is Button { Tag: PortForwardTaskViewModel task }) viewModel.OpenPortForwardTask(task);
     }
 
-    private void ClosePortForwardToolClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ClosePortForwardTool();
-    }
+    private void ClosePortForwardToolClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.ClosePortForwardTool();
 
     private void FilterSearchKeyDown(object? sender, KeyEventArgs e)
     {
@@ -2138,10 +2045,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         }
     }
 
-    private void PortForwardSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.PrepareSelectedResourcePortForward();
-    }
+    private void PortForwardSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.PrepareSelectedResourcePortForward();
 
     private void ToggleResourceValueRevealClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -2895,10 +2799,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         }
     }
 
-    private void TogglePortSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.TogglePortSearch();
-    }
+    private void TogglePortSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.TogglePortSearch();
 
     private void FocusPortSearch() => FocusSearchBox(viewModel.IsPortSearchOpen, PortSearchBox);
 
