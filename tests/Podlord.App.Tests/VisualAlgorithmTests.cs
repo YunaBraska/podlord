@@ -142,6 +142,38 @@ public sealed class VisualAlgorithmTests
     }
 
     [Fact]
+    public void Yaml_analyzer_marks_resource_reference_values_and_empty_values()
+    {
+        Assert.False(YamlSyntaxAnalyzer.IsResourceRefKey(null));
+        Assert.False(YamlSyntaxAnalyzer.IsResourceRefKey(string.Empty));
+        Assert.True(YamlSyntaxAnalyzer.IsResourceRefKey("name"));
+        Assert.True(YamlSyntaxAnalyzer.IsResourceRefKey("namespace"));
+        Assert.True(YamlSyntaxAnalyzer.IsResourceRefKey("kind"));
+
+        Assert.Equal(
+            [
+                new YamlToken(0, 4, YamlTokenKind.Key),
+                new YamlToken(6, 11, YamlTokenKind.ResourceRef)
+            ],
+            YamlSyntaxAnalyzer.AnalyzeLine("name: pod-a"));
+        Assert.Equal(
+            [new YamlToken(0, 4, YamlTokenKind.Key)],
+            YamlSyntaxAnalyzer.AnalyzeLine("name:   "));
+        Assert.Equal(
+            [
+                new YamlToken(0, 4, YamlTokenKind.Key),
+                new YamlToken(8, 17, YamlTokenKind.Comment)
+            ],
+            YamlSyntaxAnalyzer.AnalyzeLine("kind:   # comment"));
+        Assert.Equal(
+            [
+                new YamlToken(0, 4, YamlTokenKind.Key),
+                new YamlToken(6, 16, YamlTokenKind.ResourceRef)
+            ],
+            YamlSyntaxAnalyzer.AnalyzeLine("kind: Deployment"));
+    }
+
+    [Fact]
     public void Source_rows_normalize_names_filters_and_emit_change_notifications()
     {
         var removed = false;

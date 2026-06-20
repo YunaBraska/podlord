@@ -344,9 +344,12 @@ public sealed class AppBehaviorTests
     {
         Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "2026.6.20"));
         Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19-local+sha", "2026.7.1"));
+        Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6", "2026.6.1"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "2026.6.19"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.20", "2026.6.19"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("dev-build", "2026.6.19"));
+        Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "dev-build"));
+        Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease(string.Empty, "2026.6.19"));
 
         var assets = new[]
         {
@@ -360,7 +363,152 @@ public sealed class AppBehaviorTests
         Assert.Equal("legacy-mac", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-macos-x64.zip"));
         Assert.Equal("mac", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-osx-arm64.zip"));
         Assert.Equal("linux", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-linux-x64.tar.gz"));
+        Assert.Equal(
+            "mac-contained",
+            GitHubReleaseUpdateChecker.PreferredAssetUrl(
+                [new ReleaseAssetInfo("podlord-2026.6.20-macos-arm64.zip", "mac-contained")],
+                "podlord-macos-arm64.zip"));
         Assert.Null(GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-macos-arm.zip"));
+        Assert.Matches(@"^podlord-(macos|win|linux)-(arm64|arm|x86|x64)\.(zip|tar\.gz)$", GitHubReleaseUpdateChecker.RuntimeReleaseAssetName());
+        Assert.Matches(@"^\d+\.\d+\.\d+", GitHubReleaseUpdateChecker.CurrentApplicationVersion());
+    }
+
+    [Fact]
+    public async Task GitHub_release_update_checker_reads_latest_release_and_prefers_runtime_asset()
+    {
+        using var http = new HttpClient(new AppRecordingHandler(request =>
+        {
+            Assert.Equal("/repos/YunaBraska/podlord/releases/latest", request.RequestUri?.AbsolutePath);
+            Assert.Contains(request.Headers.UserAgent, value => value.Product?.Name == "Podlord" && value.Product.Version == "2026.6.19-test");
+            Assert.Contains(request.Headers.Accept, value => value.MediaType == "application/vnd.github+json");
+            Assert.True(request.Headers.TryGetValues("X-GitHub-Api-Version", out var versions));
+            Assert.Contains(GitHubReleaseUpdateChecker.GitHubApiVersion, versions);
+            return JsonResponse("""
+              {
+                "tag_name": "2026.6.20",
+                "html_url": "https://github.com/YunaBraska/podlord/releases/tag/2026.6.20",
+                "assets": [
+                  { "name": "podlord-macos-arm64.zip", "browser_download_url": "https://downloads/macos-arm64.zip" },
+                  { "name": "podlord-osx-arm64.zip", "browser_download_url": "https://downloads/osx-arm64.zip" },
+                  { "name": "podlord-linux-x64.tar.gz", "browser_download_url": "https://downloads/linux-x64.tar.gz" }
+                ]
+              }
+              """);
+        }));
+        using var checker = new GitHubReleaseUpdateChecker(http);
+
+        var result = await checker.CheckLatestAsync("2026.6.19 test", CancellationToken.None);
+
+        Assert.Equal("2026.6.20", result.LatestVersion);
+        Assert.True(result.IsNewer);
+        Assert.Equal("https://github.com/YunaBraska/podlord/releases/tag/2026.6.20", result.ReleaseUrl);
+        Assert.Equal("https://downloads/macos-arm64.zip", result.DownloadUrl);
+        Assert.Equal(string.Empty, result.Error);
+        Assert.NotEqual(string.Empty, result.LastCheckedAt);
+    }
+
+    [Fact]
+    public async Task GitHub_release_update_checker_falls_back_to_release_url_when_no_asset_matches()
+    {
+        using var http = new HttpClient(new AppRecordingHandler(_ => JsonResponse("""
+          {
+            "tag_name": "2026.6.21",
+            "html_url": "https://github.com/YunaBraska/podlord/releases/tag/2026.6.21",
+            "assets": [
+              { "name": "readme.txt", "browser_download_url": "https://downloads/readme.txt" }
+            ]
+          }
+          """)));
+        using var checker = new GitHubReleaseUpdateChecker(http);
+
+        var result = await checker.CheckLatestAsync("2026.6.20", CancellationToken.None);
+
+        Assert.True(result.IsNewer);
+        Assert.Equal("2026.6.21", result.LatestVersion);
+        Assert.Equal(result.ReleaseUrl, result.DownloadUrl);
+
+        using var noAssetsHttp = new HttpClient(new AppRecordingHandler(_ => JsonResponse("""
+          {
+            "tag_name": "2026.6.22",
+            "html_url": "https://github.com/YunaBraska/podlord/releases/tag/2026.6.22"
+          }
+          """)));
+        using var noAssetsChecker = new GitHubReleaseUpdateChecker(noAssetsHttp);
+
+        var noAssets = await noAssetsChecker.CheckLatestAsync("2026.6.21", CancellationToken.None);
+
+        Assert.True(noAssets.IsNewer);
+        Assert.Equal(noAssets.ReleaseUrl, noAssets.DownloadUrl);
+    }
+
+    [Fact]
+    public async Task GitHub_release_update_checker_returns_failure_state_for_http_invalid_json_and_timeout()
+    {
+        using var failingHttp = new HttpClient(new AppRecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            ReasonPhrase = "Rate Limited"
+        }));
+        using var unreachableHttp = new HttpClient(new AppRecordingHandler(_ => throw new HttpRequestException("network down")));
+        using var invalidJsonHttp = new HttpClient(new AppRecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{not-json", Encoding.UTF8, "application/json")
+        }));
+        using var timeoutHttp = new HttpClient(new AppRecordingHandler(_ => throw new TaskCanceledException("timeout")));
+
+        using var failingChecker = new GitHubReleaseUpdateChecker(failingHttp);
+        using var unreachableChecker = new GitHubReleaseUpdateChecker(unreachableHttp);
+        using var invalidJsonChecker = new GitHubReleaseUpdateChecker(invalidJsonHttp);
+        using var timeoutChecker = new GitHubReleaseUpdateChecker(timeoutHttp);
+
+        var httpFailure = await failingChecker.CheckLatestAsync("2026.6.20", CancellationToken.None);
+        var networkFailure = await unreachableChecker.CheckLatestAsync("2026.6.20", CancellationToken.None);
+        var jsonFailure = await invalidJsonChecker.CheckLatestAsync("2026.6.20", CancellationToken.None);
+        var timeoutFailure = await timeoutChecker.CheckLatestAsync("2026.6.20", CancellationToken.None);
+
+        Assert.False(httpFailure.IsNewer);
+        Assert.Equal("2026.6.20", httpFailure.CurrentVersion);
+        Assert.Contains("429", httpFailure.Error, StringComparison.Ordinal);
+        Assert.Contains("Rate Limited", httpFailure.Error, StringComparison.Ordinal);
+        Assert.False(networkFailure.IsNewer);
+        Assert.Contains("network down", networkFailure.Error, StringComparison.Ordinal);
+        Assert.False(jsonFailure.IsNewer);
+        Assert.Contains("invalid JSON", jsonFailure.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.False(timeoutFailure.IsNewer);
+        Assert.Equal("GitHub release check timed out.", timeoutFailure.Error);
+    }
+
+    [Fact]
+    public void Release_update_checker_factory_respects_disabled_environment()
+    {
+        var previous = Environment.GetEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK");
+        try
+        {
+            Environment.SetEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK", "1");
+            using var disabled = ReleaseUpdateCheckerFactory.CreateDefault();
+
+            Environment.SetEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK", "false");
+            using var enabled = ReleaseUpdateCheckerFactory.CreateDefault();
+
+            Assert.IsType<NoOpReleaseUpdateChecker>(disabled);
+            Assert.IsType<GitHubReleaseUpdateChecker>(enabled);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK", previous);
+        }
+    }
+
+    [Fact]
+    public async Task Noop_release_update_checker_returns_current_version_and_disabled_message()
+    {
+        using var checker = new NoOpReleaseUpdateChecker();
+
+        var result = await checker.CheckLatestAsync("2026.6.20", CancellationToken.None);
+
+        Assert.Equal("2026.6.20", result.CurrentVersion);
+        Assert.Equal("2026.6.20", result.LatestVersion);
+        Assert.False(result.IsNewer);
+        Assert.Contains("disabled", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -3113,6 +3261,28 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Alert_rule_store_returns_defaults_for_missing_and_malformed_files()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            Assert.Equal(AlertRuleCatalog.DefaultRules.Select(rule => rule.Id), AlertRuleStore.Load().Select(rule => rule.Id));
+
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "alert-rules.json"), "{not-json");
+
+            Assert.Equal(AlertRuleCatalog.DefaultRules.Select(rule => rule.Id), AlertRuleStore.Load().Select(rule => rule.Id));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Alert_editor_adds_custom_rule_saves_it_and_evaluates_cached_rows()
     {
         var directory = TempDirectory();
@@ -4389,6 +4559,14 @@ users:
         var path = Path.Combine(Path.GetTempPath(), $"podlord-app-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
     }
 
     private sealed class MutableClock(DateTimeOffset now) : IPodlordClock

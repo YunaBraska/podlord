@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Podlord.Core;
 
 namespace Podlord.Core.Tests;
@@ -577,6 +578,58 @@ public sealed class CoreEdgeCaseTests
     }
 
     [Fact]
+    public void App_state_load_default_repairs_stale_active_session_from_store()
+    {
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        var directory = TempDirectory();
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var importedAt = FixedClock.Instance.Now.ToString("O");
+            var context = new ImportedContext(
+                "ctx-dev",
+                "source.yaml",
+                null,
+                "dev",
+                "Dev",
+                "cluster-a",
+                "user-a",
+                "payments",
+                "https://cluster.example",
+                "token",
+                SafetyLevel.Unknown,
+                [],
+                importedAt);
+            var session = new PodlordSession(
+                "session-dev",
+                "Dev",
+                context.ContextId,
+                context.ClusterName,
+                NamespaceScope.All,
+                SafetyLevel.Unknown,
+                null,
+                null,
+                false,
+                importedAt);
+            var stale = new AppStore(Settings.Default, [context], [session], "missing-session");
+            File.WriteAllText(Path.Combine(directory, "store.json"), JsonSerializer.Serialize(stale));
+
+            var state = AppState.LoadDefault(FixedClock.Instance);
+            var connection = state.SessionConnection(null);
+
+            Assert.Equal(session.Id, state.Snapshot().ActiveSessionId);
+            Assert.Equal(session.Id, connection.Session.Id);
+            Assert.Equal(context.SourcePath, connection.KubeconfigPath);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void App_state_imports_home_kubeconfig_from_safe_home_override()
     {
         var previous = Environment.GetEnvironmentVariable("PODLORD_HOME");
@@ -608,23 +661,35 @@ public sealed class CoreEdgeCaseTests
         Assert.Equal(PodlordErrorKind.SessionNotFound, Assert.Throws<PodlordException>(() => state.SetSessionSafety("missing", SafetyLevel.Dev)).Kind);
         Assert.Equal(PodlordErrorKind.SessionNotFound, Assert.Throws<PodlordException>(() => state.DuplicateSession("missing")).Kind);
         Assert.Equal(PodlordErrorKind.SessionNotFound, Assert.Throws<PodlordException>(() => state.SetSessionNamespaceScope("missing", NamespaceScope.All)).Kind);
+        Assert.Equal(PodlordErrorKind.ContextNotFound, Assert.Throws<PodlordException>(() => state.SetImportedContextFilter("missing", "default")).Kind);
+
+        state.ImportKubeconfigText("one", OneContextKubeconfig("dev"));
+
+        Assert.Equal(PodlordErrorKind.SessionNotFound, Assert.Throws<PodlordException>(() => state.SessionConnection("missing")).Kind);
     }
 
     [Fact]
     public void Kubeconfig_importer_covers_auth_types_missing_references_and_parse_errors()
     {
         var importer = new KubeconfigImporter(FixedClock.Instance);
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.kube");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("file-dev"));
 
         var summary = importer.ImportText("auth.yaml", AuthKindsKubeconfig());
+        var fileSummary = importer.ImportFile(kubeconfig);
         var parse = Assert.Throws<PodlordException>(() => importer.ImportText("bad.yaml", "contexts: ["));
+        var scalarContexts = Assert.Throws<PodlordException>(() => importer.ImportText("scalar.yaml", "contexts: nope"));
         var missing = Assert.Throws<PodlordException>(() => importer.ImportFile(Path.Combine(TempDirectory(), "missing.yaml")));
 
+        Assert.Equal("file-dev", Assert.Single(fileSummary.Contexts).Name);
         Assert.Contains(summary.Contexts, context => context.AuthType == "auth-provider:oidc");
         Assert.Contains(summary.Contexts, context => context.AuthType == "client-certificate");
         Assert.Contains(summary.Contexts, context => context.AuthType == "basic-auth");
         Assert.Contains(summary.Contexts, context => context.AuthType == "unknown");
         Assert.Contains(summary.Contexts, context => context.BrokenReferences.Contains("missing user reference"));
         Assert.Equal(PodlordErrorKind.KubeconfigParse, parse.Kind);
+        Assert.Equal(PodlordErrorKind.EmptyKubeconfig, scalarContexts.Kind);
         Assert.Equal(PodlordErrorKind.ReadFile, missing.Kind);
     }
 
