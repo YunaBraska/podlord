@@ -26,23 +26,30 @@ public sealed class K3dKubernetesBehaviorTests
     [Fact]
     public async Task Explorer_loads_real_cluster_resource_map()
     {
+        var rows = await WaitForRowsWithCondition(
+            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery()),
+            rows => rows.Any(row => row.Kind == "Service" && row.Name == "podlord-healthy")
+                    && rows.Any(row => row.Kind == "EndpointSlice" && row.Namespace == "payments")
+                    && rows.Any(row => row.Kind == "Secret" && row.Name == "podlord-secret")
+                    && rows.Any(row => row.Kind == "Event"),
+            TimeSpan.FromMinutes(2));
         var snapshot = await cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery());
 
         Assert.Empty(snapshot.Failures);
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Namespace" && row.Name == "payments");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Node");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Pod" && row.Namespace == "payments" && row.Name.StartsWith("podlord-log", StringComparison.Ordinal));
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Deployment" && row.Namespace == "payments" && row.Name == "podlord-healthy");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Deployment" && row.Namespace == "broken-zone" && row.Name == "podlord-broken");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Service" && row.Name == "podlord-healthy");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "EndpointSlice" && row.Namespace == "payments");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "ConfigMap" && row.Name == "podlord-config");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Secret" && row.Name == "podlord-secret");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Job" && row.Namespace == "batch");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "CronJob" && row.Name == "podlord-cron");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "PersistentVolumeClaim" && row.Name == "podlord-data");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "NetworkPolicy" && row.Name == "podlord-deny-all");
-        Assert.Contains(snapshot.Rows, row => row.Kind == "Event");
+        Assert.Contains(rows, row => row.Kind == "Namespace" && row.Name == "payments");
+        Assert.Contains(rows, row => row.Kind == "Node");
+        Assert.Contains(rows, row => row.Kind == "Pod" && row.Namespace == "payments" && row.Name.StartsWith("podlord-log", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Kind == "Deployment" && row.Namespace == "payments" && row.Name == "podlord-healthy");
+        Assert.Contains(rows, row => row.Kind == "Deployment" && row.Namespace == "broken-zone" && row.Name == "podlord-broken");
+        Assert.Contains(rows, row => row.Kind == "Service" && row.Name == "podlord-healthy");
+        Assert.Contains(rows, row => row.Kind == "EndpointSlice" && row.Namespace == "payments");
+        Assert.Contains(rows, row => row.Kind == "ConfigMap" && row.Name == "podlord-config");
+        Assert.Contains(rows, row => row.Kind == "Secret" && row.Name == "podlord-secret");
+        Assert.Contains(rows, row => row.Kind == "Job" && row.Namespace == "batch");
+        Assert.Contains(rows, row => row.Kind == "CronJob" && row.Name == "podlord-cron");
+        Assert.Contains(rows, row => row.Kind == "PersistentVolumeClaim" && row.Name == "podlord-data");
+        Assert.Contains(rows, row => row.Kind == "NetworkPolicy" && row.Name == "podlord-deny-all");
+        Assert.Contains(rows, row => row.Kind == "Event");
     }
 
     [Fact]
