@@ -188,6 +188,11 @@ public sealed record RequestAuditRow(
     string Duration,
     string Outcome);
 
+public sealed record DiagnosticMetricRow(
+    string Label,
+    string Value,
+    string Description);
+
 public sealed record RelationshipRow(
     string FromKind,
     string FromName,

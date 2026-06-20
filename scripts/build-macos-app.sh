@@ -66,6 +66,8 @@ rm -rf "$PUBLISH_DIR" "$BUNDLE_DIR"
   -p:PublishSingleFile=false \
   -p:UseAppHost=true \
   -p:IncludeNativeLibrariesForSelfExtract=false \
+  -p:DebugType=none \
+  -p:DebugSymbols=false \
   -p:Version="$VERSION" \
   -o "$PUBLISH_DIR"
 

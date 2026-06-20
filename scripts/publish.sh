@@ -40,6 +40,8 @@ for rid in $RIDS; do
     --self-contained true \
     -p:PublishSingleFile=true \
     -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:DebugType=none \
+    -p:DebugSymbols=false \
     -p:Version="$VERSION" \
     -o "out/podlord-$rid"
 done

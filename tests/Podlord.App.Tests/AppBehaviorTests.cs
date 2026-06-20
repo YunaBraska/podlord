@@ -68,6 +68,9 @@ public sealed class AppBehaviorTests
         {
             Assert.NotEqual(PodlordLocalizer.Text("settings.radarWater", "en"), PodlordLocalizer.Text("settings.radarWater", locale.Code));
             Assert.NotEqual(PodlordLocalizer.Text("settings.inactiveBackgroundSync", "en"), PodlordLocalizer.Text("settings.inactiveBackgroundSync", locale.Code));
+            Assert.NotEqual(PodlordLocalizer.Text("settings.runtimeDiagnosticsTitle", "en"), PodlordLocalizer.Text("settings.runtimeDiagnosticsTitle", locale.Code));
+            Assert.NotEqual(PodlordLocalizer.Text("diagnostics.managedHeap", "en"), PodlordLocalizer.Text("diagnostics.managedHeap", locale.Code));
+            Assert.NotEqual(PodlordLocalizer.Text("diagnostics.requestsDescription", "en"), PodlordLocalizer.Text("diagnostics.requestsDescription", locale.Code));
             Assert.NotEqual(PodlordLocalizer.Text("action.applyServerSide", "en"), PodlordLocalizer.Text("action.applyServerSide", locale.Code));
             Assert.NotEqual(PodlordLocalizer.Text("inspector.overview", "en"), PodlordLocalizer.Text("inspector.overview", locale.Code));
             Assert.NotEqual(PodlordLocalizer.Text("port.containerPort", "en"), PodlordLocalizer.Text("port.containerPort", locale.Code));
@@ -755,13 +758,137 @@ public sealed class AppBehaviorTests
             Assert.Null(viewModel.SelectedSession);
             Assert.Empty(viewModel.Sessions);
             Assert.Empty(viewModel.RequestAuditRows);
-            Assert.Contains("Cache: 0B", viewModel.FooterLine, StringComparison.Ordinal);
+            Assert.DoesNotContain("Cache:", viewModel.FooterLine, StringComparison.Ordinal);
+            viewModel.SelectedWorkspace = "settings";
+            Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Cache" && row.Value == "0B");
             Assert.Equal("No resources loaded", viewModel.ResourceLogoTitle);
             Assert.DoesNotContain("failed", viewModel.StatusLine, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
             Environment.SetEnvironmentVariable("PODLORD_HOME", previousHome);
+        }
+    }
+
+    [Fact]
+    public void Diagnostics_rows_follow_language_changes_without_restart()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state));
+
+        viewModel.SelectedWorkspace = "settings";
+
+        Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Managed heap");
+
+        viewModel.LanguageSetting = PodlordLocalizer.LanguageOptionLabel("de");
+
+        Assert.DoesNotContain(viewModel.DiagnosticsRows, row => row.Label == "Managed heap");
+        Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Verwalteter Heap");
+        Assert.Contains(viewModel.DiagnosticsRows, row => row.Description.Contains(".NET", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Fake_kubernetes_refresh_keeps_resource_behavior_footer_and_diagnostics_contract()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                var json = path switch
+                {
+                    "/api/v1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"api","namespace":"payments","uid":"pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1","resources":{"limits":{"cpu":"500m","memory":"1Gi"}}}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                        {"metadata":{"name":"worker","namespace":"jobs","uid":"pod-2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1","resources":{"limits":{"cpu":"250m","memory":"512Mi"}}}]},"status":{"phase":"Pending","containerStatuses":[{"ready":false,"restartCount":2,"state":{"waiting":{"reason":"ImagePullBackOff"}}}]}}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"api","namespace":"payments"},"containers":[{"name":"api","usage":{"cpu":"100m","memory":"256Mi"}}]},
+                        {"metadata":{"name":"worker","namespace":"jobs"},"containers":[{"name":"worker","usage":{"cpu":"50m","memory":"128Mi"}}]}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/nodes" => """{"items":[]}""",
+                    _ => """{"items":[]}"""
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.ProblemsOnly = false;
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.Equal(["api", "worker"], viewModel.Resources.Select(row => row.Name).Order(StringComparer.Ordinal).ToArray());
+        Assert.Contains(viewModel.Resources, row => row.Name == "api" && row.CpuSummaryDisplay == "100m / 500m" && row.MemorySummaryDisplay == "256Mi / 1Gi");
+        Assert.Contains(viewModel.Resources, row => row.Name == "worker" && row.Restarts == 2 && row.Status == "ImagePullBackOff");
+        Assert.Contains("visible: 2/", viewModel.FooterLine, StringComparison.Ordinal);
+        Assert.Contains("API:", viewModel.FooterLine, StringComparison.Ordinal);
+        Assert.Contains("Synced:", viewModel.FooterLine, StringComparison.Ordinal);
+        Assert.DoesNotContain("Cache:", viewModel.FooterLine, StringComparison.Ordinal);
+        viewModel.SelectedWorkspace = "settings";
+        Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Cache" && !row.Value.Equals("0B", StringComparison.Ordinal));
+        Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Managed heap");
+        Assert.NotEmpty(viewModel.RadarBlocks);
+    }
+
+    [Fact]
+    public async Task Repeated_fake_kubernetes_refreshes_replace_views_instead_of_growing_them()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, new AppRecordingHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                var json = path switch
+                {
+                    "/api/v1/pods" => """
+                      {"items":[
+                        {"metadata":{"name":"api","namespace":"payments","uid":"pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+                        {"metadata":{"name":"worker","namespace":"jobs","uid":"pod-2","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-b","containers":[{"image":"repo/worker:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                      ]}
+                      """,
+                    "/apis/metrics.k8s.io/v1beta1/pods" => """{"items":[]}""",
+                    "/apis/metrics.k8s.io/v1beta1/nodes" => """{"items":[]}""",
+                    _ => """{"items":[]}"""
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+            })));
+
+        viewModel.ReloadSessions();
+        viewModel.ProblemsOnly = false;
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        viewModel.SelectedWorkspace = "settings";
+        await viewModel.RefreshResourcesAsync(force: true);
+        var firstCounts = (Resources: viewModel.Resources.Count, Radar: viewModel.RadarBlocks.Count, Diagnostics: viewModel.DiagnosticsRows.Count);
+
+        for (var index = 0; index < 5; index++)
+        {
+            await viewModel.RefreshResourcesAsync(force: true);
+            Assert.Equal(firstCounts.Resources, viewModel.Resources.Count);
+            Assert.Equal(firstCounts.Radar, viewModel.RadarBlocks.Count);
+            Assert.Equal(firstCounts.Diagnostics, viewModel.DiagnosticsRows.Count);
+            Assert.True(viewModel.RequestAuditRows.Count <= 256);
         }
     }
 

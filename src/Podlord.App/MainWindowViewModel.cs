@@ -83,7 +83,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string? deleteConfirmationResourceId;
     private string logText = string.Empty;
     private string selectedPodLogContainer = AllPodLogContainersOption;
-    private string requestWorkLabel = "API 0/min Cache: 0B";
+    private string requestWorkLabel = "API 0/min";
     private string healthSummary = string.Empty;
     private int radarWaterActivityRate;
     private double radarCanvasWidth = 480;
@@ -338,6 +338,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<ImportedContextRowViewModel> ImportedContextRows { get; } = [];
 
     public ObservableCollection<RequestAuditRow> RequestAuditRows { get; } = [];
+
+    public ObservableCollection<DiagnosticMetricRow> DiagnosticsRows { get; } = [];
 
     private string sourcePickerSearch = string.Empty;
 
@@ -902,6 +904,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string RequestAuditTitleText => T("settings.requestAuditTitle");
 
+    public string RuntimeDiagnosticsTitleText => T("settings.runtimeDiagnosticsTitle");
+
     public string AlertActiveText => T("alert.active");
 
     public string AlertActivationText => T("alert.activation");
@@ -1397,6 +1401,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(IsSourcesNavActive));
                 OnPropertyChanged(nameof(IsSettingsNavActive));
                 NotifyResourceLogoStateChanged();
+                if (IsSettingsWorkspace)
+                {
+                    UpdateRequestAuditRows();
+                    UpdateDiagnosticsRows();
+                }
             }
         }
     }
@@ -1896,9 +1905,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         get
         {
             var telemetry = service.RequestTelemetry();
-            var cache = service.CacheTelemetry();
             var synced = lastSyncedAt is null ? "never" : $"{HumanSince(lastSyncedAt.Value)} ago";
-            return $"visible: {Resources.Count}/{cachedRows.Count}  API: {telemetry.RequestsLastMinute}/min  Cache: {FormatCacheSize(cache.EstimatedBytes)}  Synced: {synced}";
+            return $"visible: {Resources.Count}/{cachedRows.Count}  API: {telemetry.RequestsLastMinute}/min  Synced: {synced}";
         }
     }
 
@@ -4683,6 +4691,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private IReadOnlyList<FlatResourceRow> ApplyEventLifecycle(IReadOnlyList<FlatResourceRow> rows)
     {
+        if (!rows.Any(row => row.Kind == "Event"))
+        {
+            return rows;
+        }
+
         var lookup = rows
             .Where(row => row.Kind != "Event")
             .GroupBy(ResourceLookupKey, StringComparer.Ordinal)
@@ -6560,6 +6573,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             OnPropertyChanged(property);
         }
+
+        UpdateDiagnosticsRows();
     }
 
     private static readonly string[] LocalizedProperties =
@@ -6637,6 +6652,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(WorkspaceRestoreHelpText),
         nameof(TelemetryText),
         nameof(TelemetryHelpText),
+        nameof(RuntimeDiagnosticsTitleText),
         nameof(RequestAuditTitleText),
         nameof(AlertActiveText),
         nameof(AlertActivationText),
@@ -9084,12 +9100,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void UpdateRequestWorkLabel()
     {
         var telemetry = service.RequestTelemetry();
-        var cache = service.CacheTelemetry();
         var backoff = telemetry.BackoffUntil is { } until && until > DateTimeOffset.UtcNow
             ? $" backoff {Math.Max(0, (int)(until - DateTimeOffset.UtcNow).TotalSeconds)}s"
             : string.Empty;
         RadarWaterActivityRate = telemetry.RequestsLastMinute;
-        RequestWorkLabel = $"API {telemetry.RequestsLastMinute}/min {telemetry.RequestsPerSecond:0.00}/s Q{telemetry.QueuedRequests} Cache: {FormatCacheSize(cache.EstimatedBytes)}{backoff}";
+        RequestWorkLabel = $"API {telemetry.RequestsLastMinute}/min {telemetry.RequestsPerSecond:0.00}/s Q{telemetry.QueuedRequests}{backoff}";
         if (IsInitialLoading)
         {
             UpdateLoadingHealthSegments();
@@ -9100,6 +9115,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             UpdateRequestAuditRows();
         }
 
+        if (IsSettingsWorkspace)
+        {
+            UpdateDiagnosticsRows();
+        }
         OnPropertyChanged(nameof(FooterLine));
     }
 
@@ -9215,6 +9234,60 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 entry.Outcome))
             .ToList();
         SyncCollection(RequestAuditRows, rows);
+    }
+
+    private void UpdateDiagnosticsRows()
+    {
+        SyncCollection(DiagnosticsRows, BuildDiagnosticsRows());
+    }
+
+    private IReadOnlyList<DiagnosticMetricRow> BuildDiagnosticsRows()
+    {
+        var telemetry = service.RequestTelemetry();
+        var cache = service.CacheTelemetry();
+        var process = Process.GetCurrentProcess();
+        try
+        {
+            var gcInfo = GC.GetGCMemoryInfo();
+            var workingSet = TryReadProcessValue(() => process.WorkingSet64);
+            var privateMemory = TryReadProcessValue(() => process.PrivateMemorySize64);
+            var threadCount = TryReadProcessValue(() => process.Threads.Count);
+            return
+            [
+                new DiagnosticMetricRow(T("diagnostics.cache"), FormatCacheSize(cache.EstimatedBytes), TF("diagnostics.cacheDescription", cache.TotalEntries, cache.ListEntries, cache.DetailEntries, cache.LogEntries, cache.PulseEntries)),
+                new DiagnosticMetricRow(T("diagnostics.processRss"), FormatOptionalCacheSize(workingSet, T("diagnostics.unknown")), T("diagnostics.processRssDescription")),
+                new DiagnosticMetricRow(T("diagnostics.privateMemory"), FormatOptionalCacheSize(privateMemory, T("diagnostics.unknown")), T("diagnostics.privateMemoryDescription")),
+                new DiagnosticMetricRow(T("diagnostics.managedHeap"), FormatCacheSize(GC.GetTotalMemory(false)), T("diagnostics.managedHeapDescription")),
+                new DiagnosticMetricRow(T("diagnostics.gcHeap"), FormatCacheSize(gcInfo.HeapSizeBytes), TF("diagnostics.gcHeapDescription", FormatCacheSize(gcInfo.FragmentedBytes))),
+                new DiagnosticMetricRow(T("diagnostics.uiRows"), $"{Resources.Count}/{cachedRows.Count}", T("diagnostics.uiRowsDescription")),
+                new DiagnosticMetricRow(T("diagnostics.radarBlocks"), RadarBlocks.Count.ToString(CultureInfo.InvariantCulture), T("diagnostics.radarBlocksDescription")),
+                new DiagnosticMetricRow(T("diagnostics.auditRows"), RequestAuditRows.Count.ToString(CultureInfo.InvariantCulture), T("diagnostics.auditRowsDescription")),
+                new DiagnosticMetricRow(T("diagnostics.requests"), $"{telemetry.RequestsLastMinute}/min, {telemetry.RequestsPerSecond:0.00}/s", TF("diagnostics.requestsDescription", telemetry.QueuedRequests)),
+                new DiagnosticMetricRow(T("diagnostics.threads"), threadCount?.ToString(CultureInfo.InvariantCulture) ?? T("diagnostics.unknown"), T("diagnostics.threadsDescription"))
+            ];
+        }
+        finally
+        {
+            process.Dispose();
+        }
+    }
+
+    private static T? TryReadProcessValue<T>(Func<T> read)
+        where T : struct
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string FormatOptionalCacheSize(long? bytes, string unknown)
+    {
+        return bytes is null ? unknown : FormatCacheSize(bytes.Value);
     }
 
     private static NamespaceScope ScopeFromText(string text)

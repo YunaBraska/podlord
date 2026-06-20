@@ -1457,9 +1457,41 @@
                             </StackPanel>
                         </TabItem>
                         <TabItem Header="{Binding SettingsDiagnosticsText}">
-                            <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="10">
-                                <TextBlock Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                            <Grid Margin="10" RowDefinitions="Auto,170,Auto,*" RowSpacing="10">
+                                <TextBlock Text="{Binding RuntimeDiagnosticsTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                 <DataGrid Grid.Row="1"
+                                          x:Name="DiagnosticsGrid"
+                                          ItemsSource="{Binding DiagnosticsRows}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserSortColumns="False"
+                                          CanUserResizeColumns="True"
+                                          HorizontalAlignment="Stretch"
+                                          CellPointerPressed="CopyableTableCellPointerPressed"
+                                          PointerReleased="CopyableTablePointerReleased"
+                                          PointerCaptureLost="CopyableTablePointerReleased"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Binding="{Binding Label}" Width="180" SortMemberPath="Label">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Label" Label="Metric" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Value}" Width="170" SortMemberPath="Value">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Description}" Width="*" MinWidth="360" SortMemberPath="Description">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Description" Label="Description" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <TextBlock Grid.Row="2" Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                <DataGrid Grid.Row="3"
                                           x:Name="RequestAuditGrid"
                                           ItemsSource="{Binding RequestAuditRows}"
                                           AutoGenerateColumns="False"
