@@ -26,6 +26,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly KubernetesResourceService service;
     private readonly IAlertSoundPlayer soundPlayer;
     private readonly IReleaseUpdateChecker releaseUpdateChecker;
+    private readonly Func<string> currentVersionProvider;
     private readonly List<FlatResourceRow> cachedRows = [];
     private readonly List<FileSystemWatcher> sourceWatchers = [];
     private readonly HashSet<RadarLifeCell> radarLifeCells = [];
@@ -178,12 +179,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         AppState state,
         KubernetesResourceService service,
         IAlertSoundPlayer? soundPlayer = null,
-        IReleaseUpdateChecker? releaseUpdateChecker = null)
+        IReleaseUpdateChecker? releaseUpdateChecker = null,
+        Func<string>? currentVersionProvider = null)
     {
         this.state = state;
         this.service = service;
         this.soundPlayer = soundPlayer ?? AlertSoundPlayerFactory.CreateDefault();
         this.releaseUpdateChecker = releaseUpdateChecker ?? ReleaseUpdateCheckerFactory.CreateDefault();
+        this.currentVersionProvider = currentVersionProvider ?? GitHubReleaseUpdateChecker.CurrentApplicationVersion;
         portForwardStatusLine = T("status.portForwardLine");
         statusLine = T("status.appReady");
         detailYaml = T("status.selectResource");
@@ -529,7 +532,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string NavSearchText => T("nav.search");
 
-    public bool IsUpdateAvailable => state.Settings().UpdateCheck is { IsNewer: true } update
+    public bool IsUpdateAvailable => VisibleUpdateCheck() is { IsNewer: true } update
                                      && !string.IsNullOrWhiteSpace(UpdateDownloadUrl(update));
 
     public string UpdateDownloadGlyph => "⇩";
@@ -538,7 +541,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
-            var update = state.Settings().UpdateCheck;
+            var update = VisibleUpdateCheck();
             return update is { IsNewer: true }
                 ? TF("update.downloadTip", update.LatestVersion, update.CurrentVersion)
                 : T("update.noUpdate");
@@ -617,7 +620,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string AboutTaglineText => T("about.tagline");
 
-    public string AboutVersionText => TF("about.version", GitHubReleaseUpdateChecker.CurrentApplicationVersion());
+    public string AboutVersionText => TF("about.version", currentVersionProvider());
 
     public string AboutSupportHeadingText => T("about.supportHeading");
 
@@ -785,7 +788,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void OpenUpdateDownload()
     {
-        if (state.Settings().UpdateCheck is not { IsNewer: true } update)
+        if (VisibleUpdateCheck() is not { IsNewer: true } update)
         {
             return;
         }
@@ -797,7 +800,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         var settings = state.Settings();
         var now = DateTimeOffset.UtcNow;
-        if (!force && !ShouldCheckForUpdates(settings.UpdateCheck, now))
+        var currentVersion = currentVersionProvider();
+        if (!force && !ShouldCheckForUpdates(settings.UpdateCheck, now, currentVersion))
         {
             NotifyUpdateCheckChanged();
             return;
@@ -805,10 +809,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            var currentVersion = GitHubReleaseUpdateChecker.CurrentApplicationVersion();
             var update = await releaseUpdateChecker.CheckLatestAsync(currentVersion, lifetime.Token).ConfigureAwait(true);
             var previous = state.Settings().UpdateCheck;
-            var next = PreserveVisibleUpdateOnFailure(previous, update);
+            var next = PreserveVisibleUpdateOnFailure(previous, update, currentVersion);
             state.SaveSettings(state.Settings() with { UpdateCheck = next });
             NotifyUpdateCheckChanged();
             if (next.IsNewer)
@@ -826,7 +829,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     internal static bool ShouldCheckForUpdates(UpdateCheckState? update, DateTimeOffset now)
     {
+        return ShouldCheckForUpdates(update, now, update?.CurrentVersion ?? string.Empty);
+    }
+
+    internal static bool ShouldCheckForUpdates(UpdateCheckState? update, DateTimeOffset now, string currentVersion)
+    {
         if (update is null || string.IsNullOrWhiteSpace(update.LastCheckedAt))
+        {
+            return true;
+        }
+
+        if (!string.Equals(update.CurrentVersion, currentVersion, StringComparison.Ordinal))
         {
             return true;
         }
@@ -839,16 +852,41 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return now - lastChecked >= TimeSpan.FromDays(7);
     }
 
-    private static UpdateCheckState PreserveVisibleUpdateOnFailure(UpdateCheckState? previous, UpdateCheckState update)
+    internal static UpdateCheckState? NormalizeUpdateCheckForCurrentVersion(UpdateCheckState? update, string currentVersion)
     {
-        return !string.IsNullOrWhiteSpace(update.Error) && previous is { IsNewer: true }
-            ? previous with { LastCheckedAt = update.LastCheckedAt, Error = update.Error }
-            : update;
+        if (update is null)
+        {
+            return null;
+        }
+
+        return update with
+        {
+            CurrentVersion = currentVersion,
+            IsNewer = GitHubReleaseUpdateChecker.IsNewerRelease(currentVersion, update.LatestVersion)
+        };
+    }
+
+    internal static UpdateCheckState PreserveVisibleUpdateOnFailure(UpdateCheckState? previous, UpdateCheckState update, string currentVersion)
+    {
+        if (string.IsNullOrWhiteSpace(update.Error))
+        {
+            return NormalizeUpdateCheckForCurrentVersion(update, currentVersion) ?? update;
+        }
+
+        var visiblePrevious = NormalizeUpdateCheckForCurrentVersion(previous, currentVersion);
+        return visiblePrevious is { IsNewer: true }
+            ? visiblePrevious with { LastCheckedAt = update.LastCheckedAt, Error = update.Error }
+            : NormalizeUpdateCheckForCurrentVersion(update, currentVersion) ?? update;
     }
 
     private static string UpdateDownloadUrl(UpdateCheckState update)
     {
         return string.IsNullOrWhiteSpace(update.DownloadUrl) ? update.ReleaseUrl : update.DownloadUrl;
+    }
+
+    private UpdateCheckState? VisibleUpdateCheck()
+    {
+        return NormalizeUpdateCheckForCurrentVersion(state.Settings().UpdateCheck, currentVersionProvider());
     }
 
     private void NotifyUpdateCheckChanged()

@@ -19,6 +19,7 @@ Podlord uses date-based release tags in the form `YYYY.M.D`.
 
 ### Fixed
 
+- Cached update checks are now revalidated against the installed app version so upgraded users do not keep seeing a stale download button.
 - Diagnostics cache rows no longer truncate important values without a readable hover/copy path.
 - Radar item clicks, hover hit testing, and custom layer tests now cover the drawn radar path.
 
