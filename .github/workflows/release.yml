@@ -283,6 +283,8 @@ jobs:
             git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           fi
 
+          git config user.name "Podlord Release Bot"
+          git config user.email "release@podlord.dev"
           git tag -a "$RELEASE_TAG" -m "$RELEASE_TAG [skip ci]"
           git push origin "refs/tags/$RELEASE_TAG"
 
