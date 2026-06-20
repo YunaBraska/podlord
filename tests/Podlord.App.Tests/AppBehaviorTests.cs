@@ -358,7 +358,8 @@ public sealed class AppBehaviorTests
         using var viewModel = new MainWindowViewModel(
             state,
             new KubernetesResourceService(state),
-            releaseUpdateChecker: checker);
+            releaseUpdateChecker: checker,
+            currentVersionProvider: () => "2026.6.19");
 
         await viewModel.CheckForUpdatesIfDueAsync();
 
@@ -387,13 +388,113 @@ public sealed class AppBehaviorTests
         using var viewModel = new MainWindowViewModel(
             state,
             new KubernetesResourceService(state),
-            releaseUpdateChecker: checker);
+            releaseUpdateChecker: checker,
+            currentVersionProvider: () => "2026.6.19");
 
         await viewModel.CheckForUpdatesIfDueAsync();
 
         Assert.Equal(1, checker.Calls);
         Assert.False(viewModel.IsUpdateAvailable);
         Assert.Equal("2026.6.19", state.Settings().UpdateCheck?.LatestVersion);
+        Assert.False(state.Settings().UpdateCheck?.IsNewer);
+    }
+
+    [Fact]
+    public void Update_button_rechecks_cached_state_against_installed_version()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.SaveSettings(state.Settings() with
+        {
+            UpdateCheck = new UpdateCheckState(
+                DateTimeOffset.UtcNow.ToString("O"),
+                "0.1.0",
+                "2026.6.19",
+                "https://github.com/YunaBraska/podlord/releases/tag/2026.6.19",
+                "https://github.com/YunaBraska/podlord/releases/download/2026.6.19/podlord-macos-arm64.zip",
+                true)
+        });
+
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state),
+            releaseUpdateChecker: new NoOpReleaseUpdateChecker(),
+            currentVersionProvider: () => "2026.6.20");
+
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal("Podlord is up to date.", viewModel.UpdateDownloadTooltipText);
+    }
+
+    [Fact]
+    public async Task Update_check_runs_immediately_when_installed_version_changed()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.SaveSettings(state.Settings() with
+        {
+            UpdateCheck = new UpdateCheckState(
+                DateTimeOffset.UtcNow.ToString("O"),
+                "0.1.0",
+                "2026.6.19",
+                "https://github.com/YunaBraska/podlord/releases/tag/2026.6.19",
+                "https://github.com/YunaBraska/podlord/releases/download/2026.6.19/podlord-macos-arm64.zip",
+                true)
+        });
+        var checker = new FakeReleaseUpdateChecker(new UpdateCheckState(
+            DateTimeOffset.UtcNow.ToString("O"),
+            "ignored",
+            "2026.6.20",
+            "https://github.com/YunaBraska/podlord/releases/tag/2026.6.20",
+            "https://github.com/YunaBraska/podlord/releases/download/2026.6.20/podlord-macos-arm64.zip",
+            false));
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state),
+            releaseUpdateChecker: checker,
+            currentVersionProvider: () => "2026.6.20");
+
+        await viewModel.CheckForUpdatesIfDueAsync();
+
+        Assert.Equal(1, checker.Calls);
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal("2026.6.20", state.Settings().UpdateCheck?.CurrentVersion);
+        Assert.False(state.Settings().UpdateCheck?.IsNewer);
+    }
+
+    [Fact]
+    public async Task Failed_update_check_does_not_preserve_stale_visible_update_after_upgrade()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.SaveSettings(state.Settings() with
+        {
+            UpdateCheck = new UpdateCheckState(
+                DateTimeOffset.UtcNow.AddDays(-8).ToString("O"),
+                "0.1.0",
+                "2026.6.19",
+                "https://github.com/YunaBraska/podlord/releases/tag/2026.6.19",
+                "https://github.com/YunaBraska/podlord/releases/download/2026.6.19/podlord-macos-arm64.zip",
+                true)
+        });
+        var checker = new FakeReleaseUpdateChecker(new UpdateCheckState(
+            DateTimeOffset.UtcNow.ToString("O"),
+            "ignored",
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            false,
+            "network down"));
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state),
+            releaseUpdateChecker: checker,
+            currentVersionProvider: () => "2026.6.20");
+
+        await viewModel.CheckForUpdatesIfDueAsync();
+
+        Assert.Equal(1, checker.Calls);
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal("network down", state.Settings().UpdateCheck?.Error);
         Assert.False(state.Settings().UpdateCheck?.IsNewer);
     }
 
@@ -436,9 +537,11 @@ public sealed class AppBehaviorTests
     public void Release_update_checker_compares_versions_and_selects_matching_asset()
     {
         Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "2026.6.20"));
+        Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.20", "2026.6.20.1"));
         Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19-local+sha", "2026.7.1"));
         Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6", "2026.6.1"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "2026.6.19"));
+        Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.20.1", "2026.6.20"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.20", "2026.6.19"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("dev-build", "2026.6.19"));
         Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "dev-build"));
