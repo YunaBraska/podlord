@@ -889,6 +889,12 @@ public partial class MainWindow : Window
         FocusResourceSearch();
     }
 
+    private void CloseSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.CloseSearchForCurrentWorkspace();
+        e.Handled = true;
+    }
+
     private void ResourcePreviousClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         viewModel.PreviousResourceMatch();

@@ -1838,7 +1838,8 @@ public sealed class KubernetesResourceService
             eventInfo.Message,
             eventInfo.Object)
         {
-            Pulse = ApiPulse(kind, item)
+            Pulse = ApiPulse(kind, item),
+            Created = PodlordText.HumanIsoTimestamp(created)
         };
     }
 
@@ -2153,13 +2154,14 @@ public sealed class KubernetesResourceService
 
     internal static IReadOnlyList<DetailItem> SummaryItems(JsonObject item, FlatResourceRow row)
     {
+        var created = PodlordText.HumanIsoTimestamp(Date(item, "/metadata/creationTimestamp"));
         var summary = new List<DetailItem>
         {
             new DetailItem("Kind", row.Kind),
             new DetailItem("Name", row.Name),
             new DetailItem("Namespace", row.Namespace ?? "cluster"),
             new DetailItem("Status", row.Status),
-            new DetailItem("Created", PodlordText.HumanTimestamp(Date(item, "/metadata/creationTimestamp"))),
+            new DetailItem("Created", created == "-" ? row.CreatedDisplay : created),
             new DetailItem("Age", row.AgeDisplay),
             new DetailItem("Ready", row.Ready),
             new DetailItem("Restarts", row.Restarts.ToString()),

@@ -240,7 +240,8 @@ public sealed record FlatResourceRow(
     string EventObject = "",
     bool IsAnnouncing = false,
     string AlertAnimation = "",
-    string AlertColor = "")
+    string AlertColor = "",
+    string Created = "")
 {
     public ResourcePulse Pulse { get; init; } = ResourcePulse.Empty;
 
@@ -317,6 +318,8 @@ public sealed record FlatResourceRow(
     public string MetricTooltip => Pulse.Tooltip;
 
     public string AgeDisplay => FormatAgeWithSpaces(Age);
+
+    public string CreatedDisplay => string.IsNullOrWhiteSpace(Created) ? "-" : Created;
 
     public static string FormatAgeWithSpaces(string raw)
     {

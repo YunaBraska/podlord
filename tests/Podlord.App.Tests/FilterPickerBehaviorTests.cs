@@ -660,7 +660,13 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Click=\"DeleteSavedFilterClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"{Binding RenameFilterTooltipText}\"", window, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"{Binding DeleteFilterTooltipText}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Content=\"{Binding DataContext.DeleteActionText", window, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding AddSearchCommand}\"", window, StringComparison.Ordinal);
+        Assert.Contains("<local:KindGlyph Kind=\"Add\" Fill=\"{StaticResource PlSuccessBrush}\" Width=\"14\" Height=\"14\" />", window, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding RemoveCommand}\"", window, StringComparison.Ordinal);
+        Assert.Contains("<local:KindGlyph Kind=\"Trash\" Fill=\"{StaticResource PlWarningBrush}\" Width=\"13\" Height=\"13\" />", window, StringComparison.Ordinal);
+        Assert.Contains("Click=\"CloseSearchClicked\"", window + codeBehind, StringComparison.Ordinal);
+        Assert.Contains("viewModel.CloseSearchForCurrentWorkspace();", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"{Binding DataContext.DeleteActionText", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSelectedResourceLoggable}\"", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding FocusMetrics}\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Metric\"", window, StringComparison.Ordinal);

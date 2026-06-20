@@ -529,6 +529,9 @@ public sealed class CoreEdgeCaseTests
         var moment = new DateTimeOffset(2026, 3, 2, 14, 32, 0, TimeSpan.Zero);
         Assert.Equal("2026-03-02 15:32 CEST", PodlordText.HumanTimestamp(moment, berlin));
         Assert.Equal("2026-03-02 14:32 UTC", PodlordText.HumanTimestamp(moment, TimeZoneInfo.Utc));
+        Assert.Equal("-", PodlordText.HumanIsoTimestamp(null));
+        Assert.Equal("2026-03-02T15:32:00+01:00", PodlordText.HumanIsoTimestamp(moment, berlin));
+        Assert.Equal("2026-03-02T14:32:00+00:00", PodlordText.HumanIsoTimestamp(moment, TimeZoneInfo.Utc));
     }
 
     [Fact]

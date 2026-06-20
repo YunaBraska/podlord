@@ -182,7 +182,7 @@ public sealed class K3dKubernetesBehaviorTests
             new ResourceIdentity(null, "Pod", "broken-zone", brokenPod));
 
         var created = Assert.Single(detail.Summary, item => item.Label == "Created");
-        Assert.Matches(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$", created.Value);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$", created.Value);
         var age = Assert.Single(detail.Summary, item => item.Label == "Age");
         Assert.False(string.IsNullOrWhiteSpace(age.Value));
         Assert.NotEqual("-", age.Value);

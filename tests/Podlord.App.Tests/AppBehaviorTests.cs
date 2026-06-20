@@ -390,6 +390,7 @@ public sealed class AppBehaviorTests
                 "assets": [
                   { "name": "podlord-macos-arm64.zip", "browser_download_url": "https://downloads/macos-arm64.zip" },
                   { "name": "podlord-osx-arm64.zip", "browser_download_url": "https://downloads/osx-arm64.zip" },
+                  { "name": "podlord-linux-arm64.tar.gz", "browser_download_url": "https://downloads/linux-arm64.tar.gz" },
                   { "name": "podlord-linux-x64.tar.gz", "browser_download_url": "https://downloads/linux-x64.tar.gz" }
                 ]
               }
@@ -402,7 +403,16 @@ public sealed class AppBehaviorTests
         Assert.Equal("2026.6.20", result.LatestVersion);
         Assert.True(result.IsNewer);
         Assert.Equal("https://github.com/YunaBraska/podlord/releases/tag/2026.6.20", result.ReleaseUrl);
-        Assert.Equal("https://downloads/macos-arm64.zip", result.DownloadUrl);
+        Assert.Equal(
+            GitHubReleaseUpdateChecker.PreferredAssetUrl(
+                [
+                    new ReleaseAssetInfo("podlord-macos-arm64.zip", "https://downloads/macos-arm64.zip"),
+                    new ReleaseAssetInfo("podlord-osx-arm64.zip", "https://downloads/osx-arm64.zip"),
+                    new ReleaseAssetInfo("podlord-linux-arm64.tar.gz", "https://downloads/linux-arm64.tar.gz"),
+                    new ReleaseAssetInfo("podlord-linux-x64.tar.gz", "https://downloads/linux-x64.tar.gz")
+                ],
+                GitHubReleaseUpdateChecker.RuntimeReleaseAssetName()),
+            result.DownloadUrl);
         Assert.Equal(string.Empty, result.Error);
         Assert.NotEqual(string.Empty, result.LastCheckedAt);
     }
@@ -2048,6 +2058,9 @@ public sealed class AppBehaviorTests
         Assert.Same(api, viewModel.SelectedResource);
         Assert.Same(api, viewModel.SelectedResourceRow);
         Assert.Null(viewModel.SelectedGraphNode);
+        Assert.Contains(viewModel.FocusMetrics, row =>
+            row.Label == "Created"
+            && Regex.IsMatch(row.Value, @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$"));
 
         viewModel.ResourceQuickSearch = "worker";
         viewModel.NextResourceMatch();
@@ -3063,6 +3076,36 @@ public sealed class AppBehaviorTests
 
         Assert.Null(viewModel.SelectedResource);
         Assert.Null(viewModel.SelectedResourceRow);
+
+        viewModel.ToggleResourceSearch();
+        viewModel.ResourceQuickSearch = "api";
+        viewModel.Search = "worker";
+        viewModel.ToggleResourceSearch();
+
+        Assert.False(viewModel.IsResourceSearchOpen);
+        Assert.Equal(string.Empty, viewModel.ResourceQuickSearch);
+        Assert.Equal(string.Empty, viewModel.Search);
+
+        viewModel.SelectWorkspace("graph");
+        viewModel.ToggleGraphSearch();
+        viewModel.GraphSearch = "api";
+        viewModel.ToggleGraphSearch();
+        Assert.False(viewModel.IsGraphSearchOpen);
+        Assert.Equal(string.Empty, viewModel.GraphSearch);
+
+        viewModel.SelectWorkspace("events");
+        viewModel.ToggleEventSearch();
+        viewModel.EventQuickSearch = "BackOff";
+        viewModel.ToggleEventSearch();
+        Assert.False(viewModel.IsEventSearchOpen);
+        Assert.Equal(string.Empty, viewModel.EventQuickSearch);
+
+        viewModel.SelectWorkspace("ports");
+        viewModel.TogglePortSearch();
+        viewModel.PortQuickSearch = "8080";
+        viewModel.TogglePortSearch();
+        Assert.False(viewModel.IsPortSearchOpen);
+        Assert.Equal(string.Empty, viewModel.PortQuickSearch);
     }
 
     [Fact]

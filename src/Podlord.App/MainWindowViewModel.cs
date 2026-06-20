@@ -4423,24 +4423,53 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void TogglePortSearch()
     {
-        IsPortSearchOpen = !IsPortSearchOpen;
+        if (IsPortSearchOpen)
+        {
+            IsPortSearchOpen = false;
+            PortQuickSearch = string.Empty;
+            return;
+        }
+
+        IsPortSearchOpen = true;
     }
 
     public void ToggleResourceSearch()
     {
-        IsResourceSearchOpen = !IsResourceSearchOpen;
+        if (IsResourceSearchOpen)
+        {
+            IsResourceSearchOpen = false;
+            ResourceQuickSearch = string.Empty;
+            Search = string.Empty;
+            return;
+        }
+
+        IsResourceSearchOpen = true;
         UpdateResourceSearchMatches(resetToFirstMatch: true);
     }
 
     public void ToggleGraphSearch()
     {
-        IsGraphSearchOpen = !IsGraphSearchOpen;
+        if (IsGraphSearchOpen)
+        {
+            IsGraphSearchOpen = false;
+            GraphSearch = string.Empty;
+            return;
+        }
+
+        IsGraphSearchOpen = true;
         UpdateGraphSearchMatches(resetToFirstMatch: true);
     }
 
     public void ToggleEventSearch()
     {
-        IsEventSearchOpen = !IsEventSearchOpen;
+        if (IsEventSearchOpen)
+        {
+            IsEventSearchOpen = false;
+            EventQuickSearch = string.Empty;
+            return;
+        }
+
+        IsEventSearchOpen = true;
         UpdateEventSearchMatches(resetToFirstMatch: true);
     }
 
@@ -4870,6 +4899,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             new DetailItem("Namespace", row.Namespace ?? "cluster"),
             new DetailItem("Cluster", row.Cluster),
             new DetailItem("Status", row.Status),
+            new DetailItem("Created", row.CreatedDisplay),
             new DetailItem("Ready", row.Ready),
             new DetailItem("Restarts", row.Restarts.ToString()),
             new DetailItem("CPU", row.CpuSummaryDisplay),
