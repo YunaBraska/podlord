@@ -271,45 +271,10 @@ jobs:
       - name: Prepare release metadata
         shell: sh
         run: |
-          release_date="$(date -u +%Y-%m-%d)"
+          test -f CHANGELOG.md
+          echo "Release $RELEASE_VERSION will tag the protected main commit without mutating CHANGELOG.md."
 
-          if grep -Eq "^## \\[$RELEASE_VERSION\\]" CHANGELOG.md; then
-            echo "CHANGELOG.md already contains $RELEASE_VERSION"
-          else
-            awk -v version="$RELEASE_VERSION" -v release_date="$release_date" '
-              /^## \[Unreleased\]/ && !released {
-                print "## [Unreleased]"
-                print ""
-                print "## [" version "] - " release_date
-                released = 1
-                next
-              }
-              { print }
-            ' CHANGELOG.md > CHANGELOG.md.tmp
-            mv CHANGELOG.md.tmp CHANGELOG.md
-          fi
-
-          awk -v tag="$RELEASE_TAG" '
-            /^\[Unreleased\]:/ {
-              print "[Unreleased]: https://github.com/YunaBraska/podlord/compare/" tag "...HEAD"
-              next
-            }
-            { print }
-          ' CHANGELOG.md > CHANGELOG.md.tmp
-          mv CHANGELOG.md.tmp CHANGELOG.md
-
-          if ! grep -Fq "[$RELEASE_VERSION]: https://github.com/YunaBraska/podlord/releases/tag/$RELEASE_TAG" CHANGELOG.md; then
-            printf '[%s]: https://github.com/YunaBraska/podlord/releases/tag/%s\n' "$RELEASE_VERSION" "$RELEASE_TAG" >> CHANGELOG.md
-          fi
-
-          if ! git diff --quiet -- CHANGELOG.md; then
-            git config user.name "Podlord Release Bot"
-            git config user.email "release@podlord.dev"
-            git add CHANGELOG.md
-            git commit -m "chore: release $RELEASE_VERSION [skip ci]"
-          fi
-
-      - name: Push release commit and tag
+      - name: Push release tag
         shell: sh
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -318,7 +283,6 @@ jobs:
             git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           fi
 
-          git push origin "HEAD:main"
           git tag -a "$RELEASE_TAG" -m "$RELEASE_TAG [skip ci]"
           git push origin "refs/tags/$RELEASE_TAG"
 
