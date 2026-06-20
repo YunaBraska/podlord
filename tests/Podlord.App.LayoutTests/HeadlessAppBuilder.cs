@@ -32,6 +32,7 @@ public static class HeadlessAppBuilder
             Directory.CreateDirectory(sandbox);
             Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", sandbox);
             Environment.SetEnvironmentVariable("PODLORD_HOME", sandbox);
+            Environment.SetEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK", "1");
 
             try
             {

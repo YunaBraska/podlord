@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private bool isRadarDragging;
     private bool suppressNextRadarClick;
     private Point? lastRadarDragPoint;
+    private RadarBlockViewModel? pressedRadarBlock;
     private bool isPulseStripDragging;
     private Point? lastPulseStripDragPoint;
     private readonly HashSet<DataGrid> initializedTableLayouts = [];
@@ -82,6 +83,7 @@ public partial class MainWindow : Window
         UpdateInspectorLayout();
         UpdateYamlEditorHeight();
         viewModel.LoadStartupKubeconfigs(startupArgs);
+        _ = viewModel.CheckForUpdatesIfDueAsync();
         Dispatcher.UIThread.Post(() =>
         {
             InitializeTableLayouts();
@@ -516,6 +518,8 @@ public partial class MainWindow : Window
         FocusCurrentSearch();
     }
 
+    private void DownloadUpdateClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenUpdateDownload();
+
     private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("graph");
 
     private void EventsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("events");
@@ -551,29 +555,6 @@ public partial class MainWindow : Window
         if (sender is Control { DataContext: FlatResourceRow row })
         {
             viewModel.PreparePortForward(row);
-        }
-    }
-
-    private async void RadarResourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (suppressNextRadarClick)
-        {
-            suppressNextRadarClick = false;
-            return;
-        }
-
-        if (sender is Control { DataContext: RadarBlockViewModel block })
-        {
-            if (block.IsPlaceholder || !block.IsClickable)
-            {
-                return;
-            }
-
-            await viewModel.FocusRadarResourceAsync(block.Resource).ConfigureAwait(true);
-        }
-        else if (sender is Control { DataContext: FlatResourceRow row })
-        {
-            await viewModel.FocusRadarResourceAsync(row).ConfigureAwait(true);
         }
     }
 
@@ -756,6 +737,7 @@ public partial class MainWindow : Window
         isRadarDragging = true;
         suppressNextRadarClick = false;
         lastRadarDragPoint = point.Position;
+        pressedRadarBlock = RadarBlockLayer.HitTestBlock(e.GetPosition(RadarBlockLayer));
         e.Pointer.Capture(control);
     }
 
@@ -787,17 +769,29 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void RadarPointerReleased(object? sender, PointerReleasedEventArgs e)
+    private async void RadarPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        var pressed = pressedRadarBlock;
+        var shouldClick = !suppressNextRadarClick && pressed is not null;
+        var block = shouldClick
+            ? RadarBlockLayer.HitTestBlock(e.GetPosition(RadarBlockLayer))
+            : null;
         isRadarDragging = false;
+        suppressNextRadarClick = false;
         lastRadarDragPoint = null;
+        pressedRadarBlock = null;
         e.Pointer.Capture(null);
+        if (shouldClick && ReferenceEquals(block, pressed) && block is { IsPlaceholder: false, IsClickable: true })
+        {
+            await viewModel.FocusRadarResourceAsync(block.Resource).ConfigureAwait(true);
+        }
     }
 
     private void RadarPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
         isRadarDragging = false;
         lastRadarDragPoint = null;
+        pressedRadarBlock = null;
     }
 
     private async void GraphFromClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -884,6 +878,12 @@ public partial class MainWindow : Window
     {
         viewModel.ToggleResourceSearch();
         FocusResourceSearch();
+    }
+
+    private void CloseSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        viewModel.CloseSearchForCurrentWorkspace();
+        e.Handled = true;
     }
 
     private void ResourcePreviousClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -2138,6 +2138,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             PortForwardTaskViewModel row => CopyPortForwardValue(row, HeaderText(column.Header)),
             SourceStatusRow row => CopySourceValue(row, HeaderText(column.Header)),
             RequestAuditRow row => CopyRequestAuditValue(row, HeaderText(column.Header)),
+            DiagnosticMetricRow row => CopyDiagnosticMetricValue(row, HeaderText(column.Header)),
             FocusMetricRow row => CopyFocusMetricValue(row, HeaderText(column.Header)),
             RelationshipRow row => CopyRelationshipValue(row, HeaderText(column.Header)),
             ResourceValueRow row => CopyResourceValueRowValue(row, HeaderText(column.Header)),
@@ -2265,6 +2266,17 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             "Duration" => row.Duration,
             "Outcome" => row.Outcome,
             _ => row.Outcome
+        };
+    }
+
+    internal static string CopyDiagnosticMetricValue(DiagnosticMetricRow row, string header)
+    {
+        return header switch
+        {
+            "Metric" or "Label" => row.Label,
+            "Value" => row.Value,
+            "Description" => row.Description,
+            _ => $"{row.Label}: {row.Value} - {row.Description}"
         };
     }
 

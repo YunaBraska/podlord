@@ -235,9 +235,9 @@ public sealed class KubernetesHelperBehaviorTests
         var summary = KubernetesResourceService.SummaryItems(item, row).ToDictionary(detail => detail.Label, detail => detail.Value);
         Assert.Equal("Deployment", summary["Kind"]);
         Assert.Equal("uid-1", summary["UID"]);
-        var expectedCreated = PodlordText.HumanTimestamp(new DateTimeOffset(2026, 3, 2, 14, 32, 0, TimeSpan.Zero));
+        var expectedCreated = PodlordText.HumanIsoTimestamp(new DateTimeOffset(2026, 3, 2, 14, 32, 0, TimeSpan.Zero));
         Assert.Equal(expectedCreated, summary["Created"]);
-        Assert.Matches(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$", summary["Created"]);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$", summary["Created"]);
         Assert.Equal("1m", summary["Age"]);
         Assert.Equal("160m request / 250m limit", summary["CPU limit suggestion"]);
         Assert.Equal("160Mi request / 256Mi limit", summary["Memory limit suggestion"]);

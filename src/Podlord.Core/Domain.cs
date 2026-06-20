@@ -92,14 +92,15 @@ public sealed record Settings(
     string SecretRevealPolicy,
     bool TelemetryEnabled,
     bool ScreensaverEnabled = true,
-    bool RadarWaterEnabled = true,
-    byte RadarWaterSpeed = 45,
+    bool RadarWaterEnabled = false,
+    byte RadarWaterSpeed = 0,
     bool RadarAutoFollowAlerts = true,
     int InactiveSyncMinutes = 0,
     int RequestHardLimitPerMinute = 0,
     string ThemeVariant = "dark",
     string Language = "system",
-    IReadOnlyList<TableColumnLayout>? TableColumnLayouts = null)
+    IReadOnlyList<TableColumnLayout>? TableColumnLayouts = null,
+    UpdateCheckState? UpdateCheck = null)
 {
     public static Settings Default { get; } = new(
         Theme: "Sirocco Command",
@@ -111,14 +112,15 @@ public sealed record Settings(
         SecretRevealPolicy: "explicit-reveal",
         TelemetryEnabled: false,
         ScreensaverEnabled: true,
-        RadarWaterEnabled: true,
-        RadarWaterSpeed: 45,
+        RadarWaterEnabled: false,
+        RadarWaterSpeed: 0,
         RadarAutoFollowAlerts: true,
         InactiveSyncMinutes: 0,
         RequestHardLimitPerMinute: 0,
         ThemeVariant: "dark",
         Language: "system",
-        TableColumnLayouts: Array.Empty<TableColumnLayout>());
+        TableColumnLayouts: Array.Empty<TableColumnLayout>(),
+        UpdateCheck: null);
 }
 
 public sealed record TableColumnLayout(
@@ -128,6 +130,15 @@ public sealed record TableColumnLayout(
     bool IsVisible,
     double Width = 0d,
     bool Pinned = false);
+
+public sealed record UpdateCheckState(
+    string LastCheckedAt,
+    string CurrentVersion,
+    string LatestVersion,
+    string ReleaseUrl,
+    string DownloadUrl,
+    bool IsNewer,
+    string Error = "");
 
 public sealed record ImportedContext(
     string ContextId,
@@ -229,7 +240,8 @@ public sealed record FlatResourceRow(
     string EventObject = "",
     bool IsAnnouncing = false,
     string AlertAnimation = "",
-    string AlertColor = "")
+    string AlertColor = "",
+    string Created = "")
 {
     public ResourcePulse Pulse { get; init; } = ResourcePulse.Empty;
 
@@ -306,6 +318,8 @@ public sealed record FlatResourceRow(
     public string MetricTooltip => Pulse.Tooltip;
 
     public string AgeDisplay => FormatAgeWithSpaces(Age);
+
+    public string CreatedDisplay => string.IsNullOrWhiteSpace(Created) ? "-" : Created;
 
     public static string FormatAgeWithSpaces(string raw)
     {

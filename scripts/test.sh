@@ -59,6 +59,7 @@ TEST_CONFIG_HOME="${PODLORD_TEST_CONFIG_HOME:-/tmp/podlord-test-config}"
 export PODLORD_CONFIG_HOME="$TEST_CONFIG_HOME/podlord"
 export PODLORD_HOME="$TEST_HOME"
 export PODLORD_DISABLE_AUDIO=1
+export PODLORD_DISABLE_UPDATE_CHECK=1
 mkdir -p "$TEST_HOME" "$TEST_CONFIG_HOME" "$PODLORD_CONFIG_HOME"
 rm -rf "$ROOT_DIR/TestResults" "$ROOT_DIR/tests"/*/TestResults
 "$DOTNET" test Podlord.slnx --settings "$ROOT_DIR/coverage.runsettings" --collect:"XPlat Code Coverage"

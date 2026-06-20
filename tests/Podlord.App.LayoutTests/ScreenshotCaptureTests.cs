@@ -33,36 +33,44 @@ public sealed class ScreenshotCaptureTests
                 Width = 1440,
                 Height = 860
             };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var demoRows = BuildDemoRows();
-            window.ViewModel.SelectedSession = new PodlordSession(
-                Id: "demo-session",
-                DisplayName: "podlord-demo",
-                ContextId: "demo-context",
-                ClusterName: "prod-eu-1",
-                NamespaceScope: NamespaceScope.All,
-                SafetyLevel: SafetyLevel.Dev,
-                Color: null,
-                Icon: null,
-                Active: true,
-                CreatedAt: "2026-06-01T00:00:00.0000000Z");
-            window.ViewModel.SeedCachedRowsForTesting(demoRows);
-            window.ViewModel.ForceRadarLiveForTesting();
-            window.UpdateLayout();
-            Dispatcher.UIThread.RunJobs();
-
-            SaveFrame(window, Path.Combine(outputDir, "resource-explorer.png"));
-
-            if (window.ViewModel.Resources.Count > 0)
+            try
             {
-                window.ViewModel.SelectedResourceRow = window.ViewModel.Resources[0];
+                window.Show();
                 Dispatcher.UIThread.RunJobs();
+                var demoRows = BuildDemoRows();
+                window.ViewModel.SelectedSession = new PodlordSession(
+                    Id: "demo-session",
+                    DisplayName: "podlord-demo",
+                    ContextId: "demo-context",
+                    ClusterName: "prod-eu-1",
+                    NamespaceScope: NamespaceScope.All,
+                    SafetyLevel: SafetyLevel.Dev,
+                    Color: null,
+                    Icon: null,
+                    Active: true,
+                    CreatedAt: "2026-06-01T00:00:00.0000000Z");
+                window.ViewModel.SeedCachedRowsForTesting(demoRows);
+                window.ViewModel.ForceRadarLiveForTesting();
                 window.UpdateLayout();
                 Dispatcher.UIThread.RunJobs();
-            }
 
-            SaveFrame(window, Path.Combine(outputDir, "inspector-settings.png"));
+                SaveFrame(window, Path.Combine(outputDir, "resource-explorer.png"));
+
+                if (window.ViewModel.Resources.Count > 0)
+                {
+                    window.ViewModel.SelectedResourceRow = window.ViewModel.Resources[0];
+                    Dispatcher.UIThread.RunJobs();
+                    window.UpdateLayout();
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                SaveFrame(window, Path.Combine(outputDir, "inspector-settings.png"));
+            }
+            finally
+            {
+                window.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
         });
     }
 

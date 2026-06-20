@@ -105,6 +105,9 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "Docker client:"
+docker version --format '  client={{.Client.Version}} server={{.Server.Version}}' 2>/dev/null || true
+
 if ! docker info >/dev/null 2>&1; then
   if command -v colima >/dev/null 2>&1; then
     colima start --cpu 2 --memory 4
@@ -115,6 +118,8 @@ if ! docker info >/dev/null 2>&1; then
   echo "docker is not running; start Docker or Colima before running k3d tests" >&2
   exit 1
 fi
+
+echo "Docker engine is ready for k3d tests."
 
 if ! command -v k3d >/dev/null 2>&1; then
   install_k3d

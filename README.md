@@ -47,7 +47,15 @@ Release assets are built for:
 
 Each release also includes `SHA256SUMS` for archive verification.
 
-macOS builds are currently unsigned. Right-click Open may be required until signing and notarization are configured.
+macOS builds are ad-hoc signed but not notarized. Without an Apple Developer license, opening the app can be nasty: Gatekeeper may require right-click Open, Privacy & Security approval, or removing quarantine on the downloaded app.
+
+Open on macOS:
+
+1. Unzip the release.
+2. Move `Podlord.app` to `/Applications`.
+3. Right-click `Podlord.app`, then choose `Open`.
+4. If blocked, allow Podlord in `System Settings -> Privacy & Security`.
+5. Last resort: `xattr -dr com.apple.quarantine /Applications/Podlord.app`.
 
 ## Run From Source
 
@@ -101,13 +109,13 @@ scripts/publish.sh all
 scripts/publish.sh linux-x64
 scripts/publish.sh linux-musl-arm64
 scripts/publish.sh win-x86
-scripts/build-macos-app.sh osx-arm64
+scripts/build-macos-app.sh macos-arm64
 ```
 
 Supported runtime identifiers:
 
-- `osx-arm64`
-- `osx-x64`
+- `macos-arm64`
+- `macos-x64`
 - `linux-x64`
 - `linux-arm64`
 - `linux-arm`

@@ -6,6 +6,22 @@ Podlord uses date-based release tags in the form `YYYY.M.D`.
 
 ## [Unreleased]
 
+### Added
+
+- Runtime diagnostics in Settings now show cache footprint, process memory, managed heap, GC heap, UI rows, radar blocks, audit rows, request pressure, and thread count.
+- Diagnostics table cells support full-value hover and right-click/long-press copy, matching the other data tables.
+
+### Changed
+
+- Radar and idle screensaver rendering now use custom drawn layers instead of thousands of generated controls, reducing visual churn and memory pressure.
+- Footer status updates are deduplicated so unchanged sync/progress text does not keep invalidating the UI.
+- Hot command panels use lighter non-tiled surfaces and debug trace logging is limited to debug builds.
+
+### Fixed
+
+- Diagnostics cache rows no longer truncate important values without a readable hover/copy path.
+- Radar item clicks, hover hit testing, and custom layer tests now cover the drawn radar path.
+
 ## [2026.6.19] - 2026-06-19
 
 ### Added

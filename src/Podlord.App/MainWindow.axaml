@@ -22,6 +22,11 @@
         <Border DockPanel.Dock="Top" Classes="hudPanel" Padding="8">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                 <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="{Binding UpdateDownloadGlyph}"
+                            Click="DownloadUpdateClicked"
+                            ToolTip.Tip="{Binding UpdateDownloadTooltipText}"
+                            IsVisible="{Binding IsUpdateAvailable}"
+                            Padding="8,6" />
                     <Button Content="⌕" Click="ToggleCurrentSearchClicked" ToolTip.Tip="{Binding NavSearchText}" Padding="8,6" />
                     <Button Content="{Binding NavResourcesText}" Classes="navButton" Classes.active="{Binding IsResourcesNavActive}" Click="ResourcesWorkspaceClicked" />
                     <Button Content="{Binding NavGraphText}" Classes="navButton" Classes.active="{Binding IsGraphNavActive}" Click="GraphWorkspaceClicked" />
@@ -135,150 +140,18 @@
                                                                    PauseAnimation="{Binding IsRadarWaterPaused}"
                                                                    IsVisible="{Binding IsRadarWaterVisible}" />
 
-                                            <ItemsControl ItemsSource="{Binding RadarBlocks}"
-                                                          IsVisible="{Binding IsRadarData}"
-                                                          ZIndex="1"
-                                                          Width="{Binding RadarCanvasW}"
-                                                          Height="{Binding RadarCanvasH}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <Canvas />
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.Styles>
-                                                    <Style Selector="ContentPresenter">
-                                                        <Setter Property="Canvas.Left" Value="{Binding X}" />
-                                                        <Setter Property="Canvas.Top" Value="{Binding Y}" />
-                                                    </Style>
-                                                </ItemsControl.Styles>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Button Width="{Binding Width}"
-                                                                Height="{Binding Height}"
-                                                                Padding="0"
-                                                                Background="{Binding Brush}"
-                                                                BorderBrush="{Binding BorderBrush}"
-                                                                BorderThickness="{Binding BorderThickness}"
-                                                                Opacity="{Binding Opacity}"
-                                                                Classes="radarTile"
-                                                                Click="RadarResourceClicked">
-                                                            <Grid>
-                                                                <Rectangle Classes="radarAnnounceBlink"
-                                                                           Fill="{Binding AnnounceBrush}"
-                                                                           IsVisible="{Binding IsBlinkAnimation}" />
-                                                                <Rectangle Classes="radarAnnouncePulse"
-                                                                           Fill="{Binding AnnounceBrush}"
-                                                                           IsVisible="{Binding IsPulseAnimation}" />
-                                                                <Rectangle Classes="radarAnnounceSweep"
-                                                                           Fill="{Binding AnnounceBrush}"
-                                                                           IsVisible="{Binding IsSweepAnimation}"
-                                                                           Width="2"
-                                                                           HorizontalAlignment="Left" />
-                                                                <Border Classes="radarAnnounceOutline"
-                                                                        BorderBrush="{Binding AnnounceBrush}"
-                                                                        IsVisible="{Binding IsOutlineAnimation}" />
-                                                                <local:KindGlyph Kind="{Binding DisplayKind}"
-                                                                                 Fill="{StaticResource PlBgPanelInsetBrush}"
-                                                                                 Stroke="{Binding BorderBrush}"
-                                                                                 Width="14"
-                                                                                 Height="14"
-                                                                                 HorizontalAlignment="Center"
-                                                                                 VerticalAlignment="Center"
-                                                                                 IsVisible="{Binding ShowProblemGlyph}" />
-                                                            </Grid>
-                                                            <ToolTip.Tip>
-                                                                <Border MinWidth="300"
-                                                                        MaxWidth="440"
-                                                                        Padding="10"
-                                                                        Background="{StaticResource PlBgPanelBrush}"
-                                                                        BorderBrush="{Binding Brush}"
-                                                                        BorderThickness="1">
-                                                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
-                                                                        <TextBlock Text="{Binding ToolTipTitle}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" TextWrapping="WrapWithOverflow" />
-                                                                        <TextBlock Grid.Row="1" Text="{Binding ToolTipNamespace}" Foreground="{StaticResource PlTextMutedBrush}" TextWrapping="WrapWithOverflow" />
-                                                                        <StackPanel Grid.Row="2" Spacing="3">
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8">
-                                                                                <TextBlock Text="Status" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Status}" Foreground="{Binding Resource.Status, Converter={StaticResource StatusBrushConverter}}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasReadyInfo}">
-                                                                                <TextBlock Text="Ready" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Ready}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasRestartInfo}">
-                                                                                <TextBlock Text="Restarts" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Restarts}" Foreground="{Binding Resource.Restarts, Converter={StaticResource RestartBrushConverter}}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasCpuMetricBar}">
-                                                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
-                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
-                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.CpuPercent}" Foreground="{Binding Resource.Pulse.CpuPercent, Converter={StaticResource MetricHealthBrushConverter}}" />
-                                                                                    <Border IsVisible="{Binding Resource.Pulse.HasCpuSuggestion}" Width="2" Height="10" Canvas.Top="0" Canvas.Left="{Binding Resource.Pulse.CpuSuggestionLeft}" Background="{StaticResource PlGoldBrightBrush}" />
-                                                                                </Canvas>
-                                                                            </Grid>
-                                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasMemoryMetricBar}">
-                                                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
-                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
-                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.MemoryPercent}" Foreground="{Binding Resource.Pulse.MemoryPercent, Converter={StaticResource MetricHealthBrushConverter}}" />
-                                                                                    <Border IsVisible="{Binding Resource.Pulse.HasMemorySuggestion}" Width="2" Height="10" Canvas.Top="0" Canvas.Left="{Binding Resource.Pulse.MemorySuggestionLeft}" Background="{StaticResource PlGoldBrightBrush}" />
-                                                                                </Canvas>
-                                                                            </Grid>
-                                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" IsVisible="{Binding Resource.HasStorageMetricBar}">
-                                                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Margin="8,0,0,0" Foreground="{StaticResource PlTextBrush}" VerticalAlignment="Center" />
-                                                                                <Canvas Grid.Row="1" Grid.Column="1" Width="156" Height="10" Margin="8,2,0,0" ClipToBounds="True">
-                                                                                    <ProgressBar Width="156" Height="6" Canvas.Top="2" Minimum="0" Maximum="100" Value="{Binding Resource.Pulse.StoragePercent}" Foreground="{Binding Resource.Pulse.StoragePercent, Converter={StaticResource MetricHealthBrushConverter}}" />
-                                                                                </Canvas>
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasCpuMetricTextOnly}">
-                                                                                <TextBlock Text="CPU" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.CpuSummaryDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasMemoryMetricTextOnly}">
-                                                                                <TextBlock Text="Memory" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.MemorySummaryDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasNetworkMetricInfo}">
-                                                                                <TextBlock Text="Network" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.NetworkDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasStorageMetricTextOnly}">
-                                                                                <TextBlock Text="Storage" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.StorageDisplay}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasNodeInfo}">
-                                                                                <TextBlock Text="Node" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Node}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasImageInfo}">
-                                                                                <TextBlock Text="Image" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.ImageSummary}" Foreground="{StaticResource PlTextBrush}" TextWrapping="Wrap" MaxHeight="76" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Resource.HasOwnerInfo}">
-                                                                                <TextBlock Text="Owner" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Resource.Owner}" Foreground="{StaticResource PlTextBrush}" TextTrimming="CharacterEllipsis" />
-                                                                            </Grid>
-                                                                            <Grid ColumnDefinitions="76,*" ColumnSpacing="8" IsVisible="{Binding Problem, Converter={StaticResource HasValueConverter}}">
-                                                                                <TextBlock Text="Issue" Foreground="{StaticResource PlTextMutedBrush}" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding Problem}" Foreground="{Binding Resource, Converter={StaticResource ProblemBrushConverter}}" TextWrapping="Wrap" />
-                                                                            </Grid>
-                                                                        </StackPanel>
-                                                                    </Grid>
-                                                                </Border>
-                                                            </ToolTip.Tip>
-                                                        </Button>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                            <local:RadarBlockLayer x:Name="RadarBlockLayer"
+                                                                   Blocks="{Binding RadarBlocks}"
+                                                                   IsVisible="{Binding IsRadarData}"
+                                                                   ZIndex="1"
+                                                                   Width="{Binding RadarCanvasW}"
+                                                                   Height="{Binding RadarCanvasH}" />
 
-                                            <ItemsControl ItemsSource="{Binding RadarIdleCells}"
-                                                          IsVisible="{Binding IsRadarIdle}"
-                                                          IsHitTestVisible="False"
-                                                          ZIndex="1"
-                                                          Width="{Binding RadarCanvasW}"
-                                                          Height="{Binding RadarCanvasH}">
+                                            <local:RadarIdleLayer Cells="{Binding RadarIdleCells}"
+                                                                  IsVisible="{Binding IsRadarIdle}"
+                                                                  ZIndex="1"
+                                                                  Width="{Binding RadarCanvasW}"
+                                                                  Height="{Binding RadarCanvasH}">
                                                 <ToolTip.Tip>
                                                     <Border Padding="8" Background="{StaticResource PlBgPanelBrush}" BorderBrush="{StaticResource PlBlueGlowBrush}" BorderThickness="1">
                                                         <TextBlock Foreground="{StaticResource PlBlueGlowBrush}">
@@ -289,26 +162,7 @@
                                                         </TextBlock>
                                                     </Border>
                                                 </ToolTip.Tip>
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <Canvas />
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.Styles>
-                                                    <Style Selector="ContentPresenter">
-                                                        <Setter Property="Canvas.Left" Value="{Binding X}" />
-                                                        <Setter Property="Canvas.Top" Value="{Binding Y}" />
-                                                    </Style>
-                                                </ItemsControl.Styles>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Rectangle Width="{Binding Width}"
-                                                                   Height="{Binding Height}"
-                                                                   Classes="radarWaterCell"
-                                                                   Fill="{Binding Brush}" />
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                            </local:RadarIdleLayer>
                                         </Panel>
                                 </Grid>
                             </Border>
@@ -455,7 +309,14 @@
                                                                 <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                                                                          PlaceholderText="{Binding DataContext.FilterSearchOrCustomText, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                          KeyDown="FilterSearchKeyDown" />
-                                                                <Button Grid.Column="1" Content="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding AddSearchCommand}" Padding="{StaticResource PlPaddingButtonTight}" />
+                                                                <Button Grid.Column="1"
+                                                                        Command="{Binding AddSearchCommand}"
+                                                                        Padding="6,4"
+                                                                        MinWidth="30"
+                                                                        HorizontalContentAlignment="Center"
+                                                                        ToolTip.Tip="{Binding DataContext.AddActionText, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                                    <local:KindGlyph Kind="Add" Fill="{StaticResource PlSuccessBrush}" Width="14" Height="14" />
+                                                                </Button>
                                                             </Grid>
                                                             <TextBlock Text="{Binding DataContext.CustomValuesText, RelativeSource={RelativeSource AncestorType=Window}}" Foreground="{StaticResource PlTextMutedBrush}" />
                                                             <ItemsControl ItemsSource="{Binding CustomValues}">
@@ -465,7 +326,14 @@
                                                                             <CheckBox IsChecked="{Binding IsSelected}">
                                                                                 <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
                                                                             </CheckBox>
-                                                                            <Button Grid.Column="1" Content="{Binding DataContext.DeleteActionText, RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding RemoveCommand}" Padding="6,2" />
+                                                                            <Button Grid.Column="1"
+                                                                                    Command="{Binding RemoveCommand}"
+                                                                                    Padding="6,3"
+                                                                                    MinWidth="30"
+                                                                                    HorizontalContentAlignment="Center"
+                                                                                    ToolTip.Tip="{Binding DataContext.DeleteActionText, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                                                <local:KindGlyph Kind="Trash" Fill="{StaticResource PlWarningBrush}" Width="13" Height="13" />
+                                                                            </Button>
                                                                         </Grid>
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
@@ -531,7 +399,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsResourceSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleResourceSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                        <Button Click="CloseSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -892,7 +760,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsGraphSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleGraphSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                        <Button Click="CloseSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1019,7 +887,7 @@
                   RowSpacing="8">
                 <Border IsVisible="{Binding IsEventSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-                        <Button Click="ToggleEventSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                        <Button Click="CloseSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1097,7 +965,7 @@
             <Grid Grid.Row="0" IsVisible="{Binding IsPortsWorkspace}" RowDefinitions="Auto,*" Margin="10" RowSpacing="8">
                 <Border Grid.Row="0" IsVisible="{Binding IsPortSearchOpen}" Classes="searchPanel" Padding="8">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                        <Button Click="TogglePortSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
+                        <Button Click="CloseSearchClicked" ToolTip.Tip="{Binding CloseSearchTooltipText}" Padding="{StaticResource PlPaddingButtonTight}" HorizontalContentAlignment="Center">
                             <local:KindGlyph Kind="Close" Fill="{StaticResource PlTextBrush}" Width="13" Height="13" />
                         </Button>
                         <TextBox Grid.Column="1"
@@ -1193,7 +1061,7 @@
                                     <DataGrid.Columns>
                                         <DataGridTemplateColumn Width="46">
                                             <DataGridTemplateColumn.Header>
-                                                <local:ColumnPlaqueHeader Tag="Activation" Label="On" />
+                                                <local:ColumnPlaqueHeader Tag="Activation" Label="{Binding DataContext.AlertActivationText, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
                                             </DataGridTemplateColumn.Header>
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
@@ -1205,27 +1073,27 @@
                                         </DataGridTemplateColumn>
                                         <DataGridTextColumn Binding="{Binding ActiveStateText}" Width="110" IsReadOnly="True" SortMemberPath="ActiveStateText">
                                             <DataGridTextColumn.Header>
-                                                <local:ColumnPlaqueHeader Tag="Active" Label="{Binding AlertActiveText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                                <local:ColumnPlaqueHeader Tag="Active" Label="{Binding DataContext.AlertActiveText, RelativeSource={RelativeSource AncestorType=DataGrid}}" Click="SortInspectorColumnClicked" />
                                             </DataGridTextColumn.Header>
                                         </DataGridTextColumn>
                                         <DataGridTextColumn Binding="{Binding Name}" Width="210" IsReadOnly="True" SortMemberPath="Name">
                                             <DataGridTextColumn.Header>
-                                                <local:ColumnPlaqueHeader Tag="Name" Label="{Binding AlertNameText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                                <local:ColumnPlaqueHeader Tag="Name" Label="{Binding DataContext.AlertNameText, RelativeSource={RelativeSource AncestorType=DataGrid}}" Click="SortInspectorColumnClicked" />
                                             </DataGridTextColumn.Header>
                                         </DataGridTextColumn>
                                         <DataGridTextColumn Binding="{Binding MatcherSummary}" Width="*" IsReadOnly="True" SortMemberPath="MatcherSummary">
                                             <DataGridTextColumn.Header>
-                                                <local:ColumnPlaqueHeader Tag="When" Label="{Binding AlertWhenText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                                <local:ColumnPlaqueHeader Tag="When" Label="{Binding DataContext.AlertWhenText, RelativeSource={RelativeSource AncestorType=DataGrid}}" Click="SortInspectorColumnClicked" />
                                             </DataGridTextColumn.Header>
                                         </DataGridTextColumn>
                                         <DataGridTextColumn Binding="{Binding ActionSummary}" Width="260" IsReadOnly="True" SortMemberPath="ActionSummary">
                                             <DataGridTextColumn.Header>
-                                                <local:ColumnPlaqueHeader Tag="Actions" Label="{Binding AlertActionsText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                                <local:ColumnPlaqueHeader Tag="Actions" Label="{Binding DataContext.AlertActionsText, RelativeSource={RelativeSource AncestorType=DataGrid}}" Click="SortInspectorColumnClicked" />
                                             </DataGridTextColumn.Header>
                                         </DataGridTextColumn>
                                         <DataGridTextColumn Binding="{Binding SoundLabel}" Width="220" IsReadOnly="True" SortMemberPath="SoundLabel">
                                             <DataGridTextColumn.Header>
-                                                <local:ColumnPlaqueHeader Tag="Sound" Label="{Binding AlertSoundText, RelativeSource={RelativeSource AncestorType=Window}}" Click="SortInspectorColumnClicked" />
+                                                <local:ColumnPlaqueHeader Tag="Sound" Label="{Binding DataContext.AlertSoundText, RelativeSource={RelativeSource AncestorType=DataGrid}}" Click="SortInspectorColumnClicked" />
                                             </DataGridTextColumn.Header>
                                         </DataGridTextColumn>
                                     </DataGrid.Columns>
@@ -1452,9 +1320,41 @@
                             </StackPanel>
                         </TabItem>
                         <TabItem Header="{Binding SettingsDiagnosticsText}">
-                            <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="10">
-                                <TextBlock Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                            <Grid Margin="10" RowDefinitions="Auto,170,Auto,*" RowSpacing="10">
+                                <TextBlock Text="{Binding RuntimeDiagnosticsTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
                                 <DataGrid Grid.Row="1"
+                                          x:Name="DiagnosticsGrid"
+                                          ItemsSource="{Binding DiagnosticsRows}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserSortColumns="False"
+                                          CanUserResizeColumns="True"
+                                          HorizontalAlignment="Stretch"
+                                          CellPointerPressed="CopyableTableCellPointerPressed"
+                                          PointerReleased="CopyableTablePointerReleased"
+                                          PointerCaptureLost="CopyableTablePointerReleased"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Binding="{Binding Label}" Width="180" SortMemberPath="Label">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Label" Label="Metric" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Value}" Width="170" SortMemberPath="Value">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Value" Label="Value" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Binding="{Binding Description}" Width="*" MinWidth="360" SortMemberPath="Description">
+                                            <DataGridTextColumn.Header>
+                                                <local:ColumnPlaqueHeader Tag="Description" Label="Description" Click="SortInspectorColumnClicked" />
+                                            </DataGridTextColumn.Header>
+                                        </DataGridTextColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <TextBlock Grid.Row="2" Text="{Binding RequestAuditTitleText}" Foreground="{StaticResource PlGoldBrightBrush}" FontWeight="Bold" />
+                                <DataGrid Grid.Row="3"
                                           x:Name="RequestAuditGrid"
                                           ItemsSource="{Binding RequestAuditRows}"
                                           AutoGenerateColumns="False"
@@ -1551,13 +1451,6 @@
                                                    HorizontalAlignment="Right"
                                                    VerticalAlignment="Center" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="settingHelp" Text="{Binding AnimationHelpText}" />
-                                    </Grid>
-                                </Border>
-                                <Border Classes="settingRow">
-                                    <Grid ColumnDefinitions="240,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
-                                        <TextBlock Classes="settingLabel" Text="{Binding RadarAutoFollowText}" />
-                                        <CheckBox Grid.Column="1" IsChecked="{Binding RadarAutoFollowAlertsSetting}" HorizontalAlignment="Left" />
-                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="settingHelp" Text="{Binding RadarAutoFollowHelpText}" />
                                     </Grid>
                                 </Border>
                                 <Border Classes="settingRow">
@@ -1716,6 +1609,9 @@
                                                        Foreground="{StaticResource PlGoldBrightBrush}" />
                                             <TextBlock Text="{Binding AboutTaglineText}"
                                                        FontStyle="Italic"
+                                                       Foreground="{StaticResource PlTextMutedBrush}" />
+                                            <TextBlock Text="{Binding AboutVersionText}"
+                                                       FontSize="12"
                                                        Foreground="{StaticResource PlTextMutedBrush}" />
                                         </StackPanel>
                                     </StackPanel>

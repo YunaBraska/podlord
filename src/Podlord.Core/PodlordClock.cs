@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 
 namespace Podlord.Core;
 
@@ -56,6 +57,22 @@ public static class PodlordText
         var moment = TimeZoneInfo.ConvertTime(timestamp.Value, zone);
         var abbreviation = ZoneAbbreviation(zone, timestamp.Value);
         return $"{moment:yyyy-MM-dd HH:mm} {abbreviation}";
+    }
+
+    public static string HumanIsoTimestamp(DateTimeOffset? timestamp)
+    {
+        return HumanIsoTimestamp(timestamp, TimeZoneInfo.Local);
+    }
+
+    public static string HumanIsoTimestamp(DateTimeOffset? timestamp, TimeZoneInfo zone)
+    {
+        if (timestamp is null)
+        {
+            return "-";
+        }
+
+        var moment = TimeZoneInfo.ConvertTime(timestamp.Value, zone);
+        return moment.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture);
     }
 
     public static string ZoneAbbreviation(TimeZoneInfo zone, DateTimeOffset moment)

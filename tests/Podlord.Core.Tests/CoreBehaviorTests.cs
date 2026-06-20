@@ -262,6 +262,20 @@ users:
     }
 
     [Fact]
+    public void App_state_in_memory_imports_do_not_create_owned_kubeconfig_snapshots()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, SampleKubeconfig("http://127.0.0.1:1"));
+        var state = AppState.InMemory(Clock);
+
+        state.ImportKubeconfig(kubeconfig);
+        state.ImportKubeconfigText("pasted", SampleKubeconfig("http://127.0.0.1:2"));
+
+        Assert.All(state.Snapshot().ImportedContexts, context => Assert.Null(context.OwnedKubeconfigPath));
+    }
+
+    [Fact]
     public void App_state_refresh_keeps_prior_snapshots_when_source_file_changes_shape()
     {
         var directory = TempDirectory();
@@ -379,6 +393,67 @@ users:
         Assert.Equal("raw", exactRaw[0].Name);
         Assert.Empty(broken);
         Assert.Equal(["old", "stale"], ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Age: ">5m")).Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Resource_pulse_displays_limits_tiny_values_suggestions_and_empty_age()
+    {
+        var emptyAge = HealthyRow("empty-age") with { Age = "" };
+        var limitsOnly = ResourcePulse.Empty with
+        {
+            CpuLimitMillicores = 1000,
+            MemoryLimitBytes = 1024L * 1024 * 1024,
+            StorageLimitBytes = 10L * 1024 * 1024 * 1024
+        };
+        var tinyUsage = ResourcePulse.Empty with
+        {
+            CpuMillicores = 0.5,
+            CpuLimitMillicores = 1000,
+            MemoryBytes = -1,
+            MemoryLimitBytes = 1024,
+            StorageUsedBytes = 0,
+            StorageLimitBytes = 10
+        };
+        var liveUsage = ResourcePulse.Empty with
+        {
+            CpuMillicores = 1500,
+            CpuLimitMillicores = 1000,
+            MemoryBytes = 512L * 1024 * 1024,
+            MemoryLimitBytes = 1024L * 1024 * 1024,
+            NetworkInBytesPerSecond = 12 * 1024,
+            NetworkOutBytesPerSecond = 8 * 1024,
+            SourceBadge = "LIVE",
+            Tooltip = "metrics-server"
+        };
+
+        Assert.Equal("", emptyAge.AgeDisplay);
+        Assert.Equal("-/1c", limitsOnly.CpuSummaryDisplay);
+        Assert.Equal("-/1Gi", limitsOnly.MemorySummaryDisplay);
+        Assert.Equal("-/10Gi", limitsOnly.StorageDisplay);
+        Assert.Equal("-", limitsOnly.CpuCompactDisplay);
+        Assert.Equal("-", limitsOnly.MemoryCompactDisplay);
+        Assert.Equal("-", limitsOnly.StorageCompactDisplay);
+        Assert.True((HealthyRow("limits") with { Pulse = limitsOnly }).HasCpuMetricTextOnly);
+        Assert.True((HealthyRow("limits") with { Pulse = limitsOnly }).HasMemoryMetricTextOnly);
+        Assert.True((HealthyRow("limits") with { Pulse = limitsOnly }).HasStorageMetricTextOnly);
+
+        Assert.Equal("<1m", tinyUsage.CpuDisplay);
+        Assert.Equal("0B", tinyUsage.MemoryDisplay);
+        Assert.Equal("0B / 10B", tinyUsage.StorageDisplay);
+        Assert.Equal("0%", tinyUsage.CpuPercentDisplay);
+        Assert.Equal("0%", tinyUsage.MemoryPercentDisplay);
+        Assert.Equal("0%", tinyUsage.StoragePercentDisplay);
+
+        Assert.Equal("1.5c / 1c", liveUsage.CpuSummaryDisplay);
+        Assert.Equal("150%", liveUsage.CpuPercentDisplay);
+        Assert.Equal(100, liveUsage.CpuPercent);
+        Assert.Equal("50%", liveUsage.MemoryPercentDisplay);
+        Assert.Equal("↓12Ki/s ↑8Ki/s", liveUsage.NetworkDisplay);
+        Assert.True(liveUsage.HasLiveMetrics);
+        Assert.Contains("request", liveUsage.CpuMetricDetail, StringComparison.Ordinal);
+        Assert.Contains("request", liveUsage.MemoryMetricDetail, StringComparison.Ordinal);
+        Assert.True(liveUsage.HasCpuSuggestion);
+        Assert.True(liveUsage.HasMemorySuggestion);
     }
 
     [Fact]
@@ -991,6 +1066,89 @@ users:
         var result = AlertRuleEvaluator.EvaluateRule(rows, rule);
 
         Assert.Equal(["pod"], result.Matches.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_covers_direct_group_fields()
+    {
+        var api = HealthyRow("api") with
+        {
+            Id = "pod-api",
+            Kind = "Pod",
+            Namespace = "payments",
+            Cluster = "prod-eu",
+            Status = "Running",
+            Node = "node-a",
+            ImageSummary = "repo/payment-api:1",
+            Ready = "1/1",
+            Owner = "ReplicaSet/payment-api",
+            Freshness = FreshnessState.Reconnecting,
+            EventReason = "BackOff",
+            EventMessage = "container restarted",
+            Pulse = ResourcePulse.Empty with
+            {
+                CpuMillicores = 750,
+                CpuLimitMillicores = 1000,
+                MemoryBytes = 768L * 1024 * 1024,
+                MemoryLimitBytes = 1024L * 1024 * 1024,
+                StorageUsedBytes = 6L * 1024 * 1024 * 1024,
+                StorageLimitBytes = 10L * 1024 * 1024 * 1024
+            }
+        };
+        var other = HealthyRow("worker") with
+        {
+            Id = "pod-worker",
+            Kind = "Deployment",
+            Namespace = "jobs",
+            Cluster = "prod-us",
+            Status = "Succeeded",
+            Node = "node-b",
+            ImageSummary = "repo/worker:1",
+            Ready = "0/1",
+            Owner = "Job/worker"
+        };
+        var rows = new[] { api, other };
+        (string Field, string Expression)[] matchers =
+        [
+            ("Search", "payment-api"),
+            ("Id", "\"pod-api\""),
+            ("Kind", "\"Pod\""),
+            ("Name", "\"api\""),
+            ("Namespace", "\"payments\""),
+            ("Cluster", "\"prod-eu\""),
+            ("Status", "\"Running\""),
+            ("Node", "\"node-a\""),
+            ("Image", "payment-api"),
+            ("Ready", "\"1/1\""),
+            ("Owner", "ReplicaSet"),
+            ("Freshness", "Reconnect"),
+            ("Event Reason", "\"BackOff\""),
+            ("Event Message", "restarted"),
+            ("CPU", ">700m"),
+            ("Memory", ">700Mi"),
+            ("Storage", ">5Gi")
+        ];
+
+        foreach (var (field, expression) in matchers)
+        {
+            var result = AlertRuleEvaluator.EvaluateRule(rows, RuleWithGroup(field, field, expression));
+
+            Assert.Equal(["api"], result.Matches.Select(row => row.Name).ToArray());
+        }
+    }
+
+    [Fact]
+    public void Alert_rule_evaluator_evaluate_materializes_rows_and_filters_disabled_rules()
+    {
+        var rows = new[] { HealthyRow("api") }.Select(row => row);
+        var enabled = RuleWithGroup("enabled", "Kind", "\"Pod\"");
+        var disabled = enabled with { Id = "disabled", Enabled = false };
+
+        var results = AlertRuleEvaluator.Evaluate(rows, [disabled, enabled]);
+
+        var result = Assert.Single(results);
+        Assert.Equal("enabled", result.Rule.Id);
+        Assert.True(result.Triggered);
     }
 
     private static AlertRule RuleWithGroup(string id, string field, string expression)

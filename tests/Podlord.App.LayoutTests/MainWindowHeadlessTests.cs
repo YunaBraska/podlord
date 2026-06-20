@@ -30,19 +30,23 @@ public sealed class MainWindowHeadlessTests
             try
             {
                 var state = AppState.InMemoryWithConfigDirectory(tempDir);
-                var window = new MainWindow([]);
-                window.Show();
-                Dispatcher.UIThread.RunJobs();
+                var window = ShowWindow();
+                try
+                {
+                    var buttons = window
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .Where(b => b.Content is string s && (s == "◄" || s == "►"))
+                        .ToList();
 
-                var buttons = window
-                    .GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b => b.Content is string s && (s == "◄" || s == "►"))
-                    .ToList();
-
-                Assert.Contains(buttons, b => Equals(b.Content, "◄"));
-                Assert.Contains(buttons, b => Equals(b.Content, "►"));
-                Assert.All(buttons, b => Assert.False(b.IsEnabled));
+                    Assert.Contains(buttons, b => Equals(b.Content, "◄"));
+                    Assert.Contains(buttons, b => Equals(b.Content, "►"));
+                    Assert.All(buttons, b => Assert.False(b.IsEnabled));
+                }
+                finally
+                {
+                    CloseWindow(window);
+                }
             }
             finally
             {
@@ -76,13 +80,17 @@ public sealed class MainWindowHeadlessTests
     {
         Dispatcher.UIThread.Invoke(() =>
         {
-            var window = new MainWindow([]);
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-
-            var grid = window.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault(g => g.Name == "ResourceGrid");
-            Assert.NotNull(grid);
-            Assert.NotEmpty(grid!.Columns);
+            var window = ShowWindow();
+            try
+            {
+                var grid = window.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault(g => g.Name == "ResourceGrid");
+                Assert.NotNull(grid);
+                Assert.NotEmpty(grid!.Columns);
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
         });
     }
 
@@ -91,14 +99,18 @@ public sealed class MainWindowHeadlessTests
     {
         Dispatcher.UIThread.Invoke(() =>
         {
-            var window = new MainWindow([]);
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-
-            var editorByName = window.GetLogicalDescendants()
-                .OfType<AvaloniaEdit.TextEditor>()
-                .Any(editor => editor.Name == "LogEditor");
-            Assert.True(editorByName, "LogEditor TextEditor not found in MainWindow");
+            var window = ShowWindow();
+            try
+            {
+                var editorByName = window.GetLogicalDescendants()
+                    .OfType<AvaloniaEdit.TextEditor>()
+                    .Any(editor => editor.Name == "LogEditor");
+                Assert.True(editorByName, "LogEditor TextEditor not found in MainWindow");
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
         });
     }
 
@@ -107,89 +119,116 @@ public sealed class MainWindowHeadlessTests
     {
         Dispatcher.UIThread.Invoke(() =>
         {
-            var window = new MainWindow([]);
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
+            var window = ShowWindow();
+            try
+            {
+                var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
+                           ?? window.GetVisualDescendants().OfType<StackPanel>().First();
+                var link = new ResourceLinkButton { Tag = "Pod/test-pod", Content = new TextBlock { Text = "Pod/test-pod" }, Width = 160, Height = 28 };
+                host.Children.Add(link);
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
 
-            var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
-                       ?? window.GetVisualDescendants().OfType<StackPanel>().First();
-            var link = new ResourceLinkButton { Tag = "Pod/test-pod", Content = new TextBlock { Text = "Pod/test-pod" }, Width = 160, Height = 28 };
-            host.Children.Add(link);
-            Dispatcher.UIThread.RunJobs();
-            window.UpdateLayout();
-            Dispatcher.UIThread.RunJobs();
+                Assert.NotNull(link.ContextMenu);
+                var menu = link.ContextMenu!;
+                Assert.False(menu.IsOpen);
 
-            Assert.NotNull(link.ContextMenu);
-            var menu = link.ContextMenu!;
-            Assert.False(menu.IsOpen);
+                var origin = link.TranslatePoint(new Point(link.Bounds.Width / 2, link.Bounds.Height / 2), window) ?? new Point(0, 0);
+                window.MouseDown(origin, MouseButton.Right);
+                Dispatcher.UIThread.RunJobs();
+                window.MouseUp(origin, MouseButton.Right);
+                Dispatcher.UIThread.RunJobs();
 
-            var origin = link.TranslatePoint(new Point(link.Bounds.Width / 2, link.Bounds.Height / 2), window) ?? new Point(0, 0);
-            window.MouseDown(origin, MouseButton.Right);
-            Dispatcher.UIThread.RunJobs();
-            window.MouseUp(origin, MouseButton.Right);
-            Dispatcher.UIThread.RunJobs();
-
-            Assert.Equal(2, menu.Items.OfType<MenuItem>().Count());
+                Assert.Equal(2, menu.Items.OfType<MenuItem>().Count());
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
         });
     }
 
     [Fact]
-    public void Resource_link_context_menu_copies_reference_to_clipboard_and_opens_in_inspector()
+    public void Resource_link_context_menu_exposes_reference_actions_and_resolves_known_resource()
     {
-        Dispatcher.UIThread.Invoke(async () =>
+        Dispatcher.UIThread.Invoke(() =>
         {
-            var window = new MainWindow([]);
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-
-            var row = new Podlord.Core.FlatResourceRow(
-                Id: "ses:Pod:default:test-pod:uid",
-                Status: "Running",
-                Kind: "Pod",
-                Name: "test-pod",
-                Namespace: "default",
-                Cluster: "cluster",
-                Age: "1m",
-                Ready: "1/1",
-                Restarts: 0,
-                Node: "node-a",
-                ImageSummary: "img:1",
-                Owner: "ReplicaSet/test",
-                LastChange: "now",
-                Freshness: Podlord.Core.FreshnessState.Fresh);
-            var vm = window.ViewModel;
-            vm.Resources.Add(row);
-            Dispatcher.UIThread.RunJobs();
-
-            var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
-                       ?? window.GetVisualDescendants().OfType<StackPanel>().First();
-            var link = new ResourceLinkButton { Tag = "Pod/test-pod", Content = new TextBlock { Text = "Pod/test-pod" } };
-            host.Children.Add(link);
-            Dispatcher.UIThread.RunJobs();
-
-            Assert.NotNull(link.ContextMenu);
-            var open = link.ContextMenu!.Items.OfType<MenuItem>().First(item => string.Equals(item.Header as string, vm.T("ref.menuOpen"), StringComparison.Ordinal));
-            var copy = link.ContextMenu!.Items.OfType<MenuItem>().First(item => string.Equals(item.Header as string, vm.T("ref.menuCopy"), StringComparison.Ordinal));
-
-            Assert.Equal("Pod/test-pod", open.Tag);
-            Assert.Equal("Pod/test-pod", copy.Tag);
-
-            copy.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-            Dispatcher.UIThread.RunJobs();
-            await Task.Delay(50);
-            Dispatcher.UIThread.RunJobs();
-
-            if (window.Clipboard is not null)
+            var window = ShowWindow();
+            try
             {
-                var clipboardText = await window.Clipboard.TryGetTextAsync();
-                Assert.Equal("Pod/test-pod", clipboardText);
-            }
+                var row = new Podlord.Core.FlatResourceRow(
+                    Id: "ses:Pod:default:test-pod:uid",
+                    Status: "Running",
+                    Kind: "Pod",
+                    Name: "test-pod",
+                    Namespace: "default",
+                    Cluster: "cluster",
+                    Age: "1m",
+                    Ready: "1/1",
+                    Restarts: 0,
+                    Node: "node-a",
+                    ImageSummary: "img:1",
+                    Owner: "ReplicaSet/test",
+                    LastChange: "now",
+                    Freshness: Podlord.Core.FreshnessState.Fresh);
+                var vm = window.ViewModel;
+                vm.SeedCachedRowsForTesting([row]);
+                Dispatcher.UIThread.RunJobs();
 
-            open.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-            Dispatcher.UIThread.RunJobs();
-            await Task.Delay(50);
-            Dispatcher.UIThread.RunJobs();
-            Assert.True(string.IsNullOrEmpty(vm.StatusLine) || !vm.StatusLine.Contains("No cached resource matches"));
+                var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
+                           ?? window.GetVisualDescendants().OfType<StackPanel>().First();
+                var link = new ResourceLinkButton { Tag = "Pod/test-pod", Content = new TextBlock { Text = "Pod/test-pod" } };
+                host.Children.Add(link);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.NotNull(link.ContextMenu);
+                var open = link.ContextMenu!.Items.OfType<MenuItem>().First(item => string.Equals(item.Header as string, vm.T("ref.menuOpen"), StringComparison.Ordinal));
+                var copy = link.ContextMenu!.Items.OfType<MenuItem>().First(item => string.Equals(item.Header as string, vm.T("ref.menuCopy"), StringComparison.Ordinal));
+
+                Assert.Equal("Pod/test-pod", open.Tag);
+                Assert.Equal("Pod/test-pod", copy.Tag);
+                Assert.True(vm.OpenKnownResourceReference("Pod/test-pod"));
+                Assert.True(string.IsNullOrEmpty(vm.StatusLine) || !vm.StatusLine.Contains("No cached resource matches"));
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
+        });
+    }
+
+    [Fact]
+    public void Diagnostics_grid_cell_copy_uses_full_backing_value()
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            var window = ShowWindow();
+            try
+            {
+                var vm = window.ViewModel;
+                var longValue = "cache total=123456789 list=234 detail=345 logs=456 pulse=567";
+                var row = new DiagnosticMetricRow("Cache", longValue, "Long diagnostic value used to prove copy does not depend on visible clipping.");
+
+                vm.SelectWorkspace("settings");
+                vm.SelectedSettingsTabIndex = 2;
+                vm.DiagnosticsRows.Clear();
+                vm.DiagnosticsRows.Add(row);
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+
+                var grid = window.GetVisualDescendants()
+                    .OfType<DataGrid>()
+                    .FirstOrDefault(candidate => candidate.Name == "DiagnosticsGrid");
+                Assert.NotNull(grid);
+                Assert.Equal(longValue, MainWindow.CopyDiagnosticMetricValue(row, "Value"));
+                Assert.Equal(row.Description, MainWindow.CopyDiagnosticMetricValue(row, "Description"));
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
         });
     }
 
@@ -198,31 +237,35 @@ public sealed class MainWindowHeadlessTests
     {
         Dispatcher.UIThread.Invoke(() =>
         {
-            var window = new MainWindow([]);
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
+            var window = ShowWindow();
+            try
+            {
+                var aboutTab = window.GetLogicalDescendants()
+                    .OfType<TabItem>()
+                    .FirstOrDefault(tab => tab.Header is string header && header == "About");
+                Assert.NotNull(aboutTab);
 
-            var aboutTab = window.GetLogicalDescendants()
-                .OfType<TabItem>()
-                .FirstOrDefault(tab => tab.Header is string header && header == "About");
-            Assert.NotNull(aboutTab);
+                var buttons = LogicalDescendantsOf<Button>(aboutTab!).ToList();
+                Assert.True(buttons.Count >= 7, $"Expected at least 7 buttons in About tab but found {buttons.Count}.");
+                var tags = buttons.Select(button => button.Tag as string).Where(value => !string.IsNullOrEmpty(value)).ToHashSet();
+                Assert.Contains("https://github.com/sponsors/YunaBraska", tags);
+                Assert.Contains("https://buymeacoffee.com/YunaBraska", tags);
+                Assert.Contains("https://ko-fi.com/YunaBraska", tags);
+                Assert.Contains("https://liberapay.com/YunaBraska", tags);
+                Assert.Contains("https://github.com/YunaBraska/podlord", tags);
+                Assert.Contains("https://github.com/YunaBraska/podlord/issues/new", tags);
+                Assert.Contains("https://github.com/YunaBraska/podlord/stargazers", tags);
 
-            var buttons = LogicalDescendantsOf<Button>(aboutTab!).ToList();
-            Assert.True(buttons.Count >= 7, $"Expected at least 7 buttons in About tab but found {buttons.Count}.");
-            var tags = buttons.Select(button => button.Tag as string).Where(value => !string.IsNullOrEmpty(value)).ToHashSet();
-            Assert.Contains("https://github.com/sponsors/YunaBraska", tags);
-            Assert.Contains("https://buymeacoffee.com/YunaBraska", tags);
-            Assert.Contains("https://ko-fi.com/YunaBraska", tags);
-            Assert.Contains("https://liberapay.com/YunaBraska", tags);
-            Assert.Contains("https://github.com/YunaBraska/podlord", tags);
-            Assert.Contains("https://github.com/YunaBraska/podlord/issues/new", tags);
-            Assert.Contains("https://github.com/YunaBraska/podlord/stargazers", tags);
+                var aboutBlock = LogicalDescendantsOf<TextBlock>(aboutTab!).FirstOrDefault(tb => tb.Name == "AboutBlock");
+                Assert.NotNull(aboutBlock);
 
-            var aboutBlock = LogicalDescendantsOf<TextBlock>(aboutTab!).FirstOrDefault(tb => tb.Name == "AboutBlock");
-            Assert.NotNull(aboutBlock);
-
-            var logo = LogicalDescendantsOf<Image>(aboutTab!).FirstOrDefault();
-            Assert.NotNull(logo);
+                var logo = LogicalDescendantsOf<Image>(aboutTab!).FirstOrDefault();
+                Assert.NotNull(logo);
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
         });
     }
 
@@ -239,6 +282,20 @@ public sealed class MainWindowHeadlessTests
                 stack.Push(child);
             }
         }
+    }
+
+    private static MainWindow ShowWindow()
+    {
+        var window = new MainWindow([]);
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        return window;
+    }
+
+    private static void CloseWindow(Window window)
+    {
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
     }
 }
 

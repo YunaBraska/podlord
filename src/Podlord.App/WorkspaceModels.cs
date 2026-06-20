@@ -188,6 +188,11 @@ public sealed record RequestAuditRow(
     string Duration,
     string Outcome);
 
+public sealed record DiagnosticMetricRow(
+    string Label,
+    string Value,
+    string Description);
+
 public sealed record RelationshipRow(
     string FromKind,
     string FromName,
@@ -502,10 +507,10 @@ public sealed class GraphNodeViewModel : INotifyPropertyChanged
         : AppThemeCatalog.StatusBrush("UNKNOWN");
 
     public IBrush BackgroundBrush => IsCurrentSearchMatch
-        ? SolidColorBrush.Parse("#332A190C")
-        : IsSearchMatch ? SolidColorBrush.Parse("#26141D12")
-        : Resource is { IsAnnouncing: true } ? SolidColorBrush.Parse("#24141D12")
-        : SolidColorBrush.Parse("#18000000");
+        ? SolidColorBrush.Parse("#20190F")
+        : IsSearchMatch ? SolidColorBrush.Parse("#132119")
+        : Resource is { IsAnnouncing: true } ? SolidColorBrush.Parse("#111C14")
+        : SolidColorBrush.Parse("#060707");
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
@@ -661,7 +666,7 @@ public sealed class RadarBlockViewModel(
 
     public bool IsDimmed { get; private set; } = isDimmed;
 
-    public double Opacity => IsDimmed ? 0.72 : 1;
+    public double Opacity => 1;
 
     public double BorderThickness => IsSelected ? 2 : IsDimmed ? 0.5 : Problem.Length > 0 ? 1.5 : IsEventShallow ? 1 : 0.5;
 

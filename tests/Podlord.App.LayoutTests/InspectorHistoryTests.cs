@@ -10,6 +10,7 @@ public sealed class InspectorHistoryTests : IDisposable
 
     public InspectorHistoryTests()
     {
+        HeadlessAppBuilder.EnsureStarted();
         tempDir = Path.Combine(Path.GetTempPath(), "podlord-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
     }
