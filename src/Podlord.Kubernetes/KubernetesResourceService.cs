@@ -29,7 +29,14 @@ public sealed class KubernetesResourceService
     private static readonly TimeSpan LogCacheTtl = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan PulseCacheTtl = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan PulseUnavailableTtl = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan DetailCacheRetention = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan LogCacheRetention = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan PulseCacheRetention = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MinimumRequestSpacing = TimeSpan.FromMilliseconds(400);
+    private const int MaxListCacheEntries = 2_048;
+    private const int MaxDetailCacheEntries = 512;
+    private const int MaxLogCacheEntries = 128;
+    private const int MaxPulseCacheEntries = 64;
     private static readonly SemaphoreSlim SharedRequestGate = new(1, 1);
     private static readonly object SharedRateLock = new();
     private static DateTimeOffset sharedLastRequestAt = DateTimeOffset.MinValue;
@@ -46,6 +53,8 @@ public sealed class KubernetesResourceService
     private readonly Dictionary<ResourceDetailCacheKey, ResourceDetailCacheEntry> detailCache = [];
     private readonly Dictionary<PodLogCacheKey, PodLogCacheEntry> logCache = [];
     private readonly Dictionary<string, ResourcePulseCacheEntry> pulseCache = [];
+    private KubernetesCacheTelemetry? cachedCacheTelemetry;
+    private bool cacheTelemetryDirty = true;
     private readonly Queue<DateTimeOffset> requestStarts = [];
     private readonly Queue<KubernetesRequestAuditEntry> requestAudit = [];
     private long requestSequence;
@@ -117,6 +126,44 @@ public sealed class KubernetesResourceService
         }
     }
 
+    public KubernetesCacheTelemetry CacheTelemetry()
+    {
+        lock (cacheLock)
+        {
+            if (!cacheTelemetryDirty && cachedCacheTelemetry is { } cached)
+            {
+                return cached;
+            }
+
+            var estimatedBytes =
+                listCache.Sum(entry => EstimateListEntryBytes(entry.Key, entry.Value))
+                + detailCache.Sum(entry => EstimateDetailEntryBytes(entry.Key, entry.Value))
+                + logCache.Sum(entry => EstimateLogEntryBytes(entry.Key, entry.Value))
+                + pulseCache.Sum(entry => EstimatePulseEntryBytes(entry.Key, entry.Value));
+            var telemetry = new KubernetesCacheTelemetry(
+                listCache.Count,
+                detailCache.Count,
+                logCache.Count,
+                pulseCache.Count,
+                estimatedBytes);
+            cachedCacheTelemetry = telemetry;
+            cacheTelemetryDirty = false;
+            return telemetry;
+        }
+    }
+
+    public void RecordDiagnostic(string scope, string outcome, KubernetesRequestPriority priority = KubernetesRequestPriority.UserVisible)
+    {
+        RecordAudit(
+            DateTimeOffset.UtcNow,
+            "APP",
+            string.IsNullOrWhiteSpace(scope) ? "application" : scope,
+            priority,
+            null,
+            TimeSpan.Zero,
+            Sanitize(outcome));
+    }
+
     public ResourceExplorerSnapshot GetCachedResourceSnapshot(ResourceQuery query)
     {
         return GetCachedResourceSnapshot(query, applyFilters: true);
@@ -149,8 +196,30 @@ public sealed class KubernetesResourceService
         KubernetesRequestPriority priority = KubernetesRequestPriority.Background,
         CancellationToken cancellationToken = default)
     {
-        var connection = state.SessionConnection(query.SessionId);
-        using var client = CreateClient(connection);
+        PruneCaches();
+        SessionConnection connection;
+        try
+        {
+            connection = state.SessionConnection(query.SessionId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RecordDiagnostic("session connection", ex.Message, priority);
+            throw;
+        }
+
+        HttpClient client;
+        try
+        {
+            client = CreateClient(connection);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RecordDiagnostic($"client setup / {connection.Context.Name}", ex.Message, priority);
+            throw;
+        }
+
+        using var ownedClient = client;
         var rows = new List<FlatResourceRow>();
         var failures = new List<ResourceListFailure>();
         var specs = PlannedSpecs(query).ToList();
@@ -165,7 +234,7 @@ public sealed class KubernetesResourceService
             {
                 try
                 {
-                    rows.AddRange(await ListRowsForSpec(client, connection, spec, ns, query.ForceRefresh, priority, cancellationToken).ConfigureAwait(false));
+                    rows.AddRange(await ListRowsForSpec(ownedClient, connection, spec, ns, query.ForceRefresh, priority, cancellationToken).ConfigureAwait(false));
                 }
                 catch (KubernetesStatusException ex) when (ex.StatusCode == HttpStatusCode.NotFound && spec.Optional)
                 {
@@ -186,7 +255,7 @@ public sealed class KubernetesResourceService
             }
         }
 
-        var enrichedRows = await EnrichPulseMetricsAsync(client, connection, rows, priority, cancellationToken).ConfigureAwait(false);
+        var enrichedRows = await EnrichPulseMetricsAsync(ownedClient, connection, rows, priority, cancellationToken).ConfigureAwait(false);
         StorePulseRows(connection.Session.Id, enrichedRows);
         return SnapshotFromRows(connection, enrichedRows, failures, query);
     }
@@ -626,6 +695,7 @@ public sealed class KubernetesResourceService
         lock (cacheLock)
         {
             listCache[key] = new ResourceListCacheEntry(DateTimeOffset.UtcNow, rows);
+            PruneCachesLocked(DateTimeOffset.UtcNow);
         }
     }
 
@@ -649,6 +719,7 @@ public sealed class KubernetesResourceService
         lock (cacheLock)
         {
             detailCache[key] = new ResourceDetailCacheEntry(DateTimeOffset.UtcNow, detail);
+            PruneCachesLocked(DateTimeOffset.UtcNow);
         }
     }
 
@@ -656,7 +727,7 @@ public sealed class KubernetesResourceService
     {
         lock (cacheLock)
         {
-            detailCache.Remove(new ResourceDetailCacheKey(sessionId, identity.Kind, identity.Namespace, identity.Name));
+            var changed = detailCache.Remove(new ResourceDetailCacheKey(sessionId, identity.Kind, identity.Namespace, identity.Name));
             foreach (var key in listCache.Keys.Where(key =>
                          key.SessionId.Equals(sessionId, StringComparison.Ordinal)
                          && key.Kind.Equals(identity.Kind, StringComparison.OrdinalIgnoreCase)
@@ -667,6 +738,12 @@ public sealed class KubernetesResourceService
                     .Where(row => !row.Name.Equals(identity.Name, StringComparison.Ordinal))
                     .ToList();
                 listCache[key] = new ResourceListCacheEntry(entry.StoredAt, rows);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                cacheTelemetryDirty = true;
             }
         }
     }
@@ -691,6 +768,7 @@ public sealed class KubernetesResourceService
         lock (cacheLock)
         {
             logCache[key] = new PodLogCacheEntry(DateTimeOffset.UtcNow, snapshot);
+            PruneCachesLocked(DateTimeOffset.UtcNow);
         }
     }
 
@@ -921,6 +999,7 @@ public sealed class KubernetesResourceService
 
             if (touched)
             {
+                PruneCachesLocked(DateTimeOffset.UtcNow);
                 return;
             }
 
@@ -928,7 +1007,169 @@ public sealed class KubernetesResourceService
             {
                 listCache[group.Key] = new ResourceListCacheEntry(DateTimeOffset.UtcNow, group.ToList());
             }
+            PruneCachesLocked(DateTimeOffset.UtcNow);
         }
+    }
+
+    private void PruneCaches()
+    {
+        lock (cacheLock)
+        {
+            PruneCachesLocked(DateTimeOffset.UtcNow);
+        }
+    }
+
+    private void PruneCachesLocked(DateTimeOffset now)
+    {
+        RemoveExpired(listCache, entry => entry.StoredAt, now - ListDisplayCacheTtl);
+        RemoveExpired(detailCache, entry => entry.StoredAt, now - DetailCacheRetention);
+        RemoveExpired(logCache, entry => entry.StoredAt, now - LogCacheRetention);
+        RemoveExpired(pulseCache, entry => entry.StoredAt, now - PulseCacheRetention);
+        TrimOldest(listCache, MaxListCacheEntries, entry => entry.StoredAt);
+        TrimOldest(detailCache, MaxDetailCacheEntries, entry => entry.StoredAt);
+        TrimOldest(logCache, MaxLogCacheEntries, entry => entry.StoredAt);
+        TrimOldest(pulseCache, MaxPulseCacheEntries, entry => entry.StoredAt);
+        cacheTelemetryDirty = true;
+    }
+
+    private static void RemoveExpired<TKey, TValue>(
+        Dictionary<TKey, TValue> cache,
+        Func<TValue, DateTimeOffset> storedAt,
+        DateTimeOffset cutoff)
+        where TKey : notnull
+    {
+        foreach (var key in cache.Where(entry => storedAt(entry.Value) < cutoff).Select(entry => entry.Key).ToList())
+        {
+            cache.Remove(key);
+        }
+    }
+
+    private static void TrimOldest<TKey, TValue>(
+        Dictionary<TKey, TValue> cache,
+        int maxEntries,
+        Func<TValue, DateTimeOffset> storedAt)
+        where TKey : notnull
+    {
+        if (cache.Count <= maxEntries)
+        {
+            return;
+        }
+
+        foreach (var key in cache
+                     .OrderBy(entry => storedAt(entry.Value))
+                     .Take(cache.Count - maxEntries)
+                     .Select(entry => entry.Key)
+                     .ToList())
+        {
+            cache.Remove(key);
+        }
+    }
+
+    private static long EstimateListEntryBytes(ResourceListCacheKey key, ResourceListCacheEntry entry)
+    {
+        return EstimateStrings(key.SessionId, key.Kind, key.Namespace)
+               + entry.Rows.Sum(EstimateRowBytes)
+               + 64;
+    }
+
+    private static long EstimateDetailEntryBytes(ResourceDetailCacheKey key, ResourceDetailCacheEntry entry)
+    {
+        var detail = entry.Detail;
+        return EstimateStrings(key.SessionId, key.Kind, key.Namespace, key.Name)
+               + EstimateIdentityBytes(detail.Identity)
+               + EstimateStrings(detail.Status, detail.Yaml)
+               + detail.Summary.Sum(EstimateDetailItemBytes)
+               + detail.Conditions.Sum(EstimateDetailItemBytes)
+               + detail.Events.Sum(EstimateEventBytes)
+               + detail.Values.Sum(EstimateValueBytes)
+               + 128;
+    }
+
+    private static long EstimateLogEntryBytes(PodLogCacheKey key, PodLogCacheEntry entry)
+    {
+        var snapshot = entry.Snapshot;
+        return EstimateStrings(key.SessionId, key.Namespace, key.PodName, key.Container)
+               + EstimateIdentityBytes(snapshot.Identity)
+               + EstimateStrings(snapshot.Container, snapshot.FetchedAt, snapshot.Text)
+               + 128;
+    }
+
+    private static long EstimatePulseEntryBytes(string key, ResourcePulseCacheEntry entry)
+    {
+        return EstimateStrings(key)
+               + entry.Snapshot.PodUsage.Sum(item => EstimateStrings(item.Key) + EstimatePulseBytes(item.Value))
+               + entry.Snapshot.NodeUsage.Sum(item => EstimateStrings(item.Key) + EstimatePulseBytes(item.Value))
+               + EstimateStrings(entry.Snapshot.SourceBadge, entry.Snapshot.Tooltip)
+               + 128;
+    }
+
+    private static long EstimateRowBytes(FlatResourceRow row)
+    {
+        return EstimateStrings(
+                   row.Id,
+                   row.Status,
+                   row.Kind,
+                   row.Name,
+                   row.Namespace,
+                   row.Cluster,
+                   row.Age,
+                   row.Ready,
+                   row.Node,
+                   row.ImageSummary,
+                   row.Owner,
+                   row.LastChange,
+                   row.EventName,
+                   row.EventReason,
+                   row.EventMessage,
+                   row.EventObject,
+                   row.AlertAnimation,
+                   row.AlertColor)
+               + EstimatePulseBytes(row.Pulse)
+               + 96;
+    }
+
+    private static long EstimateIdentityBytes(ResourceIdentity identity)
+    {
+        return EstimateStrings(identity.SessionId, identity.Kind, identity.Namespace, identity.Name) + 32;
+    }
+
+    private static long EstimateDetailItemBytes(DetailItem item)
+    {
+        return EstimateStrings(item.Label, item.Value) + 32;
+    }
+
+    private static long EstimateEventBytes(EventSummary item)
+    {
+        return EstimateStrings(item.EventType, item.Reason, item.Message, item.LastSeen) + 48;
+    }
+
+    private static long EstimateValueBytes(ResourceValueItem item)
+    {
+        return EstimateStrings(item.Key, item.Value) + 48;
+    }
+
+    private static long EstimatePulseBytes(ResourcePulse pulse)
+    {
+        return EstimateStrings(
+                   pulse.SourceBadge,
+                   pulse.Tooltip,
+                   pulse.CpuDisplay,
+                   pulse.MemoryDisplay,
+                   pulse.NetworkDisplay,
+                   pulse.StorageDisplay)
+               + 128;
+    }
+
+    private static long EstimatePulseBytes(LivePulseUsage pulse)
+    {
+        return 48
+               + (pulse.CpuMillicores is null ? 0 : sizeof(double))
+               + (pulse.MemoryBytes is null ? 0 : sizeof(long));
+    }
+
+    private static long EstimateStrings(params string?[] values)
+    {
+        return values.Sum(value => value is null ? 0L : 24L + value.Length * 2L);
     }
 
     private async Task<T> EnqueueRequest<T>(
@@ -2356,6 +2597,16 @@ public sealed record KubernetesRequestTelemetry(
     double RequestsPerSecond,
     int QueuedRequests,
     DateTimeOffset? BackoffUntil);
+
+public sealed record KubernetesCacheTelemetry(
+    int ListEntries,
+    int DetailEntries,
+    int LogEntries,
+    int PulseEntries,
+    long EstimatedBytes)
+{
+    public int TotalEntries => ListEntries + DetailEntries + LogEntries + PulseEntries;
+}
 
 public sealed record KubernetesRequestAuditEntry(
     string StartedAt,

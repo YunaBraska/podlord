@@ -82,6 +82,7 @@ public partial class MainWindow : Window
         UpdateInspectorLayout();
         UpdateYamlEditorHeight();
         viewModel.LoadStartupKubeconfigs(startupArgs);
+        _ = viewModel.CheckForUpdatesIfDueAsync();
         Dispatcher.UIThread.Post(() =>
         {
             InitializeTableLayouts();
@@ -515,6 +516,8 @@ public partial class MainWindow : Window
         viewModel.ToggleSearchForCurrentWorkspace();
         FocusCurrentSearch();
     }
+
+    private void DownloadUpdateClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenUpdateDownload();
 
     private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("graph");
 

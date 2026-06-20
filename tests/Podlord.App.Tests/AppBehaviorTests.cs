@@ -37,8 +37,8 @@ public sealed class AppBehaviorTests
         Assert.Equal((byte)18, AppThemeCatalog.PixelEffectIntensity("subtle"));
         Assert.Equal((byte)56, AppThemeCatalog.PixelEffectIntensity("medium"));
         Assert.Equal((byte)86, AppThemeCatalog.PixelEffectIntensity("arcade"));
-        Assert.True(Settings.Default.RadarWaterEnabled);
-        Assert.Equal((byte)45, Settings.Default.RadarWaterSpeed);
+        Assert.False(Settings.Default.RadarWaterEnabled);
+        Assert.Equal((byte)0, Settings.Default.RadarWaterSpeed);
         Assert.True(Settings.Default.RadarAutoFollowAlerts);
         Assert.Equal(0, Settings.Default.InactiveSyncMinutes);
         Assert.Equal(0, Settings.Default.RequestHardLimitPerMinute);
@@ -75,6 +75,18 @@ public sealed class AppBehaviorTests
 
         Assert.Equal("RESOURCES", PodlordLocalizer.Text("nav.resources", "definitely-not-real"));
         Assert.Equal("missing.key", PodlordLocalizer.Text("missing.key", "de"));
+    }
+
+    [Theory]
+    [InlineData(0, "0B")]
+    [InlineData(500, "500B")]
+    [InlineData(1024, "1KB")]
+    [InlineData(1536, "1.5KB")]
+    [InlineData(524288000, "500MB")]
+    [InlineData(1073741824, "1GB")]
+    public void Cache_size_footer_uses_human_readable_units(long bytes, string expected)
+    {
+        Assert.Equal(expected, MainWindowViewModel.FormatCacheSize(bytes));
     }
 
     [Fact]
@@ -206,6 +218,8 @@ public sealed class AppBehaviorTests
         Assert.Equal("https://buymeacoffee.com/YunaBraska", viewModel.AboutBuyMeACoffeeUrl);
         Assert.Equal("https://ko-fi.com/YunaBraska", viewModel.AboutKoFiUrl);
         Assert.Equal("https://liberapay.com/YunaBraska", viewModel.AboutLiberapayUrl);
+        Assert.StartsWith("Version ", viewModel.AboutVersionText, StringComparison.Ordinal);
+        Assert.True(viewModel.AboutVersionText.Length > "Version ".Length);
 
         Assert.True(MainWindowViewModel.AboutBlockCatalog.Count >= 32, $"AboutBlockCatalog should have at least 32 entries but has {MainWindowViewModel.AboutBlockCatalog.Count}.");
         Assert.All(MainWindowViewModel.AboutBlockCatalog, block =>
@@ -231,6 +245,147 @@ public sealed class AppBehaviorTests
         viewModel.OpenAboutUrl(null);
         viewModel.OpenAboutUrl(string.Empty);
         viewModel.OpenAboutUrl("not a url");
+    }
+
+    [Fact]
+    public async Task Weekly_update_check_persists_available_release_and_skips_until_due()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        var checker = new FakeReleaseUpdateChecker(new UpdateCheckState(
+            DateTimeOffset.UtcNow.ToString("O"),
+            "2026.6.19",
+            "2026.6.20",
+            "https://github.com/YunaBraska/podlord/releases/tag/2026.6.20",
+            "https://github.com/YunaBraska/podlord/releases/download/2026.6.20/podlord-macos-arm64.zip",
+            true));
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state),
+            releaseUpdateChecker: checker);
+
+        await viewModel.CheckForUpdatesIfDueAsync();
+
+        Assert.Equal(1, checker.Calls);
+        Assert.True(viewModel.IsUpdateAvailable);
+        Assert.Contains("2026.6.20", viewModel.UpdateDownloadTooltipText, StringComparison.Ordinal);
+        Assert.Equal("https://github.com/YunaBraska/podlord/releases/download/2026.6.20/podlord-macos-arm64.zip", state.Settings().UpdateCheck?.DownloadUrl);
+
+        await viewModel.CheckForUpdatesIfDueAsync();
+
+        Assert.Equal(1, checker.Calls);
+    }
+
+    [Fact]
+    public async Task Weekly_update_check_keeps_download_button_hidden_when_latest_is_not_newer()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        var checker = new FakeReleaseUpdateChecker(new UpdateCheckState(
+            DateTimeOffset.UtcNow.ToString("O"),
+            "2026.6.19",
+            "2026.6.19",
+            "https://github.com/YunaBraska/podlord/releases/tag/2026.6.19",
+            "https://github.com/YunaBraska/podlord/releases/download/2026.6.19/podlord-macos-arm64.zip",
+            false));
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state),
+            releaseUpdateChecker: checker);
+
+        await viewModel.CheckForUpdatesIfDueAsync();
+
+        Assert.Equal(1, checker.Calls);
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal("2026.6.19", state.Settings().UpdateCheck?.LatestVersion);
+        Assert.False(state.Settings().UpdateCheck?.IsNewer);
+    }
+
+    [Fact]
+    public async Task Update_check_due_gate_runs_after_seven_days_and_preserves_known_update_on_failure()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        var oldVisibleUpdate = new UpdateCheckState(
+            DateTimeOffset.UtcNow.AddDays(-8).ToString("O"),
+            "2026.6.19",
+            "2026.6.20",
+            "https://github.com/YunaBraska/podlord/releases/tag/2026.6.20",
+            "https://github.com/YunaBraska/podlord/releases/download/2026.6.20/podlord-macos-arm64.zip",
+            true);
+        state.SaveSettings(state.Settings() with { UpdateCheck = oldVisibleUpdate });
+        var checker = new FakeReleaseUpdateChecker(new UpdateCheckState(
+            DateTimeOffset.UtcNow.ToString("O"),
+            "2026.6.19",
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            false,
+            "network down"));
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state),
+            releaseUpdateChecker: checker);
+
+        Assert.True(MainWindowViewModel.ShouldCheckForUpdates(oldVisibleUpdate, DateTimeOffset.UtcNow));
+        await viewModel.CheckForUpdatesIfDueAsync();
+
+        Assert.Equal(1, checker.Calls);
+        Assert.True(viewModel.IsUpdateAvailable);
+        Assert.Equal("2026.6.20", state.Settings().UpdateCheck?.LatestVersion);
+        Assert.Equal("network down", state.Settings().UpdateCheck?.Error);
+    }
+
+    [Fact]
+    public void Release_update_checker_compares_versions_and_selects_matching_asset()
+    {
+        Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "2026.6.20"));
+        Assert.True(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19-local+sha", "2026.7.1"));
+        Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.19", "2026.6.19"));
+        Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("2026.6.20", "2026.6.19"));
+        Assert.False(GitHubReleaseUpdateChecker.IsNewerRelease("dev-build", "2026.6.19"));
+
+        var assets = new[]
+        {
+            new ReleaseAssetInfo("podlord-linux-x64.tar.gz", "linux"),
+            new ReleaseAssetInfo("podlord-macos-arm64.zip", "mac"),
+            new ReleaseAssetInfo("podlord-osx-x64.zip", "legacy-mac"),
+            new ReleaseAssetInfo("podlord-win-x64.zip", "win")
+        };
+
+        Assert.Equal("mac", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-macos-arm64.zip"));
+        Assert.Equal("legacy-mac", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-macos-x64.zip"));
+        Assert.Equal("mac", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-osx-arm64.zip"));
+        Assert.Equal("linux", GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-linux-x64.tar.gz"));
+        Assert.Null(GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-macos-arm.zip"));
+    }
+
+    [Fact]
+    public void Release_packaging_uses_public_macos_asset_names_and_plain_archive_root()
+    {
+        var root = LocateProjectRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
+        var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
+        var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
+
+        Assert.Contains("asset: macos-arm64", workflow, StringComparison.Ordinal);
+        Assert.Contains("asset: macos-x64", workflow, StringComparison.Ordinal);
+        Assert.Contains("target = Path(\"dist\") / f\"podlord-{asset}.tar.gz\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("target = Path(\"dist\") / f\"podlord-{asset}.zip\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("archive.add(source, arcname=\"podlord\")", workflow, StringComparison.Ordinal);
+        Assert.Contains("archive.write(path, Path(\"podlord\") / path.relative_to(source))", workflow, StringComparison.Ordinal);
+        Assert.Contains("\"dist/podlord-$ASSET.zip\"", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("dist/podlord-$RID.zip", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("arcname=f\"podlord-{rid}\"", workflow, StringComparison.Ordinal);
+
+        Assert.Contains("macos-arm64) RID=osx-arm64 ;;", macOSBundleScript, StringComparison.Ordinal);
+        Assert.Contains("macos-x64) RID=osx-x64 ;;", macOSBundleScript, StringComparison.Ordinal);
+        Assert.Contains("BUNDLE_DIR=\"$ROOT_DIR/out/$APP_NAME.app\"", macOSBundleScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("BUNDLE_DIR=\"$ROOT_DIR/out/$APP_NAME-$RID.app\"", macOSBundleScript, StringComparison.Ordinal);
+
+        Assert.Contains("RIDS=\"macos-arm64 macos-x64", publishScript, StringComparison.Ordinal);
+        Assert.Contains("macos-arm64) dotnet_rid=osx-arm64 ;;", publishScript, StringComparison.Ordinal);
+        Assert.Contains("-r \"$dotnet_rid\"", publishScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -390,7 +545,6 @@ public sealed class AppBehaviorTests
         viewModel.AnimationIntensitySetting = 35;
         viewModel.RadarWaterEnabledSetting = false;
         viewModel.RadarWaterSpeedSetting = 70;
-        viewModel.RadarAutoFollowAlertsSetting = false;
 
         var settings = state.Settings();
         Assert.Equal((byte)86, settings.PixelEffectIntensity);
@@ -398,7 +552,6 @@ public sealed class AppBehaviorTests
         Assert.Equal((byte)35, settings.AnimationIntensity);
         Assert.False(settings.RadarWaterEnabled);
         Assert.Equal((byte)70, settings.RadarWaterSpeed);
-        Assert.False(settings.RadarAutoFollowAlerts);
         Assert.Equal("arcade", viewModel.GraphicsQualitySetting);
         Assert.Equal("light", viewModel.ThemeVariantSetting);
         Assert.Equal("35%", viewModel.AnimationIntensityLabel);
@@ -555,6 +708,60 @@ public sealed class AppBehaviorTests
         finally
         {
             viewModel.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Refresh_failure_before_http_requests_is_visible_in_diagnostics_rows()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfigWithoutServer());
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AsyncAppRecordingHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, handler));
+        viewModel.ReloadSessions();
+
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.Empty(handler.Requests);
+        Assert.Contains("cluster server is missing", viewModel.StatusLine, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(viewModel.RequestAuditRows, row =>
+            row.Method == "APP"
+            && row.Path.Contains("client setup", StringComparison.OrdinalIgnoreCase)
+            && row.Outcome.Contains("cluster server is missing", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(viewModel.RequestAuditRows, row =>
+            row.Method == "APP"
+            && row.Path.Contains("resource refresh", StringComparison.OrdinalIgnoreCase)
+            && row.Outcome.Contains("cluster server is missing", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Startup_without_any_kubeconfig_stays_empty_and_healthy()
+    {
+        var directory = TempDirectory();
+        var fakeHome = Path.Combine(directory, "home");
+        Directory.CreateDirectory(fakeHome);
+        var previousHome = Environment.GetEnvironmentVariable("PODLORD_HOME");
+        try
+        {
+            Environment.SetEnvironmentVariable("PODLORD_HOME", fakeHome);
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+            viewModel.LoadStartupKubeconfigs([]);
+
+            Assert.Null(viewModel.SelectedSession);
+            Assert.Empty(viewModel.Sessions);
+            Assert.Empty(viewModel.RequestAuditRows);
+            Assert.Contains("Cache: 0B", viewModel.FooterLine, StringComparison.Ordinal);
+            Assert.Equal("No resources loaded", viewModel.ResourceLogoTitle);
+            Assert.DoesNotContain("failed", viewModel.StatusLine, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_HOME", previousHome);
         }
     }
 
@@ -2961,6 +3168,7 @@ public sealed class AppBehaviorTests
         try
         {
             var state = AppState.InMemoryWithConfigDirectory(directory);
+            state.SaveSettings(state.Settings() with { RadarAutoFollowAlerts = false });
             var player = new RecordingAlertSoundPlayer();
             using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
             viewModel.SetRadarViewport(480, 220);
@@ -3007,7 +3215,7 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Problem_color_default_zooms_to_matching_center_and_plays_warning_once_per_update()
+    public void Problem_color_default_zooms_to_oldest_matching_resource_and_plays_warning_once_per_update()
     {
         var directory = TempDirectory();
         var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
@@ -3015,6 +3223,7 @@ public sealed class AppBehaviorTests
         try
         {
             var state = AppState.InMemoryWithConfigDirectory(directory);
+            state.SaveSettings(state.Settings() with { RadarAutoFollowAlerts = false });
             var player = new RecordingAlertSoundPlayer();
             using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
             viewModel.SetRadarViewport(480, 220);
@@ -3022,7 +3231,7 @@ public sealed class AppBehaviorTests
             InjectCachedRows(viewModel,
             [
                 QuietAlertRow("quiet", 0),
-                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" }
+                Row("Pending", "waiting", 0, "0/1") with { Age = "5h", LastChange = "5h" }
             ]);
             ApplyLocalFilter(viewModel);
 
@@ -3032,16 +3241,14 @@ public sealed class AppBehaviorTests
             InjectCachedRows(viewModel,
             [
                 QuietAlertRow("quiet", 0),
-                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
-                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
+                Row("Pending", "waiting", 0, "0/1") with { Age = "5h", LastChange = "5h" },
+                Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "1h", LastChange = "1h" }
             ]);
             ApplyLocalFilter(viewModel);
 
-            var targets = viewModel.RadarBlocks
-                .Where(block => block.Resource.Name is "waiting" or "broken")
-                .ToList();
-            var expectedPanX = -targets.Average(block => block.X + block.Width / 2d - 480d / 2d);
-            var expectedPanY = -targets.Average(block => block.Y + block.Height / 2d - 220d / 2d);
+            var oldestTarget = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "waiting");
+            var expectedPanX = -(oldestTarget.X + oldestTarget.Width / 2d - 480d / 2d);
+            var expectedPanY = -(oldestTarget.Y + oldestTarget.Height / 2d - 220d / 2d);
 
             viewModel.PlayNextQueuedAlertSoundForTests();
             Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
@@ -3061,7 +3268,7 @@ public sealed class AppBehaviorTests
             InjectCachedRows(viewModel,
             [
                 QuietAlertRow("quiet", 0),
-                Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" },
+                Row("Pending", "waiting", 0, "0/1") with { Age = "5h", LastChange = "5h" },
                 Row("CrashLoopBackOff", "broken", 2, "0/1") with { Age = "2h", LastChange = "1s" }
             ]);
             ApplyLocalFilter(viewModel);
@@ -3778,6 +3985,25 @@ users:
 """;
     }
 
+    private static string OneContextKubeconfigWithoutServer()
+    {
+        return """
+apiVersion: v1
+clusters:
+- name: dev
+  cluster: {}
+contexts:
+- name: dev
+  context:
+    cluster: dev
+    user: dev
+users:
+- name: dev
+  user:
+    token: secret-token
+""";
+    }
+
     private static FlatResourceRow Row(string status, string name, int restarts, string ready)
     {
         return new FlatResourceRow(
@@ -4062,6 +4288,21 @@ users:
         {
             Requests.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
             return respond(request, cancellationToken);
+        }
+    }
+
+    private sealed class FakeReleaseUpdateChecker(UpdateCheckState result) : IReleaseUpdateChecker
+    {
+        public int Calls { get; private set; }
+
+        public Task<UpdateCheckState> CheckLatestAsync(string currentVersion, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(result with { CurrentVersion = currentVersion });
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
