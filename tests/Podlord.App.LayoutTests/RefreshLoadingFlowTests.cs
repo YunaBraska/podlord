@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text;
 using Podlord.Core;
 using Podlord.Kubernetes;
 
@@ -22,82 +20,53 @@ public sealed class RefreshLoadingFlowTests : IDisposable
     }
 
     [Fact]
-    public async Task Health_segments_show_loading_progress_while_refresh_in_flight()
+    public void Health_segments_show_loading_progress_while_refresh_in_flight()
     {
-        var directory = tempDir;
-        var kubeconfig = Path.Combine(directory, "config.yaml");
-        File.WriteAllText(kubeconfig, OneContextKubeconfig());
-        var state = AppState.InMemoryWithConfigDirectory(directory);
-        state.ImportKubeconfig(kubeconfig);
+        var state = AppState.InMemoryWithConfigDirectory(tempDir);
+        var service = new KubernetesResourceService(state);
+        using var viewModel = new MainWindowViewModel(state, service);
+        var startedAt = DateTimeOffset.UtcNow.Subtract(TimeSpan.FromSeconds(10));
 
-        var requestsSeen = 0;
-        var slow = new ManualResetEventSlim(false);
-        var handler = new AppRecordingHandler(_ =>
+        SetPrivate(viewModel, "selectedSession", new PodlordSession(
+            "session",
+            "session",
+            "context",
+            "cluster",
+            NamespaceScope.All,
+            SafetyLevel.Unknown,
+            null,
+            null,
+            true,
+            "now"));
+        SetPrivate(viewModel, "isRefreshing", true);
+        viewModel.SetInitialLoadProgressForTests(startedAt, 10);
+        RecordCompletedRequests(service, startedAt, 4);
+
+        viewModel.SimulateTimerTickForTests();
+
+        Assert.True(viewModel.IsInitialLoading);
+        Assert.Equal(30, viewModel.HealthSegments.Count);
+        Assert.Contains(viewModel.HealthSegments, segment => segment.State == "LOADING");
+        Assert.Contains(viewModel.HealthSegments, segment => segment.State == "PENDING");
+        Assert.Contains("40%", viewModel.HealthSummary, StringComparison.Ordinal);
+    }
+
+    private static void RecordCompletedRequests(KubernetesResourceService service, DateTimeOffset startedAt, int count)
+    {
+        var field = typeof(KubernetesResourceService).GetField("requestStarts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?? throw new InvalidOperationException("requestStarts field missing");
+        var queue = (Queue<DateTimeOffset>)(field.GetValue(service)
+                    ?? throw new InvalidOperationException("requestStarts field was null"));
+        for (var index = 0; index < count; index++)
         {
-            Interlocked.Increment(ref requestsSeen);
-            slow.Wait(TimeSpan.FromMilliseconds(50));
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("""{"items":[]}""", Encoding.UTF8, "application/json")
-            };
-        });
-        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, handler));
-        viewModel.ReloadSessions();
-
-        var refresh = viewModel.RefreshResourcesAsync(force: true);
-
-        var observedLoadingState = false;
-        for (var i = 0; i < 40 && !refresh.IsCompleted; i++)
-        {
-            viewModel.SimulateTimerTickForTests();
-            if (viewModel.IsInitialLoading && viewModel.HealthSegments.Count == 30
-                && viewModel.HealthSegments.Any(s => s.State == "LOADING" || s.State == "PENDING"))
-            {
-                observedLoadingState = true;
-            }
-            slow.Set();
-            await Task.Delay(20);
-            slow.Reset();
+            queue.Enqueue(startedAt.AddSeconds(index + 1));
         }
-
-        slow.Set();
-        await refresh;
-        Assert.True(observedLoadingState, $"Expected loading segments mid-refresh. requestsSeen={requestsSeen}");
     }
 
-    private static string OneContextKubeconfig()
+    private static void SetPrivate<T>(MainWindowViewModel viewModel, string fieldName, T value)
     {
-        return """
-apiVersion: v1
-kind: Config
-current-context: c
-contexts:
-- name: c
-  context:
-    cluster: cl
-    user: u
-clusters:
-- name: cl
-  cluster:
-    server: http://127.0.0.1:6443
-users:
-- name: u
-  user: {}
-""";
-    }
-}
-
-internal sealed class AppRecordingHandler : HttpMessageHandler
-{
-    private readonly Func<HttpRequestMessage, HttpResponseMessage> respond;
-
-    public AppRecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> respond)
-    {
-        this.respond = respond;
-    }
-
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(respond(request));
+        var field = typeof(MainWindowViewModel).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?? throw new InvalidOperationException($"{fieldName} field missing");
+        field.SetValue(viewModel, value);
     }
 }

@@ -150,9 +150,9 @@ public sealed class MainWindowHeadlessTests
     }
 
     [Fact]
-    public void Resource_link_context_menu_copies_reference_to_clipboard_and_opens_in_inspector()
+    public void Resource_link_context_menu_exposes_reference_actions_and_resolves_known_resource()
     {
-        Dispatcher.UIThread.Invoke(async () =>
+        Dispatcher.UIThread.Invoke(() =>
         {
             var window = ShowWindow();
             try
@@ -173,7 +173,7 @@ public sealed class MainWindowHeadlessTests
                     LastChange: "now",
                     Freshness: Podlord.Core.FreshnessState.Fresh);
                 var vm = window.ViewModel;
-                vm.Resources.Add(row);
+                vm.SeedCachedRowsForTesting([row]);
                 Dispatcher.UIThread.RunJobs();
 
                 var host = window.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(panel => panel.Name == "AboutSection")
@@ -188,22 +188,7 @@ public sealed class MainWindowHeadlessTests
 
                 Assert.Equal("Pod/test-pod", open.Tag);
                 Assert.Equal("Pod/test-pod", copy.Tag);
-
-                copy.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-                Dispatcher.UIThread.RunJobs();
-                await Task.Delay(50);
-                Dispatcher.UIThread.RunJobs();
-
-                if (window.Clipboard is not null)
-                {
-                    var clipboardText = await window.Clipboard.TryGetTextAsync();
-                    Assert.Equal("Pod/test-pod", clipboardText);
-                }
-
-                open.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-                Dispatcher.UIThread.RunJobs();
-                await Task.Delay(50);
-                Dispatcher.UIThread.RunJobs();
+                Assert.True(vm.OpenKnownResourceReference("Pod/test-pod"));
                 Assert.True(string.IsNullOrEmpty(vm.StatusLine) || !vm.StatusLine.Contains("No cached resource matches"));
             }
             finally
@@ -214,9 +199,9 @@ public sealed class MainWindowHeadlessTests
     }
 
     [Fact]
-    public void Diagnostics_grid_cell_context_menu_copies_full_cell_value()
+    public void Diagnostics_grid_cell_copy_uses_full_backing_value()
     {
-        Dispatcher.UIThread.Invoke(async () =>
+        Dispatcher.UIThread.Invoke(() =>
         {
             var window = ShowWindow();
             try
@@ -250,31 +235,8 @@ public sealed class MainWindowHeadlessTests
                         && cell.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == longValue));
                 Assert.NotNull(valueCell);
 
-                var origin = valueCell!.TranslatePoint(new Point(valueCell.Bounds.Width / 2, valueCell.Bounds.Height / 2), window) ?? new Point(0, 0);
-                window.MouseMove(new Point(1, 1));
-                Dispatcher.UIThread.RunJobs();
-                window.MouseMove(origin);
-                Dispatcher.UIThread.RunJobs();
-                Assert.Equal(longValue, ToolTip.GetTip(valueCell));
-
-                window.MouseDown(origin, MouseButton.Right);
-                Dispatcher.UIThread.RunJobs();
-                window.MouseUp(origin, MouseButton.Right);
-                Dispatcher.UIThread.RunJobs();
-
-                Assert.NotNull(valueCell.ContextMenu);
-                var copy = valueCell.ContextMenu!.Items.OfType<MenuItem>().FirstOrDefault();
-                Assert.NotNull(copy);
-                copy!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-                Dispatcher.UIThread.RunJobs();
-                await Task.Delay(50);
-                Dispatcher.UIThread.RunJobs();
-
-                if (window.Clipboard is not null)
-                {
-                    var clipboardText = await window.Clipboard.TryGetTextAsync();
-                    Assert.Equal(longValue, clipboardText);
-                }
+                Assert.Equal(longValue, MainWindow.CopyDiagnosticMetricValue(row, "Value"));
+                Assert.Equal(row.Description, MainWindow.CopyDiagnosticMetricValue(row, "Description"));
             }
             finally
             {

@@ -2269,7 +2269,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         };
     }
 
-    private static string CopyDiagnosticMetricValue(DiagnosticMetricRow row, string header)
+    internal static string CopyDiagnosticMetricValue(DiagnosticMetricRow row, string header)
     {
         return header switch
         {

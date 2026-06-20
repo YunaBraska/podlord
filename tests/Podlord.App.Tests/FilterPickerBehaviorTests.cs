@@ -263,7 +263,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("CopyValueForCell(cell, column)", codeBehind, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DiagnosticsGrid\"", window, StringComparison.Ordinal);
         Assert.Contains("DiagnosticMetricRow row => CopyDiagnosticMetricValue(row, HeaderText(column.Header))", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("private static string CopyDiagnosticMetricValue", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("internal static string CopyDiagnosticMetricValue", codeBehind, StringComparison.Ordinal);
         Assert.Contains("private static DataGridColumn? ColumnForCell", codeBehind, StringComparison.Ordinal);
     }
 
