@@ -261,6 +261,9 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("private void DataGridCellPointerEntered", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ToolTip.SetTip(cell", codeBehind, StringComparison.Ordinal);
         Assert.Contains("CopyValueForCell(cell, column)", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DiagnosticsGrid\"", window, StringComparison.Ordinal);
+        Assert.Contains("DiagnosticMetricRow row => CopyDiagnosticMetricValue(row, HeaderText(column.Header))", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("private static string CopyDiagnosticMetricValue", codeBehind, StringComparison.Ordinal);
         Assert.Contains("private static DataGridColumn? ColumnForCell", codeBehind, StringComparison.Ordinal);
     }
 
@@ -313,6 +316,7 @@ public sealed class FilterPickerBehaviorTests
         var viewModel = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "MainWindowViewModel.cs"));
         var workspaceModels = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "WorkspaceModels.cs"));
         var radarWaterLayer = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "RadarWaterLayer.cs"));
+        var radarBlockLayer = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "RadarBlockLayer.cs"));
         var radarWaterModel = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "RadarWaterModel.cs"));
         var codeBehind = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "MainWindow.axaml.cs"));
         var kubernetesProject = File.ReadAllText(Path.Combine(root, "src", "Podlord.Kubernetes", "Podlord.Kubernetes.csproj"));
@@ -349,11 +353,12 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Classes=\"minimapFrame\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"minimapGlass\"", window, StringComparison.Ordinal);
         Assert.Contains("PlRadarWaterBrush", app, StringComparison.Ordinal);
-        Assert.Contains("Kind=\"{Binding DisplayKind}\"", window, StringComparison.Ordinal);
+        Assert.Contains("DrawKindGlyph(context, block.DisplayKind", radarBlockLayer, StringComparison.Ordinal);
         Assert.DoesNotContain("ItemsSource=\"{Binding RadarLinks}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("RotateTransform Angle=\"{Binding Angle}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding ShowProblemGlyph}\"", window, StringComparison.Ordinal);
-        Assert.Contains("BorderBrush=\"{Binding BorderBrush}\"", window, StringComparison.Ordinal);
+        Assert.Contains("block.ShowProblemGlyph", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("new Pen(block.Brush", radarBlockLayer, StringComparison.Ordinal);
+        Assert.DoesNotContain("new Pen(block.BorderBrush", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("Classes=\"commandConsole\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"selectedUnitCard\"", window, StringComparison.Ordinal);
         Assert.Contains("Content=\"{Binding ActivityText}\"", window, StringComparison.Ordinal);
@@ -522,17 +527,17 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("ResourceSortGlyphFor", viewModel + codeBehind, StringComparison.Ordinal);
         Assert.Contains("EventSortGlyphFor", viewModel + codeBehind, StringComparison.Ordinal);
         Assert.Contains("Classes.Add(\"sortGlyph\")", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding Resource.HasCpuMetricBar}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding Resource.HasMemoryMetricBar}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding Resource.HasStorageMetricBar}\"", window, StringComparison.Ordinal);
+        Assert.Contains("block.Resource.HasCpuMetricBar", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.Resource.HasMemoryMetricBar", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.Resource.HasStorageMetricBar", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("<Style Selector=\"ProgressBar\">", app, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"MinWidth\" Value=\"0\" />", app, StringComparison.Ordinal);
         Assert.Contains("ClipToBounds=\"True\" MinWidth=\"0\"", window, StringComparison.Ordinal);
         Assert.Contains("Height=\"5\"", window, StringComparison.Ordinal);
         Assert.Contains("MinWidth=\"0\"", window, StringComparison.Ordinal);
         Assert.Contains("RestartBrushConverter", app, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"{Binding Resource.Restarts, Converter={StaticResource RestartBrushConverter}}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"{Binding Resource, Converter={StaticResource ProblemBrushConverter}}\"", window, StringComparison.Ordinal);
+        Assert.Contains("AddTextRow(stack, \"Restarts\"", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.Problem", radarBlockLayer, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"{Binding Metrics}\"", window, StringComparison.Ordinal);
         Assert.Contains("PortForwardBadgeConverter", window + app, StringComparison.Ordinal);
         Assert.Contains("PortForwardEligibilityConverter", window + app, StringComparison.Ordinal);
@@ -566,11 +571,11 @@ public sealed class FilterPickerBehaviorTests
         Assert.DoesNotContain("Click=\"RadarZoomInClicked\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"RadarZoomOutClicked\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"RadarZoomResetClicked\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnounceBlink\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnouncePulse\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnounceSweep\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnounceOutline\"", window, StringComparison.Ordinal);
-        Assert.Contains("Fill=\"{Binding Brush}\"", window, StringComparison.Ordinal);
+        Assert.Contains("block.IsBlinkAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsPulseAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsSweepAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsOutlineAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("context.DrawRectangle(block.Brush", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnounceBlink\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnouncePulse\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnounceSweep\"", window, StringComparison.Ordinal);
@@ -579,7 +584,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("IsVisible=\"{Binding IsPulseAnimation}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSweepAnimation}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsOutlineAnimation}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Opacity=\"{Binding Opacity}\"", window, StringComparison.Ordinal);
+        Assert.Contains("context.PushOpacity(block.Opacity)", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("Label=\"Name\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Reason\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Message\"", window, StringComparison.Ordinal);

@@ -62,6 +62,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string importPath = string.Empty;
     private string pasteName = string.Empty;
     private string pasteKubeconfig = string.Empty;
+    private string notifiedFooterLine = string.Empty;
+    private string notifiedLastSyncedLabel = string.Empty;
+    private double notifiedInitialLoadPercent = double.NaN;
     private string sessionDisplayName = string.Empty;
     private string sessionNamespaceScope = string.Empty;
     private string commandText = string.Empty;
@@ -3450,8 +3453,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 sessionSyncedAt[sessionId] = lastSyncedAt.Value;
             }
 
-            OnPropertyChanged(nameof(LastSyncedLabel));
-            OnPropertyChanged(nameof(FooterLine));
+            NotifyLastSyncedLabelIfChanged();
+            NotifyFooterLineIfChanged();
             if (!background || rendered)
             {
                 StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
@@ -4592,9 +4595,45 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshTimeLabels()
     {
-        OnPropertyChanged(nameof(LastSyncedLabel));
-        OnPropertyChanged(nameof(FooterLine));
+        NotifyLastSyncedLabelIfChanged();
+        NotifyFooterLineIfChanged();
         UpdateRequestWorkLabel();
+    }
+
+    private void NotifyLastSyncedLabelIfChanged()
+    {
+        var value = LastSyncedLabel;
+        if (string.Equals(notifiedLastSyncedLabel, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        notifiedLastSyncedLabel = value;
+        OnPropertyChanged(nameof(LastSyncedLabel));
+    }
+
+    private void NotifyFooterLineIfChanged()
+    {
+        var value = FooterLine;
+        if (string.Equals(notifiedFooterLine, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        notifiedFooterLine = value;
+        OnPropertyChanged(nameof(FooterLine));
+    }
+
+    private void NotifyInitialLoadPercentIfChanged()
+    {
+        var value = InitialLoadPercent;
+        if (Math.Abs(notifiedInitialLoadPercent - value) < 0.01)
+        {
+            return;
+        }
+
+        notifiedInitialLoadPercent = value;
+        OnPropertyChanged(nameof(InitialLoadPercent));
     }
 
     private void RestoreSelectedSessionCache()
@@ -4605,8 +4644,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             RenderSnapshot(EmptySnapshot());
             IsRefreshing = false;
             StatusLine = T("source.noSession");
-            OnPropertyChanged(nameof(LastSyncedLabel));
-            OnPropertyChanged(nameof(FooterLine));
+            NotifyLastSyncedLabelIfChanged();
+            NotifyFooterLineIfChanged();
             return;
         }
 
@@ -4627,8 +4666,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 NotifyResourceLogoStateChanged();
             }
 
-            OnPropertyChanged(nameof(LastSyncedLabel));
-            OnPropertyChanged(nameof(FooterLine));
+            NotifyLastSyncedLabelIfChanged();
+            NotifyFooterLineIfChanged();
         }
         catch (PodlordException ex)
         {
@@ -6887,7 +6926,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateResourceSearchMatches(resetToFirstMatch: true);
         UpdateEventSearchMatches(resetToFirstMatch: true);
         OnPropertyChanged(nameof(ResourceCountLabel));
-        OnPropertyChanged(nameof(FooterLine));
+        NotifyFooterLineIfChanged();
         OnPropertyChanged(nameof(IsInitialLoading));
         NotifyResourceLogoStateChanged();
         StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
@@ -7986,10 +8025,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             previousVisibleRadarAlertIds.Add(id);
         }
 
-        if (RadarIdleCells.Count > 0)
-        {
-            RadarIdleCells.Clear();
-        }
+        ClearRadarIdleData();
 
         IsRadarIdle = false;
         if (wasIdle)
@@ -8649,6 +8685,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         if (!IsRadarIdle || !state.Settings().ScreensaverEnabled || !isWindowVisible)
         {
             radarIdleTimer.Stop();
+            ClearRadarIdleData();
         }
         else if (!radarIdleTimer.IsEnabled)
         {
@@ -8678,6 +8715,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RenderRadarLife(bool reset)
     {
+        if (!state.Settings().ScreensaverEnabled || !isWindowVisible)
+        {
+            ClearRadarIdleData();
+            if (RadarBlocks.Count > 0)
+            {
+                RadarBlocks.Clear();
+            }
+
+            IsRadarIdle = true;
+            return;
+        }
+
         if (reset || radarLifeCells.Count == 0)
         {
             ResetRadarLife();
@@ -8725,6 +8774,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             RadarIdleCells.Add(desired[index]);
         }
+    }
+
+    private void ClearRadarIdleData()
+    {
+        radarIdleTimer.Stop();
+        if (RadarIdleCells.Count > 0)
+        {
+            RadarIdleCells.Clear();
+        }
+
+        if (radarLifeCells.Count > 0)
+        {
+            radarLifeCells.Clear();
+        }
+
+        radarLifeGeneration = 0;
+        radarLifeStagnantGenerations = 0;
+        radarLifeLastSignature = string.Empty;
+        radarLifeSeenSignatures.Clear();
     }
 
     private void ResetRadarLife()
@@ -9124,7 +9192,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         service.RecordDiagnostic(scope, outcome);
         UpdateRequestAuditRows();
-        OnPropertyChanged(nameof(FooterLine));
+        NotifyFooterLineIfChanged();
     }
 
     private void UpdateRequestWorkLabel()
@@ -9139,7 +9207,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             UpdateLoadingHealthSegments();
         }
-        OnPropertyChanged(nameof(InitialLoadPercent));
+        NotifyInitialLoadPercentIfChanged();
         if (IsSettingsWorkspace)
         {
             UpdateRequestAuditRows();
@@ -9149,7 +9217,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             UpdateDiagnosticsRows();
         }
-        OnPropertyChanged(nameof(FooterLine));
+        NotifyFooterLineIfChanged();
     }
 
     internal static string FormatCacheSize(long bytes)

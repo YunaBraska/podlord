@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json;
+using Avalonia;
 using Avalonia.Media;
 using Podlord.App;
 using Podlord.Core;
@@ -205,6 +206,98 @@ public sealed class AppBehaviorTests
         Assert.Equal("18080", badge.Convert([pod, forwards], typeof(string), null, culture));
         Assert.Equal(string.Empty, badge.Convert([pod, Array.Empty<PortForwardTaskViewModel>()], typeof(string), null, culture));
         Assert.Equal(string.Empty, badge.Convert([null, forwards], typeof(string), null, culture));
+    }
+
+    [Fact]
+    public void Radar_block_layer_hit_tests_clickable_blocks_and_ignores_placeholders()
+    {
+        var row = Row("Running", "api", 0, "1/1");
+        var clickable = new RadarBlockViewModel(
+            row,
+            "payments",
+            10,
+            20,
+            14,
+            16,
+            Brushes.Green,
+            string.Empty,
+            string.Empty);
+        var placeholder = new RadarBlockViewModel(
+            row,
+            "idle",
+            40,
+            40,
+            12,
+            12,
+            Brushes.Gray,
+            string.Empty,
+            string.Empty,
+            isPlaceholder: true);
+        var layer = new RadarBlockLayer { Blocks = [placeholder, clickable] };
+
+        Assert.Same(clickable, layer.HitTestBlock(new Point(12, 22)));
+        Assert.Null(layer.HitTestBlock(new Point(42, 42)));
+        Assert.Null(layer.HitTestBlock(new Point(200, 200)));
+    }
+
+    [Fact]
+    public void Main_window_xaml_uses_drawn_radar_layers_instead_of_per_block_button_tiles()
+    {
+        var xaml = File.ReadAllText(Path.Combine(LocateProjectRoot(), "src", "Podlord.App", "MainWindow.axaml"));
+        var layer = File.ReadAllText(Path.Combine(LocateProjectRoot(), "src", "Podlord.App", "RadarBlockLayer.cs"));
+        var app = File.ReadAllText(Path.Combine(LocateProjectRoot(), "src", "Podlord.App", "App.axaml"));
+
+        Assert.Contains("<local:RadarBlockLayer", xaml, StringComparison.Ordinal);
+        Assert.Contains("<local:RadarIdleLayer", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Classes=\"radarTile\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ItemsSource=\"{Binding RadarBlocks}\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ItemsSource=\"{Binding RadarIdleCells}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.SetShowDelay(this, 0);", layer, StringComparison.Ordinal);
+        Assert.Contains("new Pen(block.Brush", layer, StringComparison.Ordinal);
+        Assert.DoesNotContain("BoxShadow\" Value=\"inset", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("BoxShadow\" Value=\"0 0 8", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("BoxShadow\" Value=\"0 8", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("BoxShadow\" Value=\"0 10", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("Background\" Value=\"{StaticResource PlSidebarTextureBrush}", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("Background\" Value=\"{StaticResource PlInspectorTextureBrush}", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Radar_idle_cells_are_created_on_demand_and_cleared_when_live_resources_render()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.SeedCachedRowsForTesting([]);
+        Assert.True(viewModel.IsRadarIdle);
+        Assert.NotEmpty(viewModel.RadarIdleCells);
+
+        viewModel.SeedCachedRowsForTesting([Row("Running", "api", 0, "1/1")]);
+        Assert.False(viewModel.IsRadarIdle);
+        Assert.Empty(viewModel.RadarIdleCells);
+
+        viewModel.SeedCachedRowsForTesting([]);
+        Assert.True(viewModel.IsRadarIdle);
+        Assert.NotEmpty(viewModel.RadarIdleCells);
+    }
+
+    [Fact]
+    public void Timer_tick_does_not_republish_unchanged_footer_sync_or_loading_values()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        var changes = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
+
+        viewModel.SimulateTimerTickForTests();
+        changes.Clear();
+        viewModel.SimulateTimerTickForTests();
+
+        Assert.DoesNotContain(nameof(MainWindowViewModel.FooterLine), changes);
+        Assert.DoesNotContain(nameof(MainWindowViewModel.LastSyncedLabel), changes);
+        Assert.DoesNotContain(nameof(MainWindowViewModel.InitialLoadPercent), changes);
     }
 
     [Fact]

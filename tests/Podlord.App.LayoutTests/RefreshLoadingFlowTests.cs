@@ -11,6 +11,7 @@ public sealed class RefreshLoadingFlowTests : IDisposable
 
     public RefreshLoadingFlowTests()
     {
+        HeadlessAppBuilder.EnsureStarted();
         tempDir = Path.Combine(Path.GetTempPath(), "podlord-refreshflow-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
     }

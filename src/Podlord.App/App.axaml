@@ -340,24 +340,24 @@
         <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{StaticResource PlButtonBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, inset 0 -1 0 0 #66000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{StaticResource PlButtonHoverBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlAccentBrush}" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #30FFFFFF, 0 0 8 0 #33222222" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
             <Setter Property="TextElement.Foreground" Value="{StaticResource PlTextBrush}" />
         </Style>
         <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{StaticResource PlButtonPressedBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlAccentBrush}" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #99000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
 
         <Style Selector="Button.navButton.active /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{StaticResource PlButtonHoverBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlBlueGlowBrush}" />
-            <Setter Property="BoxShadow" Value="inset 0 0 0 1 #44FFFFFF, 0 0 8 0 #5572D7E7" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
             <Setter Property="TextElement.Foreground" Value="{StaticResource PlTextBrush}" />
         </Style>
 
@@ -490,7 +490,7 @@
         <Style Selector="Button.radarTile /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlBgPanelInsetBrush}" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #33FFFFFF" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Button.radarTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
@@ -668,10 +668,10 @@
             <Setter Property="MaxWidth" Value="600" />
         </Style>
         <Style Selector="Border.hudMenu">
-            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlPanelMaterialBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, 0 8 22 0 #AA000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
 
         <!-- Layered tactical panels: thin lines, subtle top highlight, dark inset depth. -->
@@ -679,13 +679,13 @@
             <Setter Property="Background" Value="{StaticResource PlPanelMaterialBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlBronzeBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, 0 10 26 0 #55000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.hudPanel.sidebarPanel">
-            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlSidebarMaterialBrush}" />
         </Style>
         <Style Selector="Border.hudPanelTextured">
-            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlSidebarMaterialBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlBronzeBrush}" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
@@ -693,7 +693,7 @@
             <Setter Property="Background" Value="{StaticResource PlRadarMaterialBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #2FFFFFFF, inset 0 0 0 1 #22000000, 0 0 14 0 #33000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.minimapGlass">
             <Setter Property="Background" Value="{StaticResource PlRadarWaterBrush}" />
@@ -703,25 +703,25 @@
         <Style Selector="Border.minimapGlass.idle">
             <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlBorderSubtleBrush}" />
-            <Setter Property="BoxShadow" Value="inset 0 0 18 0 #33000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.commandConsole">
-            <Setter Property="Background" Value="{StaticResource PlSidebarTextureBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlSidebarMaterialBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #1FFFFFFF" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.searchPanel">
             <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BoxShadow" Value="0 0 10 0 #22000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.selectedUnitCard">
-            <Setter Property="Background" Value="{StaticResource PlInspectorTextureBrush}" />
+            <Setter Property="Background" Value="{StaticResource PlInspectorMaterialBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
             <Setter Property="BorderThickness" Value="1,1,1,0" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF, 0 -8 24 0 #55000000" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.selectedUnitHeader">
             <Setter Property="Background" Value="{StaticResource PlHeaderPlaqueBrush}" />
@@ -732,7 +732,7 @@
             <Setter Property="Background" Value="{StaticResource PlPlaqueBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BoxShadow" Value="inset 0 1 0 0 #22FFFFFF" />
+            <Setter Property="BoxShadow" Value="0 0 0 0 #00000000" />
         </Style>
         <Style Selector="Border.warningPlaque">
             <Setter Property="Background" Value="{StaticResource PlPlaqueBrush}" />
