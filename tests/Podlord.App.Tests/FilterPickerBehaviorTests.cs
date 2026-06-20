@@ -486,6 +486,12 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("MergeCachedMetricItems", viewModel, StringComparison.Ordinal);
         Assert.Contains("CachedMetricItems", viewModel, StringComparison.Ordinal);
         Assert.Contains("MetricRowsFromDetails", viewModel, StringComparison.Ordinal);
+        Assert.Contains("RowHover: OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("Selection: OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("HoverTop: OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("private static string OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("Color=\"#17241D\"", app, StringComparison.Ordinal);
+        Assert.Contains("Color=\"#2B251A\"", app, StringComparison.Ordinal);
         Assert.Contains("HasCpuMetricBar", window + viewModel, StringComparison.Ordinal);
         Assert.Contains("HasMemoryMetricBar", window + viewModel, StringComparison.Ordinal);
         Assert.Contains("HasCpuMetricTextOnly", window + viewModel, StringComparison.Ordinal);
@@ -575,6 +581,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("block.IsPulseAnimation", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("block.IsSweepAnimation", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("block.IsOutlineAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("RequiresAnimationTimer", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsBlinkAnimation || block.IsPulseAnimation || block.IsSweepAnimation", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("context.DrawRectangle(block.Brush", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnounceBlink\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnouncePulse\"", window, StringComparison.Ordinal);
@@ -584,7 +592,18 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("IsVisible=\"{Binding IsPulseAnimation}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSweepAnimation}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsOutlineAnimation}\"", window, StringComparison.Ordinal);
-        Assert.Contains("context.PushOpacity(block.Opacity)", radarBlockLayer, StringComparison.Ordinal);
+        var resourceAnnouncementStyles = Regex.Matches(
+            app,
+            "<Style Selector=\"Border\\.resourceAnnounce(?:Pulse|Blink|Sweep)\">[\\s\\S]*?</Style>");
+        Assert.Equal(3, resourceAnnouncementStyles.Count);
+        foreach (Match style in resourceAnnouncementStyles)
+        {
+            Assert.DoesNotContain("<Style.Animations>", style.Value, StringComparison.Ordinal);
+            Assert.DoesNotContain("IterationCount=\"INFINITE\"", style.Value, StringComparison.Ordinal);
+            Assert.Contains("<Setter Property=\"Opacity\" Value=\"1\" />", style.Value, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("context.PushOpacity(block.Opacity)", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("public double Opacity => 1;", workspaceModels, StringComparison.Ordinal);
         Assert.Contains("Label=\"Name\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Reason\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Message\"", window, StringComparison.Ordinal);

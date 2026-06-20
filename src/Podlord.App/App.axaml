@@ -38,7 +38,7 @@
         <SolidColorBrush x:Key="PlRadarBgBrush" Color="#070B08" />
         <SolidColorBrush x:Key="PlTableBgBrush" Color="#060707" />
         <SolidColorBrush x:Key="PlTableHeaderBgBrush" Color="#181B1E" />
-        <SolidColorBrush x:Key="PlRowHoverBrush" Color="#2A735B35" />
+        <SolidColorBrush x:Key="PlRowHoverBrush" Color="#17241D" />
         <SolidColorBrush x:Key="PlBorderSubtleBrush" Color="#463A27" />
         <SolidColorBrush x:Key="PlBorderStrongBrush" Color="#9A743D" />
         <SolidColorBrush x:Key="PlAccentBrush" Color="#C69246" />
@@ -78,7 +78,7 @@
         <SolidColorBrush x:Key="PlGridBgBrush" Color="#060707" />
         <SolidColorBrush x:Key="PlGridHeaderBrush" Color="#181B1E" />
         <SolidColorBrush x:Key="PlGridLineBrush" Color="#463A27" />
-        <SolidColorBrush x:Key="PlSelectedRowBrush" Color="#26C69246" />
+        <SolidColorBrush x:Key="PlSelectedRowBrush" Color="#2B251A" />
         <SolidColorBrush x:Key="PlTooltipBgBrush" Color="#111315" />
         <SolidColorBrush x:Key="PlLogoSurfaceBrush" Color="#2AE8D3AC" />
 
@@ -98,7 +98,7 @@
             <GradientStop Offset="1" Color="#111315" />
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="PlButtonHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0" Color="#80735B35" />
+            <GradientStop Offset="0" Color="#342C20" />
             <GradientStop Offset="1" Color="#181B1E" />
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="PlButtonPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
@@ -475,7 +475,7 @@
             <Setter Property="Cursor" Value="Hand" />
         </Style>
         <Style Selector="Button.resourceLink:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#22FFD66B" />
+            <Setter Property="Background" Value="#24351C" />
         </Style>
         <Style Selector="Button.resourceLink:pointerover TextBlock">
             <Setter Property="TextDecorations" Value="Underline" />
@@ -572,56 +572,17 @@
             <Setter Property="Opacity" Value="0.72" />
         </Style>
         <Style Selector="Border.resourceAnnouncePulse">
-            <Setter Property="Opacity" Value="0" />
-            <Style.Animations>
-                <Animation Duration="0:0:1.1" IterationCount="4">
-                    <KeyFrame Cue="0%">
-                        <Setter Property="Opacity" Value="0" />
-                    </KeyFrame>
-                    <KeyFrame Cue="45%">
-                        <Setter Property="Opacity" Value="1" />
-                    </KeyFrame>
-                    <KeyFrame Cue="100%">
-                        <Setter Property="Opacity" Value="0" />
-                    </KeyFrame>
-                </Animation>
-            </Style.Animations>
+            <Setter Property="Opacity" Value="1" />
         </Style>
         <Style Selector="Border.resourceAnnounceBlink">
-            <Setter Property="Opacity" Value="0" />
-            <Style.Animations>
-                <Animation Duration="0:0:0.62" IterationCount="INFINITE">
-                    <KeyFrame Cue="0%">
-                        <Setter Property="Opacity" Value="0.18" />
-                    </KeyFrame>
-                    <KeyFrame Cue="48%">
-                        <Setter Property="Opacity" Value="1" />
-                    </KeyFrame>
-                    <KeyFrame Cue="100%">
-                        <Setter Property="Opacity" Value="0.18" />
-                    </KeyFrame>
-                </Animation>
-            </Style.Animations>
+            <Setter Property="Opacity" Value="1" />
         </Style>
         <Style Selector="Border.resourceAnnounceSweep">
-            <Setter Property="Opacity" Value="0" />
-            <Style.Animations>
-                <Animation Duration="0:0:1.1" IterationCount="INFINITE">
-                    <KeyFrame Cue="0%">
-                        <Setter Property="Opacity" Value="0" />
-                    </KeyFrame>
-                    <KeyFrame Cue="45%">
-                        <Setter Property="Opacity" Value="1" />
-                    </KeyFrame>
-                    <KeyFrame Cue="100%">
-                        <Setter Property="Opacity" Value="0" />
-                    </KeyFrame>
-                </Animation>
-            </Style.Animations>
+            <Setter Property="Opacity" Value="1" />
         </Style>
         <Style Selector="Border.resourceAnnounceOutline">
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Opacity" Value="0.75" />
+            <Setter Property="Opacity" Value="1" />
         </Style>
         <Style Selector="Button.radarSourceButton">
             <Setter Property="Padding" Value="4,2" />

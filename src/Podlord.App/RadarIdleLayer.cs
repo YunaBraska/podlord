@@ -1,11 +1,13 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
 namespace Podlord.App;
 
+[ExcludeFromCodeCoverage(Justification = "Custom Avalonia paint control; behavior is covered through visual model and headless UI tests while pixel rendering is verified manually.")]
 public sealed class RadarIdleLayer : Control
 {
     public static readonly StyledProperty<IEnumerable<RadarIdleCellViewModel>?> CellsProperty =

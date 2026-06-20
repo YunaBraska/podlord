@@ -403,13 +403,13 @@ public static class AppThemeCatalog
             RadarGlass: radarGlass,
             ProgressTrack: WithAlpha(borderSubtle, 82),
             ProgressFill: accent,
-            RowHover: WithAlpha(accentMuted, 42),
-            Selection: WithAlpha(accent, 38),
+            RowHover: OpaqueMix(bgInset, accentMuted, 0.22),
+            Selection: OpaqueMix(bgInset, accent, 0.28),
             TextureBase: textMain,
             IdentityColors: [accentGlow, accent, success, textMuted, borderStrong, accentMuted],
             ButtonTop: bgRaised,
             ButtonBottom: bgPanel,
-            HoverTop: WithAlpha(accentMuted, 128),
+            HoverTop: OpaqueMix(bgRaised, accentMuted, 0.38),
             HoverBottom: bgRaised,
             PressedTop: bgInset,
             PressedBottom: bgPanel,
@@ -492,6 +492,20 @@ public static class AppThemeCatalog
         var parsed = Color.Parse(color);
         var normalized = Math.Clamp(alpha, 0, 255);
         return $"#{normalized:X2}{parsed.R:X2}{parsed.G:X2}{parsed.B:X2}";
+    }
+
+    private static string OpaqueMix(string baseColor, string overlayColor, double overlayWeight)
+    {
+        var background = Color.Parse(baseColor);
+        var foreground = Color.Parse(overlayColor);
+        var weight = Math.Clamp(overlayWeight, 0, 1);
+        var inverse = 1 - weight;
+        return $"#{Mix(background.R, foreground.R, inverse, weight):X2}{Mix(background.G, foreground.G, inverse, weight):X2}{Mix(background.B, foreground.B, inverse, weight):X2}";
+    }
+
+    private static int Mix(byte background, byte foreground, double inverse, double weight)
+    {
+        return Math.Clamp((int)Math.Round(background * inverse + foreground * weight), 0, 255);
     }
 
     private sealed record ThemeEntry(string Name, string Id, string ShortCode, Palette Dark, Palette Light);

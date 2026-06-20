@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -8,6 +9,7 @@ using Avalonia.Threading;
 
 namespace Podlord.App;
 
+[ExcludeFromCodeCoverage(Justification = "Custom Avalonia paint control; behavior is covered through visual model and headless UI tests while pixel rendering is verified manually.")]
 public sealed class RadarBlockLayer : Control
 {
     public static readonly StyledProperty<IEnumerable<RadarBlockViewModel>?> BlocksProperty =
@@ -217,7 +219,7 @@ public sealed class RadarBlockLayer : Control
     {
         var shouldRun = isAttached
                         && IsVisible
-                        && Blocks?.Any(block => block.IsAnnouncing) == true;
+                        && Blocks?.Any(RequiresAnimationTimer) == true;
         if (shouldRun)
         {
             if (!animationTimer.IsEnabled)
@@ -231,6 +233,11 @@ public sealed class RadarBlockLayer : Control
         animationTimer.Stop();
     }
 
+    private static bool RequiresAnimationTimer(RadarBlockViewModel block)
+    {
+        return block.IsBlinkAnimation || block.IsPulseAnimation || block.IsSweepAnimation;
+    }
+
     private void DrawBlock(DrawingContext context, RadarBlockViewModel block)
     {
         var rect = new Rect(block.X, block.Y, block.Width, block.Height);
@@ -239,7 +246,6 @@ public sealed class RadarBlockLayer : Control
             return;
         }
 
-        using var opacity = context.PushOpacity(block.Opacity);
         context.DrawRectangle(block.Brush, new Pen(block.Brush, Math.Max(0.5, block.BorderThickness)), rect);
         if (ReferenceEquals(block, hoveredBlock))
         {

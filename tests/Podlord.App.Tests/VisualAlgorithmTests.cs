@@ -318,7 +318,7 @@ public sealed class VisualAlgorithmTests
 
         Assert.Equal("Pod/api", block.ToolTipTitle);
         Assert.Equal("cluster", block.ToolTipNamespace);
-        Assert.Equal(0.72, block.Opacity);
+        Assert.Equal(1, block.Opacity);
         Assert.Equal(0.5, block.BorderThickness);
 
         block.SetSelected(true);

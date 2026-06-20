@@ -643,6 +643,21 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Ci_workflow_tests_pull_requests_without_duplicate_feature_branch_push_runs()
+    {
+        var root = LocateProjectRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "ci.yml"));
+
+        Assert.Contains("pull_request:", workflow, StringComparison.Ordinal);
+        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.Contains("workflow_call:", workflow, StringComparison.Ordinal);
+        Assert.Contains("push:\n    branches:\n      - dev", workflow, StringComparison.Ordinal);
+        Assert.Contains("group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("branches-ignore:", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.event.pull_request.number || github.ref", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Yaml_editor_restores_to_new_resource_yaml_when_yaml_tab_inactive()
     {
         var directory = TempDirectory();
@@ -2713,7 +2728,7 @@ public sealed class AppBehaviorTests
             "background",
             isDimmed: true);
         Assert.True(dimmedBlock.IsDimmed);
-        Assert.Equal(0.72, dimmedBlock.Opacity);
+        Assert.Equal(1, dimmedBlock.Opacity);
         Assert.Equal(0.5, dimmedBlock.BorderThickness);
 
         var task = new PortForwardTaskViewModel("pf-1", "dev", "Pod", "api", "payments", 8080, 18080, "native websocket port-forward", "Ready");
@@ -3248,10 +3263,10 @@ public sealed class AppBehaviorTests
 
         Assert.False(graph.IsSearchMatch);
         Assert.False(graph.IsCurrentSearchMatch);
-        Assert.Equal(SolidColorBrush.Parse("#18000000").ToString(), graph.BackgroundBrush.ToString());
+        Assert.Equal(SolidColorBrush.Parse("#060707").ToString(), graph.BackgroundBrush.ToString());
 
         graph.IsSearchMatch = true;
-        Assert.Equal(SolidColorBrush.Parse("#26141D12").ToString(), graph.BackgroundBrush.ToString());
+        Assert.Equal(SolidColorBrush.Parse("#132119").ToString(), graph.BackgroundBrush.ToString());
 
         var portForward = new PortForwardTaskViewModel("pf-2", "dev", "Pod", "api", "payments", 80, 18080, "native", "Ready");
         Assert.Equal("Ready", portForward.Status);
