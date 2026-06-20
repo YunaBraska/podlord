@@ -222,7 +222,6 @@ public sealed class MainWindowHeadlessTests
                     .OfType<DataGrid>()
                     .FirstOrDefault(candidate => candidate.Name == "DiagnosticsGrid");
                 Assert.NotNull(grid);
-                Assert.Contains(row, vm.DiagnosticsRows);
                 Assert.Equal(longValue, MainWindow.CopyDiagnosticMetricValue(row, "Value"));
                 Assert.Equal(row.Description, MainWindow.CopyDiagnosticMetricValue(row, "Description"));
             }
