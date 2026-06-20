@@ -318,8 +318,7 @@ spec:
 """;
 
         await cluster.ApplyManifestTextAsync(crdManifest);
-        await cluster.KubectlOutputAsync(
-            ["wait", "--for=condition=Established", $"crd/{crdName}", "--timeout=120s"]);
+        await cluster.WaitForCustomResourceDefinitionEstablishedAsync(crdName);
         await cluster.ApplyManifestTextAsync(resourceManifest);
 
         try
@@ -626,6 +625,44 @@ public sealed class K3dClusterFixture : IAsyncLifetime
         kubectlArgs.AddRange(arguments);
         var result = await RunProcess("kubectl", kubectlArgs, TimeSpan.FromMinutes(2), true).ConfigureAwait(false);
         return result.Stdout.Trim();
+    }
+
+    public async Task WaitForCustomResourceDefinitionEstablishedAsync(string name)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var result = await RunProcess(
+                "kubectl",
+                ["--kubeconfig", KubeconfigPath, "get", "crd", name, "-o", "json"],
+                TimeSpan.FromSeconds(20),
+                throwOnError: false).ConfigureAwait(false);
+            if (result.ExitCode == 0 && CustomResourceDefinitionIsEstablished(result.Stdout))
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException($"CRD {name} did not become Established within 2 minutes.");
+    }
+
+    private static bool CustomResourceDefinitionIsEstablished(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("status", out var status)
+            || !status.TryGetProperty("conditions", out var conditions)
+            || conditions.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        return conditions.EnumerateArray().Any(condition =>
+            condition.TryGetProperty("type", out var type)
+            && string.Equals(type.GetString(), "Established", StringComparison.Ordinal)
+            && condition.TryGetProperty("status", out var state)
+            && string.Equals(state.GetString(), "True", StringComparison.Ordinal));
     }
 
     private async Task ApplyScenarioManifest()
