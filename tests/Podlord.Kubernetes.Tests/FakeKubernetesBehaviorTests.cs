@@ -69,6 +69,27 @@ public sealed class FakeKubernetesBehaviorTests
     }
 
     [Fact]
+    public async Task Resource_service_reports_estimated_cache_size_after_public_resource_list()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
+        var handler = new RecordingHandler(_ => JsonResponse(NamespaceList()));
+        var service = Service(kubeconfig, handler, directory);
+
+        var empty = service.CacheTelemetry();
+        var snapshot = await service.ListClusterResourcesAsync(new ResourceQuery(Kind: "\"Namespace\"", ForceRefresh: true));
+        var cache = service.CacheTelemetry();
+
+        Assert.Equal(0, empty.TotalEntries);
+        Assert.Equal(0, empty.EstimatedBytes);
+        Assert.Single(snapshot.Rows);
+        Assert.True(cache.ListEntries > 0);
+        Assert.True(cache.TotalEntries > 0);
+        Assert.True(cache.EstimatedBytes > 0);
+    }
+
+    [Fact]
     public async Task Native_port_forward_resolves_service_to_running_pod_and_starts_local_listener_without_kubectl()
     {
         var directory = TempDirectory();
@@ -178,6 +199,34 @@ printf '%s' '{"status":{"token":"exec-token","expirationTimestamp":"2099-01-01T0
     }
 
     [Fact]
+    public void Exec_credential_path_includes_common_macos_gui_missing_tool_locations()
+    {
+        var augmented = KubeconfigAuthLoader.AugmentedExecPath("/usr/bin:/bin");
+        var entries = augmented.Split(Path.PathSeparator);
+
+        Assert.Contains("/usr/bin", entries);
+        Assert.Contains("/bin", entries);
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Contains("/opt/homebrew/bin", entries);
+            Assert.Contains("/usr/local/bin", entries);
+        }
+    }
+
+    [Fact]
+    public void Exec_credential_command_resolution_finds_command_from_augmented_path()
+    {
+        var directory = TempDirectory();
+        var commandName = OperatingSystem.IsWindows() ? "podlord-token.exe" : "podlord-token";
+        var commandPath = Path.Combine(directory, commandName);
+        File.WriteAllText(commandPath, string.Empty);
+
+        var resolved = KubeconfigAuthLoader.ResolveExecCommand(commandName, directory);
+
+        Assert.Equal(commandPath, resolved);
+    }
+
+    [Fact]
     public async Task Resource_service_caches_exec_credential_token_when_expiration_is_missing()
     {
         if (OperatingSystem.IsWindows())
@@ -253,6 +302,7 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
     [InlineData("missing-sections")]
     [InlineData("missing-token-file")]
     [InlineData("exec-missing-command")]
+    [InlineData("exec-command-not-found")]
     public async Task Resource_service_treats_missing_or_unusable_auth_as_anonymous(string mode)
     {
         var directory = TempDirectory();
@@ -279,6 +329,10 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         else if (mode == "exec-missing-command")
         {
             File.WriteAllText(kubeconfig, Kubeconfig("exec-missing-command", directory));
+        }
+        else if (mode == "exec-command-not-found")
+        {
+            File.WriteAllText(kubeconfig, Kubeconfig("exec-command-not-found", directory));
         }
 
         var handler = new RecordingHandler(_ => JsonResponse(NamespaceList()));
@@ -527,6 +581,10 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
 
         Assert.Equal(PodlordErrorKind.KubernetesConfig, error.Kind);
         Assert.Empty(handler.Requests);
+        var audit = Assert.Single(service.RequestAuditLog());
+        Assert.Equal("APP", audit.Method);
+        Assert.Contains("client setup", audit.Path, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cluster server is missing", audit.Outcome, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1529,6 +1587,10 @@ users:
 """,
             "exec-missing-command" => """
     exec: {}
+""",
+            "exec-command-not-found" => """
+    exec:
+      command: definitely-not-a-podlord-command
 """,
             _ => "    token: static-token"
         };

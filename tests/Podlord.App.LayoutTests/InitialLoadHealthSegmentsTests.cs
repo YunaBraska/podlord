@@ -9,6 +9,7 @@ public sealed class InitialLoadHealthSegmentsTests : IDisposable
 
     public InitialLoadHealthSegmentsTests()
     {
+        HeadlessAppBuilder.EnsureStarted();
         tempDir = Path.Combine(Path.GetTempPath(), "podlord-loadhealth-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
     }

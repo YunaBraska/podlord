@@ -1,5 +1,6 @@
 using System.Text;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography.X509Certificates;
@@ -140,17 +141,23 @@ internal static class KubeconfigAuthLoader
     private static ExecTokenCacheEntry? RunExecCredential(IDictionary<object, object?> exec, string command)
     {
         using var process = new Process();
-        process.StartInfo.FileName = command;
         foreach (var arg in Args(exec))
         {
             process.StartInfo.ArgumentList.Add(arg);
         }
 
+        var execPath = AugmentedExecPath(Environment.GetEnvironmentVariable("PATH"));
+        process.StartInfo.Environment["PATH"] = execPath;
         foreach (var (name, value) in Env(exec))
         {
             process.StartInfo.Environment[name] = value;
         }
 
+        execPath = AugmentedExecPath(process.StartInfo.Environment.TryGetValue("PATH", out var configuredPath)
+            ? configuredPath
+            : execPath);
+        process.StartInfo.Environment["PATH"] = execPath;
+        process.StartInfo.FileName = ResolveExecCommand(command, execPath);
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
         process.StartInfo.UseShellExecute = false;
@@ -182,9 +189,104 @@ internal static class KubeconfigAuthLoader
                 : DateTimeOffset.UtcNow.AddMinutes(15);
             return new ExecTokenCacheEntry(token, validUntil);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or JsonException or Win32Exception)
         {
             return null;
+        }
+    }
+
+    internal static string AugmentedExecPath(string? configuredPath)
+    {
+        var entries = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        AddPath(configuredPath);
+        AddPath(Environment.GetEnvironmentVariable("PATH"));
+        foreach (var path in DefaultExecSearchPaths())
+        {
+            AddPath(path);
+        }
+
+        return string.Join(Path.PathSeparator, entries);
+
+        void AddPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            foreach (var entry in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (seen.Add(entry))
+                {
+                    entries.Add(entry);
+                }
+            }
+        }
+    }
+
+    internal static string ResolveExecCommand(string command, string searchPath)
+    {
+        if (Path.IsPathRooted(command)
+            || command.Contains(Path.DirectorySeparatorChar)
+            || (Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar && command.Contains(Path.AltDirectorySeparatorChar)))
+        {
+            return command;
+        }
+
+        foreach (var directory in searchPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            foreach (var candidate in ExecutableCandidates(directory, command))
+            {
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return command;
+    }
+
+    private static IReadOnlyList<string> DefaultExecSearchPaths()
+    {
+        var paths = new List<string>();
+        if (!OperatingSystem.IsWindows())
+        {
+            paths.AddRange([
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/opt/local/bin",
+                "/usr/bin",
+                "/bin",
+                "/usr/sbin",
+                "/sbin"
+            ]);
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(home))
+        {
+            paths.Add(Path.Combine(home, ".local", "bin"));
+            paths.Add(Path.Combine(home, "bin"));
+        }
+
+        return paths;
+    }
+
+    private static IEnumerable<string> ExecutableCandidates(string directory, string command)
+    {
+        yield return Path.Combine(directory, command);
+        if (!OperatingSystem.IsWindows() || Path.HasExtension(command))
+        {
+            yield break;
+        }
+
+        foreach (var extension in (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT")
+                     .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            yield return Path.Combine(directory, command + extension.ToLowerInvariant());
+            yield return Path.Combine(directory, command + extension.ToUpperInvariant());
         }
     }
 

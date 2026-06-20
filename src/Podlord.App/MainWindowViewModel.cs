@@ -25,6 +25,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly AppState state;
     private readonly KubernetesResourceService service;
     private readonly IAlertSoundPlayer soundPlayer;
+    private readonly IReleaseUpdateChecker releaseUpdateChecker;
     private readonly List<FlatResourceRow> cachedRows = [];
     private readonly List<FileSystemWatcher> sourceWatchers = [];
     private readonly HashSet<RadarLifeCell> radarLifeCells = [];
@@ -61,6 +62,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string importPath = string.Empty;
     private string pasteName = string.Empty;
     private string pasteKubeconfig = string.Empty;
+    private string notifiedFooterLine = string.Empty;
+    private string notifiedLastSyncedLabel = string.Empty;
+    private double notifiedInitialLoadPercent = double.NaN;
     private string sessionDisplayName = string.Empty;
     private string sessionNamespaceScope = string.Empty;
     private string commandText = string.Empty;
@@ -170,11 +174,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly HashSet<string> previousVisibleResourceAlertIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> resourceAlertBlinkUntil = new(StringComparer.Ordinal);
 
-    public MainWindowViewModel(AppState state, KubernetesResourceService service, IAlertSoundPlayer? soundPlayer = null)
+    public MainWindowViewModel(
+        AppState state,
+        KubernetesResourceService service,
+        IAlertSoundPlayer? soundPlayer = null,
+        IReleaseUpdateChecker? releaseUpdateChecker = null)
     {
         this.state = state;
         this.service = service;
         this.soundPlayer = soundPlayer ?? AlertSoundPlayerFactory.CreateDefault();
+        this.releaseUpdateChecker = releaseUpdateChecker ?? ReleaseUpdateCheckerFactory.CreateDefault();
         portForwardStatusLine = T("status.portForwardLine");
         statusLine = T("status.appReady");
         detailYaml = T("status.selectResource");
@@ -332,6 +341,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<ImportedContextRowViewModel> ImportedContextRows { get; } = [];
 
     public ObservableCollection<RequestAuditRow> RequestAuditRows { get; } = [];
+
+    public ObservableCollection<DiagnosticMetricRow> DiagnosticsRows { get; } = [];
 
     private string sourcePickerSearch = string.Empty;
 
@@ -518,6 +529,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string NavSearchText => T("nav.search");
 
+    public bool IsUpdateAvailable => state.Settings().UpdateCheck is { IsNewer: true } update
+                                     && !string.IsNullOrWhiteSpace(UpdateDownloadUrl(update));
+
+    public string UpdateDownloadGlyph => "⇩";
+
+    public string UpdateDownloadTooltipText
+    {
+        get
+        {
+            var update = state.Settings().UpdateCheck;
+            return update is { IsNewer: true }
+                ? TF("update.downloadTip", update.LatestVersion, update.CurrentVersion)
+                : T("update.noUpdate");
+        }
+    }
+
     public string NavResourcesText => T("nav.resources");
 
     public string NavGraphText => T("nav.graph");
@@ -589,6 +616,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public string SettingsAboutText => T("settings.about");
 
     public string AboutTaglineText => T("about.tagline");
+
+    public string AboutVersionText => TF("about.version", GitHubReleaseUpdateChecker.CurrentApplicationVersion());
 
     public string AboutSupportHeadingText => T("about.supportHeading");
 
@@ -754,6 +783,80 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         catch (System.ComponentModel.Win32Exception) { }
     }
 
+    public void OpenUpdateDownload()
+    {
+        if (state.Settings().UpdateCheck is not { IsNewer: true } update)
+        {
+            return;
+        }
+
+        OpenAboutUrl(UpdateDownloadUrl(update));
+    }
+
+    public async Task CheckForUpdatesIfDueAsync(bool force = false)
+    {
+        var settings = state.Settings();
+        var now = DateTimeOffset.UtcNow;
+        if (!force && !ShouldCheckForUpdates(settings.UpdateCheck, now))
+        {
+            NotifyUpdateCheckChanged();
+            return;
+        }
+
+        try
+        {
+            var currentVersion = GitHubReleaseUpdateChecker.CurrentApplicationVersion();
+            var update = await releaseUpdateChecker.CheckLatestAsync(currentVersion, lifetime.Token).ConfigureAwait(true);
+            var previous = state.Settings().UpdateCheck;
+            var next = PreserveVisibleUpdateOnFailure(previous, update);
+            state.SaveSettings(state.Settings() with { UpdateCheck = next });
+            NotifyUpdateCheckChanged();
+            if (next.IsNewer)
+            {
+                StatusLine = TF("update.availableStatus", next.LatestVersion);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    internal static bool ShouldCheckForUpdates(UpdateCheckState? update, DateTimeOffset now)
+    {
+        if (update is null || string.IsNullOrWhiteSpace(update.LastCheckedAt))
+        {
+            return true;
+        }
+
+        if (!DateTimeOffset.TryParse(update.LastCheckedAt, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var lastChecked))
+        {
+            return true;
+        }
+
+        return now - lastChecked >= TimeSpan.FromDays(7);
+    }
+
+    private static UpdateCheckState PreserveVisibleUpdateOnFailure(UpdateCheckState? previous, UpdateCheckState update)
+    {
+        return !string.IsNullOrWhiteSpace(update.Error) && previous is { IsNewer: true }
+            ? previous with { LastCheckedAt = update.LastCheckedAt, Error = update.Error }
+            : update;
+    }
+
+    private static string UpdateDownloadUrl(UpdateCheckState update)
+    {
+        return string.IsNullOrWhiteSpace(update.DownloadUrl) ? update.ReleaseUrl : update.DownloadUrl;
+    }
+
+    private void NotifyUpdateCheckChanged()
+    {
+        OnPropertyChanged(nameof(IsUpdateAvailable));
+        OnPropertyChanged(nameof(UpdateDownloadTooltipText));
+    }
+
     public static IReadOnlyList<string> AboutBlockCatalog => AboutBlocks;
 
     public string ThemeText => T("settings.theme");
@@ -784,10 +887,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string AnimationHelpText => T("settings.animationHelp");
 
-    public string RadarAutoFollowText => T("settings.radarAutoFollow");
-
-    public string RadarAutoFollowHelpText => T("settings.radarAutoFollowHelp");
-
     public string RadarScreensaverText => T("settings.radarScreensaver");
 
     public string GraphicsHelpText => T("settings.graphicsHelp");
@@ -808,7 +907,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string RequestAuditTitleText => T("settings.requestAuditTitle");
 
+    public string RuntimeDiagnosticsTitleText => T("settings.runtimeDiagnosticsTitle");
+
     public string AlertActiveText => T("alert.active");
+
+    public string AlertActivationText => T("alert.activation");
 
     public string AlertTypeText => T("alert.type");
 
@@ -1301,6 +1404,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(IsSourcesNavActive));
                 OnPropertyChanged(nameof(IsSettingsNavActive));
                 NotifyResourceLogoStateChanged();
+                if (IsSettingsWorkspace)
+                {
+                    UpdateRequestAuditRows();
+                    UpdateDiagnosticsRows();
+                }
             }
         }
     }
@@ -1866,12 +1974,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string RadarWaterSpeedLabel => $"{state.Settings().RadarWaterSpeed}%";
 
-    public bool RadarAutoFollowAlertsSetting
-    {
-        get => state.Settings().RadarAutoFollowAlerts;
-        set => SaveSettings(state.Settings() with { RadarAutoFollowAlerts = value });
-    }
-
     public string InactiveSyncSetting
     {
         get => InactiveSyncLabel(state.Settings().InactiveSyncMinutes);
@@ -1924,6 +2026,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             // Home kubeconfig is an automatic default import when present.
         }
+        catch (Exception ex)
+        {
+            RecordAppDiagnostic("startup home kubeconfig", ex.Message);
+        }
 
         foreach (var path in paths.Where(File.Exists))
         {
@@ -1934,6 +2040,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             catch (PodlordException ex)
             {
                 StatusLine = ex.Message;
+                RecordAppDiagnostic($"startup kubeconfig / {Path.GetFileName(path)}", ex.Message);
+            }
+            catch (Exception ex)
+            {
+                StatusLine = ex.Message;
+                RecordAppDiagnostic($"startup kubeconfig / {Path.GetFileName(path)}", ex.Message);
             }
         }
 
@@ -1944,9 +2056,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         catch (PodlordException ex)
         {
             StatusLine = ex.Message;
+            RecordAppDiagnostic("startup source refresh", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            StatusLine = ex.Message;
+            RecordAppDiagnostic("startup source refresh", ex.Message);
         }
 
         ReloadSessions();
+        if (SelectedSession is not null)
+        {
+            ScheduleRefresh();
+        }
     }
 
     public void ReloadSessions()
@@ -3331,8 +3453,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 sessionSyncedAt[sessionId] = lastSyncedAt.Value;
             }
 
-            OnPropertyChanged(nameof(LastSyncedLabel));
-            OnPropertyChanged(nameof(FooterLine));
+            NotifyLastSyncedLabelIfChanged();
+            NotifyFooterLineIfChanged();
             if (!background || rendered)
             {
                 StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
@@ -3341,6 +3463,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         catch (PodlordException ex)
         {
             StatusLine = ex.Message;
+            RecordAppDiagnostic("resource refresh", ex.Message);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            StatusLine = $"Could not refresh {SelectedSession?.DisplayName ?? "selected source"}: {ex.Message}";
+            RecordAppDiagnostic("resource refresh", ex.Message);
         }
         finally
         {
@@ -4295,24 +4426,53 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void TogglePortSearch()
     {
-        IsPortSearchOpen = !IsPortSearchOpen;
+        if (IsPortSearchOpen)
+        {
+            IsPortSearchOpen = false;
+            PortQuickSearch = string.Empty;
+            return;
+        }
+
+        IsPortSearchOpen = true;
     }
 
     public void ToggleResourceSearch()
     {
-        IsResourceSearchOpen = !IsResourceSearchOpen;
+        if (IsResourceSearchOpen)
+        {
+            IsResourceSearchOpen = false;
+            ResourceQuickSearch = string.Empty;
+            Search = string.Empty;
+            return;
+        }
+
+        IsResourceSearchOpen = true;
         UpdateResourceSearchMatches(resetToFirstMatch: true);
     }
 
     public void ToggleGraphSearch()
     {
-        IsGraphSearchOpen = !IsGraphSearchOpen;
+        if (IsGraphSearchOpen)
+        {
+            IsGraphSearchOpen = false;
+            GraphSearch = string.Empty;
+            return;
+        }
+
+        IsGraphSearchOpen = true;
         UpdateGraphSearchMatches(resetToFirstMatch: true);
     }
 
     public void ToggleEventSearch()
     {
-        IsEventSearchOpen = !IsEventSearchOpen;
+        if (IsEventSearchOpen)
+        {
+            IsEventSearchOpen = false;
+            EventQuickSearch = string.Empty;
+            return;
+        }
+
+        IsEventSearchOpen = true;
         UpdateEventSearchMatches(resetToFirstMatch: true);
     }
 
@@ -4430,13 +4590,50 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         DisposeSourceWatchers();
         lifetime.Dispose();
         soundPlayer.Dispose();
+        releaseUpdateChecker.Dispose();
     }
 
     private void RefreshTimeLabels()
     {
-        OnPropertyChanged(nameof(LastSyncedLabel));
-        OnPropertyChanged(nameof(FooterLine));
+        NotifyLastSyncedLabelIfChanged();
+        NotifyFooterLineIfChanged();
         UpdateRequestWorkLabel();
+    }
+
+    private void NotifyLastSyncedLabelIfChanged()
+    {
+        var value = LastSyncedLabel;
+        if (string.Equals(notifiedLastSyncedLabel, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        notifiedLastSyncedLabel = value;
+        OnPropertyChanged(nameof(LastSyncedLabel));
+    }
+
+    private void NotifyFooterLineIfChanged()
+    {
+        var value = FooterLine;
+        if (string.Equals(notifiedFooterLine, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        notifiedFooterLine = value;
+        OnPropertyChanged(nameof(FooterLine));
+    }
+
+    private void NotifyInitialLoadPercentIfChanged()
+    {
+        var value = InitialLoadPercent;
+        if (Math.Abs(notifiedInitialLoadPercent - value) < 0.01)
+        {
+            return;
+        }
+
+        notifiedInitialLoadPercent = value;
+        OnPropertyChanged(nameof(InitialLoadPercent));
     }
 
     private void RestoreSelectedSessionCache()
@@ -4447,8 +4644,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             RenderSnapshot(EmptySnapshot());
             IsRefreshing = false;
             StatusLine = T("source.noSession");
-            OnPropertyChanged(nameof(LastSyncedLabel));
-            OnPropertyChanged(nameof(FooterLine));
+            NotifyLastSyncedLabelIfChanged();
+            NotifyFooterLineIfChanged();
             return;
         }
 
@@ -4469,8 +4666,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 NotifyResourceLogoStateChanged();
             }
 
-            OnPropertyChanged(nameof(LastSyncedLabel));
-            OnPropertyChanged(nameof(FooterLine));
+            NotifyLastSyncedLabelIfChanged();
+            NotifyFooterLineIfChanged();
         }
         catch (PodlordException ex)
         {
@@ -4562,6 +4759,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private IReadOnlyList<FlatResourceRow> ApplyEventLifecycle(IReadOnlyList<FlatResourceRow> rows)
     {
+        if (!rows.Any(row => row.Kind == "Event"))
+        {
+            return rows;
+        }
+
         var lookup = rows
             .Where(row => row.Kind != "Event")
             .GroupBy(ResourceLookupKey, StringComparer.Ordinal)
@@ -4736,6 +4938,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             new DetailItem("Namespace", row.Namespace ?? "cluster"),
             new DetailItem("Cluster", row.Cluster),
             new DetailItem("Status", row.Status),
+            new DetailItem("Created", row.CreatedDisplay),
             new DetailItem("Ready", row.Ready),
             new DetailItem("Restarts", row.Restarts.ToString()),
             new DetailItem("CPU", row.CpuSummaryDisplay),
@@ -6408,7 +6611,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(RadarWaterSpeedSetting));
         OnPropertyChanged(nameof(RadarWaterSpeedPercent));
         OnPropertyChanged(nameof(RadarWaterSpeedLabel));
-        OnPropertyChanged(nameof(RadarAutoFollowAlertsSetting));
         OnPropertyChanged(nameof(InactiveSyncSetting));
         OnPropertyChanged(nameof(InactiveSyncDescription));
         OnPropertyChanged(nameof(RequestHardLimitSetting));
@@ -6440,12 +6642,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             OnPropertyChanged(property);
         }
+
+        UpdateDiagnosticsRows();
     }
 
     private static readonly string[] LocalizedProperties =
     [
         nameof(ResourceLogoTitle),
         nameof(ResourceLogoMessage),
+        nameof(UpdateDownloadTooltipText),
         nameof(NavSearchText),
         nameof(NavResourcesText),
         nameof(NavGraphText),
@@ -6481,6 +6686,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(SettingsWorkspaceText),
         nameof(SettingsPrivacyText),
         nameof(SettingsDiagnosticsText),
+        nameof(SettingsAboutText),
+        nameof(AboutTaglineText),
+        nameof(AboutVersionText),
+        nameof(AboutSupportHeadingText),
+        nameof(AboutProjectHeadingText),
+        nameof(AboutStarRepoButtonText),
+        nameof(AboutGithubRepoButtonText),
+        nameof(AboutCreateIssueButtonText),
+        nameof(AboutSponsorsButtonText),
+        nameof(AboutBuyMeACoffeeButtonText),
+        nameof(AboutKoFiButtonText),
+        nameof(AboutLiberapayButtonText),
         nameof(ThemeText),
         nameof(VariantText),
         nameof(ThemeIntensityText),
@@ -6495,8 +6712,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(RadarWaterSpeedHelpText),
         nameof(AnimationIntensityText),
         nameof(AnimationHelpText),
-        nameof(RadarAutoFollowText),
-        nameof(RadarAutoFollowHelpText),
         nameof(RadarScreensaverText),
         nameof(GraphicsHelpText),
         nameof(InactiveBackgroundSyncText),
@@ -6506,8 +6721,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(WorkspaceRestoreHelpText),
         nameof(TelemetryText),
         nameof(TelemetryHelpText),
+        nameof(RuntimeDiagnosticsTitleText),
         nameof(RequestAuditTitleText),
         nameof(AlertActiveText),
+        nameof(AlertActivationText),
         nameof(AlertTypeText),
         nameof(AlertNameText),
         nameof(AlertDescriptionText),
@@ -6709,7 +6926,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateResourceSearchMatches(resetToFirstMatch: true);
         UpdateEventSearchMatches(resetToFirstMatch: true);
         OnPropertyChanged(nameof(ResourceCountLabel));
-        OnPropertyChanged(nameof(FooterLine));
+        NotifyFooterLineIfChanged();
         OnPropertyChanged(nameof(IsInitialLoading));
         NotifyResourceLogoStateChanged();
         StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
@@ -7808,10 +8025,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             previousVisibleRadarAlertIds.Add(id);
         }
 
-        if (RadarIdleCells.Count > 0)
-        {
-            RadarIdleCells.Clear();
-        }
+        ClearRadarIdleData();
 
         IsRadarIdle = false;
         if (wasIdle)
@@ -8077,7 +8291,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         RadarFilterScope filterScope,
         IReadOnlyDictionary<string, RadarPoint> worldCenters)
     {
-        if (!state.Settings().RadarAutoFollowAlerts || rows.Count == 0 || worldCenters.Count == 0)
+        if (rows.Count == 0 || worldCenters.Count == 0)
         {
             lastRadarAutoFollowAlertKey = string.Empty;
             radarAutoFollowQueue.Clear();
@@ -8098,8 +8312,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 .Where(row => worldCenters.ContainsKey(row.Id))
                 .Where(row => filterScope.IsActive(row))
                 .Where(row => !IsVirtualRadarResource(row))
-                .OrderBy(row => RadarAlertPriority(row, ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold)))
-                .ThenBy(row => RadarAlertAge(row))
+                .OrderBy(row => RadarAlertAgeForOrdering(row).HasValue ? 0 : 1)
+                .ThenByDescending(row => RadarAlertAgeForOrdering(row) ?? TimeSpan.Zero)
+                .ThenBy(row => RadarAlertPriority(row, ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold)))
                 .ThenBy(row => row.Cluster, StringComparer.Ordinal)
                 .ThenBy(row => row.Namespace ?? string.Empty, StringComparer.Ordinal)
                 .ThenBy(row => row.Kind, StringComparer.Ordinal)
@@ -8111,9 +8326,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             }
 
             var candidateKey = $"{match.RuleId}:{AlertRowsStateKey(targets)}";
-            var worldCenter = new RadarPoint(
-                targets.Average(row => worldCenters[row.Id].X),
-                targets.Average(row => worldCenters[row.Id].Y));
+            var oldestTarget = targets[0];
+            var worldCenter = worldCenters[oldestTarget.Id];
             var zoomPercent = match.Actions is { RadarZoom: true, RadarZoomPercent: > 0 }
                 ? match.Actions.RadarZoomPercent
                 : 100;
@@ -8158,11 +8372,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return 2;
     }
 
-    private static TimeSpan RadarAlertAge(FlatResourceRow row)
+    private static TimeSpan? RadarAlertAgeForOrdering(FlatResourceRow row)
     {
         return ResourceFilterMatcher.ParseHumanDuration(row.LastChange)
-               ?? ResourceFilterMatcher.ParseHumanDuration(row.Age)
-               ?? TimeSpan.MaxValue;
+               ?? ResourceFilterMatcher.ParseHumanDuration(row.Age);
     }
 
     private bool StartRadarAutoFollow(RadarPoint worldCenter, double targetZoom)
@@ -8472,6 +8685,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         if (!IsRadarIdle || !state.Settings().ScreensaverEnabled || !isWindowVisible)
         {
             radarIdleTimer.Stop();
+            ClearRadarIdleData();
         }
         else if (!radarIdleTimer.IsEnabled)
         {
@@ -8501,6 +8715,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RenderRadarLife(bool reset)
     {
+        if (!state.Settings().ScreensaverEnabled || !isWindowVisible)
+        {
+            ClearRadarIdleData();
+            if (RadarBlocks.Count > 0)
+            {
+                RadarBlocks.Clear();
+            }
+
+            IsRadarIdle = true;
+            return;
+        }
+
         if (reset || radarLifeCells.Count == 0)
         {
             ResetRadarLife();
@@ -8548,6 +8774,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             RadarIdleCells.Add(desired[index]);
         }
+    }
+
+    private void ClearRadarIdleData()
+    {
+        radarIdleTimer.Stop();
+        if (RadarIdleCells.Count > 0)
+        {
+            RadarIdleCells.Clear();
+        }
+
+        if (radarLifeCells.Count > 0)
+        {
+            radarLifeCells.Clear();
+        }
+
+        radarLifeGeneration = 0;
+        radarLifeStagnantGenerations = 0;
+        radarLifeLastSignature = string.Empty;
+        radarLifeSeenSignatures.Clear();
     }
 
     private void ResetRadarLife()
@@ -8943,6 +9188,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private DateTimeOffset initialLoadStartedAt = DateTimeOffset.MinValue;
     private int initialLoadExpectedTotal;
 
+    private void RecordAppDiagnostic(string scope, string outcome)
+    {
+        service.RecordDiagnostic(scope, outcome);
+        UpdateRequestAuditRows();
+        NotifyFooterLineIfChanged();
+    }
+
     private void UpdateRequestWorkLabel()
     {
         var telemetry = service.RequestTelemetry();
@@ -8955,13 +9207,36 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             UpdateLoadingHealthSegments();
         }
-        OnPropertyChanged(nameof(InitialLoadPercent));
+        NotifyInitialLoadPercentIfChanged();
         if (IsSettingsWorkspace)
         {
             UpdateRequestAuditRows();
         }
 
-        OnPropertyChanged(nameof(FooterLine));
+        if (IsSettingsWorkspace)
+        {
+            UpdateDiagnosticsRows();
+        }
+        NotifyFooterLineIfChanged();
+    }
+
+    internal static string FormatCacheSize(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0B";
+        }
+
+        string[] units = ["B", "KB", "MB", "GB"];
+        var unit = 0;
+        double value = bytes;
+        while (value >= 1024d && unit < units.Length - 1)
+        {
+            value /= 1024d;
+            unit++;
+        }
+
+        return unit == 0 ? $"{bytes}B" : $"{value.ToString("0.#", CultureInfo.InvariantCulture)}{units[unit]}";
     }
 
     public double InitialLoadPercent
@@ -9057,6 +9332,60 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 entry.Outcome))
             .ToList();
         SyncCollection(RequestAuditRows, rows);
+    }
+
+    private void UpdateDiagnosticsRows()
+    {
+        SyncCollection(DiagnosticsRows, BuildDiagnosticsRows());
+    }
+
+    private IReadOnlyList<DiagnosticMetricRow> BuildDiagnosticsRows()
+    {
+        var telemetry = service.RequestTelemetry();
+        var cache = service.CacheTelemetry();
+        var process = Process.GetCurrentProcess();
+        try
+        {
+            var gcInfo = GC.GetGCMemoryInfo();
+            var workingSet = TryReadProcessValue(() => process.WorkingSet64);
+            var privateMemory = TryReadProcessValue(() => process.PrivateMemorySize64);
+            var threadCount = TryReadProcessValue(() => process.Threads.Count);
+            return
+            [
+                new DiagnosticMetricRow(T("diagnostics.cache"), FormatCacheSize(cache.EstimatedBytes), TF("diagnostics.cacheDescription", cache.TotalEntries, cache.ListEntries, cache.DetailEntries, cache.LogEntries, cache.PulseEntries)),
+                new DiagnosticMetricRow(T("diagnostics.processRss"), FormatOptionalCacheSize(workingSet, T("diagnostics.unknown")), T("diagnostics.processRssDescription")),
+                new DiagnosticMetricRow(T("diagnostics.privateMemory"), FormatOptionalCacheSize(privateMemory, T("diagnostics.unknown")), T("diagnostics.privateMemoryDescription")),
+                new DiagnosticMetricRow(T("diagnostics.managedHeap"), FormatCacheSize(GC.GetTotalMemory(false)), T("diagnostics.managedHeapDescription")),
+                new DiagnosticMetricRow(T("diagnostics.gcHeap"), FormatCacheSize(gcInfo.HeapSizeBytes), TF("diagnostics.gcHeapDescription", FormatCacheSize(gcInfo.FragmentedBytes))),
+                new DiagnosticMetricRow(T("diagnostics.uiRows"), $"{Resources.Count}/{cachedRows.Count}", T("diagnostics.uiRowsDescription")),
+                new DiagnosticMetricRow(T("diagnostics.radarBlocks"), RadarBlocks.Count.ToString(CultureInfo.InvariantCulture), T("diagnostics.radarBlocksDescription")),
+                new DiagnosticMetricRow(T("diagnostics.auditRows"), RequestAuditRows.Count.ToString(CultureInfo.InvariantCulture), T("diagnostics.auditRowsDescription")),
+                new DiagnosticMetricRow(T("diagnostics.requests"), $"{telemetry.RequestsLastMinute}/min, {telemetry.RequestsPerSecond:0.00}/s", TF("diagnostics.requestsDescription", telemetry.QueuedRequests)),
+                new DiagnosticMetricRow(T("diagnostics.threads"), threadCount?.ToString(CultureInfo.InvariantCulture) ?? T("diagnostics.unknown"), T("diagnostics.threadsDescription"))
+            ];
+        }
+        finally
+        {
+            process.Dispose();
+        }
+    }
+
+    private static T? TryReadProcessValue<T>(Func<T> read)
+        where T : struct
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string FormatOptionalCacheSize(long? bytes, string unknown)
+    {
+        return bytes is null ? unknown : FormatCacheSize(bytes.Value);
     }
 
     private static NamespaceScope ScopeFromText(string text)

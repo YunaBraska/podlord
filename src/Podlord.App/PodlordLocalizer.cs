@@ -61,6 +61,7 @@ public static class PodlordLocalizer
         ["about.githubRepo"] = "GitHub repository",
         ["about.createIssue"] = "Create issue",
         ["about.tagline"] = "A desktop console for the kubernetes-aware human.",
+        ["about.version"] = "Version {0}",
         ["about.sponsors"] = "GitHub Sponsors",
         ["about.bmc"] = "Buy Me a Coffee",
         ["about.kofi"] = "Ko-fi",
@@ -100,6 +101,9 @@ public static class PodlordLocalizer
         ["tooltip.variantHelp"] = "Dark and light variants use the same layout and readable density.",
         ["tooltip.themeIntensityHelp"] = "Subtle keeps the app professional; medium and arcade increase glow and texture.",
         ["tooltip.portForwardColumn"] = "Port forward",
+        ["update.downloadTip"] = "Download Podlord {0}. Current version: {1}.",
+        ["update.noUpdate"] = "Podlord is up to date.",
+        ["update.availableStatus"] = "Podlord {0} is available.",
         ["status.portForwardLine"] = "Local computer port forwards to the selected cluster resource port.",
         ["status.appReady"] = "Podlord native command center ready.",
         ["status.selectResource"] = "Select a resource.",
@@ -132,7 +136,30 @@ public static class PodlordLocalizer
         ["settings.workspaceRestoreHelp"] = "Workspace restore reopens the last operational layout after restart.",
         ["settings.telemetry"] = "Telemetry enabled",
         ["settings.telemetryHelp"] = "Telemetry should remain disabled unless a future explicit privacy design is added.",
+        ["settings.runtimeDiagnosticsTitle"] = "RUNTIME DIAGNOSTICS",
         ["settings.requestAuditTitle"] = "REQUEST AUDIT LOG (LAST 256)",
+        ["diagnostics.cache"] = "Cache",
+        ["diagnostics.cacheDescription"] = "{0} cached Kubernetes snapshot(s): {1} lists, {2} details, {3} logs, {4} metric pulses.",
+        ["diagnostics.processRss"] = "Process RSS",
+        ["diagnostics.processRssDescription"] = "Resident memory reported by the operating system for the Podlord process.",
+        ["diagnostics.privateMemory"] = "Private memory",
+        ["diagnostics.privateMemoryDescription"] = "Private process memory reported by the operating system.",
+        ["diagnostics.managedHeap"] = "Managed heap",
+        ["diagnostics.managedHeapDescription"] = "Live managed memory known to the .NET garbage collector.",
+        ["diagnostics.gcHeap"] = "GC heap",
+        ["diagnostics.gcHeapDescription"] = "Fragmented: {0}.",
+        ["diagnostics.uiRows"] = "UI rows",
+        ["diagnostics.uiRowsDescription"] = "Visible resource rows compared with resource rows held for the active view.",
+        ["diagnostics.radarBlocks"] = "Radar blocks",
+        ["diagnostics.radarBlocksDescription"] = "Currently rendered radar objects.",
+        ["diagnostics.auditRows"] = "Audit rows",
+        ["diagnostics.auditRowsDescription"] = "Visible request audit entries retained in diagnostics.",
+        ["diagnostics.requests"] = "Requests",
+        ["diagnostics.requestsDescription"] = "Queued: {0}.",
+        ["diagnostics.threads"] = "Threads",
+        ["diagnostics.threadsDescription"] = "Operating-system threads owned by the process.",
+        ["diagnostics.unknown"] = "unknown",
+        ["alert.activation"] = "On",
         ["alert.active"] = "Active",
         ["alert.type"] = "Type",
         ["alert.name"] = "Name",
@@ -435,6 +462,7 @@ public static class PodlordLocalizer
         Dictionary<string, string> translations)
     {
         ApplyCommonUiPack(languageCode, translations);
+        ApplyDiagnosticUiPack(languageCode, translations);
         ApplyAlertUiPack(languageCode, translations);
         foreach (var (key, value) in English)
         {
@@ -457,6 +485,80 @@ public static class PodlordLocalizer
         {
             translations.TryAdd(keys[index], values[index]);
         }
+    }
+
+    private static void ApplyDiagnosticUiPack(string languageCode, IDictionary<string, string> translations)
+    {
+        if (!DiagnosticUiPacks().TryGetValue(languageCode, out var values))
+        {
+            return;
+        }
+
+        foreach (var (key, value) in values)
+        {
+            translations.TryAdd(key, value);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> DiagnosticPack(
+        string runtimeTitle,
+        string cache,
+        string cacheDescription,
+        string processRss,
+        string processRssDescription,
+        string privateMemory,
+        string privateMemoryDescription,
+        string managedHeap,
+        string managedHeapDescription,
+        string gcHeap,
+        string gcHeapDescription,
+        string uiRows,
+        string uiRowsDescription,
+        string radarBlocks,
+        string radarBlocksDescription,
+        string auditRows,
+        string auditRowsDescription,
+        string requests,
+        string requestsDescription,
+        string threads,
+        string threadsDescription,
+        string unknown)
+    {
+        var keys = new[]
+        {
+            "settings.runtimeDiagnosticsTitle",
+            "diagnostics.cache",
+            "diagnostics.cacheDescription",
+            "diagnostics.processRss",
+            "diagnostics.processRssDescription",
+            "diagnostics.privateMemory",
+            "diagnostics.privateMemoryDescription",
+            "diagnostics.managedHeap",
+            "diagnostics.managedHeapDescription",
+            "diagnostics.gcHeap",
+            "diagnostics.gcHeapDescription",
+            "diagnostics.uiRows",
+            "diagnostics.uiRowsDescription",
+            "diagnostics.radarBlocks",
+            "diagnostics.radarBlocksDescription",
+            "diagnostics.auditRows",
+            "diagnostics.auditRowsDescription",
+            "diagnostics.requests",
+            "diagnostics.requestsDescription",
+            "diagnostics.threads",
+            "diagnostics.threadsDescription",
+            "diagnostics.unknown"
+        };
+        var values = new[]
+        {
+            runtimeTitle, cache, cacheDescription, processRss, processRssDescription, privateMemory,
+            privateMemoryDescription, managedHeap, managedHeapDescription, gcHeap, gcHeapDescription,
+            uiRows, uiRowsDescription, radarBlocks, radarBlocksDescription, auditRows, auditRowsDescription,
+            requests, requestsDescription, threads, threadsDescription, unknown
+        };
+        return keys
+            .Zip(values, static (key, value) => new KeyValuePair<string, string>(key, value))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
     }
 
     private static string[] CommonUiPackKeys() =>
@@ -522,6 +624,33 @@ public static class PodlordLocalizer
             .Zip(values, static (key, value) => new KeyValuePair<string, string>(key, value))
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
     }
+
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> DiagnosticUiPacks() =>
+        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = DiagnosticPack("LAUFZEITDIAGNOSE", "Cache", "{0} Kubernetes-Snapshot(s) im Cache: {1} Listen, {2} Details, {3} Logs, {4} Metrik-Pulse.", "Prozess-RSS", "Residenter Speicher, den das Betriebssystem für den Podlord-Prozess meldet.", "Privater Speicher", "Privater Prozessspeicher, den das Betriebssystem meldet.", "Verwalteter Heap", "Live-Speicher, den der .NET Garbage Collector kennt.", "GC-Heap", "Fragmentiert: {0}.", "UI-Zeilen", "Sichtbare Ressourcenzeilen im Vergleich zu Zeilen der aktiven Ansicht.", "Radarblöcke", "Aktuell gerenderte Radarobjekte.", "Audit-Zeilen", "Sichtbare Anfrage-Audit-Einträge in der Diagnose.", "Anfragen", "In Warteschlange: {0}.", "Threads", "Betriebssystem-Threads des Prozesses.", "unbekannt"),
+            ["es"] = DiagnosticPack("DIAGNÓSTICO DE EJECUCIÓN", "Caché", "{0} instantánea(s) de Kubernetes en caché: {1} listas, {2} detalles, {3} logs, {4} pulsos métricos.", "RSS del proceso", "Memoria residente informada por el sistema operativo para Podlord.", "Memoria privada", "Memoria privada del proceso informada por el sistema operativo.", "Heap administrado", "Memoria activa conocida por el recolector de basura de .NET.", "Heap GC", "Fragmentado: {0}.", "Filas UI", "Filas visibles comparadas con las filas de la vista activa.", "Bloques radar", "Objetos de radar renderizados actualmente.", "Filas de auditoría", "Entradas visibles de auditoría de solicitudes retenidas en diagnóstico.", "Solicitudes", "En cola: {0}.", "Hilos", "Hilos del sistema operativo del proceso.", "desconocido"),
+            ["fr"] = DiagnosticPack("DIAGNOSTIC D'EXÉCUTION", "Cache", "{0} instantané(s) Kubernetes en cache : {1} listes, {2} détails, {3} logs, {4} impulsions métriques.", "RSS processus", "Mémoire résidente signalée par le système d'exploitation pour Podlord.", "Mémoire privée", "Mémoire privée du processus signalée par le système.", "Tas managé", "Mémoire active connue du ramasse-miettes .NET.", "Tas GC", "Fragmenté : {0}.", "Lignes UI", "Lignes visibles comparées aux lignes de la vue active.", "Blocs radar", "Objets radar actuellement rendus.", "Lignes audit", "Entrées visibles d'audit des requêtes conservées en diagnostic.", "Requêtes", "En file : {0}.", "Threads", "Threads système détenus par le processus.", "inconnu"),
+            ["pt-BR"] = DiagnosticPack("DIAGNÓSTICO DE EXECUÇÃO", "Cache", "{0} snapshot(s) Kubernetes em cache: {1} listas, {2} detalhes, {3} logs, {4} pulsos métricos.", "RSS do processo", "Memória residente informada pelo sistema operacional para o Podlord.", "Memória privada", "Memória privada do processo informada pelo sistema operacional.", "Heap gerenciado", "Memória ativa conhecida pelo coletor de lixo .NET.", "Heap GC", "Fragmentado: {0}.", "Linhas da UI", "Linhas visíveis comparadas com as linhas da visão ativa.", "Blocos do radar", "Objetos de radar renderizados agora.", "Linhas de auditoria", "Entradas visíveis de auditoria de requisições mantidas no diagnóstico.", "Requisições", "Na fila: {0}.", "Threads", "Threads do sistema operacional do processo.", "desconhecido"),
+            ["it"] = DiagnosticPack("DIAGNOSTICA RUNTIME", "Cache", "{0} snapshot Kubernetes in cache: {1} liste, {2} dettagli, {3} log, {4} impulsi metrici.", "RSS processo", "Memoria residente riportata dal sistema operativo per Podlord.", "Memoria privata", "Memoria privata del processo riportata dal sistema operativo.", "Heap gestito", "Memoria attiva nota al garbage collector .NET.", "Heap GC", "Frammentato: {0}.", "Righe UI", "Righe visibili confrontate con quelle della vista attiva.", "Blocchi radar", "Oggetti radar renderizzati al momento.", "Righe audit", "Voci visibili dell'audit richieste conservate in diagnostica.", "Richieste", "In coda: {0}.", "Thread", "Thread del sistema operativo del processo.", "sconosciuto"),
+            ["nl"] = DiagnosticPack("RUNTIME-DIAGNOSE", "Cache", "{0} Kubernetes-snapshot(s) in cache: {1} lijsten, {2} details, {3} logs, {4} metriekpulsen.", "Proces-RSS", "Resident geheugen gemeld door het besturingssysteem voor Podlord.", "Privégeheugen", "Privé procesgeheugen gemeld door het besturingssysteem.", "Beheerde heap", "Live geheugen bekend bij de .NET garbage collector.", "GC-heap", "Gefragmenteerd: {0}.", "UI-rijen", "Zichtbare resource-rijen vergeleken met de actieve view.", "Radarblokken", "Momenteel gerenderde radarobjecten.", "Auditrijen", "Zichtbare aanvraag-audititems in diagnose.", "Aanvragen", "In wachtrij: {0}.", "Threads", "Besturingssysteemthreads van het proces.", "onbekend"),
+            ["pl"] = DiagnosticPack("DIAGNOSTYKA WYKONANIA", "Pamięć podręczna", "{0} snapshot(y) Kubernetes w pamięci: {1} listy, {2} szczegóły, {3} logi, {4} impulsy metryk.", "RSS procesu", "Pamięć rezydentna zgłaszana przez system operacyjny dla Podlord.", "Pamięć prywatna", "Prywatna pamięć procesu zgłaszana przez system.", "Sterta zarządzana", "Aktywna pamięć znana garbage collectorowi .NET.", "Sterta GC", "Fragmentacja: {0}.", "Wiersze UI", "Widoczne wiersze zasobów względem wierszy aktywnego widoku.", "Bloki radaru", "Aktualnie renderowane obiekty radaru.", "Wiersze audytu", "Widoczne wpisy audytu żądań w diagnostyce.", "Żądania", "W kolejce: {0}.", "Wątki", "Wątki systemu operacyjnego procesu.", "nieznane"),
+            ["ru"] = DiagnosticPack("ДИАГНОСТИКА ВЫПОЛНЕНИЯ", "Кэш", "{0} снимок(ов) Kubernetes в кэше: {1} списков, {2} деталей, {3} логов, {4} импульсов метрик.", "RSS процесса", "Резидентная память процесса Podlord по данным ОС.", "Частная память", "Частная память процесса по данным ОС.", "Управляемая куча", "Активная память, известная сборщику мусора .NET.", "Куча GC", "Фрагментация: {0}.", "Строки UI", "Видимые строки ресурсов относительно строк активного вида.", "Блоки радара", "Текущие отображаемые объекты радара.", "Строки аудита", "Видимые записи аудита запросов в диагностике.", "Запросы", "В очереди: {0}.", "Потоки", "Потоки ОС, принадлежащие процессу.", "неизвестно"),
+            ["uk"] = DiagnosticPack("ДІАГНОСТИКА ВИКОНАННЯ", "Кеш", "{0} знімок(ів) Kubernetes у кеші: {1} списків, {2} деталей, {3} логів, {4} імпульсів метрик.", "RSS процесу", "Резидентна пам'ять Podlord за даними ОС.", "Приватна пам'ять", "Приватна пам'ять процесу за даними ОС.", "Керована купа", "Активна пам'ять, відома збирачу сміття .NET.", "Купа GC", "Фрагментація: {0}.", "Рядки UI", "Видимі рядки ресурсів відносно рядків активного виду.", "Блоки радара", "Поточні відрендерені об'єкти радара.", "Рядки аудиту", "Видимі записи аудиту запитів у діагностиці.", "Запити", "У черзі: {0}.", "Потоки", "Потоки ОС цього процесу.", "невідомо"),
+            ["tr"] = DiagnosticPack("ÇALIŞMA TANI BİLGİSİ", "Önbellek", "{0} Kubernetes anlık görüntüsü önbellekte: {1} liste, {2} detay, {3} log, {4} metrik darbesi.", "Süreç RSS", "İşletim sisteminin Podlord süreci için bildirdiği yerleşik bellek.", "Özel bellek", "İşletim sisteminin bildirdiği özel süreç belleği.", "Yönetilen heap", ".NET çöp toplayıcısının bildiği canlı yönetilen bellek.", "GC heap", "Parçalı: {0}.", "UI satırları", "Görünen kaynak satırları ile etkin görünüm satırları karşılaştırması.", "Radar blokları", "Şu anda çizilen radar nesneleri.", "Denetim satırları", "Tanıda tutulan görünür istek denetim kayıtları.", "İstekler", "Kuyrukta: {0}.", "Threadler", "Sürecin işletim sistemi threadleri.", "bilinmiyor"),
+            ["ar"] = DiagnosticPack("تشخيص وقت التشغيل", "الذاكرة المؤقتة", "{0} لقطة Kubernetes مخزنة: {1} قوائم، {2} تفاصيل، {3} سجلات، {4} نبضات قياس.", "RSS العملية", "الذاكرة المقيمة التي يبلغ عنها نظام التشغيل لعملية Podlord.", "ذاكرة خاصة", "ذاكرة العملية الخاصة التي يبلغ عنها نظام التشغيل.", "الكومة المدارة", "الذاكرة الحية المعروفة لمجمع قمامة .NET.", "كومة GC", "التجزئة: {0}.", "صفوف الواجهة", "صفوف الموارد المرئية مقارنة بصفوف العرض النشط.", "كتل الرادار", "كائنات الرادار المعروضة حاليًا.", "صفوف التدقيق", "إدخالات تدقيق الطلبات المرئية المحفوظة في التشخيص.", "الطلبات", "في الانتظار: {0}.", "الخيوط", "خيوط نظام التشغيل المملوكة للعملية.", "غير معروف"),
+            ["hi"] = DiagnosticPack("रUNTIME निदान", "कैश", "{0} Kubernetes स्नैपशॉट कैश में: {1} सूचियाँ, {2} विवरण, {3} लॉग, {4} मीट्रिक पल्स.", "प्रोसेस RSS", "Podlord प्रोसेस के लिए ऑपरेटिंग सिस्टम द्वारा बताई गई रेजिडेंट मेमोरी.", "निजी मेमोरी", "ऑपरेटिंग सिस्टम द्वारा बताई गई निजी प्रोसेस मेमोरी.", "मैनेज्ड हीप", ".NET garbage collector को ज्ञात लाइव मैनेज्ड मेमोरी.", "GC हीप", "खंडित: {0}.", "UI पंक्तियाँ", "सक्रिय दृश्य की पंक्तियों की तुलना में दिखने वाली संसाधन पंक्तियाँ.", "रडार ब्लॉक", "अभी रेंडर हो रहे रडार ऑब्जेक्ट.", "ऑडिट पंक्तियाँ", "निदान में रखी गई दिखने वाली अनुरोध ऑडिट प्रविष्टियाँ.", "अनुरोध", "कतार में: {0}.", "थ्रेड", "प्रोसेस के ऑपरेटिंग सिस्टम थ्रेड.", "अज्ञात"),
+            ["bn"] = DiagnosticPack("রানটাইম ডায়াগনস্টিক", "ক্যাশ", "{0} Kubernetes স্ন্যাপশট ক্যাশে: {1} তালিকা, {2} বিস্তারিত, {3} লগ, {4} মেট্রিক পালস।", "প্রসেস RSS", "Podlord প্রসেসের জন্য অপারেটিং সিস্টেমের রিপোর্ট করা রেসিডেন্ট মেমরি।", "প্রাইভেট মেমরি", "অপারেটিং সিস্টেমের রিপোর্ট করা প্রাইভেট প্রসেস মেমরি।", "ম্যানেজড হিপ", ".NET garbage collector-এর জানা লাইভ ম্যানেজড মেমরি।", "GC হিপ", "ফ্র্যাগমেন্টেড: {0}।", "UI সারি", "অ্যাক্টিভ ভিউয়ের সারির তুলনায় দৃশ্যমান রিসোর্স সারি।", "রাডার ব্লক", "বর্তমানে রেন্ডার করা রাডার অবজেক্ট।", "অডিট সারি", "ডায়াগনস্টিকে রাখা দৃশ্যমান রিকোয়েস্ট অডিট এন্ট্রি।", "রিকোয়েস্ট", "কিউতে: {0}।", "থ্রেড", "প্রসেসের অপারেটিং সিস্টেম থ্রেড।", "অজানা"),
+            ["pa"] = DiagnosticPack("ਰਨਟਾਈਮ ਡਾਇਗਨੋਸਟਿਕ", "ਕੈਸ਼", "{0} Kubernetes ਸਨੈਪਸ਼ਾਟ ਕੈਸ਼ ਵਿੱਚ: {1} ਲਿਸਟਾਂ, {2} ਵੇਰਵੇ, {3} ਲਾਗ, {4} ਮੈਟ੍ਰਿਕ ਪਲਸ।", "ਪ੍ਰੋਸੈਸ RSS", "Podlord ਪ੍ਰੋਸੈਸ ਲਈ ਓਪਰੇਟਿੰਗ ਸਿਸਟਮ ਵੱਲੋਂ ਦੱਸੀ ਰੇਜ਼ਿਡੈਂਟ ਮੈਮੋਰੀ।", "ਨਿੱਜੀ ਮੈਮੋਰੀ", "ਓਪਰੇਟਿੰਗ ਸਿਸਟਮ ਵੱਲੋਂ ਦੱਸੀ ਨਿੱਜੀ ਪ੍ਰੋਸੈਸ ਮੈਮੋਰੀ।", "ਮੈਨੇਜਡ ਹੀਪ", ".NET garbage collector ਨੂੰ ਪਤਾ ਲਾਈਵ ਮੈਨੇਜਡ ਮੈਮੋਰੀ।", "GC ਹੀਪ", "ਫ੍ਰੈਗਮੈਂਟਡ: {0}।", "UI ਕਤਾਰਾਂ", "ਐਕਟਿਵ ਵਿਊ ਦੀਆਂ ਕਤਾਰਾਂ ਨਾਲ ਤੁਲਨਾ ਵਿੱਚ ਦਿਖਣ ਵਾਲੀਆਂ ਰਿਸੋਰਸ ਕਤਾਰਾਂ।", "ਰਡਾਰ ਬਲਾਕ", "ਇਸ ਵੇਲੇ ਰੈਂਡਰ ਕੀਤੇ ਰਡਾਰ ਆਬਜੈਕਟ।", "ਆਡਿਟ ਕਤਾਰਾਂ", "ਡਾਇਗਨੋਸਟਿਕ ਵਿੱਚ ਰੱਖੀਆਂ ਦਿਖਣ ਵਾਲੀਆਂ ਬੇਨਤੀ ਆਡਿਟ ਐਂਟਰੀਆਂ।", "ਬੇਨਤੀਆਂ", "ਕਤਾਰ ਵਿੱਚ: {0}।", "ਥ੍ਰੈਡ", "ਪ੍ਰੋਸੈਸ ਦੇ ਓਪਰੇਟਿੰਗ ਸਿਸਟਮ ਥ੍ਰੈਡ।", "ਅਣਜਾਣ"),
+            ["ur"] = DiagnosticPack("رن ٹائم تشخیص", "کیش", "{0} Kubernetes اسنیپ شاٹ کیش میں: {1} فہرستیں، {2} تفصیلات، {3} لاگز، {4} میٹرک پلس۔", "پروسیس RSS", "Podlord پروسیس کے لیے آپریٹنگ سسٹم کی بتائی ریزیڈنٹ میموری۔", "نجی میموری", "آپریٹنگ سسٹم کی بتائی نجی پروسیس میموری۔", "مینجڈ ہیپ", ".NET garbage collector کو معلوم لائیو مینجڈ میموری۔", "GC ہیپ", "فریگمنٹڈ: {0}۔", "UI قطاریں", "فعال منظر کی قطاروں کے مقابلے میں نظر آنے والی ریسورس قطاریں۔", "رڈار بلاکس", "اس وقت رینڈر ہونے والی رڈار اشیا۔", "آڈٹ قطاریں", "تشخیص میں رکھی ہوئی نظر آنے والی درخواست آڈٹ اندراجات۔", "درخواستیں", "قطار میں: {0}۔", "تھریڈز", "پروسیس کے آپریٹنگ سسٹم تھریڈز۔", "نامعلوم"),
+            ["id"] = DiagnosticPack("DIAGNOSTIK RUNTIME", "Cache", "{0} snapshot Kubernetes di cache: {1} daftar, {2} detail, {3} log, {4} pulsa metrik.", "RSS proses", "Memori resident yang dilaporkan sistem operasi untuk Podlord.", "Memori privat", "Memori privat proses yang dilaporkan sistem operasi.", "Heap terkelola", "Memori aktif yang diketahui garbage collector .NET.", "Heap GC", "Terfragmentasi: {0}.", "Baris UI", "Baris resource terlihat dibanding baris tampilan aktif.", "Blok radar", "Objek radar yang sedang dirender.", "Baris audit", "Entri audit permintaan terlihat yang disimpan di diagnostik.", "Permintaan", "Antrean: {0}.", "Thread", "Thread sistem operasi milik proses.", "tidak diketahui"),
+            ["vi"] = DiagnosticPack("CHẨN ĐOÁN RUNTIME", "Bộ nhớ đệm", "{0} ảnh chụp Kubernetes trong cache: {1} danh sách, {2} chi tiết, {3} log, {4} nhịp metric.", "RSS tiến trình", "Bộ nhớ resident do hệ điều hành báo cho Podlord.", "Bộ nhớ riêng", "Bộ nhớ riêng của tiến trình do hệ điều hành báo.", "Heap quản lý", "Bộ nhớ sống mà bộ gom rác .NET biết.", "Heap GC", "Phân mảnh: {0}.", "Dòng UI", "Dòng resource đang thấy so với dòng của view active.", "Khối radar", "Đối tượng radar đang được vẽ.", "Dòng audit", "Mục audit yêu cầu đang thấy được giữ trong chẩn đoán.", "Yêu cầu", "Đang chờ: {0}.", "Luồng", "Luồng hệ điều hành của tiến trình.", "không rõ"),
+            ["th"] = DiagnosticPack("การวินิจฉัยรันไทม์", "แคช", "มี snapshot Kubernetes ในแคช {0} รายการ: {1} ลิสต์, {2} รายละเอียด, {3} ล็อก, {4} พัลส์เมตริก", "RSS โปรเซส", "หน่วยความจำ resident ที่ระบบปฏิบัติการรายงานสำหรับ Podlord", "หน่วยความจำส่วนตัว", "หน่วยความจำส่วนตัวของโปรเซสที่ระบบปฏิบัติการรายงาน", "ฮีปจัดการ", "หน่วยความจำสดที่ .NET garbage collector รู้จัก", "ฮีป GC", "กระจายตัว: {0}", "แถว UI", "แถว resource ที่เห็นเทียบกับแถวของมุมมองที่ใช้งาน", "บล็อกเรดาร์", "วัตถุเรดาร์ที่กำลังเรนเดอร์", "แถว audit", "รายการ audit คำขอที่มองเห็นและเก็บใน diagnostics", "คำขอ", "ในคิว: {0}", "เธรด", "เธรดระบบปฏิบัติการของโปรเซส", "ไม่ทราบ"),
+            ["zh-Hans"] = DiagnosticPack("运行时诊断", "缓存", "{0} 个 Kubernetes 快照已缓存：{1} 个列表，{2} 个详情，{3} 个日志，{4} 个指标脉冲。", "进程 RSS", "操作系统报告的 Podlord 进程驻留内存。", "私有内存", "操作系统报告的进程私有内存。", "托管堆", ".NET 垃圾回收器已知的实时托管内存。", "GC 堆", "碎片：{0}。", "UI 行", "可见资源行与当前视图持有行的对比。", "雷达块", "当前渲染的雷达对象。", "审计行", "诊断中保留的可见请求审计条目。", "请求", "排队：{0}。", "线程", "该进程拥有的操作系统线程。", "未知"),
+            ["ja"] = DiagnosticPack("ランタイム診断", "キャッシュ", "{0} 件の Kubernetes スナップショットをキャッシュ: {1} リスト、{2} 詳細、{3} ログ、{4} メトリックパルス。", "プロセス RSS", "OS が報告した Podlord プロセスの常駐メモリ。", "プライベートメモリ", "OS が報告したプロセスのプライベートメモリ。", "管理ヒープ", ".NET ガベージコレクターが把握しているライブ管理メモリ。", "GC ヒープ", "断片化: {0}。", "UI 行", "表示中のリソース行とアクティブビュー保持行の比較。", "レーダーブロック", "現在描画されているレーダーオブジェクト。", "監査行", "診断に保持されている表示中のリクエスト監査項目。", "リクエスト", "キュー: {0}。", "スレッド", "プロセスが所有する OS スレッド。", "不明"),
+            ["ko"] = DiagnosticPack("런타임 진단", "캐시", "{0}개 Kubernetes 스냅샷 캐시됨: 목록 {1}, 상세 {2}, 로그 {3}, 메트릭 펄스 {4}.", "프로세스 RSS", "운영체제가 보고한 Podlord 프로세스의 상주 메모리.", "전용 메모리", "운영체제가 보고한 프로세스 전용 메모리.", "관리 힙", ".NET 가비지 수집기가 알고 있는 활성 관리 메모리.", "GC 힙", "조각화: {0}.", "UI 행", "활성 보기의 행과 비교한 표시 리소스 행.", "레이더 블록", "현재 렌더링된 레이더 객체.", "감사 행", "진단에 보관된 표시 요청 감사 항목.", "요청", "대기열: {0}.", "스레드", "프로세스가 소유한 운영체제 스레드.", "알 수 없음"),
+            ["sv"] = DiagnosticPack("KÖRNINGSDIAGNOSTIK", "Cache", "{0} Kubernetes-snapshot(s) i cache: {1} listor, {2} detaljer, {3} loggar, {4} metrikpulser.", "Process-RSS", "Resident minne som operativsystemet rapporterar för Podlord.", "Privat minne", "Privat processminne som operativsystemet rapporterar.", "Hanterad heap", "Levande hanterat minne som .NET:s garbage collector känner till.", "GC-heap", "Fragmenterat: {0}.", "UI-rader", "Synliga resursrader jämfört med rader i aktiv vy.", "Radarblock", "Radarobjekt som renderas just nu.", "Auditrader", "Synliga begärans-auditposter sparade i diagnostik.", "Begäranden", "I kö: {0}.", "Trådar", "Operativsystemstrådar som ägs av processen.", "okänt")
+        };
 
     private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> AlertUiPacks() =>
         new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)

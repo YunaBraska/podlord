@@ -124,7 +124,7 @@ jobs:
         run: scripts/test.sh
 
   build:
-    name: Build ${{ matrix.rid }}
+    name: Build ${{ matrix.asset }}
     needs:
       - plan
       - test
@@ -136,36 +136,47 @@ jobs:
       matrix:
         include:
           - rid: linux-x64
+            asset: linux-x64
             os: ubuntu-24.04
             package: tar.gz
           - rid: linux-arm64
+            asset: linux-arm64
             os: ubuntu-24.04
             package: tar.gz
           - rid: linux-arm
+            asset: linux-arm
             os: ubuntu-24.04
             package: tar.gz
           - rid: linux-musl-x64
+            asset: linux-musl-x64
             os: ubuntu-24.04
             package: tar.gz
           - rid: linux-musl-arm64
+            asset: linux-musl-arm64
             os: ubuntu-24.04
             package: tar.gz
           - rid: linux-musl-arm
+            asset: linux-musl-arm
             os: ubuntu-24.04
             package: tar.gz
           - rid: win-x64
+            asset: win-x64
             os: ubuntu-24.04
             package: zip
           - rid: win-x86
+            asset: win-x86
             os: ubuntu-24.04
             package: zip
           - rid: win-arm64
+            asset: win-arm64
             os: ubuntu-24.04
             package: zip
           - rid: osx-arm64
+            asset: macos-arm64
             os: macos-14
             package: app-zip
           - rid: osx-x64
+            asset: macos-x64
             os: macos-15-intel
             package: app-zip
 
@@ -183,6 +194,7 @@ jobs:
         shell: sh
         env:
           RID: ${{ matrix.rid }}
+          ASSET: ${{ matrix.asset }}
           PACKAGE: ${{ matrix.package }}
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
@@ -195,21 +207,22 @@ jobs:
           from pathlib import Path
 
           rid = os.environ["RID"]
+          asset = os.environ["ASSET"]
           package = os.environ["PACKAGE"]
           source = Path("out") / f"podlord-{rid}"
           if not source.is_dir():
               raise SystemExit(f"missing publish directory: {source}")
 
           if package == "tar.gz":
-              target = Path("dist") / f"podlord-{rid}.tar.gz"
+              target = Path("dist") / f"podlord-{asset}.tar.gz"
               with tarfile.open(target, "w:gz") as archive:
-                  archive.add(source, arcname=f"podlord-{rid}")
+                  archive.add(source, arcname="podlord")
           elif package == "zip":
-              target = Path("dist") / f"podlord-{rid}.zip"
+              target = Path("dist") / f"podlord-{asset}.zip"
               with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
                   for path in source.rglob("*"):
                       if path.is_file():
-                          archive.write(path, Path(f"podlord-{rid}") / path.relative_to(source))
+                          archive.write(path, Path("podlord") / path.relative_to(source))
           else:
               raise SystemExit(f"unknown package type: {package}")
 
@@ -221,16 +234,17 @@ jobs:
         shell: sh
         env:
           RID: ${{ matrix.rid }}
+          ASSET: ${{ matrix.asset }}
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           mkdir -p dist
           bundle="$(scripts/build-macos-app.sh "$RID" | tail -n 1)"
-          ditto -c -k --sequesterRsrc --keepParent "$bundle" "dist/podlord-$RID.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$bundle" "dist/podlord-$ASSET.zip"
 
       - name: Upload release asset
         uses: actions/upload-artifact@v7
         with:
-          name: podlord-${{ matrix.rid }}
+          name: podlord-${{ matrix.asset }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14

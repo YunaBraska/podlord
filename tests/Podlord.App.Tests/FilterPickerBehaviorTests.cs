@@ -261,6 +261,9 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("private void DataGridCellPointerEntered", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ToolTip.SetTip(cell", codeBehind, StringComparison.Ordinal);
         Assert.Contains("CopyValueForCell(cell, column)", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DiagnosticsGrid\"", window, StringComparison.Ordinal);
+        Assert.Contains("DiagnosticMetricRow row => CopyDiagnosticMetricValue(row, HeaderText(column.Header))", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("internal static string CopyDiagnosticMetricValue", codeBehind, StringComparison.Ordinal);
         Assert.Contains("private static DataGridColumn? ColumnForCell", codeBehind, StringComparison.Ordinal);
     }
 
@@ -313,6 +316,7 @@ public sealed class FilterPickerBehaviorTests
         var viewModel = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "MainWindowViewModel.cs"));
         var workspaceModels = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "WorkspaceModels.cs"));
         var radarWaterLayer = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "RadarWaterLayer.cs"));
+        var radarBlockLayer = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "RadarBlockLayer.cs"));
         var radarWaterModel = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "RadarWaterModel.cs"));
         var codeBehind = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "MainWindow.axaml.cs"));
         var kubernetesProject = File.ReadAllText(Path.Combine(root, "src", "Podlord.Kubernetes", "Podlord.Kubernetes.csproj"));
@@ -349,11 +353,12 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Classes=\"minimapFrame\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"minimapGlass\"", window, StringComparison.Ordinal);
         Assert.Contains("PlRadarWaterBrush", app, StringComparison.Ordinal);
-        Assert.Contains("Kind=\"{Binding DisplayKind}\"", window, StringComparison.Ordinal);
+        Assert.Contains("DrawKindGlyph(context, block.DisplayKind", radarBlockLayer, StringComparison.Ordinal);
         Assert.DoesNotContain("ItemsSource=\"{Binding RadarLinks}\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("RotateTransform Angle=\"{Binding Angle}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding ShowProblemGlyph}\"", window, StringComparison.Ordinal);
-        Assert.Contains("BorderBrush=\"{Binding BorderBrush}\"", window, StringComparison.Ordinal);
+        Assert.Contains("block.ShowProblemGlyph", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("new Pen(block.Brush", radarBlockLayer, StringComparison.Ordinal);
+        Assert.DoesNotContain("new Pen(block.BorderBrush", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("Classes=\"commandConsole\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"selectedUnitCard\"", window, StringComparison.Ordinal);
         Assert.Contains("Content=\"{Binding ActivityText}\"", window, StringComparison.Ordinal);
@@ -366,11 +371,11 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("RadarWaterEnabledSetting", window, StringComparison.Ordinal);
         Assert.Contains("RadarWaterSpeedSetting", window, StringComparison.Ordinal);
         Assert.Contains("RadarWaterSpeedLabel", window, StringComparison.Ordinal);
-        Assert.Contains("RadarAutoFollowAlertsSetting", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"settingRow\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding RadarWaterSpeedHelpText}\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding AnimationHelpText}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{Binding RadarAutoFollowHelpText}\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("RadarAutoFollowAlertsSetting", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("RadarAutoFollowHelpText", window, StringComparison.Ordinal);
         Assert.Contains("Border.settingRow", app, StringComparison.Ordinal);
         Assert.Contains("TextBlock.settingLabel", app, StringComparison.Ordinal);
         Assert.Contains("TextBlock.settingHelp", app, StringComparison.Ordinal);
@@ -387,10 +392,15 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("RequestHardLimitPerMinute", kubernetesService + viewModel, StringComparison.Ordinal);
         var localizer = File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "PodlordLocalizer.cs"));
         Assert.Contains("[\"settings.requestHardLimit\"] = \"Request limit\"", localizer, StringComparison.Ordinal);
-        Assert.Contains("[\"settings.radarAutoFollow\"] = \"Auto-follow alerts\"", localizer, StringComparison.Ordinal);
         Assert.Contains("[\"settings.alerts\"] = \"Alerts\"", localizer, StringComparison.Ordinal);
         Assert.Contains("Header=\"{Binding SettingsAlertsText}\"", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding AlertRules}\"", window, StringComparison.Ordinal);
+        Assert.Contains("AlertActivationText", window + viewModel, StringComparison.Ordinal);
+        Assert.Contains("DataContext.AlertActiveText", window, StringComparison.Ordinal);
+        Assert.Contains("DataContext.AlertNameText", window, StringComparison.Ordinal);
+        Assert.Contains("DataContext.AlertWhenText", window, StringComparison.Ordinal);
+        Assert.Contains("DataContext.AlertActionsText", window, StringComparison.Ordinal);
+        Assert.Contains("DataContext.AlertSoundText", window, StringComparison.Ordinal);
         Assert.DoesNotContain("ItemsSource=\"{Binding ActiveAlerts}\"", window, StringComparison.Ordinal);
         Assert.Contains("ActiveStateText", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"AddAlertRuleClicked\"", window, StringComparison.Ordinal);
@@ -476,6 +486,12 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("MergeCachedMetricItems", viewModel, StringComparison.Ordinal);
         Assert.Contains("CachedMetricItems", viewModel, StringComparison.Ordinal);
         Assert.Contains("MetricRowsFromDetails", viewModel, StringComparison.Ordinal);
+        Assert.Contains("RowHover: OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("Selection: OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("HoverTop: OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("private static string OpaqueMix", catalog, StringComparison.Ordinal);
+        Assert.Contains("Color=\"#17241D\"", app, StringComparison.Ordinal);
+        Assert.Contains("Color=\"#2B251A\"", app, StringComparison.Ordinal);
         Assert.Contains("HasCpuMetricBar", window + viewModel, StringComparison.Ordinal);
         Assert.Contains("HasMemoryMetricBar", window + viewModel, StringComparison.Ordinal);
         Assert.Contains("HasCpuMetricTextOnly", window + viewModel, StringComparison.Ordinal);
@@ -517,17 +533,17 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("ResourceSortGlyphFor", viewModel + codeBehind, StringComparison.Ordinal);
         Assert.Contains("EventSortGlyphFor", viewModel + codeBehind, StringComparison.Ordinal);
         Assert.Contains("Classes.Add(\"sortGlyph\")", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding Resource.HasCpuMetricBar}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding Resource.HasMemoryMetricBar}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding Resource.HasStorageMetricBar}\"", window, StringComparison.Ordinal);
+        Assert.Contains("block.Resource.HasCpuMetricBar", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.Resource.HasMemoryMetricBar", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.Resource.HasStorageMetricBar", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("<Style Selector=\"ProgressBar\">", app, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"MinWidth\" Value=\"0\" />", app, StringComparison.Ordinal);
         Assert.Contains("ClipToBounds=\"True\" MinWidth=\"0\"", window, StringComparison.Ordinal);
         Assert.Contains("Height=\"5\"", window, StringComparison.Ordinal);
         Assert.Contains("MinWidth=\"0\"", window, StringComparison.Ordinal);
         Assert.Contains("RestartBrushConverter", app, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"{Binding Resource.Restarts, Converter={StaticResource RestartBrushConverter}}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"{Binding Resource, Converter={StaticResource ProblemBrushConverter}}\"", window, StringComparison.Ordinal);
+        Assert.Contains("AddTextRow(stack, \"Restarts\"", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.Problem", radarBlockLayer, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"{Binding Metrics}\"", window, StringComparison.Ordinal);
         Assert.Contains("PortForwardBadgeConverter", window + app, StringComparison.Ordinal);
         Assert.Contains("PortForwardEligibilityConverter", window + app, StringComparison.Ordinal);
@@ -561,11 +577,13 @@ public sealed class FilterPickerBehaviorTests
         Assert.DoesNotContain("Click=\"RadarZoomInClicked\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"RadarZoomOutClicked\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"RadarZoomResetClicked\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnounceBlink\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnouncePulse\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnounceSweep\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"radarAnnounceOutline\"", window, StringComparison.Ordinal);
-        Assert.Contains("Fill=\"{Binding Brush}\"", window, StringComparison.Ordinal);
+        Assert.Contains("block.IsBlinkAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsPulseAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsSweepAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsOutlineAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("RequiresAnimationTimer", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("block.IsBlinkAnimation || block.IsPulseAnimation || block.IsSweepAnimation", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("context.DrawRectangle(block.Brush", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnounceBlink\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnouncePulse\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"resourceAnnounceSweep\"", window, StringComparison.Ordinal);
@@ -574,7 +592,18 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("IsVisible=\"{Binding IsPulseAnimation}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSweepAnimation}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsOutlineAnimation}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Opacity=\"{Binding Opacity}\"", window, StringComparison.Ordinal);
+        var resourceAnnouncementStyles = Regex.Matches(
+            app,
+            "<Style Selector=\"Border\\.resourceAnnounce(?:Pulse|Blink|Sweep)\">[\\s\\S]*?</Style>");
+        Assert.Equal(3, resourceAnnouncementStyles.Count);
+        foreach (Match style in resourceAnnouncementStyles)
+        {
+            Assert.DoesNotContain("<Style.Animations>", style.Value, StringComparison.Ordinal);
+            Assert.DoesNotContain("IterationCount=\"INFINITE\"", style.Value, StringComparison.Ordinal);
+            Assert.Contains("<Setter Property=\"Opacity\" Value=\"1\" />", style.Value, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("context.PushOpacity(block.Opacity)", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("public double Opacity => 1;", workspaceModels, StringComparison.Ordinal);
         Assert.Contains("Label=\"Name\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Reason\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Message\"", window, StringComparison.Ordinal);
@@ -655,7 +684,13 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Click=\"DeleteSavedFilterClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"{Binding RenameFilterTooltipText}\"", window, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"{Binding DeleteFilterTooltipText}\"", window, StringComparison.Ordinal);
-        Assert.Contains("Content=\"{Binding DataContext.DeleteActionText", window, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding AddSearchCommand}\"", window, StringComparison.Ordinal);
+        Assert.Contains("<local:KindGlyph Kind=\"Add\" Fill=\"{StaticResource PlSuccessBrush}\" Width=\"14\" Height=\"14\" />", window, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding RemoveCommand}\"", window, StringComparison.Ordinal);
+        Assert.Contains("<local:KindGlyph Kind=\"Trash\" Fill=\"{StaticResource PlWarningBrush}\" Width=\"13\" Height=\"13\" />", window, StringComparison.Ordinal);
+        Assert.Contains("Click=\"CloseSearchClicked\"", window + codeBehind, StringComparison.Ordinal);
+        Assert.Contains("viewModel.CloseSearchForCurrentWorkspace();", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"{Binding DataContext.DeleteActionText", window, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsSelectedResourceLoggable}\"", window, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding FocusMetrics}\"", window, StringComparison.Ordinal);
         Assert.Contains("Label=\"Metric\"", window, StringComparison.Ordinal);
@@ -748,7 +783,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("RadarWaterActivityRate = telemetry.RequestsLastMinute", viewModel, StringComparison.Ordinal);
         Assert.Contains("RadarWaterSpeedPercent", viewModel, StringComparison.Ordinal);
         Assert.Contains("RadarWaterSpeed = (byte)Math.Clamp", viewModel, StringComparison.Ordinal);
-        Assert.Contains("RadarAutoFollowAlertsSetting", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("RadarAutoFollowAlertsSetting", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("state.Settings().RadarAutoFollowAlerts", viewModel, StringComparison.Ordinal);
         Assert.Contains("StartRadarAutoFollow", viewModel, StringComparison.Ordinal);
         Assert.Contains("previousVisibleRadarAlertIds", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsRadarWaterPaused = true", viewModel, StringComparison.Ordinal);

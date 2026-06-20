@@ -5,9 +5,11 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DOTNET="$ROOT_DIR/.tools/dotnet/dotnet"
 CONFIGURATION=${CONFIGURATION:-Release}
 RID=${1:-}
+REQUESTED_RID=${1:-}
 APP_NAME=Podlord
 BUNDLE_ID=${BUNDLE_ID:-dev.podlord.app}
 VERSION=${VERSION:-0.0.0}
+CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
 
 if [ ! -x "$DOTNET" ]; then
   DOTNET=dotnet
@@ -17,13 +19,18 @@ if [ -z "$RID" ]; then
   case "$(uname -m)" in
     arm64) RID=osx-arm64 ;;
     x86_64) RID=osx-x64 ;;
-    *) echo "Unsupported macOS architecture. Pass osx-arm64 or osx-x64 explicitly." >&2; exit 1 ;;
+    *) echo "Unsupported macOS architecture. Pass macos-arm64 or macos-x64 explicitly." >&2; exit 1 ;;
   esac
 fi
 
 case "$RID" in
+  macos-arm64) RID=osx-arm64 ;;
+  macos-x64) RID=osx-x64 ;;
+esac
+
+case "$RID" in
   osx-arm64|osx-x64) ;;
-  *) echo "Unsupported macOS runtime '$RID'. Use osx-arm64 or osx-x64." >&2; exit 1 ;;
+  *) echo "Unsupported macOS runtime '${REQUESTED_RID:-$RID}'. Use macos-arm64 or macos-x64." >&2; exit 1 ;;
 esac
 
 if ! command -v iconutil >/dev/null 2>&1; then
@@ -37,7 +44,7 @@ if ! command -v sips >/dev/null 2>&1; then
 fi
 
 PUBLISH_DIR="$ROOT_DIR/out/podlord-$RID-publish"
-BUNDLE_DIR="$ROOT_DIR/out/$APP_NAME-$RID.app"
+BUNDLE_DIR="$ROOT_DIR/out/$APP_NAME.app"
 CONTENTS_DIR="$BUNDLE_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
@@ -59,6 +66,8 @@ rm -rf "$PUBLISH_DIR" "$BUNDLE_DIR"
   -p:PublishSingleFile=false \
   -p:UseAppHost=true \
   -p:IncludeNativeLibrariesForSelfExtract=false \
+  -p:DebugType=none \
+  -p:DebugSymbols=false \
   -p:Version="$VERSION" \
   -o "$PUBLISH_DIR"
 
@@ -107,5 +116,23 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
+
+if [ "$CODESIGN_IDENTITY" != "skip" ]; then
+  if ! command -v codesign >/dev/null 2>&1; then
+    echo "codesign is required to sign the macOS app bundle. Set CODESIGN_IDENTITY=skip to build without signing." >&2
+    exit 1
+  fi
+
+  SIGN_LOG="$ICON_TMP/codesign.log"
+  if ! codesign --force --deep --sign "$CODESIGN_IDENTITY" "$BUNDLE_DIR" >"$SIGN_LOG" 2>&1; then
+    cat "$SIGN_LOG" >&2
+    exit 1
+  fi
+
+  if ! codesign --verify --deep --strict "$BUNDLE_DIR" >"$SIGN_LOG" 2>&1; then
+    cat "$SIGN_LOG" >&2
+    exit 1
+  fi
+fi
 
 echo "$BUNDLE_DIR"
