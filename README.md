@@ -56,6 +56,15 @@ Open on macOS:
 2. Move `Podlord.app` to `/Applications`.
 3. Open `Podlord.app` normally.
 
+Install/update with Homebrew. Use the cask on macOS and the formula on Linux:
+
+```sh
+brew tap yunabraska/tap
+brew install --cask yunabraska/tap/podlord   # macOS
+brew install yunabraska/tap/podlord          # Linux
+brew upgrade yunabraska/tap/podlord
+```
+
 ## Run From Source
 
 Podlord pins its SDK in [global.json](global.json). If you do not have a matching .NET SDK installed, bootstrap the local toolchain:
