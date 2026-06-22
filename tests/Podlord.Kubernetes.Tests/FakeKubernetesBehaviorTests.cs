@@ -415,9 +415,61 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         var snapshots = await Task.WhenAll(requests);
 
         Assert.All(snapshots, snapshot => Assert.Empty(snapshot.Failures));
-        Assert.True(maxActiveRequests <= 1, $"Expected at most one concurrent request, observed {maxActiveRequests}.");
+        Assert.True(maxActiveRequests is >= 2 and <= 3, $"Expected bounded parallelism, observed {maxActiveRequests} concurrent requests.");
         Assert.Contains(queueSamples, sample => sample > 0);
         Assert.True(service!.RequestTelemetry().RequestsLastMinute >= requests.Length);
+    }
+
+    [Fact]
+    public async Task Single_refresh_loads_multiple_resource_kinds_in_parallel_without_unbounded_spam()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
+        var activeRequests = 0;
+        var maxActiveRequests = 0;
+        var handler = new AsyncRecordingHandler(async (request, cancellationToken) =>
+        {
+            var active = Interlocked.Increment(ref activeRequests);
+            maxActiveRequests = Math.Max(maxActiveRequests, active);
+            try
+            {
+                await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                return path.Contains("/api/v1/namespaces", StringComparison.Ordinal)
+                    ? JsonResponse(NamespaceList())
+                    : JsonResponse("""
+                    {
+                      "items": [
+                        {
+                          "metadata": {
+                            "name": "node-a",
+                            "uid": "node-1",
+                            "creationTimestamp": "2026-06-10T08:00:00Z"
+                          },
+                          "status": {
+                            "conditions": [
+                              { "type": "Ready", "status": "True" }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeRequests);
+            }
+        });
+        var service = Service(kubeconfig, handler, directory);
+
+        var snapshot = await service.ListClusterResourcesAsync(new ResourceQuery(Kind: "\"Namespace\" \"Node\"", ForceRefresh: true));
+
+        Assert.Empty(snapshot.Failures);
+        Assert.Contains(snapshot.Rows, row => row.Kind == "Namespace");
+        Assert.Contains(snapshot.Rows, row => row.Kind == "Node");
+        Assert.True(maxActiveRequests is >= 2 and <= 3, $"Expected a bounded parallel first-load fan-out, observed {maxActiveRequests} concurrent requests.");
     }
 
     [Fact]
@@ -544,7 +596,7 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
 
         Assert.Contains("ok", outcomes);
         Assert.All(outcomes, outcome => Assert.Equal("ok", outcome));
-        Assert.True(maxActiveRequests <= 1);
+        Assert.True(maxActiveRequests is >= 2 and <= 3);
         Assert.True(queuedSamples.Any());
     }
 

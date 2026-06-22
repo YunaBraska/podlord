@@ -28,6 +28,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly Func<string> currentVersionProvider;
     private readonly List<FlatResourceRow> cachedRows = [];
     private readonly List<FileSystemWatcher> sourceWatchers = [];
+    private readonly Dictionary<string, SourceFileState> sourceFileStates = new(StringComparer.Ordinal);
     private readonly HashSet<RadarLifeCell> radarLifeCells = [];
     private readonly Random radarLifeRandom = new();
     private readonly Dictionary<string, int> radarLifeSeenSignatures = [];
@@ -115,6 +116,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private bool isWindowVisible = true;
     private DateTimeOffset? lastSyncedAt;
     private DateTimeOffset lastUserActivityAt = DateTimeOffset.Now;
+    private DateTimeOffset lastSourcePollAt = DateTimeOffset.MinValue;
     private FilterPreset? selectedPreset;
     private AlertRuleRowViewModel? selectedAlertRule;
     private FlatResourceRow? portForwardResource;
@@ -269,7 +271,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         footerTimer.Interval = TimeSpan.FromSeconds(1);
-        footerTimer.Tick += (_, _) => RefreshTimeLabels();
+        footerTimer.Tick += (_, _) =>
+        {
+            PollImportedSourceFilesForChanges();
+            RefreshTimeLabels();
+        };
         footerTimer.Start();
 
         backgroundRefreshTask = BackgroundRefreshLoop(lifetime.Token);
@@ -2096,7 +2102,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            state.RefreshImportedKubeconfigs();
+            RefreshImportedSourcesNow("Refreshed", refreshViews: false);
         }
         catch (PodlordException ex)
         {
@@ -2302,9 +2308,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 #else
         try
         {
-            var summaries = state.RefreshImportedKubeconfigs();
-            StatusLine = $"Refreshed {summaries.Count} kubeconfig source(s).";
-            ReloadSessions();
+            RefreshImportedSourcesNow("Refreshed", refreshViews: false);
         }
         catch (PodlordException ex)
         {
@@ -5938,6 +5942,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             .Distinct(StringComparer.Ordinal)
             .Where(path => !IsVirtualSource(path))
             .ToList();
+        SyncSourceFileStates(paths);
         foreach (var path in paths)
         {
             var directory = Path.GetDirectoryName(path);
@@ -5958,6 +5963,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 watcher.Changed += SourceFileChanged;
                 watcher.Created += SourceFileChanged;
                 watcher.Renamed += SourceFileChanged;
+                watcher.Deleted += SourceFileChanged;
+                watcher.Error += SourceWatcherError;
                 sourceWatchers.Add(watcher);
             }
             catch (IOException)
@@ -5977,6 +5984,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             watcher.Changed -= SourceFileChanged;
             watcher.Created -= SourceFileChanged;
             watcher.Renamed -= SourceFileChanged;
+            watcher.Deleted -= SourceFileChanged;
+            watcher.Error -= SourceWatcherError;
             watcher.Dispose();
         }
 
@@ -5985,6 +5994,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void SourceFileChanged(object sender, FileSystemEventArgs args)
     {
+        ScheduleSourceRefresh();
+    }
+
+    private void SourceWatcherError(object sender, ErrorEventArgs args)
+    {
+        RecordAppDiagnostic("source watcher", args.GetException().Message);
         ScheduleSourceRefresh();
     }
 
@@ -6035,10 +6050,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             {
                 try
                 {
-                    var summaries = state.RefreshImportedKubeconfigs();
-                    ReloadSessions();
-                    StatusLine = $"Auto-refreshed {summaries.Count} kubeconfig source(s).";
-                    ScheduleRefresh();
+                    RefreshImportedSourcesNow("Auto-refreshed");
                 }
                 catch (PodlordException ex)
                 {
@@ -6049,6 +6061,140 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (OperationCanceledException)
         {
+        }
+    }
+
+    private void RefreshImportedSourcesNow(string statusPrefix, bool refreshViews = true)
+    {
+        var summaries = state.RefreshImportedKubeconfigs();
+        ReloadSessions();
+        StatusLine = $"{statusPrefix} {summaries.Count} kubeconfig source(s).";
+        if (refreshViews)
+        {
+            ScheduleRefresh();
+        }
+    }
+
+    private void PollImportedSourceFilesForChanges()
+    {
+        var now = DateTimeOffset.Now;
+        if (now - lastSourcePollAt < TimeSpan.FromSeconds(3))
+        {
+            return;
+        }
+
+        lastSourcePollAt = now;
+        var paths = state.Snapshot()
+            .ImportedContexts
+            .Select(context => context.SourcePath)
+            .Distinct(StringComparer.Ordinal)
+            .Where(path => !IsVirtualSource(path))
+            .ToList();
+        if (paths.Count == 0)
+        {
+            sourceFileStates.Clear();
+            return;
+        }
+
+        var changed = false;
+        foreach (var path in paths)
+        {
+            var current = CaptureSourceFileState(path);
+            if (!sourceFileStates.TryGetValue(path, out var previous) || !previous.Equals(current))
+            {
+                sourceFileStates[path] = current;
+                changed = true;
+            }
+        }
+
+        foreach (var stale in sourceFileStates.Keys.Except(paths, StringComparer.Ordinal).ToArray())
+        {
+            sourceFileStates.Remove(stale);
+        }
+
+        if (changed)
+        {
+            ScheduleSourceRefresh();
+        }
+    }
+
+    internal bool PollImportedSourceFilesForTesting(bool refreshNow = true)
+    {
+        var paths = state.Snapshot()
+            .ImportedContexts
+            .Select(context => context.SourcePath)
+            .Distinct(StringComparer.Ordinal)
+            .Where(path => !IsVirtualSource(path))
+            .ToList();
+        if (paths.Count == 0)
+        {
+            sourceFileStates.Clear();
+            return false;
+        }
+
+        var changed = false;
+        foreach (var path in paths)
+        {
+            var current = CaptureSourceFileState(path);
+            if (!sourceFileStates.TryGetValue(path, out var previous) || !previous.Equals(current))
+            {
+                sourceFileStates[path] = current;
+                changed = true;
+            }
+        }
+
+        foreach (var stale in sourceFileStates.Keys.Except(paths, StringComparer.Ordinal).ToArray())
+        {
+            sourceFileStates.Remove(stale);
+        }
+
+        if (!changed)
+        {
+            return false;
+        }
+
+        if (refreshNow)
+        {
+            RefreshImportedSourcesNow("Auto-refreshed");
+        }
+        else
+        {
+            ScheduleSourceRefresh();
+        }
+
+        return true;
+    }
+
+    private void SyncSourceFileStates(IEnumerable<string> paths)
+    {
+        var pathList = paths.Distinct(StringComparer.Ordinal).ToList();
+        foreach (var path in pathList)
+        {
+            sourceFileStates[path] = CaptureSourceFileState(path);
+        }
+
+        foreach (var stale in sourceFileStates.Keys.Except(pathList, StringComparer.Ordinal).ToArray())
+        {
+            sourceFileStates.Remove(stale);
+        }
+    }
+
+    private static SourceFileState CaptureSourceFileState(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists
+                ? new SourceFileState(true, info.Length, info.LastWriteTimeUtc.Ticks)
+                : new SourceFileState(false, 0, 0);
+        }
+        catch (IOException)
+        {
+            return new SourceFileState(false, 0, 0);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new SourceFileState(false, 0, 0);
         }
     }
 
@@ -9374,6 +9520,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private readonly record struct SourceFileState(bool Exists, long Length, long LastWriteUtcTicks);
     private int ParseLimit()
     {
         return int.TryParse(LimitText.Trim(), out var limit) ? ResourceFilterMatcher.NormalizeLimit(limit) : 256;
