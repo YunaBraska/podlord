@@ -57,6 +57,15 @@ Open on macOS:
 4. If blocked, allow Podlord in `System Settings -> Privacy & Security`.
 5. Last resort: `xattr -dr com.apple.quarantine /Applications/Podlord.app`.
 
+Install/update with Homebrew. Use the cask on macOS and the formula on Linux:
+
+```sh
+brew tap yunabraska/tap
+brew install --cask yunabraska/tap/podlord   # macOS
+brew install yunabraska/tap/podlord          # Linux
+brew upgrade yunabraska/tap/podlord
+```
+
 ## Run From Source
 
 Podlord pins its SDK in [global.json](global.json). If you do not have a matching .NET SDK installed, bootstrap the local toolchain:
