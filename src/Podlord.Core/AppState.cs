@@ -127,13 +127,13 @@ public sealed class AppState
         var contexts = summary.Contexts
             .Select(context => context with
             {
-                ContextId = KubeconfigImporter.ContextSnapshotId(fullPath, contentHash, context.Name),
+                ContextId = KubeconfigImporter.ContextId(fullPath, context.Name),
                 OwnedKubeconfigPath = ownedPath,
                 SourceName = sourceName,
                 SourceContentHash = contentHash
             })
             .ToList();
-        return ImportContexts(summary with { Contexts = contexts });
+        return ImportContexts(summary with { Contexts = contexts }, replaceFileSourcePath: fullPath);
     }
 
     public KubeconfigImportSummary ImportKubeconfigText(string displayName, string raw)
@@ -371,13 +371,34 @@ public sealed class AppState
         }
     }
 
-    private KubeconfigImportSummary ImportContexts(KubeconfigImportSummary summary)
+    private KubeconfigImportSummary ImportContexts(KubeconfigImportSummary summary, string? replaceFileSourcePath = null)
     {
         lock (sync)
         {
             var contexts = DeduplicateImportedContexts(store.ImportedContexts);
             var sessions = store.Sessions.ToList();
             var created = 0;
+            if (!string.IsNullOrWhiteSpace(replaceFileSourcePath))
+            {
+                var sourceIdentity = PathIdentity(replaceFileSourcePath);
+                var incomingNames = summary.Contexts
+                    .Select(context => context.Name)
+                    .ToHashSet(StringComparer.Ordinal);
+                var removedContextIds = contexts
+                    .Where(context => PathIdentity(context.SourcePath).Equals(sourceIdentity, StringComparison.Ordinal)
+                                      && !incomingNames.Contains(context.Name))
+                    .Select(context => context.ContextId)
+                    .ToHashSet(StringComparer.Ordinal);
+                if (removedContextIds.Count > 0)
+                {
+                    contexts = contexts
+                        .Where(context => !removedContextIds.Contains(context.ContextId))
+                        .ToList();
+                    sessions = sessions
+                        .Where(session => !removedContextIds.Contains(session.ContextId))
+                        .ToList();
+                }
+            }
 
             foreach (var context in summary.Contexts)
             {
@@ -656,17 +677,18 @@ public sealed class AppState
 
     private static bool SameImportedContextIdentity(ImportedContext left, ImportedContext right)
     {
+        if (PathIdentity(left.SourcePath).Equals(PathIdentity(right.SourcePath), StringComparison.Ordinal)
+            && left.Name.Equals(right.Name, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         if (!left.Name.Equals(right.Name, StringComparison.Ordinal)
             || !left.ClusterName.Equals(right.ClusterName, StringComparison.Ordinal)
             || !left.UserName.Equals(right.UserName, StringComparison.Ordinal)
             || !string.Equals(left.Server ?? string.Empty, right.Server ?? string.Empty, StringComparison.Ordinal))
         {
             return false;
-        }
-
-        if (PathIdentity(left.SourcePath).Equals(PathIdentity(right.SourcePath), StringComparison.Ordinal))
-        {
-            return true;
         }
 
         if (!string.IsNullOrWhiteSpace(left.SourceContentHash) && !string.IsNullOrWhiteSpace(right.SourceContentHash))

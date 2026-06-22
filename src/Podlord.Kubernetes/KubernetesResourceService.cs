@@ -33,11 +33,13 @@ public sealed class KubernetesResourceService
     private static readonly TimeSpan LogCacheRetention = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan PulseCacheRetention = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MinimumRequestSpacing = TimeSpan.FromMilliseconds(400);
+    private const int MaxConcurrentRequests = 3;
     private const int MaxListCacheEntries = 2_048;
     private const int MaxDetailCacheEntries = 512;
     private const int MaxLogCacheEntries = 128;
     private const int MaxPulseCacheEntries = 64;
-    private static readonly SemaphoreSlim SharedRequestGate = new(1, 1);
+    private static readonly SemaphoreSlim SharedRequestGate = new(MaxConcurrentRequests, MaxConcurrentRequests);
+    private static readonly SemaphoreSlim SharedPacingGate = new(1, 1);
     private static readonly object SharedRateLock = new();
     private static DateTimeOffset sharedLastRequestAt = DateTimeOffset.MinValue;
     private static DateTimeOffset? sharedBackoffUntil;
@@ -58,7 +60,7 @@ public sealed class KubernetesResourceService
     private readonly Queue<DateTimeOffset> requestStarts = [];
     private readonly Queue<KubernetesRequestAuditEntry> requestAudit = [];
     private long requestSequence;
-    private bool queueRunning;
+    private int queueWorkers;
     private DateTimeOffset lastRequestAt = DateTimeOffset.MinValue;
     private DateTimeOffset? backoffUntil;
 
@@ -225,33 +227,33 @@ public sealed class KubernetesResourceService
         var specs = PlannedSpecs(query).ToList();
         var namespaces = PlannedNamespaces(query);
 
-        foreach (var spec in specs)
-        {
-            var scope = spec.Namespaced && namespaces.Count > 0
-                ? namespaces
-                : [null];
-            foreach (var ns in scope)
+        var fetches = specs
+            .SelectMany(spec =>
             {
-                try
-                {
-                    rows.AddRange(await ListRowsForSpec(ownedClient, connection, spec, ns, query.ForceRefresh, priority, cancellationToken).ConfigureAwait(false));
-                }
-                catch (KubernetesStatusException ex) when (ex.StatusCode == HttpStatusCode.NotFound && spec.Optional)
-                {
-                    // Optional APIs such as Gateway are not installed on every cluster.
-                }
-                catch (KubernetesStatusException ex)
-                {
-                    failures.Add(Failure(spec.Kind, ex));
-                }
-                catch (HttpRequestException ex)
-                {
-                    failures.Add(new ResourceListFailure(
-                        spec.Kind,
-                        FreshnessState.Stale,
-                        HttpFailureMessage(ex),
-                        "Check cluster connectivity and retry."));
-                }
+                var scope = spec.Namespaced && namespaces.Count > 0
+                    ? namespaces.Select(ns => (string?)ns)
+                    : new string?[] { null };
+                return scope.Select(ns => LoadRowsForSpecAsync(
+                    ownedClient,
+                    connection,
+                    spec,
+                    ns,
+                    query.ForceRefresh,
+                    priority,
+                    cancellationToken));
+            })
+            .ToArray();
+        var fetchResults = await Task.WhenAll(fetches).ConfigureAwait(false);
+        foreach (var result in fetchResults)
+        {
+            if (result.Rows is { Count: > 0 })
+            {
+                rows.AddRange(result.Rows);
+            }
+
+            if (result.Failure is not null)
+            {
+                failures.Add(result.Failure);
             }
         }
 
@@ -933,21 +935,34 @@ public sealed class KubernetesResourceService
         CancellationToken cancellationToken)
     {
         Dictionary<string, LivePulseUsage> podUsage = new(StringComparer.Ordinal);
-        var failures = new List<string>();
-        foreach (var ns in podNamespaces)
+        var results = await Task.WhenAll(podNamespaces.Select(async ns =>
         {
             try
             {
                 var path = $"/apis/metrics.k8s.io/v1beta1/namespaces/{Uri.EscapeDataString(ns)}/pods";
                 var namespaceDocument = await GetJsonQueuedAsync(client, path, priority, cancellationToken).ConfigureAwait(false);
-                foreach (var item in Items(namespaceDocument).Select(PodMetricUsage).Where(item => item.Key.Length > 0))
-                {
-                    podUsage[item.Key] = item.Usage;
-                }
+                var items = Items(namespaceDocument)
+                    .Select(PodMetricUsage)
+                    .Where(item => item.Key.Length > 0)
+                    .ToList();
+                return (Namespace: ns, Items: items, Failure: string.Empty);
             }
             catch (KubernetesStatusException namespaceEx) when (IsOptionalMetricsFailure(namespaceEx))
             {
-                failures.Add($"{ns}: {ShortStatus(namespaceEx)}");
+                return (Namespace: ns, Items: new List<(string Key, LivePulseUsage Usage)>(), Failure: $"{ns}: {ShortStatus(namespaceEx)}");
+            }
+        })).ConfigureAwait(false);
+        var failures = new List<string>();
+        foreach (var result in results)
+        {
+            foreach (var item in result.Items)
+            {
+                podUsage[item.Key] = item.Usage;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.Failure))
+            {
+                failures.Add(result.Failure);
             }
         }
 
@@ -1172,6 +1187,40 @@ public sealed class KubernetesResourceService
         return values.Sum(value => value is null ? 0L : 24L + value.Length * 2L);
     }
 
+    private async Task<ListRowsResult> LoadRowsForSpecAsync(
+        HttpClient client,
+        SessionConnection connection,
+        ResourceSpec spec,
+        string? ns,
+        bool forceRefresh,
+        KubernetesRequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var rows = await ListRowsForSpec(client, connection, spec, ns, forceRefresh, priority, cancellationToken).ConfigureAwait(false);
+            return new ListRowsResult(rows, null);
+        }
+        catch (KubernetesStatusException ex) when (ex.StatusCode == HttpStatusCode.NotFound && spec.Optional)
+        {
+            return new ListRowsResult([], null);
+        }
+        catch (KubernetesStatusException ex)
+        {
+            return new ListRowsResult([], Failure(spec.Kind, ex));
+        }
+        catch (HttpRequestException ex)
+        {
+            return new ListRowsResult(
+                [],
+                new ResourceListFailure(
+                    spec.Kind,
+                    FreshnessState.Stale,
+                    HttpFailureMessage(ex),
+                    "Check cluster connectivity and retry."));
+        }
+    }
+
     private async Task<T> EnqueueRequest<T>(
         KubernetesRequestPriority priority,
         Func<CancellationToken, Task<T>> work,
@@ -1182,9 +1231,9 @@ public sealed class KubernetesResourceService
         lock (queueLock)
         {
             requestQueue.Enqueue(request, new QueuedRequestOrder((int)priority, ++requestSequence));
-            if (!queueRunning)
+            while (queueWorkers < MaxConcurrentRequests && queueWorkers < requestQueue.Count)
             {
-                queueRunning = true;
+                queueWorkers++;
                 _ = Task.Run(ProcessQueue);
             }
         }
@@ -1204,7 +1253,7 @@ public sealed class KubernetesResourceService
             {
                 if (!requestQueue.TryDequeue(out request!, out _))
                 {
-                    queueRunning = false;
+                    queueWorkers = Math.Max(0, queueWorkers - 1);
                     return;
                 }
             }
@@ -1218,20 +1267,29 @@ public sealed class KubernetesResourceService
         await SharedRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            while (BackoffDelay() is { } delay)
+            await SharedPacingGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                while (BackoffDelay() is { } delay)
+                {
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var last = LastRequestAt();
+                var nextAllowed = last + RequestSpacing();
+                if (nextAllowed > now)
+                {
+                    await Task.Delay(nextAllowed - now, cancellationToken).ConfigureAwait(false);
+                }
+
+                MarkRequestStarted(DateTimeOffset.UtcNow);
+            }
+            finally
+            {
+                SharedPacingGate.Release();
             }
 
-            var now = DateTimeOffset.UtcNow;
-            var last = LastRequestAt();
-            var nextAllowed = last + RequestSpacing();
-            if (nextAllowed > now)
-            {
-                await Task.Delay(nextAllowed - now, cancellationToken).ConfigureAwait(false);
-            }
-
-            MarkRequestStarted(DateTimeOffset.UtcNow);
             return new RequestSlotLease(SharedRequestGate);
         }
         catch
@@ -2818,6 +2876,10 @@ public sealed class PodlordPortForward : IDisposable, IAsyncDisposable
 }
 
 internal sealed record ResolvedPortForwardTarget(string Namespace, string PodName, int RemotePort);
+
+internal sealed record ListRowsResult(
+    IReadOnlyList<FlatResourceRow> Rows,
+    ResourceListFailure? Failure);
 
 internal sealed class RequestSlotLease : IDisposable
 {

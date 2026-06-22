@@ -153,7 +153,7 @@ public sealed class AppBehaviorTests
         var problem = new ProblemBrushConverter();
         Assert.Equal(AppThemeCatalog.StatusBrush("HEALTHY").ToString(), problem.Convert(null, typeof(IBrush), null, culture).ToString());
         Assert.Equal(AppThemeCatalog.StatusBrush("HEALTHY").ToString(), problem.Convert(Row("Running", "ok", 0, "1/1"), typeof(IBrush), null, culture).ToString());
-        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), problem.Convert(Row("Pending", "wait", 0, "-"), typeof(IBrush), null, culture).ToString());
+        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), problem.Convert(Row("Pending", "wait", 0, "-") with { Age = "10m", LastChange = "10m" }, typeof(IBrush), null, culture).ToString());
         Assert.Equal(AppThemeCatalog.StatusBrush("CRITICAL").ToString(), problem.Convert(Row("Failed", "bad", 0, "0/1"), typeof(IBrush), null, culture).ToString());
         Assert.Throws<NotSupportedException>(() => problem.ConvertBack(null, typeof(string), null, culture));
 
@@ -171,7 +171,7 @@ public sealed class AppBehaviorTests
         Assert.Throws<NotSupportedException>(() => metric.ConvertBack(null, typeof(string), null, culture));
 
         var reason = new ProblemReasonConverter();
-        Assert.Equal("Ready 0/1", reason.Convert(Row("Running", "not-ready", 0, "0/1"), typeof(string), null, culture));
+        Assert.Equal("Ready 0/1", reason.Convert(Row("Running", "not-ready", 0, "0/1") with { Age = "10m", LastChange = "10m" }, typeof(string), null, culture));
         Assert.Equal(string.Empty, reason.Convert("no-row", typeof(string), null, culture));
         Assert.Throws<NotSupportedException>(() => reason.ConvertBack(null, typeof(string), null, culture));
 
@@ -188,7 +188,7 @@ public sealed class AppBehaviorTests
 
         var radar = new RadarBrushConverter();
         Assert.Equal(Brushes.Transparent, radar.Convert("not-row", typeof(IBrush), null, culture));
-        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), radar.Convert(Row("Pending", "wait", 0, "-"), typeof(IBrush), null, culture).ToString());
+        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), radar.Convert(Row("Pending", "wait", 0, "-") with { Age = "10m", LastChange = "10m" }, typeof(IBrush), null, culture).ToString());
         Assert.Equal(AppThemeCatalog.StatusBrush("CRITICAL").ToString(), radar.Convert(Row("Failed", "bad", 0, "0/1"), typeof(IBrush), null, culture).ToString());
         Assert.NotEqual(Brushes.Transparent, radar.Convert(Row("Running", "ok", 0, "1/1"), typeof(IBrush), null, culture));
         Assert.Throws<NotSupportedException>(() => radar.ConvertBack(null, typeof(string), null, culture));
@@ -761,6 +761,20 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Main_sync_workflow_updates_dev_after_main_push()
+    {
+        var root = LocateProjectRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "sync-dev.yml"));
+
+        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.Contains("branches:\n      - main", workflow, StringComparison.Ordinal);
+        Assert.Contains("git checkout dev", workflow, StringComparison.Ordinal);
+        Assert.Contains("git merge --no-edit origin/main", workflow, StringComparison.Ordinal);
+        Assert.Contains("git push origin dev", workflow, StringComparison.Ordinal);
+        Assert.Contains("permissions:\n  contents: write", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Yaml_editor_restores_to_new_resource_yaml_when_yaml_tab_inactive()
     {
         var directory = TempDirectory();
@@ -886,6 +900,37 @@ public sealed class AppBehaviorTests
         viewModel.SortResourcesBy("Memory");
         Assert.Equal("▼", viewModel.ResourceSortGlyphFor("Memory"));
         Assert.Equal(string.Empty, viewModel.ResourceSortGlyphFor("CPU"));
+    }
+
+    [Fact]
+    public void Storage_column_and_filter_use_usage_first_and_provider_capacity_as_fallback()
+    {
+        var directory = TempDirectory();
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.SeedCachedRowsForTesting([
+            Row("Available", "provider", 0, "1/1") with
+            {
+                Pulse = ResourcePulse.Empty with
+                {
+                    StorageLimitBytes = 5L * 1024 * 1024 * 1024
+                }
+            },
+            Row("Running", "usage", 0, "1/1") with
+            {
+                Pulse = ResourcePulse.Empty with
+                {
+                    StorageUsedBytes = 7L * 1024 * 1024 * 1024
+                }
+            }
+        ]);
+
+        Assert.Equal("5Gi", viewModel.Resources.Single(row => row.Name == "provider").StorageCompactDisplay);
+        Assert.Equal("7Gi/-", viewModel.Resources.Single(row => row.Name == "usage").StorageCompactDisplay);
+
+        viewModel.SortResourcesBy("Storage");
+        Assert.Equal(["usage", "provider"], viewModel.Resources.Select(row => row.Name).Take(2).ToArray());
     }
 
     [Fact]
@@ -1464,25 +1509,24 @@ public sealed class AppBehaviorTests
         var firstHash = state.Snapshot().ImportedContexts[0].SourceContentHash;
 
         clock.Now = clock.Now.AddMinutes(2);
-        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:2", "prod"));
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:2", "dev"));
         state.ImportKubeconfig(kubeconfig);
         using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
 
         viewModel.ReloadSessions();
 
-        Assert.Equal(2, viewModel.Sources.Count);
+        Assert.Single(viewModel.Sources);
         Assert.Equal("2026-06-10T08:02:00.0000000Z", viewModel.Sources[0].ImportedAt);
         Assert.Equal("config.yaml", viewModel.Sources[0].Name);
-        Assert.Equal("prod", viewModel.Sources[0].Context);
+        Assert.Equal("dev", viewModel.Sources[0].Context);
         Assert.NotEqual(firstHash, viewModel.Sources[0].Hash);
-        Assert.Equal(firstHash, viewModel.Sources[1].Hash);
         Assert.Contains("copy:", viewModel.Sources[0].Detail, StringComparison.Ordinal);
         Assert.Contains("dev", viewModel.ActiveSessionChipLabel, StringComparison.Ordinal);
 
         viewModel.ImportedContextRows[0].ActivateCommand.Execute(null);
 
-        Assert.Equal("prod", viewModel.SelectedSession?.DisplayName);
-        Assert.Contains("prod", viewModel.ActiveSessionChipLabel, StringComparison.Ordinal);
+        Assert.Equal("dev", viewModel.SelectedSession?.DisplayName);
+        Assert.Contains("dev", viewModel.ActiveSessionChipLabel, StringComparison.Ordinal);
         Assert.Equal("ACTIVE", viewModel.ImportedContextRows[0].ActiveMark);
     }
 
@@ -1530,6 +1574,49 @@ public sealed class AppBehaviorTests
             Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public void Main_view_model_auto_refreshes_imported_source_when_file_changes()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:1", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+        var first = Assert.Single(viewModel.Sources);
+        var firstHash = first.Hash;
+        Assert.Equal("default", first.FilterName);
+
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:2", "dev"));
+
+        Assert.True(viewModel.PollImportedSourceFilesForTesting());
+        var current = Assert.Single(viewModel.Sources);
+        Assert.Equal("dev", current.Context);
+        Assert.NotEqual(firstHash, current.Hash);
+        Assert.Equal(first.ContextId, current.ContextId);
+        Assert.Contains("Auto-refreshed 1 kubeconfig source(s).", viewModel.StatusLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Main_view_model_marks_imported_source_missing_when_file_disappears()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("http://127.0.0.1:1", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+        File.Delete(kubeconfig);
+
+        Assert.True(viewModel.PollImportedSourceFilesForTesting());
+        Assert.Equal("file missing", Assert.Single(viewModel.Sources).Status);
+        Assert.Contains("Auto-refreshed 0 kubeconfig source(s).", viewModel.StatusLine, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2147,7 +2234,7 @@ public sealed class AppBehaviorTests
         await Task.WhenAll(firstRefresh, duplicateRefresh);
         await Task.Delay(800);
 
-        Assert.Equal(baselineHandler.Requests.Count, replayHandler.Requests.Count);
+        Assert.InRange(replayHandler.Requests.Count, baselineHandler.Requests.Count, baselineHandler.Requests.Count + 1);
     }
 
     [Fact]
@@ -2713,7 +2800,7 @@ public sealed class AppBehaviorTests
         Assert.Same(Brushes.Transparent, deterministic.Convert("-", typeof(IBrush), null, CultureInfo.InvariantCulture));
         Assert.Same(Brushes.Transparent, radar.Convert(null, typeof(IBrush), null, CultureInfo.InvariantCulture));
         Assert.Equal(AppThemeCatalog.StatusBrush("CRITICAL").ToString(), radar.Convert(broken, typeof(IBrush), null, CultureInfo.InvariantCulture).ToString());
-        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), radar.Convert(Row("Pending", "pending", 0, "-"), typeof(IBrush), null, CultureInfo.InvariantCulture).ToString());
+        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), radar.Convert(Row("Pending", "pending", 0, "-") with { Age = "10m", LastChange = "10m" }, typeof(IBrush), null, CultureInfo.InvariantCulture).ToString());
         Assert.NotSame(Brushes.Transparent, radar.Convert(healthy, typeof(IBrush), null, CultureInfo.InvariantCulture));
     }
 

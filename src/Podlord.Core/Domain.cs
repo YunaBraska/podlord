@@ -395,9 +395,9 @@ public sealed record ResourcePulse(
         ? "-"
         : MemoryPercentDisplay;
 
-    public string StorageCompactDisplay => StorageUsedBytes is null || StorageLimitBytes is not > 0
-        ? "-"
-        : StoragePercentDisplay;
+    public string StorageCompactDisplay => StorageUsedBytes is not null && StorageLimitBytes is > 0
+        ? StoragePercentDisplay
+        : StorageDisplay;
 
     public string CpuMetricDetail => MetricDetail("CPU", CpuSummaryDisplay, CpuPercentDisplay, CpuLimitSuggestion);
 
@@ -410,8 +410,8 @@ public sealed record ResourcePulse(
         : $"↓{FormatBytes(NetworkInBytesPerSecond ?? 0)}/s ↑{FormatBytes(NetworkOutBytesPerSecond ?? 0)}/s";
 
     public string StorageDisplay => StorageUsedBytes is null
-        ? StorageLimitBytes is null ? "-" : $"-/{FormatBytes(StorageLimitBytes.Value)}"
-        : StorageLimitBytes is null ? FormatBytes(StorageUsedBytes.Value) : $"{FormatBytes(StorageUsedBytes.Value)} / {FormatBytes(StorageLimitBytes.Value)}";
+        ? StorageLimitBytes is null ? "-" : FormatBytes(StorageLimitBytes.Value)
+        : StorageLimitBytes is null ? $"{FormatBytes(StorageUsedBytes.Value)}/-" : $"{FormatBytes(StorageUsedBytes.Value)} / {FormatBytes(StorageLimitBytes.Value)}";
 
     public double CpuPercent => RatioPercent(CpuMillicores, CpuLimitMillicores);
 

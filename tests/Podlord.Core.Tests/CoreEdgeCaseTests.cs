@@ -136,6 +136,7 @@ public sealed class CoreEdgeCaseTests
         Assert.Equal(["small"], Names(ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Memory: ">=128Mi <200Mi"))));
         Assert.Equal(["large"], Names(ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Storage: ">5Gi"))));
         Assert.Equal(["small"], Names(ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Storage: "1Gi"))));
+        Assert.Equal(["small"], Names(ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Storage: "\"1Gi\""))));
         Assert.Empty(ResourceFilterMatcher.FilterRows(rows, new ResourceQuery(Storage: ">20Gi")));
     }
 
@@ -324,10 +325,10 @@ public sealed class CoreEdgeCaseTests
 
         Assert.Equal("-/250m", limitsOnly.CpuSummaryDisplay);
         Assert.Equal("-/512Mi", limitsOnly.MemorySummaryDisplay);
-        Assert.Equal("-/10Gi", limitsOnly.StorageDisplay);
+        Assert.Equal("10Gi", limitsOnly.StorageDisplay);
         Assert.Equal("-", limitsOnly.CpuCompactDisplay);
         Assert.Equal("-", limitsOnly.MemoryCompactDisplay);
-        Assert.Equal("-", limitsOnly.StorageCompactDisplay);
+        Assert.Equal("10Gi", limitsOnly.StorageCompactDisplay);
         Assert.False(limitsOnly.HasLiveMetrics);
 
         var empty = ResourcePulse.Empty;
@@ -439,14 +440,16 @@ public sealed class CoreEdgeCaseTests
     public void Resource_problem_reason_covers_forbidden_ready_status_and_restart_threshold_paths()
     {
         var forbidden = Row("Running", "hidden", 0, "1/1") with { Freshness = FreshnessState.Forbidden };
-        var notReady = Row("Running", "not-ready", 0, "1/2");
-        var pending = Row("Pending", "pending", 0, "-");
+        var notReady = Row("Running", "not-ready", 0, "1/2") with { Age = "10m", LastChange = "10m" };
+        var pending = Row("Pending", "pending", 0, "-") with { Age = "10m", LastChange = "10m" };
         var quietRestart = Row("Running", "quiet", 2, "1/1");
         var completed = Row("Succeeded", "completed", 0, "0/1");
+        var freshPending = Row("Pending", "fresh-pending", 0, "0/1") with { Age = "1m", LastChange = "1m" };
 
         Assert.Equal("RBAC hidden", ResourceFilterMatcher.ProblemReason(forbidden));
         Assert.Equal("Ready 1/2", ResourceFilterMatcher.ProblemReason(notReady));
         Assert.Equal("Pending", ResourceFilterMatcher.ProblemReason(pending));
+        Assert.Equal(string.Empty, ResourceFilterMatcher.ProblemReason(freshPending));
         Assert.Equal(string.Empty, ResourceFilterMatcher.ProblemReason(quietRestart, restartOutlierThreshold: 2));
         Assert.Equal(string.Empty, ResourceFilterMatcher.ProblemReason(completed));
         Assert.Equal(ResourceFilterMatcher.DefaultRestartOutlierThreshold, ResourceFilterMatcher.RestartOutlierThreshold([]));

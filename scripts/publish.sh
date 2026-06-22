@@ -5,6 +5,12 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DOTNET="$ROOT_DIR/.tools/dotnet/dotnet"
 CONFIGURATION=${CONFIGURATION:-Release}
 REQUESTED_RID=${1:-all}
+VERSION=${VERSION:-}
+
+if [ -z "$VERSION" ]; then
+  VERSION=$(git -C "$ROOT_DIR" tag --sort=-version:refname | sed -n '1p')
+fi
+
 VERSION=${VERSION:-0.0.0}
 
 if [ ! -x "$DOTNET" ]; then

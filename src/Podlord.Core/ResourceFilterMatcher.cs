@@ -9,6 +9,7 @@ public static class ResourceFilterMatcher
     private static readonly TimeSpan EventSuccessActivityTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan EventNormalActivityTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan EventWarningActivityTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan PodStartupProblemGrace = TimeSpan.FromMinutes(5);
 
     public static IReadOnlyList<FlatResourceRow> FilterRows(IEnumerable<FlatResourceRow> rows, ResourceQuery query)
     {
@@ -214,8 +215,28 @@ public static class ResourceFilterMatcher
             return $"Restarted {row.Restarts}";
         }
 
+        if (string.Equals(row.Kind, "Pod", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(row.Status, "Pending", StringComparison.OrdinalIgnoreCase)
+            && IsTransientPodStartup(row))
+        {
+            return string.Empty;
+        }
+
+        if (ProblemStatuses.Contains(row.Status)
+            && !string.Equals(row.Status, "Warning", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(row.Status, "Unknown", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(row.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+        {
+            return row.Status;
+        }
+
         if (ReadyParts(row.Ready) is { } ready && ready.Ready < ready.Total)
         {
+            if (IsTransientPodStartup(row))
+            {
+                return string.Empty;
+            }
+
             return $"Ready {row.Ready}";
         }
 
@@ -252,6 +273,22 @@ public static class ResourceFilterMatcher
         }
 
         return row.Restarts > restartOutlierThreshold;
+    }
+
+    private static bool IsTransientPodStartup(FlatResourceRow row)
+    {
+        if (!string.Equals(row.Kind, "Pod", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (row.Status is "CrashLoopBackOff" or "CreateContainerConfigError" or "CreateContainerError" or "ErrImagePull" or "Error" or "Failed" or "ImagePullBackOff" or "NotReady" or "OOMKilled" or "Unavailable" or "Unknown" or "Warning" or "Terminating")
+        {
+            return false;
+        }
+
+        var reference = ParseHumanDuration(row.LastChange) ?? ParseHumanDuration(row.Age);
+        return reference is { } age && age <= PodStartupProblemGrace;
     }
 
     private static bool IsEventActivity(FlatResourceRow row)

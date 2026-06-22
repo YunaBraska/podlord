@@ -8,8 +8,14 @@ RID=${1:-}
 REQUESTED_RID=${1:-}
 APP_NAME=Podlord
 BUNDLE_ID=${BUNDLE_ID:-dev.podlord.app}
-VERSION=${VERSION:-0.0.0}
+VERSION=${VERSION:-}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
+
+if [ -z "$VERSION" ]; then
+  VERSION=$(git -C "$ROOT_DIR" tag --sort=-version:refname | sed -n '1p')
+fi
+
+VERSION=${VERSION:-0.0.0}
 
 if [ ! -x "$DOTNET" ]; then
   DOTNET=dotnet

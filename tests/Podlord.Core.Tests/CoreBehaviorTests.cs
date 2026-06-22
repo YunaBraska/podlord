@@ -113,6 +113,8 @@ users:
         var state = AppState.InMemoryWithConfigDirectory(directory, Clock);
         state.ImportKubeconfig(kubeconfig);
         var first = Assert.Single(state.Snapshot().ImportedContexts);
+        state.RenameImportedContext(first.ContextId, "Dev Alias");
+        state.SetImportedContextFilter(first.ContextId, "team-a");
         var ownedStore = Path.Combine(directory, "kubeconfigs");
 
         state.RefreshImportedKubeconfigs();
@@ -127,14 +129,16 @@ users:
             .ToList();
 
         Assert.Single(refreshed);
-        Assert.Equal(2, contexts.Count);
-        Assert.Contains(contexts, context => context.Server == "http://127.0.0.1:1");
-        Assert.Contains(contexts, context => context.Server == "http://127.0.0.1:2");
-        Assert.Equal(2, contexts.Select(context => context.SourceContentHash).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(2, contexts.Select(context => context.OwnedKubeconfigPath).Distinct(StringComparer.Ordinal).Count());
-        Assert.All(contexts, context => Assert.Equal("config.yaml", context.SourceName));
-        Assert.Equal(contexts.Count, snapshot.Sessions.Count(session => contexts.Any(context => context.ContextId == session.ContextId)));
-        Assert.NotEqual(first.ContextId, contexts.Single(context => context.Server == "http://127.0.0.1:2").ContextId);
+        var current = Assert.Single(contexts);
+        Assert.Equal("http://127.0.0.1:2", current.Server);
+        Assert.NotEqual(first.SourceContentHash, current.SourceContentHash);
+        Assert.NotEqual(first.OwnedKubeconfigPath, current.OwnedKubeconfigPath);
+        Assert.Equal("config.yaml", current.SourceName);
+        Assert.Equal("Dev Alias", current.DisplayName);
+        Assert.Equal("team-a", current.FilterName);
+        Assert.Single(snapshot.Sessions, session => session.ContextId == current.ContextId);
+        Assert.Equal(first.ContextId, current.ContextId);
+        Assert.Single(Directory.EnumerateFiles(ownedStore, "*.yaml"));
     }
 
     [Fact]
@@ -188,6 +192,26 @@ users:
         Assert.Equal("2026-06-12T08:05:00.0000000Z", current.ImportedAt);
         Assert.Single(state.Snapshot().Sessions);
         Assert.Single(Directory.EnumerateFiles(Path.Combine(directory, "kubeconfigs"), "*.yaml"));
+    }
+
+    [Fact]
+    public void App_state_refreshing_file_source_keeps_user_rename_even_when_file_changes()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("dev", "http://127.0.0.1:1"));
+        var state = AppState.InMemoryWithConfigDirectory(directory, Clock);
+        state.ImportKubeconfig(kubeconfig);
+        var first = Assert.Single(state.Snapshot().ImportedContexts);
+        state.RenameImportedContext(first.ContextId, "Production Alias");
+
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("dev", "http://127.0.0.1:2"));
+        state.RefreshImportedKubeconfigs();
+
+        var refreshed = Assert.Single(state.Snapshot().ImportedContexts, context => context.SourcePath == Path.GetFullPath(kubeconfig));
+        Assert.Equal("Production Alias", refreshed.DisplayName);
+        Assert.Equal(first.ContextId, refreshed.ContextId);
+        Assert.Equal("http://127.0.0.1:2", refreshed.Server);
     }
 
     [Fact]
@@ -276,7 +300,7 @@ users:
     }
 
     [Fact]
-    public void App_state_refresh_keeps_prior_snapshots_when_source_file_changes_shape()
+    public void App_state_refresh_replaces_removed_file_contexts_when_source_file_changes_shape()
     {
         var directory = TempDirectory();
         var kubeconfig = Path.Combine(directory, "config.yaml");
@@ -288,13 +312,14 @@ users:
         state.RefreshImportedKubeconfigs();
         var snapshot = state.Snapshot();
 
-        Assert.Contains(snapshot.ImportedContexts, context => context.Name == "only-a");
-        Assert.Contains(snapshot.Sessions, session => session.DisplayName == "only-a");
-        Assert.Contains(snapshot.ImportedContexts, context => context.Name == "only-b");
-        Assert.Contains(snapshot.Sessions, session => session.DisplayName == "only-b");
-        Assert.Equal(3, snapshot.ImportedContexts.Count);
-        Assert.Equal(3, snapshot.Sessions.Count);
-        Assert.Equal(2, snapshot.ImportedContexts.Select(context => context.SourceContentHash).Distinct(StringComparer.Ordinal).Count());
+        Assert.DoesNotContain(snapshot.ImportedContexts, context => context.Name == "only-a");
+        Assert.DoesNotContain(snapshot.Sessions, session => session.DisplayName == "only-a");
+        var onlyB = Assert.Single(snapshot.ImportedContexts, context => context.Name == "only-b");
+        Assert.Equal("http://127.0.0.1:2", onlyB.Server);
+        Assert.Single(snapshot.Sessions, session => session.DisplayName == "only-b");
+        Assert.Single(snapshot.ImportedContexts);
+        Assert.Single(snapshot.Sessions);
+        Assert.Single(snapshot.ImportedContexts.Select(context => context.SourceContentHash).Distinct(StringComparer.Ordinal));
         Assert.Contains(snapshot.Sessions, session => session.Id == snapshot.ActiveSessionId);
     }
 
@@ -429,10 +454,10 @@ users:
         Assert.Equal("", emptyAge.AgeDisplay);
         Assert.Equal("-/1c", limitsOnly.CpuSummaryDisplay);
         Assert.Equal("-/1Gi", limitsOnly.MemorySummaryDisplay);
-        Assert.Equal("-/10Gi", limitsOnly.StorageDisplay);
+        Assert.Equal("10Gi", limitsOnly.StorageDisplay);
         Assert.Equal("-", limitsOnly.CpuCompactDisplay);
         Assert.Equal("-", limitsOnly.MemoryCompactDisplay);
-        Assert.Equal("-", limitsOnly.StorageCompactDisplay);
+        Assert.Equal("10Gi", limitsOnly.StorageCompactDisplay);
         Assert.True((HealthyRow("limits") with { Pulse = limitsOnly }).HasCpuMetricTextOnly);
         Assert.True((HealthyRow("limits") with { Pulse = limitsOnly }).HasMemoryMetricTextOnly);
         Assert.True((HealthyRow("limits") with { Pulse = limitsOnly }).HasStorageMetricTextOnly);
@@ -454,6 +479,24 @@ users:
         Assert.Contains("request", liveUsage.MemoryMetricDetail, StringComparison.Ordinal);
         Assert.True(liveUsage.HasCpuSuggestion);
         Assert.True(liveUsage.HasMemorySuggestion);
+    }
+
+    [Fact]
+    public void Storage_display_prefers_usage_and_falls_back_to_provider_capacity()
+    {
+        var usageOnly = ResourcePulse.Empty with
+        {
+            StorageUsedBytes = 5L * 1024 * 1024 * 1024
+        };
+        var capacityOnly = ResourcePulse.Empty with
+        {
+            StorageLimitBytes = 5L * 1024 * 1024 * 1024
+        };
+
+        Assert.Equal("5Gi/-", usageOnly.StorageDisplay);
+        Assert.Equal("5Gi/-", usageOnly.StorageCompactDisplay);
+        Assert.Equal("5Gi", capacityOnly.StorageDisplay);
+        Assert.Equal("5Gi", capacityOnly.StorageCompactDisplay);
     }
 
     [Fact]
@@ -494,6 +537,20 @@ users:
     }
 
     [Fact]
+    public void Fresh_starting_pod_is_not_flagged_as_problem_until_startup_grace_expires()
+    {
+        var freshPending = HealthyRow("pending") with { Status = "Pending", Ready = "0/1", Age = "1m", LastChange = "1m" };
+        var freshRunning = HealthyRow("warming") with { Ready = "0/1", Age = "2m", LastChange = "2m" };
+        var stalePending = HealthyRow("stuck") with { Status = "Pending", Ready = "0/1", Age = "8m", LastChange = "8m" };
+        var crashing = HealthyRow("crashing") with { Status = "CrashLoopBackOff", Ready = "0/1", Age = "1m", LastChange = "1m" };
+
+        Assert.Equal(string.Empty, ResourceFilterMatcher.ProblemReason(freshPending));
+        Assert.Equal(string.Empty, ResourceFilterMatcher.ProblemReason(freshRunning));
+        Assert.Equal("Ready 0/1", ResourceFilterMatcher.ProblemReason(stalePending));
+        Assert.Equal("CrashLoopBackOff", ResourceFilterMatcher.ProblemReason(crashing));
+    }
+
+    [Fact]
     public void Non_running_row_keeps_restart_flag_regardless_of_threshold()
     {
         var pending = HealthyRow("pending") with { Status = "Pending", Restarts = 1 };
@@ -514,7 +571,7 @@ users:
     {
         var rows = Enumerable.Range(0, 98)
             .Select(index => HealthyRow($"pod-{index}"))
-            .Concat([WarningRow("warm-1"), WarningRow("warm-2")])
+            .Concat([WarningRow("warm-1") with { Age = "10m", LastChange = "10m" }, WarningRow("warm-2") with { Age = "10m", LastChange = "10m" }])
             .ToList();
 
         var summary = ResourceHealthCalculator.Calculate(rows, infrastructureWarnings: 0);
@@ -533,7 +590,7 @@ users:
         var rows = new[]
         {
             HealthyRow("healthy"),
-            WarningRow("warming"),
+            WarningRow("warming") with { Age = "10m", LastChange = "10m" },
             CriticalRow("broken")
         };
 
