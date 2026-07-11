@@ -2,11 +2,216 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Avalonia.Media;
 using Podlord.Core;
-using Podlord.Kubernetes;
 
 namespace Podlord.App;
+
+public sealed record SessionTabViewModel(
+    string Id,
+    string DisplayName,
+    bool IsActive,
+    string SourceName,
+    string SourceColorKey,
+    string Tooltip);
+
+internal enum ResourceSortDirection
+{
+    None,
+    Descending,
+    Ascending
+}
+
+internal sealed record SessionWorkspaceSearchState(
+    bool IsResourceSearchOpen,
+    bool IsGraphSearchOpen,
+    bool IsEventSearchOpen,
+    string ResourceQuickSearch,
+    string GraphSearch,
+    string EventQuickSearch,
+    int ResourceSearchIndex,
+    int GraphSearchIndex,
+    int EventSearchIndex)
+{
+    public static SessionWorkspaceSearchState Empty { get; } = new(false, false, false, string.Empty, string.Empty, string.Empty, -1, -1, -1);
+}
+
+internal sealed record SessionWorkspaceAlertState(
+    IReadOnlySet<string> PreviousVisibleRadarAlertIds,
+    IReadOnlySet<string> PreviousVisibleResourceAlertIds,
+    IReadOnlyDictionary<string, DateTimeOffset> RadarAlertBlinkUntil,
+    IReadOnlyDictionary<string, DateTimeOffset> ResourceAlertBlinkUntil,
+    IReadOnlyDictionary<string, string> AlertSoundKeysByRuleId,
+    IReadOnlySet<(string RuleId, string RowId)> PreviousAlertRuleMatches,
+    IReadOnlyDictionary<(string RuleId, string RowId), string> PreviousAlertRuleRowStates,
+    string LastRadarAutoFollowAlertKey)
+{
+    public static SessionWorkspaceAlertState Empty { get; } = new(
+        new HashSet<string>(StringComparer.Ordinal),
+        new HashSet<string>(StringComparer.Ordinal),
+        new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal),
+        new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal),
+        new Dictionary<string, string>(StringComparer.Ordinal),
+        new HashSet<(string RuleId, string RowId)>(),
+        new Dictionary<(string RuleId, string RowId), string>(),
+        string.Empty);
+}
+
+internal sealed record SessionWorkspaceRadarState(
+    double Zoom,
+    double PanX,
+    double PanY,
+    double CanvasWidth,
+    double CanvasHeight,
+    double PanelHeight)
+{
+    public static SessionWorkspaceRadarState Default { get; } = new(1d, 0d, 0d, 480d, 200d, 184d);
+}
+
+internal sealed record SessionWorkspaceRenderedState(
+    ResourceQuery LocalQuery,
+    string ResourceSortColumn,
+    ResourceSortDirection ResourceSortDirection,
+    string EventSortColumn,
+    ResourceSortDirection EventSortDirection,
+    IReadOnlyList<FlatResourceRow> CachedRows,
+    IReadOnlyList<FlatResourceRow> Resources,
+    IReadOnlyList<EventTimelineRow> Events,
+    IReadOnlyList<RelationshipRow> Relationships,
+    IReadOnlyList<GraphNodeViewModel> GraphNodes,
+    IReadOnlyList<RadarBlockViewModel> RadarBlocks,
+    IReadOnlyList<PulseMetricCard> ClusterPulseItems,
+    IReadOnlyList<ResourceListFailure> Failures,
+    IReadOnlyList<HealthSegmentViewModel> HealthSegments,
+    string? SelectedResourceId,
+    string? SelectedResourceRowId,
+    DateTimeOffset? LastSyncedAt,
+    int RestartOutlierThreshold,
+    string StatusLine,
+    string ResourceCountLabel);
+
+internal sealed class SessionWorkspaceViewModel : INotifyPropertyChanged
+{
+    private PodlordSession session;
+    private bool isActive;
+    private bool isRefreshing;
+    private bool isCacheWarm;
+
+    public SessionWorkspaceViewModel(PodlordSession session, IKubernetesApplicationPort service)
+    {
+        this.session = session;
+        Service = service;
+    }
+
+    public string Id => session.Id;
+
+    public PodlordSession Session => session;
+
+    public IKubernetesApplicationPort Service { get; }
+
+    public string DisplayName => session.DisplayName;
+
+    public bool IsActive
+    {
+        get => isActive;
+        set
+        {
+            if (isActive == value)
+            {
+                return;
+            }
+
+            isActive = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public SessionWorkspaceSearchState SearchState { get; set; } = SessionWorkspaceSearchState.Empty;
+
+    public SessionWorkspaceAlertState AlertState { get; set; } = SessionWorkspaceAlertState.Empty;
+
+    public SessionWorkspaceRadarState RadarState { get; set; } = SessionWorkspaceRadarState.Default;
+
+    public SessionWorkspaceRenderedState? RenderedState { get; set; }
+
+    public string FilterOptionSignature { get; set; } = string.Empty;
+
+    public DateTimeOffset? LastSyncedAt { get; set; }
+
+    public DateTimeOffset LastBroadRefreshAt { get; set; } = DateTimeOffset.MinValue;
+
+    public DateTimeOffset InitialLoadStartedAt { get; set; } = DateTimeOffset.MinValue;
+
+    public int InitialLoadExpectedTotal { get; set; }
+
+    public bool RefreshInFlight { get; set; }
+
+    public bool RefreshAgainRequested { get; set; }
+
+    public CancellationTokenSource? CacheRestore { get; set; }
+
+    public bool IsRefreshing
+    {
+        get => isRefreshing;
+        set
+        {
+            if (isRefreshing == value)
+            {
+                return;
+            }
+
+            isRefreshing = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsCacheWarm
+    {
+        get => isCacheWarm;
+        set
+        {
+            if (isCacheWarm == value)
+            {
+                return;
+            }
+
+            isCacheWarm = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public void CancelCacheRestore()
+    {
+        CacheRestore?.Cancel();
+        CacheRestore?.Dispose();
+        CacheRestore = null;
+    }
+
+    public void UpdateSession(PodlordSession updated)
+    {
+        if (!session.Id.Equals(updated.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (session.Equals(updated))
+        {
+            return;
+        }
+
+        session = updated;
+        OnPropertyChanged(nameof(Session));
+        OnPropertyChanged(nameof(DisplayName));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
 
 public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
 {
@@ -19,9 +224,18 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
         Action<ImportedContextRowViewModel> removeAction,
         Action<ImportedContextRowViewModel, string> renameAction,
         Action<ImportedContextRowViewModel>? activateAction = null,
+        Action<ImportedContextRowViewModel>? openTabAction = null,
+        Action<ImportedContextRowViewModel>? openWindowAction = null,
         bool isActive = false,
         string sourceName = "",
-        string hash = "")
+        string hash = "",
+        string useLabel = "OPEN",
+        string activeLabel = "ACTIVE",
+        string useTooltip = "",
+        string openTabTooltip = "",
+        string openWindowTooltip = "",
+        string renameTooltip = "",
+        string deleteTooltip = "")
     {
         ContextId = contextId;
         SourcePath = sourcePath;
@@ -29,9 +243,18 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
         RemoveCommand = new RelayCommand(() => removeAction(this));
         RenameCommand = new RelayCommand(() => renameAction(this, this.displayName));
         ActivateCommand = new RelayCommand(() => activateAction?.Invoke(this));
+        OpenTabCommand = new RelayCommand(() => openTabAction?.Invoke(this));
+        OpenWindowCommand = new RelayCommand(() => openWindowAction?.Invoke(this));
         IsActive = isActive;
         SourceName = sourceName;
         Hash = hash;
+        UseLabel = useLabel;
+        ActiveLabel = activeLabel;
+        UseTooltip = useTooltip;
+        OpenTabTooltip = openTabTooltip;
+        OpenWindowTooltip = openWindowTooltip;
+        RenameTooltip = renameTooltip;
+        DeleteTooltip = deleteTooltip;
     }
 
     public string ContextId { get; }
@@ -40,11 +263,25 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
 
     public bool IsActive { get; }
 
-    public string ActiveMark => IsActive ? "ACTIVE" : "USE";
+    public string ActiveMark => IsActive ? ActiveLabel : UseLabel;
 
     public string SourceName { get; }
 
     public string Hash { get; }
+
+    public string UseLabel { get; }
+
+    public string ActiveLabel { get; }
+
+    public string UseTooltip { get; }
+
+    public string OpenTabTooltip { get; }
+
+    public string OpenWindowTooltip { get; }
+
+    public string RenameTooltip { get; }
+
+    public string DeleteTooltip { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -68,6 +305,10 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
     public System.Windows.Input.ICommand RenameCommand { get; }
 
     public System.Windows.Input.ICommand ActivateCommand { get; }
+
+    public System.Windows.Input.ICommand OpenTabCommand { get; }
+
+    public System.Windows.Input.ICommand OpenWindowCommand { get; }
 }
 
 public sealed class SourceStatusRow : INotifyPropertyChanged
@@ -610,7 +851,11 @@ public sealed class RadarBlockViewModel(
     bool isAnnouncing = false,
     string alertAnimation = "",
     string alertColor = "",
-    bool isDimmed = false) : INotifyPropertyChanged
+    bool isDimmed = false,
+    double? worldX = null,
+    double? worldY = null,
+    double? worldWidth = null,
+    double? worldHeight = null) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -625,6 +870,14 @@ public sealed class RadarBlockViewModel(
     public double Width { get; private set; } = width;
 
     public double Height { get; private set; } = height;
+
+    public double WorldX { get; private set; } = worldX ?? x;
+
+    public double WorldY { get; private set; } = worldY ?? y;
+
+    public double WorldWidth { get; private set; } = worldWidth ?? width;
+
+    public double WorldHeight { get; private set; } = worldHeight ?? height;
 
     public IBrush Brush { get; private set; } = brush;
 
@@ -682,6 +935,10 @@ public sealed class RadarBlockViewModel(
             && Y.Equals(source.Y)
             && Width.Equals(source.Width)
             && Height.Equals(source.Height)
+            && WorldX.Equals(source.WorldX)
+            && WorldY.Equals(source.WorldY)
+            && WorldWidth.Equals(source.WorldWidth)
+            && WorldHeight.Equals(source.WorldHeight)
             && ReferenceEquals(Brush, source.Brush)
             && ReferenceEquals(BorderBrush, source.BorderBrush)
             && ReferenceEquals(AnnounceBrush, source.AnnounceBrush)
@@ -708,6 +965,10 @@ public sealed class RadarBlockViewModel(
         Y = source.Y;
         Width = source.Width;
         Height = source.Height;
+        WorldX = source.WorldX;
+        WorldY = source.WorldY;
+        WorldWidth = source.WorldWidth;
+        WorldHeight = source.WorldHeight;
         Brush = source.Brush;
         BorderBrush = source.BorderBrush;
         AnnounceBrush = source.AnnounceBrush;
@@ -755,7 +1016,7 @@ public sealed class PortForwardTaskViewModel : INotifyPropertyChanged
 {
     private string status;
     private Process? process;
-    private PodlordPortForward? forwarder;
+    private IPodlordPortForward? forwarder;
 
     public PortForwardTaskViewModel(
         string id,
@@ -822,7 +1083,7 @@ public sealed class PortForwardTaskViewModel : INotifyPropertyChanged
         }
     }
 
-    public PodlordPortForward? Forwarder
+    public IPodlordPortForward? Forwarder
     {
         get => forwarder;
         set

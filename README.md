@@ -155,7 +155,7 @@ src/Podlord.Kubernetes  Kubernetes API adapter, auth, metrics, resource details,
 src/Podlord.App         Avalonia desktop shell, radar, tables, filters, inspector, themes
 tests/                  Public-boundary behavior tests and k3d integration tests
 doc/adr/                Architecture decision records
-doc/spec/               Product, roadmap, and scenario notes
+doc/spec/               Product, feature, and scenario notes
 doc/design/             Design system notes and assets
 ```
 
@@ -171,16 +171,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ## Roadmap
 
-The next major feature area is rule-based alerting:
-
-- user-defined alert rules over resources, fields, filters, events, and metrics
-- reusable default rules that replace today’s built-in activity/problem behavior
-- custom radar animations for matched rules
-- optional error, warning, and info sounds
-- import/exportable rule presets
-- per-rule enable/disable controls
-
-See [doc/ROADMAP.md](doc/ROADMAP.md) for the full plan.
+See [doc/ROADMAP.md](doc/ROADMAP.md) for planned work. The README stays short on purpose; roadmap detail belongs there, not here.
 
 ## Contributing
 

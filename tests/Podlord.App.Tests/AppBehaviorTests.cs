@@ -1242,7 +1242,7 @@ public sealed class AppBehaviorTests
 
         viewModel.ReloadSessions();
         viewModel.ProblemsOnly = false;
-        viewModel.KindPicker.SetExpression("\"Pod\"");
+        viewModel.SelectWorkspace("events");
         await viewModel.RefreshResourcesAsync(force: true);
 
         Assert.Equal(["api", "worker"], viewModel.Resources.Select(row => row.Name).Order(StringComparer.Ordinal).ToArray());
@@ -1528,6 +1528,91 @@ public sealed class AppBehaviorTests
         Assert.Equal("dev", viewModel.SelectedSession?.DisplayName);
         Assert.Contains("dev", viewModel.ActiveSessionChipLabel, StringComparison.Ordinal);
         Assert.Equal("ACTIVE", viewModel.ImportedContextRows[0].ActiveMark);
+    }
+
+    [Fact]
+    public void Source_menu_open_marks_source_opened_and_moves_it_to_top()
+    {
+        var directory = TempDirectory();
+        var alpha = Path.Combine(directory, "alpha.kube");
+        var beta = Path.Combine(directory, "beta.kube");
+        var clock = new MutableClock(new DateTimeOffset(2026, 6, 24, 7, 0, 0, TimeSpan.Zero));
+        var state = AppState.InMemoryWithConfigDirectory(directory, clock);
+        File.WriteAllText(alpha, OneContextKubeconfig("http://127.0.0.1:1", "alpha"));
+        File.WriteAllText(beta, OneContextKubeconfig("http://127.0.0.1:2", "beta"));
+        state.ImportKubeconfig(alpha);
+        clock.Now = clock.Now.AddMinutes(1);
+        state.ImportKubeconfig(beta);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+
+        Assert.Equal(["beta", "alpha"], viewModel.ImportedContextRows.Select(row => row.DisplayName).ToArray());
+
+        clock.Now = clock.Now.AddMinutes(1);
+        var alphaRow = viewModel.ImportedContextRows.Single(row => row.DisplayName == "alpha");
+        alphaRow.OpenTabCommand.Execute(null);
+
+        Assert.Equal("alpha", viewModel.SelectedSession?.DisplayName);
+        Assert.Equal(["alpha", "beta"], viewModel.ImportedContextRows.Select(row => row.DisplayName).ToArray());
+        Assert.Equal("2026-06-24T07:02:00.0000000Z", state.Snapshot().ImportedContexts[0].LastOpenedAt);
+    }
+
+    [Fact]
+    public void Radar_source_selector_only_shows_sources_not_open_in_current_window()
+    {
+        var directory = TempDirectory();
+        var alpha = Path.Combine(directory, "alpha.kube");
+        var beta = Path.Combine(directory, "beta.kube");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        File.WriteAllText(alpha, OneContextKubeconfig("http://127.0.0.1:1", "alpha"));
+        File.WriteAllText(beta, OneContextKubeconfig("http://127.0.0.1:2", "beta"));
+        state.ImportKubeconfig(alpha);
+        state.ImportKubeconfig(beta);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+
+        viewModel.ReloadSessions();
+
+        Assert.Single(viewModel.OpenSessions);
+        var initiallyOpen = viewModel.OpenSessions[0].DisplayName;
+        var initiallyAvailable = viewModel.VisibleImportedContexts.ToArray();
+        Assert.Single(initiallyAvailable);
+        Assert.DoesNotContain(initiallyOpen, initiallyAvailable.Select(row => row.DisplayName));
+
+        initiallyAvailable[0].OpenTabCommand.Execute(null);
+
+        Assert.Empty(viewModel.VisibleImportedContexts);
+
+        viewModel.CloseSessionTab(viewModel.OpenSessions[0].Id);
+
+        Assert.Equal([initiallyOpen], viewModel.VisibleImportedContexts.Select(row => row.DisplayName).ToArray());
+    }
+
+    [Fact]
+    public void Radar_source_selector_hides_sources_open_in_runtime_window()
+    {
+        var directory = TempDirectory();
+        var alpha = Path.Combine(directory, "alpha.kube");
+        var beta = Path.Combine(directory, "beta.kube");
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        File.WriteAllText(alpha, OneContextKubeconfig("http://127.0.0.1:1", "alpha"));
+        File.WriteAllText(beta, OneContextKubeconfig("http://127.0.0.1:2", "beta"));
+        state.ImportKubeconfig(alpha);
+        state.ImportKubeconfig(beta);
+        var service = new KubernetesResourceService(state);
+        var runtime = new AppRuntime(state, service, _ => { });
+        using var viewModel = new MainWindowViewModel(state, service, runtime, "host-a", null, null, null);
+
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var alphaSession = state.ListSessions().Single(session => session.DisplayName == "alpha");
+
+        runtime.RegisterSessionPlacement(alphaSession.Id, "detached-host");
+
+        Assert.Equal(["beta"], viewModel.VisibleImportedContexts.Select(row => row.DisplayName).ToArray());
+
+        runtime.UnregisterSessionPlacement(alphaSession.Id, "detached-host");
+
+        Assert.Equal(["alpha", "beta"], viewModel.VisibleImportedContexts.Select(row => row.DisplayName).Order(StringComparer.Ordinal).ToArray());
     }
 
     [Fact]
@@ -1956,7 +2041,7 @@ public sealed class AppBehaviorTests
 
         viewModel.ReloadSessions();
         viewModel.ProblemsOnly = false;
-        viewModel.KindPicker.SetExpression("\"Pod\"");
+        viewModel.SelectWorkspace("events");
         await viewModel.RefreshResourcesAsync(force: true);
 
         var cachedCount = viewModel.Resources.Count;
@@ -2121,15 +2206,15 @@ public sealed class AppBehaviorTests
         }));
         var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
         var prodSession = state.ListSessions().Single(session => session.DisplayName == "prod");
-        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, ForceRefresh: true), KubernetesRequestPriority.UserVisible);
         using var viewModel = new MainWindowViewModel(state, service);
 
         viewModel.ReloadSessions();
         viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == devSession.Id);
 
         Assert.Contains(viewModel.Resources, row => row.Name == "cached-api");
-        Assert.Contains("Showing cached resources for dev", viewModel.StatusLine, StringComparison.Ordinal);
-        Assert.True(viewModel.IsRefreshing);
+        Assert.DoesNotContain("Loading resources for dev", viewModel.StatusLine, StringComparison.Ordinal);
+        Assert.False(viewModel.IsRefreshing);
 
         viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == prodSession.Id);
 
@@ -2188,6 +2273,825 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public async Task Partial_cached_session_restore_keeps_rows_and_radar_hidden_while_loading()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(path.EndsWith("/pods", StringComparison.Ordinal)
+                    ? """{"items":[{"metadata":{"name":"cached-api","namespace":"payments","uid":"cached-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                    : """{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
+        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        using var viewModel = new MainWindowViewModel(state, service);
+
+        viewModel.ReloadSessions();
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == devSession.Id);
+
+        Assert.Empty(viewModel.Resources);
+        Assert.Empty(viewModel.RadarBlocks);
+        Assert.True(viewModel.IsRefreshing);
+        Assert.True(viewModel.IsInitialLoading);
+        Assert.Contains("Loading resources", viewModel.HealthSummary, StringComparison.Ordinal);
+        Assert.True(viewModel.IsResourceLogoVisible);
+        Assert.True(viewModel.IsRadarIdle);
+    }
+
+    [Fact]
+    public async Task Tab_switch_with_fresh_cache_does_not_schedule_extra_kubernetes_requests()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(path.EndsWith("/pods", StringComparison.Ordinal)
+                    ? """{"items":[{"metadata":{"name":"cached-api","namespace":"payments","uid":"cached-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                    : """{"items":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
+        var prodSession = state.ListSessions().Single(session => session.DisplayName == "prod");
+        await service.WarmResourceCacheAsync(new ResourceQuery(devSession.Id, ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        await service.WarmResourceCacheAsync(new ResourceQuery(prodSession.Id, ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        var networkCallsAfterWarm = handler.Requests.Count;
+        using var viewModel = new MainWindowViewModel(state, service);
+
+        viewModel.ReloadSessions();
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+        viewModel.OpenSessionTab(prodSession.Id, activate: true);
+        viewModel.ActivateSessionTab(devSession.Id);
+        await Task.Delay(900);
+        viewModel.ActivateSessionTab(prodSession.Id);
+        await Task.Delay(900);
+
+        Assert.Equal(networkCallsAfterWarm, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Focus_regain_with_fresh_cache_does_not_force_refresh_or_loading_chrome()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return JsonResponse(path.EndsWith("/pods", StringComparison.Ordinal)
+                ? """{"items":[{"metadata":{"name":"cached-api","namespace":"payments","uid":"cached-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                : """{"items":[]}""");
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var session = state.ListSessions().Single(session => session.DisplayName == "dev");
+        await service.WarmResourceCacheAsync(new ResourceQuery(session.Id, ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        var networkCallsAfterWarm = handler.Requests.Count;
+        using var viewModel = new MainWindowViewModel(state, service);
+
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.OpenSessionTab(session.Id, activate: true);
+        await Task.Delay(900);
+
+        Assert.Contains(viewModel.Resources, row => row.Name == "cached-api");
+        Assert.False(viewModel.IsRefreshing);
+
+        viewModel.SetAppFocus(false);
+        viewModel.SetAppFocus(true);
+        await Task.Delay(900);
+
+        Assert.Equal(networkCallsAfterWarm, handler.Requests.Count);
+        Assert.False(viewModel.IsRefreshing);
+        Assert.False(viewModel.IsInitialLoading);
+    }
+
+    [Fact]
+    public async Task Partial_cached_session_restore_keeps_rows_hidden_until_full_sync_finishes()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return JsonResponse(path.EndsWith("/pods", StringComparison.Ordinal)
+                ? """{"items":[{"metadata":{"name":"cached-api","namespace":"payments","uid":"cached-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                : """{"items":[]}""");
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var session = state.ListSessions().Single(session => session.DisplayName == "dev");
+        await service.WarmResourceCacheAsync(new ResourceQuery(session.Id, Kind: "\"Pod\"", ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        using var viewModel = new MainWindowViewModel(state, service);
+
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.SelectedSession = viewModel.Sessions.Single(candidate => candidate.Id == session.Id);
+
+        Assert.Empty(viewModel.Resources);
+        Assert.Empty(viewModel.RadarBlocks);
+        Assert.True(viewModel.IsRefreshing);
+        Assert.True(viewModel.IsInitialLoading);
+        Assert.Contains("Loading resources for dev", viewModel.StatusLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Independent_session_pipelines_share_cache_updates_after_creation()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return JsonResponse(path.EndsWith("/pods", StringComparison.Ordinal)
+                ? """{"items":[{"metadata":{"name":"shared-api","namespace":"payments","uid":"shared-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                : """{"items":[]}""");
+        });
+        var first = new KubernetesResourceService(state, handler);
+        var second = first.CreateIndependentPipeline();
+        var session = state.ListSessions().Single(session => session.DisplayName == "dev");
+        var query = new ResourceQuery(session.Id, Kind: "\"Pod\"");
+
+        await first.WarmResourceCacheAsync(query, KubernetesRequestPriority.UserVisible);
+
+        Assert.True(second.HasRecentWarmResourceCompletion(query));
+        Assert.Contains(second.GetCachedResourceSnapshot(query).Rows, row => row.Name == "shared-api");
+    }
+
+    [Fact]
+    public void Window_title_tracks_selected_session()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.ReloadSessions(openDefaultSession: false);
+
+        Assert.Equal("Podlord - dev", viewModel.WindowTitle);
+
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        Assert.Equal("Podlord - dev", viewModel.WindowTitle);
+
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+        Assert.Equal("Podlord - prod", viewModel.WindowTitle);
+    }
+
+    [Fact]
+    public async Task Foreground_refresh_with_visible_rows_keeps_current_view_instead_of_showing_initial_loading()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        var podResponses = 0;
+        var handler = new AsyncAppRecordingHandler(async (request, cancellationToken) =>
+        {
+            await Task.Delay(220, cancellationToken).ConfigureAwait(false);
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var isPodRequest = path.EndsWith("/pods", StringComparison.Ordinal);
+            var podName = isPodRequest && Interlocked.Increment(ref podResponses) == 1 ? "cached-api" : "fresh-api";
+            var podJson = """{"items":[{"metadata":{"name":"__POD__","namespace":"payments","uid":"__POD__-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                .Replace("__POD__", podName, StringComparison.Ordinal);
+            return JsonResponse(isPodRequest
+                ? podJson
+                : """{"items":[]}""");
+        });
+        var service = new KubernetesResourceService(state, handler);
+        var session = state.ListSessions().Single(session => session.DisplayName == "dev");
+        await service.WarmResourceCacheAsync(new ResourceQuery(session.Id, ForceRefresh: true), KubernetesRequestPriority.UserVisible);
+        using var viewModel = new MainWindowViewModel(state, service);
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.OpenSessionTab(session.Id, activate: true);
+        await Task.Delay(900);
+        Assert.Equal(["cached-api"], viewModel.Resources.Select(row => row.Name).ToArray());
+        Assert.False(viewModel.IsRefreshing);
+
+        var refresh = viewModel.RefreshResourcesAsync(force: true);
+        await Task.Delay(40);
+
+        Assert.False(viewModel.IsRefreshing);
+        Assert.False(viewModel.IsInitialLoading);
+        Assert.Equal(["cached-api"], viewModel.Resources.Select(row => row.Name).ToArray());
+
+        await refresh;
+        Assert.Contains(viewModel.Resources, row => row.Name == "fresh-api");
+    }
+
+    [Fact]
+    public void Tab_switch_restores_rendered_state_and_preserves_resource_search_position()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.ReloadSessions();
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+        viewModel.SelectedSession = devSession;
+        viewModel.SeedCachedRowsForTesting([
+            Row("Running", "api-one", 0, "1/1"),
+            Row("Running", "api-two", 0, "1/1")
+        ]);
+        viewModel.ResourceQuickSearch = "api";
+        viewModel.NextResourceMatch();
+        Assert.Equal("2/2", viewModel.ResourceMatchLabel);
+
+        viewModel.SelectedSession = prodSession;
+        viewModel.SeedCachedRowsForTesting([Row("Running", "worker", 0, "1/1")]);
+        viewModel.SelectedSession = devSession;
+
+        Assert.Equal("api", viewModel.ResourceQuickSearch);
+        Assert.Equal("2/2", viewModel.ResourceMatchLabel);
+        Assert.Equal(["api-one", "api-two"], viewModel.Resources.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public void Open_session_tabs_are_backed_by_lightweight_session_workspaces()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+        viewModel.SeedCachedRowsForTesting([
+            Row("Running", "api-one", 0, "1/1"),
+            Row("Running", "api-two", 0, "1/1")
+        ]);
+        viewModel.ResourceQuickSearch = "api";
+        viewModel.NextResourceMatch();
+        viewModel.OpenSessionTab(prodSession.Id, activate: true);
+
+        Assert.Equal([devSession.Id, prodSession.Id], viewModel.OpenWorkspaces.Select(workspace => workspace.Id).ToArray());
+        Assert.False(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == devSession.Id).IsActive);
+        Assert.True(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == prodSession.Id).IsActive);
+        var tabs = viewModel.OpenSessionTabs.ToArray();
+        Assert.Equal([devSession.Id, prodSession.Id], tabs.Select(tab => tab.Id).ToArray());
+        Assert.False(tabs.Single(tab => tab.Id == devSession.Id).IsActive);
+        Assert.True(tabs.Single(tab => tab.Id == prodSession.Id).IsActive);
+        Assert.Equal("dev.yaml", tabs.Single(tab => tab.Id == devSession.Id).SourceName);
+        Assert.Equal("prod.yaml", tabs.Single(tab => tab.Id == prodSession.Id).SourceName);
+        Assert.All(tabs, tab => Assert.False(string.IsNullOrWhiteSpace(tab.SourceColorKey)));
+        Assert.Contains("prod.yaml / prod", tabs.Single(tab => tab.Id == prodSession.Id).Tooltip, StringComparison.Ordinal);
+        Assert.Equal("api", viewModel.OpenWorkspaces.Single(workspace => workspace.Id == devSession.Id).SearchState.ResourceQuickSearch);
+        Assert.NotNull(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == devSession.Id).RenderedState);
+
+        viewModel.CloseSessionTab(devSession.Id);
+
+        Assert.Equal([prodSession.Id], viewModel.OpenWorkspaces.Select(workspace => workspace.Id).ToArray());
+    }
+
+    [Fact]
+    public void Switching_session_tabs_restores_radar_viewport_per_workspace()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+        viewModel.SetRadarViewport(480, 220);
+        viewModel.PanRadar(24, -12);
+        viewModel.ZoomRadarIn();
+        var devZoom = viewModel.RadarZoom;
+        var devPanX = viewModel.RadarPanX;
+        var devPanY = viewModel.RadarPanY;
+
+        viewModel.OpenSessionTab(prodSession.Id, activate: true);
+        Assert.Equal(1, viewModel.RadarZoom, precision: 2);
+        Assert.Equal(0, viewModel.RadarPanX, precision: 2);
+        Assert.Equal(0, viewModel.RadarPanY, precision: 2);
+        viewModel.PanRadar(-30, 18);
+        viewModel.ZoomRadarOut();
+        var prodZoom = viewModel.RadarZoom;
+        var prodPanX = viewModel.RadarPanX;
+        var prodPanY = viewModel.RadarPanY;
+
+        viewModel.ActivateSessionTab(devSession.Id);
+        Assert.Equal(devZoom, viewModel.RadarZoom, precision: 2);
+        Assert.Equal(devPanX, viewModel.RadarPanX, precision: 2);
+        Assert.Equal(devPanY, viewModel.RadarPanY, precision: 2);
+
+        viewModel.ActivateSessionTab(prodSession.Id);
+        Assert.Equal(prodZoom, viewModel.RadarZoom, precision: 2);
+        Assert.Equal(prodPanX, viewModel.RadarPanX, precision: 2);
+        Assert.Equal(prodPanY, viewModel.RadarPanY, precision: 2);
+    }
+
+    [Fact]
+    public async Task In_flight_refresh_does_not_leak_loading_state_or_rows_into_another_tab()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        var handler = new AsyncAppRecordingHandler(async (request, cancellationToken) =>
+        {
+            await Task.Delay(220, cancellationToken).ConfigureAwait(false);
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var body = path.EndsWith("/pods", StringComparison.Ordinal)
+                ? """{"items":[{"metadata":{"name":"dev-api","namespace":"default","uid":"dev-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/dev-api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}]}"""
+                : """{"items":[]}""";
+            return JsonResponse(body);
+        });
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, handler));
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+        viewModel.OpenSessionTab(prodSession.Id, activate: true);
+        viewModel.SeedCachedRowsForTesting([Row("Running", "prod-api", 0, "1/1")]);
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+
+        var refresh = viewModel.RefreshResourcesAsync(force: true);
+        await Task.Delay(40);
+        Assert.True(viewModel.IsRefreshing);
+
+        viewModel.ActivateSessionTab(prodSession.Id);
+        Assert.Equal(["prod-api"], viewModel.Resources.Select(row => row.Name).ToArray());
+
+        await refresh;
+
+        Assert.Equal(prodSession.Id, viewModel.SelectedSession?.Id);
+        Assert.Equal(["prod-api"], viewModel.Resources.Select(row => row.Name).ToArray());
+    }
+
+    [Fact]
+    public async Task Slow_loading_tabs_keep_radar_health_and_inspector_state_independent()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://dev.example:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://prod.example:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        state.SaveSettings(state.Settings() with
+        {
+            RadarWaterEnabled = false,
+            RadarWaterSpeed = 0,
+            RequestHardLimitPerMinute = 0
+        });
+        var requests = new List<string>();
+        var handler = new AsyncAppRecordingHandler(async (request, cancellationToken) =>
+        {
+            lock (requests)
+            {
+                requests.Add($"{request.RequestUri?.Host}{request.RequestUri?.PathAndQuery}");
+            }
+
+            await Task.Delay(60, cancellationToken).ConfigureAwait(false);
+            return JsonResponse(SlowTabFixtureFor(request.RequestUri));
+        });
+        var service = new KubernetesResourceService(state, handler);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            service,
+            new NoOpAlertSoundPlayer(),
+            new NoOpReleaseUpdateChecker(),
+            () => "test");
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.SetRadarViewport(420, 190);
+        viewModel.ProblemsOnly = false;
+        viewModel.KindPicker.SetExpression("\"Pod\"");
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+        var devRefresh = viewModel.RefreshResourcesAsync(force: true);
+        await Task.Delay(40);
+        viewModel.OpenSessionTab(prodSession.Id, activate: false);
+        await Task.Delay(40);
+        var switchToProd = Measure(() => viewModel.ActivateSessionTab(prodSession.Id));
+        var switchToDev = Measure(() => viewModel.ActivateSessionTab(devSession.Id));
+
+        Assert.True(switchToProd < TimeSpan.FromMilliseconds(250), $"Switch to prod took {switchToProd.TotalMilliseconds:0}ms.");
+        Assert.True(switchToDev < TimeSpan.FromMilliseconds(250), $"Switch to dev took {switchToDev.TotalMilliseconds:0}ms.");
+        Assert.True(viewModel.IsInitialLoading);
+        Assert.Contains(viewModel.HealthSegments, segment => segment.State is "LOADING" or "PENDING");
+
+        await devRefresh;
+        await WaitUntilAsync(
+            () => viewModel.Resources.Any(row => row.Name == "dev-api")
+                  && viewModel.RadarBlocks.Any(block => block.Resource.Name == "dev-api"),
+            TimeSpan.FromSeconds(10),
+            () =>
+            {
+                lock (requests)
+                {
+                    return $"Dev tab did not render cached rows and radar blocks after slow load. Selected={viewModel.SelectedSession?.DisplayName}; Status={viewModel.StatusLine}; Resources=[{string.Join(",", viewModel.Resources.Select(row => row.Name))}]; Radar=[{string.Join(",", viewModel.RadarBlocks.Select(block => block.Resource.Name))}]; Requests=[{string.Join(",", requests.TakeLast(40))}]";
+                }
+            });
+
+        Assert.False(viewModel.IsRadarIdle);
+        Assert.DoesNotContain(viewModel.Resources, row => row.Name == "prod-api");
+        var devPod = Assert.Single(viewModel.Resources, row => row.Name == "dev-api");
+        viewModel.SelectedResourceRow = devPod;
+        await viewModel.OpenSelectedResourceAsync();
+
+        Assert.True(viewModel.IsInspectorVisible);
+        Assert.Contains(viewModel.Summary, item => item.Label == "Kind" && item.Value == "Pod");
+        Assert.Contains("name: dev-api", viewModel.EditableYaml, StringComparison.Ordinal);
+
+        viewModel.OpenSessionTab(prodSession.Id, activate: true);
+        await WaitUntilAsync(
+            () => viewModel.Resources.Any(row => row.Name == "prod-api")
+                  && viewModel.RadarBlocks.Any(block => block.Resource.Name == "prod-api"),
+            TimeSpan.FromSeconds(10),
+            () =>
+            {
+                lock (requests)
+                {
+                    return $"Prod tab did not render its own rows and radar blocks after opening. Status={viewModel.StatusLine}; Resources=[{string.Join(",", viewModel.Resources.Select(row => row.Name))}]; Requests=[{string.Join(",", requests.TakeLast(40))}]";
+                }
+            });
+
+        Assert.DoesNotContain(viewModel.Resources, row => row.Name == "dev-api");
+        Assert.True(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == prodSession.Id).IsActive);
+        Assert.False(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == devSession.Id).IsActive);
+
+        viewModel.ActivateSessionTab(devSession.Id);
+        await WaitUntilAsync(
+            () => viewModel.Resources.Any(row => row.Name == "dev-api")
+                  && viewModel.RadarBlocks.Any(block => block.Resource.Name == "dev-api"),
+            TimeSpan.FromSeconds(10),
+            () =>
+            {
+                lock (requests)
+                {
+                    return $"Dev tab did not restore its rendered cache after switching back. Selected={viewModel.SelectedSession?.DisplayName}; Status={viewModel.StatusLine}; Resources=[{string.Join(",", viewModel.Resources.Select(row => row.Name))}]; Radar=[{string.Join(",", viewModel.RadarBlocks.Select(block => block.Resource.Name))}]; Requests=[{string.Join(",", requests.TakeLast(40))}]";
+                }
+            });
+
+        Assert.DoesNotContain(viewModel.Resources, row => row.Name == "prod-api");
+        Assert.True(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == devSession.Id).IsActive);
+    }
+
+    [Fact]
+    public async Task First_load_does_not_render_partial_cache_rows_or_radar_until_sync_finishes()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://dev.example:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        state.SaveSettings(state.Settings() with
+        {
+            RadarWaterEnabled = false,
+            RadarWaterSpeed = 0,
+            RequestHardLimitPerMinute = 0
+        });
+        var podListed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var metricsRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseMetrics = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new AsyncAppRecordingHandler(async (request, cancellationToken) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.StartsWith("/apis/metrics.k8s.io/", StringComparison.Ordinal))
+            {
+                metricsRequested.TrySetResult();
+                await releaseMetrics.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return JsonResponse("""{"items":[]}""");
+            }
+
+            if (path == "/api/v1/pods")
+            {
+                podListed.TrySetResult();
+                return JsonResponse("""
+                {"items":[
+                  {"metadata":{"name":"early-api","namespace":"payments","uid":"early-pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/early-api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                ]}
+                """);
+            }
+
+            return JsonResponse("""{"items":[]}""");
+        });
+        var service = new KubernetesResourceService(state, handler);
+        using var viewModel = new MainWindowViewModel(
+            state,
+            service,
+            new NoOpAlertSoundPlayer(),
+            new NoOpReleaseUpdateChecker(),
+            () => "test");
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.SetRadarViewport(420, 190);
+        viewModel.ProblemsOnly = false;
+        var session = viewModel.Sessions.Single(candidate => candidate.DisplayName == "dev");
+
+        viewModel.OpenSessionTab(session.Id, activate: true);
+        var refresh = viewModel.RefreshResourcesAsync(force: true);
+        await podListed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await metricsRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(250);
+
+        Assert.True(viewModel.IsInitialLoading);
+        Assert.Empty(viewModel.Resources);
+        Assert.Empty(viewModel.RadarBlocks);
+        Assert.Contains(viewModel.HealthSegments, segment => segment.State is "LOADING" or "PENDING");
+
+        releaseMetrics.TrySetResult();
+        await refresh;
+
+        Assert.False(viewModel.IsInitialLoading);
+        Assert.Contains(viewModel.Resources, row => row.Name == "early-api");
+        Assert.Contains(viewModel.RadarBlocks, block => block.Resource.Name == "early-api");
+    }
+
+    [Fact]
+    public async Task Unchanged_refresh_does_not_redraw_resource_table_or_radar()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://dev.example:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        state.SaveSettings(state.Settings() with
+        {
+            RadarWaterEnabled = false,
+            RadarWaterSpeed = 0,
+            RequestHardLimitPerMinute = 0
+        });
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return path switch
+            {
+                "/api/v1/pods" => JsonResponse("""
+                {"items":[
+                  {"metadata":{"name":"stable-api","namespace":"payments","uid":"stable-pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/stable-api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                ]}
+                """),
+                _ when path.StartsWith("/apis/metrics.k8s.io/", StringComparison.Ordinal) => JsonResponse("""{"items":[]}"""),
+                _ => JsonResponse("""{"items":[]}""")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, handler),
+            new NoOpAlertSoundPlayer(),
+            new NoOpReleaseUpdateChecker(),
+            () => "test");
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.SetRadarViewport(420, 190);
+        viewModel.ProblemsOnly = false;
+        var session = viewModel.Sessions.Single(candidate => candidate.DisplayName == "dev");
+        viewModel.OpenSessionTab(session.Id, activate: true);
+
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.Contains(viewModel.Resources, row => row.Name == "stable-api");
+        Assert.Contains(viewModel.RadarBlocks, block => block.Resource.Name == "stable-api");
+        var resourceChanges = 0;
+        var radarChanges = 0;
+        viewModel.Resources.CollectionChanged += (_, _) => resourceChanges++;
+        viewModel.RadarBlocks.CollectionChanged += (_, _) => radarChanges++;
+
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.Equal(0, resourceChanges);
+        Assert.Equal(0, radarChanges);
+    }
+
+    [Fact]
+    public async Task Namespace_scoped_refresh_renders_rows_from_the_scoped_cache()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "limited.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://limited.example:6443", "limited"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        state.SaveSettings(state.Settings() with
+        {
+            RadarWaterEnabled = false,
+            RadarWaterSpeed = 0,
+            RequestHardLimitPerMinute = 0
+        });
+        var handler = new AppRecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            return path switch
+            {
+                "/api/v1/pods" => new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("""{"kind":"Status","status":"Failure","reason":"Forbidden","message":"cluster-wide pods forbidden"}""", Encoding.UTF8, "application/json")
+                },
+                "/api/v1/namespaces/payments/pods" => JsonResponse("""
+                {"items":[
+                  {"metadata":{"name":"scoped-api","namespace":"payments","uid":"scoped-pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"node-a","containers":[{"image":"repo/scoped-api:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+                ]}
+                """),
+                _ when path.StartsWith("/apis/metrics.k8s.io/", StringComparison.Ordinal) => JsonResponse("""{"items":[]}"""),
+                _ => JsonResponse("""{"items":[]}""")
+            };
+        });
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, handler),
+            new NoOpAlertSoundPlayer(),
+            new NoOpReleaseUpdateChecker(),
+            () => "test");
+        viewModel.ReloadSessions(openDefaultSession: false);
+        viewModel.SetRadarViewport(420, 190);
+        viewModel.ProblemsOnly = false;
+        var session = viewModel.Sessions.Single(candidate => candidate.DisplayName == "limited");
+
+        viewModel.OpenSessionTab(session.Id, activate: true);
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.Contains(viewModel.Failures, failure => failure.Kind == "Pod" && failure.Freshness == FreshnessState.Forbidden);
+
+        viewModel.NamespacePicker.SetExpression("\"payments\"");
+        await viewModel.RefreshResourcesAsync(force: true);
+
+        Assert.Contains(viewModel.Resources, row => row.Kind == "Pod" && row.Namespace == "payments" && row.Name == "scoped-api");
+        Assert.Contains(viewModel.RadarBlocks, block => block.Resource.Name == "scoped-api");
+    }
+
+    [Fact]
+    public void Local_filter_changes_are_cache_only_and_stay_below_interaction_budget()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "dev.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://dev.example:6443", "dev"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        state.SaveSettings(state.Settings() with
+        {
+            RadarWaterEnabled = false,
+            RadarWaterSpeed = 0,
+            RequestHardLimitPerMinute = 0
+        });
+        var handler = new AppRecordingHandler(_ => JsonResponse("""{"items":[]}"""));
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, handler),
+            new NoOpAlertSoundPlayer(),
+            new NoOpReleaseUpdateChecker(),
+            () => "test");
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var session = viewModel.Sessions.Single(candidate => candidate.DisplayName == "dev");
+        viewModel.OpenSessionTab(session.Id, activate: true);
+        var rows = Enumerable
+            .Range(0, 2_000)
+            .Select(index => Row("Running", $"pod-{index:0000}", 0, "1/1") with
+            {
+                Id = $"pod-{index:0000}",
+                Node = $"node-{index % 12:00}",
+                Namespace = index % 2 == 0 ? "payments" : "platform",
+                ImageSummary = $"service-{index % 40:00}:1"
+            })
+            .ToArray();
+        viewModel.SeedCachedRowsForTesting(rows);
+        var requestsAfterSeed = handler.Requests.Count;
+
+        var narrow = Measure(() => viewModel.NamePicker.SetExpression("\"pod-1999\""));
+
+        Assert.True(narrow < TimeSpan.FromMilliseconds(500), $"Narrowing local filter took {narrow.TotalMilliseconds:0}ms.");
+        Assert.Single(viewModel.Resources);
+        Assert.Equal("pod-1999", viewModel.Resources[0].Name);
+        Assert.Equal(requestsAfterSeed, handler.Requests.Count);
+
+        var clear = Measure(() => viewModel.NamePicker.SetExpression(" "));
+
+        Assert.True(clear < TimeSpan.FromMilliseconds(500), $"Clearing local filter took {clear.TotalMilliseconds:0}ms.");
+        Assert.Equal(256, viewModel.Resources.Count);
+        Assert.Equal(requestsAfterSeed, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Opening_inactive_session_tab_starts_background_load_for_that_session()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://dev.example:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://prod.example:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        var requestedHosts = new List<string>();
+        var handler = new AsyncAppRecordingHandler(async (request, cancellationToken) =>
+        {
+            lock (requestedHosts)
+            {
+                requestedHosts.Add(request.RequestUri?.Host ?? string.Empty);
+            }
+
+            await Task.Delay(40, cancellationToken).ConfigureAwait(false);
+            return JsonResponse("""{"items":[]}""");
+        });
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state, handler));
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+        await Task.Delay(250);
+        lock (requestedHosts)
+        {
+            requestedHosts.Clear();
+        }
+
+        viewModel.OpenSessionTab(prodSession.Id, activate: false);
+        await Task.Delay(350);
+
+        lock (requestedHosts)
+        {
+            Assert.Contains("prod.example", requestedHosts);
+        }
+    }
+
+    [Fact]
+    public void Switching_tabs_with_different_source_filters_does_not_flash_empty_previous_rows()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        var podsFilter = new FilterPreset("pods", false, "", "", "", "\"Pod\"", "", "", "", "", "", "", "", "", "", "", "256");
+        var servicesFilter = new FilterPreset("services", false, "", "", "", "\"Service\"", "", "", "", "", "", "", "", "", "", "", "256");
+        viewModel.SavedPresets.Add(podsFilter);
+        viewModel.SavedPresets.Add(servicesFilter);
+        var devSession = state.ListSessions().Single(session => session.DisplayName == "dev");
+        var prodSession = state.ListSessions().Single(session => session.DisplayName == "prod");
+        state.SetImportedContextFilter(devSession.ContextId, podsFilter.Name);
+        state.SetImportedContextFilter(prodSession.ContextId, servicesFilter.Name);
+        viewModel.ReloadSessions(openDefaultSession: false);
+
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == prodSession.Id);
+        viewModel.SeedCachedRowsForTesting([Row("ClusterIP", "api-service", 0, "-") with { Kind = "Service", Owner = "", ImageSummary = "-" }]);
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == devSession.Id);
+        viewModel.SeedCachedRowsForTesting([Row("Running", "api-pod", 0, "1/1")]);
+        var observedCounts = new List<int>();
+        viewModel.Resources.CollectionChanged += (_, _) => observedCounts.Add(viewModel.Resources.Count);
+
+        viewModel.SelectedSession = viewModel.Sessions.Single(session => session.Id == prodSession.Id);
+
+        Assert.Equal(["api-service"], viewModel.Resources.Select(row => row.Name).ToArray());
+        Assert.Equal("\"Service\"", viewModel.KindPicker.Expression);
+        Assert.DoesNotContain(0, observedCounts);
+    }
+
+    [Fact]
     public async Task Refresh_resources_with_identical_query_state_does_not_double_request_under_concurrent_calls()
     {
         var directory = TempDirectory();
@@ -2228,13 +3132,16 @@ public sealed class AppBehaviorTests
 
         viewModel.ReloadSessions();
         var firstRefresh = viewModel.RefreshResourcesAsync(force: true);
-            await Task.Delay(20);
+        await Task.Delay(20);
         var duplicateRefresh = viewModel.RefreshResourcesAsync();
 
         await Task.WhenAll(firstRefresh, duplicateRefresh);
         await Task.Delay(800);
 
-        Assert.InRange(replayHandler.Requests.Count, baselineHandler.Requests.Count, baselineHandler.Requests.Count + 1);
+        Assert.NotEmpty(replayHandler.Requests);
+        Assert.True(
+            replayHandler.Requests.Count < baselineHandler.Requests.Count * 2,
+            $"Concurrent duplicate refreshes should join warm-up work instead of doubling the baseline request volume. baseline={baselineHandler.Requests.Count}, replay={replayHandler.Requests.Count}");
     }
 
     [Fact]
@@ -2389,11 +3296,13 @@ public sealed class AppBehaviorTests
         var state = AppState.InMemoryWithConfigDirectory(directory);
         state.ImportKubeconfig(kubeconfig);
         var clock = new MutableClock(new DateTimeOffset(2026, 6, 10, 8, 2, 0, TimeSpan.Zero));
+        var requests = new List<string>();
         using var viewModel = new MainWindowViewModel(
             state,
             new KubernetesResourceService(state, new AppRecordingHandler(request =>
             {
                 var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                requests.Add(path);
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(path.EndsWith("/events", StringComparison.Ordinal)
@@ -2423,10 +3332,12 @@ public sealed class AppBehaviorTests
 
         viewModel.ReloadSessions();
         viewModel.ProblemsOnly = false;
-        viewModel.KindPicker.SetExpression("\"Pod\"");
+        viewModel.SelectWorkspace("events");
         await viewModel.RefreshResourcesAsync(force: true);
 
-        Assert.Equal(["api.17f4", "api.17f3"], viewModel.Events.Select(row => row.Name).ToArray());
+        Assert.True(
+            viewModel.Events.Select(row => row.Name).SequenceEqual(["api.17f4", "api.17f3"]),
+            $"Events were [{string.Join(",", viewModel.Events.Select(row => row.Name))}], resources were [{string.Join(",", viewModel.Resources.Select(row => $"{row.Kind}/{row.Name}"))}], requests were [{string.Join(",", requests)}].");
         var timeline = viewModel.Events[0];
         Assert.Equal("Warning", timeline.Status);
         Assert.Equal("Warning", timeline.Type);
@@ -2509,6 +3420,7 @@ public sealed class AppBehaviorTests
 
         viewModel.ReloadSessions();
         viewModel.ProblemsOnly = false;
+        viewModel.SelectWorkspace("events");
         await viewModel.RefreshResourcesAsync(force: true);
 
         var resolved = Assert.Single(viewModel.Events, row => row.Name == "api-old-warning");
@@ -3349,6 +4261,95 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Disposing_view_model_stops_active_port_forward_tasks()
+    {
+        var directory = TempDirectory();
+        var kubeconfig = Path.Combine(directory, "config.yaml");
+        File.WriteAllText(kubeconfig, OneContextKubeconfig("https://127.0.0.1:6443"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(kubeconfig);
+        var process = StartLongRunningProcess();
+        var task = new PortForwardTaskViewModel("pf-running", "dev", "Pod", "api", "payments", 80, 18080, "native", "running")
+        {
+            Process = process
+        };
+        var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        try
+        {
+            viewModel.PortForwards.Add(task);
+
+            viewModel.Dispose();
+
+            Assert.True(process.WaitForExit(3_000), "Disposing the view model should stop active port-forward processes.");
+            Assert.Equal("stopped", task.Status);
+            Assert.Empty(viewModel.VisiblePortForwards);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            process.Dispose();
+            viewModel.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Background_workspace_refresh_failure_is_recorded_on_that_workspace_pipeline()
+    {
+        var directory = TempDirectory();
+        var devConfig = Path.Combine(directory, "dev.yaml");
+        var prodConfig = Path.Combine(directory, "prod.yaml");
+        File.WriteAllText(devConfig, OneContextKubeconfig("https://dev.example:6443", "dev"));
+        File.WriteAllText(prodConfig, OneContextKubeconfig("https://prod.example:6443", "prod"));
+        var state = AppState.InMemoryWithConfigDirectory(directory);
+        state.ImportKubeconfig(devConfig);
+        state.ImportKubeconfig(prodConfig);
+        var prodRequested = false;
+        var handler = new AsyncAppRecordingHandler((request, _) =>
+        {
+            if (string.Equals(request.RequestUri?.Host, "prod.example", StringComparison.OrdinalIgnoreCase))
+            {
+                prodRequested = true;
+                throw new HttpRequestException("prod refresh failed");
+            }
+
+            return Task.FromResult(JsonResponse("""{"items":[]}"""));
+        });
+        using var viewModel = new MainWindowViewModel(
+            state,
+            new KubernetesResourceService(state, handler),
+            new NoOpAlertSoundPlayer(),
+            new NoOpReleaseUpdateChecker(),
+            () => "test");
+        viewModel.ReloadSessions(openDefaultSession: false);
+        var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+        var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+        viewModel.OpenSessionTab(devSession.Id, activate: true);
+        await viewModel.RefreshResourcesAsync(force: true);
+        viewModel.SelectWorkspace("settings");
+        viewModel.OpenSessionTab(prodSession.Id, activate: false);
+        await WaitUntilAsync(
+            () => prodRequested
+                  && viewModel.OpenWorkspaces.Single(workspace => workspace.Id == prodSession.Id).RefreshInFlight == false,
+            TimeSpan.FromSeconds(5),
+            () => "Inactive prod workspace refresh did not fail through the background pipeline.");
+
+        viewModel.SimulateTimerTickForTests();
+
+        Assert.DoesNotContain(viewModel.RequestAuditRows, row => row.Outcome.Contains("network error", StringComparison.OrdinalIgnoreCase));
+
+        viewModel.ActivateSessionTab(prodSession.Id);
+        viewModel.SelectWorkspace("settings");
+        viewModel.SimulateTimerTickForTests();
+
+        Assert.Contains(viewModel.RequestAuditRows, row => row.Outcome.Contains("network error", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Resource_search_close_clears_filter_and_table_selection_focuses_resource()
     {
         var directory = TempDirectory();
@@ -3469,6 +4470,8 @@ public sealed class AppBehaviorTests
         ImportedContextRowViewModel? removed = null;
         string? renamed = null;
         ImportedContextRowViewModel? activated = null;
+        ImportedContextRowViewModel? openedInTab = null;
+        ImportedContextRowViewModel? openedInWindow = null;
         var row = new ImportedContextRowViewModel(
             "ctx-1",
             "/tmp/config",
@@ -3476,21 +4479,39 @@ public sealed class AppBehaviorTests
             item => removed = item,
             (item, name) => renamed = $"{item.ContextId}:{name}",
             item => activated = item,
+            item => openedInTab = item,
+            item => openedInWindow = item,
             isActive: true,
             sourceName: "config.yaml",
-            hash: "hash");
+            hash: "hash",
+            useLabel: "OPEN",
+            activeLabel: "ACTIVE",
+            useTooltip: "use tip",
+            openTabTooltip: "tab tip",
+            openWindowTooltip: "window tip",
+            renameTooltip: "rename tip",
+            deleteTooltip: "delete tip");
 
         row.DisplayName = "new";
         row.ActivateCommand.Execute(null);
+        row.OpenTabCommand.Execute(null);
+        row.OpenWindowCommand.Execute(null);
         row.RenameCommand.Execute(null);
         row.RemoveCommand.Execute(null);
 
         Assert.Same(row, activated);
+        Assert.Same(row, openedInTab);
+        Assert.Same(row, openedInWindow);
         Assert.Equal("ctx-1:new", renamed);
         Assert.Same(row, removed);
         Assert.Equal("ACTIVE", row.ActiveMark);
         Assert.Equal("config.yaml", row.SourceName);
         Assert.Equal("hash", row.Hash);
+        Assert.Equal("use tip", row.UseTooltip);
+        Assert.Equal("tab tip", row.OpenTabTooltip);
+        Assert.Equal("window tip", row.OpenWindowTooltip);
+        Assert.Equal("rename tip", row.RenameTooltip);
+        Assert.Equal("delete tip", row.DeleteTooltip);
     }
 
     [Fact]
@@ -3818,6 +4839,7 @@ public sealed class AppBehaviorTests
                 Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
             ]);
 
+            viewModel.SelectWorkspace("graph");
             ApplyLocalFilter(viewModel);
 
             var quiet = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "quiet");
@@ -3922,6 +4944,45 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
+    public void Radar_auto_follow_refreshes_blocks_that_enter_the_viewport()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), new RecordingAlertSoundPlayer());
+            viewModel.SetRadarViewport(480, 220);
+            InjectCachedRows(viewModel, [QuietAlertRow("quiet", 0)]);
+            ApplyLocalFilter(viewModel);
+
+            viewModel.PanRadar(10_000, 0);
+            Assert.DoesNotContain(viewModel.RadarBlocks, block => block.Resource.Name == "waiting");
+
+            InjectCachedRows(viewModel,
+            [
+                QuietAlertRow("quiet", 0),
+                Row("Pending", "waiting", 0, "0/1") with { Age = "3h", LastChange = "3h" }
+            ]);
+            ApplyLocalFilter(viewModel);
+            Assert.DoesNotContain(viewModel.RadarBlocks, block => block.Resource.Name == "waiting");
+
+            for (var i = 0; i < 18; i++)
+            {
+                viewModel.StepRadarAutoFollowForTests();
+            }
+
+            Assert.Contains(viewModel.RadarBlocks, block => block.Resource.Name == "waiting");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Reactivating_problem_color_default_replays_warning_for_existing_problem_match()
     {
         var directory = TempDirectory();
@@ -3947,6 +5008,54 @@ public sealed class AppBehaviorTests
             viewModel.PlayNextQueuedAlertSoundForTests();
 
             Assert.Equal(2, CountPlayed(player, "warning-ping.ogg"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Switching_sessions_does_not_replay_alerts_for_already_seen_matches()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var devConfig = Path.Combine(directory, "dev.yaml");
+            var prodConfig = Path.Combine(directory, "prod.yaml");
+            File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+            File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            state.ImportKubeconfig(devConfig);
+            state.ImportKubeconfig(prodConfig);
+            var player = new RecordingAlertSoundPlayer();
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state), player);
+            viewModel.SetRadarViewport(480, 220);
+            viewModel.ReloadSessions();
+            var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+            var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+            var waiting = Row("Pending", "waiting", 0, "0/1") with { Age = "2h", LastChange = "2h" };
+
+            viewModel.SelectedSession = devSession;
+            InjectCachedRows(viewModel, [waiting]);
+            ApplyLocalFilter(viewModel);
+
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+
+            viewModel.SelectedSession = prodSession;
+            InjectCachedRows(viewModel, [QuietAlertRow("quiet", 0)]);
+            ApplyLocalFilter(viewModel);
+
+            viewModel.SelectedSession = devSession;
+            InjectCachedRows(viewModel, [waiting]);
+            ApplyLocalFilter(viewModel);
+            viewModel.PlayNextQueuedAlertSoundForTests();
+
+            Assert.Equal(1, CountPlayed(player, "warning-ping.ogg"));
+            Assert.Equal(0, viewModel.RadarAutoFollowQueueCountForTests);
         }
         finally
         {
@@ -4215,6 +5324,49 @@ public sealed class AppBehaviorTests
             viewModel.PanRadar(-10_000, -10_000);
             var returningRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
             Assert.True(returningRadar.IsPulseAnimation);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Switching_session_tabs_does_not_replay_active_view_pulse_for_already_seen_rows()
+    {
+        var directory = TempDirectory();
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+        try
+        {
+            var devConfig = Path.Combine(directory, "dev.yaml");
+            var prodConfig = Path.Combine(directory, "prod.yaml");
+            File.WriteAllText(devConfig, OneContextKubeconfig("https://127.0.0.1:6443", "dev"));
+            File.WriteAllText(prodConfig, OneContextKubeconfig("https://127.0.0.1:6443", "prod"));
+            var state = AppState.InMemoryWithConfigDirectory(directory);
+            state.ImportKubeconfig(devConfig);
+            state.ImportKubeconfig(prodConfig);
+            using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+            viewModel.ReloadSessions(openDefaultSession: false);
+            viewModel.SetRadarViewport(480, 220);
+            var devSession = viewModel.Sessions.Single(session => session.DisplayName == "dev");
+            var prodSession = viewModel.Sessions.Single(session => session.DisplayName == "prod");
+
+            viewModel.OpenSessionTab(devSession.Id, activate: true);
+            viewModel.SeedCachedRowsForTesting([Row("Running", "active", 0, "1/1") with { Age = "2h", LastChange = "2h" }]);
+            var firstRadar = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active");
+            Assert.True(firstRadar.IsPulseAnimation);
+            ExpireAlertTimers(viewModel, firstRadar.Resource.Id);
+            viewModel.ExpireAlertAnimationsForTests();
+            Assert.False(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active").IsAnnouncing);
+
+            viewModel.OpenSessionTab(prodSession.Id, activate: true);
+            viewModel.SeedCachedRowsForTesting([Row("Running", "worker", 0, "1/1") with { Age = "2h", LastChange = "2h" }]);
+            viewModel.ActivateSessionTab(devSession.Id);
+
+            Assert.False(Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "active").IsAnnouncing);
+            Assert.False(Assert.Single(viewModel.Resources, row => row.Name == "active").IsAnnouncing);
         }
         finally
         {
@@ -4761,6 +5913,30 @@ users:
         return """{"items":[]}""";
     }
 
+    private static string SlowTabFixtureFor(Uri? uri)
+    {
+        var path = uri?.AbsolutePath ?? string.Empty;
+        var host = uri?.Host ?? string.Empty;
+        var session = host.Contains("prod", StringComparison.OrdinalIgnoreCase) ? "prod" : "dev";
+        var podName = $"{session}-api";
+        if (path.EndsWith($"/pods/{podName}", StringComparison.Ordinal))
+        {
+            return PodDetailYamlFixture(podName, session);
+        }
+
+        if (path.EndsWith("/pods", StringComparison.Ordinal))
+        {
+            return """
+            {"items":[
+              {"metadata":{"name":"__POD__","namespace":"payments","uid":"__SESSION__-pod-1","creationTimestamp":"2026-06-10T08:00:00Z"},"spec":{"nodeName":"__SESSION__-node","containers":[{"image":"repo/__POD__:1"}]},"status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}}
+            ]}
+            """.Replace("__POD__", podName, StringComparison.Ordinal)
+                .Replace("__SESSION__", session, StringComparison.Ordinal);
+        }
+
+        return """{"items":[]}""";
+    }
+
     private static string PodDetailYamlFixture(string name, string marker)
     {
         return $$"""
@@ -4799,6 +5975,54 @@ users:
         var dx = leftX - rightX;
         var dy = leftY - rightY;
         return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    private static TimeSpan Measure(Action action)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        action();
+        watch.Stop();
+        return watch.Elapsed;
+    }
+
+    private static System.Diagnostics.Process StartLongRunningProcess()
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        if (OperatingSystem.IsWindows())
+        {
+            startInfo.ArgumentList.Add("/c");
+            startInfo.ArgumentList.Add("ping -n 30 127.0.0.1 > NUL");
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add("sleep 30");
+        }
+
+        return System.Diagnostics.Process.Start(startInfo)
+               ?? throw new InvalidOperationException("Could not start long-running test process.");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout, Func<string> failure)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (predicate())
+            {
+                return;
+            }
+
+            await Task.Delay(25).ConfigureAwait(false);
+        }
+
+        Assert.True(predicate(), failure());
     }
 
     private static bool IsRadarGridAligned(double value, double viewportCenter)

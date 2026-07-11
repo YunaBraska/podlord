@@ -18,14 +18,4 @@ Podlord is a resource-first Kubernetes desktop console. The UI favors global sca
 | Request control | Cache-first snapshots, request queue, rate-limit backoff, audit log, idle sync controls, and optional hard request cap. |
 | Testing | Unit tests, fake Kubernetes HTTP tests, and k3d integration tests with coverage gates. |
 
-## Planned
-
-| Area | Direction |
-|---|---|
-| Rule alerts | User-editable alert rules replacing hardcoded activity/problem behavior. |
-| Watch engine | Watch-first resource updates with list fallback. |
-| CRDs | Richer discovery and generic CRD table rendering. |
-| Historical metrics | Optional Prometheus and kube-state-metrics sources. |
-| Terminal | Context-bound embedded terminal with generated temporary kubeconfig. |
-| Diff | Resource, namespace, source, and cluster comparison views. |
-| Packaging | Signed macOS builds, Windows installer, Linux `.deb`, `.rpm`, and AppImage. |
+Planned work lives in [doc/ROADMAP.md](../ROADMAP.md). This inventory lists what exists now.

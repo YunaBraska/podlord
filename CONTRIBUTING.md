@@ -52,6 +52,14 @@ The coverage gate targets domain/runtime behavior. Thin Avalonia presentation ad
 - Update documentation when a user-visible workflow changes.
 - Keep release artifacts, kubeconfigs, and local IDE state out of git.
 
+## Documentation Rules
+
+- README is the 30-second index: what Podlord is, how to start, and where to look next.
+- One doc answers one question. Extend an existing table row before creating another file.
+- Keep volatile values out of prose when the app, test scripts, or release workflow can print them.
+- Reference docs describe current behavior. Planned work belongs in [doc/ROADMAP.md](doc/ROADMAP.md) or GitHub issues.
+- Prefer deleting duplicated text over adding clarifying copies.
+
 ## Commit Style
 
 Use concise semantic commits:

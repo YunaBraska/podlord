@@ -10,15 +10,17 @@ using Avalonia.VisualTree;
 using AvaloniaEdit;
 using System.Globalization;
 using Podlord.Core;
-using Podlord.Kubernetes;
 
 namespace Podlord.App;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, ISessionSurfaceHost
 {
     private sealed record CopyMenuAction(string Header, string Value);
 
     private readonly MainWindowViewModel viewModel;
+    private readonly AppRuntime runtime;
+    private readonly string hostId = Guid.NewGuid().ToString("N");
+    private readonly bool detached;
 
     internal MainWindowViewModel ViewModel => viewModel;
     private CancellationTokenSource? contextMenuHold;
@@ -57,10 +59,17 @@ public partial class MainWindow : Window
     }
 
     public MainWindow(IReadOnlyList<string> startupArgs)
+        : this(AppRuntime.LoadDefault(), startupArgs, null, loadStartupKubeconfigs: true, detached: false)
+    {
+    }
+
+    internal MainWindow(AppRuntime runtime, IReadOnlyList<string> startupArgs, string? initialSessionId, bool loadStartupKubeconfigs, bool detached)
     {
         InitializeComponent();
-        var state = AppState.LoadDefault();
-        viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+        this.runtime = runtime;
+        this.detached = detached;
+        runtime.RegisterHost(this);
+        viewModel = new MainWindowViewModel(runtime.State, runtime.Service, runtime, hostId, null, null, null);
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModelPropertyChanged;
         AddHandler(PointerPressedEvent, GlobalPointerPressedDismissMenus, RoutingStrategies.Tunnel);
@@ -82,7 +91,26 @@ public partial class MainWindow : Window
         viewModel.SetRadarPanelWidth(RightSidebarShell.Width);
         UpdateInspectorLayout();
         UpdateYamlEditorHeight();
-        viewModel.LoadStartupKubeconfigs(startupArgs);
+        if (loadStartupKubeconfigs)
+        {
+            viewModel.LoadStartupKubeconfigs(startupArgs);
+        }
+        else if (!string.IsNullOrWhiteSpace(initialSessionId))
+        {
+            viewModel.ReloadSessions(openDefaultSession: false);
+        }
+        else
+        {
+            viewModel.ReloadSessions();
+        }
+        if (!string.IsNullOrWhiteSpace(initialSessionId))
+        {
+            runtime.OpenOrActivateSession(initialSessionId, hostId, SessionOpenTarget.Tab);
+        }
+        else
+        {
+            viewModel.EnsureCurrentSessionTab();
+        }
         _ = viewModel.CheckForUpdatesIfDueAsync();
         Dispatcher.UIThread.Post(() =>
         {
@@ -122,9 +150,26 @@ public partial class MainWindow : Window
             SizeChanged -= sizeChanged;
             PropertyChanged -= windowStateChanged;
             DetachEditorHandlers();
+            runtime.UnregisterHost(this);
             viewModel.Dispose();
         };
     }
+
+    public string HostId => hostId;
+
+    public Window Window => this;
+
+    public bool IsDetached => detached;
+
+    public bool ContainsSession(string sessionId) => viewModel.HasOpenSession(sessionId);
+
+    public void AddSession(string sessionId, bool activate) => viewModel.OpenSessionTab(sessionId, activate);
+
+    public void ActivateSession(string sessionId) => viewModel.ActivateSessionTab(sessionId);
+
+    public void RemoveSession(string sessionId) => viewModel.CloseSessionTab(sessionId);
+
+    public bool IsEmpty => viewModel.OpenSessions.Count == 0;
 
     private void DetachEditorHandlers()
     {
@@ -549,6 +594,30 @@ public partial class MainWindow : Window
     private void SaveSourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SaveSelectedSource();
 
     private void DuplicateSessionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.DuplicateSelectedSession();
+
+    private void SessionTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: string sessionId })
+        {
+            viewModel.ActivateSessionTab(sessionId);
+        }
+    }
+
+    private void DetachSessionTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: string sessionId })
+        {
+            viewModel.DetachSessionTab(sessionId);
+        }
+    }
+
+    private void CloseSessionTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: string sessionId })
+        {
+            viewModel.CloseSessionTab(sessionId);
+        }
+    }
 
     private void PortForwardRowClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

@@ -936,8 +936,94 @@ It should show:
 - CPU/memory limit suggestion when available
 - replica insights for controllers
 - containers when available
+- derived issue summary when generic reasoning finds a likely cause
+- derived issue evidence when generic reasoning has supporting facts
 
 Rows with unavailable optional data are hidden. Known limits/capacity without usage can still be shown.
+
+### Derived Issue Reasoning
+
+Inspector overview should not stop at raw Kubernetes status text when Podlord can cheaply infer a likely cause.
+
+Display contract:
+
+- keep raw `Status`, `Reason`, and Kubernetes message fields visible
+- append one extra message line when Podlord has a derived diagnosis
+- format: `Likely cause: <short summary>`
+- show evidence rows below it when available
+- if confidence is weak, say `Possible cause` instead of `Likely cause`
+- never hide raw data behind the inference layer
+
+Inference inputs should stay cheap and generic:
+
+- resource `status.reason`
+- resource `status.message`
+- conditions type/reason/message
+- container waiting/terminated reasons and exit codes
+- related Events already fetched for the resource
+- owner resource readiness and replica counts
+- related Node readiness, heartbeat, and taints
+- timestamps, restart counts, and startup grace windows
+
+Initial cheap-check matrix:
+
+| Kind | Cheap checks | Reasoning targets |
+|---|---|---|
+| Pod | phase, status reason/message, conditions, container states, restart count, owner health, node health, related Events | crash loop, image pull failure, probe failure, unschedulable, eviction, stale failed pod, node shutdown interruption, completed job pod not a problem |
+| Node | `Ready` and pressure conditions, taints, lease/heartbeat age, remaining pods, machine/provider link when known | kubelet stopped posting status, unreachable node, stale node after replacement, pressure state, node still only hosting daemonset residue |
+| Deployment | desired/updated/available/unavailable replicas, progressing condition, failed child pods | rollout stuck, unavailable replicas, stale failed pods while deployment itself is healthy |
+| ReplicaSet | desired/current/ready plus owner Deployment state | stale failed replica members, replica deficit, orphaned or old failed pods |
+| StatefulSet | desired/current/ready/updated, pod ordinals, related PVC state | waiting for ordered pod, PVC block, partial rollout |
+| DaemonSet | desired/current/ready/available/misscheduled, node count mismatch | stale node inflating desired count, daemon unavailable on reachable node, partial daemon coverage |
+| Job | completions, failed, active, conditions, child pod exit reasons | failed job, backoff exhausted, stuck active job, succeeded job not a problem |
+| CronJob | last schedule, last success from child Jobs, suspended flag | missed recent success, suspended schedule, failing runs |
+| PVC | phase, capacity, resize conditions, Events | pending provisioning, waiting for consumer, attach/mount failure, resize pending |
+| PV | phase, claim ref, reclaim policy, Events | released/lost volume, bind mismatch, reclaim leftovers |
+| Service | selector, ports, EndpointSlice/endpoints presence when cached | no backing endpoints, selector matches nothing, likely port mismatch |
+| Ingress | class, status load balancer, backend refs, Events | missing address, backend service missing, class/controller not acting |
+| Gateway | accepted/programmed/listeners status | gateway not accepted, listener conflict, no programmed address |
+| HTTPRoute | parent status, accepted/resolved refs | route not accepted, backend ref unresolved, parent gateway missing |
+| ConfigMap | known reference graph, missing object lookups | referenced object missing, key missing where detectable |
+| Secret | known reference graph, type, missing object lookups | referenced secret missing, key missing, image pull secret absent |
+| Event | type, reason, message, involved object | collapse noisy event streams into a short explanation |
+
+First-pass classifiers:
+
+- `OwnerHealthyButStaleFailedPod`
+- `NodeShutdownInterruptedPod`
+- `PodEvictedByPressure`
+- `PodImagePullFailure`
+- `PodProbeFailure`
+- `PodCrashLoop`
+- `PodUnschedulable`
+- `NodeUnreachable`
+- `StaleRegisteredNode`
+- `ControllerReplicaDeficit`
+- `ControllerRolloutStuck`
+- `JobBackoffExceeded`
+- `CronJobNoRecentSuccess`
+- `PersistentVolumeClaimPending`
+- `VolumeAttachOrMountFailure`
+- `ServiceWithoutEndpoints`
+- `GatewayOrRouteNotAccepted`
+- `MissingReferencedSecretOrConfig`
+- `VisibilityBlockedByRbac`
+
+Suggested result shape:
+
+- summary
+- confidence
+- severity
+- evidence lines
+- suggested next check
+- related object references
+
+Acceptance target for first release of this feature:
+
+- Podlord can explain the highest-value common failures without provider-specific logic.
+- Cheap checks use already cached or already requested Kubernetes objects first.
+- A derived reason never replaces raw status; it only adds context.
+- Unknown stays unknown when evidence is weak.
 
 ### YAML
 

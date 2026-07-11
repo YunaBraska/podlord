@@ -91,11 +91,16 @@ public sealed class InitialLoadHealthSegmentsTests : IDisposable
     {
         var field = typeof(KubernetesResourceService).GetField("requestStarts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                     ?? throw new InvalidOperationException("requestStarts field missing");
-        var queue = (Queue<DateTimeOffset>)(field.GetValue(service)
-                    ?? throw new InvalidOperationException("requestStarts field was null"));
+        var queue = field.GetValue(service)
+                    ?? throw new InvalidOperationException("requestStarts field was null");
+        var sampleType = queue.GetType().GetGenericArguments()[0];
+        var enqueue = queue.GetType().GetMethod("Enqueue")
+                      ?? throw new InvalidOperationException("requestStarts enqueue method missing");
         for (var index = 0; index < count; index++)
         {
-            queue.Enqueue(startedAt.AddSeconds(index + 1));
+            var sample = Activator.CreateInstance(sampleType, startedAt.AddSeconds(index + 1), "session")
+                         ?? throw new InvalidOperationException("request sample creation failed");
+            enqueue.Invoke(queue, [sample]);
         }
     }
 

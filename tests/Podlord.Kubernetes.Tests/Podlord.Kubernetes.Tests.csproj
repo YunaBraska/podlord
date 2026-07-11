@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Podlord.App\Podlord.App.csproj" />
     <ProjectReference Include="..\..\src\Podlord.Core\Podlord.Core.csproj" />
     <ProjectReference Include="..\..\src\Podlord.Kubernetes\Podlord.Kubernetes.csproj" />
   </ItemGroup>

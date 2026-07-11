@@ -255,8 +255,19 @@
             <Setter Property="BorderBrush" Value="{StaticResource PlGoldBorderBrush}" />
         </Style>
 
-        <!-- Disable FluentTheme transitions on hover-driven controls to stop the cross-screen flicker
-             that happens when many controls re-animate their Background/BorderBrush at once. -->
+        <!-- Disable FluentTheme transitions on hover-driven controls to stop cross-screen brightness flicker
+             when templates re-animate Background, BorderBrush, or Opacity during clicks and flyouts. Explicit
+             Style.Animations and custom drawn radar animations still run. -->
+        <Style Selector="Control">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="ContentPresenter">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
         <Style Selector="DataGridRow">
             <Setter Property="Transitions">
                 <Transitions />
@@ -591,6 +602,44 @@
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
         <Style Selector="Button.radarSourceButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBlueGlowBrush}" />
+        </Style>
+        <Style Selector="Border.sessionTab">
+            <Setter Property="Background" Value="{StaticResource PlSidebarMaterialBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlPlaqueEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.sessionTab.active">
+            <Setter Property="Background" Value="{StaticResource PlButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PlBlueGlowBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Button.sessionTabTitle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+        <Style Selector="Button.sessionTabTitle.active">
+            <Setter Property="Foreground" Value="{StaticResource PlTextBrush}" />
+        </Style>
+        <Style Selector="Button.sessionTabTitle.active /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource PlTextBrush}" />
+        </Style>
+        <Style Selector="Button.sessionTabTitle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.sessionTabAction">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="MinWidth" Value="24" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.sessionTabAction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{StaticResource PlBgPanelInsetBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource PlBlueGlowBrush}" />
         </Style>

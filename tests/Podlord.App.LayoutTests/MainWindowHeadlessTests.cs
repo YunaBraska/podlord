@@ -9,6 +9,7 @@ using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Podlord.Core;
+using Podlord.Kubernetes;
 
 namespace Podlord.App.LayoutTests;
 
@@ -269,6 +270,218 @@ public sealed class MainWindowHeadlessTests
         });
     }
 
+    [Fact]
+    public void Opening_sources_settings_updates_title_and_active_tab_state_without_stalling_dispatcher()
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            var window = ShowWindow();
+            try
+            {
+                var session = new PodlordSession(
+                    "session-1",
+                    "session-1",
+                    "context-1",
+                    "cluster-a",
+                    NamespaceScope.All,
+                    SafetyLevel.Unknown,
+                    null,
+                    null,
+                    true,
+                    "now");
+
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                window.ViewModel.SelectedSession = session;
+                window.ViewModel.OpenSourcesSettings();
+                watch.Stop();
+
+                Assert.True(
+                    watch.Elapsed < TimeSpan.FromMilliseconds(250),
+                    $"Workspace switch took {watch.Elapsed.TotalMilliseconds:0.0} ms.");
+
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Equal("Podlord - session-1", window.Title);
+                Assert.Equal("settings", window.ViewModel.SelectedWorkspace);
+                Assert.Equal(5, window.ViewModel.SelectedSettingsTabIndex);
+
+                var sourcesTab = window.GetLogicalDescendants()
+                    .OfType<TabItem>()
+                    .First(tab => tab.Header is string header && header == window.ViewModel.SettingsSourcesText);
+                Assert.True(sourcesTab.IsSelected);
+
+                var settingsButton = window.GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button => button.Content is string text && text == window.ViewModel.NavSettingsText);
+                Assert.Contains("active", settingsButton.Classes);
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
+        });
+    }
+
+    [Fact]
+    public void Tiny_cache_delta_keeps_visible_rows_and_frame_stable()
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            var window = ShowWindow();
+            try
+            {
+                window.ViewModel.AnimationIntensitySetting = 0;
+                window.ViewModel.RadarWaterEnabledSetting = false;
+                window.ViewModel.ScreensaverSetting = false;
+                window.ViewModel.Search = "visible";
+                window.ViewModel.LimitText = "10";
+
+                var visibleRow = new FlatResourceRow(
+                    Id: "demo:Pod:default:visible:uid-1",
+                    Status: "Running",
+                    Kind: "Pod",
+                    Name: "visible",
+                    Namespace: "default",
+                    Cluster: "cluster-a",
+                    Age: "3m",
+                    Ready: "1/1",
+                    Restarts: 0,
+                    Node: "node-a",
+                    ImageSummary: "app:v1",
+                    Owner: "Deployment/visible",
+                    LastChange: "3m",
+                    Freshness: FreshnessState.Fresh);
+
+                var hiddenRow = new FlatResourceRow(
+                    Id: "demo:Pod:default:hidden:uid-2",
+                    Status: "Running",
+                    Kind: "Pod",
+                    Name: "hidden",
+                    Namespace: "default",
+                    Cluster: "cluster-a",
+                    Age: "7m",
+                    Ready: "1/1",
+                    Restarts: 0,
+                    Node: "node-b",
+                    ImageSummary: "app:v1",
+                    Owner: "Deployment/hidden",
+                    LastChange: "7m",
+                    Freshness: FreshnessState.Fresh);
+
+                window.ViewModel.SeedCachedRowsForTesting([visibleRow, hiddenRow]);
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+
+                var firstFrame = CaptureFrameHash(window);
+                var firstVisible = Assert.Single(window.ViewModel.Resources);
+                Assert.Equal(visibleRow.Id, firstVisible.Id);
+                Assert.Equal("1 visible / 2 cached", window.ViewModel.ResourceCountLabel);
+
+                var updatedHiddenRow = hiddenRow with { LastChange = "8m", Status = "Succeeded" };
+                window.ViewModel.SeedCachedRowsForTesting([visibleRow, updatedHiddenRow]);
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+
+                var secondVisible = Assert.Single(window.ViewModel.Resources);
+                Assert.Equal(visibleRow.Id, secondVisible.Id);
+                Assert.Equal("1 visible / 2 cached", window.ViewModel.ResourceCountLabel);
+                Assert.Equal(firstFrame, CaptureFrameHash(window));
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
+        });
+    }
+
+    [Fact]
+    public void Pending_secondary_restore_is_cleared_when_user_switches_tabs_before_posted_restore_runs()
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "podlord-secondary-restore-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var alphaConfig = Path.Combine(tempDir, "alpha.yaml");
+                var betaConfig = Path.Combine(tempDir, "beta.yaml");
+                File.WriteAllText(alphaConfig, OneContextKubeconfig("https://alpha.example:6443", "alpha"));
+                File.WriteAllText(betaConfig, OneContextKubeconfig("https://beta.example:6443", "beta"));
+                var state = AppState.InMemoryWithConfigDirectory(tempDir);
+                state.ImportKubeconfig(alphaConfig);
+                state.ImportKubeconfig(betaConfig);
+                using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
+                viewModel.ReloadSessions(openDefaultSession: false);
+                var alpha = viewModel.Sessions.Single(session => session.DisplayName == "alpha");
+                var beta = viewModel.Sessions.Single(session => session.DisplayName == "beta");
+
+                viewModel.OpenSessionTab(alpha.Id, activate: true);
+                viewModel.SelectWorkspace("graph");
+                viewModel.SeedCachedRowsForTesting([LayoutRow("alpha-api", "alpha")]);
+                Dispatcher.UIThread.RunJobs();
+                viewModel.OpenSessionTab(beta.Id, activate: true);
+                viewModel.SelectWorkspace("graph");
+                viewModel.SeedCachedRowsForTesting([LayoutRow("beta-api", "beta")]);
+                Dispatcher.UIThread.RunJobs();
+
+                viewModel.OpenSessionTab(alpha.Id, activate: true);
+
+                Assert.Equal(1, viewModel.PendingSecondaryRestoreCountForTests);
+
+                viewModel.OpenSessionTab(beta.Id, activate: true);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Equal(0, viewModel.PendingSecondaryRestoreCountForTests);
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, recursive: true); }
+                catch { }
+            }
+        });
+    }
+
+    [Fact]
+    public void Large_cache_secondary_views_are_lazy_and_apply_latest_filter_on_dispatcher()
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            var window = ShowWindow();
+            try
+            {
+                window.ViewModel.RadarWaterEnabledSetting = false;
+                window.ViewModel.ScreensaverSetting = false;
+                window.ViewModel.SetRadarViewport(3000, 3000);
+
+                window.ViewModel.SeedCachedRowsForTesting(LargeLayoutRows(900));
+
+                Assert.Equal(256, window.ViewModel.Resources.Count);
+                Assert.Empty(window.ViewModel.RadarBlocks);
+
+                window.ViewModel.Search = "pod-0003";
+                window.ViewModel.Search = "pod-0006";
+
+                Assert.Single(window.ViewModel.Resources);
+                Assert.Equal("pod-0006", window.ViewModel.Resources[0].Name);
+
+                PumpUntil(
+                    () =>
+                    {
+                        var latest = window.ViewModel.RadarBlocks.FirstOrDefault(block => block.Resource.Name == "pod-0006");
+                        var stale = window.ViewModel.RadarBlocks.FirstOrDefault(block => block.Resource.Name == "pod-0003");
+                        return latest is { IsDimmed: false } && stale is { IsDimmed: true };
+                    },
+                    "Lazy radar rebuild did not settle on the latest filter state.");
+            }
+            finally
+            {
+                CloseWindow(window);
+            }
+        });
+    }
+
     private static IEnumerable<T> LogicalDescendantsOf<T>(ILogical root) where T : ILogical
     {
         var stack = new Stack<ILogical>();
@@ -297,6 +510,104 @@ public sealed class MainWindowHeadlessTests
         window.Close();
         Dispatcher.UIThread.RunJobs();
     }
+
+    private static byte[] CaptureFrameHash(Window window)
+    {
+        var bitmap = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Rendered frame capture failed.");
+        var path = Path.Combine(Path.GetTempPath(), $"podlord-frame-{Guid.NewGuid():N}.png");
+        try
+        {
+            bitmap.Save(path);
+            return System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path));
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static FlatResourceRow LayoutRow(string name, string cluster)
+    {
+        return new FlatResourceRow(
+            $"{cluster}:Deployment:default:{name}:uid",
+            "Available",
+            "Deployment",
+            name,
+            "default",
+            cluster,
+            "1m",
+            "1/1",
+            0,
+            string.Empty,
+            "app:1",
+            string.Empty,
+            "1m",
+            FreshnessState.Fresh);
+    }
+
+    private static IReadOnlyList<FlatResourceRow> LargeLayoutRows(int count)
+    {
+        return Enumerable.Range(0, count)
+            .Select(index => new FlatResourceRow(
+                $"layout:Pod:payments:pod-{index:0000}:uid",
+                "Running",
+                "Pod",
+                $"pod-{index:0000}",
+                "payments",
+                "layout",
+                "1m",
+                "1/1",
+                0,
+                "node-a",
+                "api:1",
+                "ReplicaSet/api",
+                "1m",
+                FreshnessState.Fresh))
+            .ToArray();
+    }
+
+    private static void PumpUntil(Func<bool> predicate, string failure)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            if (predicate())
+            {
+                return;
+            }
+        }
+
+        Assert.True(predicate(), failure);
+    }
+
+    private static string OneContextKubeconfig(string server, string name)
+    {
+        return $$"""
+apiVersion: v1
+clusters:
+- name: {{name}}
+  cluster:
+    server: {{server}}
+contexts:
+- name: {{name}}
+  context:
+    cluster: {{name}}
+    user: {{name}}
+current-context: {{name}}
+users:
+- name: {{name}}
+  user:
+    token: token
+""";
+    }
+
 }
 
 [CollectionDefinition("Headless", DisableParallelization = true)]

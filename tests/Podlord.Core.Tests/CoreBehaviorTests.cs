@@ -105,6 +105,71 @@ users:
     }
 
     [Fact]
+    public void App_state_orders_sources_by_last_opened_or_last_updated()
+    {
+        var directory = TempDirectory();
+        var alpha = Path.Combine(directory, "alpha.config");
+        var beta = Path.Combine(directory, "beta.kubeconfig");
+        var clock = new MutableClock(new DateTimeOffset(2026, 6, 24, 7, 0, 0, TimeSpan.Zero));
+        var state = AppState.InMemoryWithConfigDirectory(directory, clock);
+        File.WriteAllText(alpha, OneContextKubeconfig("alpha", "http://127.0.0.1:1"));
+        File.WriteAllText(beta, OneContextKubeconfig("beta", "http://127.0.0.1:2"));
+
+        state.ImportKubeconfig(alpha);
+        clock.Now = clock.Now.AddMinutes(1);
+        state.ImportKubeconfig(beta);
+
+        Assert.Equal(["beta", "alpha"], state.Snapshot().ImportedContexts.Select(context => context.DisplayName).ToArray());
+
+        clock.Now = clock.Now.AddMinutes(1);
+        var alphaSession = state.ListSessions().Single(session => session.DisplayName == "alpha");
+        state.MarkSessionOpened(alphaSession.Id);
+
+        var afterOpen = state.Snapshot();
+        Assert.Equal(["alpha", "beta"], afterOpen.ImportedContexts.Select(context => context.DisplayName).ToArray());
+        Assert.Equal("2026-06-24T07:02:00.0000000Z", afterOpen.ImportedContexts[0].LastOpenedAt);
+
+        clock.Now = clock.Now.AddMinutes(1);
+        File.WriteAllText(beta, OneContextKubeconfig("beta", "http://127.0.0.1:3"));
+        state.ImportKubeconfig(beta);
+
+        Assert.Equal(["beta", "alpha"], state.Snapshot().ImportedContexts.Select(context => context.DisplayName).ToArray());
+    }
+
+    [Fact]
+    public void App_state_persists_last_opened_source_order_after_reload()
+    {
+        var directory = TempDirectory();
+        var alpha = Path.Combine(directory, "alpha.config");
+        var beta = Path.Combine(directory, "beta.kubeconfig");
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        var clock = new MutableClock(new DateTimeOffset(2026, 6, 24, 9, 0, 0, TimeSpan.Zero));
+        File.WriteAllText(alpha, OneContextKubeconfig("alpha", "http://127.0.0.1:1"));
+        File.WriteAllText(beta, OneContextKubeconfig("beta", "http://127.0.0.1:2"));
+        try
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+            var state = AppState.LoadDefault(clock);
+            state.ImportKubeconfig(alpha);
+            clock.Now = clock.Now.AddMinutes(1);
+            state.ImportKubeconfig(beta);
+            clock.Now = clock.Now.AddMinutes(1);
+            var alphaSession = state.ListSessions().Single(session => session.DisplayName == "alpha");
+            state.MarkSessionOpened(alphaSession.Id);
+
+            var reloaded = AppState.LoadDefault();
+
+            Assert.Equal(["alpha", "beta"], reloaded.Snapshot().ImportedContexts.Select(context => context.DisplayName).ToArray());
+            Assert.Equal("2026-06-24T09:02:00.0000000Z", reloaded.Snapshot().ImportedContexts[0].LastOpenedAt);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void App_state_refreshes_imported_kubeconfig_sources_after_file_change()
     {
         var directory = TempDirectory();

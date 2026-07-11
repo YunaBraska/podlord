@@ -13,25 +13,29 @@ public sealed class AppState
     private readonly string? storePath;
     private readonly string? configDirectory;
     private readonly KubeconfigImporter importer;
+    private readonly IPodlordClock clock;
     private AppStore store;
 
-    private AppState(string? storePath, string? configDirectory, AppStore store, KubeconfigImporter importer)
+    private AppState(string? storePath, string? configDirectory, AppStore store, KubeconfigImporter importer, IPodlordClock clock)
     {
         this.storePath = storePath;
         this.configDirectory = configDirectory;
         this.store = store;
         this.importer = importer;
+        this.clock = clock;
     }
 
     public static AppState InMemory(IPodlordClock? clock = null)
     {
-        return new AppState(null, null, AppStore.Empty, new KubeconfigImporter(clock));
+        var resolvedClock = clock ?? new SystemPodlordClock();
+        return new AppState(null, null, AppStore.Empty, new KubeconfigImporter(resolvedClock), resolvedClock);
     }
 
     public static AppState InMemoryWithConfigDirectory(string configDirectory, IPodlordClock? clock = null)
     {
         Directory.CreateDirectory(configDirectory);
-        return new AppState(null, configDirectory, AppStore.Empty, new KubeconfigImporter(clock));
+        var resolvedClock = clock ?? new SystemPodlordClock();
+        return new AppState(null, configDirectory, AppStore.Empty, new KubeconfigImporter(resolvedClock), resolvedClock);
     }
 
     public static AppState LoadDefault(IPodlordClock? clock = null)
@@ -56,7 +60,8 @@ public sealed class AppState
         var store = File.Exists(storePath)
             ? LoadStore(storePath)
             : AppStore.Empty;
-        var state = new AppState(storePath, configDirectory, NormalizeStore(store, configDirectory), new KubeconfigImporter(clock));
+        var resolvedClock = clock ?? new SystemPodlordClock();
+        var state = new AppState(storePath, configDirectory, NormalizeStore(store, configDirectory), new KubeconfigImporter(resolvedClock), resolvedClock);
         state.Persist();
         return state;
     }
@@ -193,9 +198,15 @@ public sealed class AppState
 
     public PodlordSession SwitchActiveSession(string sessionId)
     {
+        return MarkSessionOpened(sessionId);
+    }
+
+    public PodlordSession MarkSessionOpened(string sessionId)
+    {
         lock (sync)
         {
-            if (store.Sessions.All(session => session.Id != sessionId))
+            var session = store.Sessions.FirstOrDefault(candidate => candidate.Id == sessionId);
+            if (session is null)
             {
                 throw PodlordException.SessionNotFound(sessionId);
             }
@@ -204,7 +215,16 @@ public sealed class AppState
                 .Select(session => session with { Active = session.Id == sessionId })
                 .ToList();
             var active = sessions.Single(session => session.Active);
-            store = store with { Sessions = sessions, ActiveSessionId = active.Id };
+            var openedAt = PodlordText.NowUtcString(clock);
+            var contexts = store.ImportedContexts
+                .Select(context => context.ContextId == active.ContextId ? context with { LastOpenedAt = openedAt } : context)
+                .ToList();
+            store = NormalizeStore(store with
+            {
+                Sessions = sessions,
+                ImportedContexts = contexts,
+                ActiveSessionId = active.Id
+            }, configDirectory);
             Persist();
             return active;
         }
@@ -595,7 +615,7 @@ public sealed class AppState
         }
 
         return contexts
-            .OrderByDescending(context => ParseImportedAt(context.ImportedAt))
+            .OrderByDescending(ContextActivityAt)
             .ThenBy(context => context.SourcePath, StringComparer.Ordinal)
             .ThenBy(context => context.Name, StringComparer.Ordinal)
             .ToList();
@@ -660,7 +680,16 @@ public sealed class AppState
                 : !string.IsNullOrWhiteSpace(preferred.FilterName)
                     ? preferred.FilterName
                     : "default";
-        return preferred with { DisplayName = displayName, SafetyLevel = safety, FilterName = filterName };
+        var lastOpenedAt = ParseImportedAt(preferred.LastOpenedAt) >= ParseImportedAt(duplicate.LastOpenedAt)
+            ? preferred.LastOpenedAt
+            : duplicate.LastOpenedAt;
+        return preferred with
+        {
+            DisplayName = displayName,
+            SafetyLevel = safety,
+            FilterName = filterName,
+            LastOpenedAt = lastOpenedAt
+        };
     }
 
     private static bool CustomFilterName(ImportedContext context)
@@ -707,6 +736,13 @@ public sealed class AppState
     private static DateTimeOffset ParseImportedAt(string importedAt)
     {
         return DateTimeOffset.TryParse(importedAt, out var parsed) ? parsed : DateTimeOffset.MinValue;
+    }
+
+    private static DateTimeOffset ContextActivityAt(ImportedContext context)
+    {
+        var importedAt = ParseImportedAt(context.ImportedAt);
+        var openedAt = ParseImportedAt(context.LastOpenedAt);
+        return openedAt > importedAt ? openedAt : importedAt;
     }
 
     private static string PathIdentity(string sourcePath)

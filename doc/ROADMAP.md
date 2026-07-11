@@ -123,6 +123,68 @@ Voice cues generated locally via Piper TTS (MIT) or espeak-ng (retro RTS HUD tim
 
 Do NOT add files extracted from Blizzard, EA/Westwood, or any commercial game. Style only.
 
+## Derived Issue Reasoning
+
+Add a generic diagnosis layer so Podlord explains likely root cause instead of stopping at `Failed`, `NotReady`, or `Unknown`.
+
+UI contract:
+
+- Keep the raw Kubernetes status field.
+- Add a derived reason on the next line in the inspector message/overview area.
+- Show evidence lines when the user opens the inspector.
+- Prefer "likely" and "evidence says" over fake certainty.
+
+Cheap checks first:
+
+- resource `status.reason` and `status.message`
+- conditions reason/message
+- container waiting/terminated reasons
+- recent related Events
+- owner health (`Deployment`, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`)
+- related Node health and taints
+- desired vs ready/available counts
+- age, restart count, and startup grace window
+
+Planned generic classifiers:
+
+- stale failed pod after node shutdown
+- pod evicted by node pressure
+- pod stuck pulling image
+- pod failing readiness/liveness/startup probe
+- pod crash loop / repeated exit
+- pod unschedulable
+- node unreachable / kubelet stopped posting status
+- stale node still registered after replacement
+- controller below desired replicas
+- controller rollout stuck
+- job failed / backoff exhausted
+- cronjob missing recent successful run
+- pvc pending / waiting for provisioner
+- volume attach or mount failure
+- service without ready endpoints
+- ingress / gateway / route missing backend or listener acceptance
+- secret/config reference missing
+- RBAC-forbidden visibility masquerading as emptiness
+
+Resource coverage plan:
+
+- `Pod`: termination reason, waiting reason, probe failure, image pull, eviction, node shutdown, owner healthy but stale failed pod.
+- `Node`: `Ready` condition, heartbeat age, taints, stale registration, only-daemonset residue.
+- `Deployment` / `ReplicaSet` / `StatefulSet` / `DaemonSet`: desired vs ready, progressing deadline, stuck rollout, stale failed children, unavailable replicas.
+- `Job` / `CronJob`: failed pods, backoff limit reached, missed schedule, no recent success.
+- `PVC` / `PV`: pending bind, lost volume, resize pending, attach/mount errors from Events.
+- `Service`: selector matches nothing, endpoints empty, port mismatch when detectable.
+- `Ingress` / `Gateway` / `HTTPRoute`: not accepted, no address, backend missing, listener/parent unresolved.
+- `ConfigMap` / `Secret`: missing referenced keys or objects where reference graph is known.
+- `Event`: collapse noisy raw events into a short problem summary instead of repeating log spam verbatim.
+
+Delivery shape:
+
+- start with cheap, local, cache-backed inference
+- attach confidence and evidence to every derived reason
+- never require provider-specific logic for first-pass diagnosis
+- allow later provider plug-ins, but keep the default engine Kubernetes-generic
+
 ## Near-Term Reliability
 
 - Continue reducing unnecessary UI redraws.

@@ -10,7 +10,6 @@ using System.Text.Json;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Podlord.Core;
-using Podlord.Kubernetes;
 using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
@@ -21,9 +20,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private const string AllPodLogContainersOption = "All containers";
     private const int RadarLifeColumns = 64;
     private const int RadarLifeRows = 28;
+    private const int LazySecondaryViewRowThreshold = 750;
 
     private readonly AppState state;
-    private readonly KubernetesResourceService service;
+    private readonly IKubernetesApplicationPort service;
+    private readonly AppRuntime? runtime;
+    private readonly string hostId;
     private readonly IAlertSoundPlayer soundPlayer;
     private readonly IReleaseUpdateChecker releaseUpdateChecker;
     private readonly Func<string> currentVersionProvider;
@@ -46,9 +48,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private CancellationTokenSource? focusLoad;
     private CancellationTokenSource? logTail;
     private CancellationTokenSource? sourceRefreshDebounce;
+    private CancellationTokenSource? secondaryViewUpdate;
     private Task? backgroundRefreshTask;
+    private long secondaryViewGeneration;
     private PodlordSession? selectedSession;
-    private readonly Dictionary<string, DateTimeOffset> sessionSyncedAt = new(StringComparer.Ordinal);
+    private SessionWorkspaceViewModel? activeSessionWorkspace;
+    private readonly HashSet<string> openSessionIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SessionWorkspaceViewModel> sessionWorkspaces = new(StringComparer.Ordinal);
+    private readonly HashSet<string> pendingSecondaryRestoreSessionIds = new(StringComparer.Ordinal);
+    private string lastRenderedSnapshotSessionId = string.Empty;
     private FlatResourceRow? selectedResource;
     private FlatResourceRow? selectedResourceRow;
     private SourceStatusRow? selectedSource;
@@ -100,8 +108,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private bool problemsOnly;
     private bool activityOnly;
     private bool isRefreshing;
-    private bool refreshInFlight;
-    private bool refreshAgainRequested;
     private bool isCommandPaletteOpen;
     private bool isResourceSearchOpen;
     private bool isGraphSearchOpen;
@@ -176,16 +182,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly Dictionary<(string RuleId, string RowId), string> previousAlertRuleRowStates = [];
     private readonly HashSet<string> previousVisibleResourceAlertIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> resourceAlertBlinkUntil = new(StringComparer.Ordinal);
+    private bool suppressAlertViewStateSave;
 
     public MainWindowViewModel(
         AppState state,
-        KubernetesResourceService service,
+        IKubernetesApplicationPort service,
         IAlertSoundPlayer? soundPlayer = null,
         IReleaseUpdateChecker? releaseUpdateChecker = null,
         Func<string>? currentVersionProvider = null)
+        : this(state, service, null, null, soundPlayer, releaseUpdateChecker, currentVersionProvider)
+    {
+    }
+
+    internal MainWindowViewModel(
+        AppState state,
+        IKubernetesApplicationPort service,
+        AppRuntime? runtime,
+        string? hostId,
+        IAlertSoundPlayer? soundPlayer,
+        IReleaseUpdateChecker? releaseUpdateChecker,
+        Func<string>? currentVersionProvider)
     {
         this.state = state;
         this.service = service;
+        this.runtime = runtime;
+        this.hostId = hostId ?? Guid.NewGuid().ToString("N");
         this.soundPlayer = soundPlayer ?? AlertSoundPlayerFactory.CreateDefault();
         this.releaseUpdateChecker = releaseUpdateChecker ?? ReleaseUpdateCheckerFactory.CreateDefault();
         this.currentVersionProvider = currentVersionProvider ?? GitHubReleaseUpdateChecker.CurrentApplicationVersion;
@@ -287,10 +308,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(VisibleSavedPresets));
             OnPropertyChanged(nameof(SourceFilterOptions));
         };
+        if (runtime is not null)
+        {
+            runtime.SessionPlacementsChanged += RuntimeSessionPlacementsChanged;
+        }
         Sessions.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(IsAppEmpty));
             NotifyResourceLogoStateChanged();
+            NotifyImportedContextPickerChanged();
+        };
+        OpenSessions.CollectionChanged += (_, _) =>
+        {
+            NotifyImportedContextPickerChanged();
+        };
+        OpenWorkspaces.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasMultipleOpenSessions));
+            OnPropertyChanged(nameof(OpenSessionTabs));
+            NotifyImportedContextPickerChanged();
         };
         Resources.CollectionChanged += (_, _) => NotifyResourceLogoStateChanged();
     }
@@ -322,6 +358,44 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public ObservableCollection<PodlordSession> Sessions { get; } = [];
+
+    public ObservableCollection<PodlordSession> OpenSessions { get; } = [];
+
+    internal ObservableCollection<SessionWorkspaceViewModel> OpenWorkspaces { get; } = [];
+
+    public bool HasMultipleOpenSessions => OpenWorkspaces.Count > 1;
+
+    public IEnumerable<SessionTabViewModel> OpenSessionTabs
+    {
+        get
+        {
+            var snapshot = state.Snapshot();
+            return OpenWorkspaces.Select(workspace => SessionTabForWorkspace(workspace, snapshot.ImportedContexts));
+        }
+    }
+
+    private SessionTabViewModel SessionTabForWorkspace(
+        SessionWorkspaceViewModel workspace,
+        IReadOnlyList<ImportedContext> contexts)
+    {
+        var session = workspace.Session;
+        var context = contexts.FirstOrDefault(candidate => candidate.ContextId == session.ContextId);
+        var sourceName = context is null
+            ? session.ClusterName
+            : string.IsNullOrWhiteSpace(context.SourceName) ? SourceName(context.SourcePath) : context.SourceName;
+        var sourceColorKey = context is null
+            ? session.ClusterName
+            : !string.IsNullOrWhiteSpace(context.SourceContentHash) ? context.SourceContentHash
+            : !string.IsNullOrWhiteSpace(context.SourcePath) ? context.SourcePath
+            : sourceName;
+        return new SessionTabViewModel(
+            workspace.Id,
+            workspace.DisplayName,
+            workspace.IsActive,
+            sourceName,
+            sourceColorKey,
+            $"{sourceName} / {workspace.DisplayName}");
+    }
 
     public ObservableCollection<FlatResourceRow> Resources { get; } = [];
 
@@ -362,7 +436,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetField(ref sourcePickerSearch, value))
             {
-                OnPropertyChanged(nameof(VisibleImportedContexts));
+                NotifyImportedContextPickerChanged();
             }
         }
     }
@@ -374,16 +448,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             var query = sourcePickerSearch.Trim();
             if (query.Length == 0)
             {
-                return ImportedContextRows;
+                return ImportedContextRows.Where(IsImportedContextAvailableToOpen);
             }
 
             return ImportedContextRows.Where(row =>
-                row.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || row.SourcePath.Contains(query, StringComparison.OrdinalIgnoreCase));
+                IsImportedContextAvailableToOpen(row)
+                && (row.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || row.SourcePath.Contains(query, StringComparison.OrdinalIgnoreCase)));
         }
     }
 
     public string ImportedSourcesLabel => $"SOURCES ({ImportedContextRows.Count})";
+
+    public string WindowTitle => SelectedSession is null || string.IsNullOrWhiteSpace(SelectedSession.DisplayName)
+        ? "Podlord"
+        : $"Podlord - {SelectedSession.DisplayName}";
 
     public string RadarSourceLabel
     {
@@ -667,6 +746,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public string RenameSourceTooltipText => T("tooltip.renameSource");
 
     public string DeleteSourceTooltipText => T("tooltip.deleteSource");
+
+    public string UseSourceTooltipText => T("tooltip.useSource");
+
+    public string OpenSessionInTabTooltipText => T("tooltip.openSessionInTab");
+
+    public string OpenSessionInWindowTooltipText => T("tooltip.openSessionInWindow");
+
+    public string DetachSessionTabTooltipText => T("tooltip.detachSessionTab");
+
+    public string CloseSessionTabTooltipText => T("tooltip.closeSessionTab");
+
+    public string SourceSearchPlaceholderText => T("sources.searchPlaceholder");
 
     public string FilterProblemsTooltipText => T("tooltip.filterProblems");
 
@@ -1100,19 +1191,29 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 return;
             }
 
+            SaveCurrentWorkspaceViewState();
+            ClearTransientAlertPlayback();
             selectedSession = value;
+            activeSessionWorkspace = value is null ? null : WorkspaceFor(value);
+            UpdateOpenWorkspaceActiveState();
+            RestoreSearchViewState(activeSessionWorkspace);
+            RestoreRadarViewState(activeSessionWorkspace);
+            RestoreAlertViewState(activeSessionWorkspace);
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsRefreshing));
             OnPropertyChanged(nameof(IsInitialLoading));
+            OnPropertyChanged(nameof(OpenSessionTabs));
             SessionDisplayName = value?.DisplayName ?? string.Empty;
             SessionNamespaceScope = value?.NamespaceScope.Label ?? string.Empty;
             OnPropertyChanged(nameof(ActiveSessionChipLabel));
             OnPropertyChanged(nameof(RadarSourceLabel));
+            OnPropertyChanged(nameof(WindowTitle));
             MarkUserActivity();
             CancelFocusLoad();
             StopLogTail();
             RestoreLastFilterForSession();
-            RestoreSelectedSessionCache();
-            ScheduleRefresh();
+            RestoreSelectedSessionCacheForCurrentMode();
+            ScheduleRefreshIfSelectedCacheIsStale();
         }
     }
 
@@ -1137,7 +1238,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         suppressFilterPersist = true;
         try
         {
-            SelectedPreset = preset;
+            selectedPreset = preset;
+            OnPropertyChanged(nameof(SelectedPreset));
+            OnPropertyChanged(nameof(SelectedPresetLabel));
+            ApplyPreset(preset, renderAfterApply: false, refreshAfterApply: false);
         }
         finally
         {
@@ -1158,6 +1262,342 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         catch (PodlordException)
         {
         }
+    }
+
+    private void SaveCurrentWorkspaceViewState()
+    {
+        SaveSearchViewState(activeSessionWorkspace);
+        SaveAlertViewState(activeSessionWorkspace);
+        SaveRadarViewState(activeSessionWorkspace);
+    }
+
+    private void SaveRadarViewState(SessionWorkspaceViewModel? workspace)
+    {
+        if (workspace is null)
+        {
+            return;
+        }
+
+        workspace.RadarState = new SessionWorkspaceRadarState(
+            radarZoom,
+            radarPanX,
+            radarPanY,
+            radarCanvasWidth,
+            radarCanvasHeight,
+            radarPanelHeight);
+    }
+
+    private void SaveActiveRadarViewState() => SaveRadarViewState(activeSessionWorkspace);
+
+    private void RestoreRadarViewState(SessionWorkspaceViewModel? workspace)
+    {
+        var state = workspace?.RadarState ?? SessionWorkspaceRadarState.Default;
+        radarZoom = Math.Clamp(state.Zoom, 0.55, 3.4);
+        radarPanX = state.PanX;
+        radarPanY = state.PanY;
+        radarCanvasWidth = Math.Max(80, state.CanvasWidth);
+        radarCanvasHeight = Math.Max(80, state.CanvasHeight);
+        radarPanelHeight = Math.Clamp(state.PanelHeight, 156, 340);
+        OnPropertyChanged(nameof(RadarZoom));
+        OnPropertyChanged(nameof(RadarZoomLabel));
+        OnPropertyChanged(nameof(RadarPanX));
+        OnPropertyChanged(nameof(RadarPanY));
+        OnPropertyChanged(nameof(RadarCanvasW));
+        OnPropertyChanged(nameof(RadarCanvasH));
+        OnPropertyChanged(nameof(RadarPanelHeight));
+    }
+
+    private void SaveAlertViewState(SessionWorkspaceViewModel? workspace)
+    {
+        if (suppressAlertViewStateSave || workspace is null)
+        {
+            return;
+        }
+
+        workspace.AlertState = new SessionWorkspaceAlertState(
+            previousVisibleRadarAlertIds.ToHashSet(StringComparer.Ordinal),
+            previousVisibleResourceAlertIds.ToHashSet(StringComparer.Ordinal),
+            new Dictionary<string, DateTimeOffset>(radarAlertBlinkUntil, StringComparer.Ordinal),
+            new Dictionary<string, DateTimeOffset>(resourceAlertBlinkUntil, StringComparer.Ordinal),
+            new Dictionary<string, string>(lastAlertSoundKeysByRuleId, StringComparer.Ordinal),
+            previousAlertRuleMatches.ToHashSet(),
+            new Dictionary<(string RuleId, string RowId), string>(previousAlertRuleRowStates),
+            lastRadarAutoFollowAlertKey);
+    }
+
+    private void RestoreAlertViewState(SessionWorkspaceViewModel? workspace)
+    {
+        previousVisibleRadarAlertIds.Clear();
+        previousVisibleResourceAlertIds.Clear();
+        radarAlertBlinkUntil.Clear();
+        resourceAlertBlinkUntil.Clear();
+        lastAlertSoundKeysByRuleId.Clear();
+        previousAlertRuleMatches.Clear();
+        previousAlertRuleRowStates.Clear();
+        lastRadarAutoFollowAlertKey = string.Empty;
+        if (workspace is null)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.Now;
+        foreach (var id in workspace.AlertState.PreviousVisibleRadarAlertIds)
+        {
+            previousVisibleRadarAlertIds.Add(id);
+        }
+
+        foreach (var id in workspace.AlertState.PreviousVisibleResourceAlertIds)
+        {
+            previousVisibleResourceAlertIds.Add(id);
+        }
+
+        foreach (var (id, until) in workspace.AlertState.RadarAlertBlinkUntil.Where(pair => pair.Value > now))
+        {
+            radarAlertBlinkUntil[id] = until;
+        }
+
+        foreach (var (id, until) in workspace.AlertState.ResourceAlertBlinkUntil.Where(pair => pair.Value > now))
+        {
+            resourceAlertBlinkUntil[id] = until;
+        }
+
+        foreach (var (ruleId, key) in workspace.AlertState.AlertSoundKeysByRuleId)
+        {
+            lastAlertSoundKeysByRuleId[ruleId] = key;
+        }
+
+        foreach (var match in workspace.AlertState.PreviousAlertRuleMatches)
+        {
+            previousAlertRuleMatches.Add(match);
+        }
+
+        foreach (var (key, value) in workspace.AlertState.PreviousAlertRuleRowStates)
+        {
+            previousAlertRuleRowStates[key] = value;
+        }
+        lastRadarAutoFollowAlertKey = workspace.AlertState.LastRadarAutoFollowAlertKey;
+        if (radarAlertBlinkUntil.Count > 0 || resourceAlertBlinkUntil.Count > 0 || HasPendingAlertHold(now))
+        {
+            StartAlertAnimationExpiryTimer();
+        }
+    }
+
+    private void ClearTransientAlertPlayback()
+    {
+        priorityAlertSoundQueue.Clear();
+        alertSoundQueue.Clear();
+        alertSoundQueueTimer.Stop();
+        radarAutoFollowQueue.Clear();
+        radarAutoFollowTimer.Stop();
+        IsRadarWaterPaused = false;
+    }
+
+    private void SaveSearchViewState(SessionWorkspaceViewModel? workspace)
+    {
+        if (workspace is null)
+        {
+            return;
+        }
+
+        workspace.SearchState = new SessionWorkspaceSearchState(
+            IsResourceSearchOpen,
+            IsGraphSearchOpen,
+            IsEventSearchOpen,
+            ResourceQuickSearch,
+            GraphSearch,
+            EventQuickSearch,
+            resourceSearchIndex,
+            graphSearchIndex,
+            eventSearchIndex);
+    }
+
+    private void RestoreSearchViewState(SessionWorkspaceViewModel? workspace)
+    {
+        var state = workspace?.SearchState ?? SessionWorkspaceSearchState.Empty;
+
+        isResourceSearchOpen = state.IsResourceSearchOpen;
+        isGraphSearchOpen = state.IsGraphSearchOpen;
+        isEventSearchOpen = state.IsEventSearchOpen;
+        resourceQuickSearch = state.ResourceQuickSearch;
+        graphSearch = state.GraphSearch;
+        eventQuickSearch = state.EventQuickSearch;
+        resourceSearchIndex = state.ResourceSearchIndex;
+        graphSearchIndex = state.GraphSearchIndex;
+        eventSearchIndex = state.EventSearchIndex;
+        OnPropertyChanged(nameof(IsResourceSearchOpen));
+        OnPropertyChanged(nameof(IsGraphSearchOpen));
+        OnPropertyChanged(nameof(IsEventSearchOpen));
+        OnPropertyChanged(nameof(ResourceQuickSearch));
+        OnPropertyChanged(nameof(GraphSearch));
+        OnPropertyChanged(nameof(EventQuickSearch));
+    }
+
+    public bool HasOpenSession(string sessionId) => openSessionIds.Contains(sessionId);
+
+    private SessionWorkspaceViewModel WorkspaceFor(PodlordSession session)
+    {
+        if (sessionWorkspaces.TryGetValue(session.Id, out var existing))
+        {
+            existing.UpdateSession(session);
+            return existing;
+        }
+
+        var workspace = new SessionWorkspaceViewModel(session, service.CreateIndependentPipeline());
+        sessionWorkspaces[session.Id] = workspace;
+        return workspace;
+    }
+
+    private IKubernetesApplicationPort ActiveService => activeSessionWorkspace?.Service ?? service;
+
+    private static IKubernetesApplicationPort WorkspaceService(SessionWorkspaceViewModel workspace) => workspace.Service;
+
+    private SessionWorkspaceViewModel? WorkspaceForSessionId(string sessionId)
+    {
+        if (sessionWorkspaces.TryGetValue(sessionId, out var existing))
+        {
+            return existing;
+        }
+
+        var session = Sessions.FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal))
+                      ?? state.ListSessions().FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal));
+        return session is null ? null : WorkspaceFor(session);
+    }
+
+    private void UpdateOpenWorkspaceActiveState()
+    {
+        foreach (var workspace in OpenWorkspaces)
+        {
+            workspace.IsActive = selectedSession?.Id.Equals(workspace.Id, StringComparison.Ordinal) == true;
+        }
+    }
+
+    public void DetachSessionTab(string sessionId)
+    {
+        runtime?.DetachSession(sessionId, hostId);
+    }
+
+    public void EnsureCurrentSessionTab()
+    {
+        if (SelectedSession is not null)
+        {
+            OpenSessionTab(SelectedSession.Id, activate: true);
+        }
+    }
+
+    public void OpenSessionTab(string sessionId, bool activate)
+    {
+        var session = Sessions.FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal));
+        if (session is null)
+        {
+            return;
+        }
+
+        var shouldActivate = activate || SelectedSession is null;
+        if (openSessionIds.Add(sessionId))
+        {
+            var workspace = WorkspaceFor(session);
+            if (!OpenWorkspaces.Any(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal)))
+            {
+                OpenWorkspaces.Add(workspace);
+            }
+            OpenSessions.Add(session);
+            if (runtime?.RegisterSessionPlacement(sessionId, hostId) == false)
+            {
+                OpenSessions.Remove(session);
+                OpenWorkspaces.Remove(workspace);
+                openSessionIds.Remove(sessionId);
+                runtime.ActivateExistingSession(sessionId);
+                if (SelectedSession?.Id.Equals(sessionId, StringComparison.Ordinal) == true)
+                {
+                    SelectedSession = OpenSessions.FirstOrDefault();
+                }
+
+                return;
+            }
+
+            if (!shouldActivate)
+            {
+                ScheduleWorkspaceRefreshIfStale(workspace);
+            }
+        }
+
+        if (shouldActivate)
+        {
+            SelectedSession = MarkSessionOpenedForUi(session.Id);
+        }
+    }
+
+    public void ActivateSessionTab(string sessionId)
+    {
+        var session = OpenSessions.FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal))
+                   ?? Sessions.FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal));
+        if (session is not null)
+        {
+            SelectedSession = MarkSessionOpenedForUi(session.Id);
+        }
+    }
+
+    public void CloseSessionTab(string sessionId)
+    {
+        if (!openSessionIds.Remove(sessionId))
+        {
+            return;
+        }
+
+        var session = OpenSessions.FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal));
+        if (session is not null)
+        {
+            OpenSessions.Remove(session);
+        }
+        var workspace = OpenWorkspaces.FirstOrDefault(candidate => candidate.Id.Equals(sessionId, StringComparison.Ordinal));
+        if (workspace is not null)
+        {
+            workspace.CancelCacheRestore();
+            OpenWorkspaces.Remove(workspace);
+        }
+
+        runtime?.UnregisterSessionPlacement(sessionId, hostId);
+
+        if (SelectedSession?.Id.Equals(sessionId, StringComparison.Ordinal) == true)
+        {
+            SelectedSession = OpenSessions.FirstOrDefault();
+        }
+        else
+        {
+            UpdateOpenWorkspaceActiveState();
+        }
+
+        sessionWorkspaces.Remove(sessionId);
+        NotifyImportedContextPickerChanged();
+    }
+
+    private void RuntimeSessionPlacementsChanged(object? sender, EventArgs e)
+    {
+        NotifyImportedContextPickerChanged();
+    }
+
+    private void NotifyImportedContextPickerChanged()
+    {
+        OnPropertyChanged(nameof(VisibleImportedContexts));
+        OnPropertyChanged(nameof(ImportedSourcesLabel));
+    }
+
+    private bool IsImportedContextAvailableToOpen(ImportedContextRowViewModel row)
+    {
+        return !Sessions
+            .Where(session => session.ContextId.Equals(row.ContextId, StringComparison.Ordinal))
+            .Any(IsSessionOpenAnywhere);
+    }
+
+    private bool IsSessionOpenAnywhere(PodlordSession session)
+    {
+        if (openSessionIds.Contains(session.Id)
+            || OpenSessions.Any(open => open.Id.Equals(session.Id, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return runtime?.IsSessionOpen(session.Id) == true;
     }
 
     public FlatResourceRow? SelectedResource
@@ -1453,6 +1893,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     UpdateRequestAuditRows();
                     UpdateDiagnosticsRows();
                 }
+                ScheduleVisibleSecondaryViewUpdate(resetSearchMatches: false);
             }
         }
     }
@@ -1831,18 +2272,53 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public bool IsRefreshing
     {
-        get => isRefreshing;
-        private set
+        get => activeSessionWorkspace?.IsRefreshing ?? isRefreshing;
+        private set => SetWorkspaceRefreshing(activeSessionWorkspace, value);
+    }
+
+    private void SetWorkspaceRefreshing(SessionWorkspaceViewModel? workspace, bool value)
+    {
+        if (workspace is null)
         {
             if (SetField(ref isRefreshing, value))
             {
-                NotifyResourceLogoStateChanged();
-                OnPropertyChanged(nameof(IsInitialLoading));
+                NotifyRefreshingStateChanged();
             }
+
+            return;
+        }
+
+        var changed = workspace.IsRefreshing != value;
+        workspace.IsRefreshing = value;
+        if (changed && ReferenceEquals(workspace, activeSessionWorkspace))
+        {
+            NotifyRefreshingStateChanged();
         }
     }
 
-    public bool IsInitialLoading => SelectedSession is not null && cachedRows.Count == 0 && IsRefreshing;
+    private void NotifyRefreshingStateChanged()
+    {
+        NotifyResourceLogoStateChanged();
+        OnPropertyChanged(nameof(IsRefreshing));
+        OnPropertyChanged(nameof(IsInitialLoading));
+    }
+
+    private void SetWorkspaceCacheWarm(SessionWorkspaceViewModel? workspace, bool value)
+    {
+        if (workspace is null)
+        {
+            return;
+        }
+
+        var changed = workspace.IsCacheWarm != value;
+        workspace.IsCacheWarm = value;
+        if (changed && ReferenceEquals(workspace, activeSessionWorkspace))
+        {
+            OnPropertyChanged(nameof(IsInitialLoading));
+        }
+    }
+
+    public bool IsInitialLoading => SelectedSession is not null && IsRefreshing && activeSessionWorkspace?.IsCacheWarm != true;
 
     public bool IsInspectorVisible
     {
@@ -1951,7 +2427,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
-            var telemetry = service.RequestTelemetry();
+            var telemetry = ActiveService.RequestTelemetry(SelectedSession?.Id);
             var synced = lastSyncedAt is null ? "never" : $"{HumanSince(lastSyncedAt.Value)} ago";
             return $"visible: {Resources.Count}/{cachedRows.Count}  API: {telemetry.RequestsLastMinute}/min  Synced: {synced}";
         }
@@ -2115,18 +2591,49 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public void ReloadSessions()
+    public void ReloadSessions(bool openDefaultSession = true)
     {
+        var selectedId = SelectedSession?.Id;
+        var openIds = openSessionIds.ToList();
         Sessions.Clear();
         foreach (var session in state.ListSessions())
         {
             Sessions.Add(session);
         }
 
+        var reopened = Sessions
+            .Where(session => openIds.Contains(session.Id, StringComparer.Ordinal))
+            .ToList();
+        openSessionIds.Clear();
+        OpenSessions.Clear();
+        OpenWorkspaces.Clear();
+        foreach (var session in reopened)
+        {
+            openSessionIds.Add(session.Id);
+            var workspace = WorkspaceFor(session);
+            OpenSessions.Add(session);
+            OpenWorkspaces.Add(workspace);
+            if (runtime?.RegisterSessionPlacement(session.Id, hostId) == false)
+            {
+                openSessionIds.Remove(session.Id);
+                OpenSessions.Remove(session);
+                OpenWorkspaces.Remove(workspace);
+            }
+        }
+
         ReloadSources();
-        SelectedSession = Sessions.FirstOrDefault(session => session.Active) ?? Sessions.FirstOrDefault();
+        SelectedSession = Sessions.FirstOrDefault(session => session.Id.Equals(selectedId, StringComparison.Ordinal))
+                          ?? OpenSessions.FirstOrDefault()
+                          ?? Sessions.FirstOrDefault(session => session.Active)
+                          ?? Sessions.FirstOrDefault();
+        if (openDefaultSession && OpenSessions.Count == 0 && SelectedSession is not null)
+        {
+            OpenSessionTab(SelectedSession.Id, activate: false);
+        }
+        UpdateOpenWorkspaceActiveState();
         OnPropertyChanged(nameof(ActiveSessionChipLabel));
         OnPropertyChanged(nameof(RadarSourceLabel));
+        OnPropertyChanged(nameof(WindowTitle));
     }
 
     public void ImportHome()
@@ -2934,11 +3441,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var zoomPercent = Math.Max(100, rule.Actions.RadarZoomPercent);
-        var screenCenterX = block.X + block.Width / 2d;
-        var screenCenterY = block.Y + block.Height / 2d;
-        var worldCenter = new RadarPoint(
-            (screenCenterX - radarCanvasWidth / 2d) / radarZoom - radarPanX,
-            (screenCenterY - radarCanvasHeight / 2d) / radarZoom - radarPanY);
+        var worldCenter = new RadarPoint(block.WorldX + block.WorldWidth / 2d, block.WorldY + block.WorldHeight / 2d);
         StartRadarAutoFollow(worldCenter, zoomPercent / 100d);
         StatusLine = TF("alert.previewingZoom", target.Kind, target.Name);
     }
@@ -3225,7 +3728,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         if (focused)
         {
             MarkUserActivity();
-            ScheduleRefresh();
+            ScheduleRefreshIfSelectedCacheIsStale();
         }
 
         UpdateRadarIdleTimer();
@@ -3256,7 +3759,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            var detail = await service.GetResourceDetailAsync(
+            var detail = await ActiveService.GetResourceDetailAsync(
                 new ResourceIdentity(SelectedSession?.Id, target.Kind, target.Namespace, target.Name),
                 false,
                 KubernetesRequestPriority.Background,
@@ -3363,7 +3866,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             SelectedPortForward = task;
             RefreshPortForwardBadges();
             PortForwardStatusLine = $"Starting: local computer 127.0.0.1:{localPort} -> cluster {target}:{containerPort}.";
-            var forwarder = await service.StartPortForwardAsync(
+            var forwarder = await ActiveService.StartPortForwardAsync(
                 new PortForwardRequest(
                     SelectedSession.Id,
                     PortForwardResource.Kind,
@@ -3432,6 +3935,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private void StopAllPortForwards()
+    {
+        foreach (var task in PortForwards.ToList())
+        {
+            try
+            {
+                task.Stop();
+                task.Status = "stopped";
+            }
+            catch (InvalidOperationException)
+            {
+                task.Status = "failed";
+            }
+        }
+
+        RefreshPortForwardBadges();
+    }
+
     public async Task RefreshResourcesAsync(bool force = false)
     {
         await RefreshResourcesAsync(force, false).ConfigureAwait(true);
@@ -3439,61 +3960,93 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task RefreshResourcesAsync(bool force, bool background)
     {
-        if (refreshInFlight)
+        if (SelectedSession is null)
         {
-            refreshAgainRequested = true;
+            IsRefreshing = false;
+            StatusLine = T("source.noSession");
+            return;
+        }
+
+        var workspace = activeSessionWorkspace ?? WorkspaceFor(SelectedSession);
+        await RefreshWorkspaceResourcesAsync(workspace, force, background).ConfigureAwait(true);
+    }
+
+    private async Task RefreshWorkspaceResourcesAsync(SessionWorkspaceViewModel workspace, bool force, bool background)
+    {
+        var session = workspace.Session;
+        var sessionId = session.Id;
+        var displayQuery = BuildDisplayCacheQuery(sessionId);
+        if (workspace.RefreshInFlight)
+        {
+            workspace.RefreshAgainRequested = true;
             if (!background)
             {
-                IsRefreshing = true;
-                StatusLine = SelectedSession is null
-                    ? T("source.waitingQueue")
-                    : TF("source.waitingRefresh", SelectedSession.DisplayName);
+                SetWorkspaceRefreshing(workspace, true);
+                if (IsActiveWorkspace(workspace))
+                {
+                    StatusLine = TF("source.waitingRefresh", session.DisplayName);
+                }
+
+                await WaitForWorkspaceRefreshToFinishAsync(workspace).ConfigureAwait(true);
+                if (IsActiveWorkspace(workspace) && !lifetime.IsCancellationRequested)
+                {
+                    var snapshot = WorkspaceService(workspace).GetCachedResourceSnapshot(displayQuery, applyFilters: false);
+                    ApplySelectedSessionCacheSnapshot(workspace.Session, snapshot, deferFilterOptions: false);
+                }
             }
 
             return;
         }
 
-        var sessionId = SelectedSession?.Id;
-        var showRefreshing = !background || cachedRows.Count == 0;
+        var showRefreshing = ActiveWorkspaceRowCount(workspace) == 0;
         try
         {
-            refreshInFlight = true;
+            workspace.RefreshInFlight = true;
             if (showRefreshing)
             {
-                IsRefreshing = true;
+                SetWorkspaceRefreshing(workspace, true);
             }
 
-            if (SelectedSession is not null)
+            var warmQuery = background ? BuildBackgroundWarmQuery(force, workspace, sessionId) : BuildRemoteQuery(force, sessionId);
+            displayQuery = BuildDisplayCacheQuery(warmQuery);
+            var workspaceService = WorkspaceService(workspace);
+            var cachedBeforeWarm = workspaceService.GetCachedResourceSnapshot(displayQuery, applyFilters: false);
+            var canRenderCacheBeforeWarm = CanRenderWorkspaceCacheBeforeWarm(workspace, workspaceService, displayQuery);
+            SetWorkspaceCacheWarm(workspace, canRenderCacheBeforeWarm);
+            if (IsActiveWorkspace(workspace) && Resources.Count == 0 && cachedBeforeWarm.Rows.Count > 0 && canRenderCacheBeforeWarm)
             {
-                state.SwitchActiveSession(SelectedSession.Id);
+                RenderSnapshot(cachedBeforeWarm, deferFilterOptions: true, deferSecondaryViews: true, resetSearchMatches: false);
             }
 
-            var displayQuery = BuildDisplayCacheQuery();
-            var warmQuery = background ? BuildBackgroundWarmQuery(force) : BuildRemoteQuery(force);
-            var cachedBeforeWarm = service.GetCachedResourceSnapshot(displayQuery, applyFilters: false);
-            if (Resources.Count == 0 && cachedBeforeWarm.Rows.Count > 0)
+            workspace.InitialLoadStartedAt = DateTimeOffset.UtcNow;
+            workspace.InitialLoadExpectedTotal = Math.Max(1, workspaceService.EstimateListRequestCount(warmQuery));
+            if (IsActiveWorkspace(workspace))
             {
-                RenderSnapshot(cachedBeforeWarm);
+                initialLoadStartedAt = workspace.InitialLoadStartedAt;
+                initialLoadExpectedTotal = workspace.InitialLoadExpectedTotal;
             }
-
-            initialLoadStartedAt = DateTimeOffset.UtcNow;
-            initialLoadExpectedTotal = Math.Max(1, service.EstimateListRequestCount(warmQuery));
             var priority = background ? KubernetesRequestPriority.Background : KubernetesRequestPriority.UserVisible;
-            var warm = await service.WarmResourceCacheAsync(warmQuery, priority).ConfigureAwait(true);
-            if (!string.Equals(SelectedSession?.Id, sessionId, StringComparison.Ordinal))
+            var warmTask = workspaceService.WarmResourceCacheAsync(warmQuery, priority);
+            if (canRenderCacheBeforeWarm
+                && (cachedBeforeWarm.Rows.Count > 0 || workspace.RenderedState?.CachedRows.Count > 0 || workspace.IsCacheWarm))
             {
-                refreshAgainRequested = true;
+                await RenderActivePartialCacheWhileWarmRunsAsync(workspace, workspaceService, displayQuery, warmTask).ConfigureAwait(true);
+            }
+            var warm = await warmTask.ConfigureAwait(true);
+            var syncedAt = DateTimeOffset.Now;
+            workspace.LastSyncedAt = syncedAt;
+            var cacheSatisfiedAfterWarm = IsWorkspaceCacheSatisfied(workspaceService, displayQuery);
+            SetWorkspaceCacheWarm(workspace, cacheSatisfiedAfterWarm);
+            if (!IsActiveWorkspace(workspace))
+            {
                 return;
             }
 
-            var cached = service.GetCachedResourceSnapshot(displayQuery, applyFilters: false);
-            var rendered = RenderSnapshot(cached with { Failures = warm.Failures, Freshness = warm.Freshness });
-
-            lastSyncedAt = DateTimeOffset.Now;
-            if (sessionId is { Length: > 0 })
-            {
-                sessionSyncedAt[sessionId] = lastSyncedAt.Value;
-            }
+            var cached = workspaceService.GetCachedResourceSnapshot(displayQuery, applyFilters: false);
+            lastSyncedAt = syncedAt;
+            var rendered = background
+                ? RenderSnapshot(cached with { Failures = warm.Failures, Freshness = warm.Freshness }, deferFilterOptions: true, deferSecondaryViews: true)
+                : RenderSnapshot(cached with { Failures = warm.Failures, Freshness = warm.Freshness });
 
             NotifyLastSyncedLabelIfChanged();
             NotifyFooterLineIfChanged();
@@ -3504,32 +4057,96 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (PodlordException ex)
         {
-            StatusLine = ex.Message;
-            RecordAppDiagnostic("resource refresh", ex.Message);
+            if (IsActiveWorkspace(workspace))
+            {
+                StatusLine = ex.Message;
+            }
+            RecordAppDiagnostic(WorkspaceService(workspace), "resource refresh", ex.Message);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
         }
         catch (Exception ex)
         {
-            StatusLine = $"Could not refresh {SelectedSession?.DisplayName ?? "selected source"}: {ex.Message}";
-            RecordAppDiagnostic("resource refresh", ex.Message);
+            if (IsActiveWorkspace(workspace))
+            {
+                StatusLine = $"Could not refresh {session.DisplayName}: {ex.Message}";
+            }
+            RecordAppDiagnostic(WorkspaceService(workspace), "resource refresh", ex.Message);
         }
         finally
         {
-            refreshInFlight = false;
-            if (showRefreshing)
+            workspace.RefreshInFlight = false;
+            var cacheSatisfied = IsWorkspaceCacheSatisfied(WorkspaceService(workspace), displayQuery);
+            SetWorkspaceCacheWarm(workspace, cacheSatisfied);
+            if (showRefreshing || IsActiveWorkspace(workspace))
             {
-                IsRefreshing = false;
+                SetWorkspaceRefreshing(workspace, !cacheSatisfied);
+                if (!cacheSatisfied && IsActiveWorkspace(workspace))
+                {
+                    UpdateLoadingHealthSegments();
+                }
             }
 
             UpdateRequestWorkLabel();
-            if (refreshAgainRequested && !lifetime.IsCancellationRequested)
+            if (workspace.RefreshAgainRequested && !lifetime.IsCancellationRequested)
             {
-                refreshAgainRequested = false;
-                ScheduleRefresh();
+                workspace.RefreshAgainRequested = false;
+                if (IsActiveWorkspace(workspace))
+                {
+                    ScheduleRefresh();
+                }
+                else
+                {
+                    _ = RefreshWorkspaceResourcesAsync(workspace, force, true);
+                }
             }
         }
+    }
+
+    private async Task WaitForWorkspaceRefreshToFinishAsync(SessionWorkspaceViewModel workspace)
+    {
+        while (workspace.RefreshInFlight && !lifetime.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(25), lifetime.Token).ConfigureAwait(true);
+        }
+    }
+
+    private async Task RenderActivePartialCacheWhileWarmRunsAsync(
+        SessionWorkspaceViewModel workspace,
+        IKubernetesApplicationPort workspaceService,
+        ResourceQuery displayQuery,
+        Task warmTask)
+    {
+        while (!warmTask.IsCompleted && !lifetime.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(120), lifetime.Token).ConfigureAwait(true);
+            if (!IsActiveWorkspace(workspace) || ActiveWorkspaceRowCount(workspace) > 0)
+            {
+                continue;
+            }
+
+            var partial = workspaceService.GetCachedResourceSnapshot(displayQuery, applyFilters: false);
+            if (partial.Rows.Count == 0)
+            {
+                continue;
+            }
+
+            RenderSnapshot(partial, deferFilterOptions: true, deferSecondaryViews: true, resetSearchMatches: false);
+        }
+    }
+
+    private bool IsActiveWorkspace(SessionWorkspaceViewModel workspace)
+    {
+        return ReferenceEquals(workspace, activeSessionWorkspace)
+               && SelectedSession?.Id.Equals(workspace.Id, StringComparison.Ordinal) == true;
+    }
+
+    private int ActiveWorkspaceRowCount(SessionWorkspaceViewModel workspace)
+    {
+        return IsActiveWorkspace(workspace) && lastRenderedSnapshotSessionId.Equals(workspace.Id, StringComparison.Ordinal)
+            ? cachedRows.Count
+            : workspace.RenderedState?.CachedRows.Count ?? 0;
     }
 
     public async Task OpenSelectedResourceAsync()
@@ -3551,7 +4168,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 focusedResource.Kind,
                 focusedResource.Namespace,
                 focusedResource.Name);
-            var cached = service.GetCachedResourceDetail(identity);
+            var cached = ActiveService.GetCachedResourceDetail(identity);
             if (cached is not null)
             {
                 RenderDetail(cached);
@@ -3570,7 +4187,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 return;
             }
 
-            var detail = await service.GetResourceDetailAsync(identity, true, KubernetesRequestPriority.Foreground, cancellationToken).ConfigureAwait(true);
+            var detail = await ActiveService.GetResourceDetailAsync(identity, true, KubernetesRequestPriority.Foreground, cancellationToken).ConfigureAwait(true);
             if (cancellationToken.IsCancellationRequested || SelectedResource?.Id != focusedResource.Id)
             {
                 return;
@@ -3657,6 +4274,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         RadarPanelHeight = Math.Clamp(width * 0.47, 156, 340);
+        SaveActiveRadarViewState();
     }
 
     public void SetRadarViewport(double width, double height)
@@ -3675,7 +4293,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         RadarCanvasW = nextWidth;
         RadarCanvasH = nextHeight;
-        UpdateRadarFromCache();
+        SaveActiveRadarViewState();
+        if (IsRadarIdle) RenderRadarLife(reset: false);
+        else UpdateRadarFromCache();
     }
 
     public void ZoomRadar(double wheelDelta)
@@ -3714,6 +4334,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(RadarZoomLabel));
         OnPropertyChanged(nameof(RadarPanX));
         OnPropertyChanged(nameof(RadarPanY));
+        SaveActiveRadarViewState();
         UpdateRadarFromCache();
         PauseRadarWaterDuringInteraction();
         MarkUserActivity();
@@ -3730,6 +4351,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         radarZoom = next;
         OnPropertyChanged(nameof(RadarZoom));
         OnPropertyChanged(nameof(RadarZoomLabel));
+        SaveActiveRadarViewState();
         UpdateRadarFromCache();
         PauseRadarWaterDuringInteraction();
         MarkUserActivity();
@@ -3746,6 +4368,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         radarPanY += screenDeltaY / radarZoom;
         OnPropertyChanged(nameof(RadarPanX));
         OnPropertyChanged(nameof(RadarPanY));
+        SaveActiveRadarViewState();
         UpdateRadarFromCache();
         PauseRadarWaterDuringInteraction();
         MarkUserActivity();
@@ -3806,7 +4429,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 SelectedResource.Kind,
                 SelectedResource.Namespace,
                 SelectedResource.Name);
-            var detail = await service.ApplyResourceYamlAsync(identity, EditableYaml, lifetime.Token).ConfigureAwait(true);
+            var detail = await ActiveService.ApplyResourceYamlAsync(identity, EditableYaml, lifetime.Token).ConfigureAwait(true);
             RenderDetail(detail, forceYamlRefresh: true);
             YamlApplyStatus = $"Applied {identity.Kind}/{identity.Name}; cache refreshed.";
             StatusLine = YamlApplyStatus;
@@ -3849,7 +4472,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             IsDetailLoading = true;
             var identity = new ResourceIdentity(SelectedSession?.Id, resource.Kind, resource.Namespace, resource.Name);
-            await service.DeleteResourceAsync(identity, lifetime.Token).ConfigureAwait(true);
+            await ActiveService.DeleteResourceAsync(identity, lifetime.Token).ConfigureAwait(true);
             cachedRows.RemoveAll(row => row.Id.Equals(resource.Id, StringComparison.Ordinal));
             ApplyLocalFilter();
             CloseInspector();
@@ -4035,7 +4658,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 try
                 {
                     var cachedIdentity = new ResourceIdentity(SelectedSession.Id, row.Kind, row.Namespace, row.Name);
-                    cachedDetail = service.GetCachedResourceDetail(cachedIdentity);
+                    cachedDetail = ActiveService.GetCachedResourceDetail(cachedIdentity);
                 }
                 catch (PodlordException)
                 {
@@ -4607,12 +5230,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         focusLoad?.Cancel();
         logTail?.Cancel();
         sourceRefreshDebounce?.Cancel();
+        secondaryViewUpdate?.Cancel();
+        foreach (var workspace in sessionWorkspaces.Values)
+        {
+            workspace.CancelCacheRestore();
+        }
+        StopAllPortForwards();
         radarIdleTimer.Stop();
         radarWaterPauseTimer.Stop();
         radarAutoFollowTimer.Stop();
         alertSoundQueueTimer.Stop();
         alertAnimationExpiryTimer.Stop();
         footerTimer.Stop();
+        if (runtime is not null)
+        {
+            runtime.SessionPlacementsChanged -= RuntimeSessionPlacementsChanged;
+        }
         radarAutoFollowQueue.Clear();
         priorityAlertSoundQueue.Clear();
         alertSoundQueue.Clear();
@@ -4623,12 +5256,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         focusLoad?.Dispose();
         logTail?.Dispose();
         sourceRefreshDebounce?.Dispose();
+        secondaryViewUpdate?.Dispose();
         refreshDebounce = null;
         filterDebounce = null;
         focusDebounce = null;
         focusLoad = null;
         logTail = null;
         sourceRefreshDebounce = null;
+        secondaryViewUpdate = null;
         DisposeSourceWatchers();
         lifetime.Dispose();
         soundPlayer.Dispose();
@@ -4693,23 +5328,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            state.SwitchActiveSession(SelectedSession.Id);
-            lastSyncedAt = sessionSyncedAt.TryGetValue(SelectedSession.Id, out var syncedAt)
-                ? syncedAt
-                : null;
-            var snapshot = service.GetCachedResourceSnapshot(BuildDisplayCacheQuery(), applyFilters: false);
-            var rendered = RenderSnapshot(snapshot);
-            IsRefreshing = true;
-            StatusLine = snapshot.Rows.Count > 0
-                ? TF("source.showingCached", SelectedSession.DisplayName)
-                : TF("source.loadingResources", SelectedSession.DisplayName);
-            if (!rendered)
-            {
-                NotifyResourceLogoStateChanged();
-            }
-
-            NotifyLastSyncedLabelIfChanged();
-            NotifyFooterLineIfChanged();
+            var snapshot = ActiveService.GetCachedResourceSnapshot(BuildDisplayCacheQuery(SelectedSession.Id), applyFilters: false);
+            ApplySelectedSessionCacheSnapshot(SelectedSession, snapshot, deferFilterOptions: false);
         }
         catch (PodlordException ex)
         {
@@ -4717,6 +5337,198 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             IsRefreshing = false;
             StatusLine = ex.Message;
         }
+    }
+
+    private void RestoreSelectedSessionCacheForCurrentMode()
+    {
+        if (TryRestoreRenderedSessionViewState())
+        {
+            return;
+        }
+
+        if (runtime is null)
+        {
+            suppressAlertViewStateSave = true;
+            try
+            {
+                RestoreSelectedSessionCache();
+            }
+            finally
+            {
+                suppressAlertViewStateSave = false;
+            }
+            return;
+        }
+
+        ScheduleSelectedSessionCacheRestore();
+    }
+
+    private void ScheduleSelectedSessionCacheRestore()
+    {
+        if (SelectedSession is null)
+        {
+            RestoreSelectedSessionCache();
+            return;
+        }
+
+        var session = SelectedSession;
+        var workspace = activeSessionWorkspace ?? WorkspaceFor(session);
+        workspace.CancelCacheRestore();
+        workspace.CacheRestore = new CancellationTokenSource();
+        var token = workspace.CacheRestore.Token;
+        var query = BuildDisplayCacheQuery(session.Id);
+        SetWorkspaceRefreshing(workspace, true);
+        StatusLine = TF("source.loadingResources", session.DisplayName);
+        NotifyFooterLineIfChanged();
+        _ = RestoreSelectedSessionCacheAsync(workspace, session, query, token);
+    }
+
+    private async Task RestoreSelectedSessionCacheAsync(
+        SessionWorkspaceViewModel workspace,
+        PodlordSession session,
+        ResourceQuery query,
+        CancellationToken cancellationToken)
+    {
+        var shouldRefreshAfterRestore = false;
+        try
+        {
+            var snapshot = await Task.Run(() => WorkspaceService(workspace).GetCachedResourceSnapshot(query, applyFilters: false), cancellationToken).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (!IsActiveWorkspace(workspace))
+                {
+                    var inactiveCacheSatisfied = IsWorkspaceCacheSatisfied(WorkspaceService(workspace), query);
+                    SetWorkspaceCacheWarm(workspace, inactiveCacheSatisfied);
+                    workspace.IsRefreshing = workspace.RefreshInFlight || !inactiveCacheSatisfied;
+                    return;
+                }
+
+                suppressAlertViewStateSave = true;
+                try
+                {
+                    ApplySelectedSessionCacheSnapshot(session, snapshot, deferFilterOptions: true);
+                    shouldRefreshAfterRestore = !IsWorkspaceCacheSatisfied(WorkspaceService(workspace), query);
+                }
+                finally
+                {
+                    suppressAlertViewStateSave = false;
+                }
+            }, DispatcherPriority.Background);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (PodlordException ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                SetWorkspaceRefreshing(workspace, false);
+                if (!IsActiveWorkspace(workspace))
+                {
+                    return;
+                }
+
+                RenderSnapshot(EmptySnapshot());
+                StatusLine = ex.Message;
+            }, DispatcherPriority.Background);
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var completedRestore = false;
+                if (workspace.CacheRestore?.Token.Equals(cancellationToken) == true)
+                {
+                    workspace.CacheRestore.Dispose();
+                    workspace.CacheRestore = null;
+                    completedRestore = true;
+                }
+
+                if (completedRestore
+                    && IsActiveWorkspace(workspace)
+                    && workspace.RefreshInFlight
+                    && ActiveWorkspaceRowCount(workspace) == 0
+                    && !lifetime.IsCancellationRequested)
+                {
+                    _ = RetrySelectedSessionCacheRestoreAsync(workspace.Id);
+                    return;
+                }
+
+                if (completedRestore
+                    && shouldRefreshAfterRestore
+                    && IsActiveWorkspace(workspace)
+                    && !workspace.RefreshInFlight)
+                {
+                    ScheduleWorkspaceRefreshIfStale(workspace);
+                }
+            }, DispatcherPriority.Background);
+        }
+    }
+
+    private async Task RetrySelectedSessionCacheRestoreAsync(string sessionId)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(150), lifetime.Token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var workspace = WorkspaceForSessionId(sessionId);
+        if (workspace is null
+            || !IsActiveWorkspace(workspace)
+            || !workspace.RefreshInFlight
+            || ActiveWorkspaceRowCount(workspace) > 0)
+        {
+            return;
+        }
+
+        ScheduleSelectedSessionCacheRestore();
+    }
+
+    private void ApplySelectedSessionCacheSnapshot(
+        PodlordSession session,
+        ResourceExplorerSnapshot snapshot,
+        bool deferFilterOptions)
+    {
+        var workspace = WorkspaceFor(session);
+        lastSyncedAt = workspace.LastSyncedAt;
+        var cacheSatisfied = IsWorkspaceCacheSatisfied(WorkspaceService(workspace), BuildDisplayCacheQuery(session.Id));
+        var canRenderCache = cacheSatisfied || workspace.LastSyncedAt is not null;
+        SetWorkspaceCacheWarm(workspace, cacheSatisfied);
+        var rendered = RenderSnapshot(
+            canRenderCache ? snapshot : EmptySnapshot(),
+            canRenderCache && deferFilterOptions,
+            deferSecondaryViews: canRenderCache && deferFilterOptions,
+            resetSearchMatches: !deferFilterOptions);
+        var shouldShowLoading = snapshot.Rows.Count == 0 || workspace.RefreshInFlight || !cacheSatisfied;
+        SetWorkspaceRefreshing(workspace, shouldShowLoading);
+        if (shouldShowLoading && IsActiveWorkspace(workspace))
+        {
+            UpdateLoadingHealthSegments();
+        }
+        StatusLine = snapshot.Rows.Count > 0 && cacheSatisfied
+            ? TF("source.showingCached", session.DisplayName)
+            : TF("source.loadingResources", session.DisplayName);
+        if (!rendered)
+        {
+            NotifyResourceLogoStateChanged();
+        }
+
+        NotifyLastSyncedLabelIfChanged();
+        NotifyFooterLineIfChanged();
     }
 
     private ResourceExplorerSnapshot EmptySnapshot()
@@ -4740,20 +5552,34 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             []);
     }
 
-    private bool RenderSnapshot(ResourceExplorerSnapshot snapshot)
+    private bool RenderSnapshot(ResourceExplorerSnapshot snapshot) => RenderSnapshot(snapshot, deferFilterOptions: false, deferSecondaryViews: false, resetSearchMatches: true);
+
+    private bool RenderSnapshot(
+        ResourceExplorerSnapshot snapshot,
+        bool deferFilterOptions,
+        bool deferSecondaryViews = false,
+        bool resetSearchMatches = true)
     {
         var rows = ApplyEventLifecycle(snapshot.Rows);
-        if (RenderedSnapshotMatches(rows, snapshot.Failures))
+        if (RenderedSnapshotMatches(snapshot.SessionId, rows, snapshot.Failures))
         {
             return false;
         }
 
+        lastRenderedSnapshotSessionId = snapshot.SessionId;
         cachedRows.Clear();
         cachedRows.AddRange(rows);
         RefreshFocusedResourceReference(rows);
         restartOutlierThreshold = ResourceFilterMatcher.RestartOutlierThreshold(cachedRows);
         UpdateRadarIdleTimer();
-        UpdateFilterOptions(snapshot with { Rows = rows });
+        if (deferFilterOptions)
+        {
+            ScheduleFilterOptionsUpdate(snapshot with { Rows = rows });
+        }
+        else
+        {
+            UpdateFilterOptionsIfChanged(snapshot with { Rows = rows });
+        }
         Failures.Clear();
         foreach (var failure in snapshot.Failures)
         {
@@ -4761,8 +5587,59 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         UpdateHealthSegments(cachedRows);
-        ApplyLocalFilter();
+        ApplyLocalFilterCore(resetSearchMatches, deferSecondaryViews);
         return true;
+    }
+
+    private void ScheduleFilterOptionsUpdate(ResourceExplorerSnapshot snapshot)
+    {
+        var sessionId = snapshot.SessionId;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (SelectedSession?.Id.Equals(sessionId, StringComparison.Ordinal) == true)
+            {
+                UpdateFilterOptionsIfChanged(snapshot);
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private void UpdateFilterOptionsIfChanged(ResourceExplorerSnapshot snapshot)
+    {
+        var workspace = WorkspaceForSessionId(snapshot.SessionId);
+        if (workspace is null)
+        {
+            UpdateFilterOptions(snapshot);
+            return;
+        }
+
+        var signature = FilterOptionsSignature(snapshot);
+        if (workspace.FilterOptionSignature.Equals(signature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        workspace.FilterOptionSignature = signature;
+        UpdateFilterOptions(snapshot);
+    }
+
+    private static string FilterOptionsSignature(ResourceExplorerSnapshot snapshot)
+    {
+        var hash = new HashCode();
+        hash.Add(snapshot.SessionId, StringComparer.Ordinal);
+        hash.Add(snapshot.Rows.Count);
+        foreach (var row in snapshot.Rows)
+        {
+            hash.Add(row.Id, StringComparer.Ordinal);
+            hash.Add(row.Status, StringComparer.Ordinal);
+            hash.Add(row.Kind, StringComparer.Ordinal);
+            hash.Add(row.Namespace ?? string.Empty, StringComparer.Ordinal);
+            hash.Add(row.Cluster, StringComparer.Ordinal);
+            hash.Add(row.Node ?? string.Empty, StringComparer.Ordinal);
+            hash.Add(row.ImageSummary, StringComparer.Ordinal);
+            hash.Add(row.Owner ?? string.Empty, StringComparer.Ordinal);
+        }
+
+        return hash.ToHashCode().ToString(CultureInfo.InvariantCulture);
     }
 
     private void RefreshFocusedResourceReference(IReadOnlyList<FlatResourceRow> rows)
@@ -4792,10 +5669,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     }
 
     private bool RenderedSnapshotMatches(
+        string sessionId,
         IReadOnlyList<FlatResourceRow> rows,
         IReadOnlyList<ResourceListFailure> failures)
     {
-        return cachedRows.SequenceEqual(rows)
+        return lastRenderedSnapshotSessionId.Equals(sessionId, StringComparison.Ordinal)
+               && cachedRows.SequenceEqual(rows)
                && Failures.SequenceEqual(failures);
     }
 
@@ -4903,7 +5782,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         YamlApplyStatus = "Fetching fresh YAML from the cluster...";
         try
         {
-            var detail = await service.GetResourceDetailAsync(identity, true, KubernetesRequestPriority.Foreground, lifetime.Token).ConfigureAwait(true);
+            var detail = await ActiveService.GetResourceDetailAsync(identity, true, KubernetesRequestPriority.Foreground, lifetime.Token).ConfigureAwait(true);
             if (SelectedResource?.Id != focusedResource.Id)
             {
                 return;
@@ -5511,14 +6390,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 {
                     var container = SelectedPodLogContainer == AllPodLogContainersOption ? null : SelectedPodLogContainer;
                     var request = new PodLogRequest(SelectedSession?.Id, ns, pod, container, 100, false);
-                    var cached = service.GetCachedPodLogs(request);
+                    var cached = ActiveService.GetCachedPodLogs(request);
                     if (cached is not null)
                     {
                         LogText = cached.Text.Length == 0 ? "No log lines in the selected tail window." : cached.Text;
                     }
 
                     var priority = isAppFocused ? KubernetesRequestPriority.Foreground : KubernetesRequestPriority.Background;
-                    var logs = await service.GetPodLogsAsync(request, true, priority, cancellationToken).ConfigureAwait(true);
+                    var logs = await ActiveService.GetPodLogsAsync(request, true, priority, cancellationToken).ConfigureAwait(true);
                     LogText = logs.Text.Length == 0 ? "No log lines in the selected tail window." : logs.Text;
                 }
             }
@@ -5565,10 +6444,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             .Where(name => name.Length > 0 && name != "-");
     }
 
-    private ResourceQuery BuildRemoteQuery(bool force)
+    private ResourceQuery BuildRemoteQuery(bool force) => BuildRemoteQuery(force, SelectedSession?.Id);
+
+    private ResourceQuery BuildRemoteQuery(bool force, string? sessionId)
     {
         return new ResourceQuery(
-            SessionId: SelectedSession?.Id,
+            SessionId: sessionId,
             Kind: EmptyToNull(RemoteKindExpression(KindPicker.Expression)),
             Namespace: EmptyToNull(NamespacePicker.Expression),
             ProblemsOnly: false,
@@ -5587,27 +6468,53 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return $"{trimmed} \"Event\"";
     }
 
-    private ResourceQuery BuildDisplayCacheQuery()
+    private ResourceQuery BuildDisplayCacheQuery() => BuildDisplayCacheQuery(SelectedSession?.Id);
+
+    private static ResourceQuery BuildDisplayCacheQuery(string? sessionId)
     {
         return new ResourceQuery(
-            SessionId: SelectedSession?.Id,
+            SessionId: sessionId,
             Limit: 5_000,
             ForceRefresh: false);
     }
 
-    private ResourceQuery BuildBackgroundWarmQuery(bool force)
+    private static ResourceQuery BuildDisplayCacheQuery(ResourceQuery warmedQuery)
+    {
+        return new ResourceQuery(
+            SessionId: warmedQuery.SessionId,
+            Kind: warmedQuery.Kind,
+            Namespace: warmedQuery.Namespace,
+            Limit: 5_000,
+            ForceRefresh: false);
+    }
+
+    private ResourceQuery BuildBackgroundWarmQuery(bool force) =>
+        BuildBackgroundWarmQuery(force, activeSessionWorkspace, SelectedSession?.Id);
+
+    private ResourceQuery BuildBackgroundWarmQuery(bool force, SessionWorkspaceViewModel? workspace, string? sessionId)
     {
         var now = DateTimeOffset.Now;
-        if (HasRemoteScopeFilter() && now - lastBroadRefreshAt > TimeSpan.FromMinutes(2))
+        var lastBroadRefresh = workspace?.LastBroadRefreshAt ?? lastBroadRefreshAt;
+        if (HasRemoteScopeFilter()
+            && workspace?.IsCacheWarm == true
+            && now - lastBroadRefresh > TimeSpan.FromMinutes(2))
         {
-            lastBroadRefreshAt = now;
+            if (workspace is null)
+            {
+                lastBroadRefreshAt = now;
+            }
+            else
+            {
+                workspace.LastBroadRefreshAt = now;
+            }
+
             return new ResourceQuery(
-                SessionId: SelectedSession?.Id,
+                SessionId: sessionId,
                 Limit: 5_000,
                 ForceRefresh: force);
         }
 
-        return BuildRemoteQuery(force) with { ProblemsOnly = ProblemsOnly };
+        return BuildRemoteQuery(force, sessionId) with { ProblemsOnly = ProblemsOnly };
     }
 
     private bool HasRemoteScopeFilter()
@@ -5689,7 +6596,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         Sources.Clear();
         ImportedContextRows.Clear();
         foreach (var context in DisplayImportedContexts(state.Snapshot().ImportedContexts)
-                     .OrderByDescending(context => context.ImportedAt, StringComparer.Ordinal)
+                     .OrderByDescending(SourceActivityAt)
                      .ThenBy(context => string.IsNullOrWhiteSpace(context.SourceName) ? context.SourcePath : context.SourceName, StringComparer.Ordinal)
                      .ThenBy(context => context.Name, StringComparer.Ordinal))
         {
@@ -5727,13 +6634,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 RemoveImportedContextRow,
                 RenameImportedContextRow,
                 ActivateImportedContextRow,
+                OpenImportedContextRowInTab,
+                OpenImportedContextRowInWindow,
                 Sessions.Any(session => session.ContextId == context.ContextId && session.Id == state.Snapshot().ActiveSessionId),
                 sourceName,
-                hash));
+                hash,
+                T("action.open"),
+                T("action.active"),
+                UseSourceTooltipText,
+                OpenSessionInTabTooltipText,
+                OpenSessionInWindowTooltipText,
+                RenameSourceTooltipText,
+                DeleteSourceTooltipText));
         }
 
-        OnPropertyChanged(nameof(VisibleImportedContexts));
-        OnPropertyChanged(nameof(ImportedSourcesLabel));
+        NotifyImportedContextPickerChanged();
         OnPropertyChanged(nameof(ActiveSessionChipLabel));
         OnPropertyChanged(nameof(RadarSourceLabel));
         if (selectedSource is { ContextId.Length: > 0 } current)
@@ -5770,7 +6685,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private static IReadOnlyList<ImportedContext> DisplayImportedContexts(IEnumerable<ImportedContext> contexts)
     {
         var visible = new List<ImportedContext>();
-        foreach (var context in contexts.OrderByDescending(context => context.ImportedAt, StringComparer.Ordinal))
+        foreach (var context in contexts.OrderByDescending(SourceActivityAt))
         {
             if (visible.Any(existing => SameDisplaySource(existing, context)))
             {
@@ -5811,6 +6726,47 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return IsVirtualSource(sourcePath) ? sourcePath : Path.GetFullPath(sourcePath);
     }
 
+    private static DateTimeOffset SourceActivityAt(ImportedContext context)
+    {
+        var importedAt = ParseSourceTimestamp(context.ImportedAt);
+        var openedAt = ParseSourceTimestamp(context.LastOpenedAt);
+        return openedAt > importedAt ? openedAt : importedAt;
+    }
+
+    private static DateTimeOffset ParseSourceTimestamp(string value)
+    {
+        return DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;
+    }
+
+    private PodlordSession MarkSessionOpenedForUi(string sessionId)
+    {
+        var active = state.MarkSessionOpened(sessionId);
+        ReplaceSessionSnapshot(active);
+        ReloadSources();
+        return active;
+    }
+
+    private void ReplaceSessionSnapshot(PodlordSession updated)
+    {
+        ReplaceSessionIn(Sessions, updated);
+        ReplaceSessionIn(OpenSessions, updated);
+        WorkspaceFor(updated).UpdateSession(updated);
+        UpdateOpenWorkspaceActiveState();
+        OnPropertyChanged(nameof(OpenSessionTabs));
+    }
+
+    private static void ReplaceSessionIn(ObservableCollection<PodlordSession> sessions, PodlordSession updated)
+    {
+        for (var index = 0; index < sessions.Count; index++)
+        {
+            if (sessions[index].Id.Equals(updated.Id, StringComparison.Ordinal))
+            {
+                sessions[index] = updated;
+                return;
+            }
+        }
+    }
+
     private void ActivateImportedContextRow(ImportedContextRowViewModel row)
     {
         var session = state.ListSessions().FirstOrDefault(candidate => candidate.ContextId == row.ContextId);
@@ -5822,15 +6778,62 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            state.SwitchActiveSession(session.Id);
+            if (runtime is null)
+            {
+                SelectedSession = MarkSessionOpenedForUi(session.Id);
+                EnsureCurrentSessionTab();
+            }
+            else
+            {
+                runtime.OpenOrActivateSession(session.Id, hostId, SessionOpenTarget.Activate);
+            }
+
             StatusLine = $"Activated {session.DisplayName}.";
-            ReloadSessions();
-            ScheduleRefresh();
         }
         catch (PodlordException ex)
         {
             StatusLine = ex.Message;
         }
+    }
+
+    private void OpenImportedContextRowInTab(ImportedContextRowViewModel row)
+    {
+        var session = state.ListSessions().FirstOrDefault(candidate => candidate.ContextId == row.ContextId);
+        if (session is null)
+        {
+            StatusLine = $"No session exists for {row.DisplayName}.";
+            return;
+        }
+
+        if (runtime is null)
+        {
+            OpenSessionTab(session.Id, activate: true);
+        }
+        else
+        {
+            runtime.OpenOrActivateSession(session.Id, hostId, SessionOpenTarget.Tab);
+        }
+        StatusLine = $"Opened {session.DisplayName}.";
+    }
+
+    private void OpenImportedContextRowInWindow(ImportedContextRowViewModel row)
+    {
+        var session = state.ListSessions().FirstOrDefault(candidate => candidate.ContextId == row.ContextId);
+        if (session is null)
+        {
+            StatusLine = $"No session exists for {row.DisplayName}.";
+            return;
+        }
+
+        if (runtime is null)
+        {
+            OpenSessionTab(session.Id, activate: true);
+        }
+        else
+        {
+            runtime.OpenOrActivateSession(session.Id, hostId, SessionOpenTarget.Window);
+        }
+        StatusLine = $"Opened {session.DisplayName}.";
     }
 
     private void RemoveImportedContextRow(ImportedContextRowViewModel row)
@@ -6370,11 +7373,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         SyncCollection(Relationships, desired);
     }
 
-    private void UpdateGraphNodes(IReadOnlyList<FlatResourceRow> rows)
+    private void UpdateGraphNodes(IReadOnlyList<FlatResourceRow> rows, bool resetSearchMatches)
     {
-        GraphNodes.Clear();
         var session = new GraphNodeViewModel("Session", SelectedSession?.DisplayName ?? "active", "cluster", "Observed");
-        GraphNodes.Add(session);
 
         var sessionLookup = state.Snapshot().Sessions
             .ToLookup(s => s.ClusterName, StringComparer.Ordinal);
@@ -6398,7 +7399,46 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             }
         }
 
-        UpdateGraphSearchMatches(resetToFirstMatch: true);
+        SyncGraphNodeCollection(GraphNodes, [session]);
+        UpdateGraphSearchMatches(resetSearchMatches);
+    }
+
+    private static void SyncGraphNodeCollection(
+        ObservableCollection<GraphNodeViewModel> target,
+        IReadOnlyList<GraphNodeViewModel> desired)
+    {
+        var shared = Math.Min(target.Count, desired.Count);
+        for (var index = 0; index < shared; index++)
+        {
+            if (SameGraphNode(target[index], desired[index]))
+            {
+                SyncGraphNodeCollection(target[index].Children, desired[index].Children);
+            }
+            else
+            {
+                target[index] = desired[index];
+            }
+        }
+
+        while (target.Count > desired.Count)
+        {
+            target.RemoveAt(target.Count - 1);
+        }
+
+        for (var index = target.Count; index < desired.Count; index++)
+        {
+            target.Add(desired[index]);
+        }
+    }
+
+    private static bool SameGraphNode(GraphNodeViewModel left, GraphNodeViewModel right)
+    {
+        return left.Kind.Equals(right.Kind, StringComparison.Ordinal)
+               && left.Name.Equals(right.Name, StringComparison.Ordinal)
+               && left.Namespace.Equals(right.Namespace, StringComparison.Ordinal)
+               && left.Status.Equals(right.Status, StringComparison.Ordinal)
+               && string.Equals(left.Resource?.Id, right.Resource?.Id, StringComparison.Ordinal)
+               && Equals(left.Resource, right.Resource);
     }
 
     private void UpdateGraphSearchMatches(bool resetToFirstMatch)
@@ -7075,7 +8115,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private void ApplyLocalFilter()
+    private void ApplyLocalFilter() => ApplyLocalFilterCore(resetSearchMatches: true, deferSecondaryViews: false);
+
+    private void ApplyLocalFilterCore(bool resetSearchMatches, bool deferSecondaryViews)
     {
         var localQuery = BuildLocalQuery();
         var now = DateTimeOffset.Now;
@@ -7102,18 +8144,335 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         SyncResourcesPreservingSelection(visibleRows);
         SyncPreviousVisibleResourceAlertIds(visibleResourceIds);
 
-        UpdateEvents(EventRowsForCurrentFilter(localQuery));
-        UpdateRelationships(filteredForViews);
-        UpdateGraphNodes(visibleRows);
-        UpdateRadarFromCache(localQuery);
-        UpdatePulseLayer(cachedRows, filteredForViews);
-        UpdateResourceSearchMatches(resetToFirstMatch: true);
-        UpdateEventSearchMatches(resetToFirstMatch: true);
+        UpdateResourceSearchMatches(resetSearchMatches);
+        if (IsEventsWorkspace)
+        {
+            UpdateEvents(visibleRows.Where(row => row.Kind == "Event"));
+            UpdateEventSearchMatches(resetSearchMatches);
+        }
         OnPropertyChanged(nameof(ResourceCountLabel));
         NotifyFooterLineIfChanged();
         OnPropertyChanged(nameof(IsInitialLoading));
         NotifyResourceLogoStateChanged();
         StatusLine = $"{ResourceCountLabel}; {Failures.Count} warning(s); {LastSyncedLabel}.";
+        var canRunLazySecondaryViews = Avalonia.Application.Current is not null;
+        var shouldDeferSecondaryViews = canRunLazySecondaryViews
+                                       && (deferSecondaryViews || filteredForViews.Count >= LazySecondaryViewRowThreshold);
+        if (shouldDeferSecondaryViews)
+        {
+            SaveRenderedSessionViewState(localQuery);
+            ScheduleSecondaryViewUpdate(localQuery, filteredForViews, visibleRows, resetSearchMatches);
+            return;
+        }
+
+        CancelPendingSecondaryViewUpdate();
+        ApplySecondaryViews(localQuery, filteredForViews, visibleRows, resetSearchMatches);
+    }
+
+    private void CancelPendingSecondaryViewUpdate()
+    {
+        secondaryViewUpdate?.Cancel();
+        secondaryViewUpdate?.Dispose();
+        secondaryViewUpdate = null;
+        Interlocked.Increment(ref secondaryViewGeneration);
+    }
+
+    private void ScheduleSecondaryViewUpdate(
+        ResourceQuery localQuery,
+        IReadOnlyList<FlatResourceRow> filteredForViews,
+        IReadOnlyList<FlatResourceRow> visibleRows,
+        bool resetSearchMatches)
+    {
+        var sessionId = SelectedSession?.Id;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return;
+        }
+
+        secondaryViewUpdate?.Cancel();
+        secondaryViewUpdate?.Dispose();
+        secondaryViewUpdate = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var token = secondaryViewUpdate.Token;
+        var generation = Interlocked.Increment(ref secondaryViewGeneration);
+        Dispatcher.UIThread.Post(() =>
+        {
+            _ = ApplySecondaryViewsLazyAsync(
+                sessionId,
+                generation,
+                token,
+                localQuery,
+                filteredForViews,
+                visibleRows,
+                resetSearchMatches);
+        }, DispatcherPriority.Background);
+    }
+
+    private async Task ApplySecondaryViewsLazyAsync(
+        string sessionId,
+        long generation,
+        CancellationToken cancellationToken,
+        ResourceQuery localQuery,
+        IReadOnlyList<FlatResourceRow> filteredForViews,
+        IReadOnlyList<FlatResourceRow> visibleRows,
+        bool resetSearchMatches)
+    {
+        try
+        {
+            if (!IsSecondaryViewUpdateCurrent(sessionId, generation, cancellationToken))
+            {
+                return;
+            }
+
+            await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+            if (IsEventsWorkspace)
+            {
+                UpdateEvents(EventRowsForCurrentFilter(localQuery));
+                UpdateEventSearchMatches(resetSearchMatches);
+            }
+
+            await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+            if (IsGraphWorkspace)
+            {
+                UpdateRelationships(filteredForViews);
+                UpdateGraphNodes(visibleRows, resetSearchMatches);
+            }
+
+            await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+            await UpdateRadarFromCacheAsync(localQuery, sessionId, generation, cancellationToken).ConfigureAwait(true);
+
+            await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+            UpdatePulseLayer(cachedRows, filteredForViews);
+            if (SelectedSession?.Id is { Length: > 0 } activeSessionId)
+            {
+                pendingSecondaryRestoreSessionIds.Remove(activeSessionId);
+            }
+            SaveRenderedSessionViewState(localQuery);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            RecordAppDiagnostic("secondary view update", ex.Message);
+        }
+    }
+
+    private async Task YieldSecondaryViewUpdateAsync(string sessionId, long generation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        if (!IsSecondaryViewUpdateCurrent(sessionId, generation, cancellationToken))
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private bool IsSecondaryViewUpdateCurrent(string sessionId, long generation, CancellationToken cancellationToken)
+    {
+        return !disposed
+               && !cancellationToken.IsCancellationRequested
+               && !lifetime.IsCancellationRequested
+               && generation == Interlocked.Read(ref secondaryViewGeneration)
+               && string.Equals(SelectedSession?.Id, sessionId, StringComparison.Ordinal);
+    }
+
+    private void ApplySecondaryViews(
+        ResourceQuery localQuery,
+        IReadOnlyList<FlatResourceRow> filteredForViews,
+        IReadOnlyList<FlatResourceRow> visibleRows,
+        bool resetSearchMatches)
+    {
+        if (IsEventsWorkspace)
+        {
+            UpdateEvents(EventRowsForCurrentFilter(localQuery));
+            UpdateEventSearchMatches(resetSearchMatches);
+        }
+        if (IsGraphWorkspace)
+        {
+            UpdateRelationships(filteredForViews);
+            UpdateGraphNodes(visibleRows, resetSearchMatches);
+        }
+        UpdateRadarFromCache(localQuery);
+        UpdatePulseLayer(cachedRows, filteredForViews);
+        if (SelectedSession?.Id is { Length: > 0 } sessionId)
+        {
+            pendingSecondaryRestoreSessionIds.Remove(sessionId);
+        }
+        SaveRenderedSessionViewState(localQuery);
+    }
+
+    private void ScheduleVisibleSecondaryViewUpdate(bool resetSearchMatches)
+    {
+        if (cachedRows.Count == 0 || (!IsGraphWorkspace && !IsEventsWorkspace))
+        {
+            return;
+        }
+
+        var sessionId = SelectedSession?.Id;
+        var localQuery = BuildLocalQuery();
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!string.Equals(SelectedSession?.Id, sessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var filteredForViews = SortRows(ResourceFilterMatcher.FilterRows(cachedRows, localQuery with { Limit = 5_000 }))
+                .ToList();
+            var visibleRows = Resources.ToList();
+            ApplySecondaryViews(localQuery, filteredForViews, visibleRows, resetSearchMatches);
+        }, DispatcherPriority.Background);
+    }
+
+    private void SaveRenderedSessionViewState(ResourceQuery localQuery)
+    {
+        var sessionId = SelectedSession?.Id;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return;
+        }
+
+        var workspace = WorkspaceForSessionId(sessionId);
+        if (workspace is null)
+        {
+            return;
+        }
+
+        var previous = workspace.RenderedState;
+        var preserveSecondary = pendingSecondaryRestoreSessionIds.Contains(sessionId) && previous is not null;
+        workspace.RenderedState = new SessionWorkspaceRenderedState(
+            localQuery,
+            resourceSortColumn,
+            resourceSortDirection,
+            eventSortColumn,
+            eventSortDirection,
+            cachedRows.ToList(),
+            Resources.ToList(),
+            preserveSecondary ? previous!.Events : Events.ToList(),
+            preserveSecondary ? previous!.Relationships : Relationships.ToList(),
+            preserveSecondary ? previous!.GraphNodes : GraphNodes.ToList(),
+            preserveSecondary ? previous!.RadarBlocks : RadarBlocks.ToList(),
+            preserveSecondary ? previous!.ClusterPulseItems : ClusterPulseItems.ToList(),
+            Failures.ToList(),
+            HealthSegments.ToList(),
+            selectedResource?.Id,
+            selectedResourceRow?.Id,
+            lastSyncedAt,
+            restartOutlierThreshold,
+            StatusLine,
+            ResourceCountLabel);
+    }
+
+    private bool TryRestoreRenderedSessionViewState()
+    {
+        var sessionId = SelectedSession?.Id;
+        if (string.IsNullOrWhiteSpace(sessionId)
+            || WorkspaceForSessionId(sessionId)?.RenderedState is not { } state
+            || !RenderedStateMatchesCurrentView(state))
+        {
+            return false;
+        }
+
+        var workspace = WorkspaceForSessionId(sessionId);
+        if (workspace?.LastSyncedAt is { } workspaceSyncedAt
+            && (state.LastSyncedAt is null || workspaceSyncedAt > state.LastSyncedAt.Value))
+        {
+            return false;
+        }
+
+        lastRenderedSnapshotSessionId = sessionId;
+        var cacheSatisfied = workspace is not null
+            && IsWorkspaceCacheSatisfied(WorkspaceService(workspace), BuildDisplayCacheQuery(sessionId));
+        SetWorkspaceCacheWarm(workspace, cacheSatisfied);
+        cachedRows.Clear();
+        cachedRows.AddRange(state.CachedRows);
+        restartOutlierThreshold = state.RestartOutlierThreshold;
+        lastSyncedAt = state.LastSyncedAt;
+        SyncCollection(Failures, state.Failures);
+        SyncCollection(HealthSegments, state.HealthSegments);
+        SyncResourcesPreservingSelection(state.Resources);
+        RestoreRenderedSelection(state.SelectedResourceId, state.SelectedResourceRowId);
+        UpdateResourceSearchMatches(resetToFirstMatch: false);
+        SetWorkspaceRefreshing(workspace, workspace?.RefreshInFlight == true || !cacheSatisfied);
+        if (IsRefreshing)
+        {
+            UpdateLoadingHealthSegments();
+        }
+        StatusLine = state.StatusLine;
+        if (cachedRows.Count > 0)
+        {
+            ClearRadarIdleData();
+            IsRadarIdle = false;
+        }
+        UpdateRadarFromCache(state.LocalQuery);
+        SyncCollection(ClusterPulseItems, state.ClusterPulseItems);
+        ScheduleRenderedSecondaryStateRestore(sessionId, state);
+        NotifyLastSyncedLabelIfChanged();
+        NotifyFooterLineIfChanged();
+        OnPropertyChanged(nameof(ResourceCountLabel));
+        OnPropertyChanged(nameof(IsInitialLoading));
+        NotifyResourceLogoStateChanged();
+        return true;
+    }
+
+    private void ScheduleRenderedSecondaryStateRestore(string sessionId, SessionWorkspaceRenderedState state)
+    {
+        pendingSecondaryRestoreSessionIds.Add(sessionId);
+        Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                if (!string.Equals(SelectedSession?.Id, sessionId, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                if (IsEventsWorkspace)
+                {
+                    SyncCollection(Events, state.Events);
+                    UpdateEventSearchMatches(resetToFirstMatch: false);
+                }
+                if (IsGraphWorkspace)
+                {
+                    SyncCollection(Relationships, state.Relationships);
+                    SyncGraphNodeCollection(GraphNodes, state.GraphNodes);
+                    UpdateGraphSearchMatches(resetToFirstMatch: false);
+                }
+                UpdateRadarIdleTimer();
+            }
+            finally
+            {
+                pendingSecondaryRestoreSessionIds.Remove(sessionId);
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private bool RenderedStateMatchesCurrentView(SessionWorkspaceRenderedState state)
+    {
+        return Equals(state.LocalQuery, BuildLocalQuery())
+               && state.ResourceSortColumn.Equals(resourceSortColumn, StringComparison.Ordinal)
+               && state.ResourceSortDirection == resourceSortDirection
+               && state.EventSortColumn.Equals(eventSortColumn, StringComparison.Ordinal)
+               && state.EventSortDirection == eventSortDirection;
+    }
+
+    private void RestoreRenderedSelection(string? selectedResourceId, string? selectedResourceRowId)
+    {
+        selectedResource = string.IsNullOrWhiteSpace(selectedResourceId)
+            ? null
+            : cachedRows.FirstOrDefault(row => row.Id.Equals(selectedResourceId, StringComparison.Ordinal));
+        selectedResourceRow = string.IsNullOrWhiteSpace(selectedResourceRowId)
+            ? null
+            : Resources.FirstOrDefault(row => row.Id.Equals(selectedResourceRowId, StringComparison.Ordinal));
+        OnPropertyChanged(nameof(SelectedResource));
+        OnPropertyChanged(nameof(SelectedResourceRow));
+        if (selectedResource is not null && IsInspectorVisible && IsInspectorOverviewActive)
+        {
+            RenderCachedResourceSummary(selectedResource);
+        }
     }
 
     private void EvaluateAlertRules()
@@ -7185,6 +8544,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             previousAlertRuleRowStates[key] = value;
         }
+        SaveAlertViewState(activeSessionWorkspace);
     }
 
     private void ClearSoundDeduplicationForInactiveRules(IReadOnlySet<string> enabledRuleIds)
@@ -7202,10 +8562,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         if (!rule.Actions.PlaySound || rows.Count < Math.Max(1, rule.Actions.SoundMinimumMatches))
         {
             lastAlertSoundKeysByRuleId.Remove(rule.Id);
+            SaveAlertViewState(activeSessionWorkspace);
             return;
         }
 
         var key = AlertRowsStateKey(rows);
+        if (!AlertRowsChangedSincePreviousEvaluation(rule, rows))
+        {
+            lastAlertSoundKeysByRuleId[rule.Id] = key;
+            SaveAlertViewState(activeSessionWorkspace);
+            return;
+        }
+
         if (lastAlertSoundKeysByRuleId.TryGetValue(rule.Id, out var previous)
             && previous.Equals(key, StringComparison.Ordinal))
         {
@@ -7213,7 +8581,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         lastAlertSoundKeysByRuleId[rule.Id] = key;
+        SaveAlertViewState(activeSessionWorkspace);
         TryPlayAutomaticSound(rule.SoundId, priority: true);
+    }
+
+    private bool AlertRowsChangedSincePreviousEvaluation(AlertRule rule, IReadOnlyList<FlatResourceRow> rows)
+    {
+        var currentIds = rows.Select(row => row.Id).ToHashSet(StringComparer.Ordinal);
+        if (previousAlertRuleRowStates.Keys.Any(key => key.RuleId.Equals(rule.Id, StringComparison.Ordinal) && !currentIds.Contains(key.RowId)))
+        {
+            return true;
+        }
+
+        foreach (var row in rows)
+        {
+            var key = (rule.Id, row.Id);
+            var stateKey = AlertRowStateKey(row);
+            if (!previousAlertRuleRowStates.TryGetValue(key, out var previous)
+                || !previous.Equals(stateKey, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string AlertSummary(IReadOnlyList<FlatResourceRow> rows)
@@ -7776,6 +9167,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             resourceAlertBlinkUntil.Remove(id);
         }
+        SaveAlertViewState(activeSessionWorkspace);
     }
 
     private string AlertAnimationFor(string rowId)
@@ -7798,6 +9190,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         var rows = RadarRows();
         UpdateRadarBlocks(rows, RadarFilterScope.From(rows, localQuery ?? BuildLocalQuery()));
+    }
+
+    private async Task UpdateRadarFromCacheAsync(
+        ResourceQuery? localQuery,
+        string sessionId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        var rows = RadarRows();
+        await UpdateRadarBlocksAsync(
+            rows,
+            RadarFilterScope.From(rows, localQuery ?? BuildLocalQuery()),
+            lazy: true,
+            sessionId,
+            generation,
+            cancellationToken).ConfigureAwait(true);
     }
 
     private void NotifyResourceLogoStateChanged()
@@ -8111,6 +9519,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void UpdateRadarBlocks(IReadOnlyList<FlatResourceRow> rows, RadarFilterScope filterScope)
     {
+        UpdateRadarBlocksAsync(
+            rows,
+            filterScope,
+            lazy: false,
+            sessionId: null,
+            generation: 0,
+            CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    private async Task UpdateRadarBlocksAsync(
+        IReadOnlyList<FlatResourceRow> rows,
+        RadarFilterScope filterScope,
+        bool lazy,
+        string? sessionId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
         var desired = new List<RadarBlockViewModel>();
         var worldCenters = new Dictionary<string, RadarPoint>(StringComparer.Ordinal);
         var visibleAlertIds = new HashSet<string>(StringComparer.Ordinal);
@@ -8120,11 +9545,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         if (capped.Count == 0)
         {
             previousVisibleRadarAlertIds.Clear();
+            SaveAlertViewState(activeSessionWorkspace);
             RenderRadarLife(reset: !IsRadarIdle);
             UpdateRadarIdleTimer();
             return;
         }
 
+        ClearRadarIdleData();
+        IsRadarIdle = false;
         var occupied = new HashSet<RadarGridCell>();
         var clusterGroups = capped
             .GroupBy(row => row.Cluster)
@@ -8134,6 +9562,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         for (var clusterIndex = 0; clusterIndex < clusterGroups.Count; clusterIndex++)
         {
+            if (lazy && sessionId is not null)
+            {
+                await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+            }
+
             var clusterGroup = clusterGroups[clusterIndex];
             var clusterCenter = clusterCenters[clusterIndex];
             var clusterRow = RadarVirtualRow("Cluster", clusterGroup.Key, null, clusterGroup.Key);
@@ -8157,6 +9590,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 .ToList();
             for (var namespaceIndex = 0; namespaceIndex < namespaceGroups.Count; namespaceIndex++)
             {
+                if (lazy && sessionId is not null && namespaceIndex % 4 == 0)
+                {
+                    await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+                }
+
                 var namespaceGroup = namespaceGroups[namespaceIndex];
                 var namespaceAngle = NamespaceAngle(clusterGroup.Key, namespaceGroup.Key, namespaceIndex, namespaceGroups.Count);
                 var namespaceRadiusX = clusterGroups.Count > 1 ? 20 : 28;
@@ -8201,6 +9639,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             }
         }
 
+        if (lazy && sessionId is not null)
+        {
+            await YieldSecondaryViewUpdateAsync(sessionId, generation, cancellationToken).ConfigureAwait(true);
+        }
+
         MaybeStartRadarAutoFollow(capped, filterScope, worldCenters);
         SyncRadarBlocks(desired);
         previousVisibleRadarAlertIds.Clear();
@@ -8208,6 +9651,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             previousVisibleRadarAlertIds.Add(id);
         }
+        SaveAlertViewState(activeSessionWorkspace);
 
         ClearRadarIdleData();
 
@@ -8321,7 +9765,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             isAnnouncing: announce,
             alertAnimation: alertAnimation,
             alertColor: colorAlert,
-            isDimmed: isFilteredOut));
+            isDimmed: isFilteredOut,
+            worldX: worldRect.X,
+            worldY: worldRect.Y,
+            worldWidth: worldRect.W,
+            worldHeight: worldRect.H));
         return worldCenter;
     }
 
@@ -8615,13 +10063,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(RadarPanY));
         OnPropertyChanged(nameof(RadarZoom));
         OnPropertyChanged(nameof(RadarZoomLabel));
-        UpdateRadarFromCache();
+        SaveActiveRadarViewState();
+        if (radarAutoFollowStep % 6 == 0)
+        {
+            UpdateRadarFromCache();
+        }
         if (radarAutoFollowStep < steps)
         {
             return;
         }
 
         radarAutoFollowTimer.Stop();
+        UpdateRadarFromCache();
         while (radarAutoFollowQueue.TryDequeue(out var next))
         {
             if (StartRadarAutoFollow(next.WorldCenter, next.TargetZoom))
@@ -9112,6 +10565,91 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         _ = DebouncedRefresh(refreshDebounce.Token);
     }
 
+    private void ScheduleRefreshIfSelectedCacheIsStale()
+    {
+        if (SelectedSession is null)
+        {
+            return;
+        }
+
+        var workspace = activeSessionWorkspace ?? WorkspaceFor(SelectedSession);
+        if (workspace.CacheRestore is not null)
+        {
+            if (ActiveWorkspaceRowCount(workspace) == 0)
+            {
+                SetWorkspaceRefreshing(workspace, true);
+                StatusLine = TF("source.loadingResources", workspace.DisplayName);
+            }
+            return;
+        }
+
+        if (workspace.RefreshInFlight)
+        {
+            if (ActiveWorkspaceRowCount(workspace) == 0)
+            {
+                SetWorkspaceRefreshing(workspace, true);
+                StatusLine = TF("source.waitingRefresh", workspace.DisplayName);
+            }
+            return;
+        }
+
+        ScheduleWorkspaceRefreshIfStale(workspace);
+    }
+
+    private void ScheduleWorkspaceRefreshIfStale(SessionWorkspaceViewModel workspace)
+    {
+        if (workspace.RefreshInFlight)
+        {
+            return;
+        }
+
+        try
+        {
+            var query = BuildDisplayCacheQuery(workspace.Id);
+            var service = WorkspaceService(workspace);
+            if (IsWorkspaceCacheSatisfied(service, query))
+            {
+                SetWorkspaceCacheWarm(workspace, true);
+                return;
+            }
+
+            SetWorkspaceCacheWarm(workspace, false);
+        }
+        catch (PodlordException ex)
+        {
+            RecordAppDiagnostic("cache freshness", ex.Message);
+        }
+
+        if (IsActiveWorkspace(workspace))
+        {
+            ScheduleRefresh();
+            return;
+        }
+
+        _ = RefreshWorkspaceResourcesAsync(workspace, force: false, background: true);
+    }
+
+    private bool IsWorkspaceCacheSatisfied(IKubernetesApplicationPort service, ResourceQuery query)
+    {
+        try
+        {
+            return service.HasFreshResourceCache(query) || service.HasRecentWarmResourceCompletion(query);
+        }
+        catch (PodlordException ex)
+        {
+            RecordAppDiagnostic("cache freshness", ex.Message);
+            return false;
+        }
+    }
+
+    private bool CanRenderWorkspaceCacheBeforeWarm(
+        SessionWorkspaceViewModel workspace,
+        IKubernetesApplicationPort service,
+        ResourceQuery query)
+    {
+        return workspace.LastSyncedAt is not null || IsWorkspaceCacheSatisfied(service, query);
+    }
+
     private void OnRemoteFilterChanged()
     {
         if (applyingPreset)
@@ -9135,7 +10673,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ApplyLocalFilter();
     }
 
-    private void ApplyPreset(FilterPreset preset)
+    private void ApplyPreset(FilterPreset preset, bool renderAfterApply = true, bool refreshAfterApply = true)
     {
         applyingPreset = true;
         try
@@ -9167,8 +10705,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             applyingPreset = false;
         }
 
-        ApplyLocalFilter();
-        ScheduleRefresh();
+        if (renderAfterApply)
+        {
+            ApplyLocalFilter();
+        }
+        if (refreshAfterApply)
+        {
+            ScheduleRefresh();
+        }
     }
 
     private async Task DebouncedRefresh(CancellationToken cancellationToken)
@@ -9248,9 +10792,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private TimeSpan BackgroundRefreshInterval()
     {
         var idle = DateTimeOffset.Now - lastUserActivityAt;
+        var syncedAt = activeSessionWorkspace?.LastSyncedAt ?? lastSyncedAt;
         if (IsInactiveForBackgroundSync(idle))
         {
-            return InactiveBackgroundCheckInterval(state.Settings().InactiveSyncMinutes, lastSyncedAt, DateTimeOffset.Now);
+            return InactiveBackgroundCheckInterval(state.Settings().InactiveSyncMinutes, syncedAt, DateTimeOffset.Now);
         }
 
         return BackgroundRefreshIntervalFor(
@@ -9269,6 +10814,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var idle = DateTimeOffset.Now - lastUserActivityAt;
+        var syncedAt = activeSessionWorkspace?.LastSyncedAt ?? lastSyncedAt;
         if (!IsInactiveForBackgroundSync(idle))
         {
             return true;
@@ -9276,12 +10822,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         var minutes = state.Settings().InactiveSyncMinutes;
         if (minutes > 0
-            && (lastSyncedAt is null || DateTimeOffset.Now - lastSyncedAt.Value >= TimeSpan.FromMinutes(minutes)))
+            && (syncedAt is null || DateTimeOffset.Now - syncedAt.Value >= TimeSpan.FromMinutes(minutes)))
         {
             return true;
         }
 
-        return lastSyncedAt is null || DateTimeOffset.Now - lastSyncedAt.Value >= MinimumBackgroundCadence;
+        return syncedAt is null || DateTimeOffset.Now - syncedAt.Value >= MinimumBackgroundCadence;
     }
 
     private bool IsInactiveForBackgroundSync(TimeSpan idle)
@@ -9374,14 +10920,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RecordAppDiagnostic(string scope, string outcome)
     {
-        service.RecordDiagnostic(scope, outcome);
-        UpdateRequestAuditRows();
-        NotifyFooterLineIfChanged();
+        RecordAppDiagnostic(ActiveService, scope, outcome);
+    }
+
+    private void RecordAppDiagnostic(IKubernetesApplicationPort targetService, string scope, string outcome)
+    {
+        targetService.RecordDiagnostic(scope, outcome);
+        if (ReferenceEquals(targetService, ActiveService))
+        {
+            UpdateRequestAuditRows();
+            NotifyFooterLineIfChanged();
+        }
     }
 
     private void UpdateRequestWorkLabel()
     {
-        var telemetry = service.RequestTelemetry();
+        var telemetry = ActiveService.RequestTelemetry(SelectedSession?.Id);
         var backoff = telemetry.BackoffUntil is { } until && until > DateTimeOffset.UtcNow
             ? $" backoff {Math.Max(0, (int)(until - DateTimeOffset.UtcNow).TotalSeconds)}s"
             : string.Empty;
@@ -9427,19 +10981,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
-            if (!IsInitialLoading || initialLoadExpectedTotal <= 0)
+            var expectedTotal = activeSessionWorkspace?.InitialLoadExpectedTotal ?? initialLoadExpectedTotal;
+            if (!IsInitialLoading || expectedTotal <= 0)
             {
                 return 0;
             }
-            var completed = service.CompletedRequestsSinceStart(initialLoadStartedAt);
-            return Math.Clamp(completed / (double)initialLoadExpectedTotal * 100d, 0d, 100d);
+            var startedAt = activeSessionWorkspace?.InitialLoadStartedAt ?? initialLoadStartedAt;
+            var completed = ActiveService.CompletedRequestsSinceStart(startedAt, SelectedSession?.Id);
+            return Math.Clamp(completed / (double)expectedTotal * 100d, 0d, 100d);
         }
     }
 
     internal void SetInitialLoadProgressForTests(DateTimeOffset start, int expectedTotal)
     {
-        initialLoadStartedAt = start;
-        initialLoadExpectedTotal = expectedTotal;
+        if (activeSessionWorkspace is null)
+        {
+            initialLoadStartedAt = start;
+            initialLoadExpectedTotal = expectedTotal;
+            return;
+        }
+
+        activeSessionWorkspace.InitialLoadStartedAt = start;
+        activeSessionWorkspace.InitialLoadExpectedTotal = expectedTotal;
     }
 
     internal void SimulateTimerTickForTests()
@@ -9458,6 +11021,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     }
 
     internal int RadarAutoFollowQueueCountForTests => radarAutoFollowQueue.Count;
+
+    internal int PendingSecondaryRestoreCountForTests => pendingSecondaryRestoreSessionIds.Count;
 
     internal void StepRadarAutoFollowForTests()
     {
@@ -9493,7 +11058,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 HealthSegments[i] = new HealthSegmentViewModel(desiredState, 0, 0, tickHeight, desiredBrush);
             }
         }
-        HealthSummary = $"Loading resources from cluster… {(int)percent}% ({service.CompletedRequestsSinceStart(initialLoadStartedAt)}/{initialLoadExpectedTotal})";
+        var expectedTotal = activeSessionWorkspace?.InitialLoadExpectedTotal ?? initialLoadExpectedTotal;
+        var startedAt = activeSessionWorkspace?.InitialLoadStartedAt ?? initialLoadStartedAt;
+        HealthSummary = $"Loading resources from cluster… {(int)percent}% ({ActiveService.CompletedRequestsSinceStart(startedAt, SelectedSession?.Id)}/{expectedTotal})";
     }
 
     private void RefreshPortForwardBadges()
@@ -9505,7 +11072,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void UpdateRequestAuditRows()
     {
-        var rows = service.RequestAuditLog()
+        var rows = ActiveService.RequestAuditLog()
             .Select(entry => new RequestAuditRow(
                 entry.StartedAt,
                 entry.Method,
@@ -9525,8 +11092,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private IReadOnlyList<DiagnosticMetricRow> BuildDiagnosticsRows()
     {
-        var telemetry = service.RequestTelemetry();
-        var cache = service.CacheTelemetry();
+        var telemetry = ActiveService.RequestTelemetry(SelectedSession?.Id);
+        var cache = ActiveService.CacheTelemetry();
         var process = Process.GetCurrentProcess();
         try
         {
@@ -9745,13 +11312,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    private enum ResourceSortDirection
-    {
-        None,
-        Descending,
-        Ascending
     }
 
     private enum SelectionSurface
