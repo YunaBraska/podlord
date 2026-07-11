@@ -15,28 +15,24 @@ public static class ResourceFilterMatcher
     {
         var materialized = rows as IReadOnlyCollection<FlatResourceRow> ?? rows.ToList();
         var threshold = RestartOutlierThreshold(materialized);
-        return materialized
-            .Where(row => MatchesText(row.Id, query.Id))
-            .Where(row => MatchesText(ProblemReason(row, threshold), query.Issue))
-            .Where(row => MatchesText(row.Kind, query.Kind))
-            .Where(row => MatchesText(row.Name, query.Name))
-            .Where(row => MatchesText(row.Namespace ?? "cluster", query.Namespace))
-            .Where(row => MatchesText(row.Cluster, query.Cluster))
-            .Where(row => MatchesText(row.Status, query.Status))
-            .Where(row => MatchesAge(row.Age, query.Age))
-            .Where(row => MatchesText(row.Node ?? string.Empty, query.Node))
-            .Where(row => MatchesText(row.ImageSummary, query.Image))
-            .Where(row => MatchesText(row.Ready, query.Ready))
-            .Where(row => MatchesText(row.Owner ?? string.Empty, query.Owner))
-            .Where(row => MatchesNumber(row.Restarts, query.Restarts))
-            .Where(row => MatchesCpu(row.Pulse, query.Cpu))
-            .Where(row => MatchesBytes(row.Pulse.MemoryBytes, row.Pulse.MemoryLimitBytes, row.MemorySummaryDisplay, query.Memory))
-            .Where(row => MatchesBytes(row.Pulse.StorageUsedBytes, row.Pulse.StorageLimitBytes, row.StorageDisplay, query.Storage))
-            .Where(row => MatchesSearch(row, query.Search))
-            .Where(row => !query.ProblemsOnly || IsProblem(row, threshold))
-            .Where(row => !query.ActivityOnly || IsActivity(row))
-            .Take(NormalizeLimit(query.Limit))
-            .ToList();
+        var compiled = CompiledQuery.From(query);
+        var limit = NormalizeLimit(query.Limit);
+        var filtered = new List<FlatResourceRow>(Math.Min(limit, materialized.Count));
+        foreach (var row in materialized)
+        {
+            if (!compiled.MatchesRow(row, threshold))
+            {
+                continue;
+            }
+
+            filtered.Add(row);
+            if (filtered.Count >= limit)
+            {
+                break;
+            }
+        }
+
+        return filtered;
     }
 
     public static bool MatchesText(string? value, string? expression)
@@ -349,31 +345,28 @@ public static class ResourceFilterMatcher
 
     private static bool MatchesSearch(FlatResourceRow row, string? expression)
     {
-        if (string.IsNullOrWhiteSpace(expression))
-        {
-            return true;
-        }
-
-        var values = new[]
-        {
-            row.Kind,
-            row.Id,
-            row.Name,
-            row.Namespace ?? "cluster",
-            row.Cluster,
-            row.Status,
-            row.Ready,
-            row.Node ?? string.Empty,
-            row.ImageSummary,
-            row.Owner ?? string.Empty,
-            row.CpuSummaryDisplay,
-            row.MemorySummaryDisplay,
-            row.StorageDisplay,
-            row.Age,
-            row.LastChange
-        };
-        return values.Any(value => MatchesText(value, expression));
+        return CompiledTextFilter.Parse(expression).MatchesAny(SearchValues(row));
     }
+
+    private static IEnumerable<string> SearchValues(FlatResourceRow row)
+    {
+        yield return row.Kind;
+        yield return row.Id;
+        yield return row.Name;
+        yield return row.Namespace ?? "cluster";
+        yield return row.Cluster;
+        yield return row.Status;
+        yield return row.Ready;
+        yield return row.Node ?? string.Empty;
+        yield return row.ImageSummary;
+        yield return row.Owner ?? string.Empty;
+        yield return row.CpuSummaryDisplay;
+        yield return row.MemorySummaryDisplay;
+        yield return row.StorageDisplay;
+        yield return row.Age;
+        yield return row.LastChange;
+    }
+
 
     public static TimeSpan? ParseHumanDuration(string? value)
     {
@@ -688,6 +681,246 @@ public static class ResourceFilterMatcher
         }
 
         return ParseDouble(text);
+    }
+
+    private sealed record CompiledQuery(
+        CompiledTextFilter Id,
+        CompiledTextFilter Issue,
+        CompiledTextFilter Kind,
+        CompiledTextFilter Name,
+        CompiledTextFilter Namespace,
+        CompiledTextFilter Cluster,
+        CompiledTextFilter Status,
+        CompiledDurationFilter Age,
+        CompiledTextFilter Node,
+        CompiledTextFilter Image,
+        CompiledTextFilter Ready,
+        CompiledTextFilter Owner,
+        CompiledNumberFilter Restarts,
+        CompiledQuantityFilter Cpu,
+        CompiledQuantityFilter Memory,
+        CompiledQuantityFilter Storage,
+        CompiledTextFilter Search,
+        bool ProblemsOnly,
+        bool ActivityOnly)
+    {
+        public static CompiledQuery From(ResourceQuery query)
+        {
+            return new CompiledQuery(
+                CompiledTextFilter.Parse(query.Id),
+                CompiledTextFilter.Parse(query.Issue),
+                CompiledTextFilter.Parse(query.Kind),
+                CompiledTextFilter.Parse(query.Name),
+                CompiledTextFilter.Parse(query.Namespace),
+                CompiledTextFilter.Parse(query.Cluster),
+                CompiledTextFilter.Parse(query.Status),
+                CompiledDurationFilter.Parse(query.Age),
+                CompiledTextFilter.Parse(query.Node),
+                CompiledTextFilter.Parse(query.Image),
+                CompiledTextFilter.Parse(query.Ready),
+                CompiledTextFilter.Parse(query.Owner),
+                CompiledNumberFilter.Parse(query.Restarts),
+                CompiledQuantityFilter.Parse(query.Cpu, ParseCpuQuantity),
+                CompiledQuantityFilter.Parse(query.Memory, ParseByteQuantity),
+                CompiledQuantityFilter.Parse(query.Storage, ParseByteQuantity),
+                CompiledTextFilter.Parse(query.Search),
+                query.ProblemsOnly,
+                query.ActivityOnly);
+        }
+
+        public bool MatchesRow(FlatResourceRow row, int restartOutlierThreshold)
+        {
+            var problem = string.Empty;
+            if (!Id.Matches(row.Id)
+                || !Kind.Matches(row.Kind)
+                || !Name.Matches(row.Name)
+                || !Namespace.Matches(row.Namespace ?? "cluster")
+                || !Cluster.Matches(row.Cluster)
+                || !Status.Matches(row.Status)
+                || !Age.MatchesDurationText(row.Age)
+                || !Node.Matches(row.Node ?? string.Empty)
+                || !Image.Matches(row.ImageSummary)
+                || !Ready.Matches(row.Ready)
+                || !Owner.Matches(row.Owner ?? string.Empty)
+                || !Restarts.Matches(row.Restarts)
+                || !Cpu.Matches(row.Pulse.CpuMillicores ?? row.Pulse.CpuLimitMillicores, row.Pulse.CpuSummaryDisplay)
+                || !Memory.Matches(row.Pulse.MemoryBytes ?? row.Pulse.MemoryLimitBytes, row.MemorySummaryDisplay)
+                || !Storage.Matches(row.Pulse.StorageUsedBytes ?? row.Pulse.StorageLimitBytes, row.StorageDisplay)
+                || !Search.MatchesAny(SearchValues(row)))
+            {
+                return false;
+            }
+
+            if (!Issue.IsEmpty || ProblemsOnly)
+            {
+                problem = ProblemReason(row, restartOutlierThreshold);
+                if (!Issue.Matches(problem))
+                {
+                    return false;
+                }
+            }
+
+            if (ProblemsOnly && problem.Length == 0)
+            {
+                return false;
+            }
+
+            return !ActivityOnly || IsActivity(row);
+        }
+    }
+
+    private sealed record CompiledTextFilter(IReadOnlyList<FilterToken> Tokens)
+    {
+        public static CompiledTextFilter Parse(string? expression) => new(ResourceFilterMatcher.Parse(expression));
+
+        public bool IsEmpty => Tokens.Count == 0;
+
+        public bool Matches(string? value)
+        {
+            if (Tokens.Count == 0)
+            {
+                return true;
+            }
+
+            var candidate = value ?? string.Empty;
+            return Tokens.Any(token => token.Matches(candidate));
+        }
+
+        public bool MatchesAny(IEnumerable<string> values)
+        {
+            if (Tokens.Count == 0)
+            {
+                return true;
+            }
+
+            foreach (var value in values)
+            {
+                if (Matches(value))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    private sealed record CompiledNumberFilter(IReadOnlyList<FilterToken> Tokens)
+    {
+        public static CompiledNumberFilter Parse(string? expression) => new(ResourceFilterMatcher.Parse(expression));
+
+        public bool Matches(int value)
+        {
+            if (Tokens.Count == 0)
+            {
+                return true;
+            }
+
+            return Tokens.Any(token => token.MatchesNumber(value));
+        }
+    }
+
+    private sealed record CompiledDurationFilter(
+        string? RawExpression,
+        IReadOnlyList<DurationFilterToken> Tokens,
+        CompiledTextFilter FallbackText)
+    {
+        public static CompiledDurationFilter Parse(string? expression)
+        {
+            return new(expression, ParseDurationTokens(expression ?? string.Empty), CompiledTextFilter.Parse(expression));
+        }
+
+        public bool MatchesDurationText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(RawExpression))
+            {
+                return true;
+            }
+
+            var duration = ParseHumanDuration(value);
+            if (duration is null)
+            {
+                return FallbackText.Matches(value);
+            }
+
+            if (Tokens.Count == 0)
+            {
+                return FallbackText.Matches(value);
+            }
+
+            var rangeMatches = true;
+            var exactMatched = false;
+            var hasExact = false;
+            foreach (var token in Tokens)
+            {
+                if (token.IsRange)
+                {
+                    if (!token.Matches(duration.Value))
+                    {
+                        rangeMatches = false;
+                        break;
+                    }
+                }
+                else
+                {
+                    hasExact = true;
+                    exactMatched |= token.Matches(duration.Value);
+                }
+            }
+
+            return rangeMatches && (!hasExact || exactMatched);
+        }
+    }
+
+    private sealed record CompiledQuantityFilter(
+        string? RawExpression,
+        IReadOnlyList<QuantityFilterToken> Tokens,
+        CompiledTextFilter FallbackText)
+    {
+        public static CompiledQuantityFilter Parse(string? expression, Func<string, double?> parse)
+        {
+            return new(expression, ParseQuantityTokens(expression ?? string.Empty, parse), CompiledTextFilter.Parse(expression));
+        }
+
+        public bool Matches(double? value, string display)
+        {
+            if (string.IsNullOrWhiteSpace(RawExpression))
+            {
+                return true;
+            }
+
+            if (Tokens.Count == 0)
+            {
+                return FallbackText.Matches(display);
+            }
+
+            if (value is null)
+            {
+                return false;
+            }
+
+            var rangeMatches = true;
+            var exactMatched = false;
+            var hasExact = false;
+            foreach (var token in Tokens)
+            {
+                if (token.IsRange)
+                {
+                    if (!token.Matches(value.Value))
+                    {
+                        rangeMatches = false;
+                        break;
+                    }
+                }
+                else
+                {
+                    hasExact = true;
+                    exactMatched |= token.Matches(value.Value);
+                }
+            }
+
+            return rangeMatches && (!hasExact || exactMatched);
+        }
     }
 
     private static double? ParseDouble(string value)

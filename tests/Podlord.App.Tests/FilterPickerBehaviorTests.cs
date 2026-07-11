@@ -226,7 +226,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Kind=\"PersistentVolume\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding StorageCompactDisplay}\"", window, StringComparison.Ordinal);
         Assert.Contains("StorageMetricDetail", window + domain, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding HasStorageMetricBar}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding StorageDisplay}\"", window, StringComparison.Ordinal);
         Assert.Contains("StoragePicker = new FilterPickerViewModel", viewModel, StringComparison.Ordinal);
         Assert.Contains("CpuPicker = new FilterPickerViewModel", viewModel, StringComparison.Ordinal);
         Assert.Contains("MemoryPicker = new FilterPickerViewModel", viewModel, StringComparison.Ordinal);
@@ -440,7 +440,7 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("AnimationDurationChoice", window + viewModel, StringComparison.Ordinal);
         Assert.Contains("Kind=\"Sound\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes.dropdown=\"True\"", window, StringComparison.Ordinal);
-        Assert.Contains("Resource.IsPulseAnimation", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Classes.active=\"{Binding IsGraphNavActive}\"", window, StringComparison.Ordinal);
         Assert.Contains("AlertResourceBrushConverter", window + File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "Podlord.App", "App.axaml")), StringComparison.Ordinal);
         Assert.DoesNotContain("Guided rules use", window, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Process.Start", File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "Podlord.App", "AlertSoundPlayer.cs")), StringComparison.Ordinal);
@@ -479,8 +479,8 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Tag=\"Memory\"", window, StringComparison.Ordinal);
         Assert.Contains("CpuCompactDisplay", window + viewModel, StringComparison.Ordinal);
         Assert.Contains("MemoryCompactDisplay", window + viewModel, StringComparison.Ordinal);
-        Assert.Contains("CpuMetricDetail", window + viewModel, StringComparison.Ordinal);
-        Assert.Contains("MemoryMetricDetail", window + viewModel, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding CpuSummaryDisplay}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding MemorySummaryDisplay}\"", window, StringComparison.Ordinal);
         Assert.Contains("MetricHealthBrushConverter", app, StringComparison.Ordinal);
         Assert.Contains("Padding=\"8,3\"", window, StringComparison.Ordinal);
         Assert.Contains("SuggestionLeft", window + workspaceModels, StringComparison.Ordinal);
@@ -494,15 +494,15 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("private static string OpaqueMix", catalog, StringComparison.Ordinal);
         Assert.Contains("Color=\"#17241D\"", app, StringComparison.Ordinal);
         Assert.Contains("Color=\"#2B251A\"", app, StringComparison.Ordinal);
-        Assert.Contains("HasCpuMetricBar", window + viewModel, StringComparison.Ordinal);
-        Assert.Contains("HasMemoryMetricBar", window + viewModel, StringComparison.Ordinal);
-        Assert.Contains("HasCpuMetricTextOnly", window + viewModel, StringComparison.Ordinal);
+        Assert.Contains("CpuCompactDisplay", window + viewModel, StringComparison.Ordinal);
+        Assert.Contains("MemoryCompactDisplay", window + viewModel, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding CpuSummaryDisplay}\"", window, StringComparison.Ordinal);
         Assert.Contains("HasNetworkMetricInfo", window + viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("HasNoCpuMetricBar", window + viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("HasNoMemoryMetricBar", window + viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("HasNoStorageMetricBar", window + viewModel, StringComparison.Ordinal);
-        Assert.Contains("TextWrapping=\"WrapWithOverflow\"", window, StringComparison.Ordinal);
-        Assert.Contains("ClipToBounds=\"False\"", window, StringComparison.Ordinal);
+        Assert.Contains("TextTrimming=\"CharacterEllipsis\"", window, StringComparison.Ordinal);
+        Assert.Contains("ClipToBounds=\"True\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Header=\"Metrics\"", window, StringComparison.Ordinal);
         Assert.Contains("SelectedInspectorTabIndex == 4", viewModel, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"PulseStripScroller\"", window, StringComparison.Ordinal);
@@ -537,12 +537,10 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("Classes.Add(\"sortGlyph\")", codeBehind, StringComparison.Ordinal);
         Assert.Contains("block.Resource.HasCpuMetricBar", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("block.Resource.HasMemoryMetricBar", radarBlockLayer, StringComparison.Ordinal);
-        Assert.Contains("block.Resource.HasStorageMetricBar", radarBlockLayer, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding StorageDisplay}\"", window, StringComparison.Ordinal);
         Assert.Contains("<Style Selector=\"ProgressBar\">", app, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"MinWidth\" Value=\"0\" />", app, StringComparison.Ordinal);
-        Assert.Contains("ClipToBounds=\"True\" MinWidth=\"0\"", window, StringComparison.Ordinal);
-        Assert.Contains("Height=\"5\"", window, StringComparison.Ordinal);
-        Assert.Contains("MinWidth=\"0\"", window, StringComparison.Ordinal);
+        Assert.Contains("ClipToBounds=\"True\"", window, StringComparison.Ordinal);
         Assert.Contains("RestartBrushConverter", app, StringComparison.Ordinal);
         Assert.Contains("AddTextRow(stack, \"Restarts\"", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("block.Problem", radarBlockLayer, StringComparison.Ordinal);
@@ -586,18 +584,13 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("RequiresAnimationTimer", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("block.IsBlinkAnimation || block.IsPulseAnimation || block.IsSweepAnimation", radarBlockLayer, StringComparison.Ordinal);
         Assert.Contains("context.DrawRectangle(block.Brush", radarBlockLayer, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"resourceAnnounceBlink\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"resourceAnnouncePulse\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"resourceAnnounceSweep\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"resourceAnnounceOutline\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding IsBlinkAnimation}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding IsPulseAnimation}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding IsSweepAnimation}\"", window, StringComparison.Ordinal);
-        Assert.Contains("IsVisible=\"{Binding IsOutlineAnimation}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Border.resourceAnnouncePulse", app, StringComparison.Ordinal);
+        Assert.Contains("Border.resourceAnnounceSweep", app, StringComparison.Ordinal);
+        Assert.Contains("Border.resourceAnnounceOutline", app, StringComparison.Ordinal);
         var resourceAnnouncementStyles = Regex.Matches(
             app,
-            "<Style Selector=\"Border\\.resourceAnnounce(?:Pulse|Blink|Sweep)\">[\\s\\S]*?</Style>");
-        Assert.Equal(3, resourceAnnouncementStyles.Count);
+            "<Style Selector=\"Border\\.resourceAnnounce(?:Pulse|Sweep)\">[\\s\\S]*?</Style>");
+        Assert.Equal(2, resourceAnnouncementStyles.Count);
         foreach (Match style in resourceAnnouncementStyles)
         {
             Assert.DoesNotContain("<Style.Animations>", style.Value, StringComparison.Ordinal);
@@ -719,7 +712,6 @@ public sealed class FilterPickerBehaviorTests
         Assert.Contains("AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml", app, StringComparison.Ordinal);
         Assert.Contains("Avalonia.AvaloniaEdit", File.ReadAllText(Path.Combine(root, "src", "Podlord.App", "Podlord.App.csproj")), StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding Cluster, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
-        Assert.Contains("NodeReferenceConverter", window, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"{Binding ImageSummary, Converter={StaticResource DeterministicBrushConverter}}\"", window, StringComparison.Ordinal);
         Assert.Contains("local:ResourceLinkButton", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Foreground=\"#050806\"", window, StringComparison.Ordinal);

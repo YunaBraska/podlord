@@ -25,16 +25,13 @@ internal enum ResourceSortDirection
 
 internal sealed record SessionWorkspaceSearchState(
     bool IsResourceSearchOpen,
-    bool IsGraphSearchOpen,
     bool IsEventSearchOpen,
     string ResourceQuickSearch,
-    string GraphSearch,
     string EventQuickSearch,
     int ResourceSearchIndex,
-    int GraphSearchIndex,
     int EventSearchIndex)
 {
-    public static SessionWorkspaceSearchState Empty { get; } = new(false, false, false, string.Empty, string.Empty, string.Empty, -1, -1, -1);
+    public static SessionWorkspaceSearchState Empty { get; } = new(false, false, string.Empty, string.Empty, -1, -1);
 }
 
 internal sealed record SessionWorkspaceAlertState(
@@ -77,19 +74,12 @@ internal sealed record SessionWorkspaceRenderedState(
     ResourceSortDirection EventSortDirection,
     IReadOnlyList<FlatResourceRow> CachedRows,
     IReadOnlyList<FlatResourceRow> Resources,
-    IReadOnlyList<EventTimelineRow> Events,
-    IReadOnlyList<RelationshipRow> Relationships,
-    IReadOnlyList<GraphNodeViewModel> GraphNodes,
-    IReadOnlyList<RadarBlockViewModel> RadarBlocks,
-    IReadOnlyList<PulseMetricCard> ClusterPulseItems,
     IReadOnlyList<ResourceListFailure> Failures,
-    IReadOnlyList<HealthSegmentViewModel> HealthSegments,
     string? SelectedResourceId,
     string? SelectedResourceRowId,
     DateTimeOffset? LastSyncedAt,
     int RestartOutlierThreshold,
-    string StatusLine,
-    string ResourceCountLabel);
+    string StatusLine);
 
 internal sealed class SessionWorkspaceViewModel : INotifyPropertyChanged
 {
@@ -676,130 +666,6 @@ public sealed record HealthSegmentViewModel(
     double Height,
     IBrush Brush);
 
-public sealed class GraphNodeViewModel : INotifyPropertyChanged
-{
-    private bool isSearchMatch;
-    private bool isCurrentSearchMatch;
-
-    public GraphNodeViewModel(string kind, string name, string ns, string status, FlatResourceRow? resource = null)
-    {
-        Kind = kind;
-        Name = name;
-        Namespace = ns;
-        Status = status;
-        Resource = resource;
-    }
-
-    public string Kind { get; }
-
-    public string Name { get; }
-
-    public string Namespace { get; }
-
-    public string Status { get; }
-
-    public FlatResourceRow? Resource { get; }
-
-    public bool HasResource => Resource is not null;
-
-    public ObservableCollection<GraphNodeViewModel> Children { get; } = [];
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public bool IsSearchMatch
-    {
-        get => isSearchMatch;
-        set
-        {
-            if (isSearchMatch == value)
-            {
-                return;
-            }
-
-            isSearchMatch = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(BorderBrush));
-            OnPropertyChanged(nameof(BackgroundBrush));
-        }
-    }
-
-    public bool IsCurrentSearchMatch
-    {
-        get => isCurrentSearchMatch;
-        set
-        {
-            if (isCurrentSearchMatch == value)
-            {
-                return;
-            }
-
-            isCurrentSearchMatch = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(BorderBrush));
-            OnPropertyChanged(nameof(BackgroundBrush));
-        }
-    }
-
-    public IBrush BorderBrush => IsCurrentSearchMatch
-        ? AppThemeCatalog.StatusBrush("WARNING")
-        : IsSearchMatch ? AppThemeCatalog.StatusBrush("HEALTHY")
-        : Resource is { AlertColor.Length: > 0 } row && !row.AlertColor.Equals("none", StringComparison.OrdinalIgnoreCase) ? AlertBrush(row)
-        : Resource is { IsAnnouncing: true } ? AppThemeCatalog.StatusBrush("HEALTHY")
-        : AppThemeCatalog.StatusBrush("UNKNOWN");
-
-    public IBrush BackgroundBrush => IsCurrentSearchMatch
-        ? SolidColorBrush.Parse("#20190F")
-        : IsSearchMatch ? SolidColorBrush.Parse("#132119")
-        : Resource is { IsAnnouncing: true } ? SolidColorBrush.Parse("#111C14")
-        : SolidColorBrush.Parse("#060707");
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    private static IBrush AlertBrush(FlatResourceRow row)
-    {
-        if (row.AlertColor.StartsWith('#') && row.AlertColor.Length is 7 or 9)
-        {
-            try
-            {
-                return SolidColorBrush.Parse(row.AlertColor);
-            }
-            catch (FormatException)
-            {
-                return AppThemeCatalog.StatusBrush(row.Status);
-            }
-        }
-
-        return row.AlertColor.ToLowerInvariant() switch
-        {
-            "fresh" or "cyan" or "green" => AppThemeCatalog.StatusBrush("HEALTHY"),
-            "amber" or "yellow" => AppThemeCatalog.StatusBrush("WARNING"),
-            "red" => AppThemeCatalog.StatusBrush("CRITICAL"),
-            "status" => ProblemAwareStatusBrush(row),
-            _ => AppThemeCatalog.StatusBrush(row.Status)
-        };
-    }
-
-    private static IBrush ProblemAwareStatusBrush(FlatResourceRow row)
-    {
-        var problem = ResourceFilterMatcher.ProblemReason(row);
-        if (problem.Length == 0)
-        {
-            return AppThemeCatalog.StatusBrush(row.Status);
-        }
-
-        return row.Status is "CrashLoopBackOff" or "CreateContainerConfigError" or "CreateContainerError" or "ErrImagePull" or "Error" or "Failed" or "ImagePullBackOff" or "NotReady" or "OOMKilled" or "Unavailable"
-               || problem.Contains("Crash", StringComparison.OrdinalIgnoreCase)
-               || problem.Contains("Error", StringComparison.OrdinalIgnoreCase)
-               || problem.Contains("Failed", StringComparison.OrdinalIgnoreCase)
-               || problem.Contains("Unavailable", StringComparison.OrdinalIgnoreCase)
-            ? AppThemeCatalog.StatusBrush("CRITICAL")
-            : AppThemeCatalog.StatusBrush("WARNING");
-    }
-}
-
 public sealed class RadarIdleCellViewModel(double x, double y, double width, double height, IBrush brush) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -959,6 +825,13 @@ public sealed class RadarBlockViewModel(
             return;
         }
 
+        var borderThicknessChanged = IsSelected != source.IsSelected
+                                     || IsDimmed != source.IsDimmed
+                                     || IsEventShallow != source.IsEventShallow
+                                     || Problem.Length != source.Problem.Length;
+        var animationStateChanged = IsAnnouncing != source.IsAnnouncing
+                                    || !AlertAnimation.Equals(source.AlertAnimation, StringComparison.Ordinal);
+
         Resource = source.Resource;
         Group = source.Group;
         X = source.X;
@@ -985,7 +858,46 @@ public sealed class RadarBlockViewModel(
         AlertAnimation = source.AlertAnimation;
         AlertColor = source.AlertColor;
         IsDimmed = source.IsDimmed;
-        OnPropertyChanged(string.Empty);
+        OnPropertyChanged(nameof(Resource));
+        OnPropertyChanged(nameof(Group));
+        OnPropertyChanged(nameof(X));
+        OnPropertyChanged(nameof(Y));
+        OnPropertyChanged(nameof(Width));
+        OnPropertyChanged(nameof(Height));
+        OnPropertyChanged(nameof(WorldX));
+        OnPropertyChanged(nameof(WorldY));
+        OnPropertyChanged(nameof(WorldWidth));
+        OnPropertyChanged(nameof(WorldHeight));
+        OnPropertyChanged(nameof(Brush));
+        OnPropertyChanged(nameof(BorderBrush));
+        OnPropertyChanged(nameof(AnnounceBrush));
+        OnPropertyChanged(nameof(Problem));
+        OnPropertyChanged(nameof(Metrics));
+        OnPropertyChanged(nameof(IsPlaceholder));
+        OnPropertyChanged(nameof(IsSelected));
+        OnPropertyChanged(nameof(DisplayKind));
+        OnPropertyChanged(nameof(DisplayName));
+        OnPropertyChanged(nameof(ShowProblemGlyph));
+        OnPropertyChanged(nameof(IsEventShallow));
+        OnPropertyChanged(nameof(IsClickable));
+        OnPropertyChanged(nameof(IsAnnouncing));
+        OnPropertyChanged(nameof(AlertAnimation));
+        OnPropertyChanged(nameof(AlertColor));
+        OnPropertyChanged(nameof(IsDimmed));
+        OnPropertyChanged(nameof(ToolTipTitle));
+        OnPropertyChanged(nameof(ToolTipNamespace));
+        if (borderThicknessChanged)
+        {
+            OnPropertyChanged(nameof(BorderThickness));
+        }
+
+        if (animationStateChanged)
+        {
+            OnPropertyChanged(nameof(IsBlinkAnimation));
+            OnPropertyChanged(nameof(IsPulseAnimation));
+            OnPropertyChanged(nameof(IsSweepAnimation));
+            OnPropertyChanged(nameof(IsOutlineAnimation));
+        }
     }
 
     public void SetSelected(bool value)

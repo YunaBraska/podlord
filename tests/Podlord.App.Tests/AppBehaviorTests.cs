@@ -1174,6 +1174,7 @@ public sealed class AppBehaviorTests
             Assert.Empty(viewModel.RequestAuditRows);
             Assert.DoesNotContain("Cache:", viewModel.FooterLine, StringComparison.Ordinal);
             viewModel.SelectedWorkspace = "settings";
+            viewModel.SelectedSettingsTabIndex = 2;
             Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Cache" && row.Value == "0B");
             Assert.Equal("No resources loaded", viewModel.ResourceLogoTitle);
             Assert.DoesNotContain("failed", viewModel.StatusLine, StringComparison.OrdinalIgnoreCase);
@@ -1194,6 +1195,7 @@ public sealed class AppBehaviorTests
             new KubernetesResourceService(state));
 
         viewModel.SelectedWorkspace = "settings";
+        viewModel.SelectedSettingsTabIndex = 2;
 
         Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Managed heap");
 
@@ -1253,6 +1255,7 @@ public sealed class AppBehaviorTests
         Assert.Contains("Synced:", viewModel.FooterLine, StringComparison.Ordinal);
         Assert.DoesNotContain("Cache:", viewModel.FooterLine, StringComparison.Ordinal);
         viewModel.SelectedWorkspace = "settings";
+        viewModel.SelectedSettingsTabIndex = 2;
         Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Cache" && !row.Value.Equals("0B", StringComparison.Ordinal));
         Assert.Contains(viewModel.DiagnosticsRows, row => row.Label == "Managed heap");
         Assert.NotEmpty(viewModel.RadarBlocks);
@@ -3262,7 +3265,6 @@ public sealed class AppBehaviorTests
 
         Assert.Same(api, viewModel.SelectedResource);
         Assert.Same(api, viewModel.SelectedResourceRow);
-        Assert.Null(viewModel.SelectedGraphNode);
         Assert.Contains(viewModel.FocusMetrics, row =>
             row.Label == "Created"
             && Regex.IsMatch(row.Value, @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$"));
@@ -3270,7 +3272,6 @@ public sealed class AppBehaviorTests
         viewModel.ResourceQuickSearch = "worker";
         viewModel.NextResourceMatch();
 
-        Assert.Null(viewModel.SelectedGraphNode);
         Assert.Equal("worker", viewModel.SelectedResource?.Name);
 
         var cluster = Assert.Single(viewModel.RadarBlocks, block => block.DisplayKind == "Cluster").Resource;
@@ -3278,13 +3279,6 @@ public sealed class AppBehaviorTests
 
         Assert.Equal("Cluster", viewModel.SelectedResource?.Kind);
         Assert.Null(viewModel.SelectedResourceRow);
-        Assert.Null(viewModel.SelectedGraphNode);
-
-        await viewModel.FocusGraphNodeAsync(new GraphNodeViewModel("Namespace", "payments", "cluster", "Ready", null));
-
-        Assert.Null(viewModel.SelectedResource);
-        Assert.Null(viewModel.SelectedResourceRow);
-        Assert.NotNull(viewModel.SelectedGraphNode);
     }
 
     [Fact]
@@ -3765,17 +3759,6 @@ public sealed class AppBehaviorTests
     [Fact]
     public void Workspace_models_raise_changes_and_update_radar_blocks()
     {
-        var graph = new GraphNodeViewModel("Pod", "api", "payments", "Running");
-        var graphChanged = new List<string?>();
-        graph.PropertyChanged += (_, args) => graphChanged.Add(args.PropertyName);
-
-        graph.IsSearchMatch = true;
-        graph.IsCurrentSearchMatch = true;
-
-        Assert.Contains(nameof(GraphNodeViewModel.BorderBrush), graphChanged);
-        Assert.Contains(nameof(GraphNodeViewModel.BackgroundBrush), graphChanged);
-        Assert.Equal(AppThemeCatalog.StatusBrush("WARNING").ToString(), graph.BorderBrush.ToString());
-
         var idle = new RadarIdleCellViewModel(1, 2, 3, 4, Brushes.Gold);
         var idleChanged = new List<string?>();
         idle.PropertyChanged += (_, args) => idleChanged.Add(args.PropertyName);
@@ -3785,11 +3768,12 @@ public sealed class AppBehaviorTests
 
         var source = new RadarBlockViewModel(Row("Running", "api", 0, "1/1"), "pods", 1, 2, 3, 4, Brushes.Gold, "", "ok");
         var target = new RadarBlockViewModel(Row("Pending", "queue", 0, "0/1"), "jobs", 9, 8, 7, 6, Brushes.OrangeRed, "Pending", "bad", true);
-        var blockChanged = false;
-        target.PropertyChanged += (_, args) => blockChanged = args.PropertyName == string.Empty;
+        var changed = new List<string?>();
+        target.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
         target.UpdateFrom(source);
 
-        Assert.True(blockChanged);
+        Assert.Contains(nameof(RadarBlockViewModel.Resource), changed);
+        Assert.Contains(nameof(RadarBlockViewModel.ToolTipTitle), changed);
         Assert.Equal("Pod/api", target.ToolTipTitle);
         Assert.Equal("payments", target.ToolTipNamespace);
         Assert.False(target.IsPlaceholder);
@@ -4331,6 +4315,7 @@ public sealed class AppBehaviorTests
         viewModel.OpenSessionTab(devSession.Id, activate: true);
         await viewModel.RefreshResourcesAsync(force: true);
         viewModel.SelectWorkspace("settings");
+        viewModel.SelectedSettingsTabIndex = 2;
         viewModel.OpenSessionTab(prodSession.Id, activate: false);
         await WaitUntilAsync(
             () => prodRequested
@@ -4340,10 +4325,11 @@ public sealed class AppBehaviorTests
 
         viewModel.SimulateTimerTickForTests();
 
-        Assert.DoesNotContain(viewModel.RequestAuditRows, row => row.Outcome.Contains("network error", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(viewModel.RequestAuditRows, row => row.Outcome.Contains("network error", StringComparison.OrdinalIgnoreCase));
 
         viewModel.ActivateSessionTab(prodSession.Id);
         viewModel.SelectWorkspace("settings");
+        viewModel.SelectedSettingsTabIndex = 2;
         viewModel.SimulateTimerTickForTests();
 
         Assert.Contains(viewModel.RequestAuditRows, row => row.Outcome.Contains("network error", StringComparison.OrdinalIgnoreCase));
@@ -4384,13 +4370,6 @@ public sealed class AppBehaviorTests
         Assert.False(viewModel.IsResourceSearchOpen);
         Assert.Equal(string.Empty, viewModel.ResourceQuickSearch);
         Assert.Equal(string.Empty, viewModel.Search);
-
-        viewModel.SelectWorkspace("graph");
-        viewModel.ToggleGraphSearch();
-        viewModel.GraphSearch = "api";
-        viewModel.ToggleGraphSearch();
-        Assert.False(viewModel.IsGraphSearchOpen);
-        Assert.Equal(string.Empty, viewModel.GraphSearch);
 
         viewModel.SelectWorkspace("events");
         viewModel.ToggleEventSearch();
@@ -4447,17 +4426,6 @@ public sealed class AppBehaviorTests
 
         Assert.Equal("display", context.DisplayName);
         Assert.Equal(0, contextChanges);
-
-        var graph = new GraphNodeViewModel("Service", "api", "payments", "Observed");
-        graph.IsSearchMatch = false;
-        graph.IsCurrentSearchMatch = false;
-
-        Assert.False(graph.IsSearchMatch);
-        Assert.False(graph.IsCurrentSearchMatch);
-        Assert.Equal(SolidColorBrush.Parse("#060707").ToString(), graph.BackgroundBrush.ToString());
-
-        graph.IsSearchMatch = true;
-        Assert.Equal(SolidColorBrush.Parse("#132119").ToString(), graph.BackgroundBrush.ToString());
 
         var portForward = new PortForwardTaskViewModel("pf-2", "dev", "Pod", "api", "payments", 80, 18080, "native", "Ready");
         Assert.Equal("Ready", portForward.Status);
@@ -4839,7 +4807,7 @@ public sealed class AppBehaviorTests
                 Row("CrashLoopBackOff", "broken", 1, "0/1") with { Age = "2h", LastChange = "2h" }
             ]);
 
-            viewModel.SelectWorkspace("graph");
+            viewModel.SelectWorkspace("resources");
             ApplyLocalFilter(viewModel);
 
             var quiet = Assert.Single(viewModel.RadarBlocks, block => block.Resource.Name == "quiet");
@@ -4855,8 +4823,6 @@ public sealed class AppBehaviorTests
             Assert.True(waiting.IsPulseAnimation);
             Assert.Equal("status", broken.AlertColor);
             Assert.True(broken.IsPulseAnimation);
-            var graphBroken = FlattenGraph(viewModel.GraphNodes).First(node => node.Resource?.Name == "broken");
-            Assert.True(graphBroken.Resource?.IsPulseAnimation);
             var waitingRow = Assert.Single(viewModel.Resources, row => row.Name == "waiting");
             var problemBrush = new AlertResourceBrushConverter().Convert(waitingRow, typeof(IBrush), null, CultureInfo.InvariantCulture);
             Assert.Equal(BrushColor(AppThemeCatalog.StatusBrush("WARNING")), BrushColor(problemBrush));
@@ -5820,12 +5786,7 @@ users:
 
     private static void InjectCachedRows(MainWindowViewModel viewModel, IReadOnlyList<FlatResourceRow> rows)
     {
-        var field = typeof(MainWindowViewModel).GetField("cachedRows", BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?? throw new InvalidOperationException("cachedRows field missing");
-        var cached = (List<FlatResourceRow>)(field.GetValue(viewModel)
-                    ?? throw new InvalidOperationException("cachedRows field was null"));
-        cached.Clear();
-        cached.AddRange(rows);
+        viewModel.SeedCachedRowsForTesting(rows);
     }
 
     private static void ApplyLocalFilter(MainWindowViewModel viewModel)
@@ -5875,18 +5836,6 @@ users:
     private static Color BrushColor(object brush)
     {
         return Assert.IsType<SolidColorBrush>(brush).Color;
-    }
-
-    private static IEnumerable<GraphNodeViewModel> FlattenGraph(IEnumerable<GraphNodeViewModel> nodes)
-    {
-        foreach (var node in nodes)
-        {
-            yield return node;
-            foreach (var child in FlattenGraph(node.Children))
-            {
-                yield return child;
-            }
-        }
     }
 
     private static string RadarFixtureFor(string path)

@@ -94,7 +94,7 @@ public sealed class PerformanceBudgetTests
     }
 
     [Fact]
-    public void Large_cache_graph_and_events_workspace_materialization_are_budgeted()
+    public void Large_cache_events_and_resources_workspace_materialization_are_budgeted()
     {
         var (viewModel, handler) = CreateViewModel();
         using (viewModel)
@@ -102,11 +102,9 @@ public sealed class PerformanceBudgetTests
             viewModel.SeedCachedRowsForTesting(LargeRows(3_000));
             var requestCount = handler.Requests.Count;
 
-            var graph = Measure(() => viewModel.SelectWorkspace("graph"));
             var events = Measure(() => viewModel.SelectWorkspace("events"));
             var resources = Measure(() => viewModel.SelectWorkspace("resources"));
 
-            AssertUnder("graph workspace", graph, SecondaryViewBudget);
             AssertUnder("events workspace", events, SecondaryViewBudget);
             AssertUnder("resources workspace", resources, InteractionBudget);
             Assert.Equal(requestCount, handler.Requests.Count);

@@ -565,8 +565,6 @@ public partial class MainWindow : Window, ISessionSurfaceHost
 
     private void DownloadUpdateClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.OpenUpdateDownload();
 
-    private void GraphWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("graph");
-
     private void EventsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("events");
 
     private void PortsWorkspaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.SelectWorkspace("ports");
@@ -863,30 +861,6 @@ public partial class MainWindow : Window, ISessionSurfaceHost
         pressedRadarBlock = null;
     }
 
-    private async void GraphFromClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: RelationshipRow row })
-        {
-            await viewModel.FocusRelationshipEndpointAsync(row, focusTarget: false).ConfigureAwait(true);
-        }
-    }
-
-    private async void GraphToClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: RelationshipRow row })
-        {
-            await viewModel.FocusRelationshipEndpointAsync(row, focusTarget: true).ConfigureAwait(true);
-        }
-    }
-
-    private async void GraphNodeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: GraphNodeViewModel node })
-        {
-            await viewModel.FocusGraphNodeAsync(node).ConfigureAwait(true);
-        }
-    }
-
     private void StartPortForwardClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.StartPreparedPortForward();
 
     private void RunPortForwardActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => viewModel.RunPreparedPortForwardAction();
@@ -912,33 +886,6 @@ public partial class MainWindow : Window, ISessionSurfaceHost
         if (e.Key == Key.Enter && sender is Control { DataContext: FilterPickerViewModel picker })
         {
             picker.AddSearchAsCustom();
-            e.Handled = true;
-        }
-    }
-
-    private void GraphPreviousClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.PreviousGraphMatch();
-        ScrollSelectedGraphNodeIntoView();
-    }
-
-    private void GraphNextClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.NextGraphMatch();
-        ScrollSelectedGraphNodeIntoView();
-    }
-
-    private void GraphSearchKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-        {
-            viewModel.NextGraphMatch();
-            ScrollSelectedGraphNodeIntoView();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Escape)
-        {
-            viewModel.CloseSearchForCurrentWorkspace();
             e.Handled = true;
         }
     }
@@ -988,12 +935,6 @@ public partial class MainWindow : Window, ISessionSurfaceHost
         {
             ResourceGrid.ScrollIntoView(viewModel.CurrentResourceSearchMatch, ResourceGrid.Columns.FirstOrDefault());
         }
-    }
-
-    private void ToggleGraphSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        viewModel.ToggleGraphSearch();
-        FocusGraphSearch();
     }
 
     private void ToggleEventSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1958,13 +1899,23 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
 
     private void CopyableTableCellPointerPressed(object? sender, DataGridCellPointerPressedEventArgs e)
     {
+        SelectRowForCell(e.Cell);
         var actions = CopyActionsForCell(e.Cell, e.Column);
-        if (actions.Count == 0)
+        var hasPrimaryAction = HasPrimaryRowAction(e.Cell);
+        var point = e.PointerPressedEventArgs.GetCurrentPoint(e.Cell);
+        if (point.Properties.IsLeftButtonPressed && e.PointerPressedEventArgs.ClickCount >= 2)
         {
+            if (InvokePrimaryRowAction(e.Cell))
+            {
+                e.PointerPressedEventArgs.Handled = true;
+            }
             return;
         }
 
-        var point = e.PointerPressedEventArgs.GetCurrentPoint(e.Cell);
+        if (actions.Count == 0 && !hasPrimaryAction)
+        {
+            return;
+        }
         if (point.Properties.IsRightButtonPressed)
         {
             OpenCopyContextMenu(e.Cell, actions);
@@ -2063,6 +2014,42 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         return null;
     }
 
+    private void SelectRowForCell(DataGridCell cell)
+    {
+        if (cell.FindAncestorOfType<DataGrid>() is not { } grid)
+        {
+            return;
+        }
+
+        switch (cell.DataContext)
+        {
+            case FlatResourceRow resourceRow:
+                if (!ReferenceEquals(viewModel.SelectedResourceRow, resourceRow))
+                {
+                    grid.SelectedItem = resourceRow;
+                }
+                break;
+            case EventTimelineRow eventRow:
+                if (!ReferenceEquals(viewModel.SelectedEvent, eventRow))
+                {
+                    grid.SelectedItem = eventRow;
+                }
+                break;
+            case PortForwardTaskViewModel portTask:
+                if (!ReferenceEquals(viewModel.SelectedPortForward, portTask))
+                {
+                    grid.SelectedItem = portTask;
+                }
+                break;
+            case SourceStatusRow sourceRow:
+                if (!ReferenceEquals(viewModel.SelectedSource, sourceRow))
+                {
+                    grid.SelectedItem = sourceRow;
+                }
+                break;
+        }
+    }
+
     private void CopyableTablePointerReleased(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         CopyableCellPointerReleased(sender, e);
@@ -2114,6 +2101,11 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             menu.Items.Add(item);
         }
 
+        if (TryBuildPrimaryRowAction(control, out var primaryItem))
+        {
+            menu.Items.Add(primaryItem);
+        }
+
         var referenceValue = actions[0].Value;
         if (viewModel.HasKnownResourceReference(referenceValue))
         {
@@ -2141,6 +2133,101 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         activeContextMenuOwner = control;
         menu.PlacementTarget = control;
         menu.Open(control);
+    }
+
+    private bool TryBuildPrimaryRowAction(Control control, out MenuItem item)
+    {
+        switch (control.DataContext)
+        {
+            case FlatResourceRow row:
+                item = new MenuItem { Header = "Open in inspector" };
+                item.Click += async (_, _) =>
+                {
+                    try
+                    {
+                        await viewModel.FocusResourceAsync(row).ConfigureAwait(true);
+                    }
+                    finally
+                    {
+                        CloseActiveContextMenu(cancelPendingHold: true);
+                    }
+                };
+                return true;
+            case EventTimelineRow row:
+                item = new MenuItem { Header = "Open event in inspector" };
+                item.Click += async (_, _) =>
+                {
+                    try
+                    {
+                        await viewModel.FocusEventAsync(row).ConfigureAwait(true);
+                    }
+                    finally
+                    {
+                        CloseActiveContextMenu(cancelPendingHold: true);
+                    }
+                };
+                return true;
+            case PortForwardTaskViewModel task:
+                item = new MenuItem { Header = "Open port forward" };
+                item.Click += (_, _) =>
+                {
+                    try
+                    {
+                        viewModel.OpenPortForwardTask(task);
+                    }
+                    finally
+                    {
+                        CloseActiveContextMenu(cancelPendingHold: true);
+                    }
+                };
+                return true;
+            case SourceStatusRow source:
+                item = new MenuItem { Header = "Open source in inspector" };
+                item.Click += (_, _) =>
+                {
+                    try
+                    {
+                        viewModel.SelectedSource = source;
+                    }
+                    finally
+                    {
+                        CloseActiveContextMenu(cancelPendingHold: true);
+                    }
+                };
+                return true;
+            default:
+                item = null!;
+                return false;
+        }
+    }
+
+    private bool HasPrimaryRowAction(Control control)
+    {
+        return control.DataContext is FlatResourceRow
+            or EventTimelineRow
+            or PortForwardTaskViewModel
+            or SourceStatusRow;
+    }
+
+    private bool InvokePrimaryRowAction(Control control)
+    {
+        switch (control.DataContext)
+        {
+            case FlatResourceRow row:
+                _ = viewModel.FocusResourceAsync(row);
+                return true;
+            case EventTimelineRow row:
+                _ = viewModel.FocusEventAsync(row);
+                return true;
+            case PortForwardTaskViewModel task:
+                viewModel.OpenPortForwardTask(task);
+                return true;
+            case SourceStatusRow source:
+                viewModel.SelectedSource = source;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private async Task CopyTextAsync(string value)
@@ -2517,14 +2604,6 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         }
     }
 
-    private void ScrollSelectedGraphNodeIntoView()
-    {
-        if (viewModel.SelectedGraphNode is not null)
-        {
-            GraphTree.ScrollIntoView(viewModel.SelectedGraphNode);
-        }
-    }
-
     private void ScrollSelectedResourceIntoView()
     {
         if (viewModel.SelectedResource is not null)
@@ -2569,7 +2648,7 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
             return;
         }
 
-        if (e.Key == Key.Escape && (viewModel.IsResourceSearchOpen || viewModel.IsGraphSearchOpen || viewModel.IsEventSearchOpen || viewModel.IsPortSearchOpen))
+        if (e.Key == Key.Escape && (viewModel.IsResourceSearchOpen || viewModel.IsEventSearchOpen || viewModel.IsPortSearchOpen))
         {
             viewModel.CloseSearchForCurrentWorkspace();
             e.Handled = true;
@@ -2666,10 +2745,6 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
         {
             FocusResourceSearch();
         }
-        else if (viewModel.IsGraphWorkspace)
-        {
-            FocusGraphSearch();
-        }
         else if (viewModel.IsEventsWorkspace)
         {
             FocusEventSearch();
@@ -2685,8 +2760,6 @@ private void OpenColumnVisibilityMenu(Control owner, DataGrid grid)
     private void FocusPortSearch() => FocusSearchBox(viewModel.IsPortSearchOpen, PortSearchBox);
 
     private void FocusResourceSearch() => FocusSearchBox(viewModel.IsResourceSearchOpen, ResourceSearchBox);
-
-    private void FocusGraphSearch() => FocusSearchBox(viewModel.IsGraphSearchOpen, GraphSearchBox);
 
     private void FocusEventSearch() => FocusSearchBox(viewModel.IsEventSearchOpen, EventSearchBox);
 

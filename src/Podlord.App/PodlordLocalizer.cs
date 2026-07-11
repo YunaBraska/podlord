@@ -18,7 +18,6 @@ public static class PodlordLocalizer
     {
         ["nav.search"] = "Search",
         ["nav.resources"] = "RESOURCES",
-        ["nav.graph"] = "GRAPH",
         ["nav.events"] = "EVENTS",
         ["nav.ports"] = "PORTS",
         ["nav.settings"] = "SETTINGS",
@@ -245,128 +244,128 @@ public static class PodlordLocalizer
             ["en"] = English,
             ["de"] = WithEnglish("de", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Suche", ["nav.resources"] = "RESSOURCEN", ["nav.graph"] = "GRAPH", ["nav.events"] = "EREIGNISSE", ["nav.ports"] = "PORTS", ["nav.settings"] = "EINSTELLUNGEN",
+                ["nav.search"] = "Suche", ["nav.resources"] = "RESSOURCEN", ["nav.events"] = "EREIGNISSE", ["nav.ports"] = "PORTS", ["nav.settings"] = "EINSTELLUNGEN",
                 ["filters.title"] = "FILTER", ["filters.problems"] = "Probleme", ["filters.activity"] = "Aktivität", ["settings.title"] = "EINSTELLUNGEN", ["settings.language"] = "Sprache",
                 ["resource.noMatchingTitle"] = "Keine passenden Ressourcen", ["resource.loadingTitle"] = "Ressourcen werden geladen", ["resource.emptyTitle"] = "Keine Ressourcen geladen", ["source.noSession"] = "Keine Kubernetes-Sitzung ausgewählt.", ["status.settingsSaved"] = "Einstellungen gespeichert."
             }),
             ["es"] = WithEnglish("es", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Buscar", ["nav.resources"] = "RECURSOS", ["nav.graph"] = "GRAFO", ["nav.events"] = "EVENTOS", ["nav.ports"] = "PUERTOS", ["nav.settings"] = "AJUSTES",
+                ["nav.search"] = "Buscar", ["nav.resources"] = "RECURSOS", ["nav.events"] = "EVENTOS", ["nav.ports"] = "PUERTOS", ["nav.settings"] = "AJUSTES",
                 ["filters.title"] = "FILTROS", ["filters.problems"] = "Problemas", ["filters.activity"] = "Actividad", ["settings.title"] = "AJUSTES", ["settings.language"] = "Idioma",
                 ["resource.noMatchingTitle"] = "No hay recursos coincidentes", ["resource.loadingTitle"] = "Cargando recursos", ["source.noSession"] = "No hay sesión de Kubernetes seleccionada.", ["status.settingsSaved"] = "Ajustes guardados."
             }),
             ["fr"] = WithEnglish("fr", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Rechercher", ["nav.resources"] = "RESSOURCES", ["nav.graph"] = "GRAPHE", ["nav.events"] = "ÉVÉNEMENTS", ["nav.ports"] = "PORTS", ["nav.settings"] = "PARAMÈTRES",
+                ["nav.search"] = "Rechercher", ["nav.resources"] = "RESSOURCES", ["nav.events"] = "ÉVÉNEMENTS", ["nav.ports"] = "PORTS", ["nav.settings"] = "PARAMÈTRES",
                 ["filters.title"] = "FILTRES", ["filters.problems"] = "Problèmes", ["filters.activity"] = "Activité", ["settings.title"] = "PARAMÈTRES", ["settings.language"] = "Langue",
                 ["resource.noMatchingTitle"] = "Aucune ressource correspondante", ["resource.loadingTitle"] = "Chargement des ressources", ["source.noSession"] = "Aucune session Kubernetes sélectionnée.", ["status.settingsSaved"] = "Paramètres enregistrés."
             }),
             ["pt-BR"] = WithEnglish("pt-BR", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Buscar", ["nav.resources"] = "RECURSOS", ["nav.graph"] = "GRAFO", ["nav.events"] = "EVENTOS", ["nav.ports"] = "PORTAS", ["nav.settings"] = "CONFIGURAÇÕES",
+                ["nav.search"] = "Buscar", ["nav.resources"] = "RECURSOS", ["nav.events"] = "EVENTOS", ["nav.ports"] = "PORTAS", ["nav.settings"] = "CONFIGURAÇÕES",
                 ["filters.title"] = "FILTROS", ["filters.problems"] = "Problemas", ["filters.activity"] = "Atividade", ["settings.title"] = "CONFIGURAÇÕES", ["settings.language"] = "Idioma",
                 ["resource.noMatchingTitle"] = "Nenhum recurso encontrado", ["resource.loadingTitle"] = "Carregando recursos", ["source.noSession"] = "Nenhuma sessão Kubernetes selecionada.", ["status.settingsSaved"] = "Configurações salvas."
             }),
             ["it"] = WithEnglish("it", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Cerca", ["nav.resources"] = "RISORSE", ["nav.graph"] = "GRAFO", ["nav.events"] = "EVENTI", ["nav.ports"] = "PORTE", ["nav.settings"] = "IMPOSTAZIONI",
+                ["nav.search"] = "Cerca", ["nav.resources"] = "RISORSE", ["nav.events"] = "EVENTI", ["nav.ports"] = "PORTE", ["nav.settings"] = "IMPOSTAZIONI",
                 ["filters.title"] = "FILTRI", ["filters.problems"] = "Problemi", ["filters.activity"] = "Attività", ["settings.title"] = "IMPOSTAZIONI", ["settings.language"] = "Lingua",
                 ["resource.noMatchingTitle"] = "Nessuna risorsa corrispondente", ["resource.loadingTitle"] = "Caricamento risorse", ["source.noSession"] = "Nessuna sessione Kubernetes selezionata.", ["status.settingsSaved"] = "Impostazioni salvate."
             }),
             ["nl"] = WithEnglish("nl", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Zoeken", ["nav.resources"] = "RESOURCES", ["nav.graph"] = "GRAFIEK", ["nav.events"] = "GEBEURTENISSEN", ["nav.ports"] = "POORTEN", ["nav.settings"] = "INSTELLINGEN",
+                ["nav.search"] = "Zoeken", ["nav.resources"] = "RESOURCES", ["nav.events"] = "GEBEURTENISSEN", ["nav.ports"] = "POORTEN", ["nav.settings"] = "INSTELLINGEN",
                 ["filters.title"] = "FILTERS", ["filters.problems"] = "Problemen", ["filters.activity"] = "Activiteit", ["settings.title"] = "INSTELLINGEN", ["settings.language"] = "Taal",
                 ["resource.noMatchingTitle"] = "Geen overeenkomende resources", ["resource.loadingTitle"] = "Resources laden", ["source.noSession"] = "Geen Kubernetes-sessie geselecteerd.", ["status.settingsSaved"] = "Instellingen opgeslagen."
             }),
             ["pl"] = WithEnglish("pl", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Szukaj", ["nav.resources"] = "ZASOBY", ["nav.graph"] = "GRAF", ["nav.events"] = "ZDARZENIA", ["nav.ports"] = "PORTY", ["nav.settings"] = "USTAWIENIA",
+                ["nav.search"] = "Szukaj", ["nav.resources"] = "ZASOBY", ["nav.events"] = "ZDARZENIA", ["nav.ports"] = "PORTY", ["nav.settings"] = "USTAWIENIA",
                 ["filters.title"] = "FILTRY", ["filters.problems"] = "Problemy", ["filters.activity"] = "Aktywność", ["settings.title"] = "USTAWIENIA", ["settings.language"] = "Język",
                 ["resource.noMatchingTitle"] = "Brak pasujących zasobów", ["resource.loadingTitle"] = "Ładowanie zasobów", ["source.noSession"] = "Nie wybrano sesji Kubernetes.", ["status.settingsSaved"] = "Ustawienia zapisane."
             }),
             ["ru"] = WithEnglish("ru", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Поиск", ["nav.resources"] = "РЕСУРСЫ", ["nav.graph"] = "ГРАФ", ["nav.events"] = "СОБЫТИЯ", ["nav.ports"] = "ПОРТЫ", ["nav.settings"] = "НАСТРОЙКИ",
+                ["nav.search"] = "Поиск", ["nav.resources"] = "РЕСУРСЫ", ["nav.events"] = "СОБЫТИЯ", ["nav.ports"] = "ПОРТЫ", ["nav.settings"] = "НАСТРОЙКИ",
                 ["filters.title"] = "ФИЛЬТРЫ", ["filters.problems"] = "Проблемы", ["filters.activity"] = "Активность", ["settings.title"] = "НАСТРОЙКИ", ["settings.language"] = "Язык",
                 ["resource.noMatchingTitle"] = "Нет подходящих ресурсов", ["resource.loadingTitle"] = "Загрузка ресурсов", ["source.noSession"] = "Сеанс Kubernetes не выбран.", ["status.settingsSaved"] = "Настройки сохранены."
             }),
             ["uk"] = WithEnglish("uk", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Пошук", ["nav.resources"] = "РЕСУРСИ", ["nav.graph"] = "ГРАФ", ["nav.events"] = "ПОДІЇ", ["nav.ports"] = "ПОРТИ", ["nav.settings"] = "НАЛАШТУВАННЯ",
+                ["nav.search"] = "Пошук", ["nav.resources"] = "РЕСУРСИ", ["nav.events"] = "ПОДІЇ", ["nav.ports"] = "ПОРТИ", ["nav.settings"] = "НАЛАШТУВАННЯ",
                 ["filters.title"] = "ФІЛЬТРИ", ["filters.problems"] = "Проблеми", ["filters.activity"] = "Активність", ["settings.title"] = "НАЛАШТУВАННЯ", ["settings.language"] = "Мова"
             }),
             ["tr"] = WithEnglish("tr", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Ara", ["nav.resources"] = "KAYNAKLAR", ["nav.graph"] = "GRAF", ["nav.events"] = "OLAYLAR", ["nav.ports"] = "PORTLAR", ["nav.settings"] = "AYARLAR",
+                ["nav.search"] = "Ara", ["nav.resources"] = "KAYNAKLAR", ["nav.events"] = "OLAYLAR", ["nav.ports"] = "PORTLAR", ["nav.settings"] = "AYARLAR",
                 ["filters.title"] = "FİLTRELER", ["filters.problems"] = "Sorunlar", ["filters.activity"] = "Etkinlik", ["settings.title"] = "AYARLAR", ["settings.language"] = "Dil",
                 ["resource.noMatchingTitle"] = "Eşleşen kaynak yok", ["resource.loadingTitle"] = "Kaynaklar yükleniyor", ["source.noSession"] = "Kubernetes oturumu seçilmedi.", ["status.settingsSaved"] = "Ayarlar kaydedildi."
             }),
             ["ar"] = WithEnglish("ar", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "بحث", ["nav.resources"] = "الموارد", ["nav.graph"] = "الرسم", ["nav.events"] = "الأحداث", ["nav.ports"] = "المنافذ", ["nav.settings"] = "الإعدادات",
+                ["nav.search"] = "بحث", ["nav.resources"] = "الموارد", ["nav.events"] = "الأحداث", ["nav.ports"] = "المنافذ", ["nav.settings"] = "الإعدادات",
                 ["filters.title"] = "الفلاتر", ["filters.problems"] = "مشكلات", ["filters.activity"] = "نشاط", ["settings.title"] = "الإعدادات", ["settings.language"] = "اللغة",
                 ["resource.noMatchingTitle"] = "لا توجد موارد مطابقة", ["resource.loadingTitle"] = "تحميل الموارد", ["source.noSession"] = "لم يتم اختيار جلسة Kubernetes.", ["status.settingsSaved"] = "تم حفظ الإعدادات."
             }),
             ["hi"] = WithEnglish("hi", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "खोज", ["nav.resources"] = "संसाधन", ["nav.graph"] = "ग्राफ", ["nav.events"] = "घटनाएं", ["nav.ports"] = "पोर्ट", ["nav.settings"] = "सेटिंग्स",
+                ["nav.search"] = "खोज", ["nav.resources"] = "संसाधन", ["nav.events"] = "घटनाएं", ["nav.ports"] = "पोर्ट", ["nav.settings"] = "सेटिंग्स",
                 ["filters.title"] = "फिल्टर", ["filters.problems"] = "समस्याएं", ["filters.activity"] = "गतिविधि", ["settings.title"] = "सेटिंग्स", ["settings.language"] = "भाषा",
                 ["resource.noMatchingTitle"] = "कोई मिलते संसाधन नहीं", ["resource.loadingTitle"] = "संसाधन लोड हो रहे हैं", ["source.noSession"] = "कोई Kubernetes सत्र चयनित नहीं.", ["status.settingsSaved"] = "सेटिंग्स सहेजी गईं."
             }),
             ["bn"] = WithEnglish("bn", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "অনুসন্ধান", ["nav.resources"] = "রিসোর্স", ["nav.graph"] = "গ্রাফ", ["nav.events"] = "ইভেন্ট", ["nav.ports"] = "পোর্ট", ["nav.settings"] = "সেটিংস",
+                ["nav.search"] = "অনুসন্ধান", ["nav.resources"] = "রিসোর্স", ["nav.events"] = "ইভেন্ট", ["nav.ports"] = "পোর্ট", ["nav.settings"] = "সেটিংস",
                 ["filters.title"] = "ফিল্টার", ["filters.problems"] = "সমস্যা", ["filters.activity"] = "কার্যকলাপ", ["settings.title"] = "সেটিংস", ["settings.language"] = "ভাষা"
             }),
             ["pa"] = WithEnglish("pa", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "ਖੋਜ", ["nav.resources"] = "ਸਰੋਤ", ["nav.graph"] = "ਗ੍ਰਾਫ", ["nav.events"] = "ਘਟਨਾਵਾਂ", ["nav.ports"] = "ਪੋਰਟ", ["nav.settings"] = "ਸੈਟਿੰਗਾਂ",
+                ["nav.search"] = "ਖੋਜ", ["nav.resources"] = "ਸਰੋਤ", ["nav.events"] = "ਘਟਨਾਵਾਂ", ["nav.ports"] = "ਪੋਰਟ", ["nav.settings"] = "ਸੈਟਿੰਗਾਂ",
                 ["filters.title"] = "ਫਿਲਟਰ", ["filters.problems"] = "ਸਮੱਸਿਆਵਾਂ", ["filters.activity"] = "ਗਤੀਵਿਧੀ", ["settings.title"] = "ਸੈਟਿੰਗਾਂ", ["settings.language"] = "ਭਾਸ਼ਾ"
             }),
             ["ur"] = WithEnglish("ur", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "تلاش", ["nav.resources"] = "وسائل", ["nav.graph"] = "گراف", ["nav.events"] = "واقعات", ["nav.ports"] = "پورٹس", ["nav.settings"] = "ترتیبات",
+                ["nav.search"] = "تلاش", ["nav.resources"] = "وسائل", ["nav.events"] = "واقعات", ["nav.ports"] = "پورٹس", ["nav.settings"] = "ترتیبات",
                 ["filters.title"] = "فلٹرز", ["filters.problems"] = "مسائل", ["filters.activity"] = "سرگرمی", ["settings.title"] = "ترتیبات", ["settings.language"] = "زبان"
             }),
             ["id"] = WithEnglish("id", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Cari", ["nav.resources"] = "SUMBER DAYA", ["nav.graph"] = "GRAF", ["nav.events"] = "PERISTIWA", ["nav.ports"] = "PORT", ["nav.settings"] = "PENGATURAN",
+                ["nav.search"] = "Cari", ["nav.resources"] = "SUMBER DAYA", ["nav.events"] = "PERISTIWA", ["nav.ports"] = "PORT", ["nav.settings"] = "PENGATURAN",
                 ["filters.title"] = "FILTER", ["filters.problems"] = "Masalah", ["filters.activity"] = "Aktivitas", ["settings.title"] = "PENGATURAN", ["settings.language"] = "Bahasa",
                 ["resource.noMatchingTitle"] = "Tidak ada sumber daya cocok", ["resource.loadingTitle"] = "Memuat sumber daya", ["source.noSession"] = "Sesi Kubernetes belum dipilih.", ["status.settingsSaved"] = "Pengaturan disimpan."
             }),
             ["vi"] = WithEnglish("vi", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Tìm", ["nav.resources"] = "TÀI NGUYÊN", ["nav.graph"] = "ĐỒ THỊ", ["nav.events"] = "SỰ KIỆN", ["nav.ports"] = "CỔNG", ["nav.settings"] = "CÀI ĐẶT",
+                ["nav.search"] = "Tìm", ["nav.resources"] = "TÀI NGUYÊN", ["nav.events"] = "SỰ KIỆN", ["nav.ports"] = "CỔNG", ["nav.settings"] = "CÀI ĐẶT",
                 ["filters.title"] = "BỘ LỌC", ["filters.problems"] = "Sự cố", ["filters.activity"] = "Hoạt động", ["settings.title"] = "CÀI ĐẶT", ["settings.language"] = "Ngôn ngữ",
                 ["resource.noMatchingTitle"] = "Không có tài nguyên phù hợp", ["resource.loadingTitle"] = "Đang tải tài nguyên", ["source.noSession"] = "Chưa chọn phiên Kubernetes.", ["status.settingsSaved"] = "Đã lưu cài đặt."
             }),
             ["th"] = WithEnglish("th", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "ค้นหา", ["nav.resources"] = "ทรัพยากร", ["nav.graph"] = "กราฟ", ["nav.events"] = "เหตุการณ์", ["nav.ports"] = "พอร์ต", ["nav.settings"] = "ตั้งค่า",
+                ["nav.search"] = "ค้นหา", ["nav.resources"] = "ทรัพยากร", ["nav.events"] = "เหตุการณ์", ["nav.ports"] = "พอร์ต", ["nav.settings"] = "ตั้งค่า",
                 ["filters.title"] = "ตัวกรอง", ["filters.problems"] = "ปัญหา", ["filters.activity"] = "กิจกรรม", ["settings.title"] = "ตั้งค่า", ["settings.language"] = "ภาษา"
             }),
             ["zh-Hans"] = WithEnglish("zh-Hans", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "搜索", ["nav.resources"] = "资源", ["nav.graph"] = "图谱", ["nav.events"] = "事件", ["nav.ports"] = "端口", ["nav.settings"] = "设置",
+                ["nav.search"] = "搜索", ["nav.resources"] = "资源", ["nav.events"] = "事件", ["nav.ports"] = "端口", ["nav.settings"] = "设置",
                 ["filters.title"] = "过滤器", ["filters.problems"] = "问题", ["filters.activity"] = "活动", ["settings.title"] = "设置", ["settings.language"] = "语言",
                 ["resource.noMatchingTitle"] = "没有匹配资源", ["resource.loadingTitle"] = "正在加载资源", ["source.noSession"] = "未选择 Kubernetes 会话。", ["status.settingsSaved"] = "设置已保存。"
             }),
             ["ja"] = WithEnglish("ja", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "検索", ["nav.resources"] = "リソース", ["nav.graph"] = "グラフ", ["nav.events"] = "イベント", ["nav.ports"] = "ポート", ["nav.settings"] = "設定",
+                ["nav.search"] = "検索", ["nav.resources"] = "リソース", ["nav.events"] = "イベント", ["nav.ports"] = "ポート", ["nav.settings"] = "設定",
                 ["filters.title"] = "フィルター", ["filters.problems"] = "問題", ["filters.activity"] = "アクティビティ", ["settings.title"] = "設定", ["settings.language"] = "言語",
                 ["resource.noMatchingTitle"] = "一致するリソースなし", ["resource.loadingTitle"] = "リソースを読み込み中", ["source.noSession"] = "Kubernetes セッションが選択されていません。", ["status.settingsSaved"] = "設定を保存しました。"
             }),
             ["ko"] = WithEnglish("ko", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "검색", ["nav.resources"] = "리소스", ["nav.graph"] = "그래프", ["nav.events"] = "이벤트", ["nav.ports"] = "포트", ["nav.settings"] = "설정",
+                ["nav.search"] = "검색", ["nav.resources"] = "리소스", ["nav.events"] = "이벤트", ["nav.ports"] = "포트", ["nav.settings"] = "설정",
                 ["filters.title"] = "필터", ["filters.problems"] = "문제", ["filters.activity"] = "활동", ["settings.title"] = "설정", ["settings.language"] = "언어",
                 ["resource.noMatchingTitle"] = "일치하는 리소스 없음", ["resource.loadingTitle"] = "리소스 로드 중", ["source.noSession"] = "Kubernetes 세션이 선택되지 않았습니다.", ["status.settingsSaved"] = "설정이 저장되었습니다."
             }),
             ["sv"] = WithEnglish("sv", new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["nav.search"] = "Sök", ["nav.resources"] = "RESURSER", ["nav.graph"] = "GRAF", ["nav.events"] = "HÄNDELSER", ["nav.ports"] = "PORTAR", ["nav.settings"] = "INSTÄLLNINGAR",
+                ["nav.search"] = "Sök", ["nav.resources"] = "RESURSER", ["nav.events"] = "HÄNDELSER", ["nav.ports"] = "PORTAR", ["nav.settings"] = "INSTÄLLNINGAR",
                 ["filters.title"] = "FILTER", ["filters.problems"] = "Problem", ["filters.activity"] = "Aktivitet", ["settings.title"] = "INSTÄLLNINGAR", ["settings.language"] = "Språk",
                 ["resource.noMatchingTitle"] = "Inga matchande resurser", ["resource.loadingTitle"] = "Laddar resurser", ["source.noSession"] = "Ingen Kubernetes-session vald.", ["status.settingsSaved"] = "Inställningar sparade."
             })
