@@ -156,7 +156,8 @@ public sealed record ImportedContext(
     string ImportedAt,
     string SourceName = "",
     string SourceContentHash = "",
-    string FilterName = "default");
+    string FilterName = "default",
+    string LastOpenedAt = "");
 
 public sealed record PodlordSession(
     string Id,

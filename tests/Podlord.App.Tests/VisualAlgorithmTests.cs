@@ -199,6 +199,7 @@ public sealed class VisualAlgorithmTests
         imported.ActivateCommand.Execute(null);
 
         Assert.Equal("ACTIVE", imported.ActiveMark);
+        Assert.Equal("OPEN", new ImportedContextRowViewModel("ctx-2", "/tmp/config", "dev", _ => { }, (_, _) => { }).ActiveMark);
         Assert.Equal(["DisplayName"], changed);
         Assert.Equal("new", renamed);
         Assert.True(removed);

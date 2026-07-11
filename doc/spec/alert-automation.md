@@ -52,11 +52,3 @@ Bundled sounds must be original, generated, or clearly royalty-free. Every sound
 No copyrighted game samples, faction voices, melodies, logos, or copied assets are allowed. Imported user sounds should keep their metadata beside the imported asset.
 
 The built-in pack currently uses Kenney CC0 assets from UI Audio, Interface Sounds, Sci-fi Sounds, and Music Jingles. The app stores local OGG copies and keeps source, author, and license visible in the alert editor.
-
-## Planned Expansion
-
-- Add in-app sound playback and volume per alert.
-- Add reusable alert presets for teaching, production, and noisy dev clusters.
-- Move current hard-coded activity behavior fully into user-visible default rules.
-- Add radar animation variants per rule: pulse, blink, sweep, outline, and trail.
-- Add per-rule quiet hours and action throttling.
