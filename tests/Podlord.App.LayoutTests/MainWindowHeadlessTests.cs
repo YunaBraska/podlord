@@ -397,7 +397,7 @@ public sealed class MainWindowHeadlessTests
     }
 
     [Fact]
-    public void Pending_secondary_restore_is_cleared_when_user_switches_tabs_before_posted_restore_runs()
+    public void Session_switch_does_not_queue_secondary_restore_state()
     {
         Dispatcher.UIThread.Invoke(() =>
         {
@@ -418,17 +418,17 @@ public sealed class MainWindowHeadlessTests
                 var beta = viewModel.Sessions.Single(session => session.DisplayName == "beta");
 
                 viewModel.OpenSessionTab(alpha.Id, activate: true);
-                viewModel.SelectWorkspace("graph");
+                viewModel.SelectWorkspace("events");
                 viewModel.SeedCachedRowsForTesting([LayoutRow("alpha-api", "alpha")]);
                 Dispatcher.UIThread.RunJobs();
                 viewModel.OpenSessionTab(beta.Id, activate: true);
-                viewModel.SelectWorkspace("graph");
+                viewModel.SelectWorkspace("events");
                 viewModel.SeedCachedRowsForTesting([LayoutRow("beta-api", "beta")]);
                 Dispatcher.UIThread.RunJobs();
 
                 viewModel.OpenSessionTab(alpha.Id, activate: true);
 
-                Assert.Equal(1, viewModel.PendingSecondaryRestoreCountForTests);
+                Assert.Equal(0, viewModel.PendingSecondaryRestoreCountForTests);
 
                 viewModel.OpenSessionTab(beta.Id, activate: true);
                 Dispatcher.UIThread.RunJobs();
@@ -444,7 +444,7 @@ public sealed class MainWindowHeadlessTests
     }
 
     [Fact]
-    public void Large_cache_secondary_views_are_lazy_and_apply_latest_filter_on_dispatcher()
+    public void Large_cache_resources_follow_latest_filter_without_waiting_for_secondary_views()
     {
         Dispatcher.UIThread.Invoke(() =>
         {
@@ -458,22 +458,12 @@ public sealed class MainWindowHeadlessTests
                 window.ViewModel.SeedCachedRowsForTesting(LargeLayoutRows(900));
 
                 Assert.Equal(256, window.ViewModel.Resources.Count);
-                Assert.Empty(window.ViewModel.RadarBlocks);
 
                 window.ViewModel.Search = "pod-0003";
                 window.ViewModel.Search = "pod-0006";
 
                 Assert.Single(window.ViewModel.Resources);
                 Assert.Equal("pod-0006", window.ViewModel.Resources[0].Name);
-
-                PumpUntil(
-                    () =>
-                    {
-                        var latest = window.ViewModel.RadarBlocks.FirstOrDefault(block => block.Resource.Name == "pod-0006");
-                        var stale = window.ViewModel.RadarBlocks.FirstOrDefault(block => block.Resource.Name == "pod-0003");
-                        return latest is { IsDimmed: false } && stale is { IsDimmed: true };
-                    },
-                    "Lazy radar rebuild did not settle on the latest filter state.");
             }
             finally
             {

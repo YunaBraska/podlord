@@ -259,19 +259,6 @@ public sealed class VisualAlgorithmTests
             "owner",
             "now",
             FreshnessState.Fresh);
-        var graph = new GraphNodeViewModel("Pod", "api", "default", "Running", resource);
-        var graphChanges = new List<string?>();
-        graph.PropertyChanged += (_, args) => graphChanges.Add(args.PropertyName);
-
-        graph.IsSearchMatch = true;
-        graph.IsSearchMatch = true;
-        graph.IsCurrentSearchMatch = true;
-
-        Assert.True(graph.HasResource);
-        Assert.Equal(["IsSearchMatch", "BorderBrush", "BackgroundBrush", "IsCurrentSearchMatch", "BorderBrush", "BackgroundBrush"], graphChanges);
-        Assert.NotNull(graph.BorderBrush);
-        Assert.NotNull(graph.BackgroundBrush);
-
         var idle = new RadarIdleCellViewModel(1, 2, 3, 4, AppThemeCatalog.StatusBrush("HEALTHY"));
         var idleChanges = new List<string?>();
         idle.PropertyChanged += (_, args) => idleChanges.Add(args.PropertyName);
@@ -351,7 +338,7 @@ public sealed class VisualAlgorithmTests
         Assert.Equal("RADAR IDLE CELL", block.ToolTipTitle);
         Assert.Equal("group-2", block.ToolTipNamespace);
         Assert.Equal(1, block.Opacity);
-        Assert.Contains(string.Empty, changes);
+        Assert.Contains(nameof(RadarBlockViewModel.Resource), changes);
     }
 
     [Fact]
