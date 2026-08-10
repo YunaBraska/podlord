@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="KubernetesClient" Version="19.0.2" />
-    <PackageReference Include="YamlDotNet" Version="18.0.0" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
   <PropertyGroup>
