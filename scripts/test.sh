@@ -62,5 +62,5 @@ export PODLORD_DISABLE_AUDIO=1
 export PODLORD_DISABLE_UPDATE_CHECK=1
 mkdir -p "$TEST_HOME" "$TEST_CONFIG_HOME" "$PODLORD_CONFIG_HOME"
 rm -rf "$ROOT_DIR/TestResults" "$ROOT_DIR/tests"/*/TestResults
-"$DOTNET" test Podlord.slnx --settings "$ROOT_DIR/coverage.runsettings" --collect:"XPlat Code Coverage"
+"$DOTNET" test Podlord.slnx --settings "$ROOT_DIR/coverage.runsettings" --collect:"XPlat Code Coverage" -p:Version="${VERSION:-1.0.0}"
 python3 "$ROOT_DIR/scripts/check-coverage.py" "$ROOT_DIR"
