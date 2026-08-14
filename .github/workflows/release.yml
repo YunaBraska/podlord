@@ -16,6 +16,6 @@ permissions:
 
 jobs:
   release:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5
     with:
       force: ${{ inputs.force }}

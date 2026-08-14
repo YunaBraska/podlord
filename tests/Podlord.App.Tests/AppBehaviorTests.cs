@@ -727,8 +727,8 @@ public sealed class AppBehaviorTests
         var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
         var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
 
-        Assert.Contains("wc_dotnet_build_native.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", mergeWorkflow, StringComparison.Ordinal);
-        Assert.Contains("wc_dotnet_release.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", releaseWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_native.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_release.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5", releaseWorkflow, StringComparison.Ordinal);
         Assert.Contains("# yuna-release: true", releaseWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("macos-arm64) RID=osx-arm64 ;;", macOSBundleScript, StringComparison.Ordinal);
@@ -751,12 +751,12 @@ public sealed class AppBehaviorTests
 
         Assert.Contains("pull_request:", pullRequestWorkflow, StringComparison.Ordinal);
         Assert.Contains("group: podlord-pr-${{ github.event.pull_request.number }}", pullRequestWorkflow, StringComparison.Ordinal);
-        Assert.Contains("wc_dotnet_build_common.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", pullRequestWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_common.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5", pullRequestWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("push:", pullRequestWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("push:\n    branches:\n      - main", mergeWorkflow, StringComparison.Ordinal);
-        Assert.Contains("wc_dotnet_build_common.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", mergeWorkflow, StringComparison.Ordinal);
-        Assert.Contains("wc_dotnet_build_native.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_common.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_native.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5", mergeWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("dev", mergeWorkflow, StringComparison.Ordinal);
     }
 
