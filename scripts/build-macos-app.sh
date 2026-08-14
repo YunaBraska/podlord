@@ -8,7 +8,7 @@ RID=${1:-}
 REQUESTED_RID=${1:-}
 APP_NAME=Podlord
 BUNDLE_ID=${BUNDLE_ID:-dev.podlord.app}
-VERSION=${VERSION:-0.0.0}
+VERSION=${VERSION:-1.0.0}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
 
 if [ ! -x "$DOTNET" ]; then

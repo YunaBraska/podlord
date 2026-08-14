@@ -522,7 +522,8 @@ public sealed class AppBehaviorTests
         using var viewModel = new MainWindowViewModel(
             state,
             new KubernetesResourceService(state),
-            releaseUpdateChecker: checker);
+            releaseUpdateChecker: checker,
+            currentVersionProvider: () => "2026.6.19");
 
         Assert.True(MainWindowViewModel.ShouldCheckForUpdates(oldVisibleUpdate, DateTimeOffset.UtcNow));
         await viewModel.CheckForUpdatesIfDueAsync();
@@ -718,22 +719,17 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Release_packaging_uses_public_macos_asset_names_and_plain_archive_root()
+    public void Native_release_uses_shared_archives_and_public_asset_names()
     {
         var root = LocateProjectRoot();
-        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
+        var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
+        var releaseWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
         var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
         var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
 
-        Assert.Contains("asset: macos-arm64", workflow, StringComparison.Ordinal);
-        Assert.Contains("asset: macos-x64", workflow, StringComparison.Ordinal);
-        Assert.Contains("target = Path(\"dist\") / f\"podlord-{asset}.tar.gz\"", workflow, StringComparison.Ordinal);
-        Assert.Contains("target = Path(\"dist\") / f\"podlord-{asset}.zip\"", workflow, StringComparison.Ordinal);
-        Assert.Contains("archive.add(source, arcname=\"podlord\")", workflow, StringComparison.Ordinal);
-        Assert.Contains("archive.write(path, Path(\"podlord\") / path.relative_to(source))", workflow, StringComparison.Ordinal);
-        Assert.Contains("\"dist/podlord-$ASSET.zip\"", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("dist/podlord-$RID.zip", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("arcname=f\"podlord-{rid}\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_native.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_release.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", releaseWorkflow, StringComparison.Ordinal);
+        Assert.Contains("# yuna-release: true", releaseWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("macos-arm64) RID=osx-arm64 ;;", macOSBundleScript, StringComparison.Ordinal);
         Assert.Contains("macos-x64) RID=osx-x64 ;;", macOSBundleScript, StringComparison.Ordinal);
@@ -743,21 +739,25 @@ public sealed class AppBehaviorTests
         Assert.Contains("RIDS=\"macos-arm64 macos-x64", publishScript, StringComparison.Ordinal);
         Assert.Contains("macos-arm64) dotnet_rid=osx-arm64 ;;", publishScript, StringComparison.Ordinal);
         Assert.Contains("-r \"$dotnet_rid\"", publishScript, StringComparison.Ordinal);
+        Assert.Contains("-o \"out/podlord-$rid\"", publishScript, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Ci_workflow_tests_pull_requests_without_duplicate_feature_branch_push_runs()
+    public void Ci_workflows_use_shared_pull_request_and_main_merge_builds()
     {
         var root = LocateProjectRoot();
-        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "ci.yml"));
+        var pullRequestWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-pr.yml"));
+        var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
 
-        Assert.Contains("pull_request:", workflow, StringComparison.Ordinal);
-        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
-        Assert.Contains("workflow_call:", workflow, StringComparison.Ordinal);
-        Assert.Contains("push:\n    branches:\n      - dev", workflow, StringComparison.Ordinal);
-        Assert.Contains("group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("branches-ignore:", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("github.event.pull_request.number || github.ref", workflow, StringComparison.Ordinal);
+        Assert.Contains("pull_request:", pullRequestWorkflow, StringComparison.Ordinal);
+        Assert.Contains("group: podlord-pr-${{ github.event.pull_request.number }}", pullRequestWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_common.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", pullRequestWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push:", pullRequestWorkflow, StringComparison.Ordinal);
+
+        Assert.Contains("push:\n    branches:\n      - main", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_common.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("wc_dotnet_build_native.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11", mergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("dev", mergeWorkflow, StringComparison.Ordinal);
     }
 
     [Fact]

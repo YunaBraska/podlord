@@ -1,0 +1,25 @@
+name: 🧩 CI · Merge
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: podlord-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_common.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11
+    with:
+      ref: ${{ github.sha }}
+      dry_run: true
+  native:
+    needs: build
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_native.yml@726750fe689eaec2d338410c83fe91a7b3ff4b11
+    with:
+      version: ${{ needs.build.outputs.version }}
