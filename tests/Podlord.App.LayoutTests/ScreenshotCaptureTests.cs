@@ -78,7 +78,7 @@ public sealed class ScreenshotCaptureTests
     {
         if (window.CaptureRenderedFrame() is { } bitmap)
         {
-            bitmap.Save(path);
+            bitmap.Save(path, PngBitmapEncoderOptions.Default);
         }
     }
 
