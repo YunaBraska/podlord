@@ -20,7 +20,7 @@
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="JAJ.Packages.MiniAudioEx" Version="3.3.6" />
+    <PackageReference Include="JAJ.Packages.MiniAudioEx" Version="3.3.7" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
