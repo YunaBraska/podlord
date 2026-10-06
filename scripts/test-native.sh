@@ -1,0 +1,70 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
+find_tool() {
+    if command -v "$1" >/dev/null 2>&1; then command -v "$1"
+    elif [ -x "/opt/homebrew/bin/$1" ]; then printf '%s\n' "/opt/homebrew/bin/$1"
+    else printf 'Required tool is missing: %s\n' "$1" >&2; return 1
+    fi
+}
+find_llvm() {
+    if command -v "$1" >/dev/null 2>&1; then command -v "$1"
+    elif command -v xcrun >/dev/null 2>&1; then xcrun --find "$1"
+    else printf 'Required LLVM tool is missing: %s\n' "$1" >&2; return 1
+    fi
+}
+CMAKE=$(find_tool cmake)
+CTEST=$(find_tool ctest)
+NINJA=$(find_tool ninja)
+COV=$(find_llvm llvm-cov)
+PROFDATA=$(find_llvm llvm-profdata)
+PREFIX=${CMAKE_PREFIX_PATH:-/opt/homebrew}
+"$CMAKE" -S "$ROOT/native" -B "$BUILD" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
+    -DCMAKE_PREFIX_PATH="$PREFIX" -DCMAKE_BUILD_TYPE=Release -DPODLORD_COVERAGE=ON
+"$CMAKE" --build "$BUILD" --parallel "${PODLORD_BUILD_JOBS:-4}"
+mkdir -p "$BUILD/coverage"
+RUN=$(mktemp -d "$BUILD/coverage/run.XXXXXX")
+APP="$BUILD/podlord-native"
+if [ -x "$BUILD/podlord-native.app/Contents/MacOS/podlord-native" ]; then APP="$BUILD/podlord-native.app/Contents/MacOS/podlord-native"; fi
+cleanup() {
+    find "$RUN" -depth -delete
+}
+trap cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+mkdir "$RUN/tmp"
+TMPDIR="$RUN/tmp"
+export TMPDIR
+LLVM_PROFILE_FILE="$RUN/%p-%m.profraw"
+export LLVM_PROFILE_FILE
+TEST_STATUS=0
+"$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure || TEST_STATUS=$?
+if [ "$TEST_STATUS" -eq 0 ]; then
+BENCHMARK=$("$BUILD/session_cli_test" "$BUILD/podlord-session" benchmark)
+printf '%s\n' "$BENCHMARK" > "$BUILD/coverage/benchmark.json"
+printf '%s\n' "$BENCHMARK"
+SOURCE_BENCHMARK=$("$BUILD/session_cli_test" "$BUILD/podlord-source" source.benchmark)
+printf '%s\n' "$SOURCE_BENCHMARK" > "$BUILD/coverage/source-benchmark.json"
+printf '%s\n' "$SOURCE_BENCHMARK"
+fi
+find "$RUN" -maxdepth 1 -type f -name '*.profraw' > "$RUN/profiles.txt"
+"$PROFDATA" merge -sparse --input-files="$RUN/profiles.txt" -o "$BUILD/coverage/native.profdata"
+set -- "$APP"
+for binary in podlord-session podlord-source session_contract_test workspace_ui_test \
+    source_input_test authentication_ui_test pod_logs_ui_test theme_ui_test \
+    alert_ui_test alerts_store_test sound-catalog-test resource_metrics_test read_settings_test \
+    yaml-draft-check-test yaml-apply-test table_layout_test view_state_test \
+    resource_filter_test kind_glyph_ui_test resource-delete-ui-test inspector-navigation-ui-test port-forward-ui-test container-terminal-ui-test field-filter-ui-test metric-filter-ui-test read-overlap-test radar_reference_test \
+    resource_guidance_test resource-age-filter-test about-ui-test mutation-admission-test credential-file-test settings-draft-ui-test command-palette-ui-test pulse-layout-ui-test tls-connection-test k3d-import-test workspace-restore-ui-test source-removal-ui-test; do
+    set -- "$@" -object "$BUILD/$binary"
+done
+"$COV" report "$@" \
+    -instr-profile="$BUILD/coverage/native.profdata" "$ROOT"/native/src/*.cpp "$ROOT"/native/src/*.h > "$BUILD/coverage/report.txt"
+cat "$BUILD/coverage/report.txt"
+COVERAGE_STATUS=0
+awk '/^TOTAL/ { seen=1; line=$10+0; branch=$13+0; if (line<95 || branch<90) exit 1 }
+     END { if (!seen) exit 1 }' "$BUILD/coverage/report.txt" || COVERAGE_STATUS=$?
+[ "$TEST_STATUS" -eq 0 ] || exit "$TEST_STATUS"
+exit "$COVERAGE_STATUS"

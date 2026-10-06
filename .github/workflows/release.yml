@@ -15,7 +15,11 @@ permissions:
   contents: write
 
 jobs:
+  native-preflight:
+    uses: ./.github/workflows/native.yml
+
   release:
+    needs: native-preflight
     uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@57a1b3d17849cc22d170a7710a8f9976e3b7a21f
     with:
       force: ${{ inputs.force }}

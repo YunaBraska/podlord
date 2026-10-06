@@ -39,6 +39,9 @@ internal sealed record SessionWorkspaceAlertState(
     IReadOnlySet<string> PreviousVisibleResourceAlertIds,
     IReadOnlyDictionary<string, DateTimeOffset> RadarAlertBlinkUntil,
     IReadOnlyDictionary<string, DateTimeOffset> ResourceAlertBlinkUntil,
+    IReadOnlyDictionary<(string RuleId, string RowId), DateTimeOffset> AlertDurationUntilByRuleResource,
+    IReadOnlyDictionary<(string RuleId, string RowId), DateTimeOffset> AlertColorUntilByRuleResource,
+    IReadOnlyDictionary<(string RuleId, string RowId), DateTimeOffset> AlertAnimationUntilByRuleResource,
     IReadOnlyDictionary<string, string> AlertSoundKeysByRuleId,
     IReadOnlySet<(string RuleId, string RowId)> PreviousAlertRuleMatches,
     IReadOnlyDictionary<(string RuleId, string RowId), string> PreviousAlertRuleRowStates,
@@ -49,6 +52,9 @@ internal sealed record SessionWorkspaceAlertState(
         new HashSet<string>(StringComparer.Ordinal),
         new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal),
         new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal),
+        new Dictionary<(string RuleId, string RowId), DateTimeOffset>(),
+        new Dictionary<(string RuleId, string RowId), DateTimeOffset>(),
+        new Dictionary<(string RuleId, string RowId), DateTimeOffset>(),
         new Dictionary<string, string>(StringComparer.Ordinal),
         new HashSet<(string RuleId, string RowId)>(),
         new Dictionary<(string RuleId, string RowId), string>(),
@@ -73,12 +79,10 @@ internal sealed record SessionWorkspaceRenderedState(
     string EventSortColumn,
     ResourceSortDirection EventSortDirection,
     IReadOnlyList<FlatResourceRow> CachedRows,
-    IReadOnlyList<FlatResourceRow> Resources,
     IReadOnlyList<ResourceListFailure> Failures,
     string? SelectedResourceId,
     string? SelectedResourceRowId,
     DateTimeOffset? LastSyncedAt,
-    int RestartOutlierThreshold,
     string StatusLine);
 
 internal sealed class SessionWorkspaceViewModel : INotifyPropertyChanged

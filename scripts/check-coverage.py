@@ -11,10 +11,7 @@ from pathlib import Path
 
 
 LINE_GATE = 95.0
-# Coverlet branch data for this Avalonia/C# app includes many compiler-generated
-# property, switch, async, and TLS setup branches. Keep this gate enforceable while
-# the report still prints the worst branch debt for hardening work.
-BRANCH_GATE = 80.0
+BRANCH_GATE = 90.0
 PROJECTS = ("Podlord.App", "Podlord.Core", "Podlord.Kubernetes")
 EXCLUDES = (
     "src/Podlord.App/*.axaml",
@@ -37,18 +34,25 @@ EXCLUDES = (
 
 def main() -> int:
     root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd().resolve()
-    reports = sorted(root.glob("tests/*/TestResults/*/coverage.cobertura.xml"))
+    reports = sorted(Path(sys.argv[2]).resolve().glob("**/coverage.cobertura.xml")) if len(sys.argv) > 2 else sorted(root.glob("tests/*/TestResults/*/coverage.cobertura.xml"))
     if not reports:
         print("coverage: no Cobertura reports found under tests/*/TestResults", file=sys.stderr)
         return 2
 
     files: dict[str, dict[int, int]] = {}
     branches: dict[str, dict[int, tuple[int, int]]] = {}
-    for report in reports:
-        merge_report(root, report, files, branches)
+    try:
+        for report in reports:
+            merge_report(root, report, files, branches)
+    except (ET.ParseError, OSError, ValueError, KeyError) as error:
+        print(f"coverage: invalid coverage report: {error}", file=sys.stderr)
+        return 2
 
     line_covered = sum(sum(hit > 0 for hit in lines.values()) for lines in files.values())
     line_total = sum(len(lines) for lines in files.values())
+    if line_total == 0:
+        print("coverage: no executable production lines in the supplied reports", file=sys.stderr)
+        return 2
     branch_covered = sum(sum(covered for covered, _ in lines.values()) for lines in branches.values())
     branch_total = sum(sum(total for _, total in lines.values()) for lines in branches.values())
     line_rate = percent(line_covered, line_total)
@@ -84,13 +88,18 @@ def merge_report(
         branch_hits = branches.setdefault(rel, {})
         for line in cls.findall("./lines/line"):
             number = int(line.attrib["number"])
-            line_hits[number] = max(line_hits.get(number, 0), int(line.attrib.get("hits", "0")))
+            hits = int(line.attrib.get("hits", "0"))
+            if number <= 0 or hits < 0:
+                raise ValueError(f"Invalid line number or hit count in {rel}")
+            line_hits[number] = max(line_hits.get(number, 0), hits)
             if line.attrib.get("branch", "").lower() == "true":
                 match = re.search(r"\((\d+)/(\d+)\)", line.attrib.get("condition-coverage", ""))
                 if match is None:
-                    continue
+                    raise ValueError(f"Missing branch counts in {rel}:{number}")
 
                 covered, total = int(match.group(1)), int(match.group(2))
+                if total == 0 or covered > total:
+                    raise ValueError(f"Invalid branch counts in {rel}:{number}")
                 previous = branch_hits.get(number, (0, 0))
                 branch_hits[number] = (max(previous[0], covered), max(previous[1], total))
 

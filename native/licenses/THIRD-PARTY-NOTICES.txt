@@ -1,0 +1,45 @@
+Podlord native dependency notices
+
+Podlord's own code is distributed under the MIT license. The libraries below
+retain their own licenses and copyright notices; they are not relicensed by
+Podlord. They are linked dynamically in the portable macOS package.
+
+Qt
+Copyright The Qt Company Ltd. and other contributors.
+The deployed open-source Qt modules use the GNU Lesser General Public License
+version 3 option. LGPL-3.0.txt and its incorporated GPL-3.0.txt are included.
+Project and source: https://www.qt.io/ and https://code.qt.io/
+Qt's individual third-party components have additional notices in the supplier
+SPDX documents included with the portable package.
+
+FFmpeg
+Copyright the FFmpeg developers and contributors.
+The deployed FFmpeg build reports LGPL version 2.1 or later. LGPL-2.1.txt is
+included. This build does not enable the GPL or nonfree configuration options.
+Project and source: https://ffmpeg.org/ and https://git.ffmpeg.org/ffmpeg.git
+
+OpenSSL
+Copyright the OpenSSL Project Authors and contributors.
+Apache License 2.0. The original OpenSSL-LICENSE.txt is included.
+Project and source: https://www.openssl.org/ and https://github.com/openssl/openssl
+
+yaml-cpp
+Copyright Jesse Beder and contributors.
+MIT license. The original yaml-cpp-LICENSE.txt is included.
+Project and source: https://github.com/jbeder/yaml-cpp
+
+Audio credits are listed separately in About alongside their original sources.
+
+License texts alone do not constitute complete LGPL distribution compliance.
+Corresponding sources, exact build configuration, all upstream component
+notices, and library replacement/relinking and installation information must
+accompany an externally distributed release. These remain release gates until
+verified for that artifact and platform.
+
+libvterm 0.3.3
+Copyright (c) 2008 Paul Evans.
+MIT license. The original libvterm-LICENSE.txt is included.
+Source: https://www.leonerd.org.uk/code/libvterm/libvterm-0.3.3.tar.gz
+Source SHA-256: 09156f43dd2128bd347cbeebe50d9a571d32c64e0cf18d211197946aff7226e0
+The toolkit-independent terminal emulator is statically linked; no installed
+terminal program, browser frontend or kubectl is required.

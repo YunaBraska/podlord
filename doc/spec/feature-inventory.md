@@ -2,7 +2,9 @@
 
 Podlord is a resource-first Kubernetes desktop console. The UI favors global scanning, cache-first operations, explicit source selection, and focused resource inspection.
 
-## Implemented
+## Implemented in the C# reference
+
+This table describes the reference implementation, not a completed native migration. Native capability gaps and evidence are tracked in [the legacy capability inventory](legacy-capability-inventory.md), [the operational specification](podlord-operational-spec.md), and [the test map](k3d-test-map.md). A component test does not establish complete feature or visual parity.
 
 | Area | Behavior |
 |---|---|

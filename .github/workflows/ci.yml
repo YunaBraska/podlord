@@ -21,6 +21,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-preflight:
+    uses: ./.github/workflows/native.yml
+
   test:
     name: Test with k3d
     runs-on: ubuntu-24.04
@@ -40,6 +43,10 @@ jobs:
       - name: Run tests
         shell: sh
         run: scripts/test.sh
+
+      - name: Verify coverage gate boundaries
+        shell: sh
+        run: python3 scripts/test-coverage-gates.py
 
       - name: Upload coverage reports
         if: always()
