@@ -81,6 +81,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string resourceQuickSearch = string.Empty;
     private string eventQuickSearch = string.Empty;
     private string portQuickSearch = string.Empty;
+    private Func<string?, bool> portQuickSearchMatcher = static _ => true;
     private bool isPortSearchOpen;
     private string presetSearch = string.Empty;
     private string selectedWorkspace = "resources";
@@ -122,6 +123,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private DateTimeOffset? lastSyncedAt;
     private DateTimeOffset lastUserActivityAt = DateTimeOffset.Now;
     private DateTimeOffset lastSourcePollAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastProcessDiagnosticsRefreshAt = DateTimeOffset.MinValue;
     private FilterPreset? selectedPreset;
     private AlertRuleRowViewModel? selectedAlertRule;
     private FlatResourceRow? portForwardResource;
@@ -146,6 +148,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private bool selectingResource;
     private bool suppressTableSelectionChanges;
     private int portForwardBadgeVersion;
+    private int lastRequestAuditCount = -1;
+    private long lastRequestAuditLastTicks = long.MinValue;
+    private string lastRequestAuditLastPath = string.Empty;
+    private string lastRequestAuditLastOutcome = string.Empty;
     private DateTimeOffset lastBroadRefreshAt = DateTimeOffset.MinValue;
     private IReadOnlyList<int> portDeclaredPorts = [];
     private string? portDeclaredPortsResourceId;
@@ -425,6 +431,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<RequestAuditRow> RequestAuditRows { get; } = [];
 
     public ObservableCollection<DiagnosticMetricRow> DiagnosticsRows { get; } = [];
+
+    private readonly Dictionary<(string Kind, string Name, string Namespace), List<RelationshipRow>> relationshipsByTarget = new();
+    private readonly Dictionary<string, List<RelationshipRow>> relationshipsBySourceName = new(StringComparer.Ordinal);
 
     private string sourcePickerSearch = string.Empty;
 
@@ -1315,6 +1324,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             previousVisibleResourceAlertIds.ToHashSet(StringComparer.Ordinal),
             new Dictionary<string, DateTimeOffset>(radarAlertBlinkUntil, StringComparer.Ordinal),
             new Dictionary<string, DateTimeOffset>(resourceAlertBlinkUntil, StringComparer.Ordinal),
+            new Dictionary<(string RuleId, string RowId), DateTimeOffset>(alertDurationUntilByRuleResource),
+            new Dictionary<(string RuleId, string RowId), DateTimeOffset>(alertColorUntilByRuleResource),
+            new Dictionary<(string RuleId, string RowId), DateTimeOffset>(alertAnimationUntilByRuleResource),
             new Dictionary<string, string>(lastAlertSoundKeysByRuleId, StringComparer.Ordinal),
             previousAlertRuleMatches.ToHashSet(),
             new Dictionary<(string RuleId, string RowId), string>(previousAlertRuleRowStates),
@@ -1327,6 +1339,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         previousVisibleResourceAlertIds.Clear();
         radarAlertBlinkUntil.Clear();
         resourceAlertBlinkUntil.Clear();
+        alertDurationUntilByRuleResource.Clear();
+        alertColorUntilByRuleResource.Clear();
+        alertAnimationUntilByRuleResource.Clear();
         lastAlertSoundKeysByRuleId.Clear();
         previousAlertRuleMatches.Clear();
         previousAlertRuleRowStates.Clear();
@@ -1355,6 +1370,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         foreach (var (id, until) in workspace.AlertState.ResourceAlertBlinkUntil.Where(pair => pair.Value > now))
         {
             resourceAlertBlinkUntil[id] = until;
+        }
+
+        foreach (var (key, until) in workspace.AlertState.AlertDurationUntilByRuleResource.Where(pair => pair.Value > now))
+        {
+            alertDurationUntilByRuleResource[key] = until;
+        }
+
+        foreach (var (key, until) in workspace.AlertState.AlertColorUntilByRuleResource.Where(pair => pair.Value > now))
+        {
+            alertColorUntilByRuleResource[key] = until;
+        }
+
+        foreach (var (key, until) in workspace.AlertState.AlertAnimationUntilByRuleResource.Where(pair => pair.Value > now))
+        {
+            alertAnimationUntilByRuleResource[key] = until;
         }
 
         foreach (var (ruleId, key) in workspace.AlertState.AlertSoundKeysByRuleId)
@@ -2029,6 +2059,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetField(ref portQuickSearch, value))
             {
+                portQuickSearchMatcher = ResourceFilterMatcher.CompileTextMatcher(portQuickSearch.Trim());
                 OnPropertyChanged(nameof(VisiblePortForwards));
             }
         }
@@ -2052,12 +2083,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             }
 
             return active.Where(task =>
-                ResourceFilterMatcher.MatchesText(task.Kind, expression)
-                || ResourceFilterMatcher.MatchesText(task.Name, expression)
-                || ResourceFilterMatcher.MatchesText(task.Namespace, expression)
-                || ResourceFilterMatcher.MatchesText(task.Session, expression)
-                || ResourceFilterMatcher.MatchesText(task.Command, expression)
-                || ResourceFilterMatcher.MatchesText(task.Status, expression));
+                portQuickSearchMatcher(task.Kind)
+                || portQuickSearchMatcher(task.Name)
+                || portQuickSearchMatcher(task.Namespace)
+                || portQuickSearchMatcher(task.Session)
+                || portQuickSearchMatcher(task.Command)
+                || portQuickSearchMatcher(task.Status));
         }
     }
 
@@ -5737,11 +5768,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 item.LastSeen,
                 item.Message)).ToList());
 
-        SyncCollection(FocusedRelationships, Relationships.Where(row =>
-                     (row.ToKind.Equals(detail.Identity.Kind, StringComparison.OrdinalIgnoreCase)
-                      && row.ToName.Equals(detail.Identity.Name, StringComparison.Ordinal)
-                      && row.Namespace.Equals(detail.Identity.Namespace ?? "cluster", StringComparison.Ordinal))
-                     || row.FromName.Equals(detail.Identity.Name, StringComparison.Ordinal)).Take(256).ToList());
+        SyncCollection(FocusedRelationships, FocusedRelationshipsFor(detail.Identity.Kind, detail.Identity.Name, detail.Identity.Namespace ?? "cluster", 256, includeSourceNameMatches: true));
         SyncCollection(ResourceValues, detail.Values
             .Select(item => new ResourceValueRow(item.Key, item.Value, item.Sensitive, item.Base64Encoded))
             .ToList());
@@ -5812,10 +5839,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdatePodLogContainers(items);
 
         SyncCollection(FocusedEvents, Array.Empty<EventTimelineRow>());
-        SyncCollection(FocusedRelationships, Relationships.Where(candidate =>
-                     candidate.ToKind.Equals(row.Kind, StringComparison.OrdinalIgnoreCase)
-                     && candidate.ToName.Equals(row.Name, StringComparison.Ordinal)
-                     && candidate.Namespace.Equals(row.Namespace ?? "cluster", StringComparison.Ordinal)).Take(128).ToList());
+        SyncCollection(FocusedRelationships, FocusedRelationshipsFor(row.Kind, row.Name, row.Namespace ?? "cluster", 128, includeSourceNameMatches: false));
         SyncCollection(ResourceValues, Array.Empty<ResourceValueRow>());
 
         DetailYaml = "Loading fresh YAML through the Kubernetes request queue...";
@@ -7235,6 +7259,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void UpdateEvents(IEnumerable<FlatResourceRow> rows)
     {
         var expression = eventQuickSearch.Trim();
+        var matcher = ResourceFilterMatcher.CompileAnyTextMatcher(expression);
         var desired = SortEventRows(rows.Where(row => row.Kind == "Event"))
             .Take(512)
             .Select(row => new EventTimelineRow(
@@ -7246,7 +7271,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 row.Age,
                 string.IsNullOrWhiteSpace(row.EventMessage) ? row.ImageSummary : row.EventMessage,
                 row.Id))
-            .Where(timelineRow => expression.Length == 0 || EventMatches(timelineRow, expression))
+            .Where(timelineRow => expression.Length == 0 || matcher(EventSearchValues(timelineRow)))
             .ToList();
         SyncCollection(Events, desired);
     }
@@ -7255,6 +7280,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         var scopedRows = rows.ToList();
         var desired = new List<RelationshipRow>();
+        relationshipsByTarget.Clear();
+        relationshipsBySourceName.Clear();
         foreach (var cluster in scopedRows.Select(row => row.Cluster).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
             desired.Add(new RelationshipRow("Session", SelectedSession?.DisplayName ?? "active", "=>", "Cluster", cluster, "cluster", "Observed"));
@@ -7278,37 +7305,101 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 row.Status));
         }
 
+        foreach (var relationship in desired)
+        {
+            var targetKey = (relationship.ToKind, relationship.ToName, relationship.Namespace);
+            if (!relationshipsByTarget.TryGetValue(targetKey, out var targetRows))
+            {
+                targetRows = [];
+                relationshipsByTarget[targetKey] = targetRows;
+            }
+            targetRows.Add(relationship);
+
+            if (!relationshipsBySourceName.TryGetValue(relationship.FromName, out var sourceRows))
+            {
+                sourceRows = [];
+                relationshipsBySourceName[relationship.FromName] = sourceRows;
+            }
+            sourceRows.Add(relationship);
+        }
+
         SyncCollection(Relationships, desired);
     }
 
-    private bool RowMatches(FlatResourceRow row, string expression)
+    private static IEnumerable<string> ResourceSearchValues(FlatResourceRow row)
     {
-        var values = new[]
+        yield return row.Id;
+        yield return row.Kind;
+        yield return row.Name;
+        yield return row.Namespace ?? "cluster";
+        yield return row.Cluster;
+        yield return row.Status;
+        yield return row.Ready;
+        yield return row.Restarts.ToString(CultureInfo.InvariantCulture);
+        yield return row.Node ?? string.Empty;
+        yield return row.ImageSummary;
+        yield return row.Owner ?? string.Empty;
+        yield return row.Age;
+    }
+
+    private static IEnumerable<string> EventSearchValues(EventTimelineRow row)
+    {
+        yield return row.Type;
+        yield return row.Name;
+        yield return row.Reason;
+        yield return row.Object;
+        yield return row.Namespace;
+        yield return row.Age;
+        yield return row.Message;
+    }
+
+    private IReadOnlyList<RelationshipRow> FocusedRelationshipsFor(string kind, string name, string ns, int limit, bool includeSourceNameMatches)
+    {
+        var collected = new List<RelationshipRow>(limit);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        if (relationshipsByTarget.TryGetValue((kind, name, ns), out var direct))
         {
-            row.Id,
-            row.Kind,
-            row.Name,
-            row.Namespace ?? "cluster",
-            row.Cluster,
-            row.Status,
-            row.Ready,
-            row.Restarts.ToString(),
-            row.Node ?? string.Empty,
-            row.ImageSummary,
-            row.Owner ?? string.Empty,
-            row.Age,
-            ResourceFilterMatcher.ProblemReason(row, restartOutlierThreshold)
-        };
-        return values.Any(value => ResourceFilterMatcher.MatchesText(value, expression));
+            foreach (var row in direct)
+            {
+                var key = $"{row.FromKind}|{row.FromName}|{row.Link}|{row.ToKind}|{row.ToName}|{row.Namespace}";
+                if (seen.Add(key))
+                {
+                    collected.Add(row);
+                    if (collected.Count >= limit)
+                    {
+                        return collected;
+                    }
+                }
+            }
+        }
+
+        if (includeSourceNameMatches && relationshipsBySourceName.TryGetValue(name, out var related))
+        {
+            foreach (var row in related)
+            {
+                var key = $"{row.FromKind}|{row.FromName}|{row.Link}|{row.ToKind}|{row.ToName}|{row.Namespace}";
+                if (seen.Add(key))
+                {
+                    collected.Add(row);
+                    if (collected.Count >= limit)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        return collected;
     }
 
     private void UpdateResourceSearchMatches(bool resetToFirstMatch)
     {
         resourceSearchMatches.Clear();
         var expression = ResourceQuickSearch.Trim();
+        var matcher = ResourceFilterMatcher.CompileAnyTextMatcher(expression);
         if (expression.Length > 0)
         {
-            resourceSearchMatches.AddRange(Resources.Where(row => RowMatches(row, expression)));
+            resourceSearchMatches.AddRange(Resources.Where(row => matcher(ResourceSearchValues(row))));
         }
 
         resourceSearchIndex = resourceSearchMatches.Count == 0
@@ -7335,9 +7426,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         eventSearchMatches.Clear();
         var expression = EventQuickSearch.Trim();
+        var matcher = ResourceFilterMatcher.CompileAnyTextMatcher(expression);
         if (expression.Length > 0)
         {
-            eventSearchMatches.AddRange(Events.Where(row => EventMatches(row, expression)));
+            eventSearchMatches.AddRange(Events.Where(row => matcher(EventSearchValues(row))));
         }
 
         eventSearchIndex = eventSearchMatches.Count == 0
@@ -7587,7 +7679,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(property);
         }
 
-        UpdateDiagnosticsRows();
+        UpdateDiagnosticsRows(force: true);
     }
 
     private static readonly string[] LocalizedProperties =
@@ -7837,23 +7929,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var now = DateTimeOffset.Now;
         var filteredForViews = SortRows(ResourceFilterMatcher.FilterRows(cachedRows, localQuery with { Limit = 5_000 }))
             .ToList();
-        var visibleBaseRows = filteredForViews
-            .Take(ResourceFilterMatcher.NormalizeLimit(localQuery.Limit))
-            .ToList();
-        var visibleResourceIds = visibleBaseRows.Select(row => row.Id).ToHashSet(StringComparer.Ordinal);
+        var visibleLimit = ResourceFilterMatcher.NormalizeLimit(localQuery.Limit);
+        var visibleRows = new List<FlatResourceRow>(Math.Min(visibleLimit, filteredForViews.Count));
+        var visibleResourceIds = new HashSet<string>(StringComparer.Ordinal);
         EvaluateAlertRules();
-        var visibleRows = visibleBaseRows
-            .Select(row =>
+        for (var index = 0; index < filteredForViews.Count && visibleRows.Count < visibleLimit; index++)
+        {
+            visibleResourceIds.Add(filteredForViews[index].Id);
+        }
+
+        foreach (var row in filteredForViews)
+        {
+            if (visibleRows.Count >= visibleLimit)
             {
-                var announce = ShouldAnnounceResourceRow(row, visibleResourceIds, now);
-                return row with
-                {
-                    IsAnnouncing = announce,
-                    AlertAnimation = announce ? AlertAnimationFor(row.Id) : string.Empty,
-                    AlertColor = AlertColorFor(row.Id, isFilteredOut: false)
-                };
-            })
-            .ToList();
+                break;
+            }
+
+            var announce = ShouldAnnounceResourceRow(row, visibleResourceIds, now);
+            visibleRows.Add(row with
+            {
+                IsAnnouncing = announce,
+                AlertAnimation = announce ? AlertAnimationFor(row.Id) : string.Empty,
+                AlertColor = AlertColorFor(row.Id, isFilteredOut: false)
+            });
+        }
 
         SyncResourcesPreservingSelection(visibleRows);
         SyncPreviousVisibleResourceAlertIds(visibleResourceIds);
@@ -7862,7 +7961,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateRadarFromCache();
         if (IsEventsWorkspace)
         {
-            UpdateEvents(visibleRows.Where(row => row.Kind == "Event"));
+            UpdateEvents(filteredForViews);
             UpdateEventSearchMatches(resetSearchMatches);
         }
         OnPropertyChanged(nameof(ResourceCountLabel));
@@ -8036,12 +8135,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             eventSortColumn,
             eventSortDirection,
             cachedRows.ToList(),
-            Resources.ToList(),
             Failures.ToList(),
             selectedResource?.Id,
             selectedResourceRow?.Id,
             lastSyncedAt,
-            restartOutlierThreshold,
             StatusLine);
     }
 
@@ -8066,37 +8163,74 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var cacheSatisfied = workspace is not null
             && IsWorkspaceCacheSatisfied(WorkspaceService(workspace), BuildDisplayCacheQuery(sessionId));
         SetWorkspaceCacheWarm(workspace, cacheSatisfied);
-        cachedRows.Clear();
-        cachedRows.AddRange(state.CachedRows);
-        restartOutlierThreshold = state.RestartOutlierThreshold;
-        lastSyncedAt = state.LastSyncedAt;
-        SyncCollection(Failures, state.Failures);
-        UpdateHealthSegments(cachedRows);
-        SyncResourcesPreservingSelection(state.Resources);
+        if (workspace is null)
+        {
+            return false;
+        }
+
+        var restoredRowIds = state.CachedRows.Select(row => row.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var rowId in restoredRowIds)
+        {
+            previousVisibleRadarAlertIds.Add(rowId);
+            previousVisibleResourceAlertIds.Add(rowId);
+        }
+
+        var snapshot = WorkspaceService(workspace).GetCachedResourceSnapshot(BuildDisplayCacheQuery(sessionId), applyFilters: false);
+        if (snapshot.Rows.Count == 0 && state.CachedRows.Count > 0)
+        {
+            cachedRows.Clear();
+            cachedRows.AddRange(state.CachedRows);
+            restartOutlierThreshold = ResourceFilterMatcher.RestartOutlierThreshold(cachedRows);
+            Failures.Clear();
+            foreach (var failure in state.Failures)
+            {
+                Failures.Add(failure);
+            }
+            UpdateHealthSegments(cachedRows);
+            RefreshSnapshotDrivenChrome();
+            ApplyLocalFilterCore(resetSearchMatches: false, deferSecondaryViews: true);
+        }
+        else
+        {
+            lastSyncedAt = state.LastSyncedAt;
+            RenderSnapshot(snapshot, deferFilterOptions: true, deferSecondaryViews: true, resetSearchMatches: false);
+        }
         RestoreRenderedSelection(state.SelectedResourceId, state.SelectedResourceRowId);
-        UpdateResourceSearchMatches(resetToFirstMatch: false);
-        SetWorkspaceRefreshing(workspace, workspace?.RefreshInFlight == true || !cacheSatisfied);
+        SetWorkspaceRefreshing(workspace, workspace.RefreshInFlight || !cacheSatisfied);
         if (IsRefreshing)
         {
             UpdateLoadingHealthSegments();
         }
         StatusLine = state.StatusLine;
-        if (cachedRows.Count > 0)
-        {
-            ClearRadarIdleData();
-            IsRadarIdle = false;
-        }
-        RefreshSnapshotDrivenChrome();
         if (IsEventsWorkspace)
         {
             ScheduleVisibleSecondaryViewUpdate(resetSearchMatches: false);
         }
-        NotifyLastSyncedLabelIfChanged();
-        NotifyFooterLineIfChanged();
-        OnPropertyChanged(nameof(ResourceCountLabel));
-        OnPropertyChanged(nameof(IsInitialLoading));
-        NotifyResourceLogoStateChanged();
+
+        if (NormalizeRestoredVisibleAlertState(restoredRowIds))
+        {
+            ApplyLocalFilterCore(resetSearchMatches: false, deferSecondaryViews: true);
+            RestoreRenderedSelection(state.SelectedResourceId, state.SelectedResourceRowId);
+        }
         return true;
+    }
+
+    private bool NormalizeRestoredVisibleAlertState(IReadOnlySet<string> restoredRowIds)
+    {
+        var changed = false;
+        foreach (var rowId in restoredRowIds)
+        {
+            previousVisibleRadarAlertIds.Add(rowId);
+            previousVisibleResourceAlertIds.Add(rowId);
+            if (activeAlertActionsByResourceId.TryGetValue(rowId, out var actions)
+                && actions.RadarAnimationUntilMode.Equals(AlertUntilModes.NewInView, StringComparison.OrdinalIgnoreCase))
+            {
+                changed |= radarAlertBlinkUntil.Remove(rowId);
+                changed |= resourceAlertBlinkUntil.Remove(rowId);
+            }
+        }
+
+        return changed;
     }
 
     private bool RenderedStateMatchesCurrentView(SessionWorkspaceRenderedState state)
@@ -10562,6 +10696,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         if (ReferenceEquals(targetService, ActiveService))
         {
             UpdateRequestAuditRows();
+            RefreshSettingsDiagnosticsIfDue();
             NotifyFooterLineIfChanged();
         }
     }
@@ -10597,8 +10732,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         lastSettingsDiagnosticsRefreshAt = now;
-        UpdateRequestAuditRows();
-        UpdateDiagnosticsRows();
+        var auditRowsChanged = UpdateRequestAuditRows(force);
+        UpdateDiagnosticsRows(force || auditRowsChanged);
     }
 
     internal static string FormatCacheSize(long bytes)
@@ -10717,9 +10852,27 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(VisiblePortForwards));
     }
 
-    private void UpdateRequestAuditRows()
+    private bool UpdateRequestAuditRows(bool force = false)
     {
-        var rows = ActiveService.RequestAuditLog()
+        var entries = ActiveService.RequestAuditLog().ToList();
+        var count = entries.Count;
+        var lastTicks = count == 0 ? long.MinValue : StringComparer.Ordinal.GetHashCode(entries[^1].StartedAt);
+        var lastPath = count == 0 ? string.Empty : entries[^1].Path;
+        var lastOutcome = count == 0 ? string.Empty : entries[^1].Outcome;
+        if (!force
+            && count == lastRequestAuditCount
+            && lastTicks == lastRequestAuditLastTicks
+            && string.Equals(lastPath, lastRequestAuditLastPath, StringComparison.Ordinal)
+            && string.Equals(lastOutcome, lastRequestAuditLastOutcome, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        lastRequestAuditCount = count;
+        lastRequestAuditLastTicks = lastTicks;
+        lastRequestAuditLastPath = lastPath;
+        lastRequestAuditLastOutcome = lastOutcome;
+        var rows = entries
             .Select(entry => new RequestAuditRow(
                 entry.StartedAt,
                 entry.Method,
@@ -10730,10 +10883,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 entry.Outcome))
             .ToList();
         SyncCollection(RequestAuditRows, rows);
+        return true;
     }
 
-    private void UpdateDiagnosticsRows()
+    private void UpdateDiagnosticsRows(bool force = false)
     {
+        var now = DateTimeOffset.UtcNow;
+        if (!force
+            && DiagnosticsRows.Count > 0
+            && now - lastProcessDiagnosticsRefreshAt < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+
+        lastProcessDiagnosticsRefreshAt = now;
         SyncCollection(DiagnosticsRows, BuildDiagnosticsRows());
     }
 

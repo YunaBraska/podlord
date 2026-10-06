@@ -47,6 +47,18 @@ public static class ResourceFilterMatcher
         return tokens.Any(token => token.Matches(candidate));
     }
 
+    public static Func<string?, bool> CompileTextMatcher(string? expression)
+    {
+        var compiled = CompiledTextFilter.Parse(expression);
+        return compiled.Matches;
+    }
+
+    public static Func<IEnumerable<string>, bool> CompileAnyTextMatcher(string? expression)
+    {
+        var compiled = CompiledTextFilter.Parse(expression);
+        return compiled.MatchesAny;
+    }
+
     public static bool MatchesNumber(int value, string? expression)
     {
         var tokens = Parse(expression);

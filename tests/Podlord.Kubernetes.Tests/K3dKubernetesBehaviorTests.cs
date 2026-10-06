@@ -838,7 +838,9 @@ public sealed class K3dClusterFixture : IAsyncLifetime
 {
     private readonly string tempDirectory = Path.Combine(Path.GetTempPath(), $"podlord-k3d-{Guid.NewGuid():N}");
     private readonly string clusterName = $"podlord-it-{Guid.NewGuid():N}"[..23];
+    private readonly string testRunOwner = Environment.GetEnvironmentVariable("PODLORD_TEST_RUN_OWNER") ?? Guid.NewGuid().ToString("N");
     private bool clusterCreated;
+    private string createdToolsContainerId = string.Empty;
 
     public KubernetesResourceService AdminService { get; private set; } = null!;
 
@@ -854,27 +856,62 @@ public sealed class K3dClusterFixture : IAsyncLifetime
         RequireTool("docker");
         RequireTool("k3d");
         RequireTool("kubectl");
+        if (testRunOwner.Length == 0 || testRunOwner.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
+        {
+            throw new InvalidOperationException("Invalid local test-run owner.");
+        }
+        await Run("/bin/sh", [Path.Combine(AppContext.BaseDirectory, "cleanup-k3d-test-run.sh"), testRunOwner, clusterName], TimeSpan.FromMinutes(2));
         EnsureDockerAvailable();
-        await DeleteStaleTestClusters();
-        await Run("k3d", ["cluster", "create", clusterName, "--servers", "1", "--agents", "0", "--wait", "--timeout", "180s", "--kubeconfig-update-default=false", "--kubeconfig-switch-context=false"], TimeSpan.FromMinutes(5));
+        var existing = await Capture("k3d", ["cluster", "list", "-o", "json"], TimeSpan.FromMinutes(1));
+        using (var document = JsonDocument.Parse(existing))
+        {
+            if (document.RootElement.EnumerateArray().Any(cluster => cluster.GetProperty("name").GetString() == clusterName))
+            {
+                throw new InvalidOperationException("The private test-cluster identity already exists; it was not modified.");
+            }
+        }
+        var existingContainers = await Capture("docker", ["container", "ls", "-aq", "--filter", $"label=k3d.cluster={clusterName}"], TimeSpan.FromSeconds(30));
+        if (!string.IsNullOrWhiteSpace(existingContainers))
+        {
+            throw new InvalidOperationException("The private test-cluster container identity already exists; it was not modified.");
+        }
         clusterCreated = true;
-        KubeconfigPath = Path.Combine(tempDirectory, "kubeconfig.yaml");
-        var kubeconfig = await Capture("k3d", ["kubeconfig", "get", clusterName], TimeSpan.FromMinutes(1));
-        await File.WriteAllTextAsync(KubeconfigPath, kubeconfig.Replace("https://0.0.0.0:", "https://127.0.0.1:", StringComparison.Ordinal));
-        await WaitForNodesReady();
-        await EnsureScenarioImagesAvailable();
-        await ApplyScenarioManifest();
-        await WaitForScenario();
-        AdminService = ServiceFromKubeconfig(KubeconfigPath);
-        LimitedKubeconfigPath = await CreateLimitedKubeconfig();
-        LimitedService = ServiceFromKubeconfig(LimitedKubeconfigPath);
+        try
+        {
+            try
+            {
+                await Run("k3d", ["cluster", "create", clusterName, "--image", "rancher/k3s:v1.35.5-k3s1", "--servers", "1", "--agents", "0", "--wait", "--timeout", "180s", "--runtime-label", $"podlord.test.run={testRunOwner}@all", "--k3s-arg", "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<512Mi,imagefs.available<512Mi,nodefs.inodesFree<5%,imagefs.inodesFree<5%@server:*", "--kubeconfig-update-default=false", "--kubeconfig-switch-context=false"], TimeSpan.FromMinutes(5));
+            }
+            finally
+            {
+                var tools = await RunProcess("docker", ["container", "ls", "-aq", "--no-trunc", "--filter", $"label=k3d.cluster={clusterName}", "--filter", $"name=^/k3d-{clusterName}-tools$"], TimeSpan.FromSeconds(30), throwOnError: false);
+                if (tools.ExitCode == 0) createdToolsContainerId = tools.Stdout.Trim();
+            }
+            KubeconfigPath = Path.Combine(tempDirectory, "kubeconfig.yaml");
+            var kubeconfig = await Capture("k3d", ["kubeconfig", "get", clusterName], TimeSpan.FromMinutes(1));
+            await File.WriteAllTextAsync(KubeconfigPath, kubeconfig.Replace("https://0.0.0.0:", "https://127.0.0.1:", StringComparison.Ordinal));
+            await WaitForNodesReady();
+            await EnsureScenarioImagesAvailable();
+            await ApplyScenarioManifest();
+            await WaitForScenario();
+            AdminService = ServiceFromKubeconfig(KubeconfigPath);
+            LimitedKubeconfigPath = await CreateLimitedKubeconfig();
+            LimitedService = ServiceFromKubeconfig(LimitedKubeconfigPath);
+        }
+        catch (Exception initializationFailure)
+        {
+            try { await DisposeAsync(); }
+            catch (Exception cleanupFailure) { throw new AggregateException("Cluster initialization and owned cleanup both failed.", initializationFailure, cleanupFailure); }
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
     {
         if (clusterCreated)
         {
-            await Run("k3d", ["cluster", "delete", clusterName], TimeSpan.FromMinutes(2), throwOnError: false);
+            await Run("/bin/sh", [Path.Combine(AppContext.BaseDirectory, "cleanup-k3d-test-run.sh"), testRunOwner, clusterName, createdToolsContainerId], TimeSpan.FromMinutes(2));
+            clusterCreated = false;
         }
 
         if (Directory.Exists(tempDirectory))
@@ -1077,33 +1114,12 @@ public sealed class K3dClusterFixture : IAsyncLifetime
         await Run("k3d", importArguments, TimeSpan.FromMinutes(4));
     }
 
-    private async Task DeleteStaleTestClusters()
-    {
-        var existing = await RunProcess("k3d", ["cluster", "list", "-o", "json"], TimeSpan.FromMinutes(1), throwOnError: true);
-        using var document = JsonDocument.Parse(existing.Stdout);
-        foreach (var cluster in document.RootElement.EnumerateArray())
-        {
-            if (!cluster.TryGetProperty("name", out var nameProperty))
-            {
-                continue;
-            }
-
-            var existingName = nameProperty.GetString();
-            if (string.IsNullOrWhiteSpace(existingName)
-                || existingName == clusterName
-                || !existingName.StartsWith("podlord-it-", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            await Run("k3d", ["cluster", "delete", existingName], TimeSpan.FromMinutes(2), throwOnError: false);
-        }
-    }
 
     private async Task<string> CaptureScenarioDiagnostics()
     {
         var commands = new (string FileName, IReadOnlyList<string> Arguments, string Label)[]
         {
+            ("kubectl", ["--kubeconfig", KubeconfigPath, "describe", "nodes"], "node conditions and scheduling taints"),
             ("kubectl", ["--kubeconfig", KubeconfigPath, "get", "pods", "-A", "-o", "wide"], "pods"),
             ("kubectl", ["--kubeconfig", KubeconfigPath, "-n", "payments", "describe", "deployment", "podlord-healthy"], "healthy deployment"),
             ("kubectl", ["--kubeconfig", KubeconfigPath, "-n", "payments", "describe", "pods"], "payments pod descriptions"),

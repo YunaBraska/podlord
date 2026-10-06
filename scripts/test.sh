@@ -1,66 +1,41 @@
 #!/bin/sh
 set -eu
-
+umask 077
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DOTNET="$ROOT_DIR/.tools/dotnet/dotnet"
 PATH="$ROOT_DIR/.tools/bin:$PATH"
 export PATH
-
-cleanup_k3d_test_artifacts() {
-  if command -v k3d >/dev/null 2>&1; then
-    k3d cluster list -o json 2>/dev/null \
-      | python3 -c 'import json, sys
-for cluster in json.load(sys.stdin):
-    name = cluster.get("name", "")
-    if name.startswith("podlord-it-"):
-        print(name)' \
-      | while IFS= read -r cluster; do
-          [ -n "$cluster" ] || continue
-          k3d cluster delete "$cluster" >/dev/null 2>&1 || true
-        done
-  fi
-
-  if command -v docker >/dev/null 2>&1; then
-    docker ps -aq --filter "name=^k3d-podlord-it-" \
-      | while IFS= read -r container; do
-          [ -n "$container" ] || continue
-          docker rm -f "$container" >/dev/null 2>&1 || true
-        done
-
-    docker volume ls -q --filter "name=^k3d-podlord-it-" \
-      | while IFS= read -r volume; do
-          [ -n "$volume" ] || continue
-          docker volume rm "$volume" >/dev/null 2>&1 || true
-        done
-
-    docker image ls --format '{{.Repository}}:{{.Tag}} {{.ID}}' \
-      | awk '/^k3d-podlord-it-/{print $2}' \
-      | tail -n +2 \
-      | while IFS= read -r image_id; do
-          [ -n "$image_id" ] || continue
-          docker image rm -f "$image_id" >/dev/null 2>&1 || true
-        done
-
-    docker image prune -f >/dev/null 2>&1 || true
-  fi
-}
-
-trap cleanup_k3d_test_artifacts EXIT INT TERM
-
-if [ ! -x "$DOTNET" ]; then
-  DOTNET=dotnet
-fi
-
-cd "$ROOT_DIR"
-"$ROOT_DIR/scripts/bootstrap-k3d.sh"
-cleanup_k3d_test_artifacts
-TEST_HOME="${PODLORD_TEST_HOME:-/tmp/podlord-test-home}"
-TEST_CONFIG_HOME="${PODLORD_TEST_CONFIG_HOME:-/tmp/podlord-test-config}"
-export PODLORD_CONFIG_HOME="$TEST_CONFIG_HOME/podlord"
-export PODLORD_HOME="$TEST_HOME"
+[ -x "$DOTNET" ] || DOTNET=dotnet
+RUN=$(mktemp -d "${TMPDIR:-/tmp}/podlord-test.XXXXXX")
+OWNER=$(basename "$RUN" | tr '.' '-')
+export PODLORD_TEST_RUN_OWNER="$OWNER"
+export PODLORD_CONFIG_HOME="$RUN/config/podlord"
+export PODLORD_HOME="$RUN/home"
+export KUBECONFIG="$RUN/kubeconfig"
 export PODLORD_DISABLE_AUDIO=1
 export PODLORD_DISABLE_UPDATE_CHECK=1
-mkdir -p "$TEST_HOME" "$TEST_CONFIG_HOME" "$PODLORD_CONFIG_HOME"
-rm -rf "$ROOT_DIR/TestResults" "$ROOT_DIR/tests"/*/TestResults
-"$DOTNET" test Podlord.slnx --settings "$ROOT_DIR/coverage.runsettings" --collect:"XPlat Code Coverage"
-python3 "$ROOT_DIR/scripts/check-coverage.py" "$ROOT_DIR"
+PID=
+cleanup() {
+    status=$?
+    trap - 0
+    if [ -n "$PID" ]; then kill "$PID" 2>/dev/null || :; wait "$PID" 2>/dev/null || :; fi
+    if ! /bin/sh "$ROOT_DIR/scripts/cleanup-k3d-test-run.sh" "$OWNER"; then status=1; fi
+    find "$RUN/home" "$RUN/config" -depth -delete 2>/dev/null || :
+    find "$RUN" -maxdepth 1 -type f -delete
+    printf 'Test results retained in %s/results\n' "$RUN"
+    exit "$status"
+}
+trap cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+mkdir -p "$PODLORD_HOME" "$PODLORD_CONFIG_HOME"
+cd "$ROOT_DIR"
+# Reject remote Docker contexts before bootstrapping or starting a cluster.
+/bin/sh "$ROOT_DIR/scripts/cleanup-k3d-test-run.sh" "$OWNER"
+"$ROOT_DIR/scripts/bootstrap-k3d.sh"
+"$DOTNET" test Podlord.slnx --settings "$ROOT_DIR/coverage.runsettings" --collect:"XPlat Code Coverage" --results-directory "$RUN/results" "$@" &
+PID=$!
+wait "$PID"
+PID=
+python3 "$ROOT_DIR/scripts/check-coverage.py" "$ROOT_DIR" "$RUN/results"

@@ -24,6 +24,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-preflight:
+    uses: ./.github/workflows/native.yml
+
   plan:
     name: Plan release
     runs-on: ubuntu-24.04
@@ -104,7 +107,7 @@ jobs:
 
   test:
     name: Test before packaging
-    needs: plan
+    needs: [plan, native-preflight]
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45

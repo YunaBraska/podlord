@@ -10,6 +10,8 @@ Podlord is a native desktop Kubernetes operations console for people who want a 
 
 It is built with C#/.NET, Avalonia UI, and a direct Kubernetes API client. Normal app operations do not depend on a preconfigured shell context and do not call `kubectl`; kubeconfigs are imported into Podlord-owned snapshots so sessions stay explicit and repeatable.
 
+The C++/Qt rewrite is developed separately: [native build and verification](native/README.md). It is not yet the published release.
+
 ## Screenshots
 
 ![Podlord resource explorer](doc/screenshots/resource-explorer.png)
@@ -105,7 +107,7 @@ The test script:
 Current gates:
 
 - Line coverage: 95%
-- Branch coverage: 80%
+- Branch coverage: 90%
 
 The gate targets domain, persistence, Kubernetes, filtering, sync, and alert-rule behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and covered by focused behavior/layout tests where useful.
 
