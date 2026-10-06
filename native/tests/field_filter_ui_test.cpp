@@ -152,10 +152,15 @@ bool run(const QString& scenario) {
     QString session;
     {
         podlord::Workspace workspace(profile);
-        QQmlApplicationEngine engine; engine.rootContext()->setContextProperty("workspace", &workspace); engine.load(QUrl("qrc:/podlord/Main.qml"));
-        if (engine.rootObjects().isEmpty()) return false;
-        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
-        if (!window || !waitFor([&] { return !workspace.busy(); })) return false;
+        QQmlApplicationEngine engine;
+        QQuickWindow* window = nullptr;
+        if (!scenario.startsWith("contract_")) {
+            engine.rootContext()->setContextProperty("workspace", &workspace); engine.load(QUrl("qrc:/podlord/Main.qml"));
+            if (engine.rootObjects().isEmpty()) return false;
+            window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+            if (!window) return false;
+        }
+        if (!waitFor([&] { return !workspace.busy(); })) return false;
         if (scenario.startsWith("contract_empty_")) {
             const QString operation = scenario.mid(QStringLiteral("contract_empty_").size());
             const bool accepted = operation == "filter" ? workspace.filterField("name", "alpha")
@@ -180,8 +185,96 @@ bool run(const QString& scenario) {
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
+        if (scenario.startsWith("flyout_")) {
+            if (scenario == "flyout_narrow") {
+                window->resize(640, 650);
+                if (!click(window, "toggleSidebar")) return false;
+            }
+            if (!click(window, "sidebarField_name")) return false;
+            auto* button = item(window, "sidebarField_name");
+            auto* popup = window->findChild<QObject*>("fieldFiltersPopup");
+            if (!popup || !waitFor([&] { return popup->property("visible").toBool(); })
+                || popup->property("modal").toBool() != (scenario == "flyout_narrow")) return false;
+            bool passed = false;
+            if (scenario == "flyout_open") {
+                const auto expected = std::max(12.0, std::min(window->width() - popup->property("width").toReal() - 12,
+                    button->mapToScene(QPointF()).x()));
+                passed = qAbs(popup->property("x").toReal() - expected) < 2 && workspace.resourceCount() == 3;
+            } else if (scenario == "flyout_edit") {
+                passed = type(window, "fieldFilterExpression", "alpha") && waitFor([&] { return workspace.resourceCount() == 1; })
+                    && popup->property("visible").toBool() && !popup->property("modal").toBool();
+            } else if (scenario == "flyout_escape") {
+                QTest::keyClick(window, Qt::Key_Escape);
+                passed = waitFor([&] { return !popup->property("visible").toBool(); });
+            } else if (scenario == "flyout_navigation") {
+                passed = click(window, "eventsWorkspaceButton") && waitFor([&] {
+                    return workspace.property("workspacePage").toString() == "events" && !popup->property("visible").toBool(); });
+            } else if (scenario == "flyout_keyboard") {
+                auto* value = item(window, "fieldFilterValue_0");
+                if (!value) return false;
+                value->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
+                passed = waitFor([&] { return workspace.resourceCount() == 1; }) && value->property("checked").toBool();
+            } else if (scenario == "flyout_anchor_scroll") {
+                auto* list = item(window, "sidebarFilters");
+                passed = list && QMetaObject::invokeMethod(list, "positionViewAtEnd")
+                    && waitFor([&] { return !popup->property("visible").toBool(); });
+            } else if (scenario == "flyout_edge" || scenario == "flyout_narrow") {
+                if (scenario == "flyout_edge") {
+                    QTest::keyClick(window, Qt::Key_Escape);
+                    auto* list = item(window, "sidebarFilters");
+                    if (!list || !QMetaObject::invokeMethod(list, "positionViewAtEnd")
+                        || !waitFor([&] { return item(window, "sidebarField_uid") != nullptr; })
+                        || !click(window, "sidebarField_uid")) return false;
+                }
+                passed = popup->property("x").toReal() >= 0 && popup->property("y").toReal() >= 0
+                    && popup->property("x").toReal() + popup->property("width").toReal() <= window->width()
+                    && popup->property("y").toReal() + popup->property("height").toReal() <= window->height();
+            } else if (scenario == "flyout_session") {
+                if (!type(window, "fieldFilterExpression", "alpha") || workspace.resourceCount() != 1) return false;
+                const auto other = workspace.contexts().last().toMap().value("id").toString();
+                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })
+                    || popup->property("visible").toBool()) return false;
+                const int beforeSwitch = server.requests;
+                return workspace.activate(session) && waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; })
+                    && !popup->property("visible").toBool() && server.requests == beforeSwitch;
+            }
+            const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+            return passed && server.requests == requests && (screenshot.isEmpty() || window->grabWindow().save(screenshot));
+        }
         if (scenario.startsWith("contract_")) {
             const auto unchanged = [&] { return server.requests == requests && workspace.totalResourceCount() == 3; };
+            if (scenario == "contract_cluster_rebind" || scenario == "contract_metadata_activity_update" || scenario == "contract_cluster_filter_rebind") {
+                const auto* proxy = qobject_cast<QAbstractProxyModel*>(workspace.table());
+                const auto* source = proxy ? qobject_cast<podlord::ResourceTable*>(proxy->sourceModel()) : nullptr;
+                if (!source) return false;
+                QJsonArray snapshot;
+                for (int row = 0; row < source->rowCount(); ++row) {
+                    auto value = source->row(row); value.remove("cluster");
+                    if (scenario == "contract_metadata_activity_update") value["activity"] = false;
+                    snapshot.append(value);
+                }
+                podlord::ResourceTable model(nullptr, {"name", "cluster", "status"}, {"Name", "Cluster", "Status"}, "path");
+                if (!model.publish(snapshot, "first")) return false;
+                if (scenario == "contract_cluster_filter_rebind") {
+                    podlord::ResourceFilter filtered;
+                    filtered.setSourceModel(&model);
+                    if (!filtered.filter("", {{"cluster", "first"}}) || filtered.rowCount() != snapshot.size()) return false;
+                    return model.publish(snapshot, "second") && filtered.rowCount() == 0 && unchanged();
+                }
+                if (scenario == "contract_metadata_activity_update") {
+                    podlord::ResourceFilter filtered;
+                    filtered.setSourceModel(&model);
+                    if (!filtered.filter("", {}, "activity") || filtered.rowCount() != 0) return false;
+                    auto changed = snapshot.first().toObject(); changed["activity"] = true; snapshot[0] = changed;
+                    return model.publish(snapshot, "first") && filtered.rowCount() == 1 && unchanged();
+                }
+                QSignalSpy changes(&model, &QAbstractItemModel::dataChanged);
+                return model.publish(snapshot, "second") && changes.count() == 1
+                    && qvariant_cast<QModelIndex>(changes.front()[0]).column() == 1
+                    && qvariant_cast<QModelIndex>(changes.front()[1]).column() == 1
+                    && model.data(model.index(0, 1)).toString() == "second"
+                    && model.data(model.index(0, 0)).toString() == source->row(0)["name"].toString() && unchanged();
+            }
             if (scenario == "contract_unknown_field") return !workspace.filterField("unknown", "alpha") && workspace.resourceCount() == 3 && unchanged();
             if (scenario == "contract_unknown_picker") return !workspace.prepareFilterPicker("unknown") && workspace.resourceCount() == 3 && unchanged();
             if (scenario == "contract_invalid_mode") return !workspace.setFilterMode("unknown") && !workspace.property("problemsOnly").toBool() && unchanged();

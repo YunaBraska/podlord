@@ -18,6 +18,17 @@ The transient read cache uses the existing 24-hour list and five-minute detail c
 
 QML reads table and catalog snapshots. Status changes do not republish unchanged resource tables. Table updates insert/remove/update rows by stable resource path; filters and tri-state sorting run on the local model. Identity color is an additional marker, not the text contrast or sole identifier. The initial inspector exposes only metadata summaries, never Secret data or a misleading YAML editor.
 
+Changing only the fallback cluster label invalidates the cluster column, not all
+row metadata and displayed cells. Payload changes retain their complete-row
+notifications so row-wide predicates also observe nondisplayed health metadata.
+
+Session-store mutations reuse the live client's already resolved connection when
+reopening a cached session. This avoids re-reading owned configuration and a
+second asynchronous busy phase on each tab activation. Explicit source reloads
+and confirmed authentication retries still resolve owned bytes afresh. Connection
+reuse does not renew cache timestamps, bypass credential suspension or create a
+second connection cache.
+
 ## Verification And Rollback
 
 Source display aliases remain owned by the existing kubeconfig snapshot store,

@@ -1,12 +1,24 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Podlord.Graphics 1.0
 
 Pane {
     id: sidebar
     SessionManager { id: sessionManager }
-    readonly property var filterOrder: ["cluster", "namespace", "kind", "name", "status", "issue", "ready", "restarts", "cpu", "memory", "storage", "createdAt", "node", "image", "owner", "uid"]
-    signal fieldRequested(string field)
+    readonly property var filterOrder: ["cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"]
+    signal fieldRequested(string field, var anchor)
+    component ScopeCheckBox: CheckBox {
+        id: scopeControl
+        indicator: Rectangle {
+            x: scopeControl.leftPadding
+            y: (scopeControl.height - height) / 2
+            width: 18; height: 18
+            color: scopeControl.checked ? workspace.appearanceColors.accent : workspace.appearanceColors.inset
+            border.color: scopeControl.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+            Label { anchors.centerIn: parent; text: scopeControl.checked ? "✓" : ""; color: workspace.appearanceColors.inset }
+        }
+    }
     signal sourcesRequested()
     signal renameRequested()
     signal filtersRequested()
@@ -51,8 +63,8 @@ Pane {
                 Button { objectName: "resourceFieldFilters"; text: "Fields"; implicitHeight: 24; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: filtersRequested() }
             }
             RowLayout {
-                CheckBox { objectName: "problemsOnly"; text: "Problems"; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
-                CheckBox { objectName: "activityOnly"; text: "Activity"; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
+                ScopeCheckBox { objectName: "problemsOnly"; text: "Problems"; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
+                ScopeCheckBox { objectName: "activityOnly"; text: "Activity"; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -78,13 +90,31 @@ Pane {
                 clip: true; reuseItems: true; cacheBuffer: 0
                 ScrollBar.vertical: ScrollBar {}
                 delegate: Button {
+                    id: fieldButton
                     required property var modelData
+                    objectName: "sidebarField_" + modelData.id
                     width: filters.width; height: 30
                     text: modelData.name + (workspace.resourceFieldFilters[modelData.id] ? ": " + workspace.resourceFieldFilters[modelData.id] : "")
+                    leftPadding: 10; rightPadding: 10
+                    font.bold: true
+                    background: Rectangle {
+                        color: fieldButton.down || fieldButton.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.panel
+                        border.color: fieldButton.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+                    }
+                    contentItem: RowLayout {
+                        spacing: 8
+                        KindGlyph {
+                            Layout.preferredWidth: 16; Layout.preferredHeight: 16
+                            kind: ({cluster: "Cluster", namespace: "Namespace", kind: "CustomResourceDefinition", name: "Pod", status: "Event", issue: "Event", createdAt: "CronJob", ready: "Service", restarts: "Event", cpu: "Node", memory: "ConfigMap", storage: "PersistentVolume", node: "Node", image: "ConfigMap", owner: "Deployment", uid: "Secret"})[fieldButton.modelData.id]
+                            fill: workspace.appearanceColors.accent
+                        }
+                        Label { Layout.fillWidth: true; text: fieldButton.text; textFormat: Text.PlainText; font: fieldButton.font; elide: Text.ElideRight }
+                        Label { text: "▾"; color: workspace.appearanceColors.accent }
+                    }
                     enabled: workspace.currentSession !== "" && !workspace.busy
                     Accessible.name: "Filter " + modelData.name
                     ToolTip.visible: hovered; ToolTip.text: text
-                    onClicked: fieldRequested(modelData.id)
+                    onClicked: fieldRequested(modelData.id, fieldButton)
                 }
             }
             RowLayout {

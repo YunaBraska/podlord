@@ -16,6 +16,8 @@ cmake --build ../podlord-native-build
 
 The installer refuses existing destinations. Requires C++20, CMake, Ninja, Python, curl and the Xcode command-line tools. On other desktop systems launch `podlord-native` directly; the macOS installer is not a cross-platform installer. No ambient kubeconfig is imported.
 
-`sh scripts/test-native.sh` runs CLI/UI checks, benchmarks and the unchanged 95% line/90% branch gates. `sh scripts/test-native-kubernetes.sh` exercises real local Kubernetes through Colima/Docker and removes only its own container/volumes. Only macOS arm64 has execution evidence. Signing, platform, visual, performance and coverage gates still block release.
+For a filter-only change, run `ctest --test-dir ../podlord-native-build -L behavior -R '^native.field_filter\.' --parallel 6 --output-on-failure`. The `behavior` label excludes duplicate Fusion/Basic runs; `style-variant` retains them for theme/style checks. API-only filter contracts do not load QML and run once, without meaningless style duplicates. Target the affected executable when building. Do not rebuild and run the complete suite for each local UI edit.
+
+`sh scripts/test-native.sh` runs the complete CLI/UI suite, benchmarks and unchanged 95% line/90% branch gates, including style variants. `sh scripts/test-native-kubernetes.sh` exercises real local Kubernetes through Colima/Docker and removes only its own container/volumes. Only macOS arm64 has execution evidence. Functional, platform, visual, performance and coverage gates remain open. Developer-ID signing and notarization are deferred for the private release.
 
 [Contract](../doc/spec/podlord-operational-spec.md) | [Roadmap](../doc/roadmap.md) | [Test evidence](../doc/spec/k3d-test-map.md) | [Read workspace](../doc/adr/0018-native-read-workspace.md)
