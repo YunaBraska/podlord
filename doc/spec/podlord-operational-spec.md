@@ -472,6 +472,7 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | FLT-011 | Within each field or global search, expression alternatives MUST be combined with OR. Different field expressions and global search MUST all match the resource. |
 | FLT-012 | A field value picker MUST read the complete current session cache. Its open option snapshot MUST stay stable until an explicit reload, preserve selected values absent from a refreshed cache, and close on a session change. |
 | FLT-013 | CPU, memory and storage quantity filters MUST compare actual cached measurements only. Missing measurements MUST NOT match a numeric comparison or be substituted with zero, requests, limits or capacity. References remain separate from measured usage. |
+| FLT-014 | Wide-window sidebar fields MUST open a nonmodal, viewport-bounded flyout at the selected field, leaving workspace navigation operable. Escape, outside presses, session changes and an anchor leaving or being reused in the list MUST close it. The complete field picker and narrow-window selection MUST remain centered and operable. Checkbox state, borders and keyboard focus MUST remain visible in the selected theme. |
 
 Filter and sort retention across app restarts is governed by STR-003 and STR-004,
 with the native storage boundary recorded in [ADR 0027](../adr/0027-session-filter-and-sort-persistence.md).

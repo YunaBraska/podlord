@@ -5,21 +5,27 @@ import QtQuick.Layouts
 Dialog {
     id: dialog
     required property var controller
+    objectName: "fieldFiltersPopup"
+    property Item anchorItem: null
+    onAnchorItemChanged: if (visible && anchorItem === null) close()
     readonly property bool quantityField: ["cpu", "memory", "storage"].indexOf(controller.filterPickerField) >= 0
     readonly property bool durationField: controller.filterPickerField === "createdAt"
     parent: Overlay.overlay
-    title: "Resource field filters"
-    modal: true
-    width: Math.min(640, parent ? parent.width - 24 : 640)
-    height: Math.min(600, parent ? parent.height - 24 : 600)
-    x: parent ? Math.round((parent.width - width) / 2) : 0
-    y: parent ? Math.round((parent.height - height) / 2) : 0
+    title: anchorItem ? column.currentText : "Resource field filters"
+    modal: anchorItem === null
+    width: Math.min(anchorItem ? 360 : 640, parent ? parent.width - 24 : 640)
+    height: Math.min(anchorItem ? 500 : 600, parent ? parent.height - 24 : 600)
+    x: anchorItem ? Math.max(12, Math.min(parent.width - width - 12, anchorItem.mapToItem(parent, 0, 0).x)) : parent ? Math.round((parent.width - width) / 2) : 0
+    y: anchorItem ? Math.max(12, Math.min(parent.height - height - 12, anchorItem.mapToItem(parent, 0, anchorItem.height).y)) : parent ? Math.round((parent.height - height) / 2) : 0
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    onOpened: expressionInput.forceActiveFocus()
     standardButtons: Dialog.Close
     function openFilters() {
         openField("name")
     }
-    function openField(field) {
+    function openField(field, anchor) {
         if (controller.prepareFilterPicker(field)) {
+            anchorItem = anchor || null
             column.currentIndex = controller.filterFields.findIndex(function(value) { return value.id === field })
             optionSearch.clear()
             open()
@@ -31,10 +37,20 @@ Dialog {
             if (dialog.controller.filterPickerField === "") dialog.close()
         }
     }
+    Connections {
+        target: dialog.anchorItem
+        function onVisibleChanged() { if (dialog.anchorItem && !dialog.anchorItem.visible) dialog.close() }
+        function onObjectNameChanged() { if (dialog.anchorItem && dialog.anchorItem.objectName !== "sidebarField_" + dialog.controller.filterPickerField) dialog.close() }
+    }
+    Connections {
+        target: dialog.anchorItem ? dialog.anchorItem.parent : null
+        function onYChanged() { dialog.close() }
+    }
     contentItem: ColumnLayout {
         spacing: 10
         Label {
             Layout.fillWidth: true
+            visible: dialog.anchorItem === null
             text: dialog.quantityField
                 ? "Numeric filters compare actual measurements, never missing values or limits. Ranges use AND; equal values use OR. Without numeric terms, text matches the displayed cache value. Different fields and the main search must all match."
                 : dialog.durationField ? "Age uses the cached creation timestamp in whole seconds. Units: ms, s, m, h, d, w; compound durations: 1h30m. Ranges use AND; exact numeric values use OR. Missing, invalid or future timestamps never match numeric comparisons. Quoted text and patterns match the displayed age."
@@ -44,6 +60,7 @@ Dialog {
         }
         ComboBox {
             id: column
+            visible: dialog.anchorItem === null
             objectName: "fieldFilterColumn"
             Layout.fillWidth: true
             model: dialog.controller.filterFields
@@ -56,6 +73,7 @@ Dialog {
             }
         }
         TextField {
+            id: expressionInput
             objectName: "fieldFilterExpression"
             Layout.fillWidth: true
             text: dialog.controller.resourceFieldFilters[dialog.controller.filterPickerField] || ""
@@ -113,6 +131,14 @@ Dialog {
                     return dialog.controller.filterValueSelected(modelData)
                 }
                 Accessible.name: modelData
+                indicator: Rectangle {
+                    x: valueControl.leftPadding
+                    y: (valueControl.height - height) / 2
+                    width: 18; height: 18
+                    color: valueControl.checked ? dialog.controller.appearanceColors.accent : dialog.controller.appearanceColors.inset
+                    border.color: valueControl.activeFocus ? dialog.controller.appearanceColors.accent : dialog.controller.appearanceColors.border
+                    Label { anchors.centerIn: parent; text: valueControl.checked ? "✓" : ""; color: dialog.controller.appearanceColors.inset }
+                }
                 contentItem: Label {
                     text: valueControl.modelData
                     textFormat: Text.PlainText

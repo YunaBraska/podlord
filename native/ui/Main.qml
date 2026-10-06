@@ -605,7 +605,7 @@ ApplicationWindow {
         parent: window.wideLayout ? sidebarHost : sidebarDrawer.contentItem
         anchors.fill: parent
         visible: window.wideLayout ? sidebarHost.visible : sidebarDrawer.visible
-        onFieldRequested: function(field) { fieldFiltersDialog.openField(field); if (!window.wideLayout) sidebarDrawer.close() }
+        onFieldRequested: function(field, anchor) { fieldFiltersDialog.openField(field, window.wideLayout ? anchor : null); if (!window.wideLayout) sidebarDrawer.close() }
         onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.wideLayout) sidebarDrawer.close() }
         onRenameRequested: renameSessionDialog.openFor(workspace.currentSession, workspace.title)
         onFiltersRequested: { fieldFiltersDialog.openFilters(); if (!window.wideLayout) sidebarDrawer.close() }

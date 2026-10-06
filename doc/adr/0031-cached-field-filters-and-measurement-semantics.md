@@ -99,7 +99,14 @@ Numeric-looking malformed values and malformed regex fail visibly. Spaced
 operators and display-unit spacing are supported without the reference's accidental
 interpretation of a displayed 500 mCPU as 500 cores.
 
-The standard field dialog is centered within its overlay on normal and narrow
-windows. This corrects an observed top-left modal placement without adding
-layout state, a timer or persistence. Public UI regression cases establish
-position and all grammar paths in Basic and Fusion.
+Individual sidebar fields use a nonmodal flyout anchored to their button, matching
+the reference application's interaction. Bounds are clamped to the window; the
+remaining workspace stays operable. Escape, an outside press and session changes
+close the flyout. Text and checkbox edits share the existing cached filter owner;
+opening, searching options and filtering never schedule API requests.
+
+The complete field picker and narrow-window field selection remain centered modal
+dialogs. Both presentations reuse the same dialog and option snapshot; there is
+no second filter model, timer or persistence. Checkbox borders and keyboard focus
+remain visible in the HUD palette. Public UI cases cover placement, keyboard
+selection, cache-only editing, navigation, viewport edges and session isolation.

@@ -3889,3 +3889,65 @@ There are 28 new keyboard cases. The initial ten failed before cells became keyb
 The latest private package is `2026-10-06-native-terminal-alarm-private-package/podlord-native.app`. Its ZIP is 31,649,407 bytes and its installed regular-file logical sum is 84,910,763 bytes. Executable SHA-256: `758ac2d6f947b780827834252a52c415f500ebc1b9d007e6862087cebbf05027`; ZIP SHA-256: `3c47d1e72afcfe467249abfdec8d7e76f5a71695fef75831dfcb6aa25bae65dd`. Dependency-path and local ad-hoc signature checks passed. The actual new packaged executable passed all 30 CLI/Cocoa startup cases without SDK runtime overrides. Evidence: `native-terminal-alarm-private-package.log` and `native-terminal-alarm-private-installed-startup.json`. This is not Developer-ID signing, notarization, clean-machine proof or an installed terminal interaction proof.
 
 Full functional/visual parity remains open. This increment completes keyboard access within the existing alarm table, not its remaining column toolbox or Values/Diagnostics table parity. Multi-window behavior, localization, full relationship/metric coverage, the current paired view/theme matrix, foreground performance budgets and the branch-coverage gate remain separate work. The Mac was still reported locked during the attempted visible comparison. The unchanged frozen C# reference and all evidence logs/images are retained; superseded private C++ bundles created by this task are removed.
+
+## 2026-10-06: Which Filter, Test-Cost And Cached-Tab Gaps Are Closed?
+
+| Behavior | Public boundary | Regression cases | Evidence / remaining gap |
+|---|---|---|---|
+| Sidebar field selection opens a bounded nonmodal flyout | Real Qt Quick input; external Kubernetes HTTP fake only | `native.field_filter.flyout_open_Basic`, `flyout_edge_Basic` | Passed; the full field picker still uses the same centered dialog. |
+| Expressions and cached choices filter without API requests | Real Qt Quick text / keyboard input | `flyout_edit_Basic`, `flyout_keyboard_Basic`, `flyout_keyboard_Fusion` | Passed; editing retains the open nonmodal flyout. |
+| Escape, outside navigation and recycled anchors close the flyout | Real Qt Quick keyboard, navigation and public ListView scrolling | `flyout_escape_Basic`, `flyout_navigation_Basic`, `flyout_anchor_scroll_Basic` | Passed; anchor scrolling was reproduced as a failing regression before the fix. |
+| Narrow field selection stays within the viewport | Real Qt Quick input after resize | `flyout_narrow_Basic`, `flyout_narrow_Fusion` | Passed; centered modal selection remains reachable after the drawer closes. |
+| Session changes close stale choices and retain each session's filter | Public Workspace activation plus real Qt Quick input | `flyout_session_Basic` | Passed; returning to a fresh cached session sends no new API request. |
+| Rebinding only the fallback cluster does not invalidate unrelated row metadata | Public Qt table model using accepted Workspace cache rows | `contract_cluster_rebind_Basic` | Failed before the notification change; passed after it. Cluster text changes and resource identity remains intact. |
+| Nondisplayed activity metadata still updates the filtered set | Public Qt table / proxy model using accepted cache rows | `contract_metadata_activity_update_Basic` | Passed; payload notifications retain the row-wide display role needed by the proxy. |
+| A cluster predicate updates after a cluster-only rebind | Public Qt table / proxy model using accepted cache rows | `contract_cluster_filter_rebind_Basic` | Passed without an additional production change; protects the reduced notification path. |
+
+The pre-subtraction filter suite passed all 275 cases in 104.19 seconds, including
+all 191 rendered UI/style cases. API contracts now avoid loading QML. All 43
+retained API contract cases passed after removing 41 equivalent Fusion runs
+(13.62 seconds). The 208 session, source and workspace-restoration cases passed
+in 30.94 seconds before the subsequent cluster-notification optimization.
+Evidence: `filter-test-boundaries-suite.log`, `filter-style-subtraction-suite.log`,
+`filter-cached-session-regressions.log`. The additional cluster-predicate case
+passed separately (`cluster-filter-rebind-red.log`; no further fix was needed),
+bringing retained API cases to 44. The post-notification behavior UI suite passed
+all 345 cases in 156.25 seconds (`filter-table-notification-ui-suite.log`). These
+are not a claim that every native test was
+rerun after this increment.
+
+The test inventory is 3,743 registrations and 2,808 distinct executable/argument
+commands, not 3,743 distinct user journeys. Labels separate 2,826 behavior runs
+from 917 retained style variants. Different environments can still make equal
+commands meaningful. No behavior scenario was deleted or folded into an opaque
+combined E2E case. The 41 removed runs were style copies of API contracts with no
+rendered controls. The unchanged C# tests remain a reference oracle during the
+migration, not a dependency of the native application. Remaining suites still
+need case-by-case evidence before claiming all redundancy or obsolete coverage
+has been removed.
+
+The recorded pre-optimization foreground run measured cached-tab p95 105.73 ms,
+maximum RSS 257.79 MB and idle CPU 0.694% of one core. Reusing the live connection
+measured tab p95 91.46 ms, RSS 256.36 MB and idle CPU 0.697%; the 50 ms and 250 MB
+gates still failed. The final cluster-notification follow-up had an exposed but
+inactive window and failed the foreground precondition before measuring actions.
+It is not performance clearance. Evidence directories:
+`2026-10-06-foreground-performance-review`, `2026-10-06-cached-tab-performance`,
+`2026-10-06-filter-increment-performance`.
+
+A real local K3S run supplied paired C#/C++ Resources screenshots. The capture
+shows remaining layout/catalog differences, not full visual parity. Attempts to
+open other views through desktop control were not reliably successful and are
+kept separately, not counted as proof. The current field flyout has a Cocoa PNG
+from the actual QML renderer with the explicit external HTTP test boundary;
+this is not an installed-app or real-cluster flyout proof. Evidence directory:
+`2026-10-06-live-parity-review` (`comparison-resources.png`,
+`native-field-flyout-cocoa.png`, `comparisons.json`). The owned K3S container,
+volumes and both comparison processes were removed by the script's cleanup;
+pre-existing Colima VMs and shared images were preserved.
+
+Remaining work: Values/Alerts/Diagnostics table tools, full saved-filter migration
+and paired filter visual evidence, multiwindow placement/ownership, localization,
+the complete view/theme matrix, foreground performance gates and branch coverage.
+Private-release signing/notarization remains deliberately deferred, not hidden as
+an unexplained implementation blocker.

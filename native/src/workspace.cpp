@@ -157,18 +157,18 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
             lastChanged = index;
         }
     }
+    const int firstMetadataChanged = firstChanged, lastMetadataChanged = lastChanged;
     if (clusterChanged && fields_.contains("cluster") && !rows_.isEmpty()) {
         firstChanged = 0; lastChanged = rowCount()-1;
         const int column = int(fields_.indexOf("cluster"));
         firstColumn = std::min(firstColumn,column); lastColumn = std::max(lastColumn,column);
     }
-    if (firstChanged >= 0) {
-        if (lastColumn >= 0) emit dataChanged(index(firstChanged,firstColumn),index(lastChanged,lastColumn),
-            {Qt::DisplayRole, Qt::ToolTipRole, Qt::ForegroundRole, Qt::UserRole+6, Qt::UserRole+11});
-        emit dataChanged(index(firstChanged,0),index(lastChanged,columnCount()-1),
-            {Qt::DisplayRole, Qt::UserRole, Qt::UserRole+1, Qt::UserRole+2, Qt::UserRole+3, Qt::UserRole+4,
-             Qt::UserRole+5, Qt::UserRole+7, Qt::UserRole+8, Qt::UserRole+9, Qt::UserRole+10, Qt::UserRole+12});
-    }
+    if (firstChanged >= 0 && lastColumn >= 0) emit dataChanged(index(firstChanged,firstColumn),index(lastChanged,lastColumn),
+        {Qt::DisplayRole, Qt::ToolTipRole, Qt::ForegroundRole, Qt::UserRole+6, Qt::UserRole+11});
+    // Row-wide predicates depend on metadata as well as the displayed filter column.
+    if (firstMetadataChanged >= 0) emit dataChanged(index(firstMetadataChanged,0),index(lastMetadataChanged,columnCount()-1),
+        {Qt::DisplayRole, Qt::UserRole, Qt::UserRole+1, Qt::UserRole+2, Qt::UserRole+3, Qt::UserRole+4,
+         Qt::UserRole+5, Qt::UserRole+7, Qt::UserRole+8, Qt::UserRole+9, Qt::UserRole+10, Qt::UserRole+12});
     for (auto next = incoming.cbegin(); next != incoming.cend();) {
         const auto position = std::lower_bound(rows_.cbegin(), rows_.cend(), next.key(), [this](const auto& row, const auto& key) { return row[identityField_].toString() < key; });
         int index = static_cast<int>(position - rows_.cbegin());
@@ -907,8 +907,13 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
             catalog_ = catalog; sessionRenameError_.clear(); emit catalogsChanged(); emit changed(); emit sessionRenamed(renamedSession);
         } else {
             if (!select(catalog)) return;
-            if (!active_.isEmpty()) resolve(active_);
-            else emit changed();
+            if (!active_.isEmpty()) {
+                const auto connection = client_.connection(active_);
+                const auto session = std::find_if(catalog.sessions.cbegin(), catalog.sessions.cend(),
+                    [&](const auto& value) { return sessionId(value.id) == active_; });
+                if (connection && session != catalog.sessions.cend()) client_.open(active_, *connection, session->config.namespaces);
+                else resolve(active_);
+            } else emit changed();
         }
         refreshSessionSelection();
     });
