@@ -24,7 +24,6 @@ struct AlertCatalog final {
 /** Parses and compiles an editable rule at the input boundary; never accepts unknown fields. */
 Result<AlertRule> parseAlertRule(QJsonObject value);
 /** Canonical built-in rules, matching the existing desktop catalog. */
-AlertCatalog defaultAlerts();
 /** Private atomic persistence. Invalid or newer data is never replaced with defaults. */
 class AlertStore final {
 public:

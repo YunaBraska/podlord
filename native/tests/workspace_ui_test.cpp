@@ -1365,15 +1365,20 @@ bool execute(const QString& scenario) {
             }
             return item(window, "resourceColumnVisible_kind") && item(window, "resourceColumnVisible_kind")->isVisible() && column("resource", "kind")["visible"].toBool() && server.requests.size() == requests;
         }
-        if (!waitFor([&] { auto* control = item(window, "resourceSaveColumns"); return !control || !control->isVisible(); })) return false;
+        if (!waitFor([&] {
+            auto* dialog = window->findChild<QObject*>("resourceColumnsDialog");
+            return dialog && !dialog->property("visible").toBool() && !dialog->property("opened").toBool();
+        })) return false;
         if (scenario == "columns_order" || scenario == "columns_sort_copy") {
             if (!waitFor([&] { return item(window, "header_1")->mapToScene({0, 0}).x() < item(window, "header_0")->mapToScene({0, 0}).x(); })) return false;
             if (scenario == "columns_order") return server.requests.size() == requests;
             if (!click(window, item(window, "header_1")) || !waitFor([&] { return workspace.sortColumnIndex() == 1; })) return false;
             auto* cell = item(window, "cell_0_1");
             if (!cell) return false;
-            cell->forceActiveFocus(); QTest::keySequence(window, QKeySequence::Copy);
-            return QGuiApplication::clipboard()->text() == workspace.table()->data(workspace.table()->index(0, 1)).toString() && server.requests.size() == requests;
+            cell->forceActiveFocus();
+            if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
+            QTest::keySequence(window, QKeySequence::Copy);
+            return waitFor([&] { return QGuiApplication::clipboard()->text() == workspace.table()->data(workspace.table()->index(0, 1)).toString(); }) && server.requests.size() == requests;
         }
         if (scenario == "columns_width") {
             const bool resized = waitFor([&] { return qAbs(item(window, "header_0")->width() - 450) < 1; });
@@ -1404,8 +1409,10 @@ bool execute(const QString& scenario) {
                     std::fprintf(stderr, "Namespace presentation: header=%s cell=%s\n", qPrintable(text(window, header)), qPrintable(text(window, "pinnedCell_0_2"))); return false;
                 }
                 auto* cell = item(window, "pinnedCell_0_2");
-                cell->forceActiveFocus(); QTest::keySequence(window, QKeySequence::Copy);
-                if (QGuiApplication::clipboard()->text() != "default" || !click(window, item(window, header)) || !waitFor([&] { return workspace.sortColumnIndex() == 2; })) {
+                cell->forceActiveFocus();
+                if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
+                QTest::keySequence(window, QKeySequence::Copy);
+                if (!waitFor([&] { return QGuiApplication::clipboard()->text() == "default"; }) || !click(window, item(window, header)) || !waitFor([&] { return workspace.sortColumnIndex() == 2; })) {
                     std::fprintf(stderr, "Namespace interaction: clipboard=%s sortedColumn=%d\n", qPrintable(QGuiApplication::clipboard()->text()), workspace.sortColumnIndex()); return false;
                 }
             }

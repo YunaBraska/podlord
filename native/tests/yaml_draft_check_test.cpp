@@ -306,7 +306,10 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
             || workspace.yamlApplyDiff().contains("bG9jYWwtZW50ZXJlZC1zZWNyZXQ="))) return false;
         if (scenario == "ui_apply_preview") {
             auto* cancel = window->findChild<QQuickItem*>("cancelYamlApply");
-            if (!cancel || !cancel->hasActiveFocus() || !cancel->property("visualFocus").toBool()) return false;
+            if (!cancel || !await([&] { return cancel->isVisible() && cancel->hasActiveFocus() && cancel->property("visualFocus").toBool(); })) {
+                std::fputs("YAML preview did not show keyboard focus on Cancel.\n", stderr);
+                return false;
+            }
             QTest::keyClick(window, Qt::Key_Escape);
             auto* readBack = itemNamed("readBackYaml");
             return !workspace.yamlApplyPreview() && !workspace.yamlApplyLocked() && workspace.yamlText() == draft && workspace.yamlDirty() && patches == 0 && readBack && !readBack->isVisible();

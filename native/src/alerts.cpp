@@ -205,18 +205,27 @@ Result<AlertRule> parseAlertRule(QJsonObject value) {
     }
     return rule;
 }
-AlertCatalog defaultAlerts() {
-    AlertCatalog result;
-    result.rules.append(std::get<AlertRule>(parseAlertRule(draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "warning-ping", "Paint resources yellow or red while they have an active problem."))));
-    result.rules.append(std::get<AlertRule>(parseAlertRule(draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "none", "none", "Highlight recently changed resources green for the freshness window."))));
+namespace {
+Result<AlertCatalog> defaultAlerts() {
     auto active=draft("default-active-view-pulse", "Active view pulse", "newInView", "true", "none", "pulse", "none", "Pulse active resources briefly when they enter the view.");
     active["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "newInView"}, {"expression", "true"}}, QJsonObject{{"field", "activity"}, {"expression", "true"}}}};
-    result.rules.append(std::get<AlertRule>(parseAlertRule(active))); return result;
+    AlertCatalog result;
+    for (const auto& value : {
+        draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "warning-ping", "Paint resources yellow or red while they have an active problem."),
+        draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "none", "none", "Highlight recently changed resources green for the freshness window."),
+        active}) {
+        const auto parsed = parseAlertRule(value);
+        if (const auto* failure = std::get_if<Failure>(&parsed))
+            return Failure{StoreError::InvalidData, "Cannot load built-in alert " + value["id"].toString() + ": " + failure->message};
+        result.rules.append(std::get<AlertRule>(parsed));
+    }
+    return result;
 }
-namespace {
 Result<AlertCatalog> decodeAlerts(const QJsonObject& root) {
     if (root.size()!=4 || root["version"]!=1 || !root["rules"].isArray() || !root["muted"].isBool() || !root["reducedMotion"].isBool()) return Failure{StoreError::InvalidData, "Invalid or unsupported alert document; existing data was retained."};
-    auto result=defaultAlerts(); result.muted=root["muted"].toBool(); result.reducedMotion=root["reducedMotion"].toBool(); QSet<QString> ids;
+    const auto defaults = defaultAlerts();
+    if (const auto* failure = std::get_if<Failure>(&defaults)) return *failure;
+    auto result=std::get<AlertCatalog>(defaults); result.muted=root["muted"].toBool(); result.reducedMotion=root["reducedMotion"].toBool(); QSet<QString> ids;
     for (const auto& entry : root["rules"].toArray()) {
         if (!entry.isObject()) return Failure{StoreError::InvalidData, "Invalid alert record; existing data was retained."};
         const auto parsed=parseAlertRule(entry.toObject()); if (const auto* failure=std::get_if<Failure>(&parsed)) return *failure;

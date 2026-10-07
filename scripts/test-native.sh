@@ -40,7 +40,12 @@ export TMPDIR
 LLVM_PROFILE_FILE="$RUN/%p-%m.profraw"
 export LLVM_PROFILE_FILE
 TEST_STATUS=0
-"$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure || TEST_STATUS=$?
+# Reject broken defaults or application startup before spending a full suite on the same failure.
+PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default)$'
+"$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
+if [ "$TEST_STATUS" -eq 0 ]; then
+    "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?
+fi
 if [ "$TEST_STATUS" -eq 0 ]; then
 BENCHMARK=$("$BUILD/session_cli_test" "$BUILD/podlord-session" benchmark)
 printf '%s\n' "$BENCHMARK" > "$BUILD/coverage/benchmark.json"
