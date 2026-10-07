@@ -24,6 +24,8 @@ public:
     /** Profile-wide named resource filters; the default filter is protected. */
     Result<TableViewStates> loadPresets() const;
     Result<TableViewStates> savePresets(const TableViewStates& desired, const TableViewStates& expected) const;
+    /** Import explicit JSON input without overwriting existing names or modifying the selected source. */
+    Result<TableViewStates> importPresets(const QString& path, const TableViewStates& expected) const;
 private:
     const QString profile_;
     const TableSchemas schemas_;

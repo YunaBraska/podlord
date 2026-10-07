@@ -98,8 +98,21 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         contentItem: Label { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         footer: DialogButtonBox {
-            Button { id: discardStayButton; objectName: "discardStay"; text: "Stay"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "discardAccept"; text: "Discard changes"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            Button {
+                id: discardStayButton
+                objectName: "discardStay"
+                text: "Stay"
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                Keys.onReturnPressed: discardChanges.reject()
+                Keys.onEnterPressed: discardChanges.reject()
+            }
+            Button {
+                objectName: "discardAccept"
+                text: "Discard changes"
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+                Keys.onReturnPressed: discardChanges.accept()
+                Keys.onEnterPressed: discardChanges.accept()
+            }
             onAccepted: discardChanges.accept()
             onRejected: discardChanges.reject()
         }

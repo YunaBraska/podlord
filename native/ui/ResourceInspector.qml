@@ -11,7 +11,6 @@ Pane {
     }
     contentItem: ColumnLayout {
     id: inspector
-    SystemPalette { id: systemPalette }
     property real yamlPosition: 0
     property real overviewPosition: 0
     property real valuesPosition: 0
@@ -24,7 +23,7 @@ Pane {
         const overviewPane = overviewScroll
         yamlPane.contentY = same ? Math.min(yamlPosition, Math.max(0, yamlPane.contentHeight - yamlPane.height)) : 0
         overviewPane.contentY = same ? Math.min(overviewPosition, Math.max(0, overviewPane.contentHeight - overviewPane.height)) : 0
-        values.contentY = same ? Math.min(valuesPosition, Math.max(0, values.contentHeight - values.height)) : 0
+        values.contentY = same ? Math.min(valuesPosition, Math.max(0, values.contentHeight - values.viewportHeight)) : 0
     }
     Connections {
         target: workspace
@@ -244,64 +243,11 @@ Pane {
         Button { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
     }
     Label { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-    ListView {
+    ResourceValuesView {
         id: values
-        objectName: "resourceValues"
         Layout.fillWidth: true
         Layout.fillHeight: true
         visible: workspace.valuesVisible
-        clip: true
-        activeFocusOnTab: true
-        Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Home) { values.positionViewAtIndex(0,ListView.Beginning); event.accepted = true }
-            else if (event.key === Qt.Key_End) { values.positionViewAtIndex(values.count-1,ListView.End); event.accepted = true }
-        }
-        model: workspace.resourceValues
-        spacing: 8
-        ScrollBar.vertical: ScrollBar {}
-        delegate: ColumnLayout {
-            id: valueRow
-            required property var modelData
-            property string copyError: ""
-            function copy(representation) {
-                copyError = workspace.copyValue(modelData.id, representation) ? "" : "Cannot decode this value as text. Copy the raw value instead."
-            }
-            width: values.width
-            RowLayout {
-                Layout.fillWidth: true
-                Label { Layout.fillWidth: true; text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight }
-                Button { objectName: "reveal_" + modelData.id; visible: modelData.secret; text: modelData.revealed ? "Hide" : "Reveal"; Accessible.name: text + " " + modelData.name; onClicked: workspace.revealValue(modelData.id, !modelData.revealed) }
-                Button { objectName: "copy_" + modelData.id; text: "Copy"; Accessible.name: "Copy " + modelData.name; onClicked: valueRow.copy("preferred") }
-                Button {
-                    id: copyOptions
-                    objectName: "copyOptions_" + modelData.id
-                    text: "Copy options"
-                    Accessible.name: "Copy options for " + modelData.name
-                    onClicked: copyMenu.popup(copyOptions, 0, copyOptions.height)
-                    Menu {
-                        id: copyMenu
-                        MenuItem { objectName: "copyKey_" + modelData.id; text: "Copy key"; onTriggered: valueRow.copy("key") }
-                        MenuItem { objectName: "copyRaw_" + modelData.id; text: "Copy raw value"; onTriggered: valueRow.copy("raw") }
-                        MenuItem { objectName: "copyDecoded_" + modelData.id; text: "Copy decoded text"; onTriggered: valueRow.copy("decoded") }
-                    }
-                }
-            }
-            Label { objectName: "copyValueError_" + modelData.id; Layout.fillWidth: true; visible: text !== ""; text: valueRow.copyError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-            Label { text: modelData.field + " - " + modelData.encoding; textFormat: Text.PlainText }
-            TextArea {
-                objectName: "value_" + modelData.id
-                Layout.fillWidth: true
-                readOnly: true
-                textFormat: TextEdit.PlainText
-                text: modelData.preview
-                wrapMode: TextArea.Wrap
-                Accessible.name: modelData.name + ": " + modelData.preview
-                ToolTip.visible: hovered || activeFocus
-                ToolTip.text: modelData.tooltip
-            }
-        }
-        Label { anchors.centerIn: parent; width: parent.width - 16; visible: values.count === 0; text: "No values cached. Refresh detail to request current data."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-        Rectangle { anchors.fill: parent; z: 1; visible: values.activeFocus; color: "transparent"; border.width: 2; border.color: systemPalette.highlight }
     }
     PodLogsView { Layout.fillWidth: true; Layout.fillHeight: true; visible: workspace.logsVisible }
     Loader {

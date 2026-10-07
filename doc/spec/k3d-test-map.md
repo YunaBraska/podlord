@@ -3951,3 +3951,43 @@ and paired filter visual evidence, multiwindow placement/ownership, localization
 the complete view/theme matrix, foreground performance gates and branch coverage.
 Private-release signing/notarization remains deliberately deferred, not hidden as
 an unexplained implementation blocker.
+
+## 2026-10-07: What Do Values, Preset Import And Linux Verification Prove?
+
+| Behavior | Public boundary | Regression cases | Evidence / gap |
+|---|---|---|---|
+| Values use the common virtualized table with five reference columns | Rendered inspector, pointer and keyboard input | `inspector_secret_table_*`, ConfigMap Values cases in `workspace_ui_test` | Sort, Find, full-value hover/copy, direct KEY/VALUE/RAW/DEC, reveal and persisted column controls pass in Basic/Fusion. Masked values remain the source for sorting and searching. |
+| Fresh inspector data preserves the actual table viewport | Inspector refresh through the external Kubernetes HTTP boundary | Values scroll refresh case in `workspace_ui_test` | A real 78-pixel jump failed on Linux before using the table viewport instead of the enclosing control height. `values-scroll-red.log` retains that failure. |
+| Explicit C# saved-filter import is bounded and atomic | Public preset store and Workspace import action | Legacy-array and import cases in `view_state_test`; rendered sidebar import contracts | Native/C# JSON import, identical repeat import, conflicting names, invalid input and file bounds pass. The source file is unchanged. A visible native file-picker journey and complete C# profile migration are not established. |
+| Stay retains a YAML draft for Return, keypad Enter and Space | Real Qt Quick dialog input | Existing Return case and new independent keypad/Space cases | Linux exposed Return accepting the dialog despite focus on Stay. Explicit button key handling fixes this safety regression without a double-key test fallback. |
+| Empty and virtualized table headers remain testable | Public Qt TableView/HeaderView entrypoints | Event header, repeated sort and Values pointer cases | Tests re-resolve loaded delegates after rendering instead of retaining recycled items. Empty tables do not require a nonexistent body row to locate a header. |
+| Native Linux/arm64 behavior works outside macOS | Unprivileged pinned Linux container, real native executable | Same 524 affected behavior/style cases as macOS | All 524 pass on both platforms. The configured Linux x86_64/arm64 CI lanes have not yet executed remotely. |
+| Native Kubernetes integration remains intact | Ephemeral local K3S API, TLS and real resources | `scripts/test-native-kubernetes.sh` | Values, Secret masking/write preservation, multi-container logs, patches and delete/UID replacement protection pass. Credential exec authentication is not evidence of an interactive container terminal. |
+
+Final affected-suite evidence: `20261007-verified-macos.log/xml` (524/524,
+90.51 seconds) and `2026-10-07-linux-values/viewport-results.log/xml` (524/524,
+165.63 seconds). The real local Kubernetes run is `20261007-real-kubernetes.log`.
+The owned test containers were removed; shared clusters, profiles and images were
+not pruned. The visible Cocoa frame `values-current-cocoa.png` shows the actual
+native Values layout using an explicit external HTTP test boundary. It is not
+an installed-app, real-cluster or paired C#/C++ screenshot matrix.
+
+The complete macOS run before the final two header-locator corrections passed
+3,747/3,749 cases in 550.41 seconds with 12 isolated workers. Its two failures
+were empty Event-header test lookup, not an application regression. The final
+affected suite covers those corrections and the subsequent viewport fix; a
+single post-correction whole-suite all-green result is not claimed. Compared
+with the preceding six-worker run (1,071.10 seconds), parallelism roughly halves
+test wall time. This does not establish application UI performance.
+
+The current inventory has 3,749 registrations, 2,851 distinct executable/argument
+commands, 2,869 behavior registrations and 880 retained style variants. Thirty-
+seven Fusion copies of non-rendered guidance contracts were removed; their Basic
+behavior cases remain. Rendered UI variants and independent scenarios were not
+merged into large E2E methods. The frozen C# reference remains a migration oracle.
+
+Remaining release gates: Alerts/Diagnostics column tools, complete saved-profile
+and paired filter evidence, multiwindow ownership, translations, the full paired
+view/theme matrix including terminal, foreground latency/memory budgets and
+90-percent branch coverage. The previous private package predates this increment
+and is not labelled current. Signing/notarization remains intentionally deferred.

@@ -56,6 +56,9 @@ bool Workspace::restoreViewStates(const LoadedViewStates& states) {
         nav.inspectorEventOrder = detailEvents.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
         nav.inspectorLinkColumn = static_cast<int>(schemas.value("inspectorLink").indexOf(links.column));
         nav.inspectorLinkOrder = links.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
+        const auto values = views.value("value");
+        nav.valueColumn = static_cast<int>(schemas.value("value").indexOf(values.column));
+        nav.valueOrder = values.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
     }
     emit fieldFiltersChanged();
     return !viewStateFailed();
@@ -64,12 +67,12 @@ bool Workspace::queueViewSave(const QString& table) {
     if (active_.isEmpty() || viewStateErrors_.contains(active_)) return false;
     const auto& nav = navigation_[active_];
     const auto* model = table == "resource" ? &rows_ : table == "event" ? &eventRows_ : table == "port" ? &portRows_
-        : table == "inspectorEvent" ? &inspectorEventRows_ : table == "inspectorLink" ? &inspectorLinkRows_ : nullptr;
+        : table == "inspectorEvent" ? &inspectorEventRows_ : table == "inspectorLink" ? &inspectorLinkRows_ : table == "value" ? &valueRows_ : nullptr;
     if (!model) return false;
     const int column = table == "resource" ? nav.column : table == "event" ? nav.eventColumn : table == "port" ? nav.portColumn
-        : table == "inspectorEvent" ? nav.inspectorEventColumn : nav.inspectorLinkColumn;
+        : table == "inspectorEvent" ? nav.inspectorEventColumn : table == "inspectorLink" ? nav.inspectorLinkColumn : nav.valueColumn;
     const auto order = table == "resource" ? nav.order : table == "event" ? nav.eventOrder : table == "port" ? nav.portOrder
-        : table == "inspectorEvent" ? nav.inspectorEventOrder : nav.inspectorLinkOrder;
+        : table == "inspectorEvent" ? nav.inspectorEventOrder : table == "inspectorLink" ? nav.inspectorLinkOrder : nav.valueOrder;
     pendingViews_[active_][table] = {table == "resource" ? nav.filter : table == "event" ? nav.eventFilter : table == "port" ? nav.portFilter : QString{},
         column < 0 ? QString{} : model->headerData(column, Qt::Horizontal, Qt::UserRole).toString(), column >= 0 && order == Qt::DescendingOrder,
         table == "resource" ? nav.fields : QMap<QString, QString>{}, table == "resource" ? nav.mode : QString{}};

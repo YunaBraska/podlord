@@ -374,25 +374,14 @@ bool run(const QString& scenario) {
                 if (!click(window, "copy_" + id)) return false;
             } else {
                 if (scenario.contains("_keyboard_")) {
-                    auto* options = item(window, "copyOptions_" + id);
-                    if (!options || !podlord::test::scrollIntoView(window, options)) return false;
-                    options->forceActiveFocus(Qt::TabFocusReason);
-                    QTest::keyClick(window, Qt::Key_Space);
-                    if (!waitFor([&] { return item(window, "copyKey_" + id) && item(window, "copyKey_" + id)->isVisible(); })) return false;
                     auto* decoded = item(window, "copyDecoded_" + id);
-                    for (int step = 0; step < 3 && decoded && !decoded->property("highlighted").toBool(); ++step) {
-                        auto* focused = QGuiApplication::focusWindow();
-                        if (!focused) return false;
-                        QTest::keyClick(focused, Qt::Key_Down);
-                        QCoreApplication::processEvents();
-                    }
-                    if (!decoded || !decoded->property("highlighted").toBool() || !QGuiApplication::focusWindow()) return false;
-                    QTest::keyClick(QGuiApplication::focusWindow(), Qt::Key_Return);
+                    if (!decoded || !podlord::test::scrollIntoView(window, decoded)) return false;
+                    decoded->forceActiveFocus(Qt::TabFocusReason);
+                    QTest::keyClick(window, Qt::Key_Space);
                 } else {
-                if (!click(window, "copyOptions_" + id)) return false;
-                const auto action = scenario.endsWith("_key") ? QStringLiteral("copyKey_")
-                    : scenario.endsWith("_raw") ? QStringLiteral("copyRaw_") : QStringLiteral("copyDecoded_");
-                if (!click(window, action + id)) return false;
+                    const auto action = scenario.endsWith("_key") ? QStringLiteral("copyKey_")
+                        : scenario.endsWith("_raw") ? QStringLiteral("copyRaw_") : QStringLiteral("copyDecoded_");
+                    if (!click(window, action + id)) return false;
                 }
             }
             const bool binaryFailure = key == "binary" && !preferred;
@@ -401,7 +390,7 @@ bool run(const QString& scenario) {
                 : QStringLiteral("decoded-value");
             if (!waitFor([&] { return QGuiApplication::clipboard()->text() == expected && masked(); }) || server.requests != calls) return false;
             if (!binaryFailure) return true;
-            return waitFor([&] { auto* error = item(window, "copyValueError_" + id);
+            return waitFor([&] { auto* error = item(window, "copyValueError");
                 return error && error->isVisible() && !error->property("text").toString().isEmpty(); });
         }
         if (scenario.startsWith("table_keyboard_")) {

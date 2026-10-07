@@ -29,6 +29,88 @@ bool run(const QString& scenario) {
     const auto path = views + "/" + session + ".json";
     const ViewStateStore store(profile, schemas);
     const TableViewState value{"alpha", "name", true};
+    if (scenario.startsWith("preset_import_")) {
+        const auto source = temporary.filePath("saved filters %.json");
+        const TableViewStates empty{{"default", {}}};
+        QJsonObject legacy{{"name", "Imported"}, {"nameFilter", "~web"}, {"namespace", "team"}};
+        const auto bytes = QJsonDocument(QJsonArray{legacy}).toJson();
+        if (!write(source, scenario == "preset_import_malformed" ? QByteArray("{") : scenario == "preset_import_oversized" ? QByteArray(65537, ' ') : bytes)) return false;
+        if (scenario == "preset_import_missing") return fails(store.importPresets(temporary.filePath("missing"), empty), StoreError::ReadFailed);
+        if (scenario == "preset_import_relative") return fails(store.importPresets("relative.json", empty), StoreError::InvalidInput);
+        if (scenario == "preset_import_malformed") return fails(store.importPresets(source, empty), StoreError::InvalidData);
+        if (scenario == "preset_import_oversized") return fails(store.importPresets(source, empty), StoreError::ReadFailed);
+        auto expected = empty;
+        if (scenario == "preset_import_conflict" || scenario == "preset_import_case_conflict") {
+            expected[scenario == "preset_import_conflict" ? "Imported" : "imported"] = {"existing", {}, false};
+            if (!equals(store.savePresets(expected, empty), expected)) return false;
+            return fails(store.importPresets(source, expected), StoreError::Conflict) && equals(store.loadPresets(), expected);
+        }
+        if (scenario == "preset_import_stale") {
+            auto changed = empty; changed["Other"] = {};
+            if (!equals(store.savePresets(changed, empty), changed)) return false;
+            return fails(store.importPresets(source, empty), StoreError::Conflict) && equals(store.loadPresets(), changed);
+        }
+        const auto imported = store.importPresets(source, empty);
+        if (!std::holds_alternative<TableViewStates>(imported)) return false;
+        const auto actual = std::get<TableViewStates>(imported);
+        if (actual.value("Imported").fields != QMap<QString, QString>{{"name", "~web"}, {"namespace", "team"}}
+            || !equals(store.loadPresets(), actual)) return false;
+        QFile original(source);
+        if (!original.open(QIODevice::ReadOnly) || original.readAll() != bytes) return false;
+        if (scenario == "preset_import_repeat") return equals(store.importPresets(source, actual), actual);
+        return scenario == "preset_import_success";
+    }
+    if (scenario.startsWith("values_upgrade_")) {
+        auto expanded = schemas; expanded["value"] = {"name", "encoding", "preview", "copy", "reveal"};
+        const QJsonObject resource{{"filter", "alpha"}, {"column", "name"}, {"descending", true}, {"fields", QJsonObject{}}, {"mode", "problems"}};
+        const QJsonObject event{{"filter", ""}, {"column", ""}, {"descending", false}, {"fields", QJsonObject{}}, {"mode", ""}};
+        auto state = resource;
+        if (scenario == "values_upgrade_invalid") state["column"] = "missing";
+        const auto bytes = QJsonDocument(QJsonObject{{"version", scenario == "values_upgrade_current_missing" ? 5 : 4},
+            {"views", QJsonObject{{"resource", state}, {"event", event}}}}).toJson();
+        if (!QDir().mkpath(views) || !write(path, bytes)) return false;
+        const ViewStateStore upgraded(profile, expanded);
+        const auto loaded = upgraded.load(session);
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly) || file.readAll() != bytes) return false;
+        if (scenario == "values_upgrade_invalid" || scenario == "values_upgrade_current_missing") return fails(loaded, StoreError::InvalidData);
+        if (!std::holds_alternative<TableViewStates>(loaded)) return false;
+        const auto actual = std::get<TableViewStates>(loaded);
+        if (actual.value("resource").mode != "problems" || actual.value("resource").column != "name" || actual.value("value") != TableViewState{}) return false;
+        if (scenario == "values_upgrade_read") return true;
+        const TableViewState sorted{"", "preview", true};
+        const auto saved = upgraded.save(session, "value", sorted, {});
+        return std::holds_alternative<TableViewStates>(saved) && std::get<TableViewStates>(upgraded.load(session)).value("value") == sorted
+            && std::get<TableViewStates>(upgraded.load(session)).value("resource") == actual.value("resource");
+    }
+    if (scenario.startsWith("legacy_preset_")) {
+        const auto presetPath = profile + "/filter-presets.json";
+        auto full = schemas;
+        full["resource"] = {"name", "namespace", "kind", "cluster", "status", "issue", "node", "image", "createdAt", "ready", "restarts", "owner", "cpu", "memory", "storage", "uid"};
+        QJsonObject preset{{"name", "Production"}, {"search", "api"}, {"nameFilter", "~web"}, {"namespace", "\"team\""},
+            {"age", ">=1h"}, {"cpu", ">500m"}, {"problemsOnly", true}, {"activityOnly", false}, {"limit", "256"}, {"id", ""}};
+        if (scenario == "legacy_preset_activity") { preset["problemsOnly"] = false; preset["activityOnly"] = true; }
+        if (scenario == "legacy_preset_invalid") preset["cpu"] = 5;
+        if (scenario == "legacy_preset_conflicting_modes") preset["activityOnly"] = true;
+        QJsonArray source{preset};
+        if (scenario == "legacy_preset_duplicate") source.append(preset);
+        const auto bytes = QJsonDocument(source).toJson();
+        if (!QDir().mkpath(profile) || !write(presetPath, bytes)) return false;
+        const ViewStateStore imported(profile, full);
+        const auto loaded = imported.loadPresets();
+        QFile file(presetPath);
+        if (!file.open(QIODevice::ReadOnly) || file.readAll() != bytes) return false;
+        if (scenario == "legacy_preset_invalid" || scenario == "legacy_preset_duplicate" || scenario == "legacy_preset_conflicting_modes") return fails(loaded, StoreError::InvalidData);
+        if (!std::holds_alternative<TableViewStates>(loaded)) return false;
+        auto actual = std::get<TableViewStates>(loaded);
+        const auto production = actual.value("Production");
+        if (actual.value("default") != TableViewState{} || production.filter != "api" || production.column != ""
+            || production.mode != (scenario == "legacy_preset_activity" ? "activity" : "problems")
+            || production.fields != QMap<QString, QString>{{"name", "~web"}, {"namespace", "\"team\""}, {"createdAt", ">=1h"}, {"cpu", ">500m"}}) return false;
+        if (scenario != "legacy_preset_save") return true;
+        auto desired = actual; desired["Renamed"] = desired.take("Production");
+        return equals(imported.savePresets(desired, actual), desired) && equals(imported.loadPresets(), desired);
+    }
     if (scenario.startsWith("auxiliary_")) {
         auto expanded = schemas;
         expanded["port"] = {"endpoint", "name"}; expanded["inspectorEvent"] = {"time", "count"}; expanded["inspectorLink"] = {"from", "to"};
@@ -179,9 +261,9 @@ bool run(const QString& scenario) {
         const auto result = store.save(session, "resource", filtered, value);
         if (!std::holds_alternative<TableViewStates>(result) || std::get<TableViewStates>(store.load(session)).value("resource") != filtered
             || !input.open(QIODevice::ReadOnly)) return false;
-        return QJsonDocument::fromJson(input.readAll()).object()["version"] == 4;
+        return QJsonDocument::fromJson(input.readAll()).object()["version"] == 5;
     }
-    if (scenario == "version") document["version"] = 5;
+    if (scenario == "version") document["version"] = 6;
     else if (scenario == "field_type") resource["fields"] = true;
     else if (scenario == "field_value_type") resource["fields"] = QJsonObject{{"name", 3}};
     else if (scenario == "field_empty") resource["fields"] = QJsonObject{{"name", ""}};

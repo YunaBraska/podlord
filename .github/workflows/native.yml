@@ -8,6 +8,50 @@ permissions:
   contents: read
 
 jobs:
+  linux:
+    name: Native Linux ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated Linux toolchain
+        run: docker build --tag "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" - < native/tests/linux.Dockerfile
+      - name: Execute native tests and coverage gates without host Qt
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-linux"
+          docker run --rm --init --name "podlord-native-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/source,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/native-linux,dst=/output" \
+            "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            sh -c 'dpkg-query -W > /output/packages.txt; sh scripts/test-native.sh > /output/tests.log 2>&1; status=$?; tail -45 /output/tests.log; exit "$status"'
+      - name: Retain Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-${{ matrix.runner }}-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-linux/packages.txt
+            ${{ runner.temp }}/native-linux/tests.log
+            ${{ runner.temp }}/native-linux/build/coverage/report.txt
+            ${{ runner.temp }}/native-linux/build/Testing/Temporary/LastTest.log
+      - name: Remove owned Linux test resources
+        if: always()
+        run: |
+          name="podlord-native-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if docker container inspect "$name" >/dev/null 2>&1; then docker rm -f "$name"; fi
+          if docker image inspect "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1; then
+            docker image rm "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
   macos:
     name: Native ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}

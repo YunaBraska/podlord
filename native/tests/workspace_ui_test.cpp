@@ -161,6 +161,11 @@ public:
                             document["metadata"] = metadata;
                             if (secret) {
                                 document["data"] = QJsonObject{{"alpha", "YWxwaGEtcHJpdmF0ZS12YWx1ZQ=="}, {"beta", "YmV0YS1wcml2YXRlLXZhbHVl"}, {"binary", "AAH/"}, {"empty", ""}};
+                                if (scenario == "inspector_secret_table_hover") {
+                                    auto data = document["data"].toObject();
+                                    data["alpha"] = QString::fromLatin1((QByteArray("<b>literal secret</b>\n") + QByteArray(600, 'x')).toBase64());
+                                    document["data"] = data;
+                                }
                                 if (scenario == "inspector_secret_stringdata") document["stringData"] = QJsonObject{{"gamma", "string-private-value"}};
                                 metadata["annotations"] = QJsonObject{{"kubectl.kubernetes.io/last-applied-configuration", QJsonDocument(document).toJson(QJsonDocument::Compact).constData()}, {"note", "ordinary annotation"}};
                                 document["metadata"] = metadata;
@@ -409,9 +414,24 @@ QQuickItem* visualItem(QQuickItem* root, const QString& name) {
 }
 QQuickItem* item(QObject* root, const QString& name) {
     const auto parts = name.split('_');
-    if (parts.size() == 3 && (parts[0] == "cell" || parts[0] == "eventCell" || parts[0] == "pinnedCell")) {
+    if (parts.size() == 2 && (parts[0] == "header" || parts[0] == "pinnedHeader" || parts[0].endsWith("Header"))) {
+        const QStringList views = parts[0] == "pinnedHeader" ? QStringList{"resourcePinnedHeaderView", "eventPinnedHeaderView", "portPinnedHeaderView", "inspectorEventPinnedHeaderView", "inspectorLinkPinnedHeaderView", "valuePinnedHeaderView"}
+            : QStringList{(parts[0] == "header" ? QString("resource") : parts[0].left(parts[0].size() - 6)) + "HeaderView"};
+        for (const auto& viewName : views) {
+            auto* view = item(root, viewName);
+            if (!view || !view->isVisible() || view->width() <= 0) continue;
+            QQmlExpression expression(qmlContext(view), view,
+                QString("(function() { for (let column = 0; column < columns; ++column) { const header = itemAtCell(Qt.point(column, 0)); if (header && header.objectName === '%1') return header; } return null; })()").arg(name));
+            auto* header = expression.evaluate().value<QQuickItem*>();
+            if (expression.hasError()) std::fprintf(stderr, "Header lookup failed: %s\n", qPrintable(expression.error().toString()));
+            if (header) return header;
+        }
+        return nullptr;
+    }
+    if (parts.size() == 3 && (parts[0] == "cell" || parts[0] == "eventCell" || parts[0] == "pinnedCell"
+        || parts[0] == "inspectorEventCell" || parts[0] == "inspectorLinkCell")) {
         const QStringList views = parts[0] == "pinnedCell" ? QStringList{"resourcePinnedTable", "eventPinnedTable"}
-            : QStringList{parts[0] == "eventCell" ? "eventTable" : "resourceTable"};
+            : QStringList{parts[0] == "cell" ? "resourceTable" : parts[0].left(parts[0].size() - 4) + "Table"};
         for (const auto& viewName : views) {
             auto* view = item(root, viewName);
             if (!view || !view->isVisible() || view->width() <= 0) continue;
@@ -423,14 +443,16 @@ QQuickItem* item(QObject* root, const QString& name) {
         }
         return nullptr;
     }
-    if (auto* found = root->findChild<QQuickItem*>(name)) return found;
     auto* window = qobject_cast<QQuickWindow*>(root);
+    if (window) if (auto* found = podlord::test::visibleItem(window->contentItem(), name)) return found;
+    if (auto* found = root->findChild<QQuickItem*>(name)) return found;
     return window ? visualItem(window->contentItem(), name) : nullptr;
 }
 QString text(QObject* root, const QString& name) {
     auto* value = item(root, name); return value ? value->property("text").toString() : QString{};
 }
 bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt::LeftButton) {
+    const auto name = target ? target->objectName() : QString{};
     if (target && !target->isVisible()) {
         const auto name=target->objectName();
         if (name=="sourcesButton" || name=="radarWorkspaceButton" || name=="resourceFieldFilters" || name=="renameCurrentSession")
@@ -441,7 +463,17 @@ bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt
     for (auto* parent = target; parent; parent = parent->parentItem()) ancestors.prepend(parent);
     for (auto* parent : ancestors) parent->ensurePolished();
     QCoreApplication::processEvents();
+    QSignalSpy frame(window, &QQuickWindow::frameSwapped);
+    window->update();
+    if (!frame.wait(1000)) return false;
+    if (!name.isEmpty()) target = item(window, name);
+    if (!target || !target->isVisible() || !target->isEnabled()) return false;
     if (!podlord::test::scrollIntoView(window,target)) return false;
+    // Scrolling can recycle a delegate into another row or column before input.
+    if (!name.isEmpty() && target->objectName() != name) {
+        std::fprintf(stderr, "Pointer target recycled: %s -> %s\n", qPrintable(name), qPrintable(target->objectName()));
+        return false;
+    }
     const auto position = target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint();
     QTest::mouseClick(window, button, Qt::NoModifier, position); return true;
 }
@@ -909,7 +941,7 @@ bool execute(const QString& scenario) {
             || !type(second, item(second, "resourceFilter"), "bravo")) return false;
         podlord::TableSchemas schemas;
         for (const auto& entry : QList<QPair<QString, QAbstractItemModel*>>{{"resource", restored.table()}, {"event", restored.eventTable()},
-            {"port", restored.portTable()}, {"inspectorEvent", restored.inspectorEventTable()}, {"inspectorLink", restored.inspectorLinkTable()}}) {
+            {"port", restored.portTable()}, {"inspectorEvent", restored.inspectorEventTable()}, {"inspectorLink", restored.inspectorLinkTable()}, {"value", restored.valuesTable()}}) {
             QStringList ids;
             for (int column = 0; column < entry.second->columnCount(); ++column) ids.append(entry.second->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
             schemas[entry.first] = ids;
@@ -1069,7 +1101,7 @@ bool execute(const QString& scenario) {
             podlord::TableSchemas schemas;
             for (const auto& entry : {std::pair{QString("resource"), workspace.table()}, std::pair{QString("event"), workspace.eventTable()},
                 std::pair{QString("port"), workspace.portTable()}, std::pair{QString("inspectorEvent"), workspace.inspectorEventTable()},
-                std::pair{QString("inspectorLink"), workspace.inspectorLinkTable()}}) {
+                std::pair{QString("inspectorLink"), workspace.inspectorLinkTable()}, std::pair{QString("value"), workspace.valuesTable()}}) {
                 QStringList columns;
                 for (int column = 0; column < entry.second->columnCount(); ++column) columns.append(entry.second->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
                 schemas.insert(entry.first, columns);
@@ -1107,12 +1139,18 @@ bool execute(const QString& scenario) {
             for (const auto& value:workspace.resourceColumns()) { const auto state=value.toMap(); if (state["visible"].toBool() && state["pinned"].toBool()) order.append(state["column"].toInt()); }
             for (const auto& value:workspace.resourceColumns()) { const auto state=value.toMap(); if (!state["visible"].toBool() || !state["pinned"].toBool()) order.append(state["column"].toInt()); }
             QQmlExpression position(qmlContext(view), view, QString("positionViewAtColumn(%1, TableView.Contain)").arg(order.indexOf(index))); position.evaluate();
-            return !position.hasError() && waitFor([&] {
+            const bool shown = !position.hasError() && waitFor([&] {
                 auto* cell = item(window, "cell_0_" + QString::number(index));
                 if (!cell || !cell->isVisible() || cell->width() <= 0 || view->property("moving").toBool()) return false;
                 const auto left = cell->mapToItem(view, {0,0}).x();
                 return left >= -1 && left + cell->width() <= view->width() + 1;
             });
+            if (!shown) {
+                auto* cell = item(window, "cell_0_" + QString::number(index));
+                std::fprintf(stderr, "Column %d is not displayed: viewport=%g x=%g cell=%g/%g moving=%d\n", index, view->width(), view->property("contentX").toDouble(),
+                    cell ? cell->mapToItem(view, {0,0}).x() : -1, cell ? cell->width() : -1, view->property("moving").toBool());
+            }
+            return shown;
         };
         const auto value = [&](int row, const QString& field) { return model->data(model->index(row, column(field))).toString(); };
         if (scenario == "table_columns") return model->columnCount() == fields.size() && workspace.resourceColumns().size() == fields.size();
@@ -1189,8 +1227,14 @@ bool execute(const QString& scenario) {
             const bool readiness = field == "ready";
             const QString first = readiness ? "charlie" : field == "createdAt" ? "alpha" : "bravo", second = readiness ? "alpha" : first == "alpha" ? "bravo" : "alpha", third = readiness ? "bravo" : "charlie";
             const auto order = [&](const QString& a, const QString& b, const QString& c) { return value(0,"name") == a && value(1,"name") == b && value(2,"name") == c && value(3,"name") == "custom-widget"; };
-            if (!click(window, item(window, "header_" + QString::number(index))) || !waitFor([&] { return order(first, second, third) && workspace.sortDirection() == "ASC"; })) return false;
-            if (!click(window, item(window, "header_" + QString::number(index))) || !waitFor([&] { return order(readiness ? third : second, readiness ? second : first, readiness ? first : third) && workspace.sortDirection() == "DESC"; })) return false;
+            if (!click(window, item(window, "header_" + QString::number(index))) || !waitFor([&] { return order(first, second, third) && workspace.sortDirection() == "ASC"; })) {
+                std::fprintf(stderr, "Sort %s: header=%s requested=%d actual=%d/%s names=%s,%s,%s,%s\n", qPrintable(field), qPrintable(text(window, "header_" + QString::number(index))), index, workspace.sortColumnIndex(), qPrintable(workspace.sortDirection()), qPrintable(value(0,"name")), qPrintable(value(1,"name")), qPrintable(value(2,"name")), qPrintable(value(3,"name")));
+                return false;
+            }
+            if (!click(window, item(window, "header_" + QString::number(index))) || !waitFor([&] { return order(readiness ? third : second, readiness ? second : first, readiness ? first : third) && workspace.sortDirection() == "DESC"; })) {
+                std::fprintf(stderr, "Second sort %s: actual=%d/%s names=%s,%s,%s,%s\n", qPrintable(field), workspace.sortColumnIndex(), qPrintable(workspace.sortDirection()), qPrintable(value(0,"name")), qPrintable(value(1,"name")), qPrintable(value(2,"name")), qPrintable(value(3,"name")));
+                return false;
+            }
             return click(window, item(window, "header_" + QString::number(index))) && waitFor([&] { return workspace.sortColumnIndex() == -1 && order("alpha", "bravo", "charlie"); }) && server.requests.size() == requests;
         }
         if (scenario == "table_cluster_filter" || scenario == "table_owner_filter") {
@@ -1331,7 +1375,11 @@ bool execute(const QString& scenario) {
             cell->forceActiveFocus(); QTest::keySequence(window, QKeySequence::Copy);
             return QGuiApplication::clipboard()->text() == workspace.table()->data(workspace.table()->index(0, 1)).toString() && server.requests.size() == requests;
         }
-        if (scenario == "columns_width") return waitFor([&] { return qAbs(item(window, "header_0")->width() - 450) < 1; }) && server.requests.size() == requests;
+        if (scenario == "columns_width") {
+            const bool resized = waitFor([&] { return qAbs(item(window, "header_0")->width() - 450) < 1; });
+            if (!resized) std::fprintf(stderr, "Name width: saved=%d header=%s/%g\n", column("resource", "name")["width"].toInt(), qPrintable(text(window,"header_0")), item(window,"header_0")->width());
+            return resized && server.requests.size() == requests;
+        }
         if (scenario == "columns_pin_all") {
             window->resize(760, 640); QTest::qWait(30);
             auto* scroll = item(window, "resourcePinnedTable");
@@ -1886,10 +1934,9 @@ bool execute(const QString& scenario) {
             if (!click(window, item(window, "eventsWorkspaceButton")) || !waitFor([&] { return item(window, "eventTable")->isVisible() && item(window, "eventTable")->property("rows").toInt() == 2; })) return false;
             if (scenario == "inspector_related_event_sort") {
                 if (!waitFor([&] { return item(window, "eventHeader_5") && item(window, "eventHeader_5")->width() > 0; })) return false;
-                auto* header = item(window, "eventHeader_5");
-                if (!click(window, header) || !waitFor([&] { return text(window, "eventCell_0_5") == "3"; })) return false;
-                if (!click(window, header) || !waitFor([&] { return text(window, "eventCell_0_5") == "12"; })) return false;
-                return click(window, header) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == -1; }) && server.requests.size() == calls;
+                if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "3"; })) return false;
+                if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "12"; })) return false;
+                return click(window, item(window, "eventHeader_5")) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == -1; }) && server.requests.size() == calls;
             }
             if (!type(window, item(window, "eventFilter"), "Scheduled") || !waitFor([&] { return workspace.eventTable()->rowCount() == 1 && text(window, "eventCell_0_2") == "Scheduled"; })) return false;
             if (server.requests.size() != calls) return false;
@@ -1997,7 +2044,11 @@ bool execute(const QString& scenario) {
         if (scenario == "inspector_related_events" || scenario == "inspector_related_wrong_uid") {
             if (!click(window, item(window, "inspectorEventsButton"))) return false;
             if (scenario == "inspector_related_wrong_uid") return item(window, "emptyInspectorEvents")->isVisible() && server.requests.size() == calls;
-            return waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled" && text(window, "inspectorEventCell_0_4") == "Local event message"; }) && server.requests.size() == calls;
+            if (!waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled"; })) return false;
+            auto* events = item(window, "inspectorEventTable");
+            QQmlExpression reveal(qmlContext(events), events, "positionViewAtIndex(model.index(0, 4), TableView.Contain)");
+            reveal.evaluate();
+            return !reveal.hasError() && waitFor([&] { return text(window, "inspectorEventCell_0_4") == "Local event message"; }) && server.requests.size() == calls;
         }
         if (!click(window, item(window, "inspectorLinksButton")) || !waitFor([&] { return item(window, "inspectorLinkCell_0_2") && item(window, "inspectorLinkCell_1_2"); })) return false;
         if (server.requests.size() != calls) return false;
@@ -2213,14 +2264,20 @@ bool execute(const QString& scenario) {
             const bool accept = scenario.endsWith("_accept") || scenario == "inspector_edit_resource_bound";
             if (scenario == "inspector_edit_resource_bound") workspace.filter("bravo");
             if (scenario == "inspector_edit_close_escape") QTest::keyClick(window, Qt::Key_Escape);
-            else if (scenario == "inspector_edit_close_keyboard") {
-                if (!item(window, "discardStay")->hasActiveFocus() || !item(window, "discardStay")->property("visualFocus").toBool()) return false;
-                QTest::keyClick(window, Qt::Key_Return); QTest::qWait(20);
-                if (item(window, "discardStay")->isVisible()) QTest::keyClick(window, Qt::Key_Space);
+            else if (scenario == "inspector_edit_close_keyboard" || scenario == "inspector_edit_close_keypad" || scenario == "inspector_edit_close_space") {
+                if (!item(window, "discardStay")->hasActiveFocus() || !item(window, "discardStay")->property("visualFocus").toBool()) {
+                    std::fprintf(stderr, "Discard keyboard focus: active=%d visual=%d current=%s\n", item(window,"discardStay")->hasActiveFocus(), item(window,"discardStay")->property("visualFocus").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
+                    return false;
+                }
+                QTest::keyClick(window, scenario.endsWith("_keypad") ? Qt::Key_Enter : scenario.endsWith("_space") ? Qt::Key_Space : Qt::Key_Return);
             }
             else if (!click(window, item(window, accept ? "discardAccept" : "discardStay"))) return false;
             if (!waitFor([&] { return !item(window, "discardStay")->isVisible(); })) return false;
-            if (!accept) return text(window, "inspectorYaml") == draft && !yamlView->property("readOnly").toBool() && workspace.currentSession() == originalSession && !workspace.inspectorPath().isEmpty() && window->isVisible() && noWrites();
+            if (!accept) {
+                const bool retained = text(window, "inspectorYaml") == draft && !yamlView->property("readOnly").toBool() && workspace.currentSession() == originalSession && !workspace.inspectorPath().isEmpty() && window->isVisible() && noWrites();
+                if (!retained) std::fprintf(stderr, "Stay: draft=%d readOnly=%d session=%d inspector=%s visible=%d writes=%d\n", text(window,"inspectorYaml")==draft, yamlView->property("readOnly").toBool(), workspace.currentSession()==originalSession, qPrintable(workspace.inspectorPath()), window->isVisible(), !noWrites());
+                return retained;
+            }
             if (scenario.startsWith("inspector_edit_resource_")) return waitFor([&] { return text(window, "inspectorResourceName") == "charlie" && !workspace.loading(); }) && !text(window, "inspectorYaml").contains("# operator draft") && yamlView->property("readOnly").toBool() && noWrites();
             if (scenario == "inspector_edit_window_accept") return !window->isVisible() && noWrites();
             if (scenario == "inspector_edit_tab_accept") return waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); }) && noWrites();
@@ -2291,12 +2348,148 @@ bool execute(const QString& scenario) {
             return server.requests.size() == requests && !server.requests.contains("/credential-leak");
         }
         if (!click(window, item(window, "valuesButton"))) return false;
+        if (scenario.startsWith("inspector_secret_table_")) {
+            const auto before = server.requests.size();
+            const auto action = scenario.mid(QString("inspector_secret_table_").size());
+            auto* model = workspace.property("valuesTable").value<QAbstractItemModel*>();
+            if (!model || model->columnCount() != 5 || model->rowCount() != 4) return false;
+            if (!waitFor([&] { return item(window, "valueHeader_0") && item(window, "value_data/alpha"); })) return false;
+            if (const auto frame = qEnvironmentVariable("PODLORD_VALUES_FRAME"); !frame.isEmpty()) window->grabWindow().save(frame);
+            if (action == "layout") {
+                const QStringList titles{"Key", "Encoding", "Value", "Copy", "Reveal"};
+                for (int column = 0; column < titles.size(); ++column)
+                    if (model->headerData(column, Qt::Horizontal).toString() != titles[column]) return false;
+                return text(window, "value_data/alpha") == "[hidden]" && noLeak() && server.requests.size() == before;
+            }
+            if (action == "sort") {
+                if (!click(window, item(window, "valueHeader_0")) || workspace.property("valuesSortDirection").toString() != "ASC") return false;
+                if (!click(window, item(window, "valueHeader_0")) || model->index(0, 0).data().toString() != "empty") return false;
+                return click(window, item(window, "valueHeader_0")) && workspace.property("valuesSortColumn").toInt() == -1
+                    && model->index(0, 0).data().toString() == "alpha" && server.requests.size() == before;
+            }
+            if (action == "actions_unsorted") {
+                return !workspace.sortInspectorColumn("value", 3) && !workspace.sortInspectorColumn("value", 4)
+                    && !workspace.sortInspectorColumn("value", -1) && !workspace.sortInspectorColumn("value", 5)
+                    && workspace.property("valuesSortColumn").toInt() == -1 && server.requests.size() == before;
+            }
+            if (action == "copy_key" || action == "copy_raw" || action == "copy_decoded") {
+                const auto representation = action.mid(5);
+                const auto menu = representation == "key" ? "copyKey_" : representation == "raw" ? "copyRaw_" : "copyDecoded_";
+                if (!click(window, item(window, QString(menu) + "data/alpha"))) return false;
+                const auto expected = representation == "key" ? "alpha" : representation == "raw" ? "YWxwaGEtcHJpdmF0ZS12YWx1ZQ==" : "alpha-private-value";
+                return QGuiApplication::clipboard()->text() == expected && noLeak() && server.requests.size() == before;
+            }
+            if (action == "binary_decode") {
+                if (!click(window, item(window, "copyDecoded_data/binary"))) return false;
+                return text(window, "copyValueError").contains("raw") && noLeak() && server.requests.size() == before;
+            }
+            if (action == "context_copy") {
+                if (!click(window, item(window, "value_data/alpha"), Qt::RightButton)
+                    || !click(window, item(window, "valueMenuCopy"))) return false;
+                return QGuiApplication::clipboard()->text() == "alpha-private-value" && noLeak() && server.requests.size() == before;
+            }
+            if (action == "hover") {
+                if (!click(window, item(window, "reveal_data/alpha"))) return false;
+                const auto full = QString("<b>literal secret</b>\n") + QString(600, 'x');
+                if (!waitFor([&] { return text(window, "value_data/alpha") == full.left(256); })) return false;
+                item(window, "value_data/alpha")->forceActiveFocus();
+                auto* tooltip = window->findChild<QObject*>("valueValueTooltip");
+                if (!tooltip || !waitFor([&] { return tooltip->property("visible").toBool() && tooltip->property("text").toString() == full; })) return false;
+                QTest::keySequence(window, QKeySequence::Copy);
+                return QGuiApplication::clipboard()->text() == full && noLeak() && server.requests.size() == before;
+            }
+            if (action == "find_masked") {
+                if (!click(window, item(window, "valueFindButton")) || !type(window, item(window, "valueFindInput"), "alpha-private-value")) return false;
+                if (!waitFor([&] { return text(window, "valueFindCount") == "0/0"; })) return false;
+                return click(window, item(window, "reveal_data/alpha"))
+                    && waitFor([&] { return text(window, "valueFindCount") == "1/1"; }) && noLeak() && server.requests.size() == before;
+            }
+            if (action == "sort_restart") {
+                if (!click(window, item(window, "valueHeader_0")) || !click(window, item(window, "valueHeader_0"))) return false;
+                const auto session = workspace.currentSession();
+                window->close();
+                if (!waitFor([&] { return !window->isVisible(); })) { std::fputs("Values restart: window did not close.\n", stderr); return false; }
+                podlord::Workspace restored(profile);
+                if (!waitFor([&] { return !restored.busy() && !restored.contexts().isEmpty(); })) { std::fputs("Values restart: reload did not complete.\n", stderr); return false; }
+                if (restored.currentSession().isEmpty() && !restored.openContext(restored.contexts().first().toMap().value("id").toString())) { std::fputs("Values restart: session did not reopen.\n", stderr); return false; }
+                if (!waitFor([&] { return !restored.busy() && restored.currentSession() == session; })) { std::fputs("Values restart: session identity changed.\n", stderr); return false; }
+                const bool sorted = restored.property("valuesSortColumn").toInt() == 0 && restored.property("valuesSortDirection").toString() == "DESC";
+                if (!sorted) std::fprintf(stderr, "Values restart: sort=%d/%s error=%s\n", restored.property("valuesSortColumn").toInt(), qPrintable(restored.property("valuesSortDirection").toString()), qPrintable(restored.error()));
+                return sorted;
+            }
+            if (action == "legacy_presets") {
+                if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+                QFile presets(QDir(profile).filePath("filter-presets.json"));
+                const auto bytes = QJsonDocument(QJsonArray{QJsonObject{{"name", "Secrets"}, {"search", "Secret"}, {"namespace", "default"}}}).toJson();
+                if (!presets.open(QIODevice::WriteOnly) || presets.write(bytes) != bytes.size()) return false;
+                presets.close();
+                if (!workspace.reloadFilterPresets() || !waitFor([&] { return !workspace.filterPresetsBusy(); })
+                    || !workspace.loadFilterPreset("Secrets")) return false;
+                if (workspace.table()->rowCount() != 1 || workspace.resourceFieldFilters().value("namespace").toString() != "default") return false;
+                if (!workspace.saveFilterPreset("Native copy") || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+                return workspace.filterPresets().contains("Secrets") && workspace.filterPresets().contains("Native copy")
+                    && workspace.filterPresetsError().isEmpty() && server.requests.size() == before;
+            }
+            if (action == "import" || action == "import_conflict" || action == "import_url") {
+                if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+                if (action == "import_url") return !workspace.importFilterPresets(QUrl("https://example.test/filter-presets.json"))
+                    && workspace.filterPresetsError().contains("local") && server.requests.size() == before;
+                const auto source = temporary.filePath("saved filters %.json");
+                QFile presets(source);
+                const auto bytes = QJsonDocument(QJsonArray{QJsonObject{{"name", "Secrets"}, {"search", "Secret"}, {"namespace", "default"}}}).toJson();
+                if (!presets.open(QIODevice::WriteOnly) || presets.write(bytes) != bytes.size()) return false;
+                presets.close();
+                if (action == "import_conflict" && (!workspace.saveFilterPreset("Secrets") || !waitFor([&] { return !workspace.filterPresetsBusy(); }))) return false;
+                if (!workspace.importFilterPresets(QUrl::fromLocalFile(source)) || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+                if (!presets.open(QIODevice::ReadOnly) || presets.readAll() != bytes) return false;
+                if (action == "import_conflict") return workspace.filterPresetsError().contains("already in use") && server.requests.size() == before;
+                return workspace.filterPresetsError().isEmpty() && workspace.loadFilterPreset("Secrets") && workspace.table()->rowCount() == 1
+                    && workspace.resourceFieldFilters().value("namespace").toString() == "default" && server.requests.size() == before;
+            }
+            if (action == "columns" || action == "restart") {
+                if (!click(window, item(window, "valueColumnsButton"))
+                    || !click(window, item(window, "valueColumnPinned_name"))
+                    || !click(window, item(window, "valueColumnVisible_encoding"))
+                    || !click(window, item(window, "valueSaveColumns"))
+                    || !waitFor([&] { return !workspace.tableLayoutSaving(); })) return false;
+                const auto columns = workspace.property("valuesColumns").toList();
+                if (!columns[0].toMap().value("pinned").toBool() || columns[1].toMap().value("visible").toBool()) return false;
+                if (action == "restart") {
+                    podlord::Workspace restored(profile);
+                    if (restored.property("valuesColumns").toList() != columns) return false;
+                }
+                return noLeak() && server.requests.size() == before;
+            }
+            return false;
+        }
+        if (scenario == "inspector_values_table_scroll") {
+            auto* values = item(window, "resourceValues");
+            auto* table = item(window, "valueTable");
+            if (!waitFor([&] { return item(window, "valueTable")->property("rows").toInt() == 124
+                && item(window, "valueTable")->height() > 0 && item(window, "value_data/booleanText"); })) return false;
+            QSignalSpy frame(window, &QQuickWindow::frameSwapped);
+            window->update();
+            if (!frame.wait(1000)) return false;
+            values->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
+            if (!waitFor([&] { return displayedWithin(table, item(window, "value_data/numericText"))
+                && text(window, "value_data/numericText") == "123"; })) return false;
+            const auto position = values->property("contentY").toDouble();
+            if (!click(window, item(window, "refreshInspector")) || !waitFor([&] { return server.detailReads == 2 && workspace.yamlText().contains("ordinary-value-v2"); })) return false;
+            window->update();
+            if (!frame.wait(1000)) return false;
+            const bool retained = waitFor([&] { return std::abs(values->property("contentY").toDouble() - position) < 1
+                && displayedWithin(table, item(window, "value_data/numericText")) && text(window, "value_data/numericText") == "123"; });
+            if (!retained) std::fprintf(stderr, "Values refresh: position=%g -> %g content=%g root=%g viewport=%g\n", position, values->property("contentY").toDouble(), values->property("contentHeight").toDouble(), values->height(), table->height());
+            return retained;
+        }
         if (scenario == "inspector_configmap") {
             auto* values = item(window, "resourceValues");
-            if (!waitFor([&] { return values->isVisible() && values->height() > 0 && values->property("contentHeight").toDouble() > values->height(); })) return false;
+            if (!waitFor([&] { return values->isVisible() && item(window, "valueTable")->height() > 0
+                && values->property("contentHeight").toDouble() > values->height() && item(window, "value_data/booleanText"); })) return false;
             values->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
             const bool visible = waitFor([&] { return text(window, "value_data/numericText")=="123"; });
-            if (!visible) std::fprintf(stderr, "ConfigMap end navigation: y=%.1f content=%.1f viewport=%.1f\n", values->property("contentY").toDouble(), values->property("contentHeight").toDouble(), values->height());
+            if (!visible) std::fprintf(stderr, "ConfigMap end navigation: y=%.1f content=%.1f viewport=%.1f focus=%s rows=%d\n", values->property("contentY").toDouble(), values->property("contentHeight").toDouble(), values->height(),
+                window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none", item(window,"valueTable")->property("rows").toInt());
             return visible;
         }
         if (!noLeak() || !waitFor([&] { return item(window, "reveal_data/alpha"); })) return false;

@@ -14,6 +14,36 @@ ColumnLayout {
     property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
     property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
     property var visualOrder: []
+    property bool inspectable: true
+    property int sortableColumns: -1
+    property int rowHeight: 32
+    property bool wrapCells: false
+    property var actionColumns: []
+    property var accessoryColumns: []
+    property Component cellAccessory: null
+    property var cellName: null
+    property alias contentY: table.contentY
+    readonly property real contentHeight: table.contentHeight
+    readonly property real viewportHeight: table.height
+    readonly property int count: table.rows
+    readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
+    onContextScopeChanged: { cellMenu.close(); valueTip.target = null }
+    signal actionRequested(string identity, int column, string label)
+    function activateCell(row, column) {
+        if (actionColumns.indexOf(column) >= 0) {
+            const label = tableModel.data(tableModel.index(row, column), Qt.DisplayRole)
+            if (label !== "") actionRequested(pathAt(row), column, label)
+        } else if (inspectable) inspectRequested(endpointAt(row, column))
+    }
+    activeFocusOnTab: true
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+            table.forceLayout()
+            table.positionViewAtRow(event.key === Qt.Key_Home ? 0 : table.rows - 1,
+                event.key === Qt.Key_Home ? TableView.AlignTop : TableView.AlignBottom)
+            event.accepted = true
+        }
+    }
     property bool findOpen: false
     property int findCount: 0
     property int findIndex: -1
@@ -78,7 +108,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Item { Layout.fillWidth: true }
         Button { objectName: grid.prefix + "FindButton"; text: "Find"; Accessible.name: "Find within cached " + grid.prefix + " rows"; onClicked: grid.openFind() }
-        Button { objectName: grid.prefix + "ColumnsButton"; text: "Columns"; Accessible.name: grid.prefix === "resource" ? "Resource table columns" : grid.prefix === "event" ? "Event table columns" : "Port table columns"; onClicked: columnsDialog.open() }
+        Button { objectName: grid.prefix + "ColumnsButton"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: columnsDialog.open() }
     }
     RowLayout {
         Layout.fillWidth: true
@@ -107,7 +137,7 @@ ColumnLayout {
         property int column: -1
         onAboutToShow: grid.contextRequested(path)
         property string endpoint: ""
-        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: "Open in inspector"; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
+        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: "Open in inspector"; visible: grid.inspectable; enabled: visible; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
         MenuItem { objectName: grid.prefix === "resource" ? "menuCopy" : grid.prefix + "MenuCopy"; text: "Copy value"; onTriggered: grid.copyPathRequested(cellMenu.path, cellMenu.column) }
         Instantiator {
             model: grid.contextActions
@@ -123,6 +153,7 @@ ColumnLayout {
             required property int column
             hoverEnabled: true
             readonly property bool pinned: TableView.view === pinnedHeader
+            readonly property bool sortable: grid.sortableColumns < 0 || column < grid.sortableColumns
             objectName: (pinned ? "pinnedHeader_" : grid.prefix === "resource" ? "header_" : grid.prefix + "Header_") + column
             text: model.display
             implicitWidth: 170
@@ -144,8 +175,9 @@ ColumnLayout {
                 Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: workspace.appearanceColors.accent; elide: Text.ElideRight }
                 Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: workspace.appearanceColors.accent; font.pixelSize: 12 }
             }
-            Accessible.name: model.display + (grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted")
-            onClicked: grid.sortRequested(column)
+            focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
+            Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
+            onClicked: if (sortable) grid.sortRequested(column)
             ToolTip.visible: (hovered || activeFocus) && contentItem.implicitWidth > availableWidth
             ToolTip.text: text
             TapHandler { acceptedButtons: Qt.RightButton; onTapped: columnsDialog.open() }
@@ -164,25 +196,33 @@ ColumnLayout {
             required property bool selected
             required property bool current
             readonly property bool pinned: TableView.view === pinnedTable
-            objectName: (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
+            objectName: grid.cellName ? grid.cellName(row, column, resourcePath) : (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
             implicitWidth: 170
-            implicitHeight: 32
+            implicitHeight: grid.rowHeight
             font.pixelSize: 13
             highlighted: selected
             text: model.display
             Accessible.name: model.display
             contentItem: RowLayout {
                 spacing: 6
-                Label { id: cellText; Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: cell.font; color: identityColor.a > 0 ? identityColor : palette.text; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
+                Label { id: cellText; Layout.fillWidth: true; visible: grid.accessoryColumns.indexOf(cell.column) < 0; text: model.display; textFormat: Text.PlainText; font: cell.font; color: identityColor.a > 0 ? identityColor : palette.text; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter; wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap; maximumLineCount: grid.wrapCells ? 3 : 1 }
+                Loader {
+                    active: grid.cellAccessory !== null && grid.accessoryColumns.indexOf(cell.column) >= 0
+                    visible: active
+                    sourceComponent: grid.cellAccessory
+                    property string identity: cell.resourcePath
+                    property int column: cell.column
+                    property bool encodedValue: cell.model.encodedValue
+                }
             }
             background: Rectangle {
                 color: cell.highlighted || cell.current ? workspace.appearanceColors.selection : cell.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
                 border.color: cell.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
                 border.width: 1
             }
-            onClicked: grid.inspectRequested(grid.endpointAt(row, column))
-            Keys.onReturnPressed: grid.inspectRequested(grid.endpointAt(row, column))
-            Keys.onEnterPressed: grid.inspectRequested(grid.endpointAt(row, column))
+            onClicked: grid.activateCell(row, column)
+            Keys.onReturnPressed: grid.activateCell(row, column)
+            Keys.onEnterPressed: grid.activateCell(row, column)
             Keys.onPressed: function(event) {
                 if (event.matches(StandardKey.Copy)) { grid.copyRequested(row, column); event.accepted = true }
                 else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
@@ -191,8 +231,8 @@ ColumnLayout {
                     event.accepted = true
                 }
             }
-            readonly property string tipText: model.display
-            readonly property bool wantsTip: (hovered || activeFocus) && cellText.truncated
+            readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : model.display
+            readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > model.display.length)
             onWantsTipChanged: if (wantsTip) valueTip.target=cell
             Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
             TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup() } }
@@ -209,29 +249,29 @@ ColumnLayout {
                 Layout.preferredWidth: Math.min(grid.pinnedWidth, Math.max(0, grid.width - (grid.hasScrollingColumns ? 120 : 0)))
                 Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { id: pinnedHeader; Layout.fillWidth: true; syncView: pinnedTable; clip: true; delegate: headerDelegate }
+                HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; delegate: headerDelegate }
                 TableView {
                     id: pinnedTable
                     objectName: grid.prefix + "PinnedTable"
                     Layout.fillWidth: true; Layout.fillHeight: true
                     clip: true
-                    model: grid.tableModel
+                    model: grid.pinnedWidth > 0 ? grid.tableModel : null
                     selectionModel: selection
                     selectionBehavior: TableView.SelectRows
                     selectionMode: TableView.SingleSelection
-                    syncView: table
+                    syncView: grid.pinnedWidth > 0 ? table : null
                     syncDirection: Qt.Vertical
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && state.pinned ? state.width : 0 }
-                    rowHeightProvider: function() { return 32 }
+                    rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.horizontal: ScrollBar {}
                     delegate: cellDelegate
-                    Keys.onReturnPressed: if (selection.currentIndex.valid) grid.inspectRequested(grid.endpointAt(selection.currentIndex.row, selection.currentIndex.column))
+                    Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
                 }
             }
             ColumnLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { Layout.fillWidth: true; syncView: table; clip: true; delegate: headerDelegate }
+                HorizontalHeaderView { objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; delegate: headerDelegate }
                 TableView {
                     id: table
                     objectName: grid.prefix + "Table"
@@ -242,11 +282,11 @@ ColumnLayout {
                     selectionBehavior: TableView.SelectRows
                     selectionMode: TableView.SingleSelection
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && !state.pinned ? state.width : 0 }
-                    rowHeightProvider: function() { return 32 }
+                    rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar {}
                     delegate: cellDelegate
-                    Keys.onReturnPressed: if (selection.currentIndex.valid) grid.inspectRequested(grid.endpointAt(selection.currentIndex.row, selection.currentIndex.column))
+                    Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
                 }
             }
         }

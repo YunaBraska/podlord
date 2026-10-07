@@ -1187,12 +1187,28 @@ rules. Partial cached resources remain usable while collections arrive.
 | FLT-016 | Named resource filter presets MUST be shared within the profile, while applying a preset affects only the active session. Save/overwrite, load, rename, delete and reload MUST be reachable controls. The empty default cannot be changed, renamed or deleted. |
 | FLT-017 | Presets and per-session mode state MUST survive restart. Atomic private persistence MUST detect conflicting writers and retain malformed/newer documents instead of replacing them with defaults. |
 
-Native presets currently capture search, the implemented field expressions and
-Problems/Activity. They do not capture table sort or radar camera. C# preset
-parameters without an implemented native entrypoint (notably Age, UID and the
-reference row-limit setting) remain parity gaps, not silently supported options.
-Version 3 session-view documents preserve versions 1/2 on read and upgrade only
-when a view actually changes. The native preset schema is not a C# profile import.
+Native presets capture search, implemented field expressions and Problems/Activity,
+not table sort or radar camera. Session views version 5 preserve older supported
+documents on read and upgrade only when a view actually changes. Saved-filter
+import is not a complete C# profile import.
+
+### How Must Saved-Filter Migration Behave?
+
+- FLT-018: Import MUST be explicit and accept a regular local JSON file in the native or C# saved-filter format, within the existing 64 KiB bound. It MUST NOT access an ambient reference profile or modify the selected source.
+- FLT-019: Import MUST preserve search, Problems/Activity and supported field expressions. Mutually conflicting modes, malformed fields, unsupported fields and case-insensitive name collisions MUST fail without partial replacement. Repeating the same named state MUST be idempotent; differing state MUST NOT silently overwrite an existing name.
+- FLT-020: Import MUST use the existing asynchronous preset owner and private atomic persistence. Failure MUST preserve existing presets and report an error without exposing document contents. Import and applying the resulting filter MUST NOT initiate Kubernetes requests.
+
+C# ApplyPreset clears Id; import does the same rather than inventing a UID
+predicate. Its row-limit is a display cap, not a filter; the native virtualized
+view retains all matching cached resources. This bounded compatibility behavior
+and rollback are owned by ADR 0031.
+
+### How Must The Values Inspector Apply The Shared Table Contract?
+
+- VAL-TBL-001: Values MUST provide Key, Encoding, Value, Copy and Reveal columns. Key, Encoding and displayed Value MUST cycle ASC/DESC/NONE. Copy and Reveal are action columns, not sortable controls.
+- VAL-TBL-002: KEY and VALUE MUST remain direct copy actions; encoded values MUST also offer RAW and DEC. Invalid decoding MUST leave the clipboard unchanged and show an explicit error. Secret access and reveal rules remain authoritative for every representation.
+- VAL-TBL-003: Sorting, table Find and overflow presentation MUST read the masked displayed projection. Concealed Secret values MUST NOT become searchable or appear in tooltips. Layout and sort persistence MUST NOT contain resource values.
+- VAL-TBL-004: Values MUST reuse hide, reorder, pin, width, keyboard copy and full-value access under TBL-004 through TBL-012. Refresh in the same inspector scope MUST preserve reading position. Changing scope MUST dismiss stale menus and overflow presentation.
 
 ## How Must Filtered Radar Terrain And Native Settings Match The Reference?
 

@@ -107,35 +107,38 @@ QString Workspace::selectedFilterPreset() const {
         if (preset->filter == nav.filter && preset->fields == nav.fields && preset->mode == nav.mode) return preset.key();
     return {};
 }
-bool Workspace::reloadFilterPresets() {
-    if (presetsBusy_) return false;
+bool Workspace::updateFilterPresets(const std::function<Result<TableViewStates>(const ViewStateStore&)>& operation, bool reload) {
+    if (presetsBusy_ || (!reload && !presetsReady_)) return false;
     presetsBusy_ = true; emit filterPresetsChanged();
     auto* watcher = new QFutureWatcher<Result<TableViewStates>>(this);
-    connect(watcher, &QFutureWatcher<Result<TableViewStates>>::finished, this, [this, watcher] {
+    connect(watcher, &QFutureWatcher<Result<TableViewStates>>::finished, this, [this, watcher, reload] {
         const auto result = watcher->result(); watcher->deleteLater(); presetsBusy_ = false;
-        if (const auto* failure = std::get_if<Failure>(&result)) { presetsReady_ = false; presetsError_ = failure->message; }
-        else { presets_ = std::get<TableViewStates>(result); presetsReady_ = true; presetsError_.clear(); }
+        if (const auto* failure = std::get_if<Failure>(&result)) {
+            if (reload) presetsReady_ = false;
+            presetsError_ = failure->message;
+        } else { presets_ = std::get<TableViewStates>(result); presetsReady_ = true; presetsError_.clear(); }
         emit filterPresetsChanged(); emit fieldFiltersChanged(); emit changed();
         if (viewClosePending_ && !viewSaving_ && pendingViews_.isEmpty() && !viewStateFailed()) emit windowCloseApproved();
     });
-    presetsFuture_ = QtConcurrent::run([profile = profile_, schemas = tableSchemas()] { return ViewStateStore(profile, schemas).loadPresets(); });
+    presetsFuture_ = QtConcurrent::run([profile = profile_, schemas = tableSchemas(), operation] {
+        return operation(ViewStateStore(profile, schemas));
+    });
     watcher->setFuture(presetsFuture_); return true;
 }
+bool Workspace::reloadFilterPresets() {
+    return updateFilterPresets([](const ViewStateStore& store) { return store.loadPresets(); }, true);
+}
 bool Workspace::persistFilterPresets(const TableViewStates& desired) {
-    if (presetsBusy_ || !presetsReady_) return false;
-    presetsBusy_ = true; emit filterPresetsChanged();
-    auto* watcher = new QFutureWatcher<Result<TableViewStates>>(this);
-    connect(watcher, &QFutureWatcher<Result<TableViewStates>>::finished, this, [this, watcher] {
-        const auto result = watcher->result(); watcher->deleteLater(); presetsBusy_ = false;
-        if (const auto* failure = std::get_if<Failure>(&result)) presetsError_ = failure->message;
-        else { presets_ = std::get<TableViewStates>(result); presetsError_.clear(); }
-        emit filterPresetsChanged(); emit fieldFiltersChanged(); emit changed();
-        if (viewClosePending_ && !viewSaving_ && pendingViews_.isEmpty() && !viewStateFailed()) emit windowCloseApproved();
+    return updateFilterPresets([desired, expected = presets_](const ViewStateStore& store) { return store.savePresets(desired, expected); });
+}
+bool Workspace::importFilterPresets(const QUrl& source) {
+    if (!source.isValid() || !source.isLocalFile() || source.hasQuery() || source.hasFragment()) {
+        presetsError_ = "Choose a local saved-filter JSON file. No filters were changed.";
+        emit filterPresetsChanged(); return false;
+    }
+    return updateFilterPresets([path = source.toLocalFile(), expected = presets_](const ViewStateStore& store) {
+        return store.importPresets(path, expected);
     });
-    presetsFuture_ = QtConcurrent::run([profile = profile_, schemas = tableSchemas(), desired, expected = presets_] {
-        return ViewStateStore(profile, schemas).savePresets(desired, expected);
-    });
-    watcher->setFuture(presetsFuture_); return true;
 }
 bool Workspace::loadFilterPreset(const QString& name) {
     if (active_.isEmpty() || !presetsReady_ || !presets_.contains(name)) return false;

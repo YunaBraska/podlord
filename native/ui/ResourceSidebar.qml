@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Podlord.Graphics 1.0
 
@@ -77,11 +78,19 @@ Pane {
                 Button { objectName: "saveFilterPreset"; text: "Save"; implicitHeight: 28; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
                 ToolButton { objectName: "filterPresetActions"; text: "..."; Accessible.name: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.open() }
                 Menu { id: presetActions
+                    MenuItem { objectName: "importFilterPresets"; text: "Import saved filters..."; onTriggered: importPresets.open() }
                     MenuItem { objectName: "renameFilterPreset"; text: "Rename"; enabled: presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onTriggered: { renamePreset.original = presetName.text; renameText.text = presetName.text; renamePreset.open() } }
                     MenuItem { objectName: "deleteFilterPreset"; text: "Delete"; enabled: presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onTriggered: workspace.deleteFilterPreset(presetName.text) }
                 }
             }
             Label { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
+            FileDialog {
+                id: importPresets
+                title: "Import saved filters"
+                nameFilters: ["Saved filters (*.json)"]
+                fileMode: FileDialog.OpenFile
+                onAccepted: workspace.importFilterPresets(selectedFile)
+            }
             ListView {
                 id: filters
                 objectName: "sidebarFilters"
