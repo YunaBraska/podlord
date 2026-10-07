@@ -6,6 +6,7 @@ import Podlord.Graphics 1.0
 
 ColumnLayout {
     id: grid
+    Layout.minimumHeight: implicitHeight
     required property var tableModel
     required property int sortColumn
     required property string sortDirection
@@ -29,19 +30,66 @@ ColumnLayout {
     readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
     onContextScopeChanged: { cellMenu.close(); valueTip.target = null; if (selection) selection.clear() }
     signal actionRequested(string identity, int column, string label)
+    signal currentRequested(string identity)
+    function focusCell(row, column, owner) {
+        const index = tableModel.index(row, column)
+        selection.setCurrentIndex(index, ItemSelectionModel.NoUpdate)
+        owner.positionViewAtIndex(index, TableView.Contain)
+    }
+    function selectIdentity(identity, column) {
+        const current = selection.currentIndex
+        if (current.valid && pathAt(current.row) === identity) column = current.column
+        for (let row = 0; row < tableModel.rowCount(); ++row) {
+            if (pathAt(row) !== identity) continue
+            selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+            if (visible) {
+                table.forceLayout()
+                table.positionViewAtIndex(selection.currentIndex, TableView.Contain)
+            }
+            return true
+        }
+        selection.clear()
+        return false
+    }
     function activateCell(row, column) {
         if (actionColumns.indexOf(column) >= 0) {
             const label = tableModel.data(tableModel.index(row, column), Qt.DisplayRole)
             if (label !== "") actionRequested(pathAt(row), column, label)
         } else if (inspectable) inspectRequested(endpointAt(row, column))
     }
-    activeFocusOnTab: true
+    function handleCellKey(event, row, column, anchor) {
+        const current = selection.currentIndex
+        if (current.valid) { row = current.row; column = current.column }
+        if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+            const target = event.key === Qt.Key_Home ? 0 : table.rows - 1
+            if (target >= 0) {
+                selection.setCurrentIndex(tableModel.index(target, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+                table.positionViewAtRow(target, TableView.Contain)
+                table.forceActiveFocus(Qt.TabFocusReason)
+            }
+        } else if (event.matches(StandardKey.Copy)) grid.copyRequested(row, column)
+        else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
+            cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column
+            cellMenu.popup(anchor, 0, anchor.height)
+        } else return false
+        return true
+    }
+    function revealFocusedCell() {
+        let control = grid.Window.window ? grid.Window.window.activeFocusItem : null
+        while (control) {
+            if (control === table || control === pinnedTable) {
+                if (selection.currentIndex.valid) control.positionViewAtIndex(selection.currentIndex, TableView.Contain)
+                return
+            }
+            control = control.parent
+        }
+    }
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            table.forceLayout()
-            table.positionViewAtRow(event.key === Qt.Key_Home ? 0 : table.rows - 1,
-                event.key === Qt.Key_Home ? TableView.AlignTop : TableView.AlignBottom)
-            event.accepted = true
+            const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => column.visible).column
+            event.accepted = handleCellKey(event, 0, column, grid)
+        } else if (selection.currentIndex.valid) {
+            event.accepted = handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, grid.Window.window.activeFocusItem)
         }
     }
     property bool findOpen: false
@@ -103,7 +151,10 @@ ColumnLayout {
     }
     Component.onCompleted: synchronizeColumns()
     spacing: 0
-    ItemSelectionModel { id: selection; model: grid.tableModel }
+    ItemSelectionModel {
+        id: selection; model: grid.tableModel
+        onCurrentChanged: (current, previous) => { if (current.valid) grid.currentRequested(grid.pathAt(current.row)) }
+    }
     ResourceFindFilter { id: findMatches; sourceModel: grid.findOpen && grid.visible ? grid.tableModel : null }
     Connections {
         target: findMatches
@@ -179,6 +230,7 @@ ColumnLayout {
             contentItem: RowLayout {
                 spacing: 6
                 KindGlyph {
+                    visible: grid.prefix !== "alert"
                     Layout.preferredWidth: 12; Layout.preferredHeight: 12
                     kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
                     fill: workspace.appearanceColors.accent
@@ -199,20 +251,24 @@ ColumnLayout {
         ItemDelegate {
             id: cell
             hoverEnabled: true
+            activeFocusOnTab: true
             required property int row
             required property int column
             required property var model
             required property string resourcePath
             required property color identityColor
             required property bool selected
-            required property bool current
+            readonly property bool current: selection.currentIndex.valid && selection.currentIndex.row === row && selection.currentIndex.column === column
             readonly property bool pinned: TableView.view === pinnedTable
             objectName: grid.cellName ? grid.cellName(row, column, resourcePath) : (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
             implicitWidth: 170
             implicitHeight: grid.rowHeight
             font.pixelSize: 13
+            padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
             highlighted: selected
-            onActiveFocusChanged: if (activeFocus) selection.setCurrentIndex(grid.tableModel.index(row, column), ItemSelectionModel.NoUpdate)
+            onActiveFocusChanged: if (activeFocus) {
+                grid.focusCell(row, column, TableView.view)
+            }
             text: model.display
             Accessible.name: model.display
             contentItem: Label {
@@ -231,25 +287,22 @@ ColumnLayout {
                     visible: active
                     sourceComponent: grid.cellAccessory
                     property string identity: cell.resourcePath
+                    property int row: cell.row
                     property int column: cell.column
+                    property var tableView: cell.TableView.view
                     property bool encodedValue: cell.model.encodedValue
                 }
             }
             background: Rectangle {
                 color: cell.highlighted || cell.current ? workspace.appearanceColors.selection : cell.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-                border.color: cell.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+                border.color: cell.activeFocus || (cell.current && cell.TableView.view.activeFocus) ? workspace.appearanceColors.accent : workspace.appearanceColors.border
                 border.width: 1
             }
-            onClicked: grid.activateCell(row, column)
+            onClicked: { forceActiveFocus(Qt.MouseFocusReason); grid.activateCell(row, column) }
             Keys.onReturnPressed: grid.activateCell(row, column)
             Keys.onEnterPressed: grid.activateCell(row, column)
             Keys.onPressed: function(event) {
-                if (event.matches(StandardKey.Copy)) { grid.copyRequested(row, column); event.accepted = true }
-                else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
-                    cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column
-                    cellMenu.popup(cell, 0, cell.height)
-                    event.accepted = true
-                }
+                event.accepted = grid.handleCellKey(event, row, column, cell)
             }
             readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : model.display
             readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > model.display.length)
@@ -259,6 +312,7 @@ ColumnLayout {
         }
     }
     Item {
+        implicitHeight: scrollingHeader.implicitHeight + grid.rowHeight + horizontalScroll.implicitHeight
         Layout.fillHeight: true
         Layout.fillWidth: true
         RowLayout {
@@ -272,8 +326,11 @@ ColumnLayout {
                 HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; delegate: headerDelegate }
                 TableView {
                     id: pinnedTable
+                    animate: false
+                    activeFocusOnTab: true
                     objectName: grid.prefix + "PinnedTable"
                     Layout.fillWidth: true; Layout.fillHeight: true
+                    onWidthChanged: Qt.callLater(grid.revealFocusedCell)
                     clip: true
                     model: grid.visible && grid.pinnedWidth > 0 ? grid.tableModel : null
                     selectionModel: model ? selection : null
@@ -291,11 +348,14 @@ ColumnLayout {
             ColumnLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; delegate: headerDelegate }
+                HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; delegate: headerDelegate }
                 TableView {
                     id: table
+                    animate: false
+                    activeFocusOnTab: true
                     objectName: grid.prefix + "Table"
                     Layout.fillWidth: true; Layout.fillHeight: true
+                    onWidthChanged: Qt.callLater(grid.revealFocusedCell)
                     clip: true
                     model: grid.visible ? grid.tableModel : null
                     selectionModel: model ? selection : null
@@ -305,7 +365,7 @@ ColumnLayout {
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && !state.pinned ? state.width : 0 }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.vertical: ScrollBar {}
-                    ScrollBar.horizontal: ScrollBar {}
+                    ScrollBar.horizontal: ScrollBar { id: horizontalScroll }
                     delegate: cellDelegate
                     Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
                 }

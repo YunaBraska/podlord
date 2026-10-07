@@ -4244,3 +4244,36 @@ as a precise cross-platform speedup guarantee.
 The unprofiled macOS arm64 build passed all 491 selected public UI/filter regressions after separating display-role notifications from row-metadata invalidation. The selection covered field, metric, resource and age filters, table find, session/cluster switches, inspector values and Secrets, column tools, YAML preview and single-decision Cancel. Execution used twelve isolated processes and randomized order; elapsed time was 110.88 seconds. Evidence: `20261007-row-notification-regressions.log` and its JUnit XML. This is not a complete-suite or coverage result.
 
 The subsequent Cocoa/Metal measurement with 5,000 resources retained the existing gates. Filter p95 was 45.59 ms and sort p95 38.64 ms. Cached inspector p95 was 46.32 ms, maximum 65.27 ms. Cached session switching still failed: p95 78.37 ms and maximum 111.90 ms against 50/100 ms. Maximum resident memory was 259,637,248 bytes against 250,000,000; steady-state growth was 1,916,928 bytes and passed its 5,000,000-byte limit. The foreground window lost activation after 3.012 seconds, so the required uninterrupted 60-second idle CPU proof remains invalid. Evidence: `2026-10-07-row-notification-metal-performance` and `20261007-row-notification-metal-performance.log`. These measurements do not establish statistical improvements or release readiness.
+
+### What Did The 2026-10-07 Shared-Table And Scheduler Checks Establish?
+
+| Behavior / scenario | Public entrypoint | Test evidence | Result / remaining gap |
+| --- | --- | --- | --- |
+| Copy/Menu/Shift+F10 when Qt focuses a pinned table rather than a cell | Visible native grid and actual keyboard | `native.ui.columns_pin_namespace_table_copy`, `columns_pin_namespace_table_menu`, `columns_pin_namespace_table_f10`, Basic/Fusion | macOS 8/8 selected cases passed; Linux 9 selected cases repeated 20 times, 180/180 passed. Focus uses the shared current logical index. |
+| Shared table/filter/Values/YAML behavior after keyboard ownership correction | Public Qt controls and external HTTP boundary | `20261007-shared-key-regressions.xml` | macOS 508/508 passed, 104.75 seconds. This is scoped regression evidence, not a full latest-source suite. |
+| Concurrent pod/node metric requests | Real C# resource-service ingress and held external HTTP responses | `Resource_service_fetches_pod_and_node_metrics_in_parallel` | Deterministic rendezvous failed before the shared queue-worker correction and passed after it. No elapsed-delay assumption or internal fake is used. |
+| Six bounded request workers and a held twelve-request backlog | Public list requests and request telemetry | `FakeKubernetesBehaviorTests` held-backlog regression | Held external responses prove queued work before release; cleanup drains all started requests. The selected Kubernetes project run passed 59/59 non-k3d tests with coverage. Real-cluster/hosted confirmation remains required. |
+| Whole registered native suite at commit `842e01b` | Actual CLI and Qt test executables with isolated profiles | `20261007-current-full-suite.log`, fresh LLVM merge | 3765/3765 passed; lines 97.30% passed, branches 82.86% failed the 90% gate. Later changes are not covered by this historical full-suite claim. |
+| Registration inventory | CTest command/environment/work-directory configurations | `20261007-current-test-inventory.json` | 3765 registrations represented 2872 non-style configurations and 890 explicitly labeled style variants. No identical full registration was found; this does not prove all scenarios are semantically unique or that legacy assertions can remain. |
+| Foreground idle CPU with continued normal sync | Real Cocoa/Metal native performance window | `2026-10-07-runtime-profile/measurements.jsonl` | Valid 60,069 ms foreground interval, 1.183% of one core, foreground not lost; passed the 2% gate. Action timings sampled by a profiler are diagnostic only. |
+| Memory in that process | OS RSS sampler, `vmmap`, `heap` | `2026-10-07-runtime-profile/` | RSS maximum 259,735,552 bytes failed the 250 MB gate; idle growth 3,145,728 bytes passed the 5 MB gate. OS physical footprint was separately 542 MiB and includes graphics allocations; it is not interchangeable with RSS. Root-cause/performance and installed-package gates remain open. |
+
+The existing macOS arm64/Intel and Linux amd64/arm64 CI jobs provide real
+architecture execution rather than renamed copies of one host's test result.
+The current hosted run is not green. Keep independent tests concurrent where
+profiles and external servers are isolated; keep foreground performance and
+interactive screenshot runs exclusive. Do not merge unrelated scenarios merely
+to reduce the registration count, and do not count a component or offscreen test
+as an installed application, device, real-cluster or paired-image proof.
+
+### What Does The Shared Alarm Table Verify?
+
+The alarm rule table now uses the same native model, selection, Find, copy/context menu, three-state sorting and column editor as the other resource tables. Layout version 7 adds `alert`; reading older versions supplies defaults without rewriting the file, and saving preserves unrelated layouts. The canonical rule UUID owns editor selection, including sorting, duplicated/deleted rows and pinned columns. Match ticks update only the Active column, not rule metadata or sound labels.
+
+- macOS: 817 shared alarm/table/filter/value/YAML regression registrations passed in 128.38 seconds with 12 workers (`20261007-shared-alarm-grid-final.log`).
+- Linux: 317 alarm/layout/pinned-column registrations passed in 67.81 seconds with four workers (`2026-10-07-linux-values/shared-alarm-grid.log`). The isolated verification container removed itself; the existing latest verification image was reused.
+- Ten keyboard/Tab/duplicate/delete registrations each passed 20 consecutive executions, 200 executions in 19.08 seconds (`20261007-alarm-helper-reuse.log`). The tests reuse the existing visible-item lookup rather than selecting hidden recycled delegates.
+- New public checks cover valid/invalid Find; hide/show/pin/order/resize/cancel/defaults/last-visible/invalid-width/restart of alarm columns; native keyboard entry; and old-layout upgrade/read/save/failure retention. Basic/Fusion executions are style variants, not additional distinct product scenarios.
+- `20261007-native-alert-table-current.png` records an actual Cocoa-rendered native window with the three real built-in definitions and a private empty profile. It verifies the current On header and shared table layout. It is not a populated Kubernetes screenshot, a C#/C++ pair, or evidence for the full view/theme matrix.
+
+The previous whole-suite coverage figures still belong to the earlier saved revision. These scoped passes do not establish the current full-suite coverage gates, filter RowLimit parity, multiwindow, localization, the complete paired image matrix, or the failing memory/cached-tab budgets.

@@ -55,6 +55,6 @@ jobs:
         with:
           name: coverage-reports
           path: |
-            tests/**/TestResults/**/coverage.cobertura.xml
-          if-no-files-found: ignore
+            /tmp/podlord-test.*/results/**/coverage.cobertura.xml
+          if-no-files-found: error
           retention-days: 14

@@ -497,9 +497,8 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
         var activeRequests = 0;
         var maxActiveRequests = 0;
-        var queueSamples = new List<int>();
+        var releaseResponses = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stateLock = new object();
-        KubernetesResourceService? service = null;
         var handler = new AsyncRecordingHandler(async (_, cancellationToken) =>
         {
             var active = Interlocked.Increment(ref activeRequests);
@@ -509,12 +508,11 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
                 {
                     maxActiveRequests = active;
                 }
-                queueSamples.Add(service!.RequestTelemetry().QueuedRequests);
             }
 
             try
             {
-                await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+                await releaseResponses.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
                 return JsonResponse(NamespaceList());
             }
             finally
@@ -522,17 +520,31 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
                 Interlocked.Decrement(ref activeRequests);
             }
         });
-        service = Service(kubeconfig, handler, directory);
+        var service = Service(kubeconfig, handler, directory);
 
         var requests = Enumerable.Range(0, 12)
             .Select(_ => service.ListClusterResourcesAsync(new ResourceQuery(Kind: "\"Namespace\"", ForceRefresh: true)))
             .ToArray();
-        var snapshots = await Task.WhenAll(requests);
+        var completed = Task.WhenAll(requests);
+        try
+        {
+            var watch = Stopwatch.StartNew();
+            while (service.RequestTelemetry().QueuedRequests == 0 && watch.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                await Task.Delay(10);
+            }
+            Assert.True(service.RequestTelemetry().QueuedRequests > 0, "Requests exceeding the six occupied slots must remain visibly queued.");
+        }
+        finally
+        {
+            releaseResponses.TrySetResult();
+            await completed;
+        }
+        var snapshots = await completed;
 
         Assert.All(snapshots, snapshot => Assert.Empty(snapshot.Failures));
         Assert.True(maxActiveRequests is >= 2 and <= 6, $"Expected bounded parallelism, observed {maxActiveRequests} concurrent requests.");
-        Assert.Contains(queueSamples, sample => sample > 0);
-        Assert.True(service!.RequestTelemetry().RequestsLastMinute >= requests.Length);
+        Assert.True(service.RequestTelemetry().RequestsLastMinute >= requests.Length);
     }
 
     [Fact]
@@ -1015,41 +1027,37 @@ printf '%s' '{"status":{"token":"exec-cache-token"}}'
         var directory = TempDirectory();
         var kubeconfig = Path.Combine(directory, "config.yaml");
         File.WriteAllText(kubeconfig, Kubeconfig("token", directory));
-        var activeMetricRequests = 0;
-        var maxMetricRequests = 0;
+        var metricRequests = 0;
+        var bothMetricsArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var handler = new AsyncRecordingHandler(async (request, cancellationToken) =>
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
-            if (!path.StartsWith("/apis/metrics.k8s.io/", StringComparison.Ordinal))
+            if (path is not ("/apis/metrics.k8s.io/v1beta1/pods" or "/apis/metrics.k8s.io/v1beta1/nodes"))
             {
                 return path == "/api/v1/namespaces/payments/pods"
                     ? JsonResponse(PodListWithResources())
                     : JsonResponse("""{"items":[]}""");
             }
 
-            var active = Interlocked.Increment(ref activeMetricRequests);
-            maxMetricRequests = Math.Max(maxMetricRequests, active);
-            try
+            if (Interlocked.Increment(ref metricRequests) == 2)
             {
-                await Task.Delay(120, cancellationToken).ConfigureAwait(false);
-                return path switch
-                {
-                    "/apis/metrics.k8s.io/v1beta1/pods" => JsonResponse(PodMetricsList()),
-                    "/apis/metrics.k8s.io/v1beta1/nodes" => JsonResponse(NodeMetricsList()),
-                    _ => JsonResponse("""{"items":[]}""")
-                };
+                bothMetricsArrived.TrySetResult();
             }
-            finally
+            await bothMetricsArrived.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            return path switch
             {
-                Interlocked.Decrement(ref activeMetricRequests);
-            }
+                "/apis/metrics.k8s.io/v1beta1/pods" => JsonResponse(PodMetricsList()),
+                _ => JsonResponse(NodeMetricsList())
+            };
         });
         var service = Service(kubeconfig, handler, directory);
 
         var snapshot = await service.ListClusterResourcesAsync(new ResourceQuery(Kind: "\"Pod\"", Namespace: "\"payments\"", ForceRefresh: true));
 
         Assert.Single(snapshot.Rows);
-        Assert.True(maxMetricRequests >= 2, $"Expected pod and node metric requests to overlap, observed {maxMetricRequests}.");
+        Assert.Empty(snapshot.Failures);
+        Assert.True(bothMetricsArrived.Task.IsCompletedSuccessfully, "Both metrics requests must arrive before either response is released.");
+        Assert.Equal(2, metricRequests);
     }
 
     [Fact]

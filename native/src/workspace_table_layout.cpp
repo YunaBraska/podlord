@@ -5,8 +5,8 @@
 namespace podlord {
 TableSchemas Workspace::tableSchemas(bool includeAuxiliary) const {
     TableSchemas result;
-    for (const auto& entry : {std::pair{QString("resource"), &rows_}, std::pair{QString("event"), &eventRows_}, std::pair{QString("port"), &portRows_},
-        std::pair{QString("inspectorEvent"), &inspectorEventRows_}, std::pair{QString("inspectorLink"), &inspectorLinkRows_}, std::pair{QString("value"), &valueRows_}}) {
+    for (const auto& entry : QList<QPair<QString, const QAbstractItemModel*>>{{"resource", &rows_}, {"event", &eventRows_}, {"port", &portRows_},
+        {"inspectorEvent", &inspectorEventRows_}, {"inspectorLink", &inspectorLinkRows_}, {"value", &valueRows_}, {"alert", alerts_.tableModel()}}) {
         if (!includeAuxiliary && entry.first != "resource" && entry.first != "event") continue;
         QStringList ids;
         for (int column = 0; column < entry.second->columnCount(); ++column)
@@ -15,7 +15,7 @@ TableSchemas Workspace::tableSchemas(bool includeAuxiliary) const {
     }
     return result;
 }
-QVariantList Workspace::tableColumns(const QString& table, const ResourceTable& model, bool defaults) const {
+QVariantList Workspace::tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults) const {
     QVariantList result;
     const auto ids = tableSchemas(true).value(table);
     for (const auto& entry : defaults ? defaultTableLayouts(tableSchemas(true)).value(table) : tableLayouts_.value(table)) {
@@ -26,12 +26,13 @@ QVariantList Workspace::tableColumns(const QString& table, const ResourceTable& 
     return result;
 }
 QVariantList Workspace::resourceColumns() const { return tableColumns("resource", rows_); }
+QVariantList Workspace::alertColumns() const { return tableColumns("alert", *alerts_.tableModel()); }
 QVariantList Workspace::eventColumns() const { return tableColumns("event", eventRows_); }
 QVariantList Workspace::portColumns() const { return tableColumns("port", portRows_); }
 QVariantList Workspace::defaultTableColumns(const QString& table) const {
     return table=="resource" ? tableColumns(table,rows_,true) : table=="event" ? tableColumns(table,eventRows_,true) : table=="port" ? tableColumns(table,portRows_,true)
         : table=="inspectorEvent" ? tableColumns(table,inspectorEventRows_,true) : table=="inspectorLink" ? tableColumns(table,inspectorLinkRows_,true)
-        : table=="value" ? tableColumns(table,valueRows_,true) : QVariantList{};
+        : table=="value" ? tableColumns(table,valueRows_,true) : table=="alert" ? tableColumns(table,*alerts_.tableModel(),true) : QVariantList{};
 }
 bool Workspace::reloadTableLayouts() {
     if (tableLayoutSaving_) return false;
