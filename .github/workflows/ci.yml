@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev
+      - 'feat/**'
   pull_request:
     types:
       - opened
