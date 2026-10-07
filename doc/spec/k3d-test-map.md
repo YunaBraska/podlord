@@ -4056,3 +4056,12 @@ not inferred from the configured matrix. The earlier broad real-Kubernetes lane
 passed terminal, forward, deletion, history, search and metric steps but stopped
 at the old driver's health abort before desktop comparison. Its successful steps
 are not relabelled as a completed release-review lane.
+
+The final uninstrumented Release foreground run completed without losing focus
+(`2026-10-07-stable-columns-performance`). Filter p95 was 44.94 ms, sort 37.76 ms,
+cached inspector 32.86 ms, and 60.409 nonsync idle seconds used 1.288 percent of
+one core: those classes passed. Cached-session-tab p95 was 96.50 ms with a
+114.06 ms maximum; RSS reached 266.47 MB despite only 2.41 MB warm growth.
+The 50 ms tab and 250 MB resident limits remain failed release gates. Neither
+limits nor unsuccessful samples were removed. This driver is not an installed
+startup or complete UI-work-per-frame benchmark.
