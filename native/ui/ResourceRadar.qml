@@ -40,10 +40,10 @@ Pane {
             Layout.fillWidth: true
             Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
             Item { Layout.fillWidth: true }
-            Button { objectName: "radarZoomOut"; text: "-"; implicitWidth: radarPane.compact ? 28 : 72; implicitHeight: radarPane.compact ? 24 : 30; Accessible.name: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
+            Button { objectName: "radarZoomOut"; text: "-"; leftPadding: 6; rightPadding: 6; implicitWidth: radarPane.compact ? 28 : 72; implicitHeight: radarPane.compact ? 24 : 30; Accessible.name: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
             Label { text: Math.round(grid.viewPose.zoom * 100) + "%" }
-            Button { objectName: "radarZoom"; text: "+"; implicitWidth: radarPane.compact ? 28 : 72; implicitHeight: radarPane.compact ? 24 : 30; Accessible.name: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
-            Button { objectName: "resetRadar"; text: radarPane.compact ? "Reset" : "Reset view"; implicitWidth: radarPane.compact ? 54 : 90; implicitHeight: radarPane.compact ? 24 : 30; onClicked: grid.resetView() }
+            Button { objectName: "radarZoom"; text: "+"; leftPadding: 6; rightPadding: 6; implicitWidth: radarPane.compact ? 28 : 72; implicitHeight: radarPane.compact ? 24 : 30; Accessible.name: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
+            Button { objectName: "resetRadar"; text: radarPane.compact ? "Reset" : "Reset view"; leftPadding: 6; rightPadding: 6; implicitWidth: radarPane.compact ? 54 : 90; implicitHeight: radarPane.compact ? 24 : 30; onClicked: grid.resetView() }
         }
         RowLayout {
             Layout.fillWidth: true
@@ -224,13 +224,15 @@ Pane {
                     border.width: tile.hovered || tile.activeFocus || tile.resourcePath === workspace.inspectorPath || (grid.activeFocus && grid.currentIndex === tile.resourceIndex) ? 1.2 : 0
                     border.color: "#7DFFC3"
                 }
-                KindGlyph {
-                    objectName: "radarGlyph_" + tile.resourceIndex
+                Loader {
                     anchors.fill: parent
-                    kind: tile.resourceKind
-                    visible: width >= 9
-                    fill: workspace.appearanceColors.inset
-                    stroke: tile.alertColor
+                    active: tile.width >= 9
+                    sourceComponent: KindGlyph {
+                        objectName: "radarGlyph_" + tile.resourceIndex
+                        kind: tile.resourceKind
+                        fill: workspace.appearanceColors.inset
+                        stroke: tile.alertColor
+                    }
                 }
                 HoverHandler { id: hover }
                 TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: { grid.selectResource(tile.resourceIndex); grid.forceActiveFocus(); workspace.inspectRow(tile.resourceIndex) } }

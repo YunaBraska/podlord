@@ -138,3 +138,25 @@ until an explicit save. Invalid or newer documents fail without replacement.
 Rollback requires a compatible executable or a preserved older private profile,
 not destructive rewriting. Values now has scoped public-boundary evidence;
 Alerts/Diagnostics tools and complete paired visual parity remain separate gates.
+
+### How Does A Session Switch Differ From A Cache Refresh?
+
+Resource and Event model identities are scoped to their session. Switching the
+session replaces the published model once using the standard Qt model-reset
+boundary; equal resource paths in different sessions do not retain selection
+identity. A refresh within the same session continues using incremental updates
+so scroll and selected-resource identity can survive fresh data. Unscoped model
+callers keep the existing incremental contract, including cluster-label rebinding.
+
+Hidden resource grids disconnect their rendered table models while retaining the
+shared cache and view state. Radar glyphs are instantiated only at readable zoom
+sizes. Compact Radar buttons reserve sufficient content space in both control
+styles. Text sorting fetches each operand once and uses Qt's string comparison;
+locale-aware, numeric and timestamp sorting retain Qt's proxy implementation.
+When a hidden grid becomes visible, its saved column order is applied only after
+the model exposes its columns. Qt's current index mapping is checked before
+clearing an existing order. Reapplying an unchanged order can recycle the focused
+delegate during keyboard input and destabilize rapid filtering of a large table;
+it provides no presentation benefit. Menus and overflow tips close on hiding.
+These changes do not relax the latency or memory gates and add no network or
+storage work to rendering.

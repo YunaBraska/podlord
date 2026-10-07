@@ -9,6 +9,7 @@
 #include <QLockFile>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlExpression>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTcpServer>
@@ -224,11 +225,25 @@ bool run(const QString& scenario, const QString& configPath) {
         std::fprintf(stderr,"Forward setup did not obtain its fresh target: %s / %s\n",qPrintable(workspace.error()),qPrintable(workspace.inspectorStatus())); return false;
     }
     const auto named = [&](const char* name) -> QQuickItem* {
+        const auto parts = QString::fromLatin1(name).split('_');
+        if ((parts.size() == 3 && parts[0] == "portCell") || (parts.size() == 2 && parts[0] == "portHeader")) {
+            auto* view = podlord::test::visibleItem(window->contentItem(), parts.size() == 3 ? "portTable" : "portHeaderView");
+            if (!view) return nullptr;
+            QQmlExpression lookup(qmlContext(view), view, parts.size() == 3
+                ? QString("itemAtIndex(model.index(%1, %2))").arg(parts[1], parts[2])
+                : QString("(function() { for (let column = 0; column < columns; ++column) { const header = itemAtCell(Qt.point(column, 0)); if (header && header.objectName === '%1') return header; } return null; })()").arg(QString::fromLatin1(name)));
+            auto* result = lookup.evaluate().value<QQuickItem*>();
+            if (lookup.hasError()) std::fprintf(stderr, "Ports delegate lookup: %s\n", qPrintable(lookup.error().toString()));
+            return result;
+        }
+        if (auto* visible = podlord::test::visibleItem(window->contentItem(), QString::fromLatin1(name))) return visible;
         QList<QQuickItem*> pending{window->contentItem()};
         while (!pending.isEmpty()) { auto* item = pending.takeLast(); if (item->objectName() == QLatin1String(name)) return item; pending.append(item->childItems()); }
         return nullptr;
     };
     const auto click = [&](const char* name) {
+        QSignalSpy frame(window, &QQuickWindow::frameSwapped); window->update();
+        if (!frame.wait(1000)) return false;
         auto* item = named(name); if (!item || !item->isVisible() || !item->isEnabled()) return false;
         QList<QQuickItem*> parents; for (auto* next = item; next; next = next->parentItem()) parents.prepend(next);
         for (auto* next : parents) next->ensurePolished();
@@ -368,7 +383,9 @@ bool run(const QString& scenario, const QString& configPath) {
         const auto openedStreams = upgrades;
         const auto token=workspace.portForwards().first().toMap()["id"].toString();
         const auto endpoint=workspace.portForwards().first().toMap()["endpoint"].toString();
-        if (!click("portForwardTasksButton") || !waitFor([&] { return named("portTable") && named("portTable")->isVisible(); })) return false;
+        if (!click("portForwardTasksButton") || !waitFor([&] { return named("portCell_0_0") && named("portCell_0_0")->isVisible(); })) {
+            std::fputs("Ports table did not render its first endpoint.\n", stderr); return false;
+        }
         if (scenario.startsWith("ports_table_")) {
             auto* table = workspace.property("portTable").value<QAbstractItemModel*>();
             if (!table || table->rowCount() < 1 || table->columnCount() != 7) return false;

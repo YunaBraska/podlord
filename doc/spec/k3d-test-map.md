@@ -3991,3 +3991,68 @@ and paired filter evidence, multiwindow ownership, translations, the full paired
 view/theme matrix including terminal, foreground latency/memory budgets and
 90-percent branch coverage. The previous private package predates this increment
 and is not labelled current. Signing/notarization remains intentionally deferred.
+
+## 2026-10-07: What Does The Session-Publication And Radar Follow-Up Establish?
+
+Session-scoped Resource/Event replacement and hidden-grid detachment passed all
+996 affected macOS cases in 201.64 seconds (`20261007-session-scope-ui.log/xml`).
+Same-session incremental refresh and the existing unscoped cluster-rebind
+contract remain covered. This result precedes the later sorting and glyph changes.
+
+The public compact-Radar case failed first in Basic because the Reset text was
+clipped; Fusion passed (`20261007-radar-controls-red.log`). After the padding fix,
+all twelve compact-control, zoom, layout and glyph cases passed in both styles
+(`20261007-radar-visible-glyph.log/xml`). The old glyph cases asserted existence
+of an invisible object. They now zoom and focus through public controls and assert
+visible Pod/Widget glyphs, including filter reuse. No behavior case was deleted.
+
+The real local Kubernetes terminal lane passed `real_shell`, `real_vi`,
+`real_interrupt` and `real_touch_interrupt`. Evidence is
+`20261007-current-real-terminal.log` and four native frames in
+`2026-10-07-current-real-terminal`. This lane used real WebSocket exec and PTY
+streams, not credential-process authentication. Its owned cluster and volumes
+were removed. The frames predate the subsequent compact-control correction;
+they are not paired C#/C++ or full theme-matrix evidence.
+
+The complete pre-change foreground baseline measured tab p95 107.66 ms, maximum
+RSS 264.60 MB and nonsync idle CPU 1.254 percent of one core. The scoped-model
+follow-up completed its tab class at p95 81.78 ms, but lost focus in other phases
+and still exceeded the memory limit. The later sorting follow-up passed its
+filter, sort and inspector classes (p95 45.34, 40.11 and 45.87 ms respectively),
+but tab measurement lost foreground and RSS still reached 265.99 MB. Aborted
+5/9-second idle phases are not 60-second idle results. No overall performance
+clearance is claimed. Evidence directories: `2026-10-07-values-foreground-performance`,
+`2026-10-07-session-scope-foreground-verified`, `2026-10-07-sort-reuse-performance`.
+Foreground-loss failures now identify the actual exposure/focus precondition;
+the benchmark does not discard failed samples or relax limits.
+
+Final table lifecycle verification passed all 3,746 native macOS registrations
+in 557.78 seconds with twelve isolated workers
+(`20261007-stable-columns-complete.log/xml`) and all 1,285 affected Linux arm64
+cases in 528.00 seconds with six workers
+(`2026-10-07-linux-values/stable-columns.log/xml`). The earlier full run's four
+Events Shift+F10 failures were real focus regressions: applying an unchanged
+column order recycled the focused cell. The eight focused Menu/Shift+F10 cases
+passed after the shared-grid correction. An older real-Kubernetes driver also
+aborted inside Qt's table rebuild while typing a filter. The corrected driver
+passed that same large-resource health/Radar workflow through the new focused
+`native-health-e2e` lane (`20261007-stable-columns-real-health.log`). Its pending
+PVC, red failure-Pod and inspector frames are retained separately from the failed
+`20261007-table-lifecycle-real-review.log` lane; both owned clusters were removed.
+
+Five overview registrations duplicated the exact Basic command and environment;
+their existing Basic/Fusion registrations remain. The final inventory has 2,865
+behavior registrations and 881 real style variants, with no identical
+command/environment pairs (`20261007-compacted-inventory.json`). Quantity-filter
+variants remain because they operate the real picker and keyboard, not just a
+style-independent parser. No unrelated behavior cases were merged.
+
+The updated private arm64 package passed physical dependency, minimum-OS,
+architecture, size and ad-hoc signature checks
+(`2026-10-07-stable-columns-package`). Package preflight and the health frames do
+not establish a complete paired C#/C++ matrix, clean-device or other-architecture
+execution. GitHub returned no runs for this working branch; hosted execution is
+not inferred from the configured matrix. The earlier broad real-Kubernetes lane
+passed terminal, forward, deletion, history, search and metric steps but stopped
+at the old driver's health abort before desktop comparison. Its successful steps
+are not relabelled as a completed release-review lane.

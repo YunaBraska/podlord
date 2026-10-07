@@ -130,11 +130,19 @@ bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole, Qt::UserRole + 5});
     return true;
 }
-bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
+bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, const QString& identityScope) {
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
     QMap<QString, QJsonObject> incoming;
     for (const auto& value : rows) { const auto row = value.toObject(); incoming.insert(row[identityField_].toString(), row); }
+    if (identityScope_ != identityScope) {
+        // Equal resource paths in different sessions are not the same selected entity.
+        beginResetModel();
+        identityScope_ = identityScope;
+        rows_ = incoming.values();
+        endResetModel();
+        return true;
+    }
     for (int last = static_cast<int>(rows_.size()) - 1; last >= 0;) {
         if (incoming.contains(rows_[last][identityField_].toString())) { --last; continue; }
         int first = last;
@@ -679,7 +687,7 @@ bool Workspace::publish() {
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
-    rows_.publish(snapshot, cluster);
+    rows_.publish(snapshot, cluster, active_);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;
     for (const auto& value : snapshot) {
@@ -691,7 +699,7 @@ bool Workspace::publish() {
         else ++healthy;
     }
     healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
-    eventRows_.publish(eventSnapshot, cluster);
+    eventRows_.publish(eventSnapshot, cluster, active_);
     publishPorts();
     const auto nav = navigation_.value(active_);
     table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);

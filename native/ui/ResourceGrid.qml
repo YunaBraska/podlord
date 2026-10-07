@@ -75,7 +75,14 @@ ColumnLayout {
         return columns.find(function(column) { return column.column === logical })
     }
     function synchronizeColumns() {
+        if (!visible || table.columns !== columns.length) return
         const wanted = columns.filter(function(column) { return column.visible && column.pinned }).concat(columns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
+        if (table.rows > 0 && wanted.every(function(column, position) { return table.columnAtIndex(tableModel.index(0, column)) === position })) {
+            visualOrder = wanted
+            table.forceLayout()
+            pinnedTable.forceLayout()
+            return
+        }
         const current = columns.map(function(column) { return column.column }).sort(function(a, b) { return a - b })
         table.clearColumnReordering()
         visualOrder = current.slice()
@@ -90,6 +97,10 @@ ColumnLayout {
         pinnedTable.forceLayout()
     }
     onColumnsChanged: Qt.callLater(synchronizeColumns)
+    onVisibleChanged: {
+        if (visible) Qt.callLater(synchronizeColumns)
+        else { cellMenu.close(); valueTip.target = null }
+    }
     Component.onCompleted: synchronizeColumns()
     spacing: 0
     ItemSelectionModel { id: selection; model: grid.tableModel }
@@ -255,11 +266,11 @@ ColumnLayout {
                     objectName: grid.prefix + "PinnedTable"
                     Layout.fillWidth: true; Layout.fillHeight: true
                     clip: true
-                    model: grid.pinnedWidth > 0 ? grid.tableModel : null
-                    selectionModel: selection
+                    model: grid.visible && grid.pinnedWidth > 0 ? grid.tableModel : null
+                    selectionModel: model ? selection : null
                     selectionBehavior: TableView.SelectRows
                     selectionMode: TableView.SingleSelection
-                    syncView: grid.pinnedWidth > 0 ? table : null
+                    syncView: grid.visible && grid.pinnedWidth > 0 ? table : null
                     syncDirection: Qt.Vertical
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && state.pinned ? state.width : 0 }
                     rowHeightProvider: function() { return grid.rowHeight }
@@ -277,8 +288,9 @@ ColumnLayout {
                     objectName: grid.prefix + "Table"
                     Layout.fillWidth: true; Layout.fillHeight: true
                     clip: true
-                    model: grid.tableModel
-                    selectionModel: selection
+                    model: grid.visible ? grid.tableModel : null
+                    selectionModel: model ? selection : null
+                    onColumnsChanged: Qt.callLater(grid.synchronizeColumns)
                     selectionBehavior: TableView.SelectRows
                     selectionMode: TableView.SingleSelection
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && !state.pinned ? state.width : 0 }

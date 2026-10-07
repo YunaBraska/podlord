@@ -1504,6 +1504,17 @@ bool execute(const QString& scenario) {
             if (!frame.isEmpty() && !window->grabWindow().save(frame)) return false;
         }
         const auto calls = server.requests.size();
+        if (scenario == "radar_compact_controls") {
+            for (const auto* name : {"radarZoomOut", "radarZoom", "resetRadar"}) {
+                auto* control = item(window, name);
+                if (!control || !control->isVisible()
+                    || control->property("implicitContentWidth").toReal() > control->property("availableWidth").toReal() + 0.5) {
+                    std::fprintf(stderr, "Radar control is clipped: %s\n", name);
+                    return false;
+                }
+            }
+            return server.requests.size() == calls;
+        }
         if (scenario.startsWith("radar_water_")) {
             auto* water = item(window,"radarWater");
             if (!water) { std::fprintf(stderr,"Radar water is missing.\n"); return false; }
@@ -1840,14 +1851,21 @@ bool execute(const QString& scenario) {
             return stableDuringSync && after == position;
         }
         if (scenario == "radar_glyph" || scenario == "radar_glyph_reuse") {
+            radar->forceActiveFocus();
+            QTest::keyClick(window, Qt::Key_Home);
+            for (int step = 0; step < 3; ++step)
+                if (!click(window, item(window, "radarZoom"))) return false;
             auto* glyph = item(window, "radarGlyph_0");
-            if (!glyph || glyph->property("kind").toString() != "Pod") return false;
+            if (!glyph || !glyph->isVisible() || glyph->property("kind").toString() != "Pod") return false;
             if (scenario == "radar_glyph_reuse") {
                 if (!type(window, item(window, "resourceFilter"), "custom-widget")
                     || !waitFor([&] { return radar->property("count").toInt() == 1; })) return false;
-                if (!waitFor([&] { auto* next = item(window, "radarGlyph_0"); return next && next->property("kind").toString() == "Widget"; })) return false;
+                radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
+                if (!waitFor([&] { auto* next = item(window, "radarGlyph_0"); return next && next->isVisible() && next->property("kind").toString() == "Widget"; })) return false;
                 if (!type(window, item(window, "resourceFilter"), "alpha")
-                    || !waitFor([&] { auto* next = item(window, "radarGlyph_0"); return next && next->property("kind").toString() == "Pod"; })) return false;
+                    || !waitFor([&] { return radar->property("count").toInt() == 1; })) return false;
+                radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
+                if (!waitFor([&] { auto* next = item(window, "radarGlyph_0"); return next && next->isVisible() && next->property("kind").toString() == "Pod"; })) return false;
             }
             return server.requests.size() == calls;
         }
@@ -2127,10 +2145,9 @@ bool execute(const QString& scenario) {
             && server.requests.count("/api") == roots && client.rows("sync").size() == 3;
     }
     if (scenario == "sort") {
-        auto* header = item(window, "header_0");
-        if (!click(window, header) || !waitFor([&] { return workspace.sortDirection()=="ASC" && text(window, "cell_0_0") == "alpha"; })) return false;
-        if (!click(window, header) || !waitFor([&] { return workspace.sortDirection()=="DESC" && text(window, "cell_0_0") == "custom-widget"; })) return false;
-        return click(window, header) && waitFor([&] { return workspace.sortColumnIndex()==-1 && header->property("text").toString() == "Name" && text(window, "cell_0_0") == "alpha"; });
+        if (!click(window, item(window, "header_0")) || !waitFor([&] { return workspace.sortDirection()=="ASC" && text(window, "cell_0_0") == "alpha"; })) return false;
+        if (!click(window, item(window, "header_0")) || !waitFor([&] { return workspace.sortDirection()=="DESC" && text(window, "cell_0_0") == "custom-widget"; })) return false;
+        return click(window, item(window, "header_0")) && waitFor([&] { return workspace.sortColumnIndex()==-1 && text(window, "header_0") == "Name" && text(window, "cell_0_0") == "alpha"; });
     }
     if (scenario == "filter") {
         const auto calls = server.requests.size();
