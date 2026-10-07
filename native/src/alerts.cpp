@@ -120,7 +120,7 @@ Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, cons
 }
 QJsonObject draft(QString id, QString name, QString field, QString expression, QString color, QString animation, QString sound, QString description) {
     return {{"id", id}, {"name", name}, {"description", description}, {"enabled", true}, {"builtIn", true},
-        {"groups", QJsonArray{QJsonArray{QJsonObject{{"field", field}, {"expression", expression}}}}},
+        {"groups", QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", field}, {"expression", expression}}})}},
         {"color", color}, {"colorMode", "no-match"}, {"colorSeconds", 5}, {"animation", animation}, {"animationMode", animation == "none" ? "no-match" : "new-in-view"}, {"animationSeconds", 5},
         {"zoom", color == "status" ? 100 : 0}, {"sound", sound}, {"soundMinimumMatches", 1}};
 }
@@ -208,7 +208,7 @@ Result<AlertRule> parseAlertRule(QJsonObject value) {
 namespace {
 Result<AlertCatalog> defaultAlerts() {
     auto active=draft("default-active-view-pulse", "Active view pulse", "newInView", "true", "none", "pulse", "none", "Pulse active resources briefly when they enter the view.");
-    active["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "newInView"}, {"expression", "true"}}, QJsonObject{{"field", "activity"}, {"expression", "true"}}}};
+    active["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "newInView"}, {"expression", "true"}}, QJsonObject{{"field", "activity"}, {"expression", "true"}}})};
     AlertCatalog result;
     for (const auto& value : {
         draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "warning-ping", "Paint resources yellow or red while they have an active problem."),

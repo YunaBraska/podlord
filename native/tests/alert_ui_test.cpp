@@ -319,7 +319,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 || scenario.endsWith("_invalid_input") || scenario.endsWith("_regex_limit")) {
                 auto draft = baseline.first().toMap();
                 if (scenario.endsWith("_invalid_input")) draft.clear();
-                if (scenario.endsWith("_regex_limit")) draft["groups"] = QJsonArray{QJsonArray{QJsonObject{{"field", "image"}, {"expression", "/(*NO_START_OPT)(a+)+$/"}}}}.toVariantList();
+                if (scenario.endsWith("_regex_limit")) draft["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "image"}, {"expression", "/(*NO_START_OPT)(a+)+$/"}}})}.toVariantList();
                 const bool accepted = workspace.previewAlertZoom(draft);
                 if (scenario.endsWith("_invalid_input")) return !accepted && !workspace.alerts()->zoomPreviewError().isEmpty() && previews.isEmpty() && server.requests == requests;
                 if (!accepted) return false;
@@ -628,12 +628,12 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     }
     if (scenario=="and" || scenario=="or" || scenario=="numeric" || scenario=="missing_metric" || scenario=="hold" || scenario=="no_replay" || scenario=="regex_limit") {
         auto rule=workspace.alerts()->rules().last().toMap();
-        if (scenario=="and") rule["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "name"}, {"expression", "alpha"}}, QJsonObject{{"field", "status"}, {"expression", "Failed"}}}}.toVariantList();
-        if (scenario=="or") rule["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "name"}, {"expression", "absent"}}}, QJsonArray{QJsonObject{{"field", "name"}, {"expression", "alpha"}}}}.toVariantList();
-        if (scenario=="numeric") rule["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "restarts"}, {"expression", ">=1 <3"}}}}.toVariantList();
-        if (scenario=="missing_metric") rule["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "cpu"}, {"expression", ">1m"}}}}.toVariantList();
-        if (scenario=="regex_limit") rule["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "image"}, {"expression", "/(*NO_START_OPT)(a+)+$/"}}}}.toVariantList();
-        if (scenario=="hold") { rule["groups"]=QJsonArray{QJsonArray{QJsonObject{{"field", "status"}, {"expression", "Running"}}}}.toVariantList(); rule["colorMode"]="duration"; rule["colorSeconds"]=1; }
+        if (scenario=="and") rule["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "alpha"}}, QJsonObject{{"field", "status"}, {"expression", "Failed"}}})}.toVariantList();
+        if (scenario=="or") rule["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "absent"}}}), QJsonArray{QJsonObject{{"field", "name"}, {"expression", "alpha"}}}}.toVariantList();
+        if (scenario=="numeric") rule["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "restarts"}, {"expression", ">=1 <3"}}})}.toVariantList();
+        if (scenario=="missing_metric") rule["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "cpu"}, {"expression", ">1m"}}})}.toVariantList();
+        if (scenario=="regex_limit") rule["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "image"}, {"expression", "/(*NO_START_OPT)(a+)+$/"}}})}.toVariantList();
+        if (scenario=="hold") { rule["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "status"}, {"expression", "Running"}}})}.toVariantList(); rule["colorMode"]="duration"; rule["colorSeconds"]=1; }
         if (scenario=="no_replay") rule["zoom"]=100;
         if (!workspace.alerts()->saveRule(rule) || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
     }

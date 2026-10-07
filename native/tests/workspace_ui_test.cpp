@@ -1497,7 +1497,7 @@ bool execute(const QString& scenario) {
                 || !waitFor([&] { return !workspace.alerts()->busy() && workspace.alerts()->rules().size() == 4; })) return false;
             auto rule = workspace.alerts()->rules().last().toMap();
             rule["enabled"] = true; rule["animation"] = scenario == "radar_pooled_animation" ? "pulse" : scenario.mid(QString("radar_pooled_").size()); rule["animationMode"] = "no-match";
-            rule["groups"] = QJsonArray{QJsonArray{QJsonObject{{"field", "name"}, {"expression", "\"radar-0000\""}}}}.toVariantList();
+            rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "\"radar-0000\""}}})}.toVariantList();
             if (!workspace.alerts()->saveRule(rule) || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
         }
         if (!click(window, item(window, "radarWorkspaceButton"))) return false;
