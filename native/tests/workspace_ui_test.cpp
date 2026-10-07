@@ -1193,6 +1193,9 @@ bool execute(const QString& scenario) {
         }
         if (scenario == "table_cluster_switch") {
             const auto first=workspace.currentSession();
+            const auto selection=item(window,"resourceTable")->property("selectionModel").value<QItemSelectionModel*>();
+            if (!selection) return false;
+            selection->setCurrentIndex(model->index(0,0),QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
             if (!click(window,item(window,"sourcesButton"))) return false;
             auto* contexts=item(window,"contexts");
             const auto firstCluster=value(0,"cluster");
@@ -1202,10 +1205,12 @@ bool execute(const QString& scenario) {
             QTest::keyClick(window,nextIndex==1 ? Qt::Key_End : Qt::Key_Home); QTest::keyClick(window,Qt::Key_Return);
             if (!waitFor([&] { return contexts->property("currentIndex").toInt()==nextIndex; }) || !click(window,item(window,"openContext"))) { std::fprintf(stderr,"Context choice did not change: current=%d expected=%d\n",contexts->property("currentIndex").toInt(),nextIndex); return false; }
             if (!waitFor([&] { return workspace.currentSession()!=first && model->rowCount()==4 && !workspace.loading() && value(0,"cluster")==nextCluster && value(0,"cpu")=="2000 mCPU"; })) { std::fprintf(stderr,"Context table did not change: cluster=%s expected=%s rows=%d status=%s\n",qPrintable(value(0,"cluster")),nextCluster,model->rowCount(),qPrintable(workspace.status())); return false; }
+            if (selection->currentIndex().isValid() || selection->hasSelection()) return false;
             if (!type(window,item(window,"resourceFilter"),nextCluster) || !waitFor([&] { return model->rowCount()==4; })) return false;
             const auto calls=server.requests.size();
+            selection->setCurrentIndex(model->index(0,0),QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
             if (!click(window,item(window,"activateSession_"+first))) return false;
-            return waitFor([&] { return workspace.currentSession()==first && model->rowCount()==4 && value(0,"cluster")==firstCluster; }) && server.requests.size()==calls;
+            return waitFor([&] { return workspace.currentSession()==first && model->rowCount()==4 && value(0,"cluster")==firstCluster; }) && !selection->currentIndex().isValid() && !selection->hasSelection() && server.requests.size()==calls;
         }
         if (scenario == "table_values" || scenario == "table_zero") {
             const QString cpu = scenario == "table_zero" ? "0 mCPU" : "2000 mCPU", memory = scenario == "table_zero" ? "0 B" : "2 GiB";
@@ -1378,7 +1383,15 @@ bool execute(const QString& scenario) {
             cell->forceActiveFocus();
             if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
             QTest::keySequence(window, QKeySequence::Copy);
-            return waitFor([&] { return QGuiApplication::clipboard()->text() == workspace.table()->data(workspace.table()->index(0, 1)).toString(); }) && server.requests.size() == requests;
+            const bool copied = waitFor([&] { return QGuiApplication::clipboard()->text() == workspace.table()->data(workspace.table()->index(0, 1)).toString(); });
+            if (!copied) {
+                const auto* focused = window->activeFocusItem();
+                std::fprintf(stderr, "Reordered copy: clipboard=%s expected=%s focus=%s/%s cellFocus=%d currentColumn=%d\n",
+                    qPrintable(QGuiApplication::clipboard()->text()), qPrintable(workspace.table()->data(workspace.table()->index(0, 1)).toString()),
+                    focused ? focused->metaObject()->className() : "none", focused ? qPrintable(focused->objectName()) : "none",
+                    cell->hasActiveFocus(), item(window,"resourceTable")->property("currentColumn").toInt());
+            }
+            return copied && server.requests.size() == requests;
         }
         if (scenario == "columns_width") {
             const bool resized = waitFor([&] { return qAbs(item(window, "header_0")->width() - 450) < 1; });
@@ -1413,7 +1426,13 @@ bool execute(const QString& scenario) {
                 if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
                 QTest::keySequence(window, QKeySequence::Copy);
                 if (!waitFor([&] { return QGuiApplication::clipboard()->text() == "default"; }) || !click(window, item(window, header)) || !waitFor([&] { return workspace.sortColumnIndex() == 2; })) {
-                    std::fprintf(stderr, "Namespace interaction: clipboard=%s sortedColumn=%d\n", qPrintable(QGuiApplication::clipboard()->text()), workspace.sortColumnIndex()); return false;
+                    const auto* focused = window->activeFocusItem();
+                    const auto* current = item(window, "pinnedCell_0_2");
+                    const auto* view = item(window, "resourcePinnedTable");
+                    std::fprintf(stderr, "Namespace interaction: clipboard=%s sortedColumn=%d focus=%s/%s cellFocus=%d sameCell=%d currentColumn=%d windowActive=%d\n",
+                        qPrintable(QGuiApplication::clipboard()->text()), workspace.sortColumnIndex(), focused ? focused->metaObject()->className() : "none",
+                        focused ? qPrintable(focused->objectName()) : "none", current && current->hasActiveFocus(), current == cell,
+                        view ? view->property("currentColumn").toInt() : -1, window->isActive()); return false;
                 }
             }
             window->resize(760, 640); QTest::qWait(30);

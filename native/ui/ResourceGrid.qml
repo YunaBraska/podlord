@@ -27,7 +27,7 @@ ColumnLayout {
     readonly property real viewportHeight: table.height
     readonly property int count: table.rows
     readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
-    onContextScopeChanged: { cellMenu.close(); valueTip.target = null }
+    onContextScopeChanged: { cellMenu.close(); valueTip.target = null; if (selection) selection.clear() }
     signal actionRequested(string identity, int column, string label)
     function activateCell(row, column) {
         if (actionColumns.indexOf(column) >= 0) {
@@ -212,6 +212,7 @@ ColumnLayout {
             implicitHeight: grid.rowHeight
             font.pixelSize: 13
             highlighted: selected
+            onActiveFocusChanged: if (activeFocus) selection.setCurrentIndex(grid.tableModel.index(row, column), ItemSelectionModel.NoUpdate)
             text: model.display
             Accessible.name: model.display
             contentItem: Label {

@@ -28,8 +28,9 @@ session does not prevent independent sessions from saving. Only pending edits of
 the failed session are stopped; unrelated pending saves are still drained. Errors
 remain visible, with the active session's error preferred when applicable.
 
-Record version 4 owns those five actual table schemas. Reading versions 1
-through 3 adds empty defaults only for known, missing auxiliary tables and does
+Record version 5 owns those six actual table schemas, including inspector
+Values sorting. Reading versions 1 through 4 adds empty defaults only for
+known, missing auxiliary tables and does
 not write. Unknown tables and incomplete current records fail explicitly. The
 existing atomic writer performs the next upgrade; malformed files remain
 untouched. Port preferences never restart saved forwards, and inspector sort
@@ -59,3 +60,17 @@ and close-failure decisions using only an external Kubernetes HTTP fake. Actual
 process restart against an owned local Kubernetes cluster supplies desktop
 evidence. These checks do not prove unimplemented session deletion or mobile
 packaging.
+
+## How Are Existing Named Filters Imported?
+
+Explicit import reads the existing C# saved-filter array or native preset record
+through the same bounded store boundary. Field names map to stable native IDs;
+Problems and Activity retain their distinct modes. As in the reference loader,
+the old saved ID does not become a resource predicate. Its display Limit is not
+a predicate either; this does not implement the missing row-limit control.
+
+Import keeps the source bytes unchanged, protects the empty default, rejects
+conflicting names rather than replacing existing filters, and uses the existing
+locked atomic writer. Merely loading or selecting a preset cannot fetch resources.
+The migration runner compiles the actual reference store to produce its input;
+its screenshots prove native headless controls, not desktop visual parity.

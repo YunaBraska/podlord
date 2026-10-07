@@ -150,7 +150,7 @@ public:
     }
 };
 const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
-bool run(const QString& scenario) {
+bool run(const QString& scenario, const QString& referencePresets) {
     QTemporaryDir temporary; KubernetesBoundary server;
     server.delayed = scenario == "loading_silent" || scenario == "loading_parallel";
     server.events = scenario.startsWith("table_keyboard_event_");
@@ -198,6 +198,57 @@ bool run(const QString& scenario) {
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
+        if (scenario.startsWith("reference_presets_")) {
+            QFile original(referencePresets);
+            if (!original.open(QIODevice::ReadOnly)) return false;
+            const auto exported = original.readAll();
+            original.close();
+            if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+            if (scenario == "reference_presets_conflict") {
+                if (!workspace.filterField("name", "bravo") || !type(window, "filterPresetName", "Pod alpha")
+                    || !click(window, "saveFilterPreset") || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+            }
+            const auto beforeImport = workspace.filterPresets();
+            if (!workspace.importFilterPresets(QUrl::fromLocalFile(referencePresets))
+                || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
+            if (!original.open(QIODevice::ReadOnly) || original.readAll() != exported) return false;
+            if (scenario == "reference_presets_conflict")
+                return workspace.filterPresetsError().contains("already in use") && workspace.filterPresets() == beforeImport
+                    && workspace.resourceCount() == 1 && workspace.resourceFieldFilters().value("name") == "bravo" && server.requests == requests;
+            if (!workspace.filterPresetsError().isEmpty() || workspace.filterPresets().size() != 5) return false;
+            if (scenario == "reference_presets_repeat") {
+                const auto imported = workspace.filterPresets();
+                if (!workspace.importFilterPresets(QUrl::fromLocalFile(referencePresets))
+                    || !waitFor([&] { return !workspace.filterPresetsBusy(); }) || !workspace.filterPresetsError().isEmpty()
+                    || workspace.filterPresets() != imported) return false;
+            }
+            const QString name = scenario == "reference_presets_problems" ? "Problem pods"
+                : scenario == "reference_presets_activity" ? "Recently active"
+                : scenario == "reference_presets_missing_metrics" ? "Measured workloads" : "Pod alpha";
+            const int selected = workspace.filterPresets().indexOf(name);
+            if (selected < 0 || !click(window, "filterPreset")) return false;
+            QTest::keyClick(window, Qt::Key_Home);
+            for (int index = 0; index < selected; ++index) QTest::keyClick(window, Qt::Key_Down);
+            QTest::keyClick(window, Qt::Key_Return);
+            const int expected = scenario == "reference_presets_activity" ? 2 : scenario == "reference_presets_missing_metrics" ? 0 : 1;
+            if (!waitFor([&] { return workspace.resourceCount() == expected && workspace.selectedFilterPreset() == name; })
+                || !workspace.filterError().isEmpty() || server.requests != requests) return false;
+            if (name == "Pod alpha") {
+                const QVariantMap fields{{"name", "alpha"}, {"namespace", "team-a"}, {"kind", "Pod"}, {"cluster", "local"},
+                    {"status", "Running"}, {"createdAt", ">=1m <2m"}, {"node", "node-a"}, {"image", "busybox:1"},
+                    {"ready", "1/1"}, {"restarts", "=0"}, {"owner", "owner-a"}};
+                if (workspace.resourceFieldFilters() != fields || workspace.filterText() != "Pod") return false;
+            }
+            const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+            if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot)) return false;
+            if (scenario != "reference_presets_restart") return true;
+            if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
+            podlord::Workspace restored(profile);
+            return waitFor([&] { return !restored.busy() && !restored.loading() && !restored.filterPresetsBusy()
+                && restored.currentSession() == session && restored.resourceCount() == 1; })
+                && restored.selectedFilterPreset() == name && restored.resourceFieldFilters() == workspace.resourceFieldFilters()
+                && restored.filterPresets() == workspace.filterPresets() && restored.filterError().isEmpty();
+        }
         if (scenario == "filter_render_frame") {
             window->requestActivate();
             if (!QTest::qWaitForWindowExposed(window, 5000)) {
@@ -633,8 +684,10 @@ bool run(const QString& scenario) {
 }
 }
 int main(int argc, char** argv) {
-    QGuiApplication application(argc, argv); if (argc != 2) return 2;
-    const auto scenario = QString::fromLocal8Bit(argv[1]); const bool passed = run(scenario);
+    QGuiApplication application(argc, argv); if (argc != 2 && argc != 3) return 2;
+    const auto scenario = QString::fromLocal8Bit(argv[1]);
+    if (scenario.startsWith("reference_presets_") != (argc == 3)) return 2;
+    const bool passed = run(scenario, argc == 3 ? QString::fromLocal8Bit(argv[2]) : QString{});
     if (!passed) std::fprintf(stderr, "Field filter UI scenario failed: %s\n", argv[1]);
     return passed ? 0 : 1;
 }

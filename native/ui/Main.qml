@@ -113,8 +113,6 @@ ApplicationWindow {
                 Keys.onReturnPressed: discardChanges.accept()
                 Keys.onEnterPressed: discardChanges.accept()
             }
-            onAccepted: discardChanges.accept()
-            onRejected: discardChanges.reject()
         }
         onOpened: discardStayButton.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.confirmDiscard(true)
@@ -150,7 +148,6 @@ ApplicationWindow {
             Button { id: forwardCancel; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "startPortForward"; text: "Start forwarding"; visible: !portForwardDialog.stopMode; enabled: !workspace.authenticationRequired && !workspace.busy; onClicked: workspace.startPreparedPortForward(forwardLocal.text, forwardRemote.text) }
             Button { objectName: "stopPortForward"; text: "Stop forwarding"; visible: portForwardDialog.stopMode; onClicked: workspace.stopPreparedPortForward() }
-            onRejected: portForwardDialog.reject()
         }
         onOpened: forwardCancel.forceActiveFocus(Qt.TabFocusReason)
         onRejected: workspace.cancelPreparedPortForward()
@@ -171,8 +168,6 @@ ApplicationWindow {
         footer: DialogButtonBox {
             Button { id: stayView; objectName: "stayViewClose"; text: "Stay"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "discardViewClose"; text: "Close without saving view"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            onRejected: viewCloseFailure.reject()
-            onAccepted: viewCloseFailure.accept()
         }
         onOpened: stayView.forceActiveFocus(Qt.TabFocusReason)
         onRejected: workspace.confirmViewClose(false)
@@ -227,8 +222,6 @@ ApplicationWindow {
         footer: DialogButtonBox {
             Button { id: deleteCancel; objectName: "cancelResourceDelete"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "confirmResourceDelete"; text: "Delete this resource"; enabled: workspace.deletionPending && !workspace.authenticationRequired && !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            onAccepted: deleteConfirmation.accept()
-            onRejected: deleteConfirmation.reject()
         }
         onOpened: deleteCancel.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.confirmDeletion(true)
@@ -254,9 +247,8 @@ ApplicationWindow {
         footer: DialogButtonBox {
             Button { id: applyCancel; objectName: "cancelYamlApply"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "confirmYamlApply"; text: "Apply to this resource"; enabled: workspace.yamlApplyPreview && !workspace.discardPending; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            onAccepted: applyPreview.accept()
-            onRejected: applyPreview.reject()
         }
+        onAboutToShow: footer.contentItem.currentIndex = -1
         onOpened: applyCancel.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.confirmYamlApply(true)
         onRejected: workspace.confirmYamlApply(false)
@@ -303,8 +295,6 @@ ApplicationWindow {
         footer: DialogButtonBox {
             Button { id: reconcileCancel; objectName: "cancelYamlReconcile"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "continueYamlReconcile"; text: "Continue to preview"; enabled: workspace.yamlReconcileReady; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            onAccepted: reconcile.accept()
-            onRejected: reconcile.reject()
         }
         onOpened: reconcileCancel.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.finishYamlReconcile(true)
@@ -323,8 +313,6 @@ ApplicationWindow {
         footer: DialogButtonBox {
             Button { objectName: "authenticationAccept"; text: "Authenticate"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
             Button { objectName: "authenticationCancel"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            onAccepted: authentication.accept()
-            onRejected: authentication.reject()
         }
         onAccepted: { if (session === workspace.currentSession) workspace.refresh(true) }
     }
@@ -351,7 +339,6 @@ ApplicationWindow {
         footer: DialogButtonBox {
             Button { objectName: "cancelSessionRename"; text: "Cancel"; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "saveSessionRename"; text: workspace.busy ? "Saving..." : "Rename"; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: renameSessionDialog.save() }
-            onRejected: renameSessionDialog.reject()
         }
     }
     component NavButton: Button {

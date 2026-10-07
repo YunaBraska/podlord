@@ -24,7 +24,7 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    bool publish(const QJsonArray& rows, const QString& cluster = {}, const QString& identityScope = {});
+    bool publish(const QJsonArray& rows, const QString& cluster = {});
     QJsonObject row(int index) const;
     bool setAppearance(const Appearance& appearance);
 private:
@@ -32,7 +32,7 @@ private:
     const QString identityField_;
     QList<QJsonObject> rows_;
     Appearance appearance_;
-    QString cluster_, identityScope_;
+    QString cluster_;
 };
 class ResourceFilter : public QSortFilterProxyModel {
     Q_OBJECT

@@ -18,6 +18,7 @@
 #include <QPointer>
 #include <QProcess>
 #include <QtTest/QTest>
+#include <QSignalSpy>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -304,10 +305,25 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
         if (scenario == "ui_apply_secret_input" && (!workspace.yamlText().contains("local-entered-secret")
             || workspace.yamlApplyDiff().contains("local-entered-secret")
             || workspace.yamlApplyDiff().contains("bG9jYWwtZW50ZXJlZC1zZWNyZXQ="))) return false;
+        if (scenario == "ui_apply_cancel_once") {
+            auto* dialog = window->findChild<QObject*>("applyYamlDialog");
+            if (!dialog) return false;
+            QSignalSpy rejected(dialog, SIGNAL(rejected()));
+            if (!click("cancelYamlApply") || rejected.count() != 1) {
+                std::fprintf(stderr, "Cancel must reject exactly once; observed %d decisions.\n", int(rejected.count()));
+                return false;
+            }
+            return !workspace.yamlApplyPreview() && !workspace.yamlApplyLocked() && workspace.yamlText() == draft && workspace.yamlDirty() && patches == 0;
+        }
         if (scenario == "ui_apply_preview") {
             auto* cancel = window->findChild<QQuickItem*>("cancelYamlApply");
             if (!cancel || !await([&] { return cancel->isVisible() && cancel->hasActiveFocus() && cancel->property("visualFocus").toBool(); })) {
-                std::fputs("YAML preview did not show keyboard focus on Cancel.\n", stderr);
+                const auto* focused = window->activeFocusItem();
+                const auto* dialog = window->findChild<QObject*>("applyYamlDialog");
+                std::fprintf(stderr, "YAML preview focus: visible=%d active=%d visual=%d reason=%d focus=%s/%s popupFocus=%d windowActive=%d sameWindow=%d\n",
+                    cancel && cancel->isVisible(), cancel && cancel->hasActiveFocus(), cancel && cancel->property("visualFocus").toBool(),
+                    cancel ? cancel->property("focusReason").toInt() : -1, focused ? focused->metaObject()->className() : "none",
+                    focused ? qPrintable(focused->objectName()) : "none", dialog && dialog->property("focus").toBool(), window->isActive(), cancel && cancel->window() == window);
                 return false;
             }
             QTest::keyClick(window, Qt::Key_Escape);
