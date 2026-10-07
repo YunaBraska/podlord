@@ -12,7 +12,7 @@ if [ -n "$TOOLS" ]; then
     [ -n "$CLUSTER" ] && [ "${#TOOLS}" -eq 64 ] || { printf 'Invalid recorded tools container ID.\n' >&2; exit 2; }
     case "$TOOLS" in *[!a-f0-9]*) printf 'Invalid recorded tools container ID.\n' >&2; exit 2 ;; esac
 fi
-for tool in docker k3d; do command -v "$tool" >/dev/null 2>&1 || { printf 'Missing cleanup tool: %s\n' "$tool" >&2; exit 1; }; done
+command -v docker >/dev/null 2>&1 || { printf 'Missing cleanup tool: docker\n' >&2; exit 1; }
 if [ -n "${DOCKER_CONTEXT:-}" ]; then
     endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}')
 elif [ -n "${DOCKER_HOST:-}" ]; then endpoint=$DOCKER_HOST
@@ -30,6 +30,8 @@ for id in $owned; do
     case "$cluster" in *[!a-zA-Z0-9_-]*) printf 'Cleanup refused: invalid cluster identity.\n' >&2; exit 1 ;; esac
     clusters="$clusters $cluster"
 done
+[ -n "$clusters" ] || exit 0
+command -v k3d >/dev/null 2>&1 || { printf 'Missing cleanup tool: k3d\n' >&2; exit 1; }
 PRIVATE=$(mktemp -d "${TMPDIR:-/tmp}/podlord-k3d-cleanup.XXXXXX")
 trap 'find "$PRIVATE" -depth -delete' 0
 export KUBECONFIG="$PRIVATE/kubeconfig"

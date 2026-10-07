@@ -214,10 +214,18 @@ ColumnLayout {
             highlighted: selected
             text: model.display
             Accessible.name: model.display
-            contentItem: RowLayout {
-                spacing: 6
-                Label { id: cellText; Layout.fillWidth: true; visible: grid.accessoryColumns.indexOf(cell.column) < 0; text: model.display; textFormat: Text.PlainText; font: cell.font; color: identityColor.a > 0 ? identityColor : palette.text; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter; wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap; maximumLineCount: grid.wrapCells ? 3 : 1 }
+            contentItem: Label {
+                id: cellText
+                text: grid.accessoryColumns.indexOf(cell.column) < 0 ? model.display : ""
+                textFormat: Text.PlainText
+                font: cell.font
+                color: identityColor.a > 0 ? identityColor : palette.text
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap
+                maximumLineCount: grid.wrapCells ? 3 : 1
                 Loader {
+                    anchors.fill: parent
                     active: grid.cellAccessory !== null && grid.accessoryColumns.indexOf(cell.column) >= 0
                     visible: active
                     sourceComponent: grid.cellAccessory

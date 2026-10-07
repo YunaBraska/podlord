@@ -8,12 +8,12 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const owner = 'private-test-owner';
 const cluster = 'podlord-it-abcdef123456';
 const root = path.resolve(__dirname, '..');
 
-for (const scenario of ['empty', 'foreign', 'mixed', 'list_failure', 'inspection_failure', 'remote', 'invalid', 'tools_unrecorded', 'tools_recorded', 'tools_wrong_id', 'tools_wrong_role', 'tools_foreign_owner', 'tools_invalid_id']) {
+for (const scenario of ['empty', 'missing_k3d_empty', 'missing_k3d_owned', 'foreign', 'mixed', 'list_failure', 'inspection_failure', 'remote', 'invalid', 'tools_unrecorded', 'tools_recorded', 'tools_wrong_id', 'tools_wrong_role', 'tools_foreign_owner', 'tools_invalid_id']) {
     test(`k3d cleanup ownership: ${scenario}`, { timeout: 15000 }, async () => {
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-k3d-cleanup-test-'));
         const socket = path.join(directory, 'docker.sock'), trace = [];
@@ -39,7 +39,7 @@ for (const scenario of ['empty', 'foreign', 'mixed', 'list_failure', 'inspection
                         json(500, { message: 'External deletion unavailable.' }); return;
                     }
                 }
-                const values = scenario.startsWith('tools_') || scenario === 'mixed' || scenario === 'inspection_failure'
+                const values = scenario === 'missing_k3d_owned' ? [ownedNode] : scenario.startsWith('tools_') || scenario === 'mixed' || scenario === 'inspection_failure'
                     ? ownedOnly ? [ownedNode] : [ownedNode, foreignNode]
                     : scenario === 'foreign' && !ownedOnly ? [foreignNode] : [];
                 json(200, values); return;
@@ -55,12 +55,20 @@ for (const scenario of ['empty', 'foreign', 'mixed', 'list_failure', 'inspection
             json(500, { message: 'Unexpected external request: ' + route });
         });
         try {
+            let executablePath = '/opt/homebrew/bin:' + process.env.PATH;
+            if (scenario.startsWith('missing_k3d_')) {
+                const docker = spawnSync('/bin/sh', ['-c', 'command -v docker'], { encoding: 'utf8' });
+                assert.equal(docker.status, 0, 'A real Docker CLI is required.');
+                executablePath = path.join(directory, 'bin');
+                await fs.mkdir(executablePath);
+                await fs.symlink(docker.stdout.trim(), path.join(executablePath, 'docker'));
+            }
             await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
             const result = await new Promise((resolve, reject) => {
                 const args = [path.join(root, 'scripts/cleanup-k3d-test-run.sh'), scenario === 'invalid' ? '../invalid' : owner];
                 if (scenario.startsWith('tools_') && scenario !== 'tools_unrecorded') args.push(cluster, scenario === 'tools_invalid_id' ? '../invalid' : (scenario === 'tools_wrong_id' ? 'c' : 'b').repeat(64));
                 const child = spawn('/bin/sh', args, {
-                    cwd: root, env: { ...process.env, PATH: '/opt/homebrew/bin:' + process.env.PATH, DOCKER_CONTEXT: '', DOCKER_HOST: scenario === 'remote' ? 'tcp://127.0.0.1:1' : 'unix://' + socket },
+                    cwd: root, env: { ...process.env, PATH: executablePath, DOCKER_CONTEXT: '', DOCKER_HOST: scenario === 'remote' ? 'tcp://127.0.0.1:1' : 'unix://' + socket },
                     stdio: ['ignore', 'pipe', 'pipe']
                 });
                 let output = ''; child.stdout.on('data', value => { output += value; }); child.stderr.on('data', value => { output += value; });
@@ -69,7 +77,9 @@ for (const scenario of ['empty', 'foreign', 'mixed', 'list_failure', 'inspection
                 child.once('close', (code, signal) => { clearTimeout(timeout); resolve({ code, signal, output }); });
             });
             assert.equal(result.signal, null, result.output);
-            assert.equal(result.code, ['empty', 'foreign'].includes(scenario) ? 0 : ['invalid', 'tools_invalid_id'].includes(scenario) ? 2 : 1, result.output);
+            assert.equal(result.code, ['empty', 'missing_k3d_empty', 'foreign'].includes(scenario) ? 0 : ['invalid', 'tools_invalid_id'].includes(scenario) ? 2 : 1, result.output);
+            if (scenario.startsWith('missing_k3d_')) assert.ok(trace.some(call => call.route === '/containers/json'), 'Discover owned resources before requiring a cluster-deletion tool.');
+            if (scenario === 'missing_k3d_owned') assert.match(result.output, /Missing cleanup tool: k3d/);
             assert.equal(trace.some(call => call.method === 'DELETE' || call.route.includes('/prune')), false, 'Unowned containers, volumes and images must remain untouched.');
             if (scenario === 'mixed') assert.match(result.output, /contains an unowned container/);
             if (['tools_unrecorded', 'tools_wrong_id', 'tools_wrong_role', 'tools_foreign_owner'].includes(scenario)) assert.match(result.output, /contains an unowned container/);
