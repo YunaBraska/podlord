@@ -4109,3 +4109,12 @@ Alerts/Diagnostics column tools, complete saved-profile migration, multi-window,
 localization, installed view/theme/terminal comparisons, startup/frame-work/RSS
 performance and the 95% line/90% branch coverage gates remain open. The recorded
 50 ms cached-tab and 250 MB RSS failures are unchanged by this alarm correction.
+
+## Which table simplification and first hosted CI failures were checked on 2026-10-07?
+
+- Removed the redundant per-cell row layout from the shared resource grid; retained plain-text rendering, identity colors, copy/hover behavior and action accessories. The 416 affected macOS table, filter, find, layout, values and related-resource tests passed with 12 randomized workers in 105.50 seconds. Evidence: `20261007-cell-layout-build.log` and `20261007-cell-layout-tests.log` under the local comparison evidence directory. This does not establish a latency or memory improvement.
+- A fresh hosted runner has Docker but not yet k3d when the test runner performs its initial ownership cleanup. Cleanup now discovers owned clusters before requiring k3d. Empty cleanup succeeds without k3d; an owned cluster without k3d fails explicitly without deletion. Both new public-script regressions failed first and the final 15 cleanup cases passed. Remote-Docker and ownership protections remain unchanged.
+- Hosted workflow run `37606214179` executed the migration branch. Linux AMD64 completed 3517 cases with three failures; Linux ARM64 completed 3517 cases with four failures. Both include pinned-namespace interaction and YAML preview; ARM64 additionally includes column-sort/copy. These remain blockers pending diagnosis.
+- The macOS ARM64 runner reports unhandled background exceptions in UI/application startup and TLS tests. Packaged startup and TLS checks also fail. This is a release blocker, not an unavailable-runner waiver.
+- The hosted Linux reports show 96.93% line coverage but only 82.82% AMD64 and 82.70% ARM64 branch coverage, below the required 90%. Failed-run coverage is diagnostic evidence, not an accepted coverage gate.
+- The attempted current foreground performance run was invalid: the window was exposed but not active. It provides no new tab-latency or RSS result. The previous cached-tab and memory failures remain open. A currently locked desktop also prevents completing the paired image matrix.
