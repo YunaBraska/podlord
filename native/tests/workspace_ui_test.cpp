@@ -1319,7 +1319,7 @@ bool execute(const QString& scenario) {
         if (!click(window, item(window, "resourceColumnsButton")) || !waitFor([&] { return item(window, "resourceColumnVisible_kind") && item(window, "resourceColumnVisible_kind")->isVisible(); })) return false;
         if (scenario == "columns_keyboard") {
             item(window, "resourceColumnVisible_kind")->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
-        } else if (scenario == "columns_pin" || scenario == "columns_pin_namespace") {
+        } else if (scenario == "columns_pin" || scenario.startsWith("columns_pin_namespace")) {
             if (!click(window, item(window, scenario == "columns_pin" ? "resourceColumnPinned_name" : "resourceColumnPinned_namespace"))) return false;
         } else if (scenario == "columns_pin_all") {
             for (const auto& value : columns("resource")) {
@@ -1409,7 +1409,7 @@ bool execute(const QString& scenario) {
             const auto row = scroll->property("topRow").toInt();
             return waitFor([&] { return text(window, "pinnedCell_" + QString::number(row) + "_0") == QString("radar-%1").arg(row, 4, 10, QChar('0')); }) && server.requests.size() == requests;
         }
-        if (scenario == "columns_pin" || scenario == "columns_pin_namespace") {
+        if (scenario == "columns_pin" || scenario.startsWith("columns_pin_namespace")) {
             const int pinned = scenario == "columns_pin" ? 0 : 2;
             const auto header = "pinnedHeader_" + QString::number(pinned);
             if (!waitFor([&] { return item(window, "resourcePinnedTable") && item(window, "resourcePinnedTable")->isVisible() && item(window, header); })) {
@@ -1417,13 +1417,26 @@ bool execute(const QString& scenario) {
                     if (control->objectName().contains("Header_") || control->objectName().startsWith("header_")) std::fprintf(stderr, "Rendered header %s: %s\n", qPrintable(control->objectName()), qPrintable(control->property("text").toString()));
                 return false;
             }
-            if (scenario == "columns_pin_namespace") {
+            if (scenario.startsWith("columns_pin_namespace")) {
                 if (!text(window, header).startsWith("Namespace") || text(window, "pinnedCell_0_2") != "default") {
                     std::fprintf(stderr, "Namespace presentation: header=%s cell=%s\n", qPrintable(text(window, header)), qPrintable(text(window, "pinnedCell_0_2"))); return false;
                 }
                 auto* cell = item(window, "pinnedCell_0_2");
                 cell->forceActiveFocus();
                 if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
+                if (scenario != "columns_pin_namespace") {
+                    auto* table = item(window, "resourcePinnedTable");
+                    table->forceActiveFocus(Qt::TabFocusReason);
+                    if (!waitFor([&] { return table->hasActiveFocus(); })) return false;
+                    if (scenario.endsWith("_menu") || scenario.endsWith("_f10")) {
+                        QTest::keyClick(window, scenario.endsWith("_f10") ? Qt::Key_F10 : Qt::Key_Menu,
+                            scenario.endsWith("_f10") ? Qt::ShiftModifier : Qt::NoModifier);
+                        if (!waitFor([&] { auto* menu = item(window, "menuCopy"); return menu && menu->isVisible(); })
+                            || !click(window, item(window, "menuCopy"))) return false;
+                    } else QTest::keySequence(window, QKeySequence::Copy);
+                    return waitFor([&] { return QGuiApplication::clipboard()->text() == "default"; })
+                        && server.requests.size() == requests;
+                }
                 QTest::keySequence(window, QKeySequence::Copy);
                 if (!waitFor([&] { return QGuiApplication::clipboard()->text() == "default"; }) || !click(window, item(window, header)) || !waitFor([&] { return workspace.sortColumnIndex() == 2; })) {
                     const auto* focused = window->activeFocusItem();

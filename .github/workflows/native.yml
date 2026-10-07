@@ -20,7 +20,7 @@ jobs:
       run:
         shell: sh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build isolated Linux toolchain
         run: docker build --tag "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" - < native/tests/linux.Dockerfile
       - name: Execute native tests and coverage gates without host Qt
@@ -66,7 +66,7 @@ jobs:
     env:
       PODLORD_TEST_JOBS: '6'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install native build dependencies
         run: |
           brew install cmake ninja python

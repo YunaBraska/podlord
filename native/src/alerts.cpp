@@ -279,7 +279,102 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
         const bool loading = !client_->initialSyncComplete(session);
         if (states_[session].loading != loading) { states_[session].loading = loading; queue(session); }
     });
+    const QList<QPair<QString, QString>> columns{{"enabled", "On"}, {"active", "Active"}, {"name", "Name"}, {"when", "When"}, {"actions", "Actions"}, {"soundLabel", "Sound"}};
+    ruleRows_.setColumnCount(static_cast<int>(columns.size()));
+    for (int column = 0; column < columns.size(); ++column) {
+        ruleRows_.setHeaderData(column, Qt::Horizontal, columns[column].first, Qt::UserRole);
+        ruleRows_.setHeaderData(column, Qt::Horizontal, columns[column].second, Qt::DisplayRole);
+    }
+    auto roles = ruleRows_.roleNames();
+    roles.insert(Qt::UserRole, "resourcePath"); roles.insert(Qt::UserRole + 1, "identityColor");
+    roles.insert(Qt::UserRole + 2, "valueDetail"); roles.insert(Qt::UserRole + 3, "encodedValue");
+    roles.insert(Qt::UserRole + 6, "sortValue"); ruleRows_.setItemRoleNames(roles);
+    table_.setSourceModel(&ruleRows_); table_.setSortRole(Qt::UserRole + 6);
+    connect(this, &Alerts::rulesChanged, this, &Alerts::publishTable);
+    connect(this, &Alerts::presentationChanged, this, &Alerts::publishTableMatches);
     busy_=false; reload();
+}
+bool Alerts::publishTableMatches() {
+    QHash<QString, int> counts;
+    for (const auto& value : matches()) {
+        const auto match = value.toMap();
+        counts.insert(match["id"].toString(), match["count"].toInt());
+    }
+    for (int row = 0; row < ruleRows_.rowCount(); ++row) {
+        const auto index = ruleRows_.index(row, 1);
+        const auto identity = ruleRows_.index(row, 0).data(Qt::UserRole).toString();
+        const int count = counts.value(identity);
+        const bool hasMatches = counts.contains(identity);
+        const bool displayedMatches = index.data(Qt::DisplayRole).toString() != "-";
+        if (index.data(Qt::UserRole + 6).toInt() == count && hasMatches == displayedMatches) continue;
+        const auto text = hasMatches ? QString::number(count) + " match(es)" : QString("-");
+        ruleRows_.setItemData(index, {{Qt::DisplayRole, text}, {Qt::UserRole + 2, text}, {Qt::UserRole + 6, count}});
+    }
+    return true;
+}
+bool Alerts::publishTable() {
+    QMap<QString, int> counts;
+    for (const auto& match : matches()) { const auto value = match.toMap(); counts.insert(value["id"].toString(), value["count"].toInt()); }
+    const auto sounds = soundCatalog();
+    ruleRows_.setRowCount(static_cast<int>(catalog_.rules.size()));
+    for (int row = 0; row < catalog_.rules.size(); ++row) {
+        const auto& rule = catalog_.rules[row].value;
+        const auto identity = rule["id"].toString();
+        QStringList groups, actions;
+        for (const auto& group : catalog_.rules[row].groups) {
+            QStringList criteria;
+            for (const auto& criterion : group) criteria.append(criterion.field + ": " + criterion.expression);
+            groups.append('(' + criteria.join(" AND ") + ')');
+        }
+        if (rule["color"] != "none") actions.append("color: " + rule["color"].toString());
+        if (rule["animation"] != "none") actions.append("animation: " + rule["animation"].toString());
+        if (rule["zoom"].toInt() > 0) actions.append("zoom: " + QString::number(rule["zoom"].toInt()) + '%');
+        QString soundLabel = rule["sound"].toString();
+        for (const auto& sound : sounds) {
+            const auto value = sound.toMap();
+            if (value["id"] == rule["sound"].toVariant()) { soundLabel = value["name"].toString() + " (" + value["license"].toString() + ')'; break; }
+        }
+        const QVariantList values{rule["enabled"].toBool() ? "On" : "Off", counts.contains(identity) ? QString::number(counts.value(identity)) + " match(es)" : QString("-"),
+            rule["name"].toString(), groups.join(" OR "), actions.join(", "), soundLabel};
+        for (int column = 0; column < values.size(); ++column) {
+            const QVariant sorting = column == 0 ? QVariant(rule["enabled"].toBool() ? 1 : 0) : column == 1 ? QVariant(counts.value(identity)) : values[column];
+            const auto* previous = ruleRows_.item(row, column);
+            if (previous && previous->data(Qt::DisplayRole) == values[column] && previous->data(Qt::UserRole) == identity
+                && previous->data(Qt::UserRole + 6) == sorting) continue;
+            auto* item = new QStandardItem(values[column].toString());
+            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            item->setData(identity, Qt::UserRole); item->setData(QColor(Qt::transparent), Qt::UserRole + 1);
+            item->setData(values[column], Qt::UserRole + 2); item->setData(false, Qt::UserRole + 3); item->setData(sorting, Qt::UserRole + 6);
+            ruleRows_.setItem(row, column, item);
+        }
+    }
+    return true;
+}
+QString Alerts::tableSortDirection() const {
+    if (table_.sortColumn() < 0) return "None";
+    return table_.sortOrder() == Qt::AscendingOrder ? "Ascending" : "Descending";
+}
+bool Alerts::sortTable(int column) {
+    if (column < 0 || column >= ruleRows_.columnCount()) return false;
+    if (table_.sortColumn() != column) {
+        table_.sort(column, Qt::AscendingOrder);
+    } else if (table_.sortOrder() == Qt::AscendingOrder) {
+        table_.sort(column, Qt::DescendingOrder);
+    } else {
+        table_.sort(-1, Qt::AscendingOrder);
+    }
+    emit tableSortChanged();
+    return true;
+}
+bool Alerts::copyCell(int row, int column) {
+    const auto index = table_.index(row, column);
+    return index.isValid() && copyText(table_.data(index).toString());
+}
+bool Alerts::copyIdentity(const QString& identity, int column) {
+    if (column < 0 || column >= ruleRows_.columnCount()) return false;
+    for (int row = 0; row < ruleRows_.rowCount(); ++row)
+        if (ruleRows_.data(ruleRows_.index(row, 0), Qt::UserRole) == identity) return copyText(ruleRows_.data(ruleRows_.index(row, column)).toString());
+    return false;
 }
 QVariantList Alerts::rules() const { QVariantList result; for (const auto& rule : catalog_.rules) result.append(rule.value.toVariantMap()); return result; }
 QVariantList Alerts::matches() const { const auto state=states_.constFind(shown_); return state==states_.cend() ? QVariantList{} : state->matches; }

@@ -448,6 +448,8 @@ public:
     Q_INVOKABLE bool copyValue(const QString& id, const QString& representation = "preferred");
     QAbstractItemModel* table();
     QVariantList resourceColumns() const;
+    Q_PROPERTY(QVariantList alertColumns READ alertColumns NOTIFY tableLayoutChanged)
+    QVariantList alertColumns() const;
     QVariantList eventColumns() const;
     Q_INVOKABLE QVariantList defaultTableColumns(const QString& table) const;
     QString tableLayoutError() const { return tableLayoutError_; }
@@ -576,7 +578,7 @@ private:
     QString tableLayoutError_;
     bool tableLayoutSaving_ = false;
     TableSchemas tableSchemas(bool includeAuxiliary = false) const;
-    QVariantList tableColumns(const QString& table, const ResourceTable& model, bool defaults = false) const;
+    QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
     SourceCatalog sources_;
     QVariantMap sourceRemoval_;
     Appearance appearance_;

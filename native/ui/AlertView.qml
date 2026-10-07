@@ -8,10 +8,6 @@ Pane {
     property var draft: null
     property bool savedSelection: false
     property bool selectNew: false
-    property var rows: []
-    property string sortColumn: ""
-    property int sortDirection: 0
-    property string copiedText: ""
     property string sourceError: ""
     property string selectedSoundId: "none"
     readonly property var soundCatalog: workspace.alerts.sounds
@@ -27,36 +23,23 @@ Pane {
         return soundCatalog.filter(s => !query || [s.id, s.name, s.purpose, s.author, s.license, s.source, s.asset, s.isMusic ? "music" : "sound"].join(" ").toLowerCase().includes(query))
     }
     ListModel { id: criteria }
-    function refreshRows() {
-        if (!visible) return
-        const matches = workspace.alerts.matches
-        const next = workspace.alerts.rules.map(rule => {
-            const match = matches.find(m => m.id === rule.id)
-            const sound = view.soundsById[rule.sound]
-            return Object.assign({}, rule, {
-                active: match ? match.count + " match(es)" : "-",
-                matchCount: match ? match.count : 0,
-                when: rule.groups.map(g => "(" + g.map(c => c.field + ": " + c.expression).join(" AND ") + ")").join(" OR "),
-                actions: [rule.color !== "none" ? "color: " + rule.color : "", rule.animation !== "none" ? "animation: " + rule.animation : "", rule.zoom > 0 ? "zoom: " + rule.zoom + "%" : ""].filter(s => s !== "").join(", "),
-                soundLabel: sound ? sound.name + " (" + sound.license + ")" : rule.sound
-            })
-        })
-        if (sortDirection !== 0) next.sort((a, b) => {
-            const x = sortColumn === "active" ? a.matchCount : a[sortColumn]
-            const y = sortColumn === "active" ? b.matchCount : b[sortColumn]
-            const difference = x < y ? -1 : x > y ? 1 : 0
-            return difference * sortDirection
-        })
-        rows = next
+    function selectRule(identity) {
+        const rule = workspace.alerts.rules.find(candidate => candidate.id === identity)
+        if (!rule) return false
+        if (!draft || draft.id !== rule.id) edit(rule)
+        return true
     }
-    onVisibleChanged: if (visible) refreshRows()
-    function sort(column) {
-        sortDirection = sortColumn !== column || sortDirection === 0 ? 1 : sortDirection === 1 ? -1 : 0
-        sortColumn = sortDirection === 0 ? "" : column
-        refreshRows()
+    function toggleRule(identity) {
+        const rule = workspace.alerts.rules.find(candidate => candidate.id === identity)
+        if (!rule || workspace.alerts.busy) return false
+        edit(rule)
+        ruleEnabled.checked = !rule.enabled
+        save()
+        return true
     }
     function edit(rule) {
         draft = rule
+        ruleGrid.selectIdentity(rule.id, 2)
         criteria.clear()
         for (let g = 0; g < rule.groups.length; ++g)
             for (const c of rule.groups[g]) criteria.append({group: g, field: c.field, expression: c.expression})
@@ -112,14 +95,11 @@ Pane {
         if (!accepted) savedSelection = false
     }
     Component.onCompleted: {
-        refreshRows()
         if (!workspace.alerts.busy && workspace.alerts.rules.length) edit(workspace.alerts.rules[0])
     }
     Connections {
         target: workspace.alerts
-        function onPresentationChanged() { view.refreshRows() }
         function onRulesChanged() {
-            view.refreshRows()
             if (workspace.alerts.busy) return
             if (workspace.alerts.error !== "") { view.savedSelection = false; return }
             const rules = workspace.alerts.rules
@@ -132,31 +112,20 @@ Pane {
             view.selectNew = false
         }
     }
-    component Cell: Label {
-        id: alertCell
-        required property string value
-        required property string column
-        objectName: "alertCell_" + column
-        activeFocusOnTab: true
-        onActiveFocusChanged: ruleTable.revealFocus(alertCell)
-        text: value; textFormat: Text.PlainText; elide: Text.ElideRight
-        padding: 6; verticalAlignment: Text.AlignVCenter
-        Accessible.name: column + ": " + value
-        background: Rectangle { color: "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: workspace.appearanceColors.accent }
-        Keys.onPressed: event => {
-            if (event.matches(StandardKey.Copy)) {
-                workspace.alerts.copyText(value); event.accepted = true
-            } else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
-                view.copiedText = value; copyMenu.popup(); event.accepted = true
-            } else event.accepted = ruleList.navigate(event.key, column)
+    Component {
+        id: toggleComponent
+        Button {
+            readonly property var rule: workspace.alerts.rules.find(candidate => candidate.id === parent.identity)
+            padding: 4
+            activeFocusOnTab: true
+            onActiveFocusChanged: if (activeFocus) ruleGrid.focusCell(parent.row, parent.column, parent.tableView)
+            objectName: "toggleAlert_" + parent.row
+            text: rule && rule.enabled ? "On" : "Off"
+            enabled: !!rule && !workspace.alerts.busy
+            Accessible.name: rule ? (rule.enabled ? "Disable " : "Enable ") + rule.name : "Toggle alarm"
+            onClicked: view.toggleRule(parent.identity)
         }
-        property string tipText: value
-        property bool wantsTip: pointer.hovered && truncated
-        HoverHandler { id: pointer; onHoveredChanged: if (hovered) valueTip.target = parent }
-        TapHandler { acceptedButtons: Qt.RightButton; onTapped: { view.copiedText = parent.value; copyMenu.popup() } }
     }
-    PlainToolTip { id: valueTip }
-    Menu { id: copyMenu; MenuItem { objectName: "copyAlertValue"; text: "Copy value"; onTriggered: workspace.alerts.copyText(view.copiedText) } }
     component ActionButton: Button {
         implicitWidth: Math.max(44, implicitContentWidth + leftPadding + rightPadding)
         implicitHeight: 28; leftPadding: 6; rightPadding: 6; topPadding: 4; bottomPadding: 4
@@ -172,99 +141,28 @@ Pane {
         spacing: 8
         Label { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
         Label { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
-        ScrollView {
-            id: ruleTable
+        ResourceGrid {
+            id: ruleGrid
             objectName: "alertRulesTable"
-            Layout.fillWidth: true; Layout.preferredHeight: Math.min(220, Math.max(112, view.height * 0.32))
-            contentWidth: Math.max(ruleHeaders.model.reduce((sum, column) => sum + column.width, 46), availableWidth); contentHeight: availableHeight; clip: true
-            function revealFocus(control) {
-                if (!control || !control.activeFocus || !contentItem) return
-                const left = control.mapToItem(contentItem, 0, 0).x
-                const delta = left < 0 ? left : Math.max(0, left + control.width - availableWidth)
-                if (delta !== 0) contentItem.contentX = Math.max(0, Math.min(contentWidth - availableWidth, contentItem.contentX + delta))
-            }
-            function revealFocusedControl() {
-                const owner = view.Window.window
-                const control = owner ? owner.activeFocusItem : null
-                if (control && (control.objectName.startsWith("alertCell_") || control.objectName.startsWith("toggleAlert_"))) revealFocus(control)
-            }
-            onAvailableWidthChanged: Qt.callLater(revealFocusedControl)
-            ColumnLayout {
-                width: ruleTable.contentWidth; height: ruleTable.availableHeight; spacing: 0
-                RowLayout {
-                    Layout.fillWidth: true; spacing: 0
-                    Label { text: "On"; Layout.preferredWidth: 46; padding: 6; color: workspace.appearanceColors.accent }
-                    Repeater {
-                        id: ruleHeaders
-                        model: [{column: "active", label: "Active", width: 110}, {column: "name", label: "Name", width: 210}, {column: "when", label: "When", width: 220}, {column: "actions", label: "Actions", width: 260}, {column: "soundLabel", label: "Sound", width: 220}]
-                        Button {
-                            required property var modelData
-                            objectName: "sortAlert_" + modelData.column
-                            Layout.preferredWidth: modelData.width; Layout.fillWidth: modelData.column === "when"
-                            implicitHeight: 28; padding: 6
-                            text: modelData.label + (view.sortColumn === modelData.column ? view.sortDirection === 1 ? " +" : " -" : "")
-                            Accessible.name: "Sort alerts by " + modelData.label + (view.sortColumn === modelData.column ? view.sortDirection === 1 ? ", ascending" : ", descending" : ", none")
-                            onClicked: view.sort(modelData.column)
-                            contentItem: Label { text: parent.text; color: workspace.appearanceColors.accent; font.bold: true; verticalAlignment: Text.AlignVCenter }
-                            background: Rectangle { color: workspace.appearanceColors.inset; border.color: parent.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border }
-                        }
-                    }
-                }
-                ListView {
-                    id: ruleList
-                    Layout.fillWidth: true; Layout.fillHeight: true; clip: true; reuseItems: true
-                    model: view.rows
-                    ScrollBar.vertical: ScrollBar {}
-                    activeFocusOnTab: true; keyNavigationEnabled: false
-                    function navigate(key, column) {
-                        if (![Qt.Key_Up, Qt.Key_Down, Qt.Key_Home, Qt.Key_End].includes(key) || view.rows.length === 0) return false
-                        const selected = view.rows.findIndex(r => view.draft && r.id === view.draft.id)
-                        const next = key === Qt.Key_Home ? 0 : key === Qt.Key_End ? view.rows.length - 1
-                            : Math.max(0, Math.min(view.rows.length - 1, selected + (key === Qt.Key_Down ? 1 : -1)))
-                        currentIndex = next; positionViewAtIndex(next, ListView.Contain); view.edit(view.rows[next])
-                        if (column !== "") {
-                            const identity = view.rows[next].id
-                            Qt.callLater(() => {
-                                if (!view.visible || !view.draft || view.draft.id !== identity) return
-                                const row = ruleList.itemAtIndex(next)
-                                if (!row || row.modelData.id !== identity) return
-                                const cell = row.contentItem.children.find(child => child.objectName === "alertCell_" + column)
-                                if (cell) cell.forceActiveFocus(Qt.TabFocusReason)
-                            })
-                        }
-                        return true
-                    }
-                    Keys.onPressed: event => event.accepted = navigate(event.key, "")
-                    delegate: ItemDelegate {
-                        id: ruleRow
-                        required property var modelData; required property int index
-                        objectName: "alertRule_" + index
-                        width: ruleList.width; height: 28; padding: 0
-                        text: modelData.name; Accessible.name: text + ", " + modelData.active + (modelData.enabled ? ", enabled" : ", disabled")
-                        highlighted: view.draft !== null && view.draft.id === modelData.id
-                        onClicked: { ruleList.currentIndex = index; ruleList.forceActiveFocus(Qt.MouseFocusReason); view.edit(modelData) }
-                        background: Rectangle { color: parent.highlighted || parent.down ? workspace.appearanceColors.selection : parent.hovered ? workspace.appearanceColors.inset : "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: workspace.appearanceColors.accent }
-                        contentItem: RowLayout {
-                            spacing: 0
-                            Button {
-                                id: ruleEnabledToggle
-                                objectName: "toggleAlert_" + ruleRow.index
-                                onActiveFocusChanged: ruleTable.revealFocus(ruleEnabledToggle)
-                                Layout.preferredWidth: 46; implicitHeight: 28
-                                text: ruleRow.modelData.enabled ? "On" : "Off"; enabled: !workspace.alerts.busy
-                                Accessible.name: (ruleRow.modelData.enabled ? "Disable " : "Enable ") + ruleRow.modelData.name
-                                onClicked: { view.edit(ruleRow.modelData); ruleEnabled.checked = !ruleRow.modelData.enabled; view.save() }
-                            }
-                            Cell { value: ruleRow.modelData.active; column: "Active"; Layout.preferredWidth: 110 }
-                            Cell { value: ruleRow.modelData.name; column: "Name"; Layout.preferredWidth: 210 }
-                            Cell { value: ruleRow.modelData.when; column: "When"; Layout.fillWidth: true; Layout.minimumWidth: 220 }
-                            Cell { value: ruleRow.modelData.actions; column: "Actions"; Layout.preferredWidth: 260 }
-                            Cell { value: ruleRow.modelData.soundLabel; column: "Sound"; Layout.preferredWidth: 220 }
-                        }
-                    }
-                }
-            }
-            background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(220, Math.max(112, view.height * 0.32))
+            prefix: "alert"
+            emptyText: "No alarm rules."
+            tableModel: workspace.alerts.tableModel
+            columns: workspace.alertColumns
+            sortColumn: workspace.alerts.tableSortColumn
+            sortDirection: workspace.alerts.tableSortDirection
+            rowHeight: 28
+            inspectable: false
+            actionColumns: [0, 1, 2, 3, 4, 5]
+            accessoryColumns: [0]
+            cellAccessory: toggleComponent
+            cellName: (row, column, identity) => column === 2 ? "alertRule_" + row : "alertCell_" + column + "_" + row
+            onCurrentRequested: identity => view.selectRule(identity)
+            onActionRequested: (identity, column, label) => column === 0 ? view.toggleRule(identity) : view.selectRule(identity)
+            onSortRequested: column => workspace.alerts.sortTable(column)
+            onCopyRequested: (row, column) => workspace.alerts.copyCell(row, column)
+            onCopyPathRequested: (identity, column) => workspace.alerts.copyIdentity(identity, column)
         }
         Flow {
             Layout.fillWidth: true; spacing: 6

@@ -1424,7 +1424,7 @@ public sealed class KubernetesResourceService : IKubernetesApplicationPort
         lock (queueLock)
         {
             requestQueue.Enqueue(request, new QueuedRequestOrder((int)priority, ++requestSequence));
-            while (queueWorkers < MaxConcurrentRequests && queueWorkers < requestQueue.Count)
+            if (queueWorkers < MaxConcurrentRequests)
             {
                 queueWorkers++;
                 _ = Task.Run(ProcessQueue);

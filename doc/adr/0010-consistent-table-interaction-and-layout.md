@@ -113,7 +113,7 @@ column choices. Values, Alerts and Diagnostics still require separate evidence.
 
 ### Keyboard access in the alarm rule table
 
-Alarm value cells support the platform Copy shortcut and Menu/Shift+F10 without changing a rule or requesting cluster data. Up/Down/Home/End retain the selected column while changing the selected rule. Focus is visibly outlined. The table owns focus visibility for both cells and enable controls, including narrow-window resizing and reverse Tab traversal; its horizontal extent is derived from its existing column definitions rather than an undersized fixed width. These controls do not imply that the remaining column-toolbox parity is complete.
+Alarm value cells support the platform Copy shortcut and Menu/Shift+F10 without changing a rule or requesting cluster data. Up/Down/Home/End retain the selected column while changing the selected rule. Focus is visibly outlined. The native selection model owns the current cell; Tab enters the table, arrows traverse its columns and rows, and Return activates the current alarm enable control. The table retains focus visibility during narrow-window resizing; its horizontal extent is derived from its existing column definitions rather than an undersized fixed width. These controls do not imply that the remaining column-toolbox parity is complete.
 
 ### How Does The Values Inspector Preserve Secret Boundaries?
 
@@ -185,3 +185,31 @@ columns. Presentation changes keep their bounded display-column notification;
 metadata-only updates no longer invalidate every cell's display text. A changed
 cluster still invalidates row predicates, including when source JSON is otherwise
 identical. No second cache, polling loop or hidden mutation is introduced.
+
+### How Do Alarm Rules Reuse The Table Contract?
+
+The existing alarm controller publishes a read-only Qt item model from its
+canonical rules and current match counts. Native proxy sorting handles typed
+Enabled and Active values as well as the textual columns. The shared grid owns
+Find, selection, keyboard/context copying, overflow and column controls; the
+editor continues to own an unsaved rule draft. No second JavaScript row catalog,
+manual sort, navigation loop, refresh timer or Kubernetes request is added.
+
+The model's stable rule ID, not its sorted row number, identifies an edited or
+copied rule. Moving the current table selection opens that rule's existing
+editor; model refresh does not overwrite an unsaved draft. Built-in definitions
+remain locked and enabling a rule still uses the existing validated save path.
+
+Layout version 7 adds `alert`. Reading valid versions 1 through 6 appends only
+missing model-derived alarm defaults without writing or discarding other table
+choices. The next explicit atomic save writes version 7. Missing current-schema
+tables, unknown types and malformed layouts fail without replacement. Rollback
+requires a compatible binary or a preserved older profile, not rewriting away
+column choices. Executed evidence and remaining parity gaps belong to the test
+map; this decision alone does not establish release readiness.
+
+Alarm match updates publish only the Active column. Static conditions, actions and
+sound labels change with definitions, not presentation ticks. Current-cell
+presentation derives from the shared canonical selection index, including after
+Qt recycles a delegate. Table positioning has no extra animation, and the grid
+reserves enough height for its toolbar, header and at least one readable row.

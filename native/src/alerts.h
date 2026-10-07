@@ -5,6 +5,8 @@
 #include <QVariantList>
 #include <QMediaPlayer>
 #include <QAudioOutput>
+#include <QStandardItemModel>
+#include <QSortFilterProxyModel>
 
 namespace podlord {
 struct AlertCriterion final {
@@ -46,6 +48,9 @@ class Alerts final : public QObject {
     Q_PROPERTY(int revision READ revision NOTIFY presentationChanged)
     Q_PROPERTY(QStringList fields READ fields CONSTANT)
     Q_PROPERTY(QVariantList sounds READ sounds CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* tableModel READ tableModel CONSTANT)
+    Q_PROPERTY(int tableSortColumn READ tableSortColumn NOTIFY tableSortChanged)
+    Q_PROPERTY(QString tableSortDirection READ tableSortDirection NOTIFY tableSortChanged)
     Q_PROPERTY(bool zoomPreviewBusy READ zoomPreviewBusy NOTIFY zoomPreviewChanged)
     Q_PROPERTY(QString zoomPreviewError READ zoomPreviewError NOTIFY zoomPreviewChanged)
 public:
@@ -61,6 +66,13 @@ public:
     int revision() const { return revision_; }
     QStringList fields() const;
     QVariantList sounds() const;
+    QAbstractItemModel* tableModel() { return &table_; }
+    const QAbstractItemModel* tableModel() const { return &table_; }
+    int tableSortColumn() const { return table_.sortColumn(); }
+    QString tableSortDirection() const;
+    Q_INVOKABLE bool sortTable(int column);
+    Q_INVOKABLE bool copyCell(int row, int column);
+    Q_INVOKABLE bool copyIdentity(const QString& identity, int column);
     Q_INVOKABLE bool saveRule(const QVariantMap& draft);
     Q_INVOKABLE bool duplicateRule(const QString& id);
     Q_INVOKABLE bool deleteRule(const QString& id);
@@ -79,6 +91,7 @@ public:
 signals:
     void rulesChanged();
     void presentationChanged();
+    void tableSortChanged();
     void focusRequested(const QString& session, const QString& path, int percent);
     void soundRequested(const QString& session, const QString& rule, const QString& sound);
     void zoomPreviewChanged();
@@ -100,6 +113,8 @@ private:
     ResourceClient* const client_;
     const std::function<QDateTime()> now_;
     AlertCatalog catalog_;
+    QStandardItemModel ruleRows_{this};
+    QSortFilterProxyModel table_{this};
     QMap<QString, State> states_;
     QSet<QString> closed_, pending_;
     QString shown_, error_;
@@ -115,5 +130,7 @@ private:
     bool queue(const QString& session);
     bool dispatch();
     bool play(const QString& id);
+    bool publishTable();
+    bool publishTableMatches();
 };
 } // namespace podlord

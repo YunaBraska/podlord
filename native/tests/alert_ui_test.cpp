@@ -38,6 +38,7 @@ QQuickItem* visualItem(QQuickItem* root, const QString& name) {
 QQuickItem* item(QObject* root, const QString& name) {
     auto* window=qobject_cast<QQuickWindow*>(root);
     if (!window) return nullptr;
+    if (auto* found = podlord::test::visibleItem(window->contentItem(), name)) return found;
     if (auto* found = visualItem(window->contentItem(), name)) return found;
     return window->findChild<QQuickItem*>(name);
 }
@@ -410,6 +411,78 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!viewport.contains(bounds(first).center())) { std::fprintf(stderr,"Alarm editor first control is unreachable after reverse scrolling.\n"); return false; }
             return server.requests==0;
         }
+        if (scenario == "reference_table_tab_entry") {
+            auto* columns = item(window, "alertColumnsButton");
+            auto* table = item(window, "alertTable");
+            if (!columns || !table) return false;
+            columns->forceActiveFocus(Qt::TabFocusReason);
+            for (int step = 0; step < 32 && !table->hasActiveFocus(); ++step) {
+                QTest::keyClick(window, Qt::Key_Tab);
+                QCoreApplication::processEvents();
+            }
+            if (!table->hasActiveFocus()) return false;
+            QTest::keyClick(window, Qt::Key_Home);
+            QTest::keyClick(window, Qt::Key_Down);
+            return waitFor([&] { return selected() == baseline[1].toMap()["name"].toString(); })
+                && rules() == baseline && server.requests == 0;
+        }
+        if (scenario == "reference_find" || scenario == "reference_find_invalid") {
+            if (!click(window, "alertFindButton")) return false;
+            const auto expected = baseline[1].toMap()["name"].toString();
+            if (!type(window, "alertFindInput", scenario.endsWith("_invalid") ? QString("/[/") : "\"" + expected + "\"")) return false;
+            if (scenario.endsWith("_invalid")) {
+                return waitFor([&] { return item(window, "alertFindError")->isVisible(); })
+                    && !item(window, "alertFindNext")->isEnabled() && rules() == baseline && server.requests == 0;
+            }
+            if (!waitFor([&] { return item(window, "alertFindCount")->property("text").toString() == "1/1"; })
+                || !click(window, "alertFindNext")) return false;
+            return waitFor([&] { return selected() == expected; }) && rules() == baseline && server.requests == 0;
+        }
+        if (scenario.startsWith("reference_columns_")) {
+            const auto mode = scenario.mid(QString("reference_columns_").size());
+            const auto before = workspace.alertColumns();
+            const auto resources = workspace.resourceColumns();
+            const auto column = [](const QVariantList& columns, const QString& id) {
+                for (const auto& value : columns) if (value.toMap()["id"] == id) return value.toMap();
+                return QVariantMap{};
+            };
+            if (!click(window, "alertColumnsButton")) return false;
+            if (mode == "hide" || mode == "show") {
+                if (!click(window, "alertColumnVisible_name")) return false;
+            } else if (mode == "pin" || mode == "restart") {
+                if (!click(window, "alertColumnPinned_name")) return false;
+            } else if (mode == "order") {
+                if (!click(window, "alertColumnEarlier_name")) return false;
+            } else if (mode == "last_visible") {
+                for (const auto& value : before) if (!click(window, "alertColumnVisible_" + value.toMap()["id"].toString())) return false;
+            } else if (mode == "width" || mode == "cancel" || mode == "defaults" || mode == "invalid_width") {
+                if (!type(window, "alertColumnWidth_name", mode == "invalid_width" ? "0" : "317")) return false;
+            } else return false;
+            if (!click(window, mode == "cancel" ? "alertCancelColumns" : "alertSaveColumns")) return false;
+            if (mode == "cancel") return workspace.alertColumns() == before && rules() == baseline && server.requests == 0;
+            if (mode == "last_visible" || mode == "invalid_width") {
+                return waitFor([&] { return !workspace.tableLayoutError().isEmpty(); })
+                    && workspace.alertColumns() == before && rules() == baseline && server.requests == 0;
+            }
+            if (!waitFor([&] { return !workspace.tableLayoutSaving() && workspace.alertColumns() != before; })) return false;
+            auto actual = workspace.alertColumns();
+            if (mode == "show" || mode == "defaults") {
+                if (!click(window, "alertColumnsButton")
+                    || !click(window, mode == "show" ? "alertColumnVisible_name" : "alertResetColumns")
+                    || !click(window, "alertSaveColumns")
+                    || !waitFor([&] { return !workspace.tableLayoutSaving() && workspace.alertColumns() == before; })) return false;
+                actual = workspace.alertColumns();
+            }
+            if (mode == "hide" && column(actual, "name")["visible"].toBool()) return false;
+            if (mode == "width" && column(actual, "name")["width"].toInt() != 317) return false;
+            if (mode == "order" && actual[1].toMap()["id"] != "name") return false;
+            if (mode == "pin" && (!column(actual, "name")["pinned"].toBool() || !waitFor([&] { return item(window, "pinnedHeader_2") != nullptr; }))) return false;
+            if (mode == "restart") {
+                podlord::Workspace reopened(profile);
+                if (!waitFor([&] { return !reopened.busy(); }) || reopened.alertColumns() != actual) return false;
+            }
+            return workspace.resourceColumns() == resources && rules() == baseline && server.requests == 0;
+        }
         if (scenario.startsWith("reference_cell_")) {
             const auto mode = scenario.mid(QString("reference_cell_").size());
             if (!QStringList{"copy", "menu", "shift_menu", "escape", "navigation", "copy_active", "copy_when", "copy_actions", "copy_sound", "narrow", "narrow_reverse", "narrow_resize", "home", "end"}.contains(mode)) return false;
@@ -417,29 +490,55 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             const QMap<QString, QString> columns{{"copy_active", "Active"}, {"copy_when", "When"}, {"copy_actions", "Actions"}, {"copy_sound", "Sound"}, {"narrow", "Sound"}};
             const auto column = mode.startsWith("narrow") ? QString("Sound") : columns.value(mode, "Name");
             const QStringList order{"Active", "Name", "When", "Actions", "Sound"};
+            const int logicalColumn = order.indexOf(column) + 1;
+            const auto cellName = logicalColumn == 2 ? QString("alertRule_0") : "alertCell_" + QString::number(logicalColumn) + "_0";
             auto* toggle = item(window, "toggleAlert_0");
-            auto* firstRow = item(window, "alertRule_0");
-            auto* cell = firstRow ? visualItem(firstRow, "alertCell_" + column) : nullptr;
-            if (!toggle || !cell || !podlord::test::scrollIntoView(window, toggle)) {
-                std::fputs("Alert value cells are not keyboard reachable.\n", stderr); return false;
-            }
+            if (!toggle || !podlord::test::scrollIntoView(window, toggle)) return false;
             const auto before = rules();
-            auto expected = cell->property("text").toString();
             QGuiApplication::clipboard()->setText("unchanged clipboard");
             toggle->forceActiveFocus(Qt::TabFocusReason);
-            for (int step = 0; step <= order.indexOf(column); ++step) QTest::keyClick(window, Qt::Key_Tab);
-            if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
+            auto* nativeTable = item(window, "alertTable");
+            if (!nativeTable) return false;
+            nativeTable->forceActiveFocus(Qt::TabFocusReason);
+            for (int step = 0; step < logicalColumn; ++step) QTest::keyClick(window, Qt::Key_Right);
+            if (!waitFor([&] { auto* target = item(window, cellName); return target && target->property("current").toBool(); })) return false;
+            auto* cell = item(window, cellName);
+            auto expected = cell->property("text").toString();
             if (mode.startsWith("narrow")) {
                 if (mode == "narrow_resize") { window->setWidth(720); window->setHeight(720); }
                 auto* table = item(window, "alertRulesTable");
                 if (!table || !waitFor([&] {
                     return QRectF(table->mapToScene({0,0}), table->size()).contains(cell->mapToScene({cell->width()/2, cell->height()/2}));
-                })) { std::fputs("Keyboard focus is outside the visible alert table.\n", stderr); return false; }
+                })) {
+                    std::fprintf(stderr,"Keyboard focus outside alert table: target=%s focus=%s targetX=%.1f width=%.1f tableX=%.1f width=%.1f targetY=%.1f height=%.1f tableY=%.1f height=%.1f\n",
+                        qPrintable(cell->objectName()),qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),
+                        cell->mapToScene({0,0}).x(),cell->width(),table ? table->mapToScene({0,0}).x() : -1,table ? table->width() : -1,
+                        cell->mapToScene({0,0}).y(),cell->height(),table ? table->mapToScene({0,0}).y() : -1,table ? table->height() : -1);
+                    return false;
+                }
                 if (mode == "narrow_reverse") {
-                    for (int step = 0; step <= order.indexOf(column); ++step) QTest::keyClick(window, Qt::Key_Tab, Qt::ShiftModifier);
+                    for (int step = 0; step < logicalColumn; ++step) QTest::keyClick(window, Qt::Key_Left);
                     if (!waitFor([&] {
-                        return toggle->hasActiveFocus() && QRectF(table->mapToScene({0,0}), table->size()).contains(toggle->mapToScene({toggle->width()/2, toggle->height()/2}));
-                    })) { std::fputs("Reverse Tab hides the alert enable control.\n", stderr); return false; }
+                        auto* enabled = item(window, "alertCell_0_0");
+                        return enabled && enabled->property("current").toBool()
+                            && QRectF(table->mapToScene({0,0}), table->size()).contains(enabled->mapToScene({enabled->width()/2, enabled->height()/2}));
+                    })) {
+                        auto* enabled = item(window, "alertCell_0_0");
+                        std::fprintf(stderr,"Reverse column did not show On: focus=%s column=%d row=%d left=%d present=%d current=%d x=%.1f y=%.1f width=%.1f height=%.1f tableY=%.1f height=%.1f\n",
+                            qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),nativeTable->property("currentColumn").toInt(),nativeTable->property("currentRow").toInt(),nativeTable->property("leftColumn").toInt(),enabled != nullptr,enabled && enabled->property("current").toBool(),
+                            enabled ? enabled->mapToScene({0,0}).x() : -1,enabled ? enabled->mapToScene({0,0}).y() : -1,enabled ? enabled->width() : -1,enabled ? enabled->height() : -1,table->mapToScene({0,0}).y(),table->height());
+                        return false;
+                    }
+                    QTest::keyClick(window, Qt::Key_Return);
+                    if (!waitFor([&] { return !workspace.alerts()->busy() && rules().first().toMap()["enabled"] != before.first().toMap()["enabled"]; })) {
+                        std::fprintf(stderr,"Keyboard toggle failed: focus=%s enabled=%d error=%s\n",qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),rules().first().toMap()["enabled"].toBool(),qPrintable(workspace.alerts()->error()));
+                        return false;
+                    }
+                    QTest::keyClick(window, Qt::Key_Return);
+                    if (!waitFor([&] { return !workspace.alerts()->busy() && rules() == before; })) {
+                        std::fprintf(stderr,"Keyboard toggle restoration failed: focus=%s enabled=%d error=%s\n",qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),rules().first().toMap()["enabled"].toBool(),qPrintable(workspace.alerts()->error()));
+                        return false;
+                    }
                     expected = "unchanged clipboard";
                 }
             }
@@ -449,9 +548,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 const int nextIndex = mode == "home" ? 0 : mode == "end" ? baseline.size() - 1 : 1;
                 expected = baseline[nextIndex].toMap()["name"].toString();
                 if (!waitFor([&] {
-                    auto* row = item(window, "alertRule_" + QString::number(nextIndex));
-                    auto* next = row ? visualItem(row, "alertCell_Name") : nullptr;
-                    return next && next->hasActiveFocus() && selected() == expected;
+                    auto* next = item(window, "alertRule_" + QString::number(nextIndex));
+                    return next && selected() == expected;
                 })) return false;
             }
             if (mode.startsWith("copy") || mode == "navigation" || mode == "home" || mode == "end" || mode == "narrow" || mode == "narrow_resize") QTest::keySequence(window, QKeySequence::Copy);
@@ -459,15 +557,15 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 QTest::keyClick(window, mode == "shift_menu" ? Qt::Key_F10 : Qt::Key_Menu,
                     mode == "shift_menu" ? Qt::ShiftModifier : Qt::NoModifier);
                 if (!waitFor([&] {
-                    auto* copy = item(window, "copyAlertValue");
+                    auto* copy = item(window, "alertMenuCopy");
                     return copy && copy->isVisible() && copy->isEnabled();
                 })) return false;
                 if (mode == "escape") {
                     QTest::keyClick(window, Qt::Key_Escape);
-                    if (!waitFor([&] { return !item(window, "copyAlertValue")->isVisible(); })) return false;
+                    if (!waitFor([&] { return !item(window, "alertMenuCopy")->isVisible(); })) return false;
                     expected = "unchanged clipboard";
                 } else {
-                    auto* copy = item(window, "copyAlertValue");
+                    auto* copy = item(window, "alertMenuCopy");
                     copy->forceActiveFocus(Qt::TabFocusReason);
                     QTest::keyClick(copy->window(), Qt::Key_Space);
                 }
@@ -483,7 +581,10 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         if (scenario=="reference_keyboard") {
             if (!click(window,"alertRule_0")) return false;
             QTest::keyClick(window,Qt::Key_Down);
-            if (!waitFor([&] { return selected()==baseline[1].toMap()["name"].toString(); })) return false;
+            if (!waitFor([&] { return selected()==baseline[1].toMap()["name"].toString(); })) {
+                std::fprintf(stderr,"Arrow navigation selected=%s focus=%s\n",qPrintable(selected()),qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}));
+                return false;
+            }
             QTest::keyClick(window,Qt::Key_End);
             if (!waitFor([&] { return selected()==baseline.last().toMap()["name"].toString(); })) return false;
             QTest::keyClick(window,Qt::Key_Home);
@@ -568,15 +669,15 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         }
         if (scenario=="reference_sort") {
             QStringList expected; for (const auto& entry:baseline) expected.append(entry.toMap()["name"].toString()); expected.sort(Qt::CaseSensitive);
-            if (!click(window,"sortAlert_name") || !waitFor([&] { return item(window,"alertRule_0")->property("text").toString()==expected.first(); })) return false;
-            if (!click(window,"alertRule_0") || selected()!=expected.first() || !click(window,"sortAlert_name") || !waitFor([&] { return item(window,"alertRule_0")->property("text").toString()==expected.last(); })) return false;
-            if (selected()!=expected.first() || !click(window,"sortAlert_name")) return false;
+            if (!click(window,"alertHeader_2") || !waitFor([&] { return item(window,"alertRule_0")->property("text").toString()==expected.first(); })) return false;
+            if (!click(window,"alertRule_0") || selected()!=expected.first() || !click(window,"alertHeader_2") || !waitFor([&] { return item(window,"alertRule_0")->property("text").toString()==expected.last(); })) return false;
+            if (selected()!=expected.first() || !click(window,"alertHeader_2")) return false;
             return waitFor([&] { return item(window,"alertRule_0")->property("text").toString()==baseline.first().toMap()["name"].toString(); }) && rules()==baseline && server.requests==0;
         }
         if (scenario=="reference_copy") {
             auto* row=item(window,"alertRule_0"); if (!row) return false;
             QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,row->mapToScene({200,row->height()/2}).toPoint());
-            if (!waitFor([&] { return item(window,"copyAlertValue") && item(window,"copyAlertValue")->isVisible(); }) || !click(window,"copyAlertValue")) return false;
+            if (!waitFor([&] { return item(window,"alertMenuCopy") && item(window,"alertMenuCopy")->isVisible(); }) || !click(window,"alertMenuCopy")) return false;
             const auto copied=QGuiApplication::clipboard()->text();
             bool accepted = true;
             return copied==baseline.first().toMap()["name"].toString()
@@ -616,8 +717,23 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     if (scenario == "busy") return waitFor([&] { return !item(window, "alertError")->property("text").toString().isEmpty(); });
     if (!waitFor([&] { return item(window, "alertRule_3") != nullptr; })) return false;
     if (scenario == "create") return QFile::exists(profile + "/alert-rules.json") && server.requests == 0;
-    if (scenario == "duplicate") return click(window, "duplicateAlert") && waitFor([&] { return item(window, "alertRule_4") != nullptr; });
-    if (scenario == "delete") return click(window, "deleteAlert") && waitFor([&] { return item(window, "alertRule_3") == nullptr; });
+    if (scenario == "duplicate") {
+        const auto original = workspace.alerts()->rules().last().toMap();
+        return click(window, "duplicateAlert") && waitFor([&] {
+            const auto rules = workspace.alerts()->rules();
+            return !workspace.alerts()->busy() && rules.size() == 5
+                && rules.last().toMap()["id"] != original["id"]
+                && rules.last().toMap()["name"].toString().startsWith(original["name"].toString())
+                && item(window, "alertName")->property("text") == rules.last().toMap()["name"];
+        }) && server.requests == 0;
+    }
+    if (scenario == "delete") {
+        return click(window, "deleteAlert") && waitFor([&] {
+            const auto rules = workspace.alerts()->rules();
+            return !workspace.alerts()->busy() && rules.size() == 3
+                && item(window, "alertName")->property("text") == rules.first().toMap()["name"];
+        }) && server.requests == 0;
+    }
     if (scenario == "restart") {
         podlord::Workspace restored(profile); QQmlApplicationEngine second;
         second.rootContext()->setContextProperty("workspace", &restored); second.load(QUrl("qrc:/podlord/Main.qml"));
