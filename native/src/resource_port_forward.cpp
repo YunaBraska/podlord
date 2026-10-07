@@ -20,7 +20,7 @@ Result<QString> ResourceClient::startPortForward(const QString& id, const QStrin
     expire();
     const auto state = states_.constFind(id);
     const auto row = resource(id, path);
-    if (state == states_.cend() || !state->open || state->suspended || !enabled_ || id != visible_
+    if (state == states_.cend() || !state->open || state->suspended || !enabled_ || !isVisible(id)
         || !containsResource(id, path) || row["apiVersion"] != "v1" || row["uid"].toString().isEmpty()
         || row["namespace"].toString().isEmpty() || (row["kind"] != "Service" && (row["kind"] != "Pod" || row["status"] != "Running")))
         return Failure{StoreError::InvalidInput, "Select a Running core Pod or namespaced core Service in an authenticated session."};

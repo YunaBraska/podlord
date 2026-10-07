@@ -269,7 +269,9 @@ ResourceClient::ResourceClient(QObject* parent, std::function<QDateTime()> now) 
     connect(&sync_, &QTimer::timeout, this, &ResourceClient::synchronize);
     logSync_.setSingleShot(true);
     logSync_.setTimerType(Qt::PreciseTimer);
-    connect(&logSync_, &QTimer::timeout, this, [this] { refreshLogs(false); });
+    connect(&logSync_, &QTimer::timeout, this, [this] {
+        for (const auto& view : views_.keys()) refreshLogs(false, view);
+    });
 }
 ResourceClient::~ResourceClient() {
     enabled_ = false;
@@ -297,7 +299,7 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
     for (const auto& state : states_)
         if (state.connection.credentialId == states_[id].connection.credentialId && state.suspended) states_[id].suspended = true;
     states_[id].open = true;
-    if (visible_.isEmpty()) visible_ = id;
+    if (views_.size() == 1 && views_.contains({}) && views_.value({}).session.isEmpty()) views_[{}].session = id;
     if (!states_[id].connection.credentialReady)
         suspend(states_[id].connection.credentialId, "Authentication required. Confirm the credential command before it can run.");
     expire();
@@ -314,8 +316,7 @@ bool ResourceClient::close(const QString& id) {
     it->open = false;
     stopTerminal(id);
     stopSessionForwards(id);
-    if (visible_ == id) visible_.clear();
-    if (logSession_ == id) hideLogs();
+    for (const auto& view : views_.keys()) if (views_.value(view).session == id) showSession({}, view);
     dropQueued([&](const auto& task) { return task.id == id && task.read != Read::Verify && task.read != Read::VerifyDelete; });
     emit changed(id);
     scheduleSync();
@@ -360,7 +361,13 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
     }
     scheduleSync(); return true;
 }
-bool ResourceClient::wanted(const QString& id) const { return states_.contains(id) && states_[id].open && (id == visible_ || settings_.inactiveSyncMinutes > 0); }
+bool ResourceClient::isVisible(const QString& id) const {
+    return !id.isEmpty() && std::any_of(views_.cbegin(), views_.cend(), [&](const View& view) { return view.session == id; });
+}
+bool ResourceClient::logsShown(const QString& id, const QString& key) const {
+    return !key.isEmpty() && std::any_of(views_.cbegin(), views_.cend(), [&](const View& view) { return view.session == id && view.logKey == key; });
+}
+bool ResourceClient::wanted(const QString& id) const { return states_.contains(id) && states_[id].open && (isVisible(id) || settings_.inactiveSyncMinutes > 0); }
 bool ResourceClient::configure(ReadSettings settings) {
     if (!settings.valid()) return false;
     if (settings_.requestHardLimitPerMinute == settings.requestHardLimitPerMinute && settings_.inactiveSyncMinutes == settings.inactiveSyncMinutes
@@ -371,9 +378,9 @@ bool ResourceClient::configure(ReadSettings settings) {
     for (auto state = states_.begin(); state != states_.end(); ++state)
         for (auto& history : state->logs) {
             history.trim(static_cast<qint64>(settings_.logLimitMb) * 1000000);
-            if (state.key() == logSession_ && logKey(state.key(), history.path) == logKey_) emit logsChanged(state.key(), history.path);
+            if (logsShown(state.key(), logKey(state.key(), history.path))) emit logsChanged(state.key(), history.path);
         }
-    showSession(visible_); scheduleSync(); dispatch(); return true;
+    discardHiddenReads(); scheduleSync(); scheduleLogs(); dispatch(); return true;
 }
 bool ResourceClient::enableRequests(bool enabled) {
     enabled_ = enabled;
@@ -382,15 +389,42 @@ bool ResourceClient::enableRequests(bool enabled) {
     }
     scheduleSync(); if (enabled) { dispatch(); scheduleLogs(); } return true;
 }
-bool ResourceClient::showSession(const QString& id) {
-    visible_ = id;
-    if (logSession_ != id) hideLogs();
+void ResourceClient::discardHiddenReads() {
     dropQueued([&](const auto& task) { return task.read != Read::Verify && task.read != Read::VerifyDelete
-        && (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() ? (!wanted(task.id) || ((task.read == Read::Detail || task.read == Read::Delete) && task.id != visible_)) : !states_[task.id].open); });
+        && (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() ? (!wanted(task.id) || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id))) : !states_[task.id].open); });
+}
+bool ResourceClient::showSession(const QString& id, const QString& view) {
+    for (auto it = views_.cbegin(); it != views_.cend(); ++it)
+        if (!id.isEmpty() && it.key() != view && it->session == id) return false;
+    if (views_.value(view).session != id) hideLogs(view);
+    if (id.isEmpty() && !view.isEmpty()) views_.remove(view);
+    else views_[view].session = id;
+    discardHiddenReads();
     scheduleSync(); dispatch(); return true;
 }
-bool ResourceClient::setFocused(bool focused) { focused_ = focused; scheduleSync(); return true; }
-bool ResourceClient::userActivity() { activityAt_ = clock_.elapsed(); return true; }
+bool ResourceClient::moveSession(const QString& fromView, const QString& toView) {
+    const auto source = views_.constFind(fromView);
+    if (source == views_.cend() || source->session.isEmpty()) return false;
+    if (fromView == toView) return true;
+    const auto target = views_.constFind(toView);
+    if (target != views_.cend() && !target->session.isEmpty()) return false;
+    auto moved = *source;
+    if (target != views_.cend()) { moved.focused = target->focused; moved.activityAt = target->activityAt; }
+    if (fromView.isEmpty()) { views_[fromView].session.clear(); views_[fromView].logKey.clear(); }
+    else views_.remove(fromView);
+    views_.insert(toView, std::move(moved));
+    scheduleSync(); scheduleLogs(); return true;
+}
+bool ResourceClient::setFocused(bool focused, const QString& view) {
+    const auto it = views_.find(view);
+    if (it == views_.end()) return false;
+    it->focused = focused; scheduleSync(); return true;
+}
+bool ResourceClient::userActivity(const QString& view) {
+    const auto it = views_.find(view);
+    if (it == views_.end()) return false;
+    it->activityAt = clock_.elapsed(); return true;
+}
 void ResourceClient::scheduleSync() {
     sync_.stop();
     if (!enabled_) return;
@@ -404,10 +438,11 @@ void ResourceClient::scheduleSync() {
 }
 qint64 ResourceClient::syncInterval(const QString& id, const State& state) const {
     const bool available = !state.snapshot.isEmpty();
-    if (id != visible_) return static_cast<qint64>(settings_.inactiveSyncMinutes) * 60000;
-    if (!focused_) return available ? 240000 : 45000;
+    const auto view = std::find_if(views_.cbegin(), views_.cend(), [&](const View& candidate) { return candidate.session == id; });
+    if (view == views_.cend()) return static_cast<qint64>(settings_.inactiveSyncMinutes) * 60000;
+    if (!view->focused) return available ? 240000 : 45000;
     if (!available) return state.failures.isEmpty() ? 12000 : 25000;
-    const auto idle = clock_.elapsed() - activityAt_;
+    const auto idle = clock_.elapsed() - view->activityAt;
     return idle < 30000 ? 20000 : idle < 300000 ? 45000 : 120000;
 }
 bool ResourceClient::synchronize() {
@@ -501,9 +536,11 @@ void ResourceClient::publishRows(const QString& id) {
 }
 void ResourceClient::reconcileLogs(const QString& id) {
     auto& state = states_[id];
-    if (id == logSession_ && state.logs.contains(logKey_)) {
-        const auto path = state.logs.value(logKey_).path;
-        if (logKey(id, path) != logKey_) { hideLogs(); if (!showLogs(id, path)) emit logsChanged(id, path); }
+    for (const auto& view : views_.keys()) {
+        const auto shown = views_.value(view);
+        if (shown.session != id || !state.logs.contains(shown.logKey)) continue;
+        const auto path = state.logs.value(shown.logKey).path;
+        if (logKey(id, path) != shown.logKey) { hideLogs(view); if (!showLogs(id, path, view)) emit logsChanged(id, path); }
     }
 }
 QJsonObject ResourceClient::detail(const QString& id, const QString& path) const {
@@ -626,13 +663,17 @@ void ResourceClient::dropQueued(const std::function<bool(const Task&)>& obsolete
             task.read == Read::Apply ? "Queued write canceled before sending. Draft retained." : "Read-back unavailable. No write was retried; draft retained.", {});
     }
 }
-bool ResourceClient::hideLogs() {
-    logSync_.stop(); logSession_.clear(); logKey_.clear();
-    dropQueued([](const auto& task) { return task.read == Read::Log; });
+bool ResourceClient::hideLogs(const QString& view) {
+    const auto it = views_.find(view);
+    if (it == views_.end()) return true;
+    const auto id = it->session, key = it->logKey;
+    it->logKey.clear();
+    dropQueued([&](const auto& task) { return task.read == Read::Log && task.id == id && task.logKey == key; });
+    scheduleLogs();
     return true;
 }
-bool ResourceClient::showLogs(const QString& id, const QString& path) {
-    if (id != visible_ || !states_.contains(id) || !states_[id].open) return false;
+bool ResourceClient::showLogs(const QString& id, const QString& path, const QString& view) {
+    if (id.isEmpty() || views_.value(view).session != id || !states_.contains(id) || !states_[id].open) return false;
     const auto row = resource(id, path);
     if (row["kind"] != "Pod" || row["uid"].toString().isEmpty() || !path.startsWith("/api/v1/namespaces/") || !path.contains("/pods/")) return false;
     QStringList containers;
@@ -642,56 +683,63 @@ bool ResourceClient::showLogs(const QString& id, const QString& path) {
     }
     if (containers.isEmpty()) return false;
     const auto key = logKey(id, path);
-    if (logSession_ != id || logKey_ != key) hideLogs();
+    if (views_.value(view).logKey != key) hideLogs(view);
     auto& history = states_[id].logs[key];
     history.path = path; history.uid = row["uid"].toString(); history.containers = containers;
     if (history.selected != "*" && !containers.contains(history.selected)) history.selected = containers.size() == 1 ? containers.first() : "*";
-    logSession_ = id; logKey_ = key;
+    views_[view].logKey = key;
     emit logsChanged(id, path);
     if (history.paused) { scheduleLogs(); return true; }
-    refreshLogs(); return true;
+    refreshLogs(true, view); return true;
 }
-bool ResourceClient::selectLogContainer(const QString& container) {
-    if (logSession_.isEmpty()) return false;
-    auto& history = states_[logSession_].logs[logKey_];
+bool ResourceClient::selectLogContainer(const QString& container, const QString& view) {
+    const auto shown = views_.value(view);
+    if (shown.logKey.isEmpty()) return false;
+    auto& history = states_[shown.session].logs[shown.logKey];
     if (container != "*" && !history.containers.contains(container)) return false;
     history.selected = container; history.publish();
-    dropQueued([&](const auto& task) { return task.read == Read::Log && task.id == logSession_ && task.logKey == logKey_ && container != "*" && task.container != container; });
-    emit logsChanged(logSession_, history.path);
-    return refreshLogs();
+    dropQueued([&](const auto& task) { return task.read == Read::Log && task.id == shown.session && task.logKey == shown.logKey && container != "*" && task.container != container; });
+    emit logsChanged(shown.session, history.path);
+    return refreshLogs(true, view);
 }
-bool ResourceClient::pauseLogs(bool paused) {
-    if (logSession_.isEmpty()) return false;
-    auto& history = states_[logSession_].logs[logKey_];
+bool ResourceClient::pauseLogs(bool paused, const QString& view) {
+    const auto shown = views_.value(view);
+    if (shown.logKey.isEmpty()) return false;
+    auto& history = states_[shown.session].logs[shown.logKey];
     history.paused = paused;
-    if (paused) { dropQueued([](const auto& task) { return task.read == Read::Log; }); }
+    if (paused) { dropQueued([&](const auto& task) { return task.read == Read::Log && task.id == shown.session && task.logKey == shown.logKey; }); }
     else { history.publish(); }
-    emit logsChanged(logSession_, history.path);
+    emit logsChanged(shown.session, history.path);
     scheduleLogs();
-    return paused || refreshLogs();
+    return paused || refreshLogs(true, view);
 }
-bool ResourceClient::refreshLogs(bool foreground) {
+bool ResourceClient::refreshLogs(bool foreground, const QString& view) {
     expire();
-    if (!enabled_ || logSession_.isEmpty() || logSession_ != visible_) return false;
-    auto& state = states_[logSession_]; auto& history = state.logs[logKey_];
+    const auto shown = views_.value(view);
+    if (!enabled_ || shown.session.isEmpty() || shown.logKey.isEmpty()) return false;
+    auto& state = states_[shown.session]; auto& history = state.logs[shown.logKey];
     if (state.suspended || !state.open || (!foreground && (history.paused || history.pending))) return false;
     if (!foreground && clock_.elapsed() < history.cycleAt + 3000) { scheduleLogs(); return true; }
     if (!history.pending) history.cycleAt = -1;
     const auto selected = history.selected == "*" ? history.containers : QStringList{history.selected};
     for (const auto& container : selected) {
-        Task task; task.id = logSession_; task.path = history.path + "/log"; task.read = Read::Log;
-        task.logKey = logKey_; task.container = container; task.continuation = container; task.foreground = foreground;
+        Task task; task.id = shown.session; task.path = history.path + "/log"; task.read = Read::Log;
+        task.logKey = shown.logKey; task.container = container; task.continuation = container; task.foreground = foreground;
         enqueue(task);
     }
     scheduleLogs(); return true;
 }
 void ResourceClient::scheduleLogs() {
     logSync_.stop();
-    if (!enabled_ || logSession_.isEmpty() || logSession_ != visible_) return;
-    const auto& state = states_[logSession_]; const auto& history = state.logs[logKey_];
-    if (!state.open || state.suspended || history.paused || history.pending) return;
-    const auto delay = std::max<qint64>(1, history.cycleAt + 3000 - clock_.elapsed());
-    logSync_.start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
+    if (!enabled_) return;
+    qint64 delay = std::numeric_limits<qint64>::max();
+    for (const auto& view : views_) {
+        if (view.session.isEmpty() || view.logKey.isEmpty()) continue;
+        const auto& state = states_[view.session]; const auto& history = state.logs[view.logKey];
+        if (!state.open || state.suspended || history.paused || history.pending) continue;
+        delay = std::min(delay, std::max<qint64>(1, history.cycleAt + 3000 - clock_.elapsed()));
+    }
+    if (delay != std::numeric_limits<qint64>::max()) logSync_.start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
 }
 bool ResourceClient::authenticate(const ClusterConnection& connection, const QString& session) {
     if (!connection.credentialReady) return false;
@@ -727,7 +775,7 @@ void ResourceClient::expire() {
             if (delay<=0) rowsChanged=true; else next=std::min(next, delay);
         }
         for (auto& history : it->logs) {
-            if (history.expire(now) && it.key() == logSession_ && logKey(it.key(), history.path) == logKey_) emit logsChanged(it.key(), history.path);
+            if (history.expire(now) && logsShown(it.key(), logKey(it.key(), history.path))) emit logsChanged(it.key(), history.path);
             for (const auto& cursor : history.cursors) next = std::min(next, std::max<qint64>(1, now.msecsTo(cursor.fetched.addSecs(60)) + 1));
         }
         for (auto entry = it->collections.begin(); entry != it->collections.end();) {
@@ -754,9 +802,9 @@ void ResourceClient::expire() {
 bool ResourceClient::enqueue(Task task) {
     expire();
     auto& state = states_[task.id];
-    if (task.read == Read::Log && (task.id != logSession_ || task.logKey != logKey_)) return false;
+    if (task.read == Read::Log && !logsShown(task.id, task.logKey)) return false;
     if (!enabled_ || (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() ? (task.read != Read::Verify && task.read != Read::VerifyDelete && !wanted(task.id)) : !state.open) || state.suspended
-        || ((task.read == Read::Detail || task.read == Read::Delete) && task.id != visible_) || (!task.foreground && state.blocked.contains(task.path))) return false;
+        || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id)) || (!task.foreground && state.blocked.contains(task.path))) return false;
     if (running_ && running_->read == task.read && running_->id == task.id && running_->path == task.path && running_->continuation == task.continuation && running_->logKey == task.logKey && running_->forwardToken == task.forwardToken && running_->streamToken == task.streamToken && running_->terminalToken == task.terminalToken)
         return task.read != Read::Apply && task.read != Read::Delete && (!task.change || (running_->change && running_->change->token == task.change->token));
     for (auto& active : reads_) if (active.read == task.read && active.id == task.id && active.path == task.path && active.continuation == task.continuation) {
@@ -954,7 +1002,7 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         emit detailFinished(task.id, task.path, !state.failures.contains(task.path) && !document(task.id, task.path).isEmpty());
         finishVerify(task);
     }
-    if (task.read == Read::Log && task.id == logSession_ && task.logKey == logKey_) emit logsChanged(task.id, state.logs[task.logKey].path);
+    if (task.read == Read::Log && logsShown(task.id, task.logKey)) emit logsChanged(task.id, state.logs[task.logKey].path);
     completedRequests_.append(QVariantMap{{"session",task.id},{"time",now_().toString(Qt::ISODateWithMs)},
         {"method",task.read==Read::Apply ? "PATCH" : task.read==Read::Delete ? "DELETE" : "GET"},{"path",task.path},
         {"priority",task.foreground || task.read==Read::Detail || task.change ? "Foreground" : "Background"},

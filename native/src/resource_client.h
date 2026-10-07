@@ -44,9 +44,12 @@ public:
     bool authenticate(const ClusterConnection& connection, const QString& session);
     bool configure(ReadSettings settings);
     bool enableRequests(bool enabled);
-    bool showSession(const QString& id);
-    bool setFocused(bool focused);
-    bool userActivity();
+    /** Bind a session to one view. Empty IDs hide it; another view's binding is not stolen. */
+    bool showSession(const QString& id, const QString& view = {});
+    /** Move an existing visible session without closing its cache, forwards or terminal. */
+    bool moveSession(const QString& fromView, const QString& toView);
+    bool setFocused(bool focused, const QString& view = {});
+    bool userActivity(const QString& view = {});
     bool synchronize();
     QJsonObject resource(const QString& id, const QString& path) const;
     /** Membership in the current session collection snapshot, excluding retained detail-only entries. */
@@ -73,11 +76,11 @@ public:
     bool readBackDeletion(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline);
     /** Unresolved dispatched deletion: a valid current-target read is required before another write. */
     bool deletionNeedsObservation(const QString& id, const QString& path) const;
-    bool showLogs(const QString& id, const QString& path);
-    bool hideLogs();
-    bool selectLogContainer(const QString& container);
-    bool pauseLogs(bool paused);
-    bool refreshLogs(bool foreground = true);
+    bool showLogs(const QString& id, const QString& path, const QString& view = {});
+    bool hideLogs(const QString& view = {});
+    bool selectLogContainer(const QString& container, const QString& view = {});
+    bool pauseLogs(bool paused, const QString& view = {});
+    bool refreshLogs(bool foreground = true, const QString& view = {});
     QStringList logContainers(const QString& id, const QString& path) const;
     QString logSelection(const QString& id, const QString& path) const;
     QString logStatus(const QString& id, const QString& path) const;
@@ -179,12 +182,16 @@ private:
     QTimer expiry_;
     QTimer sync_;
     QTimer logSync_;
-    QString logSession_, logKey_;
+    struct View final {
+        QString session, logKey;
+        bool focused = true;
+        qint64 activityAt = 0;
+    };
+    QMap<QString, View> views_{{QString{}, View{}}};
     const std::function<QDateTime()> now_;
     ReadSettings settings_;
-    QString visible_;
-    bool focused_ = true, enabled_ = true;
-    qint64 activityAt_ = 0, lastStart_ = -1;
+    bool enabled_ = true;
+    qint64 lastStart_ = -1;
     bool resetConnections_ = false;
     QElapsedTimer clock_;
     qint64 backoffUntil_ = 0;
@@ -200,6 +207,9 @@ private:
     void reconcileLogs(const QString& id);
     bool refreshSession(const QString& id, bool foreground);
     bool wanted(const QString& id) const;
+    bool isVisible(const QString& id) const;
+    bool logsShown(const QString& id, const QString& key) const;
+    void discardHiddenReads();
     void dispatch();
     void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter);
     void consume(const Task& task, const QJsonObject& document);

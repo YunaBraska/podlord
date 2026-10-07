@@ -11,7 +11,7 @@ Result<QString> ResourceClient::startTerminal(const QString& id, const QString& 
     expire();
     const auto state = states_.constFind(id); const auto row = resource(id, path);
     static const QRegularExpression shellPath("^/[A-Za-z0-9_./-]{1,255}$");
-    if (state == states_.cend() || !state->open || state->suspended || !enabled_ || id != visible_
+    if (state == states_.cend() || !state->open || state->suspended || !enabled_ || !isVisible(id)
         || !containsResource(id, path) || row["apiVersion"] != "v1" || row["kind"] != "Pod" || row["status"] != "Running"
         || row["uid"].toString().isEmpty() || !row["containers"].toArray().contains(container)
         || !shellPath.match(shell).hasMatch() || shell.contains("/../") || shell.endsWith("/.."))
