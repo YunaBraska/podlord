@@ -132,7 +132,7 @@ Dialog {
                 }
                 Accessible.name: modelData
                 indicator: Rectangle {
-                    x: valueControl.leftPadding
+                    x: valueControl.mirrored ? valueControl.width - width - valueControl.rightPadding : valueControl.leftPadding
                     y: (valueControl.height - height) / 2
                     width: 18; height: 18
                     color: valueControl.checked ? dialog.controller.appearanceColors.accent : dialog.controller.appearanceColors.inset
@@ -144,7 +144,8 @@ Dialog {
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                     verticalAlignment: Text.AlignVCenter
-                    leftPadding: valueControl.indicator ? valueControl.indicator.width + valueControl.spacing : 0
+                    leftPadding: !valueControl.mirrored && valueControl.indicator ? valueControl.indicator.width + valueControl.spacing : 0
+                    rightPadding: valueControl.mirrored && valueControl.indicator ? valueControl.indicator.width + valueControl.spacing : 0
                 }
                 onClicked: dialog.controller.selectFilterValue(modelData, checked)
                 ToolTip {
@@ -167,7 +168,7 @@ Dialog {
                 }
                 Menu {
                     id: copyMenu
-                    MenuItem { objectName: "copyFieldFilterValue_" + valueControl.index; text: "Copy value"; onTriggered: dialog.controller.copyFilterValue(valueControl.modelData) }
+                    MenuItem { objectName: "copyFieldFilterValue_" + valueControl.index; text: dialog.controller.uiText["copy.value"]; onTriggered: dialog.controller.copyFilterValue(valueControl.modelData) }
                 }
             }
         }

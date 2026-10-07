@@ -187,9 +187,9 @@ ColumnLayout {
             Keys.onEscapePressed: { grid.findOpen = false; table.forceActiveFocus() }
         }
         Label { objectName: grid.prefix + "FindCount"; text: (grid.findIndex + 1) + "/" + grid.findCount; textFormat: Text.PlainText; Accessible.name: "Search match " + text }
-        ToolButton { objectName: grid.prefix + "FindPrevious"; text: "Previous"; enabled: grid.findCount > 0; Accessible.name: "Previous matching " + grid.prefix + " row"; onClicked: grid.selectFindMatch(-1) }
-        ToolButton { objectName: grid.prefix + "FindNext"; text: "Next"; enabled: grid.findCount > 0; Accessible.name: "Next matching " + grid.prefix + " row"; onClicked: grid.selectFindMatch(1) }
-        ToolButton { objectName: grid.prefix + "FindClose"; text: "Close"; Accessible.name: "Close table find"; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
+        ToolButton { objectName: grid.prefix + "FindPrevious"; text: "Previous"; enabled: grid.findCount > 0; Accessible.name: workspace.uiText["tooltip.previousMatch"]; onClicked: grid.selectFindMatch(-1) }
+        ToolButton { objectName: grid.prefix + "FindNext"; text: "Next"; enabled: grid.findCount > 0; Accessible.name: workspace.uiText["tooltip.nextMatch"]; onClicked: grid.selectFindMatch(1) }
+        ToolButton { objectName: grid.prefix + "FindClose"; text: workspace.uiText["action.close"]; Accessible.name: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
     }
     Label { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
     Label { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
@@ -199,8 +199,8 @@ ColumnLayout {
         property int column: -1
         onAboutToShow: grid.contextRequested(path)
         property string endpoint: ""
-        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: "Open in inspector"; visible: grid.inspectable; enabled: visible; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
-        MenuItem { objectName: grid.prefix === "resource" ? "menuCopy" : grid.prefix + "MenuCopy"; text: "Copy value"; onTriggered: grid.copyPathRequested(cellMenu.path, cellMenu.column) }
+        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: workspace.uiText["ref.menuOpen"]; visible: grid.inspectable; enabled: visible; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
+        MenuItem { objectName: grid.prefix === "resource" ? "menuCopy" : grid.prefix + "MenuCopy"; text: workspace.uiText["copy.value"]; onTriggered: grid.copyPathRequested(cellMenu.path, cellMenu.column) }
         Instantiator {
             model: grid.contextActions
             delegate: MenuItem { required property var modelData; action: modelData; objectName: modelData.objectName }

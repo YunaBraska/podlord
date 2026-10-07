@@ -99,7 +99,7 @@ Dialog {
         }
     }
     footer: DialogButtonBox {
-        Button { objectName: dialog.tableType + "SaveColumns"; text: "Save"; enabled: !workspace.tableLayoutSaving; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: dialog.save(); Keys.onReturnPressed: dialog.save() }
+        Button { objectName: dialog.tableType + "SaveColumns"; text: workspace.uiText["action.save"]; enabled: !workspace.tableLayoutSaving; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: dialog.save(); Keys.onReturnPressed: dialog.save() }
         Button { objectName: dialog.tableType + "CancelColumns"; text: "Cancel"; enabled: !workspace.tableLayoutSaving; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
         onRejected: dialog.close()
     }

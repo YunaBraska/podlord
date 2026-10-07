@@ -43,19 +43,19 @@ Pane {
     }
     RowLayout {
         Layout.fillWidth: true
-        ToolButton { objectName: "inspectorBack"; text: "Back"; enabled: workspace.canInspectBack; Accessible.name: "Previous inspected resource"; onClicked: workspace.navigateInspector(-1) }
-        ToolButton { objectName: "inspectorForward"; text: "Forward"; enabled: workspace.canInspectForward; Accessible.name: "Next inspected resource"; onClicked: workspace.navigateInspector(1) }
+        ToolButton { objectName: "inspectorBack"; text: "Back"; enabled: workspace.canInspectBack; Accessible.name: workspace.uiText["tooltip.previousResource"]; onClicked: workspace.navigateInspector(-1) }
+        ToolButton { objectName: "inspectorForward"; text: "Forward"; enabled: workspace.canInspectForward; Accessible.name: workspace.uiText["tooltip.nextResource"]; onClicked: workspace.navigateInspector(1) }
         Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; text: workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap; Accessible.name: "Inspecting " + text }
     }
     TabBar {
         Layout.fillWidth: true
         currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
-        TabButton { objectName: "overviewButton"; width: implicitWidth; text: "Overview"; onClicked: workspace.setInspectorPage("overview") }
-        TabButton { objectName: "yamlButton"; width: implicitWidth; text: "YAML"; onClicked: workspace.setInspectorPage("yaml") }
-        TabButton { objectName: "inspectorEventsButton"; width: implicitWidth; text: "Events"; onClicked: workspace.setInspectorPage("events") }
-        TabButton { objectName: "inspectorLinksButton"; width: implicitWidth; text: "Links"; onClicked: workspace.setInspectorPage("links") }
-        TabButton { objectName: "valuesButton"; text: "Values"; visible: workspace.valuesAvailable; width: visible ? implicitWidth : 0; onClicked: workspace.setInspectorPage("values") }
-        TabButton { objectName: "logsButton"; text: "Logs"; visible: workspace.podInspected; width: visible ? implicitWidth : 0; onClicked: workspace.setLogsVisible(true) }
+        TabButton { objectName: "overviewButton"; width: implicitWidth; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
+        TabButton { objectName: "yamlButton"; width: implicitWidth; text: workspace.uiText["inspector.yaml"]; onClicked: workspace.setInspectorPage("yaml") }
+        TabButton { objectName: "inspectorEventsButton"; width: implicitWidth; text: workspace.uiText["inspector.events"]; onClicked: workspace.setInspectorPage("events") }
+        TabButton { objectName: "inspectorLinksButton"; width: implicitWidth; text: workspace.uiText["inspector.links"]; onClicked: workspace.setInspectorPage("links") }
+        TabButton { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; visible: workspace.valuesAvailable; width: visible ? implicitWidth : 0; onClicked: workspace.setInspectorPage("values") }
+        TabButton { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; width: visible ? implicitWidth : 0; onClicked: workspace.setLogsVisible(true) }
         TabButton { objectName: "terminalButton"; text: "Terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; width: visible ? implicitWidth : 0; onClicked: workspace.setInspectorPage("terminal") }
     }
     Flow {
@@ -65,7 +65,7 @@ Pane {
         Button { objectName: "copyYaml"; text: "Copy visible YAML"; visible: workspace.yamlVisible; enabled: !workspace.yamlEditing && workspace.yamlText !== ""; onClicked: workspace.copyYaml() }
         Button { objectName: "deleteResource"; text: "Delete..."; enabled: workspace.canDeleteResource; Accessible.name: "Review deletion of " + workspace.inspectorName; onClicked: workspace.previewDeletion() }
         Button { objectName: "preparePortForward"; text: "Port forward..."; enabled: workspace.canPortForward; Accessible.name: "Port forward " + workspace.inspectorName; onClicked: workspace.preparePortForward() }
-        Button { objectName: "closeInspector"; text: "Close"; Accessible.name: "Close inspector"; onClicked: workspace.closeInspector() }
+        Button { objectName: "closeInspector"; text: workspace.uiText["action.close"]; Accessible.name: "Close inspector"; onClicked: workspace.closeInspector() }
         Button { objectName: "expandTerminal"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: terminalDialog.open() }
         Button { objectName: "readBackResourceDelete"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
     }
@@ -116,9 +116,9 @@ Pane {
                         Flow {
                             Layout.fillWidth: true
                             spacing: 6
-                            Button { objectName: "guidanceEvents_" + index; text: "Events"; Accessible.name: "Open cached events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
-                            Button { objectName: "guidanceYaml_" + index; text: "YAML"; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
-                            Button { objectName: "guidanceLogs_" + index; text: "Pod logs"; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
+                            Button { objectName: "guidanceEvents_" + index; text: workspace.uiText["inspector.events"]; Accessible.name: "Open cached events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
+                            Button { objectName: "guidanceYaml_" + index; text: workspace.uiText["inspector.yaml"]; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
+                            Button { objectName: "guidanceLogs_" + index; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
                         }
                         Button {
                             objectName: "guidanceDocs_" + index

@@ -1123,6 +1123,7 @@ bool execute(const QString& scenario) {
     }
     if (scenario.startsWith("language_cache_")) {
         const QString language = scenario.endsWith("_ar") ? "ar" : "de";
+        if (!click(window, item(window, "cell_0_0")) || !waitFor([&] { return workspace.canEditYaml(); })) return false;
         const auto session = workspace.currentSession();
         const auto requests = server.requests.size();
         QStringList before;
@@ -1145,6 +1146,14 @@ bool execute(const QString& scenario) {
             for (int column = 0; column < workspace.table()->columnCount(); ++column)
                 after.append(workspace.table()->data(workspace.table()->index(row, column)).toString());
         if (before.isEmpty() || after != before || workspace.currentSession() != session || server.requests.size() != requests) return false;
+        for (const auto& label : QList<QPair<QString, QString>>{{"overviewButton", "inspector.overview"}, {"yamlButton", "inspector.yaml"},
+            {"inspectorEventsButton", "inspector.events"}, {"inspectorLinksButton", "inspector.links"}, {"logsButton", "inspector.logs"}}) {
+            auto* control = item(window, label.first);
+            if (!control || control->property("text") != workspace.uiText()[label.second]) {
+                std::fprintf(stderr, "Inspector label %s did not apply language %s.\n", qPrintable(label.first), qPrintable(language));
+                return false;
+            }
+        }
         auto* problems = item(window, "problemsOnly");
         if (!problems || problems->property("text") != workspace.uiText()["filters.problems"]
             || problems->property("mirrored").toBool() != (language == "ar")
@@ -2353,7 +2362,7 @@ bool execute(const QString& scenario) {
             if (scenario == "inspector_edit_resource_bound") workspace.filter("bravo");
             if (scenario == "inspector_edit_close_escape") QTest::keyClick(window, Qt::Key_Escape);
             else if (scenario == "inspector_edit_close_keyboard" || scenario == "inspector_edit_close_keypad" || scenario == "inspector_edit_close_space") {
-                if (!item(window, "discardStay")->hasActiveFocus() || !item(window, "discardStay")->property("visualFocus").toBool()) {
+                if (!waitFor([&] { return item(window, "discardStay")->hasActiveFocus() && item(window, "discardStay")->property("visualFocus").toBool(); })) {
                     std::fprintf(stderr, "Discard keyboard focus: active=%d visual=%d current=%s\n", item(window,"discardStay")->hasActiveFocus(), item(window,"discardStay")->property("visualFocus").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
                     return false;
                 }

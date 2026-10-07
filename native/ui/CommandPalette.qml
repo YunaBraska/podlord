@@ -70,7 +70,7 @@ Dialog {
         }
     }
     footer: DialogButtonBox {
-        Button { objectName: "commandPaletteClose"; text: "Close"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+        Button { objectName: "commandPaletteClose"; text: workspace.uiText["action.close"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
         onRejected: commandPopup.reject()
     }
 }

@@ -57,14 +57,10 @@ fi
 find "$RUN" -maxdepth 1 -type f -name '*.profraw' > "$RUN/profiles.txt"
 "$PROFDATA" merge -sparse --input-files="$RUN/profiles.txt" -o "$BUILD/coverage/native.profdata"
 set -- "$APP"
-for binary in podlord-session podlord-source session_contract_test workspace_ui_test \
-    source_input_test authentication_ui_test pod_logs_ui_test theme_ui_test \
-    alert_ui_test alerts_store_test sound-catalog-test resource_metrics_test read_settings_test \
-    yaml-draft-check-test yaml-apply-test table_layout_test view_state_test \
-    resource_filter_test kind_glyph_ui_test resource-delete-ui-test inspector-navigation-ui-test port-forward-ui-test container-terminal-ui-test field-filter-ui-test metric-filter-ui-test read-overlap-test radar_reference_test \
-    resource_guidance_test resource-age-filter-test about-ui-test mutation-admission-test credential-file-test settings-draft-ui-test command-palette-ui-test pulse-layout-ui-test tls-connection-test k3d-import-test workspace-restore-ui-test source-removal-ui-test; do
-    set -- "$@" -object "$BUILD/$binary"
-done
+while IFS= read -r binary; do
+    [ -x "$binary" ] || { printf 'Configured coverage executable is missing: %s\n' "$binary" >&2; exit 1; }
+    set -- "$@" -object "$binary"
+done < "$BUILD/coverage/objects-Release.txt"
 "$COV" report "$@" \
     -instr-profile="$BUILD/coverage/native.profdata" "$ROOT"/native/src/*.cpp "$ROOT"/native/src/*.h > "$BUILD/coverage/report.txt"
 cat "$BUILD/coverage/report.txt"

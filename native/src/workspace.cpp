@@ -60,6 +60,21 @@ int ResourceTable::columnCount(const QModelIndex& parent) const { return parent.
 QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() >= rows_.size() || index.column() >= fields_.size()) return {};
     const auto& row = rows_[index.row()];
+    switch (role) {
+    case Qt::UserRole: return row[identityField_].toString();
+    case Qt::UserRole + 1: return row["name"].toString();
+    case Qt::UserRole + 2: return row["kind"].toString();
+    case Qt::UserRole + 3: return row["namespace"].toString();
+    case Qt::UserRole + 4: return row["status"].toString();
+    case Qt::UserRole + 5: return appearanceStatus(appearance_, row["status"].toString());
+    case Qt::UserRole + 7: return resourceMetricPresentation(row);
+    case Qt::UserRole + 8: return row.contains("metricReferences");
+    case Qt::UserRole + 9: return row["problemSeverity"].toInt();
+    case Qt::UserRole + 10: return row["activity"].toBool();
+    case Qt::UserRole + 13: return row["value"].toString();
+    case Qt::UserRole + 14: return row["base64"].toBool();
+    default: break;
+    }
     const auto& field = fields_[index.column()];
     const auto cell = row[field];
     const auto text = field == "cluster" ? cluster_ : cell.toString();
@@ -85,18 +100,12 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         if (role == Qt::DisplayRole) return value;
         return "<span>" + value.toHtmlEscaped().replace('\n', "<br>") + "</span>";
     }
-    if (role == Qt::UserRole) return row[identityField_].toString();
     if (role == Qt::UserRole + 12) return field == "from" || field == "to" ? row[field + "Path"].toString() : row[identityField_].toString();
     if (role == Qt::ForegroundRole) {
         if (field=="status") return appearanceStatus(appearance_,text);
         static const QStringList identities{"kind", "namespace", "status", "node", "image", "cluster", "eventType", "type", "from", "to"};
         return identities.contains(field) && !text.isEmpty() ? appearanceIdentity(appearance_, text) : QColor(Qt::transparent);
     }
-    if (role == Qt::UserRole + 1) return row["name"].toString();
-    if (role == Qt::UserRole + 2) return row["kind"].toString();
-    if (role == Qt::UserRole + 3) return row["namespace"].toString();
-    if (role == Qt::UserRole + 4) return row["status"].toString();
-    if (role == Qt::UserRole + 5) return appearanceStatus(appearance_, row["status"].toString());
     if (role == Qt::UserRole + 6) {
         if (field == "preview") return row["value"].toString();
         if (field == "eventTime") return QDateTime::fromString(text, Qt::ISODateWithMs);
@@ -105,13 +114,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
             ? QVariant(double(row["readyCount"].toInt())/row["containerCount"].toInt()) : QVariant{};
         return field == "cluster" ? QVariant(text) : cell.toVariant();
     }
-    if (role == Qt::UserRole + 7) return resourceMetricPresentation(row);
-    if (role == Qt::UserRole + 8) return row.contains("metricReferences");
-    if (role == Qt::UserRole + 9) return row["problemSeverity"].toInt();
-    if (role == Qt::UserRole + 10) return row["activity"].toBool();
     if (role == Qt::UserRole + 11) return age && created.isValid() && created <= now ? QVariant(created.secsTo(now)) : QVariant{};
-    if (role == Qt::UserRole + 13) return row["value"].toString();
-    if (role == Qt::UserRole + 14) return row["base64"].toBool();
     return {};
 }
 QVariant ResourceTable::headerData(int section, Qt::Orientation orientation, int role) const {
