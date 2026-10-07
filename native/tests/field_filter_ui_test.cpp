@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlExpression>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTcpServer>
@@ -29,6 +30,17 @@ QQuickItem* item(QQuickItem* root, const QString& name) {
     return nullptr;
 }
 QQuickItem* item(QQuickWindow* window, const QString& name) {
+    const auto parts = name.split('_');
+    if (parts.size() == 3 && (parts[0] == "cell" || parts[0] == "eventCell" || parts[0] == "pinnedCell")) {
+        auto* view = podlord::test::visibleItem(window->contentItem(), parts[0] == "cell" ? "resourceTable"
+            : parts[0] == "eventCell" ? "eventTable" : "resourcePinnedTable");
+        if (!view) return nullptr;
+        QQmlExpression lookup(qmlContext(view), view, QString("itemAtIndex(model.index(%1, %2))").arg(parts[1], parts[2]));
+        auto* cell = lookup.evaluate().value<QQuickItem*>();
+        if (lookup.hasError()) std::fprintf(stderr, "Filter table lookup: %s\n", qPrintable(lookup.error().toString()));
+        return cell;
+    }
+    if (auto* visible = podlord::test::visibleItem(window->contentItem(), name)) return visible;
     if (auto* found = item(window->contentItem(), name)) return found;
     return window->findChild<QQuickItem*>(name);
 }

@@ -76,16 +76,22 @@ bool run(const QString& config) {
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};
         }
-        return window->isExposed() && window->isActive() ? rendered : std::nullopt;
+        if (!window->isExposed() || !window->isActive()) {
+            report({{"type", "failure"}, {"reason", "foreground lost during measured frame"},
+                    {"exposed", window->isExposed()}, {"active", window->isActive()}});
+            return {};
+        }
+        return rendered;
     };
     if (!workspace.importFile(config) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 3; })) return false;
-    QStringList sessions;
+    QStringList sessions, clusters;
     QList<int> counts;
     int total = 0;
     const auto path = QStringLiteral("/api/v1/namespaces/benchmark/pods/load-0");
     for (const auto& entry : workspace.contexts()) {
         if (!workspace.openContext(entry.toMap()["id"].toString()) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() >= 1666; })) return false;
         sessions.append(workspace.currentSession());
+        clusters.append(entry.toMap()["cluster"].toString());
         counts.append(workspace.totalResourceCount());
         total += counts.last();
         if (!workspace.setWorkspacePage("resources") || !workspace.inspectPath(path) || !workspace.setInspectorPage("logs")
@@ -119,7 +125,12 @@ bool run(const QString& config) {
     if (!workspace.filter("")) return false;
     accepted = benchmark("sort", 100, [&](int) { return workspace.sortColumn(0); }, [&] (int) { return workspace.resourceCount() == counts.first(); }) && accepted;
     accepted = benchmark("cached-session-tab", 50, [&](int i) { return workspace.activate(sessions[i % 3]); },
-        [&](int i) { return workspace.currentSession() == sessions[i % 3] && workspace.totalResourceCount() == counts[i % 3]; }) && accepted;
+        [&](int i) {
+            const auto* model = workspace.table();
+            return workspace.currentSession() == sessions[i % 3] && workspace.totalResourceCount() == counts[i % 3]
+                && model->rowCount() > 0
+                && model->data(model->index(0, 6)).toString() == clusters[i % 3];
+        }) && accepted;
     if (!frame([&] { return workspace.activate(sessions.first()); }, [&] { return !workspace.busy() && workspace.currentSession() == sessions.first(); })) return false;
     accepted = benchmark("cached-inspector", 50, [&](int) { return workspace.closeInspector() && workspace.inspectPath(path); },
         [&](int) { return workspace.inspectorPath() == path && workspace.inspectorName() == "load-0" && !workspace.overviewFields().isEmpty(); }) && accepted;

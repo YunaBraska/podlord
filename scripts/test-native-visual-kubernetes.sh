@@ -17,8 +17,8 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
 MODE=${1:-desktop}
-[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-fields-e2e, radar-parity or release-review.\n' >&2; exit 1; }
-case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-fields-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
+case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
     command -v go >/dev/null 2>&1 || { printf 'Missing tool: go\n' >&2; exit 1; }
 fi
@@ -26,12 +26,15 @@ DESKTOP_TIMEOUT=${PODLORD_DESKTOP_TIMEOUT_SECONDS:-3600}
 case "$DESKTOP_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
 [ "${#DESKTOP_TIMEOUT}" -le 5 ] && [ "$DESKTOP_TIMEOUT" -ge 60 ] && [ "$DESKTOP_TIMEOUT" -le 21600 ] || { printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
 LEGACY=${PODLORD_LEGACY_APP:-}
-if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
+if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
     printf 'Required native field filter UI test executable is missing.\n' >&2
     exit 1
 fi
 if [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
     [ -x "$BUILD/container-terminal-ui-test" ] || { printf 'Required native terminal UI test executable is missing.\n' >&2; exit 1; }
+fi
+if [ "$MODE" = native-health-e2e ]; then
+    [ -x "$BUILD/alert_ui_test" ] || { printf 'Required native health UI test executable is missing.\n' >&2; exit 1; }
 fi
 if [ "$MODE" = radar-parity ]; then
     [ -x "$BUILD/radar_reference_test" ] && [ -f "${PODLORD_RADAR_REFERENCE_DLL:-}" ] && [ -x "${PODLORD_DOTNET:-}" ] || { printf 'Built native and C# radar reference tools are required.\n' >&2; exit 1; }
@@ -246,6 +249,14 @@ fi
 if [ "$MODE" = native-terminal-e2e ]; then
     run_terminal_tests
     printf 'Native Kubernetes interactive terminal scenarios passed; cleaning up owned cluster and profiles.\n'
+    exit 0
+fi
+if [ "$MODE" = native-health-e2e ]; then
+    cp "$BUILD/alert_ui_test" "$RUN/alert_ui_test"
+    shasum -a 256 "$RUN/alert_ui_test" > "$EVIDENCE/$NAME-health-binary.sha256"
+    PODLORD_REAL_RADAR_HIGHLIGHTS="$EVIDENCE/$NAME-radar-health" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
+        run_native_test "$RUN/alert_ui_test" real_health "$RUN/kubeconfig" "$EVIDENCE/$NAME-health.png" > "$EVIDENCE/$NAME-real_health.log" 2>&1
+    printf 'Native Kubernetes health and Radar scenario passed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then

@@ -830,6 +830,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             int visual=0;
             for (const auto& value:workspace.resourceColumns()) { if (value.toMap()["id"]=="image") break; ++visual; }
             auto* table=item(window,"resourceTable");
+            if (!table || !waitFor([&] { return table->property("columns").toInt() == workspace.table()->columnCount(); })) return false;
+            QSignalSpy ready(window, &QQuickWindow::frameSwapped); window->update();
+            if (!ready.wait(2000)) return false;
             QQmlExpression position(qmlContext(table),table,QString("positionViewAtColumn(%1, TableView.Contain)").arg(visual)); position.evaluate();
             if (position.hasError()) return false;
         }
