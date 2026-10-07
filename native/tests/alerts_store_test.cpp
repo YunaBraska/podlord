@@ -12,7 +12,11 @@ namespace {
 bool run(const QString& scenario) {
     QTemporaryDir temporary; if (!temporary.isValid()) return false;
     const auto profile=temporary.filePath("profile"); podlord::AlertStore store(profile);
-    const auto loaded=store.load(); if (!std::holds_alternative<podlord::AlertCatalog>(loaded)) return false;
+    const auto loaded=store.load();
+    if (const auto* failure = std::get_if<podlord::Failure>(&loaded)) {
+        std::fprintf(stderr, "Alert catalog load failed: %s\n", qPrintable(failure->message));
+        return false;
+    }
     const auto original=std::get<podlord::AlertCatalog>(loaded);
     if (scenario=="missing") return original.rules.size()==3 && !QFile::exists(profile);
     if (scenario.startsWith("description_")) {

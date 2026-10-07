@@ -64,7 +64,7 @@ jobs:
       run:
         shell: sh
     env:
-      PODLORD_TEST_JOBS: '2'
+      PODLORD_TEST_JOBS: '4'
     steps:
       - uses: actions/checkout@v4
       - name: Install native build dependencies
