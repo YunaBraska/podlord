@@ -7,6 +7,8 @@ namespace podlord {
 ResourceFilter::ResourceFilter(QObject* parent) : QSortFilterProxyModel(parent) {
     setSortCaseSensitivity(Qt::CaseInsensitive);
     setSortRole(Qt::UserRole + 6);
+    setFilterRole(Qt::UserRole);
+    setFilterKeyColumn(-1);
 }
 Result<QList<ResourceFilter::Token>> ResourceFilter::compile(const QString& text) {
     if (text.toUtf8().size() > 65536)

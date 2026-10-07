@@ -43,7 +43,7 @@ jobs:
 
       - name: Run tests
         shell: sh
-        run: scripts/test.sh
+        run: scripts/test.sh --configuration Release
 
       - name: Verify coverage gate boundaries
         shell: sh

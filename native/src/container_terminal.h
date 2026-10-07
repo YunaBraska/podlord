@@ -38,7 +38,7 @@ public:
     bool mouseTracking() const { return mouseTracking_; }
 signals:
     void changed();
-    void screenChanged();
+    void screenChanged(int scrolledLines);
     void handshakeFinished(bool accepted, bool authenticationRequired);
 private:
     friend class ResourceClient;
@@ -51,7 +51,7 @@ private:
     QByteArray* outputBatch_ = nullptr;
     std::deque<QVector<VTermScreenCell>> history_;
     qint64 historyBytes_ = 0;
-    int rows_ = 24, columns_ = 80;
+    int rows_ = 24, columns_ = 80, scrolledLines_ = 0;
     bool admitted_ = false, reported_ = false, ended_ = false, cursorVisible_ = true, alternate_ = false, mouseTracking_ = false;
     bool outputClosed_ = false, statusClosed_ = false;
     bool send(int channel, const QByteArray& bytes);

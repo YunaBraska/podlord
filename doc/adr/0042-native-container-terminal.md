@@ -73,3 +73,17 @@ Kubernetes HTTP/WebSocket test boundary. `native-terminal-e2e` uses real local
 K3S and a multi-container Pod for shell output, PTY size, vi file read-back,
 Control-C, exit, screenshots and owned-stack cleanup. Executed outcomes and
 remaining gaps belong to the existing test map.
+
+## What Happens While Reading Earlier Terminal Output?
+
+Output follows the live tail only while the user is already at the tail.
+Scrolling back anchors the displayed history while new lines arrive, including
+when the bounded history discards its oldest cells. Growing the viewport keeps
+the first retained line visible. VT history-clear removes the old viewport;
+Follow explicitly returns to the tail.
+
+The existing libvterm push/pop/clear callbacks report displacement with the
+screen update. The surface adjusts its viewport from that displacement rather
+than comparing capped history sizes or keeping a second history cache. Native
+selection copying stays local, including Shift selection while the remote
+application requests mouse tracking.

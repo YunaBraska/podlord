@@ -4137,3 +4137,110 @@ The 242 affected macOS alarm, store, pooled-radar and application-startup cases 
 Before the construction correction, the explicit-result fix already allowed the hosted macOS package to pass seven Cocoa startup cases, five command-line metadata cases and all three real mutual-TLS/rejection cases, using the bundled OpenSSL backend. The alarm preflight still failed, so that run is not accepted as a working release.
 
 The native runner now explicitly enables testing and asks CTest to fail when no matching cases exist. A deliberately unmatched preflight was executed and rejected (`20261007-empty-preflight-rejected.log`). Missing test registration must never turn into a successful readiness check.
+
+## What Do The 2026-10-07 Filter, Terminal And Table Checks Establish?
+
+Evidence root: `/Users/yuna/.local/share/podlord-comparison/release-evidence`.
+The active migration branch remains `feat/session-tabs-detachable-windows`;
+no additional migration branch is created. Signing/notarization remain deferred
+for the private artifact, not substitutes for functional or performance gates.
+
+| Behavior | Public boundary and runnable check | Executed evidence | Remaining gap |
+| --- | --- | --- | --- |
+| Actual reference saved-filter import | `scripts/test-filter-migration.sh BUILD FRESH_OUT`, compiling the actual C# `FilterPresetStore.Save`, importing through `Workspace.importFilterPresets` and selecting through QML ComboBox keys | 14/14 Basic/Fusion scenarios; byte-for-byte source preservation; 12 native headless screenshots in `2026-10-07-real-reference-filter-import` | Native picker, installed-process restart, display Limit and paired desktop presentation are not proved |
+| Existing field/quantity/search/state behavior | Actual QML/public-store filter regression scenarios, isolated profiles and an explicit external Kubernetes HTTP boundary | 501/501, randomized 12-worker execution, `20261007-reference-filter-regressions.log/xml` | Not every menu/platform/theme and not installed-process latency |
+| Retained terminal history, trim, grow, clear, Follow and selection | Actual QML terminal, external HTTP/WebSocket boundary; seven named scenarios per style | Four genuine output/trim anchor failures reproduced first; two grow-test setup failures corrected; all 146 Terminal scenarios pass in `20261007-terminal-history-after.log/xml` | Device input/accessibility and complete paired visual matrix remain independent |
+| Real interactive container execution | `scripts/test-native-visual-kubernetes.sh native-terminal-e2e` on Cocoa/Metal and an owned local K3S cluster, populated with 1,051 objects | Shell, vi/read-back, interrupt and touch interrupt all pass; four current captures/logs in `2026-10-07-current-metal-terminal`; owned cluster/profile removed | Not a C#/C++ visual comparison or a mobile release |
+| Cached session selection, Secret isolation, table find and filters | Actual Workspace/QML controls after removing whole-model scope resets | 230/230, 12 randomized workers, `20261007-incremental-session.log/xml`; selection explicitly cleared across contexts | Current tab latency and RSS still fail below; hosted verification remains independent |
+| YAML preview default focus | Real dialog and keyboard Escape on Linux Qt 6.10, not a mocked widget | Focus trace reproduced `Cancel -> Apply`; selecting the footer's actual initial item then passed ten consecutive runs in `2026-10-07-linux-values/preview-focus-after.log/xml` | Broader current-source regression results must be recorded separately |
+| One dialog decision per click | Real Cancel button and public Dialog `rejected` signal | `cancel-once-before.log` reproduced two rejections for one click; Qt's redundant footer forwarding removed | Fresh registered Basic/Fusion and lifecycle runs required before closure |
+
+### What Do Current Performance And Coverage Measurements Say?
+
+The complete source-`3ef5640` instrumented macOS run passed 3,749 functional
+registrations, with 96.92% line coverage and 82.64% branch coverage. The 90%
+branch gate still fails. Hosted Linux ARM passed 3,515/3,517 registrations and
+AMD64 3,514/3,517; clipboard/focus failures remain actual failures, with branch
+coverage 82.69%/82.66%. Hosted macOS arm64 reported 82.67% branches. Intel hit the
+60-minute job limit before completion; it is not a compatibility pass.
+
+Current unprofiled Cocoa/Metal, 5,000-resource results are retained separately:
+
+| Protocol | Before incremental scope publication | After incremental scope publication | Gate |
+| --- | --- | --- | --- |
+| Cached tab p95 / maximum | 93.20 / 97.49 ms | 89.33 / 111.81 ms | p95 <= 50 ms, maximum <= 100 ms: fails |
+| Cache filter p95 | 33.33 ms | 26.76 ms | <= 100 ms: passes |
+| Sort p95 | 48.26 ms | 37.11 ms | <= 100 ms: passes |
+| Cached inspector p95 | 31.58 ms | 31.68 ms | <= 50 ms: passes |
+| Maximum RSS | 261,390,336 bytes | 263,569,408 bytes | <= 250,000,000 bytes: fails |
+| Warm resident growth | 2,539,520 bytes | 1,523,712 bytes | <= 5,000,000 bytes: passes |
+| Foreground nonsync idle | Focus lost after 11.22 s | Focus lost after 7.20 s | Required uninterrupted 60 s: neither run is valid |
+
+Logs: `20261007-current-metal-performance.log` and
+`20261007-incremental-session-metal-performance.log`. Different cold runs are not
+proof of a statistically established improvement. No latency, memory or coverage
+threshold has been weakened.
+
+### Are Thousands Of Registrations Thousands Of Independent Behaviors?
+
+The inventory before the two new dialog-cancellation registrations contained
+3,763 CTest entries, 2,871 distinct command/non-style environment configurations,
+and 892 additional style configurations. Of these, 889 were explicitly labeled
+`style-variant`; no identical command/environment registration was found.
+These are execution configurations, not a claim of 3,763 distinct product
+behaviors, complete E2E coverage or absence of semantic overlap.
+
+The style variants use actual UI-capable drivers, not duplicated QCore-only
+parsing runs. Broad E2E success does not replace their malformed-input, auth,
+conflict, retry or lifecycle cases. Removing those tests merely to reduce the
+count would discard negative-path evidence. A case can be deleted when the same
+observable behavior and failure boundary are demonstrably covered elsewhere.
+No unrelated scenarios are merged into a giant test method.
+
+Native tests already run independently in parallel: four workers in hosted CI,
+twelve on this local 18-core machine; owned profiles, ports and servers isolate
+them. Foreground desktop/CPU measurements cannot run concurrently with other UI
+measurements. The C# App/Layout suites retain their documented shared UI-runtime
+isolation. Seven local C# Release performance checks passed; CI now requests
+Release configuration rather than timing unoptimized Debug code. Hosted Linux
+Release outcomes are still required, and the existing budgets remain unchanged.
+
+### Did The Focus Correction Survive Repeated Execution?
+
+The first footer-index correction passed Linux but the 760-case macOS lifecycle
+run exposed a remaining visual-focus failure: Cancel was active with a non-keyboard
+focus reason. That run passed 759/760 and is retained as a failure, not rounded up.
+The final correction clears the footer ListView's initial current item before
+opening, then assigns keyboard focus once. Both macOS and Linux passed ten
+repetitions of preview/Escape and Basic/Fusion single-cancel decisions: 30/30 on
+each platform (`20261007-preview-neutral-current.log/xml` and
+`2026-10-07-linux-values/preview-neutral.log/xml`).
+
+The broader Linux focus/copy run also passed all six cases twenty times, 120/120
+(`2026-10-07-linux-values/focus-final.log/xml`). The full current-source macOS
+lifecycle/coverage run remains required rather than borrowing an earlier binary's
+result. Temporary focus-transition tracing was removed; failure diagnostics and
+the named single-cancellation regression remain.
+
+The finalized reference-export runner again passed 14/14 with source-byte
+comparison, disabled SDK telemetry/development-certificate setup and owned
+profile cleanup. `2026-10-07-final-reference-filter-import` retains its original
+reference export and twelve native captures. No additional checksum utility or
+project dependency is needed by that runner.
+
+### Does A Larger Bounded Test Pool Preserve Behavior?
+
+The finalized Terminal suite passed 146/146 twice with identical registered cases,
+first at four processes (130.83 s), then at six (76.08 s).
+`20261007-terminal-jobs-4.log/xml` and `20261007-terminal-jobs-6.log/xml` retain the
+runs. macOS CI now uses six processes, as Linux already does; the prior Intel job
+completed 3,701 of its 3,747 non-preflight registrations before cancellation at
+the job limit. No missing tail, package check or hosted six-worker result is
+counted as passed. Cold/warm ordering also prevents treating the local difference
+as a precise cross-platform speedup guarantee.
+
+### Which checks cover the final incremental table notifications?
+
+The unprofiled macOS arm64 build passed all 491 selected public UI/filter regressions after separating display-role notifications from row-metadata invalidation. The selection covered field, metric, resource and age filters, table find, session/cluster switches, inspector values and Secrets, column tools, YAML preview and single-decision Cancel. Execution used twelve isolated processes and randomized order; elapsed time was 110.88 seconds. Evidence: `20261007-row-notification-regressions.log` and its JUnit XML. This is not a complete-suite or coverage result.
+
+The subsequent Cocoa/Metal measurement with 5,000 resources retained the existing gates. Filter p95 was 45.59 ms and sort p95 38.64 ms. Cached inspector p95 was 46.32 ms, maximum 65.27 ms. Cached session switching still failed: p95 78.37 ms and maximum 111.90 ms against 50/100 ms. Maximum resident memory was 259,637,248 bytes against 250,000,000; steady-state growth was 1,916,928 bytes and passed its 5,000,000-byte limit. The foreground window lost activation after 3.012 seconds, so the required uninterrupted 60-second idle CPU proof remains invalid. Evidence: `2026-10-07-row-notification-metal-performance` and `20261007-row-notification-metal-performance.log`. These measurements do not establish statistical improvements or release readiness.

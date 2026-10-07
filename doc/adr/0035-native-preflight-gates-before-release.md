@@ -102,3 +102,17 @@ This closes neither corresponding-source nor replacement/relinking obligations.
 Exact sources/build inputs, additional component notices, installation evidence
 and platform distribution terms remain independent release gates. In particular,
 ad-hoc signing does not establish Developer ID or notarization.
+
+## How Is Independent UI Test Work Scheduled?
+
+Native macOS CI runs six isolated test processes, matching the already bounded
+Linux pool. The same 146 public Terminal scenarios passed locally with four and
+six processes: 130.83 s and 76.08 s. This motivates bounded concurrency, not a
+hosted-run performance claim. Desktop focus, CPU and RSS measurements remain
+exclusive. The 60-minute job budget and coverage/performance gates are unchanged;
+Intel's previous incomplete run must be replaced by executed evidence.
+
+The C# comparison CI requests Release compilation so runtime budgets exercise
+optimized code. It does not remove legacy regression cases or change their
+thresholds. Source/binary parity, hosted execution and runtime budgets remain
+separate checks.

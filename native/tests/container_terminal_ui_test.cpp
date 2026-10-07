@@ -168,6 +168,61 @@ bool run(const QString& scenario, const QString& configPath) {
     else if (scenario == "alternate") { output("\033[?1049h\033[2J\033[Heditor screen"); REQUIRE(waitFor([&] { return surface->visibleText().contains("editor screen"); })); output("\033[?1049l"); REQUIRE(waitFor([&] { return surface->visibleText().contains("native shell ready") && !surface->visibleText().contains("editor screen"); })); }
     else if (scenario == "unicode") { output(QByteArray::fromHex("e697a5e69cacf09f8c8d")); REQUIRE(waitFor([&] { return surface->visibleText().contains(QString::fromUtf8(QByteArray::fromHex("e697a5e69cacf09f8c8d"))); })); }
     else if (scenario == "history") { QByteArray lines; for (int i = 0; i < 200; ++i) lines += "line-" + QByteArray::number(i) + "\r\n"; output(lines); REQUIRE(waitFor([&] { return terminal->historyLines() > 0; })); QTest::keyClick(window, Qt::Key_PageUp, Qt::ShiftModifier); REQUIRE(!surface->visibleText().contains("line-199")); }
+    else if (scenario.startsWith("history_anchor_") || scenario == "history_clear" || scenario == "history_follow") {
+        if (scenario == "history_anchor_grow") {
+            window->resize(window->width(), 560);
+            REQUIRE(click("expandTerminal"));
+            auto* dialog = window->findChild<QObject*>("expandedTerminal");
+            REQUIRE(dialog && waitFor([&] { return dialog->property("opened").toBool(); }));
+            surface = qobject_cast<podlord::TerminalSurface*>(podlord::test::visibleItem(window->contentItem(), "terminalSurface"));
+            REQUIRE(surface);
+            surface->forceActiveFocus();
+        }
+        const int count = scenario == "history_anchor_trim" ? 5000 : 200;
+        QByteArray lines;
+        for (int index = 0; index < count; ++index) lines += "line-" + QByteArray::number(index) + "\r\n";
+        output(lines);
+        REQUIRE(waitFor([&] { return surface->visibleText().contains("line-" + QString::number(count - 1)); }));
+        QTest::keyClick(window, Qt::Key_PageUp, Qt::ShiftModifier);
+        const auto before = surface->visibleText();
+        REQUIRE(!before.contains("line-" + QString::number(count - 1)));
+        const int history = terminal->historyLines();
+        if (scenario == "history_anchor_grow") {
+            const int rows = terminal->rows();
+            window->resize(window->width(), window->height() + 160);
+            REQUIRE(waitFor([&] { return terminal->rows() > rows && !sizes.isEmpty() && sizes.last()["Height"].toInt() == terminal->rows(); }));
+            REQUIRE(surface->visibleText().section('\n', 0, 0) == before.section('\n', 0, 0));
+        } else if (scenario == "history_clear") {
+            output("\033[3J\033[2J\033[Hcleared-screen");
+            REQUIRE(waitFor([&] { return surface->visibleText().startsWith("cleared-screen") && terminal->historyLines() == 0; }));
+        } else {
+            output("new-tail-after-scroll\r\n");
+            REQUIRE(waitFor([&] { return terminal->text().contains("new-tail-after-scroll"); }));
+            if (scenario == "history_follow") {
+                REQUIRE(click("terminalFollow"));
+                REQUIRE(waitFor([&] { return surface->visibleText().contains("new-tail-after-scroll"); }));
+            } else {
+                REQUIRE(surface->visibleText() == before);
+                REQUIRE(scenario == "history_anchor_trim" ? terminal->historyLines() == history : terminal->historyLines() > history);
+            }
+        }
+        REQUIRE(input.isEmpty() && upgrades == 1 && freshReads == 1);
+    }
+    else if (scenario == "copy_selection" || scenario == "copy_tracking_selection") {
+        output(scenario == "copy_tracking_selection" ? "\033[?1000h\033[?1006h\033[2J\033[HABCDE" : "\033[2J\033[HABCDE");
+        REQUIRE(waitFor([&] { return surface->visibleText().startsWith("ABCDE")
+            && terminal->mouseTracking() == (scenario == "copy_tracking_selection"); }));
+        const double width = surface->width() / terminal->columns(), height = surface->height() / terminal->rows();
+        const auto first = surface->mapToScene({width / 2, height / 2}).toPoint();
+        const auto last = surface->mapToScene({width * 4.5, height / 2}).toPoint();
+        const auto modifier = scenario == "copy_tracking_selection" ? Qt::ShiftModifier : Qt::NoModifier;
+        QGuiApplication::clipboard()->setText("unchanged clipboard");
+        QTest::mousePress(window, Qt::LeftButton, modifier, first);
+        QTest::mouseMove(window, last);
+        QTest::mouseRelease(window, Qt::LeftButton, modifier, last);
+        REQUIRE(click("terminalCopy"));
+        REQUIRE(QGuiApplication::clipboard()->text() == "ABCDE" && input.isEmpty() && inputFrames == 0 && terminal->connected());
+    }
     else if (scenario == "clipboard_isolation") { QGuiApplication::clipboard()->setText("local value"); output("\033]52;c;cmVtb3Rl\007"); QTest::qWait(50); REQUIRE(QGuiApplication::clipboard()->text() == "local value"); }
     else if (scenario == "gui_modifier") {
 #ifdef Q_OS_MACOS

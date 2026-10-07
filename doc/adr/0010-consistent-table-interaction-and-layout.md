@@ -160,3 +160,28 @@ delegate during keyboard input and destabilize rapid filtering of a large table;
 it provides no presentation benefit. Menus and overflow tips close on hiding.
 These changes do not relax the latency or memory gates and add no network or
 storage work to rendering.
+
+### How Does A Cached Session Switch Avoid Rebuilding The Table?
+
+The existing incremental row publisher handles snapshot changes across sessions,
+including equal API paths with different metadata. A changed session or inspector
+scope clears the shared native selection, menu and overflow target explicitly;
+matching paths do not carry a selected entity into another context. This removes
+the separate model-reset branch and its duplicate identity-scope state. It does
+not introduce another model/cache or bypass asynchronous session persistence.
+
+Focused cells synchronize the native selection model's current index without
+selecting a row or opening the inspector. Keyboard copying and navigation then
+refer to the actually focused logical column, including pinned/reordered columns.
+
+Qt Dialog automatically connects its DialogButtonBox footer's decision signals.
+Forwarding those same signals again delivers two decisions for one click and is
+removed. The YAML preview clears the footer ListView's initial current item before
+opening and assigning keyboard focus: its deferred current-item creation must
+not steal focus for Apply. No timer, delayed focus retry or custom dialog is used.
+
+Row-wide filter invalidation listens to the existing row-metadata role across all
+columns. Presentation changes keep their bounded display-column notification;
+metadata-only updates no longer invalidate every cell's display text. A changed
+cluster still invalidates row predicates, including when source JSON is otherwise
+identical. No second cache, polling loop or hidden mutation is introduced.

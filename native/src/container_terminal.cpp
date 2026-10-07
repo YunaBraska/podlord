@@ -14,6 +14,7 @@
 #include <QWebSocketHandshakeOptions>
 #include <QLoggingCategory>
 #include <algorithm>
+#include <utility>
 
 namespace podlord {
 Q_LOGGING_CATEGORY(terminalLog, "podlord.terminal", QtWarningMsg)
@@ -79,7 +80,7 @@ ContainerTerminal::ContainerTerminal(QString target, QObject* parent) : QObject(
         if (channel == 1 || channel == 2) {
             vterm_input_write(term_, payload.constData(), static_cast<size_t>(payload.size()));
             vterm_screen_flush_damage(screen_);
-            emit screenChanged();
+            emit screenChanged(std::exchange(scrolledLines_, 0));
         } else if (channel == 3) {
             if (remoteStatus_.size() + payload.size() > 65536) { reject("Exec status exceeded the bounded response limit."); return; }
             remoteStatus_ += payload;
@@ -141,7 +142,7 @@ bool ContainerTerminal::completeStatus() {
 bool ContainerTerminal::resize(int rows, int columns) {
     if (rows < 2 || rows > 120 || columns < 2 || columns > 320) return false;
     rows_ = rows; columns_ = columns; vterm_set_size(term_, rows, columns); vterm_screen_flush_damage(screen_);
-    emit screenChanged();
+    emit screenChanged(std::exchange(scrolledLines_, 0));
     if (connected()) return send(4, QJsonDocument(QJsonObject{{"Width", columns}, {"Height", rows}}).toJson(QJsonDocument::Compact));
     return !ended_;
 }
@@ -219,15 +220,16 @@ int ContainerTerminal::property(VTermProp prop, VTermValue* value, void* user) {
 int ContainerTerminal::push(int columns, const VTermScreenCell* cells, void* user) {
     auto* self = static_cast<ContainerTerminal*>(user);
     self->history_.emplace_back(cells, cells + columns); self->historyBytes_ += columns * static_cast<qint64>(sizeof(VTermScreenCell));
+    ++self->scrolledLines_;
     while (self->historyBytes_ > historyLimit) { self->historyBytes_ -= self->history_.front().size() * static_cast<qint64>(sizeof(VTermScreenCell)); self->history_.pop_front(); }
     return 1;
 }
 int ContainerTerminal::pop(int columns, VTermScreenCell* cells, void* user) {
     auto* self = static_cast<ContainerTerminal*>(user); if (self->history_.empty()) return 0;
     const auto& line = self->history_.back(); std::fill(cells, cells + columns, VTermScreenCell{}); std::copy_n(line.begin(), std::min(columns, static_cast<int>(line.size())), cells);
-    self->historyBytes_ -= line.size() * static_cast<qint64>(sizeof(VTermScreenCell)); self->history_.pop_back(); return 1;
+    self->historyBytes_ -= line.size() * static_cast<qint64>(sizeof(VTermScreenCell)); self->history_.pop_back(); --self->scrolledLines_; return 1;
 }
-int ContainerTerminal::clear(void* user) { auto* self = static_cast<ContainerTerminal*>(user); self->history_.clear(); self->historyBytes_ = 0; return 1; }
+int ContainerTerminal::clear(void* user) { auto* self = static_cast<ContainerTerminal*>(user); self->scrolledLines_ -= static_cast<int>(self->history_.size()); self->history_.clear(); self->historyBytes_ = 0; return 1; }
 void ContainerTerminal::output(const char* bytes, size_t length, void* user) {
     auto* self = static_cast<ContainerTerminal*>(user);
     if (self->outputBatch_) self->outputBatch_->append(bytes, static_cast<qsizetype>(length));
@@ -243,7 +245,10 @@ bool TerminalSurface::setTerminal(ContainerTerminal* terminal) {
     if (terminal_) disconnect(terminal_, nullptr, this, nullptr);
     terminal_ = terminal; scroll_ = 0; selectionStart_ = selectionEnd_ = -1;
     if (terminal_) {
-        connect(terminal_, &ContainerTerminal::screenChanged, this, [this] { scroll_ = std::min(scroll_, terminal_->historyLines()); update(); emit visibleTextChanged(); });
+        connect(terminal_, &ContainerTerminal::screenChanged, this, [this](int scrolledLines) {
+            scroll_ = std::clamp(scroll_ ? scroll_ + scrolledLines : 0, 0, terminal_->historyLines());
+            update(); emit visibleTextChanged();
+        });
         connect(terminal_, &QObject::destroyed, this, [this] { update(); emit terminalChanged(); emit visibleTextChanged(); });
     }
     sizeScreen(); update(); emit terminalChanged(); emit visibleTextChanged(); return true;
