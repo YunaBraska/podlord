@@ -4433,3 +4433,77 @@ is historical evidence, not the failure in this run. Other lanes were still
 running when inspected; the workflow is not green. Local full-suite success
 does not supersede those hosted failures or establish installed visual,
 accessibility, foreground CPU/RSS, tab-latency or complete device gates.
+
+## How Does The Native Shell Remove Permanent Tool Clutter?
+
+The 2026-10-07 shell cleanup follows SHL-008 through SHL-010 and ADR 0033.
+The visible C# source keeps search behind a toggle; native now does the same
+without changing the existing cached query owners. Closing search preserves
+its query, with an active-query indicator on the toggle. Routine sync is still
+automatic. Refresh remains an explicit action inside the workspace menu;
+authentication and real recovery controls do not depend on opening search.
+
+| Behavior | Public entrypoint | Registered evidence | Remaining gap |
+| --- | --- | --- | --- |
+| Reveal, focus, hide, reopen and Escape retain cached resource results without requests | Actual Main.qml window, pointer and keyboard | `native.ui.shell_search_demand_Basic/Fusion` | Physical keyboard/assistive technology |
+| Resource and Event searches retain independent queries across navigation | Actual navigation and search fields; external Kubernetes HTTP boundary | `native.ui.shell_search_events_Basic/Fusion` | Full legacy/native picture comparison |
+| Long session names cannot grow or wrap the footer at 320x360, 390x720 and 1440x920 | Public rename operation and actual window geometry | `native.ui.shell_footer_narrow_Basic/Fusion` | Device text scaling and native mobile runtime |
+| Refresh and Commands stay reachable in the workspace menu, not a permanent text toolbar | Actual pointer/menu/Escape interactions | `native.ui.shell_tools_menu_Basic/Fusion` | Installed platform menu matrix |
+| Seven primary actions fit a 320-pixel window with 44-pixel touch targets; Radar controls stay reachable in the drawer | Actual rendered buttons and pointer/scroll behavior | `native.ui.shell_touch_Basic/Fusion` | Physical touch, safe areas and on-screen keyboard |
+| Filter reset is an icon-sized control and restores cached rows without requests | Actual Reset button | `native.ui.shell_reset_icon_Basic/Fusion` | Populated legacy/native all-theme matrix |
+
+The focused run passes 19/19 checks in 7.92 seconds: six new behavior scenarios
+in Basic/Fusion, six existing HUD layout checks and the compact-toolbar check.
+This is ten behavior targets and nine style variants, not nineteen independent
+product capabilities. Current logs, JUnit and real Qt renderings are under
+`release-evidence/2026-10-07-shell-cleanup` in the local comparison workspace.
+The new width/height regression exposed narrow-window navigation wrapping in
+Fusion: style-specific toolbar insets still applied despite a generic zero
+padding. Explicit edge insets and whole-pixel HUD widths avoid the additional
+row; both styles retain a visible table row at the minimum window size.
+
+Table Find/Columns, match navigation, session close/rename, mute, field filters
+and camera/filter reset reuse the existing native glyph renderer through one
+small icon-button component. No font-symbol dependency, new timer, request loop,
+profile schema or second camera/filter state is added. Filters scroll below the
+same retained Radar. Saved-filter reload is an explicit menu action rather than
+a persistent Reload button. Public UI tests reveal the actual menus/search
+before operating them; they do not bypass those interactions with private calls.
+
+The Mac is still reported locked by desktop control. These offscreen/software
+Qt images are not current C#/C++ desktop comparison, physical mobile support,
+Metal/RSS/CPU acceptance or a completed release gate. The prior full-suite and
+coverage evidence remains separate; this bounded UI run does not replace it.
+
+The final related UI run passes 728/728 checks in 169.35 seconds with twelve
+workers: 424 behavior targets and 304 style variants. `final.log` and `final.xml`
+retain the current result. The selected set covers shell/HUD, resource and Event
+queries, field filters and saved presets, table Find, source/session controls,
+commands, authentication, logs, forwards, language-cache behavior and the related
+radar/refresh/edit paths. It is not a new full-suite or coverage run.
+
+Earlier failures remain in `related.log` and `before-anchor-ready.log/xml`.
+Global-filter tests now reveal search through the actual toggle. The rendered
+filter comparison opens search before taking its baseline, so a toolbar shift
+cannot masquerade as changed resource output. The scroll regression uses a real
+wheel event over the filter viewport instead of calling the former nested list's
+positioning method. An anchored field popup closes when its actual viewport
+moves. Input waits for the public popup `opened` state and a rendered frame;
+that corrected case also passes fifteen consecutive repetitions in 31.02 seconds
+(`anchor-ready.log/xml`). These repetitions are one behavior, not fifteen cases.
+Port search now also exercises Escape/reopen with its retained cached query.
+
+A fresh private arm64 release package passes dependency-path, ad-hoc integrity,
+license-metadata and size checks. Evidence is in
+`release-evidence/2026-10-07-shell-cleanup-package` and
+`20261007-shell-cleanup-package.log`. The ZIP is 31,721,822 bytes and its installed
+regular-file logical sum is 85,048,715 bytes, within the existing 50 MB/100 MB
+limits. Executable SHA-256 is
+`675db2c5b54fae6fece096d9c08469f01517e7981603e9cca53a51fafc30f735`;
+ZIP SHA-256 is
+`5ccd09c670547b92400ce9138df780828ebd3c3630c89addce8e7198dccde710`.
+This does not establish installed desktop startup, current C#/C++ visual parity,
+mobile release support, performance gates or notarization. No Kubernetes stack,
+Docker image or container was created in this increment. Test profiles and the
+package builder's temporary tree are owned and cleaned by their existing
+lifecycles; the unrelated `default.profraw` remains untouched.

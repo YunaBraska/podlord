@@ -34,6 +34,7 @@ QQuickItem* item(QQuickItem* root, const QString& name) {
 }
 QQuickItem* item(QQuickWindow* window, const QString& name) { return item(window->contentItem(), name); }
 bool click(QQuickWindow* window, const QString& name) {
+    if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     if (!waitFor([&] { auto* target=item(window,name); return target && target->isVisible() && target->isEnabled(); })) {
         std::fprintf(stderr,"Unavailable control: %s\n",qPrintable(name)); return false;
     }

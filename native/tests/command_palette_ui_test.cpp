@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
@@ -106,6 +107,7 @@ int main(int argc, char** argv) {
             return target;
         };
         const auto click = [&](const char* name) {
+            require(podlord::test::revealWorkspaceAction(window, QString::fromLatin1(name)), "Workspace action is unreachable.");
             auto* target = item(name);
             require(target->isEnabled(), "Palette action is disabled.");
             target->ensurePolished();

@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -35,6 +36,7 @@ QQuickItem* find(QQuickItem* root, const QString& name) {
 }
 QQuickItem* item(QQuickWindow* window, const QString& name) { return find(window->contentItem(), name); }
 bool click(QQuickWindow* window, const QString& name) {
+    if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     auto* target = item(window, name);
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
     QList<QQuickItem*> ancestors;

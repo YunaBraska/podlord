@@ -18,6 +18,17 @@ inline QQuickItem* visibleItem(QQuickItem* root, const QString& name) {
         if (auto* found = visibleItem(child, name)) return found;
     return nullptr;
 }
+/** Open the actual workspace menu before operating its non-primary actions. */
+inline bool revealWorkspaceAction(QQuickWindow* window, const QString& name) {
+    if (name != "refreshButton" && name != "commandPaletteButton") return true;
+    if (visibleItem(window->contentItem(), name)) return true;
+    auto* trigger = visibleItem(window->contentItem(), "workspaceActionsButton");
+    if (!trigger || !trigger->isEnabled()) return false;
+    trigger->ensurePolished();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+        trigger->mapToScene({trigger->width()/2, trigger->height()/2}).toPoint());
+    return QTest::qWaitFor([&] { return visibleItem(window->contentItem(), name) != nullptr; }, 2000);
+}
 /** Reveal a control by real wheel input before sending a public pointer action. */
 inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
     const auto pointerBounds = [](const QRectF& bounds, const QRectF& viewport) {

@@ -100,6 +100,12 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME native.ui.compact_toolbar COMMAND workspace_ui_test compact_toolbar)
     set_tests_properties(native.ui.compact_toolbar PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    foreach(scenario search_demand search_events footer_narrow tools_menu touch reset_icon)
+        foreach(style Basic Fusion)
+            add_test(NAME native.ui.shell_${scenario}_${style} COMMAND workspace_ui_test shell_${scenario})
+            set_tests_properties(native.ui.shell_${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+        endforeach()
+    endforeach()
     foreach(scenario metric_stale metric_partial metric_invalid metric_repeat dashboard metric_many metric_tooltip metric_radar_tooltip metric_radar_gauges metric_radar_gauges_narrow health_event_warning health_event_normal health_event_old_warning health_event_future health_event_missing_time health_pvc_pending health_pvc_bound health_pod_not_ready health_pod_starting health_event_expiry health_event_future_activation health_event_invalid_time health_event_invalid_dates health_pod_grace_expiry health_pod_completed health_restart_outlier health_restart_population)
         add_test(NAME native.alert_ui.${scenario} COMMAND alert_ui_test ${scenario})
         set_tests_properties(native.alert_ui.${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
@@ -171,7 +177,7 @@ set(dependency_notice_files licenses/THIRD-PARTY-NOTICES.txt licenses/LGPL-3.0.t
 foreach(file IN LISTS dependency_notice_files)
     set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
 endforeach()
-qt_add_resources(podlord_workspace "workspace_ui" PREFIX "/podlord" BASE ui FILES ui/Main.qml ui/ResourceSidebar.qml ui/PulseStrip.qml ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml ui/PasteSourceDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml ui/theme-palettes.json "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE" ${dependency_notice_files})
+qt_add_resources(podlord_workspace "workspace_ui" PREFIX "/podlord" BASE ui FILES ui/Main.qml ui/IconButton.qml ui/ResourceSidebar.qml ui/PulseStrip.qml ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml ui/PasteSourceDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml ui/theme-palettes.json "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE" ${dependency_notice_files})
 set(alert_audio_files
     ../src/Podlord.App/Assets/Audio/ui/panel-segment-load.ogg
     ../src/Podlord.App/Assets/Audio/events/radar-activated.ogg

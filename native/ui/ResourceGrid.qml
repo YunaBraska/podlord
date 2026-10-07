@@ -169,8 +169,8 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Item { Layout.fillWidth: true }
-        Button { objectName: grid.prefix + "FindButton"; text: "Find"; Accessible.name: "Find within cached " + grid.prefix + " rows"; onClicked: grid.openFind() }
-        Button { objectName: grid.prefix + "ColumnsButton"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: columnsDialog.open() }
+        IconButton { objectName: grid.prefix + "FindButton"; glyph: "Search"; text: workspace.uiText["nav.search"]; Accessible.name: "Find within cached " + grid.prefix + " rows"; onClicked: grid.openFind() }
+        IconButton { objectName: grid.prefix + "ColumnsButton"; glyph: "Columns"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: columnsDialog.open() }
     }
     RowLayout {
         Layout.fillWidth: true
@@ -187,9 +187,9 @@ ColumnLayout {
             Keys.onEscapePressed: { grid.findOpen = false; table.forceActiveFocus() }
         }
         Label { objectName: grid.prefix + "FindCount"; text: (grid.findIndex + 1) + "/" + grid.findCount; textFormat: Text.PlainText; Accessible.name: "Search match " + text }
-        ToolButton { objectName: grid.prefix + "FindPrevious"; text: "Previous"; enabled: grid.findCount > 0; Accessible.name: workspace.uiText["tooltip.previousMatch"]; onClicked: grid.selectFindMatch(-1) }
-        ToolButton { objectName: grid.prefix + "FindNext"; text: "Next"; enabled: grid.findCount > 0; Accessible.name: workspace.uiText["tooltip.nextMatch"]; onClicked: grid.selectFindMatch(1) }
-        ToolButton { objectName: grid.prefix + "FindClose"; text: workspace.uiText["action.close"]; Accessible.name: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
+        IconButton { objectName: grid.prefix + "FindPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(-1) }
+        IconButton { objectName: grid.prefix + "FindNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(1) }
+        IconButton { objectName: grid.prefix + "FindClose"; glyph: "Close"; text: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
     }
     Label { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
     Label { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }

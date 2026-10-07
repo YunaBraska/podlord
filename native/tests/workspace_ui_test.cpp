@@ -453,6 +453,8 @@ QString text(QObject* root, const QString& name) {
 }
 bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt::LeftButton) {
     const auto name = target ? target->objectName() : QString{};
+    if (!podlord::test::revealWorkspaceAction(window, name)) return false;
+    if (!name.isEmpty()) target = item(window, name);
     if (target && !target->isVisible()) {
         const auto name=target->objectName();
         if (name=="sourcesButton" || name=="radarWorkspaceButton" || name=="resourceFieldFilters" || name=="renameCurrentSession")
@@ -478,6 +480,8 @@ bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt
     QTest::mouseClick(window, button, Qt::NoModifier, position); return true;
 }
 bool type(QQuickWindow* window, QQuickItem* target, const QString& value) {
+    if (target && !target->isVisible() && (target->objectName() == "resourceFilter" || target->objectName() == "eventFilter"))
+        if (!click(window, item(window, "workspaceSearchButton")) || !waitFor([&] { return target->isVisible(); })) return false;
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
     target->forceActiveFocus();
     QTest::keySequence(window, QKeySequence::SelectAll);
@@ -489,7 +493,7 @@ bool execute(const QString& scenario) {
     const bool twoContexts = scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
-    KubernetesBoundary server(scenario);
+    KubernetesBoundary server(scenario == "shell_search_events" ? "filter_event_message" : scenario);
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     const auto source = temporary.filePath("source.config");
     QFile file(source);
@@ -533,7 +537,7 @@ bool execute(const QString& scenario) {
     if (!window || !waitFor([&] { return window->isVisible(); })) return false;
     QTest::qWait(10);
     if (!waitFor([&] { return item(window, "importButton")->isEnabled(); })) return false;
-    if (scenario == "accessibility_empty") return accessibleName(window, "Open command palette")
+    if (scenario == "accessibility_empty") return accessibleName(window, "Workspace actions")
         && accessibleName(window, "Kubeconfig file or folder path") && server.requests.isEmpty();
     if (scenario.startsWith("radar_water_")) {
         if (!waitFor([&] { return !workspace.alerts()->busy(); })) return false;
@@ -679,9 +683,93 @@ bool execute(const QString& scenario) {
         return reported;
     }
     if (scenario.startsWith("shell_")) {
-        if (!waitFor([&] { return workspace.totalResourceCount()==3 && !workspace.loading(); },10000)) return false;
+        if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" ? 5 : 3) && !workspace.loading(); },10000)) return false;
         const auto calls=server.requests.size();
         auto* radar=item(window,"resourceRadar");
+        if (scenario == "shell_search_demand" || scenario == "shell_search_events") {
+            auto* input = item(window, "resourceFilter");
+            if (input->isVisible() || !click(window, item(window, "workspaceSearchButton"))
+                || !waitFor([&] { return input->isVisible() && input->hasActiveFocus(); })
+                || !type(window, input, "\"alpha\"") || workspace.resourceCount() != 1) return false;
+            if (scenario == "shell_search_events") {
+                if (!click(window, item(window, "eventsWorkspaceButton"))
+                    || !waitFor([&] { return item(window, "eventFilter")->isVisible() && workspace.totalEventCount() == 2; })
+                    || !type(window, item(window, "eventFilter"), "Started") || workspace.eventCount() != 1
+                    || !click(window, item(window, "workspaceSearchButton"))
+                    || item(window, "eventFilter")->isVisible() || workspace.eventFilterText() != "Started"
+                    || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
+            } else if (!click(window, item(window, "workspaceSearchButton"))) return false;
+            if (input->isVisible() || workspace.resourceCount() != 1 || !click(window, item(window, "workspaceSearchButton"))
+                || !waitFor([&] { return input->hasActiveFocus(); }) || text(window, "resourceFilter") != "\"alpha\"") return false;
+            QTest::keyClick(window, Qt::Key_Escape);
+            return !input->isVisible() && workspace.resourceCount() == 1
+                && item(window, "workspaceSearchButton")->hasActiveFocus() && server.requests.size() == calls;
+        }
+        if (scenario == "shell_tools_menu") {
+            if (item(window, "refreshButton")->isVisible() || !click(window, item(window, "workspaceActionsButton"))) return false;
+            if (!waitFor([&] { return item(window, "refreshButton")->isVisible() && item(window, "commandPaletteButton")->isVisible(); })) return false;
+            QTest::keyClick(window, Qt::Key_Escape);
+            return waitFor([&] { return !item(window, "refreshButton")->isVisible(); }) && server.requests.size() == calls;
+        }
+        if (scenario == "shell_footer_narrow") {
+            if (!workspace.renameSession(workspace.currentSession(), QString(96, 'x')) || !waitFor([&] { return !workspace.busy(); })) return false;
+            for (const auto size : {QSize(320,360), QSize(390,720), QSize(1440,920)}) {
+                window->resize(size);
+                if (!waitFor([&] {
+                    auto* footer = item(window, "workspaceFooter");
+                    if (!footer || qAbs(footer->height()-24) > 0.5) return false;
+                    const QRectF scene(0,0,window->width(),window->height());
+                    for (const auto* name : {"resourceMatchCount", "syncStatus"}) {
+                        auto* label = item(window, name);
+                        if (!label || label->height() > 24 || !scene.adjusted(-0.5,-0.5,0.5,0.5).contains(label->mapRectToScene(label->boundingRect()))) return false;
+                    }
+                    return item(window, "resourceTable")->height() >= 32;
+                })) {
+                    for (const auto* name : {"workspaceToolbar", "workspaceFooter", "resourceMatchCount", "syncStatus", "resourceTable"}) {
+                        auto* control = item(window, name);
+                        const auto bounds = control->mapRectToScene(control->boundingRect());
+                        std::fprintf(stderr,"%s at %dx%d: x=%g y=%g width=%g height=%g\n",name,window->width(),window->height(),bounds.x(),bounds.y(),bounds.width(),bounds.height());
+                    }
+                    const auto evidence = qEnvironmentVariable("PODLORD_UI_EVIDENCE_DIR");
+                    if (!evidence.isEmpty()) window->grabWindow().save(evidence + "/footer-failure-" + QString::number(size.width()) + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png");
+                    return false;
+                }
+            }
+            return server.requests.size() == calls;
+        }
+        if (scenario == "shell_touch") {
+            window->resize(320,720);
+            if (!waitFor([&] { return window->contentItem()->width() == 320; })) return false;
+            QList<QRectF> controls;
+            for (const auto* name : {"workspaceSearchButton", "resourcesWorkspaceButton", "eventsWorkspaceButton", "portForwardTasksButton", "settingsWorkspaceButton", "workspaceActionsButton", "toggleSidebar"}) {
+                auto* control = item(window, name);
+                if (!control || !waitFor([&] { return control->width() >= 44 && control->height() >= 44; })) return false;
+                const auto bounds = control->mapRectToScene(control->boundingRect());
+                if (bounds.left() < 0 || bounds.right() > 320.5) return false;
+                for (const auto previous : controls) if (bounds.intersects(previous)) return false;
+                controls.append(bounds);
+            }
+            const auto evidence = qEnvironmentVariable("PODLORD_UI_EVIDENCE_DIR");
+            if (!evidence.isEmpty()) {
+                QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
+                if (!frames.wait(1000) || !window->grabWindow().save(evidence + "/shell-phone-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png")) return false;
+            }
+            if (!click(window, item(window, "toggleSidebar")) || !waitFor([&] { return radar->isVisible(); })) return false;
+            for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom", "resetRadar", "resourceFieldFilters"}) {
+                auto* control = item(window,name);
+                if (!control || control->width() < 44 || control->height() < 44 || !podlord::test::scrollIntoView(window,control)) return false;
+            }
+            if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "/shell-touch-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png")) return false;
+            return server.requests.size() == calls;
+        }
+        if (scenario == "shell_reset_icon") {
+            if (!type(window,item(window,"resourceFilter"),"\"alpha\"")) return false;
+            auto* reset = item(window,"resetResourceFilters");
+            if (!reset || reset->width() > 44 || !click(window,reset) || !click(window,item(window,"workspaceSearchButton"))) return false;
+            const auto evidence = qEnvironmentVariable("PODLORD_UI_EVIDENCE_DIR");
+            if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "/shell-desktop-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png")) return false;
+            return workspace.resourceCount() == 3 && workspace.filterText().isEmpty() && server.requests.size() == calls;
+        }
         if (scenario=="shell_sidebar") {
             if (!radar || !radar->isVisible() || !click(window,item(window,"eventsWorkspaceButton")) || !radar->isVisible()) return false;
             if (!click(window,item(window,"portForwardTasksButton"))) return false;
@@ -702,12 +790,14 @@ bool execute(const QString& scenario) {
         return false;
     }
     if (scenario == "compact_toolbar") {
+        if (!click(window,item(window,"workspaceSearchButton"))) return false;
         if (!waitFor([&] { const auto* tab=item(window,"activateSession_"+workspace.currentSession()); return tab && tab->isVisible() && tab->height()>0; })) return false;
-        const auto* tab=item(window,"activateSession_"+workspace.currentSession());
-        const auto* filter=item(window,"resourceFilter");
-        const auto gap=filter->mapToScene(QPointF{}).y()-tab->mapToScene(QPointF(0,tab->height())).y();
-        if (gap<0 || gap>8) std::fprintf(stderr,"Session/filter gap is %.1f logical pixels; expected 0..8 without overlap.\n",gap);
-        return gap>=0 && gap<=8;
+        return waitFor([&] {
+            const auto* tab=item(window,"activateSession_"+workspace.currentSession());
+            const auto* filter=item(window,"resourceFilter");
+            const auto gap=filter->mapToScene(QPointF{}).y()-tab->mapToScene(QPointF(0,tab->height())).y();
+            return filter->isVisible() && gap>=0 && gap<=8;
+        });
     }
     if (scenario.startsWith("problems_reference_")) {
         if (!waitFor([&] { return workspace.totalResourceCount()==3 && !workspace.loading(); })) return false;
@@ -1770,7 +1860,9 @@ bool execute(const QString& scenario) {
                 }
                 QTest::keyClick(window, Qt::Key_0);
                 if (!waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1; })) return false;
-                auto* search=item(window,"resourceFilter"); search->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Left);
+                auto* search=item(window,"resourceFilter");
+                if (!search->isVisible() && !click(window,item(window,"workspaceSearchButton"))) return false;
+                search->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Left);
                 auto* restored = item(window,"radarTile_0");
                 return restored && QLineF(initial,restored->mapToItem(radar,QPointF(restored->width()/2,restored->height()/2))).length()<1 && server.requests.size()==calls;
             }
