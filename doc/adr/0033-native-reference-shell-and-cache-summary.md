@@ -86,3 +86,17 @@ and committed catalog. A bounded Qt clipboard bridge serves explicit table copy;
 no clipboard library, network action, persistence migration or new timer is added.
 Derived table rows are updated only for a visible Alerts view. Rolling back the
 executable restores the previous layout without converting any saved rule.
+
+### How does the shell avoid permanent diagnostic controls?
+
+Search is a transient presentation surface over the existing cached queries;
+hiding it does not clear a filter or create a second filter owner. A highlighted
+search toggle discloses a retained query. Commands and explicit synchronization
+move into the workspace menu. Authentication and actionable failures do not
+depend on opening search. Resets and table tools reuse the native vector glyph
+renderer, not font symbols or another icon dependency.
+
+The footer has one fixed line with elision and the full accessible status. Narrow
+navigation uses the same actions with 44-pixel targets. One scrollable filter
+surface sits below the retained Radar; there is no additional camera, timer,
+request owner or profile schema. Binary rollback restores the previous shell.

@@ -67,6 +67,8 @@ bool click(QQuickWindow* window, const QString& name) {
 }
 bool type(QQuickWindow* window, const QString& name, const QString& text) {
     auto* target = item(window, name);
+    if (target && !target->isVisible() && name == "resourceFilter")
+        if (!click(window,"workspaceSearchButton") || !waitFor([&] { return target->isVisible(); })) return false;
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
     target->forceActiveFocus(); QTest::keySequence(window, QKeySequence::SelectAll);
     if (text.isEmpty()) QTest::keyClick(window, Qt::Key_Backspace);
@@ -255,6 +257,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 std::fprintf(stderr,"Filter rendering requires an exposed window; platform=%s.\n",qPrintable(QGuiApplication::platformName()));
                 return false;
             }
+            if (!click(window,"workspaceSearchButton") || !waitFor([&] { return item(window,"resourceFilter")->isVisible(); })) return false;
             const auto* model=workspace.table();
             int nameColumn=-1;
             for (int column=0; column<model->columnCount(); ++column)
@@ -307,9 +310,17 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 value->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
                 passed = waitFor([&] { return workspace.resourceCount() == 1; }) && value->property("checked").toBool();
             } else if (scenario == "flyout_anchor_scroll") {
-                auto* list = item(window, "sidebarFilters");
-                passed = list && QMetaObject::invokeMethod(list, "positionViewAtEnd")
-                    && waitFor([&] { return !popup->property("visible").toBool(); });
+                if (!waitFor([&] { return popup->property("opened").toBool(); })) return false;
+                auto* scroll = item(window,"sidebarFilterScroll");
+                if (!scroll) return false;
+                QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
+                if (!frames.wait(1000)) return false;
+                const auto point = scroll->mapToScene({scroll->width()/2,10});
+                QTest::mouseMove(window,point.toPoint());
+                QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                QCoreApplication::sendEvent(window,&wheel);
+                passed = waitFor([&] { return !popup->property("visible").toBool(); });
+                if (!passed) std::fprintf(stderr,"Filter viewport wheel at (%g,%g), accepted=%d; viewport y=%g height=%g; popup y=%g height=%g\n",point.x(),point.y(),wheel.isAccepted(),scroll->mapToScene({0,0}).y(),scroll->height(),popup->property("y").toReal(),popup->property("height").toReal());
             } else if (scenario == "flyout_edge" || scenario == "flyout_narrow") {
                 if (scenario == "flyout_edge") {
                     QTest::keyClick(window, Qt::Key_Escape);

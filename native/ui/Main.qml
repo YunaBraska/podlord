@@ -14,6 +14,7 @@ ApplicationWindow {
     font.family: workspace.monospaceFamily
     font.pixelSize: 13
     property bool sidebarOpen: true
+    property bool searchOpen: false
     readonly property bool wideLayout: width >= 900
     visible: true
     property bool sourcesExpanded: false
@@ -341,16 +342,12 @@ ApplicationWindow {
             Button { objectName: "saveSessionRename"; text: workspace.busy ? "Saving..." : "Rename"; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: renameSessionDialog.save() }
         }
     }
-    component NavButton: Button {
+    component NavButton: IconButton {
+        showText: window.width >= 600
         font.bold: true
-        font.pixelSize: 14
+        font.pixelSize: 13
         checkable: true
-        implicitHeight: 30
-        leftPadding: 10; rightPadding: 10
-        background: Rectangle {
-            color: parent.down ? workspace.appearanceColors.selection : workspace.appearanceColors.inset
-            border.color: parent.checked || parent.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
-        }
+        leftPadding: showText ? 10 : 6; rightPadding: leftPadding
     }
     function toggleSidebar() {
         if (wideLayout) sidebarOpen = !sidebarOpen
@@ -359,6 +356,8 @@ ApplicationWindow {
     }
     header: ToolBar {
         objectName: "workspaceToolbar"
+        padding: 0
+        leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
         implicitHeight: headerLayout.implicitHeight + 12
         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
         GridLayout {
@@ -373,17 +372,39 @@ ApplicationWindow {
                     id: navigationRow
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
-                    spacing: 6
-                    Button { objectName: "workspaceSearchButton"; text: workspace.uiText["nav.search"]; implicitHeight: 30; enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0; Accessible.name: "Focus current search"; Accessible.description: enabled ? "Search the current cached view" : "Settings search is not available"; onClicked: { if (workspace.workspacePage === "ports") portsView.focusSearch(); else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus(); else resourceFilterInput.forceActiveFocus() } }
-                    NavButton { objectName: "resourcesWorkspaceButton"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
-                    NavButton { objectName: "eventsWorkspaceButton"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
-                    NavButton { objectName: "portForwardTasksButton"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
-                    NavButton { objectName: "settingsWorkspaceButton"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
-                Button { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: 30; Accessible.name: "Open command palette"; onClicked: commands.open() }
-                Button { objectName: "toggleSidebar"; text: "Sidebar"; implicitHeight: 30; Accessible.name: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
+                    spacing: window.width < 600 ? 0 : 4
+                    IconButton {
+                        id: searchToggle
+                        objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
+                        checkable: true; checked: window.searchOpen
+                        activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
+                            : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
+                        enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0
+                        Accessible.name: "Show or hide current search"
+                        Accessible.description: "Search the current cached view. Hiding search retains its filter."
+                        onClicked: {
+                            window.searchOpen = !window.searchOpen
+                            if (window.searchOpen) Qt.callLater(function() {
+                                if (workspace.workspacePage === "ports") portsView.focusSearch()
+                                else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus()
+                                else resourceFilterInput.forceActiveFocus()
+                            })
+                        }
+                    }
+                    NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
+                    NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
+                    NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
+                    NavButton { objectName: "settingsWorkspaceButton"; glyph: "Filters"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
+                IconButton { objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup() }
+                IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
             }
             PulseStrip { Layout.fillWidth: true; Layout.preferredHeight: implicitHeight; onDetailsRequested: workspace.setWorkspacePage("dashboard") }
         }
+    }
+    Menu {
+        id: workspaceActions
+        MenuItem { objectName: "commandPaletteButton"; text: "Commands"; Accessible.name: "Open command palette"; onTriggered: commands.open() }
+        MenuItem { objectName: "refreshButton"; text: "Refresh"; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
     }
     Drawer {
         id: sidebarDrawer
@@ -446,6 +467,7 @@ ApplicationWindow {
         }
         ScrollView {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             Layout.preferredHeight: openTabs.implicitHeight
             visible: workspace.tabs.length > 0
             contentWidth: openTabs.implicitWidth
@@ -458,7 +480,12 @@ ApplicationWindow {
                         required property var modelData
                         Button {
                             objectName: "activateSession_" + modelData.id
+                            implicitHeight: window.wideLayout ? 32 : 44
                             text: modelData.name
+                            width: Math.min(implicitWidth, window.wideLayout ? 240 : 160)
+                            contentItem: Label { text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight }
+                            ToolTip.visible: hovered || activeFocus
+                            ToolTip.text: modelData.name
                             checkable: true
                             checked: modelData.id === workspace.currentSession
                             enabled: !workspace.busy
@@ -472,34 +499,35 @@ ApplicationWindow {
                                 MenuItem { objectName: "renameTab_" + modelData.id; text: "Rename session..."; enabled: !workspace.busy; onTriggered: renameSessionDialog.openFor(modelData.id, modelData.name) }
                             }
                         }
-                        Button { objectName: "closeSession_" + modelData.id; text: "Close"; Accessible.name: "Close " + modelData.name; enabled: !workspace.busy; onClicked: workspace.close(modelData.id) }
+                        IconButton { objectName: "closeSession_" + modelData.id; glyph: "Close"; text: workspace.uiText["action.close"]; Accessible.name: "Close " + modelData.name; enabled: !workspace.busy; onClicked: workspace.close(modelData.id) }
                     }
                 }
             }
         }
         RowLayout {
             Layout.fillWidth: true
-            visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events" || workspace.workspacePage === "dashboard"
+            visible: (window.searchOpen && ["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0) || workspace.authenticationRequired || workspace.authenticationRunning
             TextField {
                 id: resourceFilterInput
                 objectName: "resourceFilter"
                 enabled: workspace.currentSession !== "" && !workspace.busy
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                implicitHeight: window.wideLayout ? 32 : 44
                 text: workspace.filterText
                 placeholderText: "Search cached resources"
                 Accessible.name: "Filter cached resources"
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
                 ToolTip.visible: hovered; ToolTip.text: Accessible.description
-                visible: workspace.workspacePage !== "events"
+                visible: window.searchOpen && ["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0
                 onTextEdited: workspace.filter(text)
+                Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
             }
-            TextField { id: eventFilterInput; objectName: "eventFilter"; Layout.fillWidth: true; visible: workspace.workspacePage === "events"; text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"; onTextEdited: workspace.filterEvents(text) }
-            Button { objectName: "refreshButton"; text: "Refresh"; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onClicked: workspace.refresh() }
+            TextField { id: eventFilterInput; objectName: "eventFilter"; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.wideLayout ? 32 : 44; visible: window.searchOpen && workspace.workspacePage === "events"; text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"; onTextEdited: workspace.filterEvents(text); Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() } }
             Button { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             Button { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
         Label { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
-        ProgressBar { Layout.fillWidth: true; Layout.preferredHeight: 3; indeterminate: workspace.loading || workspace.busy; opacity: indeterminate ? 1 : 0 }
         RowLayout {
             Layout.fillWidth: true
             visible: workspace.sourceImportNotice !== "" && (window.sourcesExpanded || workspace.currentSession === "" || workspace.sourceImportIssues.length > 0)
@@ -566,7 +594,14 @@ ApplicationWindow {
                     onVisibleChanged: if (visible) opened = true
                     sourceComponent: ResourceDashboard {}
                 }
-                PortForwardView { id: portsView; anchors.fill: parent; visible: workspace.workspacePage === "ports"; onAuthenticationRequested: authentication.open() }
+                PortForwardView {
+                    id: portsView
+                    anchors.fill: parent
+                    visible: workspace.workspacePage === "ports"
+                    searchOpen: window.searchOpen
+                    onSearchClosed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
+                    onAuthenticationRequested: authentication.open()
+                }
                 Loader {
                     id: settingsLoader
                     anchors.fill: parent
@@ -598,8 +633,11 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true
-            Label { objectName: "resourceMatchCount"; text: workspace.workspacePage === "events" ? workspace.eventCount + " / " + workspace.totalEventCount + " Events" : workspace.resourceCount + " / " + workspace.totalResourceCount + " resources"; Accessible.name: text }
-            Label { objectName: "syncStatus"; Layout.fillWidth: true; text: workspace.title + ": " + workspace.status; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            objectName: "workspaceFooter"
+            Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
+            LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "events" ? workspace.eventCount + " / " + workspace.totalEventCount + " Events" : workspace.resourceCount + " / " + workspace.totalResourceCount + " resources"; Accessible.name: text }
+            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.title + ": " + workspace.status; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
     ResourceSidebar {
@@ -611,5 +649,6 @@ ApplicationWindow {
         onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.wideLayout) sidebarDrawer.close() }
         onRenameRequested: renameSessionDialog.openFor(workspace.currentSession, workspace.title)
         onFiltersRequested: { fieldFiltersDialog.openFilters(); if (!window.wideLayout) sidebarDrawer.close() }
+        onFiltersScrolled: if (fieldFiltersDialog.anchorItem) fieldFiltersDialog.close()
     }
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 Flow {
     id: strip
@@ -14,8 +15,8 @@ Flow {
                 id: metricCard
                 required property var modelData
                 objectName: "pulse_" + modelData.id
-                width: modelData.bar ? Math.min(170, Math.max(62, (strip.width - 2 * strip.spacing) / 3)) : 62
-                height: 36
+                width: modelData.bar ? Math.floor(Math.min(170, Math.max(62, (strip.width - 2 * strip.spacing) / 3))) : 62
+                height: strip.Window.window && strip.Window.window.width < 900 ? 44 : 36
                 leftPadding: 7; rightPadding: 7; topPadding: 3; bottomPadding: 3
                 Accessible.name: modelData.label + ": " + modelData.usage
                 onClicked: detailsRequested()

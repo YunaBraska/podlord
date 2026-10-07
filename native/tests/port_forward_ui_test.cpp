@@ -391,6 +391,7 @@ bool run(const QString& scenario, const QString& configPath) {
             if (!table || table->rowCount() < 1 || table->columnCount() != 7) return false;
             const auto actualToken = table->data(table->index(0, 0), Qt::UserRole).toString();
             if (scenario == "ports_table_view_restart") {
+                if (!click("workspaceSearchButton")) return false;
                 if (!click("portHeader_4")) return false;
                 auto* search = named("portFilter"); if (!search) return false;
                 search->forceActiveFocus(); for (const auto ch : QByteArray("echo-service")) QTest::keyClick(window, ch);
@@ -460,6 +461,7 @@ bool run(const QString& scenario, const QString& configPath) {
                 return waitFor([&] { const auto* tip = window->findChild<QObject*>("portValueTooltip"); return tip && tip->property("visible").toBool() && tip->property("text").toString() == endpoint; }) && requests == calls;
             }
             if (scenario == "ports_table_filter_restore") {
+                if (!click("workspaceSearchButton")) return false;
                 const auto firstSession = workspace.currentSession(); auto* search = named("portFilter"); if (!search) return false;
                 search->forceActiveFocus(); for (const auto ch : QByteArray("no-such-forward")) QTest::keyClick(window,ch);
                 if (!waitFor([&] { return table->rowCount() == 0; }) || !workspace.openContext(source->contexts.last().id)
@@ -563,9 +565,13 @@ bool run(const QString& scenario, const QString& configPath) {
             return !workspace.copyPortForwardEndpoint("not-an-active-token") && QGuiApplication::clipboard()->text()=="retained" && requests==calls;
         }
         if (scenario=="ports_search") {
+            if (!click("workspaceSearchButton")) return false;
             auto* search=named("portFilter"); search->forceActiveFocus();
             for (const auto ch : QStringLiteral("no-such-forward")) QTest::keyClick(window,ch.toLatin1());
             if (!waitFor([&] { return workspace.portTable()->rowCount()==0; })) return false;
+            QTest::keyClick(window,Qt::Key_Escape);
+            if (search->isVisible() || workspace.portFilterText() != "no-such-forward"
+                || !click("workspaceSearchButton") || !waitFor([&] { return search->hasActiveFocus(); })) return false;
             QTest::keySequence(window,QKeySequence::SelectAll); QTest::keyClick(window,Qt::Key_Backspace);
             return waitFor([&] { return workspace.portTable()->rowCount()==1; }) && workspace.portForwards().size()==1 && requests==calls;
         }

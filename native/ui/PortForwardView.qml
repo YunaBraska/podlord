@@ -1,10 +1,13 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 Pane {
     id: view
     signal authenticationRequested()
+    signal searchClosed()
+    property bool searchOpen: false
     property string selectedId: ""
     readonly property var selectedForward: workspace.portForwards.find(row => row.id === selectedId)
     function focusSearch() { search.forceActiveFocus() }
@@ -29,17 +32,16 @@ Pane {
     contentItem: ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
-            Label { text: workspace.uiText["nav.ports"]; font.bold: true }
-            TextField { id: search; objectName: "portFilter"; Layout.fillWidth: true; text: workspace.portFilterText; placeholderText: "Search session port forwards"; Accessible.name: "Search session port forwards"; onTextEdited: workspace.filterPorts(text) }
+            visible: view.searchOpen
+            TextField { id: search; objectName: "portFilter"; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: view.Window.window && view.Window.window.width < 900 ? 44 : 32; text: workspace.portFilterText; placeholderText: "Search session port forwards"; Accessible.name: "Search session port forwards"; onTextEdited: workspace.filterPorts(text); Keys.onEscapePressed: view.searchClosed() }
         }
         Flow {
             Layout.fillWidth: true; spacing: 6
-            Button { text: "Forward selected resource"; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
-            Button { objectName: "copyPortForwardTask"; action: copyEndpoint }
-            Button { objectName: "openPortForwardTask"; text: workspace.uiText["action.open"]; enabled: openHttp.enabled; Accessible.name: view.selectedForward ? "Open " + view.selectedForward.endpoint + " in browser" : "Open selected port forward in browser"; onClicked: endpointMenu.popup() }
-            Button { objectName: "stopPortForwardTask"; action: stop }
+            IconButton { glyph: "Service"; text: "Forward selected resource"; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
+            IconButton { objectName: "copyPortForwardTask"; glyph: "ConfigMap"; action: copyEndpoint }
+            IconButton { objectName: "openPortForwardTask"; glyph: "Next"; text: workspace.uiText["action.open"]; enabled: openHttp.enabled; Accessible.name: view.selectedForward ? "Open " + view.selectedForward.endpoint + " in browser" : "Open selected port forward in browser"; onClicked: endpointMenu.popup() }
+            IconButton { objectName: "stopPortForwardTask"; glyph: "Close"; action: stop }
         }
-        Label { Layout.fillWidth: true; text: "Local endpoints belong to this session. Closing its tab stops them; switching views does not."; wrapMode: Text.Wrap; textFormat: Text.PlainText }
         Label { Layout.fillWidth: true; visible: workspace.portForwardError !== ""; text: workspace.portForwardError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         Button { visible: workspace.portForwardError !== ""; text: "Review authentication..."; onClicked: authenticationRequested() }
         ResourceGrid {

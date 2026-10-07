@@ -39,11 +39,12 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
+            IconButton { objectName: "radarWorkspaceButton"; glyph: "Cluster"; text: "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
             Item { Layout.fillWidth: true }
-            Button { objectName: "radarZoomOut"; text: "-"; leftPadding: 6; rightPadding: 6; implicitWidth: radarPane.compact ? 28 : 72; implicitHeight: radarPane.compact ? 24 : 30; Accessible.name: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
+            IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
             Label { text: Math.round(grid.viewPose.zoom * 100) + "%" }
-            Button { objectName: "radarZoom"; text: "+"; leftPadding: 6; rightPadding: 6; implicitWidth: radarPane.compact ? 28 : 72; implicitHeight: radarPane.compact ? 24 : 30; Accessible.name: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
-            Button { objectName: "resetRadar"; text: radarPane.compact ? "Reset" : "Reset view"; leftPadding: 6; rightPadding: 6; implicitWidth: radarPane.compact ? 54 : 90; implicitHeight: radarPane.compact ? 24 : 30; onClicked: grid.resetView() }
+            IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
+            IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetView() }
         }
         RowLayout {
             Layout.fillWidth: true
