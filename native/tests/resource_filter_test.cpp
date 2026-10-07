@@ -91,6 +91,25 @@ bool run(const QString& scenario) {
         if (!filter.filter("~new")) return false;
         rows.publish(QJsonArray{QJsonObject{{"path","a"},{"name","new-alpha"}}});
         expression="~new"; expected="a";
+    } else if (scenario == "source_update_batch") {
+        if (!filter.filter("~new")) return false;
+        int notifications = 0;
+        bool completeNotification = false;
+        QObject observer;
+        QObject::connect(&rows, &QAbstractItemModel::dataChanged, &observer,
+            [&](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {
+                ++notifications;
+                completeNotification = roles.contains(Qt::DisplayRole) && roles.contains(Qt::UserRole + 9);
+            });
+        rows.publish(QJsonArray{
+            QJsonObject{{"path","a"},{"name","new-alpha"},{"kind","Pod"},{"restarts",10},{"problemSeverity",2}},
+            QJsonObject{{"path","b"},{"name","bravo"},{"kind","Pod"},{"restarts",2}},
+            QJsonObject{{"path","c"},{"name","custom-widget"},{"kind","Widget"}}}, "next-cluster");
+        if (notifications != 1 || !completeNotification) {
+            std::fprintf(stderr, "Cached snapshot emitted %d updates instead of one complete update.\n", notifications);
+            return false;
+        }
+        expression="~new"; expected="a";
     } else if (scenario == "sort") {
         expression="alpha bravo"; expected="ba"; filter.sort(0,Qt::DescendingOrder);
     } else return false;

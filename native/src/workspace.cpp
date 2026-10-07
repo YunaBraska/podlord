@@ -167,15 +167,19 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
         const int column = int(fields_.indexOf("cluster"));
         firstColumn = std::min(firstColumn,column); lastColumn = std::max(lastColumn,column);
     }
-    if (firstChanged >= 0 && lastColumn >= 0) {
-        QList<int> roles{Qt::DisplayRole, Qt::ToolTipRole, Qt::ForegroundRole, Qt::UserRole+6, Qt::UserRole+11};
-        if (clusterChanged && firstMetadataChanged < 0) roles.append(Qt::UserRole);
-        emit dataChanged(index(firstChanged,firstColumn),index(lastChanged,lastColumn),roles);
-    }
+    QList<int> roles;
+    if (lastColumn >= 0) roles = {Qt::DisplayRole, Qt::ToolTipRole, Qt::ForegroundRole, Qt::UserRole+6, Qt::UserRole+11};
     // Row-wide predicates depend on metadata as well as the displayed filter column.
-    if (firstMetadataChanged >= 0) emit dataChanged(index(clusterChanged ? 0 : firstMetadataChanged,0),index(clusterChanged ? rowCount()-1 : lastMetadataChanged,columnCount()-1),
-        {Qt::UserRole, Qt::UserRole+1, Qt::UserRole+2, Qt::UserRole+3, Qt::UserRole+4,
-         Qt::UserRole+5, Qt::UserRole+7, Qt::UserRole+8, Qt::UserRole+9, Qt::UserRole+10, Qt::UserRole+12, Qt::UserRole+13, Qt::UserRole+14});
+    if (firstMetadataChanged >= 0) {
+        firstChanged = clusterChanged ? 0 : firstMetadataChanged;
+        lastChanged = clusterChanged ? rowCount()-1 : lastMetadataChanged;
+        firstColumn = 0; lastColumn = columnCount()-1;
+        roles.append({Qt::UserRole, Qt::UserRole+1, Qt::UserRole+2, Qt::UserRole+3, Qt::UserRole+4,
+            Qt::UserRole+5, Qt::UserRole+7, Qt::UserRole+8, Qt::UserRole+9, Qt::UserRole+10,
+            Qt::UserRole+12, Qt::UserRole+13, Qt::UserRole+14});
+    } else if (clusterChanged) roles.append(Qt::UserRole);
+    if (firstChanged >= 0 && lastColumn >= 0)
+        emit dataChanged(index(firstChanged,firstColumn),index(lastChanged,lastColumn),roles);
     for (auto next = incoming.cbegin(); next != incoming.cend();) {
         const auto position = std::lower_bound(rows_.cbegin(), rows_.cend(), next.key(), [this](const auto& row, const auto& key) { return row[identityField_].toString() < key; });
         int index = static_cast<int>(position - rows_.cbegin());

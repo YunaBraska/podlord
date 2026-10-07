@@ -161,7 +161,9 @@ void RadarIsland::synchronize() {
         }
     }
     std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
-        return std::tuple(a.cluster,a.scope,rank(a.kind),a.owner,a.kind,a.name,a.path)<std::tuple(b.cluster,b.scope,rank(b.kind),b.owner,b.kind,b.name,b.path);
+        const int aRank = rank(a.kind), bRank = rank(b.kind);
+        return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
+            < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
     });
     if (rows!=signature_) {
         signature_=rows;
