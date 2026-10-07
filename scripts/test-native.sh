@@ -21,7 +21,7 @@ COV=$(find_llvm llvm-cov)
 PROFDATA=$(find_llvm llvm-profdata)
 PREFIX=${CMAKE_PREFIX_PATH:-/opt/homebrew}
 "$CMAKE" -S "$ROOT/native" -B "$BUILD" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
-    -DCMAKE_PREFIX_PATH="$PREFIX" -DCMAKE_BUILD_TYPE=Release -DPODLORD_COVERAGE=ON
+    -DCMAKE_PREFIX_PATH="$PREFIX" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_COVERAGE=ON
 "$CMAKE" --build "$BUILD" --parallel "${PODLORD_BUILD_JOBS:-4}"
 mkdir -p "$BUILD/coverage"
 RUN=$(mktemp -d "$BUILD/coverage/run.XXXXXX")
@@ -42,9 +42,9 @@ export LLVM_PROFILE_FILE
 TEST_STATUS=0
 # Reject broken defaults or application startup before spending a full suite on the same failure.
 PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default)$'
-"$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
+"$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
 if [ "$TEST_STATUS" -eq 0 ]; then
-    "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?
+    "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?
 fi
 if [ "$TEST_STATUS" -eq 0 ]; then
 BENCHMARK=$("$BUILD/session_cli_test" "$BUILD/podlord-session" benchmark)

@@ -4127,3 +4127,13 @@ performance and the 95% line/90% branch coverage gates remain open. The recorded
 - The affected macOS run passed 195 cases with 12 randomized workers in 17.98 seconds; Linux ARM64 passed 62 cases with six randomized workers in 12.82 seconds. Evidence: `20261007-hosted-root-fixes-tests.log`, its JUnit XML, `20261007-hosted-linux-root-fixes.log`, and `2026-10-07-linux-values/hosted-root-fixes.xml` in the local comparison evidence directory.
 - Hosted macOS native tests use four workers instead of two. Test processes retain independent profiles, local HTTP boundaries and per-process coverage output. Foreground desktop comparisons and benchmarks remain separate from this headless parallel suite.
 - The next hosted C# run got past bootstrap and executed the reference tests: 211/214 application, 69/69 layout and 84/84 Kubernetes cases passed. Its three application failures are filter/tab performance budgets on the hosted runner, not a waived reference behavior gate.
+
+## Why did built-in alarms fail on the hosted macOS runtime?
+
+Hosted run `37610956466` now exposes the real validation failure: the first built-in alert did not contain an array of AND criteria inside its OR-group array. The ambiguous nested `QJsonArray{QJsonArray{...}}` construction was replaced with an explicit `QJsonValue` array element in the two production default builders and every matching alarm test input. The parser remains strict; malformed groups are not normalized or accepted. This is a construction correction, not a legacy format fallback.
+
+The 242 affected macOS alarm, store, pooled-radar and application-startup cases passed with 12 randomized workers in 28.85 seconds (`20261007-nested-alert-arrays-tests.log` and JUnit XML). The hosted rerun of this construction correction is required before closing the cross-platform blocker. An instrumented local default-store check also passed; local success alone did not reproduce or waive the hosted failure.
+
+Before the construction correction, the explicit-result fix already allowed the hosted macOS package to pass seven Cocoa startup cases, five command-line metadata cases and all three real mutual-TLS/rejection cases, using the bundled OpenSSL backend. The alarm preflight still failed, so that run is not accepted as a working release.
+
+The native runner now explicitly enables testing and asks CTest to fail when no matching cases exist. A deliberately unmatched preflight was executed and rejected (`20261007-empty-preflight-rejected.log`). Missing test registration must never turn into a successful readiness check.
