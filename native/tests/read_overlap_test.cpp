@@ -7,12 +7,13 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QUrlQuery>
 #include <cstdio>
 
 namespace {
-bool waitFor(const std::function<bool()>& ready) {
+bool waitFor(const std::function<bool()>& ready, int timeoutMs = 16000) {
     QElapsedTimer timer; timer.start();
-    while (!ready() && timer.elapsed() < 16000) QTest::qWait(10);
+    while (!ready() && timer.elapsed() < timeoutMs) QTest::qWait(10);
     return ready();
 }
 // Kubernetes is the only simulated boundary; cache and scheduler are the real client.
@@ -21,6 +22,7 @@ public:
     int active = 0, maximum = 0, requests = 0, podLists = 0, version = 1;
     int allDelay = 0, listDelay = 0, detailDelay = 0, listStatus = 200;
     QByteArray expectedAuthorization;
+    QMap<QString, int> logs;
     bool authorizationMismatch = false;
     Kubernetes() {
         connect(this, &QTcpServer::newConnection, this, [this] {
@@ -35,8 +37,10 @@ public:
                             if (line.toLower().startsWith("authorization:")) authorization = line.mid(14).trimmed();
                         authorizationMismatch = authorizationMismatch || authorization != expectedAuthorization;
                     }
-                    const auto path = QUrl::fromEncoded(input->split(' ')[1]).path();
-                    const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}}, {"status", QJsonObject{{"phase", "Running"}}}};
+                    const auto url = QUrl::fromEncoded(input->split(' ')[1]);
+                    const auto path = url.path();
+                    const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}},
+                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", QJsonObject{{"phase", "Running"}}}};
                     QJsonObject body; int delay = allDelay, status = 200;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", QJsonArray{}}};
@@ -48,7 +52,12 @@ public:
                     } else if (path == "/api/v1/pods") { ++podLists; delay = std::max(delay, listDelay); status = listStatus; body = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}}; }
                     else if (path == "/api/v1/namespaces/default/pods/alpha") { delay = std::max(delay, detailDelay); body = pod; }
                     else body = {{"metadata", QJsonObject{}}, {"items", QJsonArray{}}};
-                    const auto bytes = QJsonDocument(body).toJson(QJsonDocument::Compact);
+                    auto bytes = QJsonDocument(body).toJson(QJsonDocument::Compact);
+                    if (path.endsWith("/log")) {
+                        const auto container = QUrlQuery(url).queryItemValue("container");
+                        bytes = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toUtf8() + " " + container.toUtf8()
+                            + " entry " + QByteArray::number(++logs[container]) + '\n';
+                    }
                     QTimer::singleShot(delay, socket, [this, socket, bytes, status] {
                         --active;
                         socket->write("HTTP/1.1 " + QByteArray::number(status) + " OK\r\nContent-Type: application/json\r\nRetry-After: 2\r\nConnection: close\r\nContent-Length: " + QByteArray::number(bytes.size()) + "\r\n\r\n" + bytes);
@@ -129,7 +138,100 @@ bool providerScenario(const QString& scenario) {
     QTest::qWait(2000);
     return server.requests == before && client.authenticationRequired("session");
 }
+bool viewScenario(const QString& scenario) {
+    Kubernetes first, second;
+    if (!first.listen(QHostAddress::LocalHost, 0) || !second.listen(QHostAddress::LocalHost, 0)) return false;
+    auto now = QDateTime::currentDateTimeUtc();
+    podlord::ResourceClient client(nullptr, [&] { return scenario == "view_focus" ? now : QDateTime::currentDateTimeUtc(); });
+    const auto connection = [](const Kubernetes& server, const QString& credential) {
+        podlord::ClusterConnection result;
+        result.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); result.credentialId = credential;
+        return result;
+    };
+    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
+    if (scenario == "view_limit") settings.requestHardLimitPerMinute = 60;
+    if (scenario == "view_auth") second.listStatus = 401;
+    QList<qint64> starts;
+    QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
+    if (!client.configure(settings) || !client.open("first", connection(first, "first"), {})
+        || !client.showSession("second", "secondary") || !client.open("second", connection(second, "second"), {})) return false;
+    if (!waitFor([&] { return !client.loading("first") && !client.loading("second") && !first.active && !second.active; }, scenario == "view_limit" ? 30000 : 16000)) return false;
+    if (client.rows("first").size() != 1) return false;
+    const auto path = QString("/api/v1/namespaces/default/pods/alpha");
+    if (scenario == "view_auth") {
+        const auto before = second.requests;
+        if (!client.authenticationRequired("second") || client.authenticationRequired("first") || client.refresh("second")) return false;
+        if (!client.inspect("first", path) || !waitFor([&] { return !client.document("first", path).isEmpty(); })) return false;
+        QTest::qWait(500);
+        return second.requests == before && client.authenticationRequired("second");
+    }
+    if (client.rows("second").size() != 1) return false;
+    if (scenario == "view_forward_move" || scenario == "view_forward_close") {
+        const auto startForward = [&](const QString& id) -> podlord::Result<QString> {
+            QTcpServer reservation;
+            if (!reservation.listen(QHostAddress::LocalHost, 0)) return podlord::Failure{podlord::StoreError::WriteFailed, "Cannot reserve a local test port."};
+            const int port = reservation.serverPort(); reservation.close();
+            return client.startPortForward(id, path, port, 8080);
+        };
+        if (!std::holds_alternative<QString>(startForward("first")) || !std::holds_alternative<QString>(startForward("second"))) return false;
+        const auto firstForwards = client.portForwards("first"), secondForwards = client.portForwards("second");
+        if (firstForwards.size() != 1 || secondForwards.size() != 1 || !client.moveSession({}, "detached")) return false;
+        if (client.portForwards("first") != firstForwards || client.portForwards("second") != secondForwards) return false;
+        QTcpServer firstProbe, secondProbe;
+        const auto firstPort = firstForwards.first().toMap().value("localPort").toUInt();
+        const auto secondPort = secondForwards.first().toMap().value("localPort").toUInt();
+        if (scenario == "view_forward_move")
+            return !firstProbe.listen(QHostAddress::LocalHost, firstPort) && !secondProbe.listen(QHostAddress::LocalHost, secondPort);
+        return client.close("first") && client.portForwards("first").isEmpty() && client.portForwards("second") == secondForwards
+            && firstProbe.listen(QHostAddress::LocalHost, firstPort) && !secondProbe.listen(QHostAddress::LocalHost, secondPort);
+    }
+    if (scenario == "view_focus") {
+        if (!client.setFocused(true) || !client.userActivity() || !client.setFocused(false, "secondary")) return false;
+        const auto beforeFirst = first.requests, beforeSecond = second.requests;
+        now = now.addSecs(30);
+        if (!client.synchronize() || !waitFor([&] { return first.requests > beforeFirst && !client.loading("first"); })) return false;
+        return second.requests == beforeSecond && !client.loading("second");
+    }
+    if (scenario == "view_conflict" && client.showSession("first", "secondary")) return false;
+    if (scenario == "view_move_occupied" && client.moveSession({}, "secondary")) return false;
+    if (scenario == "view_move_missing" && client.moveSession("missing", "secondary")) return false;
+    if (scenario == "view_inspect" || scenario == "view_conflict" || scenario == "view_move_occupied" || scenario == "view_move_missing") {
+        const auto beforeFirst = first.requests, beforeSecond = second.requests;
+        return client.inspect("first", path) && client.inspect("second", path)
+            && waitFor([&] { return !client.document("first", path).isEmpty() && !client.document("second", path).isEmpty(); })
+            && first.requests == beforeFirst + 1 && second.requests == beforeSecond + 1;
+    }
+    if (!client.showLogs("first", path) || !client.showLogs("second", path, "secondary")) return false;
+    if (scenario == "view_pause" && !client.pauseLogs(true)) return false;
+    if (scenario == "view_hide" && !client.hideLogs()) return false;
+    if (scenario == "view_close" && !client.close("first")) return false;
+    if (!waitFor([&] { return client.logEntries("second", path).size() >= 2 && !second.active; })) return false;
+    if (scenario == "view_pause" || scenario == "view_hide" || scenario == "view_close") {
+        if (!waitFor([&] { return !first.active; })) return false;
+        const auto firstRequests = first.requests, secondLogs = second.logs.value("alpha");
+        if (!client.selectLogContainer("alpha", "secondary") || !waitFor([&] { return second.logs.value("alpha") > secondLogs; })) return false;
+        return first.requests == firstRequests && second.logs.value("beta") > 0 && client.rows("first").size() == 1;
+    }
+    if (scenario == "view_move") {
+        if (!waitFor([&] { return client.logEntries("first", path).size() >= 2 && !first.active; })) return false;
+        const auto rows = client.rows("first");
+        const auto entries = client.logEntries("first", path).size();
+        const auto before = first.requests;
+        if (!client.moveSession({}, "detached") || first.requests != before || client.rows("first") != rows
+            || client.logEntries("first", path).size() != entries || client.pauseLogs(true) || !client.pauseLogs(true, "detached")) return false;
+        return client.moveSession("detached", "detached") && client.inspect("first", path)
+            && waitFor([&] { return !client.document("first", path).isEmpty(); });
+    }
+    if (scenario == "view_logs" || scenario == "view_limit") {
+        if (!waitFor([&] { return client.logEntries("first", path).size() >= 2 && !first.active; })) return false;
+        for (qsizetype i = 1; i < starts.size(); ++i)
+            if (starts[i] - starts[i - 1] < (scenario == "view_limit" ? 1000 : 400)) return false;
+        return first.logs.value("alpha") > 0 && first.logs.value("beta") > 0 && second.logs.value("alpha") > 0 && second.logs.value("beta") > 0;
+    }
+    return false;
+}
 bool run(const QString& scenario) {
+    if (scenario.startsWith("view_")) return viewScenario(scenario);
     if (scenario.startsWith("provider_")) return providerScenario(scenario);
     Kubernetes server; if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     podlord::ResourceClient client; podlord::ClusterConnection connection;

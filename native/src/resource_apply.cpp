@@ -10,7 +10,7 @@ bool ResourceClient::applyYaml(const QString& id, const QString& path, const QSt
     const auto row = resource(id, path);
     const QJsonObject uidGuard{{"op", "test"}, {"path", "/metadata/uid"}, {"value", identity["uid"]}};
     const QJsonObject versionGuard{{"op", "test"}, {"path", "/metadata/resourceVersion"}, {"value", identity["resourceVersion"]}};
-    if (!connection || token.isEmpty() || patch.size() < 3 || id != visible_ || !wanted(id) || states_[id].suspended
+    if (!connection || token.isEmpty() || patch.size() < 3 || !isVisible(id) || !wanted(id) || states_[id].suspended
         || row["uid"] != identity["uid"] || row["name"] != identity["name"]
         || row["apiVersion"] != baseline["apiVersion"] || row["kind"] != baseline["kind"] || row["namespace"].toString() != identity["namespace"].toString()
         || patch[0] != uidGuard || patch[1] != versionGuard
@@ -30,7 +30,7 @@ bool ResourceClient::cancelYamlApply(const QString& token) {
 bool ResourceClient::readBackYaml(const QString& id, const QString& path, const QString& token,
                                   const QJsonObject& baseline, const QJsonObject& desired, const QString& outcome) {
     const auto connection = this->connection(id);
-    if (!connection || token.isEmpty() || !states_[id].open || id != visible_) return false;
+    if (!connection || token.isEmpty() || !states_[id].open || !isVisible(id)) return false;
     Task task; task.id = id; task.path = path; task.read = Read::Verify; task.foreground = true;
     task.kind = baseline["kind"].toString(); task.namespaced = !baseline["metadata"].toObject()["namespace"].toString().isEmpty();
     task.change = Change{token, baseline, desired, *connection, outcome == "rejected" ? "rejected" : "uncertain"};

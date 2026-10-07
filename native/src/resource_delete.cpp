@@ -5,7 +5,7 @@ namespace podlord {
 bool ResourceClient::deleteResource(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline) {
     const auto connection = this->connection(id);
     const auto row = resource(id, path);
-    if (!connection || token.isEmpty() || id != visible_ || !wanted(id) || states_[id].suspended
+    if (!connection || token.isEmpty() || !isVisible(id) || !wanted(id) || states_[id].suspended
         || !row["deletable"].toBool() || baseline["uid"].toString().isEmpty()
         || deletionNeedsObservation(id, path)
         || row["uid"] != baseline["uid"] || row["kind"] != baseline["kind"] || row["apiVersion"] != baseline["apiVersion"]
@@ -28,7 +28,7 @@ bool ResourceClient::deletionNeedsObservation(const QString& id, const QString& 
 }
 bool ResourceClient::readBackDeletion(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline) {
     const auto connection = this->connection(id);
-    if (!connection || token.isEmpty() || id != visible_ || !states_[id].open || baseline["uid"].toString().isEmpty()) return false;
+    if (!connection || token.isEmpty() || !isVisible(id) || !states_[id].open || baseline["uid"].toString().isEmpty()) return false;
     Task task; task.id = id; task.path = path; task.read = Read::VerifyDelete; task.foreground = true;
     task.kind = baseline["kind"].toString(); task.namespaced = !baseline["namespace"].toString().isEmpty();
     task.change = Change{token, baseline, {}, *connection, "uncertain"};

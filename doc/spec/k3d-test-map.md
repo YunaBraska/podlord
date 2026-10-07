@@ -4342,3 +4342,94 @@ On an owned real local Kubernetes cluster, the current field-filter driver passe
 - Current `native-terminal-e2e` succeeds through the real locally owned Kubernetes exec boundary for shell input, vi write/read-back, keyboard interrupt and touch interrupt. Rendered QML frames are preserved for each case. This run uses the offscreen/software test driver, not an installed-package or C#/C++ picture-parity assertion. Its cluster, volumes and private profiles are removed.
 - The packaged desktop comparison did load 1,833 real cached resources. Its native screenshot is retained, but the C# reference displayed a different overall cache population and the populated native macOS accessibility export lacked child controls. Keyboard Find and row inspection worked. Exact full-population picture parity and installed accessibility remain open; the comparison timeout cleaned up its owned apps/cluster/profile.
 - Release blockers remain independent windows, the complete paired view/theme matrix, installed accessibility, native-only localization completeness, measured foreground CPU/RSS/tab budgets, current full coverage at 90% branches and passing hosted OS/architecture gates. The hosted reference C# clear-filter performance test also exceeds its existing budget; it has not been weakened or silently skipped.
+
+## What Does The Final Table And Language Baseline Prove?
+
+The 2026-10-07 `551d3b0` native baseline passes all 3,884 registered cases:
+2 preflight checks and 3,882 remaining checks, the latter in 554.54 seconds with
+12 workers. The inventory distinguishes 2,945 behavior cases from 939 style
+variants; a variant is not an additional independent product capability.
+Production coverage is 97.35% lines and 82.87% branches. The 95% line gate
+passes; the 90% branch gate fails. Passing executable cases is not a passing
+release gate.
+
+The fresh private arm64 macOS package passes size, dependency and local ad-hoc
+signature checks: 31,713,929 archive bytes and 85,015,099 installed-file bytes.
+Executable SHA-256 is
+`4e3e824de852adef1441612c477c326d4d2d8762a02edd2480359d94b7c131b0`;
+archive SHA-256 is
+`12074c5ae3ee5ef7b6cd9320fe5f03eb1a72748549bd78560d7853d210ad5cf0`.
+These are packaging checks, not complete installed-device verification.
+
+The subsequent desktop comparison produced no valid paired image. The Mac was
+reported locked and the C# reference aborted while starting its render timer.
+The owned comparison applications, Kubernetes container and volumes were
+cleaned up. No security or lock-screen setting was changed. Existing unpaired
+images and software-rendered terminal frames are not relabeled as picture parity.
+
+## What Proves Shared Native Read Ownership Across Views?
+
+The public `ResourceClient` entrypoints now accept a view identity for visibility,
+focus/activity and log controls. `moveSession` transfers a binding without
+closing the session. The empty identity retains the existing single-window
+entrypoints. No new store, cache, framework or polling timer is introduced.
+
+| Behavior | Public entrypoint | Test | Remaining boundary |
+| --- | --- | --- | --- |
+| Both visible sessions admit inspector reads | `showSession`, `inspect`, `document` | `native.read_views.inspect` | Actual independent windows |
+| Both visible log targets retain all container streams | `showLogs`, `logEntries` | `native.read_views.logs` | Installed simultaneous log panes |
+| Pausing one log view leaves the other queue eligible | `pauseLogs`, `selectLogContainer` | `native.read_views.pause` | Installed controls |
+| Hiding one log view leaves the other queue eligible | `hideLogs`, `selectLogContainer` | `native.read_views.hide` | Window visibility wiring |
+| Closing one session preserves the other visible logs and retained cache | `close`, `logEntries`, `rows` | `native.read_views.close` | Window closure wiring |
+| A move preserves cached rows/logs and transfers log control | `moveSession`, `pauseLogs`, `inspect` | `native.read_views.move` | Window coordinator, drafts and selection |
+| Another view cannot steal the same session | `showSession`, `inspect` | `native.read_views.conflict` | Focus the existing owner in the UI |
+| Moving into an occupied view retains both originals | `moveSession`, `inspect` | `native.read_views.move_occupied` | Actual window placement |
+| Moving a missing binding fails without affecting visible sessions | `moveSession`, `inspect` | `native.read_views.move_missing` | Actual window placement |
+| Authentication failure does not retry or suspend unrelated credentials | `refresh`, `authenticationRequired`, `inspect` | `native.read_views.auth` | Explicit login controls |
+| Visible views retain independent focus cadence | `setFocused`, `userActivity`, `synchronize` | `native.read_views.focus` | Actual per-window focus events |
+| Visible views share configured request start spacing | `configure`, `requestStarted`, `showLogs` | `native.read_views.limit` | Process-wide application injection |
+| Moving retains the same forward descriptors and bound local TCP ports | `startPortForward`, `moveSession`, `portForwards` | `native.read_views.forward_move` | Real post-move WebSocket traffic |
+| Closing the moved session releases only its own local ports | `close`, `portForwards`, local TCP bind | `native.read_views.forward_close` | Actual detached-window closure |
+
+Kubernetes alone is simulated by local HTTP servers; requests, queues, cache,
+logs, timers and TCP listeners are real production code. The focus case controls
+the external wall clock so it does not wait four minutes. Each registered case
+runs in an independent process with private loopback ports and RAII cleanup;
+there is no shared test profile or required ordering. These are controller-boundary
+cases, not UI E2E or complete window parity. Existing read-overlap cases remain
+because concurrency, coalescing, late responses, auth and rate-limit behavior are
+not replaced by successful two-view cases.
+
+On Linux arm64, all 14 new cases plus 7 existing read-overlap cases pass with
+four workers in 53.43 seconds. The verification container is removed on exit;
+only the existing latest verification image is retained. Local evidence is
+`2026-10-07-linux-values/read-views-current.log` and its JUnit report.
+
+The completed current macOS arm64 run passes all 3,898 registered cases in
+574.75 seconds with 12 workers: 2,959 behavior cases and 939 style variants.
+It rebuilds all executables, collects isolated raw profiles, merges them and
+reports all production `.cpp`/`.h` sources using the generated executable
+inventory. Coverage is 97.37% lines and 82.95% branches; the unchanged 90%
+branch gate still fails. Evidence is `20261007-multiview-full-native.log`, its
+JUnit report and `20261007-multiview-coverage.txt`. The temporary raw-profile
+directory is removed on either success or failure; the unrelated existing
+`default.profraw` is not read, rewritten, staged or removed.
+
+The code review keeps one view-binding map instead of the previous singleton
+session/log/focus fields. Read, write, delete, forward and terminal admission
+use the same visibility predicate. No second cache, polling loop, settings file,
+compatibility facade or test harness is added. The existing HTTP boundary is
+reused. Cases are not collapsed merely because an E2E success path also executes
+some of their code: malformed input, cancellation, concurrency, authentication,
+late replies and migration remain independently diagnosable behavior targets.
+The new view cases run concurrently on both operating systems.
+
+Hosted run `37668747829` belongs to baseline `551d3b0`, not this later view
+increment. Its completed C# lane passes 458 cases (91 Core, 84 Kubernetes,
+69 Layout and 214 App), then fails coverage at 95.71% lines / 85.40% branches.
+The completed macOS arm64 native lane reports 97.35% / 82.87%; Linux arm64
+reports 97.35% / 82.94%. Their branch gates fail. The earlier C# timing failure
+is historical evidence, not the failure in this run. Other lanes were still
+running when inspected; the workflow is not green. Local full-suite success
+does not supersede those hosted failures or establish installed visual,
+accessibility, foreground CPU/RSS, tab-latency or complete device gates.

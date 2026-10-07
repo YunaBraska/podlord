@@ -6,7 +6,7 @@ Status: Accepted for the native read workspace, 2026-10-03.
 
 The native read controller owns one central synchronization timer, one request gate and one cache-expiry timer. QML surfaces do not own refresh loops. Rendering, hover, scrolling and keyboard focus read snapshots without fetching resources.
 
-The gate serializes reads and preserves the legacy minimum start spacing of 400 ms. A positive request ceiling adds `ceil(60000 / requestsPerMinute)` spacing when larger; zero adds no extra ceiling. Server backoff still applies. Inspector work precedes queued foreground refreshes, which precede background work. Joining an existing read does not send a duplicate request.
+The gate admits up to four concurrent reads, keeps writes exclusive and preserves the legacy minimum start spacing of 400 ms. A positive request ceiling adds `ceil(60000 / requestsPerMinute)` spacing when larger; zero adds no extra ceiling. Server backoff still applies. Inspector work precedes queued foreground refreshes, which precede background work. Joining an existing read does not send a duplicate request.
 
 Visible-session cadence uses the existing legacy focus, idle and cache-state policy: focused populated views use 20 seconds, 45 seconds or 120 seconds as activity decreases; focused empty views use 12 seconds, or 25 seconds after failure; unfocused populated views use 240 seconds and empty views use 45 seconds. These values originate in `MainWindowViewModel.BackgroundRefreshIntervalFor`, not a new performance target. An explicit action remains immediately eligible subject to the shared gate and server backoff.
 
@@ -34,7 +34,24 @@ The [test map](../spec/k3d-test-map.md) records real QML settings, inspection, c
 
 The current real Kubernetes runner exercises static and confirmed exec-certificate authentication and checks removal of its owning container and actual volumes. It does not establish complete legacy parity or platform-release readiness.
 
-The native controller currently serializes its own requests. A process-wide ceiling across multiple independent controllers or windows is not established. Full settings migration, discovery membership changes, startup resource-cache authority, broader read-failure recovery and performance/release gates remain open. No disk resource cache, draft persistence, synthetic startup data or new transport timeout is introduced.
+One controller can bind multiple visible views. Each binding owns its session,
+focus/activity cadence and optional visible log target. A session cannot be
+bound to two views; an explicit move transfers the existing binding without
+closing its cache, forwards or terminal. Log selection, pause and hiding affect
+only the originating view. All views use the same request slots, start spacing,
+backoff, authentication state and expiry timers. No per-view scheduler or
+resource cache is created.
+
+Public controller tests exercise independent visible reads/logs, authentication,
+focus, request limits, rejected moves and transfer/closure of real local TCP
+listeners. Kubernetes is their explicit local HTTP boundary; these tests do not
+prove WebSocket traffic after a move or an installed second application window.
+The application's window coordinator and shared controller injection remain
+open. A process-wide ceiling across independently constructed controllers is
+not established. Full settings migration, discovery membership changes,
+startup resource-cache authority, broader read-failure recovery and
+performance/release gates remain open. No disk resource cache, draft
+persistence, synthetic startup data or new transport timeout is introduced.
 
 ## Migration And Rollback
 
