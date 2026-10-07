@@ -4,6 +4,8 @@ import QtQuick.Layouts
 
 Pane {
     id: settings
+    LayoutMirroring.enabled: workspace.uiRightToLeft
+    LayoutMirroring.childrenInherit: true
     PasteSourceDialog { id: pasteSourceDialog }
     SessionManager { id: sessionManager }
     Dialog {
@@ -90,6 +92,7 @@ Pane {
         theme.currentIndex = workspace.themeNames.indexOf(workspace.themeName)
         variant.currentIndex = variant.model.indexOf(workspace.themeVariant)
         intensity.currentIndex = intensity.model.indexOf(workspace.themeIntensity)
+        language.currentIndex = language.model.findIndex(option => option.code === workspace.uiLanguage)
     }
     function synchronize() {
         synchronizeAppearance()
@@ -101,7 +104,7 @@ Pane {
     onSectionChanged: { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
     onVisibleChanged: if (visible) synchronize()
     Component.onCompleted: synchronize()
-    Connections { target: workspace; function onAppearanceChanged() { settings.synchronizeAppearance() } }
+    Connections { target: workspace; function onAppearanceChanged() { settings.synchronizeAppearance() } function onLanguageChanged() { settings.synchronizeAppearance() } }
     padding: 14
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
     component SectionButton: Button {
@@ -134,18 +137,18 @@ Pane {
     TableColumnsDialog { id: eventColumns; tableType: "event"; columns: workspace.eventColumns }
     contentItem: ColumnLayout {
         spacing: 12
-        Label { text: "Settings"; font.pixelSize: 16; font.bold: true; color: workspace.appearanceColors.accent }
+        Label { text: workspace.uiText["settings.title"]; font.pixelSize: 16; font.bold: true; color: workspace.appearanceColors.accent }
         Flow {
             Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 4
-            SectionButton { objectName: "alertsWorkspaceButton"; text: "Alerts"; destination: "alerts" }
-            SectionButton { objectName: "settingsAppearanceSection"; text: "Appearance"; destination: "appearance" }
-            SectionButton { objectName: "settingsDiagnosticsSection"; text: "Diagnostics"; destination: "diagnostics" }
-            SectionButton { objectName: "settingsGraphicsSection"; text: "Graphics"; destination: "graphics" }
-            SectionButton { objectName: "settingsPrivacySection"; text: "Privacy"; destination: "privacy" }
-            SectionButton { objectName: "settingsSourcesSection"; text: "Sources"; destination: "sources" }
-            SectionButton { objectName: "settingsSyncSection"; text: "Sync"; destination: "sync" }
-            SectionButton { objectName: "settingsWorkspaceSection"; text: "Workspace"; destination: "workspace" }
-            SectionButton { objectName: "settingsAboutSection"; text: "About"; destination: "about" }
+            SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
+            SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
+            SectionButton { objectName: "settingsDiagnosticsSection"; text: workspace.uiText["settings.diagnostics"]; destination: "diagnostics" }
+            SectionButton { objectName: "settingsGraphicsSection"; text: workspace.uiText["settings.graphics"]; destination: "graphics" }
+            SectionButton { objectName: "settingsPrivacySection"; text: workspace.uiText["settings.privacy"]; destination: "privacy" }
+            SectionButton { objectName: "settingsSourcesSection"; text: workspace.uiText["settings.sources"]; destination: "sources" }
+            SectionButton { objectName: "settingsSyncSection"; text: workspace.uiText["settings.sync"]; destination: "sync" }
+            SectionButton { objectName: "settingsWorkspaceSection"; text: workspace.uiText["settings.workspace"]; destination: "workspace" }
+            SectionButton { objectName: "settingsAboutSection"; text: workspace.uiText["settings.about"]; destination: "about" }
         }
         Loader {
             Layout.fillWidth: true; Layout.fillHeight: true; visible: settings.section === "alerts"
@@ -163,13 +166,14 @@ Pane {
                 width: scroll.availableWidth; spacing: 10
                 RowLayout {
                     Layout.fillWidth: true
-                    Label { Layout.fillWidth: true; text: settings.section.charAt(0).toUpperCase() + settings.section.slice(1); font.bold: true; font.pixelSize: 14; color: workspace.appearanceColors.accent }
+                    Label { Layout.fillWidth: true; text: workspace.uiText["settings." + settings.section]; font.bold: true; font.pixelSize: 14; color: workspace.appearanceColors.accent }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
-                    SettingRow { label: "Theme"; help: "Changes save immediately, without changing Kubernetes behavior."; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: "Theme"; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant, workspace.themeIntensity) } }
-                    SettingRow { label: "Variant"; help: "Every theme supports a dark and light variant."; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: "Theme variant"; onActivated: workspace.saveAppearance(workspace.themeName, currentText, workspace.themeIntensity) } }
-                    SettingRow { label: "Theme intensity"; help: "Static glow and texture. No additional animation loop."; ComboBox { id: intensity; objectName: "inlineAppearanceIntensity"; Layout.fillWidth: true; model: ["subtle", "medium", "arcade"]; enabled: !workspace.busy; Accessible.name: "Theme intensity"; onActivated: workspace.saveAppearance(workspace.themeName, workspace.themeVariant, currentText) } }
+                    SettingRow { label: workspace.uiText["settings.language"]; help: workspace.uiText["settings.languageHelp"]; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
+                    SettingRow { label: workspace.uiText["settings.theme"]; help: workspace.uiText["settings.themeHelp"]; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.theme"]; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant, workspace.themeIntensity) } }
+                    SettingRow { label: workspace.uiText["settings.variant"]; help: workspace.uiText["settings.variantHelp"]; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText, workspace.themeIntensity) } }
+                    SettingRow { label: workspace.uiText["settings.themeIntensity"]; help: workspace.uiText["settings.themeIntensityHelp"]; ComboBox { id: intensity; objectName: "inlineAppearanceIntensity"; Layout.fillWidth: true; model: ["subtle", "medium", "arcade"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.themeIntensity"]; onActivated: workspace.saveAppearance(workspace.themeName, workspace.themeVariant, currentText) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "graphics"

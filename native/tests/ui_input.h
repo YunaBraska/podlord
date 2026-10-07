@@ -26,6 +26,17 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
                       bounds.width() > viewport.width() ? 0 : bounds.width(),
                       bounds.height() > viewport.height() ? 0 : bounds.height());
     };
+    const auto clippedBy = [target, pointerBounds]() -> QQuickItem* {
+        const auto bounds = QRectF(target->mapToScene({0,0}), target->size());
+        for (auto* parent = target->parentItem(); parent; parent = parent->parentItem()) {
+            if (!parent->clip()) continue;
+            const auto viewport = QRectF(parent->mapToScene({0,0}), parent->size());
+            const auto required = pointerBounds(bounds, viewport);
+            const auto visible = viewport.adjusted(-1,-1,1,1);
+            if (!visible.contains(required.topLeft()) || !visible.contains(required.bottomRight())) return parent;
+        }
+        return nullptr;
+    };
     if (QGuiApplication::platformName()=="cocoa") {
         window->raise();
         window->requestActivate();
@@ -40,13 +51,7 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
     for (int attempt=0; attempt<48; ++attempt) {
         if (!retained) return false;
         const auto bounds=QRectF(target->mapToScene({0,0}),target->size());
-        QQuickItem* clipped=nullptr;
-        for (auto* parent=target->parentItem(); parent; parent=parent->parentItem()) {
-            const auto viewport=QRectF(parent->mapToScene({0,0}),parent->size());
-            const auto required = pointerBounds(bounds, viewport);
-            const auto visible = viewport.adjusted(-1,-1,1,1);
-            if (parent->clip() && (!visible.contains(required.topLeft()) || !visible.contains(required.bottomRight()))) { clipped=parent; break; }
-        }
+        auto* clipped = clippedBy();
         if (!clipped) {
             if (wheeled) {
                 QWheelEvent end(wheelPosition,window->mapToGlobal(wheelPosition.toPoint()),{},{},Qt::NoButton,Qt::NoModifier,Qt::ScrollEnd,false);
@@ -72,6 +77,7 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
             QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
             const bool painted=frames.wait(1000);
             if (!retained) return false;
+            if (painted && clippedBy()) continue;
             const bool fits=retained && QRectF(0,0,window->width(),window->height()).contains(target->mapToScene({target->width()/2,target->height()/2}));
             if (!painted || !fits) std::fprintf(stderr,"Pointer target %s: frame=%d inside-window=%d window=%dx%d at=(%g,%g) size=%gx%g\n",qPrintable(target->objectName()),painted,fits,window->width(),window->height(),bounds.x(),bounds.y(),bounds.width(),bounds.height());
             return painted && fits;

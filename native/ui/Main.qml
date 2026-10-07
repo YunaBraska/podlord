@@ -371,12 +371,14 @@ ApplicationWindow {
                 Layout.preferredWidth: children.reduce((total, control) => total + control.implicitWidth, 0) + spacing * Math.max(0, children.length - 1)
                 Layout.preferredHeight: Math.max(34, implicitHeight)
                     id: navigationRow
+                    LayoutMirroring.enabled: workspace.uiRightToLeft
+                    LayoutMirroring.childrenInherit: true
                     spacing: 6
-                    Button { text: "Search"; implicitHeight: 30; enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0; Accessible.name: "Focus current search"; Accessible.description: enabled ? "Search the current cached view" : "Settings search is not available"; onClicked: { if (workspace.workspacePage === "ports") portsView.focusSearch(); else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus(); else resourceFilterInput.forceActiveFocus() } }
-                    NavButton { objectName: "resourcesWorkspaceButton"; action: resourcesCommand; text: "Resources"; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
-                    NavButton { objectName: "eventsWorkspaceButton"; action: eventsCommand; text: "Events"; checked: workspace.workspacePage === "events" }
-                    NavButton { objectName: "portForwardTasksButton"; text: "Ports"; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
-                    NavButton { objectName: "settingsWorkspaceButton"; action: settingsCommand; text: "Settings"; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
+                    Button { objectName: "workspaceSearchButton"; text: workspace.uiText["nav.search"]; implicitHeight: 30; enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0; Accessible.name: "Focus current search"; Accessible.description: enabled ? "Search the current cached view" : "Settings search is not available"; onClicked: { if (workspace.workspacePage === "ports") portsView.focusSearch(); else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus(); else resourceFilterInput.forceActiveFocus() } }
+                    NavButton { objectName: "resourcesWorkspaceButton"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
+                    NavButton { objectName: "eventsWorkspaceButton"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
+                    NavButton { objectName: "portForwardTasksButton"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
+                    NavButton { objectName: "settingsWorkspaceButton"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
                 Button { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: 30; Accessible.name: "Open command palette"; onClicked: commands.open() }
                 Button { objectName: "toggleSidebar"; text: "Sidebar"; implicitHeight: 30; Accessible.name: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
             }
@@ -539,7 +541,7 @@ ApplicationWindow {
                     visible: workspace.workspacePage === "resources"
                     tableModel: workspace.table
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
-                    emptyText: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources. Cached rows appear as they arrive." : "No resources match this view."
+                    emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
                     onSortRequested: function(column) { workspace.sortColumn(column) }
                     onInspectRequested: function(path) { workspace.inspectPath(path) }
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }

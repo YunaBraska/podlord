@@ -13,6 +13,7 @@ struct ReadSettings final {
     bool radarWaterEnabled = true;
     int radarWaterSpeedPercent = 45;
     bool workspaceRestore = true;
+    QString language = "system";
     bool operator==(const ReadSettings&) const = default;
     bool valid() const;
 };
