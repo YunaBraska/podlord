@@ -47,13 +47,14 @@ Result<TableViewStates> ViewStateStore::load(const QString& session) const {
     if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || !root["version"].isDouble() || !root["views"].isObject())
         return Failure{StoreError::InvalidData, "Invalid saved views; existing data was retained."};
     const bool legacy = root["version"] == 1;
-    const bool modes = root["version"] == 3 || root["version"] == 4;
+    const bool modes = root["version"] == 3 || root["version"] == 4 || root["version"] == 5;
     if (!legacy && root["version"] != 2 && !modes) return Failure{StoreError::UnsupportedVersion, "Unsupported saved-view version; existing data was retained."};
     const auto views = root["views"].toObject();
     QStringList added;
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table)
-        if (!views.contains(table.key()) && root["version"].toInt() <= 3
-            && QStringList{"port", "inspectorEvent", "inspectorLink"}.contains(table.key())) added.append(table.key());
+        if (!views.contains(table.key()) && ((root["version"].toInt() <= 3
+            && QStringList{"port", "inspectorEvent", "inspectorLink"}.contains(table.key()))
+            || (root["version"].toInt() <= 4 && table.key() == "value"))) added.append(table.key());
     for (const auto& table : views.keys()) if (!schemas_.contains(table)) return Failure{StoreError::InvalidData, "Unsupported saved table; existing data was retained."};
     if (views.size() + added.size() != schemas_.size()) return Failure{StoreError::InvalidData, "Saved views must describe the supported table types."};
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) {
@@ -101,7 +102,7 @@ Result<TableViewStates> ViewStateStore::save(const QString& session, const QStri
     states[table] = value;
     QJsonObject encoded;
     for (auto state = states.cbegin(); state != states.cend(); ++state) encoded[state.key()] = encode(state.value());
-    const auto bytes = QJsonDocument(QJsonObject{{"version", 4}, {"views", encoded}}).toJson(QJsonDocument::Indented);
+    const auto bytes = QJsonDocument(QJsonObject{{"version", 5}, {"views", encoded}}).toJson(QJsonDocument::Indented);
     if (bytes.size() > 65536) return Failure{StoreError::InvalidInput, "The saved session view exceeds the 64 KiB document boundary."};
     QSaveFile file(path); file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
@@ -139,19 +140,72 @@ Result<TableViewStates> decodePresets(const QJsonObject& root, const QStringList
         return Failure{StoreError::InvalidData, "The default filter preset cannot be renamed, replaced or deleted."};
     return result;
 }
+Result<TableViewStates> decodeLegacyPresets(const QJsonArray& source, const QStringList& columns) {
+    const QMap<QString, QString> fields{{"nameFilter", "name"}, {"namespace", "namespace"}, {"kind", "kind"},
+        {"cluster", "cluster"}, {"status", "status"}, {"issue", "issue"}, {"age", "createdAt"}, {"node", "node"},
+        {"image", "image"}, {"ready", "ready"}, {"restarts", "restarts"}, {"owner", "owner"},
+        {"cpu", "cpu"}, {"memory", "memory"}, {"storage", "storage"}};
+    TableViewStates result{{"default", {}}};
+    QSet<QString> names;
+    for (const auto& entry : source) {
+        if (!entry.isObject()) return Failure{StoreError::InvalidData, "Invalid legacy filter record; the original file was retained."};
+        const auto record = entry.toObject();
+        const auto name = record["name"].toString();
+        if (!record["name"].isString() || names.contains(name.toCaseFolded()))
+            return Failure{StoreError::InvalidData, "Invalid or duplicate legacy filter name; the original file was retained."};
+        names.insert(name.toCaseFolded());
+        for (auto field = record.begin(); field != record.end(); ++field) {
+            const bool mode = field.key() == "problemsOnly" || field.key() == "activityOnly";
+            if (mode ? !field->isBool() : !field->isString() && !field->isNull())
+                return Failure{StoreError::InvalidData, "Invalid legacy filter field; the original file was retained."};
+            if (!mode && !fields.contains(field.key()) && !QStringList{"name", "search", "id", "limit"}.contains(field.key()))
+                return Failure{StoreError::InvalidData, "Unsupported legacy filter field; the original file was retained."};
+        }
+        if (record["problemsOnly"].toBool() && record["activityOnly"].toBool())
+            return Failure{StoreError::InvalidData, "Conflicting legacy Problems/Activity modes; review the original preset before importing it."};
+        TableViewState value{record["search"].toString(), {}, false, {},
+            record["activityOnly"].toBool() ? "activity" : record["problemsOnly"].toBool() ? "problems" : ""};
+        for (auto field = fields.cbegin(); field != fields.cend(); ++field)
+            if (const auto expression = record[field.key()].toString(); !expression.isEmpty()) value.fields[field.value()] = expression;
+        // The reference clears Id on load; Limit was a display cap, not a cache predicate.
+        result[name.compare("default", Qt::CaseInsensitive) == 0 ? QString("default") : name] = value;
+    }
+    return decodePresets(encodePresets(result), columns);
+}
+Result<TableViewStates> readPresets(const QString& path, const QStringList& columns) {
+    if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Filter presets must not be a symbolic link."};
+    if (!QFileInfo(path).isFile()) return Failure{StoreError::ReadFailed, "Choose a readable regular saved-filter JSON file."};
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 65536) return Failure{StoreError::ReadFailed, "Cannot read private filter presets."};
+    const auto bytes = file.read(65537); QJsonParseError error;
+    if (bytes.size() > 65536) return Failure{StoreError::ReadFailed, "The saved-filter file exceeds the 64 KiB document boundary."};
+    const auto document = QJsonDocument::fromJson(bytes, &error);
+    if (file.error() != QFileDevice::NoError || error.error != QJsonParseError::NoError || (!document.isObject() && !document.isArray()))
+        return Failure{StoreError::InvalidData, "Invalid filter presets; existing data was retained."};
+    if (document.isArray()) return decodeLegacyPresets(document.array(), columns);
+    return decodePresets(document.object(), columns);
+}
 }
 Result<TableViewStates> ViewStateStore::loadPresets() const {
     if (const auto failure = profileFailure(profile_)) return *failure;
     const auto path = QDir(profile_).filePath("filter-presets.json");
-    if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Filter presets must not be a symbolic link."};
-    if (!QFileInfo::exists(path)) return TableViewStates{{"default", {}}};
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly) || file.size() > 65536) return Failure{StoreError::ReadFailed, "Cannot read private filter presets."};
-    const auto bytes = file.readAll(); QJsonParseError error;
-    const auto document = QJsonDocument::fromJson(bytes, &error);
-    if (file.error() != QFileDevice::NoError || error.error != QJsonParseError::NoError || !document.isObject())
-        return Failure{StoreError::InvalidData, "Invalid filter presets; existing data was retained."};
-    return decodePresets(document.object(), schemas_.value("resource"));
+    if (!QFileInfo::exists(path) && !QFileInfo(path).isSymLink()) return TableViewStates{{"default", {}}};
+    return readPresets(path, schemas_.value("resource"));
+}
+Result<TableViewStates> ViewStateStore::importPresets(const QString& path, const TableViewStates& expected) const {
+    if (!QDir::isAbsolutePath(path)) return Failure{StoreError::InvalidInput, "Choose an absolute saved-filter file."};
+    const auto imported = readPresets(path, schemas_.value("resource"));
+    if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+    auto desired = expected;
+    const auto& presets = std::get<TableViewStates>(imported);
+    for (auto entry = presets.cbegin(); entry != presets.cend(); ++entry) {
+        if (entry.key() == "default") continue;
+        for (auto saved = expected.cbegin(); saved != expected.cend(); ++saved)
+            if (saved.key().compare(entry.key(), Qt::CaseInsensitive) == 0 && (saved.key() != entry.key() || saved.value() != entry.value()))
+                return Failure{StoreError::Conflict, "An imported filter name is already in use. Rename it before importing; no filters were changed."};
+        desired[entry.key()] = entry.value();
+    }
+    return savePresets(desired, expected);
 }
 Result<TableViewStates> ViewStateStore::savePresets(const TableViewStates& desired, const TableViewStates& expected) const {
     const auto root = encodePresets(desired); const auto validated = decodePresets(root, schemas_.value("resource"));

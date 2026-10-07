@@ -194,6 +194,10 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool discardPending READ discardPending NOTIFY changed)
     Q_PROPERTY(QString discardPrompt READ discardPrompt NOTIFY changed)
     Q_PROPERTY(QVariantList resourceValues READ resourceValues NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* valuesTable READ valuesTable CONSTANT)
+    Q_PROPERTY(QVariantList valuesColumns READ valuesColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int valuesSortColumn READ valuesSortColumn NOTIFY changed)
+    Q_PROPERTY(QString valuesSortDirection READ valuesSortDirection NOTIFY changed)
     Q_PROPERTY(bool yamlVisible READ yamlVisible NOTIFY changed)
     Q_PROPERTY(bool valuesVisible READ valuesVisible NOTIFY changed)
     Q_PROPERTY(bool valuesAvailable READ valuesAvailable NOTIFY changed)
@@ -277,6 +281,7 @@ public:
     bool filterPresetsBusy() const { return presetsBusy_; }
     QString filterPresetsError() const { return presetsError_; }
     Q_INVOKABLE bool reloadFilterPresets();
+    Q_INVOKABLE bool importFilterPresets(const QUrl& source);
     Q_INVOKABLE bool loadFilterPreset(const QString& name);
     Q_INVOKABLE bool saveFilterPreset(const QString& name);
     Q_INVOKABLE bool renameFilterPreset(const QString& name, const QString& replacement);
@@ -421,6 +426,10 @@ public:
     bool viewStateFailed() const;
     bool viewCloseNeedsDecision() const;
     QVariantList resourceValues() const;
+    QAbstractItemModel* valuesTable() { return &valuesTable_; }
+    QVariantList valuesColumns() const { return tableColumns("value", valueRows_); }
+    int valuesSortColumn() const { return navigation_.value(active_).valueColumn; }
+    QString valuesSortDirection() const { return navigation_.value(active_).valueOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
     bool yamlVisible() const;
     bool valuesVisible() const;
     bool valuesAvailable() const;
@@ -516,6 +525,7 @@ private:
     bool presetsBusy_ = false, presetsReady_ = false;
     QFuture<Result<TableViewStates>> presetsFuture_;
     bool persistFilterPresets(const TableViewStates& desired);
+    bool updateFilterPresets(const std::function<Result<TableViewStates>(const ViewStateStore&)>& operation, bool reload = false);
     struct Deletion final { QString token, session, path, target, phase, status; QJsonObject baseline; QUrl server; };
     std::optional<Deletion> deletion_;
     bool bindDeletion();
@@ -534,7 +544,20 @@ private:
     bool bindYamlApply();
     enum class Leave { Resource, Session, Context, Tab, Inspector, Window, Draft, Reload, History };
     struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
-    struct Navigation final { QString filter, mode; QMap<QString, QString> fields; int column = -1; Qt::SortOrder order = Qt::AscendingOrder; QString inspected; QString page = "overview"; QString workspace = "resources"; QVariantMap radarView{{"x",0},{"y",0},{"zoom",1}}; QString eventFilter; int eventColumn = -1; Qt::SortOrder eventOrder = Qt::AscendingOrder; QString portFilter; int portColumn = -1; Qt::SortOrder portOrder = Qt::AscendingOrder; int inspectorEventColumn = -1, inspectorLinkColumn = -1; Qt::SortOrder inspectorEventOrder = Qt::AscendingOrder, inspectorLinkOrder = Qt::AscendingOrder; QStringList history; int historyIndex = -1; };
+    struct Navigation final {
+        QString filter, mode;
+        QMap<QString, QString> fields;
+        int column = -1;
+        Qt::SortOrder order = Qt::AscendingOrder;
+        QString inspected, page = "overview", workspace = "resources";
+        QVariantMap radarView{{"x",0},{"y",0},{"zoom",1}};
+        QString eventFilter, portFilter;
+        int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
+        Qt::SortOrder eventOrder = Qt::AscendingOrder, portOrder = Qt::AscendingOrder,
+            inspectorEventOrder = Qt::AscendingOrder, inspectorLinkOrder = Qt::AscendingOrder, valueOrder = Qt::AscendingOrder;
+        QStringList history;
+        int historyIndex = -1;
+    };
     struct LogPosition final { QString anchor; double offset = 0; bool follow = true, evicted = false; PodLogHistory::Removal removal = PodLogHistory::Removal::None; };
     const QString profile_;
     QString filterPickerField_, filterPickerSession_;
@@ -580,13 +603,14 @@ private:
     QSortFilterProxyModel ports_;
     ResourceTable inspectorEventRows_, inspectorLinkRows_;
     QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
+    ResourceTable valueRows_;
+    QSortFilterProxyModel valuesTable_;
     bool publishPorts();
     LogRows logs_;
     QMap<QString, LogPosition> logPositions_;
     QString logScope_;
     QString inspectorScope_, overview_, yaml_;
     QJsonObject inspectorDocument_, inspectorSummary_;
-    QVariantList resourceValues_;
     QVariantList overviewFields_, inspectorEvents_, inspectorLinks_;
     QSortFilterProxyModel dashboardRows_;
     QString dashboardSummary_;

@@ -6,7 +6,7 @@ namespace podlord {
 TableSchemas Workspace::tableSchemas(bool includeAuxiliary) const {
     TableSchemas result;
     for (const auto& entry : {std::pair{QString("resource"), &rows_}, std::pair{QString("event"), &eventRows_}, std::pair{QString("port"), &portRows_},
-        std::pair{QString("inspectorEvent"), &inspectorEventRows_}, std::pair{QString("inspectorLink"), &inspectorLinkRows_}}) {
+        std::pair{QString("inspectorEvent"), &inspectorEventRows_}, std::pair{QString("inspectorLink"), &inspectorLinkRows_}, std::pair{QString("value"), &valueRows_}}) {
         if (!includeAuxiliary && entry.first != "resource" && entry.first != "event") continue;
         QStringList ids;
         for (int column = 0; column < entry.second->columnCount(); ++column)
@@ -30,7 +30,8 @@ QVariantList Workspace::eventColumns() const { return tableColumns("event", even
 QVariantList Workspace::portColumns() const { return tableColumns("port", portRows_); }
 QVariantList Workspace::defaultTableColumns(const QString& table) const {
     return table=="resource" ? tableColumns(table,rows_,true) : table=="event" ? tableColumns(table,eventRows_,true) : table=="port" ? tableColumns(table,portRows_,true)
-        : table=="inspectorEvent" ? tableColumns(table,inspectorEventRows_,true) : table=="inspectorLink" ? tableColumns(table,inspectorLinkRows_,true) : QVariantList{};
+        : table=="inspectorEvent" ? tableColumns(table,inspectorEventRows_,true) : table=="inspectorLink" ? tableColumns(table,inspectorLinkRows_,true)
+        : table=="value" ? tableColumns(table,valueRows_,true) : QVariantList{};
 }
 bool Workspace::reloadTableLayouts() {
     if (tableLayoutSaving_) return false;

@@ -114,3 +114,27 @@ column choices. Values, Alerts and Diagnostics still require separate evidence.
 ### Keyboard access in the alarm rule table
 
 Alarm value cells support the platform Copy shortcut and Menu/Shift+F10 without changing a rule or requesting cluster data. Up/Down/Home/End retain the selected column while changing the selected rule. Focus is visibly outlined. The table owns focus visibility for both cells and enable controls, including narrow-window resizing and reverse Tab traversal; its horizontal extent is derived from its existing column definitions rather than an undersized fixed width. These controls do not imply that the remaining column-toolbox parity is complete.
+
+### How Does The Values Inspector Preserve Secret Boundaries?
+
+Values reuses the same virtualized grid, column editor, Find, clipboard and
+plain-text overflow presentation. Its model owns Key, Encoding, Value, Copy and
+Reveal, matching the reference inspector. Only the first three columns sort;
+action headings are not presented as sortable keyboard controls. KEY and VALUE
+remain direct buttons; RAW and DEC are available for encoded values. The existing
+clipboard owner performs decoding and reports invalid encoding without replacing
+the clipboard. Reveal/Hide remains an explicit action for Secret values.
+
+One masked table projection owns displayed values. Full-value sorting, Find and
+tooltips read that projection, never concealed raw Secret fields. No duplicate
+stored value list or per-row popup/timer is added. Private values enter presentation
+only after explicit reveal and are cleared on inspector scope changes. Layout and
+sort persistence contain column IDs and presentation state, not resource values.
+Refresh retains the inspector's existing reading-position owner.
+
+Layout version 6 adds `value`; session views version 5 adds its sort state. Valid
+older documents receive only the missing defaults on read and remain unchanged
+until an explicit save. Invalid or newer documents fail without replacement.
+Rollback requires a compatible executable or a preserved older private profile,
+not destructive rewriting. Values now has scoped public-boundary evidence;
+Alerts/Diagnostics tools and complete paired visual parity remain separate gates.

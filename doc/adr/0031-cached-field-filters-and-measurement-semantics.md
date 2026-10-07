@@ -110,3 +110,29 @@ dialogs. Both presentations reuse the same dialog and option snapshot; there is
 no second filter model, timer or persistence. Checkbox borders and keyboard focus
 remain visible in the HUD palette. Public UI cases cover placement, keyboard
 selection, cache-only editing, navigation, viewport edges and session isolation.
+
+## How Are Existing C# Saved Filters Imported Without A Second Owner?
+
+The sidebar's saved-filter actions expose an explicit local JSON import using
+Qt's file dialog. Import and reload share the existing asynchronous preset owner;
+no timer, ambient C# profile access, authentication action or Kubernetes request
+is introduced. The public store accepts both the native document and the actual
+camel-case C# array, converts once at the boundary and uses the native canonical
+validator and conflict-checked atomic save.
+
+Search, Problems/Activity and supported field expressions are preserved. C#'s
+`nameFilter` maps to Name and `age` to the native age field. C# ApplyPreset clears
+Id, so importing its stored Id does not introduce an otherwise absent predicate.
+The former row-limit is a display cap, not a resource predicate; native virtualized
+views show all matching cached rows. Invalid types, conflicting modes, duplicate
+names, case collisions and unsupported fields fail explicitly. A matching name
+with identical state is an idempotent repeat; differing state never silently
+overwrites an existing preset.
+
+Selected files must be regular local JSON files within the existing 64 KiB preset
+limit. Import never modifies its source. Invalid, locked or conflicting imports
+retain existing presets and expose a content-free error. An existing private
+legacy array can also be read without rewriting; only an explicit successful edit
+writes the native format. This is saved-filter migration, not complete C# profile
+or session migration. Native file-dialog interaction and the full paired filter
+visual matrix still need separate evidence.

@@ -98,6 +98,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     if (role == Qt::UserRole + 4) return row["status"].toString();
     if (role == Qt::UserRole + 5) return appearanceStatus(appearance_, row["status"].toString());
     if (role == Qt::UserRole + 6) {
+        if (field == "preview") return row["value"].toString();
         if (field == "eventTime") return QDateTime::fromString(text, Qt::ISODateWithMs);
         if (field == "createdAt") return created.isValid() && created <= now ? QVariant(-created.toMSecsSinceEpoch()) : QVariant{};
         if (field == "ready") return !text.isEmpty() && row["containerCount"].toInt() > 0
@@ -109,6 +110,8 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     if (role == Qt::UserRole + 9) return row["problemSeverity"].toInt();
     if (role == Qt::UserRole + 10) return row["activity"].toBool();
     if (role == Qt::UserRole + 11) return age && created.isValid() && created <= now ? QVariant(created.secsTo(now)) : QVariant{};
+    if (role == Qt::UserRole + 13) return row["value"].toString();
+    if (role == Qt::UserRole + 14) return row["base64"].toBool();
     return {};
 }
 QVariant ResourceTable::headerData(int section, Qt::Orientation orientation, int role) const {
@@ -118,7 +121,7 @@ QVariant ResourceTable::headerData(int section, Qt::Orientation orientation, int
 QHash<int, QByteArray> ResourceTable::roleNames() const {
     return {{Qt::DisplayRole, "display"}, {Qt::ToolTipRole, "tooltip"}, {Qt::ForegroundRole, "identityColor"}, {Qt::UserRole, "resourcePath"},
         {Qt::UserRole + 1, "resourceName"}, {Qt::UserRole + 2, "resourceKind"}, {Qt::UserRole + 3, "resourceNamespace"},
-        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}};
+        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}};
 }
 QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index] : QJsonObject{}; }
 bool ResourceTable::setAppearance(const Appearance& appearance) {
@@ -149,6 +152,7 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
                 const bool metric = field == "cpu" || field == "memory" || field == "storage";
                 const bool changed = field == "cluster" ? clusterChanged
                     : field == "createdAt" || value[field] != previous[field]
+                        || (field == "preview" && value["value"] != previous["value"])
                         || (metric && (value["metricComplete"] != previous["metricComplete"] || value["metricStale"] != previous["metricStale"]));
                 if (changed) { firstColumn = std::min(firstColumn,column); lastColumn = std::max(lastColumn,column); }
             }
@@ -168,7 +172,7 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     // Row-wide predicates depend on metadata as well as the displayed filter column.
     if (firstMetadataChanged >= 0) emit dataChanged(index(firstMetadataChanged,0),index(lastMetadataChanged,columnCount()-1),
         {Qt::DisplayRole, Qt::UserRole, Qt::UserRole+1, Qt::UserRole+2, Qt::UserRole+3, Qt::UserRole+4,
-         Qt::UserRole+5, Qt::UserRole+7, Qt::UserRole+8, Qt::UserRole+9, Qt::UserRole+10, Qt::UserRole+12});
+         Qt::UserRole+5, Qt::UserRole+7, Qt::UserRole+8, Qt::UserRole+9, Qt::UserRole+10, Qt::UserRole+12, Qt::UserRole+13, Qt::UserRole+14});
     for (auto next = incoming.cbegin(); next != incoming.cend();) {
         const auto position = std::lower_bound(rows_.cbegin(), rows_.cend(), next.key(), [this](const auto& row, const auto& key) { return row[identityField_].toString() < key; });
         int index = static_cast<int>(position - rows_.cbegin());
@@ -187,7 +191,11 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
     portRows_(nullptr, {"endpoint", "name", "kind", "namespace", "remotePort", "resolvedPort", "status"},
         {"Local endpoint", "Name", "Kind", "Namespace", "Remote", "Resolved", "Status"}, "id"),
     inspectorEventRows_(nullptr, {"time", "type", "reason", "count", "message"}, {"Last observed", "Type", "Reason", "Count", "Message"}),
-    inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status"}, {"From", "Link", "To", "Namespace", "Status"}) {
+    inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status"}, {"From", "Link", "To", "Namespace", "Status"}),
+    valueRows_(nullptr, {"name", "encoding", "preview", "copy", "reveal"}, {"Key", "Encoding", "Value", "Copy", "Reveal"}, "id") {
+    valuesTable_.setSourceModel(&valueRows_);
+    valuesTable_.setSortRole(Qt::UserRole + 6);
+    valuesTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
     inspectorEventsTable_.setSourceModel(&inspectorEventRows_); inspectorEventsTable_.setSortRole(Qt::UserRole + 6);
     inspectorLinksTable_.setSourceModel(&inspectorLinkRows_); inspectorLinksTable_.setSortRole(Qt::UserRole + 6);
     static const int glyphType = qmlRegisterType<KindGlyph>("Podlord.Graphics", 1, 0, "KindGlyph");
@@ -379,7 +387,11 @@ bool Workspace::confirmDiscard(bool discard) {
     }
     return false;
 }
-QVariantList Workspace::resourceValues() const { return resourceValues_; }
+QVariantList Workspace::resourceValues() const {
+    QVariantList result;
+    for (int row = 0; row < valueRows_.rowCount(); ++row) result.append(valueRows_.row(row).toVariantMap());
+    return result;
+}
 bool Workspace::yamlVisible() const { return navigation_.value(active_).page == "yaml"; }
 bool Workspace::valuesVisible() const { return navigation_.value(active_).page == "values" && valuesAvailable(); }
 bool Workspace::valuesAvailable() const { return isCoreValueResource(client_.resource(active_, inspectorPath())); }
@@ -437,7 +449,7 @@ bool Workspace::publishInspector(bool revealChanged) {
     if (revealChanged || scopeChanged || documentChanged || document.isEmpty()) {
         inspectorDocument_ = document;
         if (documentChanged) yaml_ = resourceYaml(document);
-        resourceValues_.clear();
+        QJsonArray resourceValues;
         const bool secret = document["kind"] == "Secret";
         if (isCoreValueResource(document))
             for (const auto& field : secret ? QStringList{"data", "stringData"} : QStringList{"data", "binaryData"}) {
@@ -446,11 +458,14 @@ bool Workspace::publishInspector(bool revealChanged) {
                     const auto id = field + '/' + value.key();
                     const bool shown = !secret || revealedValues_.contains(id);
                     const auto display = shown ? valueText(document, field, value.key()) : DisplayedValue{"[hidden]", "Hidden"};
-                    resourceValues_.append(QVariantMap{{"id", id}, {"name", value.key()}, {"field", field}, {"secret", secret}, {"revealed", shown},
-                        {"value", display.text}, {"preview", display.text.left(256)}, {"encoding", display.encoding}, {"tooltip", "<span>" + display.text.toHtmlEscaped().replace('\n', "<br>") + "</span>"}});
+                    resourceValues.append(QJsonObject{{"id", id}, {"name", value.key()}, {"field", field}, {"secret", secret}, {"revealed", shown},
+                        {"value", display.text}, {"preview", display.text.left(256)}, {"encoding", display.encoding}, {"copy", "Copy"}, {"base64", field == "binaryData" || (secret && field == "data")},
+                        {"reveal", secret ? shown ? "Hide" : "Reveal" : ""}});
                 }
             }
+        valueRows_.publish(resourceValues);
     }
+    valuesTable_.sort(navigation_.value(active_).valueColumn, navigation_.value(active_).valueOrder);
     emit inspectorPresentationChanged();
     if (!yamlDraft_ && (documentChanged || scopeChanged)) emit yamlTextChanged();
     if (documentChanged || scopeChanged) emit yamlEditChanged();
@@ -1101,11 +1116,12 @@ bool Workspace::sortPortColumn(int column) {
     ports_.sort(nav.portColumn, nav.portOrder); queueViewSave("port"); emit changed(); return true;
 }
 bool Workspace::sortInspectorColumn(const QString& table, int column) {
-    auto* model = table == "inspectorEvent" ? &inspectorEventsTable_ : table == "inspectorLink" ? &inspectorLinksTable_ : nullptr;
+    auto* model = table == "inspectorEvent" ? &inspectorEventsTable_ : table == "inspectorLink" ? &inspectorLinksTable_ : table == "value" ? &valuesTable_ : nullptr;
     if (!model || active_.isEmpty() || column < 0 || column >= model->columnCount()) return false;
+    if (table == "value" && column >= 3) return false;
     auto& nav = navigation_[active_];
-    auto& previous = table == "inspectorEvent" ? nav.inspectorEventColumn : nav.inspectorLinkColumn;
-    auto& order = table == "inspectorEvent" ? nav.inspectorEventOrder : nav.inspectorLinkOrder;
+    auto& previous = table == "inspectorEvent" ? nav.inspectorEventColumn : table == "inspectorLink" ? nav.inspectorLinkColumn : nav.valueColumn;
+    auto& order = table == "inspectorEvent" ? nav.inspectorEventOrder : table == "inspectorLink" ? nav.inspectorLinkOrder : nav.valueOrder;
     cycleSort(column, previous, order);
     model->sort(previous, order); queueViewSave(table); emit changed(); return true;
 }
