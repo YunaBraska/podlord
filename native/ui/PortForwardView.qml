@@ -29,14 +29,14 @@ Pane {
     contentItem: ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
-            Label { text: "Ports"; font.bold: true }
+            Label { text: workspace.uiText["nav.ports"]; font.bold: true }
             TextField { id: search; objectName: "portFilter"; Layout.fillWidth: true; text: workspace.portFilterText; placeholderText: "Search session port forwards"; Accessible.name: "Search session port forwards"; onTextEdited: workspace.filterPorts(text) }
         }
         Flow {
             Layout.fillWidth: true; spacing: 6
             Button { text: "Forward selected resource"; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
             Button { objectName: "copyPortForwardTask"; action: copyEndpoint }
-            Button { objectName: "openPortForwardTask"; text: "Open"; enabled: openHttp.enabled; Accessible.name: view.selectedForward ? "Open " + view.selectedForward.endpoint + " in browser" : "Open selected port forward in browser"; onClicked: endpointMenu.popup() }
+            Button { objectName: "openPortForwardTask"; text: workspace.uiText["action.open"]; enabled: openHttp.enabled; Accessible.name: view.selectedForward ? "Open " + view.selectedForward.endpoint + " in browser" : "Open selected port forward in browser"; onClicked: endpointMenu.popup() }
             Button { objectName: "stopPortForwardTask"; action: stop }
         }
         Label { Layout.fillWidth: true; text: "Local endpoints belong to this session. Closing its tab stops them; switching views does not."; wrapMode: Text.Wrap; textFormat: Text.PlainText }

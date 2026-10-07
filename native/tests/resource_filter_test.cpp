@@ -7,7 +7,7 @@
 
 namespace {
 bool run(const QString& scenario) {
-    if (scenario == "benchmark") {
+    if (scenario == "benchmark" || scenario == "metadata_benchmark") {
         podlord::ResourceTable rows;
         QJsonArray snapshot;
         for (int index=0; index<5000; ++index) {
@@ -16,6 +16,28 @@ bool run(const QString& scenario) {
                 {"kind","Pod"},{"namespace","benchmark"},{"status","Running"},{"restarts",index%4}});
         }
         rows.publish(snapshot,"benchmark-cluster");
+        if (scenario == "metadata_benchmark") {
+            const QList<int> roles{Qt::UserRole, Qt::UserRole+1, Qt::UserRole+2, Qt::UserRole+3,
+                Qt::UserRole+4, Qt::UserRole+9, Qt::UserRole+10};
+            QList<double> samples;
+            qsizetype expected = -1;
+            for (int iteration = 0; iteration < 35; ++iteration) {
+                QElapsedTimer timer; timer.start();
+                qsizetype checksum = 0;
+                for (int row = 0; row < rows.rowCount(); ++row)
+                    for (const auto role : roles)
+                        checksum += rows.data(rows.index(row, iteration % rows.columnCount()), role).toString().size();
+                if (expected < 0) expected = checksum;
+                if (checksum == 0 || checksum != expected) return false;
+                if (iteration >= 5) samples.append(timer.nsecsElapsed()/1000000.0);
+            }
+            std::sort(samples.begin(), samples.end());
+            const auto evidence = QJsonDocument(QJsonObject{{"boundary", "public cached table metadata"}, {"rows", 5000},
+                {"roles_per_row", roles.size()}, {"samples", samples.size()}, {"p50_ms", samples[15]},
+                {"p95_ms", samples[28]}, {"max_ms", samples.last()}, {"checksum", qint64(expected)}}).toJson(QJsonDocument::Compact);
+            std::printf("%s\n", evidence.constData());
+            return true;
+        }
         podlord::ResourceFilter filter; filter.setSourceModel(&rows);
         const QList<QPair<QString,int>> queries{{"\"Pod\"",5000},{"~workload-00",100},
             {"/^workload-00[0-9]{2}$/",100},{"missing",0},{"workload-0001 workload-4999",2}};

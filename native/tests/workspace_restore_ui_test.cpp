@@ -29,11 +29,6 @@ bool write(const QString& path, const QByteArray& bytes) {
 void settle(Workspace& workspace) {
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Workspace did not settle.");
 }
-bool save(Workspace& workspace, bool enabled) {
-    bool accepted = false;
-    require(QMetaObject::invokeMethod(&workspace, "saveWorkspaceRestore", Q_RETURN_ARG(bool, accepted), Q_ARG(bool, enabled)), "Restoration action is missing.");
-    return accepted;
-}
 void run(const QString& scenario) {
     QTemporaryDir temporary; require(temporary.isValid(), "Cannot create private profile.");
     const auto profile = temporary.filePath("profile"), settingsPath = profile + "/read-settings.json";
@@ -51,11 +46,11 @@ void run(const QString& scenario) {
     const auto sessionBytes = contents(profile + "/sessions.json");
     if (scenario == "disabled" || scenario == "reload" || scenario == "reactivate" || scenario == "reenable" || scenario == "locked_start") {
         auto root = QJsonDocument::fromJson(contents(settingsPath)).object();
-        root["version"] = 6; root["workspaceRestore"] = false;
+        root["workspaceRestore"] = false;
         require(write(settingsPath, QJsonDocument(root).toJson()), "Cannot select disabled startup preference.");
     }
     if (scenario == "invalid_flag" || scenario == "missing_flag") {
-        auto root = QJsonDocument::fromJson(contents(settingsPath)).object(); root["version"] = 6;
+        auto root = QJsonDocument::fromJson(contents(settingsPath)).object();
         if (scenario == "invalid_flag") root["workspaceRestore"] = "false";
         else root.remove("workspaceRestore");
         require(write(settingsPath, QJsonDocument(root).toJson()), "Cannot exercise invalid external preference.");
@@ -83,7 +78,7 @@ void run(const QString& scenario) {
         require(workspace.tabs().size() == 1, "Explicit activation restored unrelated tabs.");
         if (scenario == "reload") { require(workspace.reload(), "Explicit reload rejected."); settle(workspace); require(workspace.tabs().size() == 1, "Reload reapplied startup suppression."); }
         if (scenario == "reenable") {
-            require(save(workspace, true), "Cannot reenable restoration."); settle(workspace);
+            require(workspace.saveWorkspaceRestore(true), "Cannot reenable restoration."); settle(workspace);
             Workspace restarted(profile); settle(restarted);
             require(restarted.tabs().size() == 1 && restarted.currentSession() == workspace.currentSession(), "Reenabled restart lost explicit placement.");
         }
@@ -95,14 +90,14 @@ void run(const QString& scenario) {
     if (scenario == "conflict") {
         auto changed = std::get<ReadSettings>(ReadSettingsStore(profile).load()); changed.logLimitMb = 9;
         require(std::holds_alternative<ReadSettings>(ReadSettingsStore(profile).save(changed, {})), "Cannot exercise concurrent settings writer.");
-        require(save(workspace, false), "Asynchronous save admission rejected."); settle(workspace);
+        require(workspace.saveWorkspaceRestore(false), "Asynchronous save admission rejected."); settle(workspace);
         require(workspace.property("workspaceRestoreEnabled").toBool() && !workspace.error().isEmpty()
             && std::get<ReadSettings>(ReadSettingsStore(profile).load()).logLimitMb == 9, "Stale toggle overwrote unrelated settings.");
         return;
     }
     QLockFile settingsLock(settingsPath + ".lock");
     if (scenario == "locked_save") {
-        require(settingsLock.tryLock(0) && save(workspace, false), "Cannot exercise locked save."); settle(workspace);
+        require(settingsLock.tryLock(0) && workspace.saveWorkspaceRestore(false), "Cannot exercise locked save."); settle(workspace);
         require(workspace.property("workspaceRestoreEnabled").toBool() && !workspace.error().isEmpty(), "Failed save adopted the preference."); return;
     }
     QQmlApplicationEngine engine; engine.rootContext()->setContextProperty("workspace", &workspace);
@@ -133,7 +128,7 @@ void run(const QString& scenario) {
     require(!workspace.property("workspaceRestoreEnabled").toBool(), "Real control did not persist restoration preference.");
     require(workspace.tabs().size() == 2 && contents(profile + "/sessions.json") == sessionBytes, "Preference change closed current tabs or changed session history.");
     require(workspace.portForwards().isEmpty(), "Preference change recreated forwarding.");
-    if (scenario == "repeat") { require(save(workspace, false), "Repeat preference save rejected."); settle(workspace); }
+    if (scenario == "repeat") { require(workspace.saveWorkspaceRestore(false), "Repeat preference save rejected."); settle(workspace); }
     Workspace restarted(profile); settle(restarted);
     require(!restarted.property("workspaceRestoreEnabled").toBool() && restarted.tabs().isEmpty(), "Saved control did not suppress reopening on restart.");
 }

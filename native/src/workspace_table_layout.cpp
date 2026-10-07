@@ -26,8 +26,9 @@ TableSchemas Workspace::layoutSchemas() const {
 }
 QVariantList Workspace::tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults) const {
     QVariantList result;
-    const auto ids = layoutSchemas().value(table);
-    for (const auto& entry : defaults ? defaultTableLayouts(layoutSchemas()).value(table) : tableLayouts_.value(table)) {
+    const auto schemas = layoutSchemas();
+    const auto ids = schemas.value(table);
+    for (const auto& entry : defaults ? defaultTableLayouts(schemas).value(table) : tableLayouts_.value(table)) {
         const int column = static_cast<int>(ids.indexOf(entry.id));
         result.append(QVariantMap{{"id", entry.id}, {"column", column}, {"title", model.headerData(column, Qt::Horizontal, Qt::DisplayRole)},
             {"visible", entry.visible}, {"pinned", entry.pinned}, {"width", entry.width}});
