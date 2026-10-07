@@ -6,13 +6,15 @@ import Podlord.Graphics 1.0
 
 Pane {
     id: sidebar
+    LayoutMirroring.enabled: workspace.uiRightToLeft
+    LayoutMirroring.childrenInherit: true
     SessionManager { id: sessionManager }
     readonly property var filterOrder: ["cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"]
     signal fieldRequested(string field, var anchor)
     component ScopeCheckBox: CheckBox {
         id: scopeControl
         indicator: Rectangle {
-            x: scopeControl.leftPadding
+            x: scopeControl.mirrored ? scopeControl.width - width - scopeControl.rightPadding : scopeControl.leftPadding
             y: (scopeControl.height - height) / 2
             width: 18; height: 18
             color: scopeControl.checked ? workspace.appearanceColors.accent : workspace.appearanceColors.inset
@@ -60,12 +62,12 @@ Pane {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: "Filters"; font.bold: true; Layout.fillWidth: true }
+                Label { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
                 Button { objectName: "resourceFieldFilters"; text: "Fields"; implicitHeight: 24; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: filtersRequested() }
             }
             RowLayout {
-                ScopeCheckBox { objectName: "problemsOnly"; text: "Problems"; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
-                ScopeCheckBox { objectName: "activityOnly"; text: "Activity"; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
+                ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
+                ScopeCheckBox { objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -74,8 +76,8 @@ Pane {
             }
             RowLayout {
                 Layout.fillWidth: true
-                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; placeholderText: "Filter name"; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text) }
-                Button { objectName: "saveFilterPreset"; text: "Save"; implicitHeight: 28; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
+                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text) }
+                Button { objectName: "saveFilterPreset"; text: workspace.uiText["action.save"]; implicitHeight: 28; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
                 ToolButton { objectName: "filterPresetActions"; text: "..."; Accessible.name: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.open() }
                 Menu { id: presetActions
                     MenuItem { objectName: "importFilterPresets"; text: "Import saved filters..."; onTriggered: importPresets.open() }

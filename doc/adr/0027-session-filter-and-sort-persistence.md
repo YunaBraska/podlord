@@ -67,7 +67,8 @@ Explicit import reads the existing C# saved-filter array or native preset record
 through the same bounded store boundary. Field names map to stable native IDs;
 Problems and Activity retain their distinct modes. As in the reference loader,
 the old saved ID does not become a resource predicate. Its display Limit is not
-a predicate either; this does not implement the missing row-limit control.
+a predicate either; ADR 0031 deliberately retains all matching rows in the native
+virtualized view rather than introducing a separate cap that could hide resources.
 
 Import keeps the source bytes unchanged, protects the empty default, rejects
 conflicting names rather than replacing existing filters, and uses the existing

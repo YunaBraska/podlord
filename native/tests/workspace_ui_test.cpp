@@ -1121,6 +1121,38 @@ bool execute(const QString& scenario) {
         }
         return server.requests.size()==requests && workspace.filterText()==expression;
     }
+    if (scenario.startsWith("language_cache_")) {
+        const QString language = scenario.endsWith("_ar") ? "ar" : "de";
+        const auto session = workspace.currentSession();
+        const auto requests = server.requests.size();
+        QStringList before;
+        for (int row = 0; row < workspace.table()->rowCount(); ++row)
+            for (int column = 0; column < workspace.table()->columnCount(); ++column)
+                before.append(workspace.table()->data(workspace.table()->index(row, column)).toString());
+        if (!click(window, item(window, "settingsWorkspaceButton")) || !click(window, item(window, "settingsAppearanceSection"))
+            || !click(window, item(window, "inlineUiLanguage"))) return false;
+        QTest::keyClick(window, Qt::Key_Home);
+        const auto languages = workspace.uiLanguages();
+        for (const auto& option : languages) {
+            if (option.toMap()["code"] == language) break;
+            QTest::keyClick(window, Qt::Key_Down);
+        }
+        QTest::keyClick(window, Qt::Key_Return);
+        if (!waitFor([&] { return !workspace.busy() && workspace.uiLanguage() == language; })
+            || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
+        QStringList after;
+        for (int row = 0; row < workspace.table()->rowCount(); ++row)
+            for (int column = 0; column < workspace.table()->columnCount(); ++column)
+                after.append(workspace.table()->data(workspace.table()->index(row, column)).toString());
+        if (before.isEmpty() || after != before || workspace.currentSession() != session || server.requests.size() != requests) return false;
+        auto* problems = item(window, "problemsOnly");
+        if (!problems || problems->property("text") != workspace.uiText()["filters.problems"]
+            || problems->property("mirrored").toBool() != (language == "ar")
+            || !click(window, problems) || !workspace.problemsOnly()
+            || !click(window, problems) || workspace.problemsOnly()) return false;
+        return workspace.table()->rowCount() * workspace.table()->columnCount() == before.size()
+            && server.requests.size() == requests && workspace.currentSession() == session;
+    }
     if (scenario.startsWith("table_")) {
         auto* model = workspace.table();
         const auto column = [&](const QString& id) {

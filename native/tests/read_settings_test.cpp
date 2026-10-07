@@ -99,7 +99,7 @@ bool scenario(const QString& name) {
     if (!QDir().mkpath(profile)) return false;
     if (name == "schema_v3_upgrade") {
         if (!write(path, "{\"version\":3,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6,\"yamlLimitMiB\":4}")) return false;
-        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 6;
+        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 7;
     }
     if (name == "version_two_yaml_upgrade") {
         if (!write(path, "{\"version\":2,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6}")) return false;
@@ -107,7 +107,7 @@ bool scenario(const QString& name) {
     }
     if (name == "version_one_upgrade") {
         if (!write(path, "{\"version\":1,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2}")) return false;
-        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 6;
+        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 7;
     }
     if (name == "conflict" || name == "repeat") {
         if (!value(store.save({120, 1}, {}), {120, 1})) return false;

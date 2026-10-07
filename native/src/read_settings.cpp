@@ -1,5 +1,6 @@
 #include "read_settings.h"
 #include "appearance.h"
+#include "ui_language.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -7,9 +8,10 @@
 #include <QLockFile>
 #include <QSaveFile>
 #include <limits>
+#include <array>
 
 namespace podlord {
-bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && validAppearance(themeName, themeVariant, themeIntensity); }
+bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && validAppearance(themeName, themeVariant, themeIntensity) && validUiLanguage(language); }
 ReadSettingsStore::ReadSettingsStore(QString profile) : profile_(std::move(profile)) {}
 Result<ReadSettings> ReadSettingsStore::load() const {
     if (const auto failure = profileFailure(profile_)) return *failure;
@@ -23,38 +25,40 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
-    const bool versionOne = root["version"] == 1 && root.size() == 3;
-    const bool versionTwo = root["version"] == 2 && root.size() == 4;
-    const bool versionThree = root["version"] == 3 && root.size() == 5;
-    const bool versionFour = root["version"] == 4 && root.size() == 8;
-    const bool versionFive = root["version"] == 5 && root.size() == 10;
-    const bool versionSix = root["version"] == 6 && root.size() == 11;
-    if (error.error != QJsonParseError::NoError || !document.isObject() || (!versionOne && !versionTwo && !versionThree && !versionFour && !versionFive && !versionSix))
+    const int version = root["version"].toInt(-1);
+    constexpr std::array fieldCounts{3, 4, 5, 8, 10, 11, 12};
+    if (error.error != QJsonParseError::NoError || !document.isObject() || version < 1 || version > static_cast<int>(fieldCounts.size()) || root.size() != fieldCounts[version - 1])
         return Failure{StoreError::InvalidData, "Invalid profile request settings; existing data was retained."};
     const auto integer = [](const QJsonValue& value, int maximum) {
-        return value.isDouble() && value.toDouble() >= 0 && value.toDouble() <= maximum && value.toDouble() == value.toInt(-1);
+        const int number = value.toInt(-1);
+        return number >= 0 && number <= maximum;
     };
     if (!integer(root["requestHardLimitPerMinute"], 60000) || !integer(root["inactiveSyncMinutes"], std::numeric_limits<int>::max()))
         return Failure{StoreError::InvalidData, "Invalid profile request setting values."};
-    if (!versionOne && (!integer(root["logLimitMb"], std::numeric_limits<int>::max()) || root["logLimitMb"].toInt() == 0))
+    if (version >= 2 && (!integer(root["logLimitMb"], std::numeric_limits<int>::max()) || root["logLimitMb"].toInt() == 0))
         return Failure{StoreError::InvalidData, "Log-size limit must be a positive whole number of MB."};
-    if ((versionThree || versionFour || versionFive || versionSix) && (!integer(root["yamlLimitMiB"], std::numeric_limits<int>::max()) || root["yamlLimitMiB"].toInt() == 0))
+    if (version >= 3 && (!integer(root["yamlLimitMiB"], std::numeric_limits<int>::max()) || root["yamlLimitMiB"].toInt() == 0))
         return Failure{StoreError::InvalidData, "YAML limit must be a positive whole number of MiB."};
-    ReadSettings settings{root["requestHardLimitPerMinute"].toInt(), root["inactiveSyncMinutes"].toInt(), versionOne ? 5 : root["logLimitMb"].toInt(), (versionThree || versionFour || versionFive || versionSix) ? root["yamlLimitMiB"].toInt() : 3};
-    if (versionFour || versionFive || versionSix) {
+    ReadSettings settings{root["requestHardLimitPerMinute"].toInt(), root["inactiveSyncMinutes"].toInt(), version >= 2 ? root["logLimitMb"].toInt() : 5, version >= 3 ? root["yamlLimitMiB"].toInt() : 3};
+    if (version >= 4) {
         if (!root["themeName"].isString() || !root["themeVariant"].isString() || !root["themeIntensity"].isString())
             return Failure{StoreError::InvalidData, "Appearance settings must contain canonical text choices."};
         settings.themeName = root["themeName"].toString(); settings.themeVariant = root["themeVariant"].toString(); settings.themeIntensity = root["themeIntensity"].toString();
     }
-    if (versionFive || versionSix) {
+    if (version >= 5) {
         if (!root["radarWaterEnabled"].isBool() || !integer(root["radarWaterSpeedPercent"],100))
             return Failure{StoreError::InvalidData, "Radar water requires an enable flag and a whole-number speed from 0 to 100."};
         settings.radarWaterEnabled = root["radarWaterEnabled"].toBool();
         settings.radarWaterSpeedPercent = root["radarWaterSpeedPercent"].toInt();
     }
-    if (versionSix) {
+    if (version >= 6) {
         if (!root["workspaceRestore"].isBool()) return Failure{StoreError::InvalidData, "Workspace restoration requires an enable flag."};
         settings.workspaceRestore = root["workspaceRestore"].toBool();
+    }
+    if (version >= 7) {
+        if (!root["language"].isString() || !validUiLanguage(root["language"].toString()))
+            return Failure{StoreError::InvalidData, "UI language must be a shipped language code or system; existing settings were retained."};
+        settings.language = root["language"].toString();
     }
     if (!settings.valid()) return Failure{StoreError::InvalidData, "Invalid profile appearance settings; existing data was retained."};
     return settings;
@@ -77,7 +81,7 @@ Result<ReadSettings> ReadSettingsStore::save(ReadSettings value, ReadSettings ex
     const auto current = load();
     if (const auto* failure = std::get_if<Failure>(&current)) return *failure;
     if (std::get<ReadSettings>(current) != expected) return Failure{StoreError::Conflict, "Request settings changed in another window. Reload before saving."};
-    const QJsonObject root{{"version", 6}, {"requestHardLimitPerMinute", value.requestHardLimitPerMinute}, {"inactiveSyncMinutes", value.inactiveSyncMinutes}, {"logLimitMb", value.logLimitMb}, {"yamlLimitMiB", value.yamlLimitMiB}, {"themeName", value.themeName}, {"themeVariant", value.themeVariant}, {"themeIntensity", value.themeIntensity}, {"radarWaterEnabled", value.radarWaterEnabled}, {"radarWaterSpeedPercent", value.radarWaterSpeedPercent}, {"workspaceRestore", value.workspaceRestore}};
+    const QJsonObject root{{"version", 7}, {"requestHardLimitPerMinute", value.requestHardLimitPerMinute}, {"inactiveSyncMinutes", value.inactiveSyncMinutes}, {"logLimitMb", value.logLimitMb}, {"yamlLimitMiB", value.yamlLimitMiB}, {"themeName", value.themeName}, {"themeVariant", value.themeVariant}, {"themeIntensity", value.themeIntensity}, {"radarWaterEnabled", value.radarWaterEnabled}, {"radarWaterSpeedPercent", value.radarWaterSpeedPercent}, {"workspaceRestore", value.workspaceRestore}, {"language", value.language}};
     QSaveFile file(path); file.setDirectWriteFallback(false);
     const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) || file.write(bytes) != bytes.size() || !file.commit())

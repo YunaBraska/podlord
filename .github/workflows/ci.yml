@@ -58,3 +58,5 @@ jobs:
             /tmp/podlord-test.*/results/**/coverage.cobertura.xml
           if-no-files-found: error
           retention-days: 14
+      - name: Check native language catalog against the reference
+        run: sh scripts/export-native-locales.sh --check

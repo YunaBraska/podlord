@@ -480,6 +480,15 @@ public:
     Q_INVOKABLE QString logEntry(int index) const;
     Q_INVOKABLE bool copyLogEntry(int index);
     Q_INVOKABLE bool saveReadSettings(int requestLimit, int inactiveMinutes, const QString& logLimit);
+    Q_PROPERTY(QString uiLanguage READ uiLanguage NOTIFY languageChanged)
+    Q_PROPERTY(QVariantList uiLanguages READ uiLanguages CONSTANT)
+    Q_PROPERTY(QVariantMap uiText READ uiText NOTIFY languageChanged)
+    Q_PROPERTY(bool uiRightToLeft READ uiRightToLeft NOTIFY languageChanged)
+    QString uiLanguage() const { return settings_.language; }
+    QVariantList uiLanguages() const;
+    QVariantMap uiText() const;
+    bool uiRightToLeft() const;
+    Q_INVOKABLE bool saveUiLanguage(const QString& language);
     Q_INVOKABLE bool reload();
     Q_INVOKABLE bool importFile(const QString& path);
     Q_INVOKABLE bool importK3d();
@@ -493,6 +502,7 @@ public:
     Q_INVOKABLE bool inspectRow(int row);
     Q_INVOKABLE bool copyCell(int row, int column);
 signals:
+    void languageChanged();
     void deletionAvailabilityChanged();
     void sourceImportFinished(bool success);
     void sourceRemovalChanged();
@@ -578,6 +588,7 @@ private:
     QString tableLayoutError_;
     bool tableLayoutSaving_ = false;
     TableSchemas tableSchemas(bool includeAuxiliary = false) const;
+    TableSchemas layoutSchemas() const;
     QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
     SourceCatalog sources_;
     QVariantMap sourceRemoval_;

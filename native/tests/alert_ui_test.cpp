@@ -651,8 +651,27 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 const auto capture=qEnvironmentVariable("PODLORD_ALERT_SOUND_FRAME");
                 if (!capture.isEmpty()) { QTest::qWait(50); if (!window->grabWindow().save(capture)) return false; }
                 if (!click(window,"alertSound")) return false;
-                QTest::keyClick(window,Qt::Key_Down); QTest::keyClick(window,Qt::Key_Return);
-                if (!waitFor([&] { return item(window,"alertSound")->property("currentValue").toString()==expected; })) return false;
+                const auto* popup = item(window,"alertSound")->property("popup").value<QObject*>();
+                if (!popup || !waitFor([&] { return popup->property("visible").toBool(); })) {
+                    auto* control = item(window,"alertSound");
+                    auto* editor = item(window,"alertEditor");
+                    auto* content = editor->property("contentItem").value<QObject*>();
+                    std::fprintf(stderr,"Sound popup did not open: x=%.1f y=%.1f width=%.1f height=%.1f focus=%s contentY=%.1f moving=%d\n",
+                        control->mapToScene({0,0}).x(),control->mapToScene({0,0}).y(),control->width(),control->height(),
+                        qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),
+                        content ? content->property("contentY").toDouble() : -1,content && content->property("moving").toBool());
+                    const auto frame=qEnvironmentVariable("PODLORD_ALERT_FAILURE_FRAME");
+                    if (!frame.isEmpty()) window->grabWindow().save(frame);
+                    return false;
+                }
+                QTest::keyClick(window,Qt::Key_Home); QTest::keyClick(window,Qt::Key_Return);
+                if (!waitFor([&] { return item(window,"alertSound")->property("currentValue").toString()==expected; })) {
+                    std::fprintf(stderr,"Sound selection failed: selected=%s focus=%s count=%d\n",
+                        qPrintable(item(window,"alertSound")->property("currentValue").toString()),
+                        qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),
+                        item(window,"alertSound")->property("count").toInt());
+                    return false;
+                }
             }
             if (!click(window,"saveAlert") || !settle()) return false;
             return rules().last().toMap()["sound"].toString()==expected && server.requests==0;

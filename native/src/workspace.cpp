@@ -585,9 +585,11 @@ bool Workspace::savePolicy(ReadSettings desired) {
     auto* watcher = new QFutureWatcher<Result<ReadSettings>>(this);
     connect(watcher, &QFutureWatcher<Result<ReadSettings>>::finished, this, [this, watcher] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
+        const auto previousLanguage = settings_.language;
         if (const auto* failure = std::get_if<Failure>(&result)) settingsError_ = failure->message;
         else { settings_ = std::get<ReadSettings>(result); settingsError_.clear(); settingsReady_ = true; publishAppearance(); client_.configure(settings_); client_.enableRequests(true); }
         emit changed(); emit appearanceChanged();
+        if (previousLanguage != settings_.language || std::holds_alternative<Failure>(result)) emit languageChanged();
     });
     const auto profile = profile_; const auto expected = settings_;
     watcher->setFuture(QtConcurrent::run([profile, desired, expected] { return ReadSettingsStore(profile).save(desired, expected); }));
@@ -716,7 +718,12 @@ bool Workspace::reload() {
     connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher] {
         const auto [sources, sessions, settings] = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&settings)) { settingsError_ = failure->message; settingsReady_ = false; client_.enableRequests(false); }
-        else { settings_ = std::get<ReadSettings>(settings); settingsError_.clear(); settingsReady_ = true; publishAppearance(); client_.configure(settings_); client_.enableRequests(true); }
+        else {
+            const auto previousLanguage = settings_.language;
+            settings_ = std::get<ReadSettings>(settings); settingsError_.clear(); settingsReady_ = true;
+            publishAppearance(); client_.configure(settings_); client_.enableRequests(true);
+            if (previousLanguage != settings_.language) emit languageChanged();
+        }
         if (const auto* failure = std::get_if<Failure>(&sources)) error_ = failure->message;
         else {
             sources_ = std::get<SourceCatalog>(sources);

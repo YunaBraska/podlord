@@ -6,7 +6,7 @@ namespace podlord {
 TableSchemas Workspace::tableSchemas(bool includeAuxiliary) const {
     TableSchemas result;
     for (const auto& entry : QList<QPair<QString, const QAbstractItemModel*>>{{"resource", &rows_}, {"event", &eventRows_}, {"port", &portRows_},
-        {"inspectorEvent", &inspectorEventRows_}, {"inspectorLink", &inspectorLinkRows_}, {"value", &valueRows_}, {"alert", alerts_.tableModel()}}) {
+        {"inspectorEvent", &inspectorEventRows_}, {"inspectorLink", &inspectorLinkRows_}, {"value", &valueRows_}}) {
         if (!includeAuxiliary && entry.first != "resource" && entry.first != "event") continue;
         QStringList ids;
         for (int column = 0; column < entry.second->columnCount(); ++column)
@@ -15,10 +15,19 @@ TableSchemas Workspace::tableSchemas(bool includeAuxiliary) const {
     }
     return result;
 }
+TableSchemas Workspace::layoutSchemas() const {
+    auto result = tableSchemas(true);
+    QStringList ids;
+    const auto* model = alerts_.tableModel();
+    for (int column = 0; column < model->columnCount(); ++column)
+        ids.append(model->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
+    result.insert("alert", ids);
+    return result;
+}
 QVariantList Workspace::tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults) const {
     QVariantList result;
-    const auto ids = tableSchemas(true).value(table);
-    for (const auto& entry : defaults ? defaultTableLayouts(tableSchemas(true)).value(table) : tableLayouts_.value(table)) {
+    const auto ids = layoutSchemas().value(table);
+    for (const auto& entry : defaults ? defaultTableLayouts(layoutSchemas()).value(table) : tableLayouts_.value(table)) {
         const int column = static_cast<int>(ids.indexOf(entry.id));
         result.append(QVariantMap{{"id", entry.id}, {"column", column}, {"title", model.headerData(column, Qt::Horizontal, Qt::DisplayRole)},
             {"visible", entry.visible}, {"pinned", entry.pinned}, {"width", entry.width}});
@@ -36,7 +45,7 @@ QVariantList Workspace::defaultTableColumns(const QString& table) const {
 }
 bool Workspace::reloadTableLayouts() {
     if (tableLayoutSaving_) return false;
-    const auto schemas = tableSchemas(true);
+    const auto schemas = layoutSchemas();
     if (tableLayouts_.isEmpty()) tableLayouts_ = defaultTableLayouts(schemas);
     const auto result = TableLayoutStore(profile_, schemas).load();
     if (const auto* failure = std::get_if<Failure>(&result)) {
@@ -48,7 +57,7 @@ bool Workspace::reloadTableLayouts() {
 }
 bool Workspace::saveTableLayout(const QString& table, const QVariantList& columns) {
     if (tableLayoutSaving_) return false;
-    const auto schemas = tableSchemas(true);
+    const auto schemas = layoutSchemas();
     if (!schemas.contains(table) || columns.size() != schemas.value(table).size()) {
         tableLayoutError_ = "Choose a supported table and its complete column layout.";
         emit tableLayoutStatusChanged(); return false;
