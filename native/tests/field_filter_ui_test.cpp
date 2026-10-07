@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QSignalSpy>
 #include <QGuiApplication>
+#include <QImage>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -197,6 +198,34 @@ bool run(const QString& scenario) {
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
+        if (scenario == "filter_render_frame") {
+            window->requestActivate();
+            if (!QTest::qWaitForWindowExposed(window, 5000)) {
+                std::fprintf(stderr,"Filter rendering requires an exposed window; platform=%s.\n",qPrintable(QGuiApplication::platformName()));
+                return false;
+            }
+            const auto* model=workspace.table();
+            int nameColumn=-1;
+            for (int column=0; column<model->columnCount(); ++column)
+                if (model->headerData(column,Qt::Horizontal,Qt::UserRole)=="name") nameColumn=column;
+            if (nameColumn<0 || !waitFor([&] { return item(window,"cell_0_"+QString::number(nameColumn))!=nullptr; })) return false;
+            auto* cell=item(window,"cell_0_"+QString::number(nameColumn));
+            const auto before=window->grabWindow();
+            if (before.isNull() || model->data(model->index(0,nameColumn)).toString()=="bravo") return false;
+            const auto scale=before.width()/double(window->width());
+            const auto origin=cell->mapToScene({0,0});
+            const QRect pixels(qRound(origin.x()*scale),qRound(origin.y()*scale),qRound(cell->width()*scale),qRound(cell->height()*scale));
+            QSignalSpy frames(window,&QQuickWindow::frameSwapped);
+            if (!type(window,"resourceFilter","bravo")
+                || !waitFor([&] { return workspace.resourceCount()==1 && frames.count()>0; })) {
+                std::fputs("A cache filter changed without producing a visible frame.\n",stderr); return false;
+            }
+            const auto after=window->grabWindow();
+            const auto capture=qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+            return model->data(model->index(0,nameColumn)).toString()=="bravo" && server.requests==requests
+                && !after.isNull() && before.copy(pixels)!=after.copy(pixels)
+                && (capture.isEmpty() || after.save(capture));
+        }
         if (scenario.startsWith("flyout_")) {
             if (scenario == "flyout_narrow") {
                 window->resize(640, 650);

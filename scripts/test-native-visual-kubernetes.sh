@@ -254,7 +254,7 @@ fi
 if [ "$MODE" = native-health-e2e ]; then
     cp "$BUILD/alert_ui_test" "$RUN/alert_ui_test"
     shasum -a 256 "$RUN/alert_ui_test" > "$EVIDENCE/$NAME-health-binary.sha256"
-    PODLORD_REAL_RADAR_HIGHLIGHTS="$EVIDENCE/$NAME-radar-health" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
+    PODLORD_REAL_RADAR_HIGHLIGHTS="$EVIDENCE/$NAME-radar-health" QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} QT_QUICK_BACKEND=${QT_QUICK_BACKEND:-software} QT_QUICK_CONTROLS_STYLE=${QT_QUICK_CONTROLS_STYLE:-Basic} \
         run_native_test "$RUN/alert_ui_test" real_health "$RUN/kubeconfig" "$EVIDENCE/$NAME-health.png" > "$EVIDENCE/$NAME-real_health.log" 2>&1
     printf 'Native Kubernetes health and Radar scenario passed; cleaning up owned cluster and profiles.\n'
     exit 0

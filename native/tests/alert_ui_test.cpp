@@ -13,6 +13,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QSignalSpy>
+#include <QPointer>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QDir>
@@ -112,6 +113,8 @@ public:
     QString healthScenario;
     QString radarScenario;
     bool secondFailed = false;
+    bool holdPodResponses = false;
+    QList<QPair<QPointer<QTcpSocket>, QByteArray>> heldPodResponses;
     const QDateTime created=QDateTime::currentDateTimeUtc().addSecs(-3600);
     const QDateTime measured=QDateTime::currentDateTimeUtc();
     Kubernetes() {
@@ -213,6 +216,11 @@ public:
                         }
                     }
                     const auto payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
+                    if (holdPodResponses && path == "/api/v1/pods") {
+                        heldPodResponses.append({socket, payload});
+                        connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                        return;
+                    }
                     if (radarScenario=="radar_loading_partial" && path=="/api/v1/configmaps") {
                         QTimer::singleShot(1500, socket, [socket, payload] {
                             socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + QByteArray::number(payload.size()) + "\r\n\r\n" + payload);
@@ -227,6 +235,16 @@ public:
             }
         });
     }
+    bool releasePodResponses() {
+        const bool released = !heldPodResponses.isEmpty();
+        for (const auto& [socket, payload] : heldPodResponses) if (socket) {
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + QByteArray::number(payload.size()) + "\r\n\r\n" + payload);
+            socket->disconnectFromHost();
+        }
+        heldPodResponses.clear();
+        holdPodResponses = false;
+        return released;
+    }
 };
 bool run(const QString& scenario, const QString& realConfig={}, const QString& capturePath={}) {
     QTemporaryDir temporary; if (!temporary.isValid()) return false;
@@ -237,7 +255,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         server.radarScenario=scenario;
         if (scenario=="radar_health_warning") server.healthScenario="health_pod_not_ready";
         if (scenario=="radar_health_restarts") server.healthScenario="health_restart_outlier";
-        if (scenario=="radar_health_critical" || scenario.startsWith("radar_focus_")) server.phase="Failed";
+        if (scenario=="radar_health_critical" || scenario=="radar_refresh_preserves_alarm" || scenario.startsWith("radar_focus_")) server.phase="Failed";
     }
     if (scenario=="metric_radar_tooltip" || scenario=="metric_radar_gauges" || scenario=="metric_radar_gauges_narrow") server.phase=QString("<img src=\"http://127.0.0.1:%1/external-image\"> untrusted status").arg(server.serverPort());
     if (scenario == "reference_zoom_preview_unsaved") server.radarScenario = "radar_focus_preview";
@@ -297,7 +315,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             QSignalSpy sounds(workspace.alerts(), &podlord::Alerts::soundRequested);
             const auto requests = server.requests;
             QGuiApplication::clipboard()->setText("unchanged clipboard");
-            if (scenario.endsWith("_busy") || scenario.endsWith("_scope_reset") || scenario.endsWith("_cache_changed")
+            if (scenario.endsWith("_busy") || scenario.endsWith("_scope_reset") || scenario.endsWith("_refresh_in_flight")
                 || scenario.endsWith("_invalid_input") || scenario.endsWith("_regex_limit")) {
                 auto draft = baseline.first().toMap();
                 if (scenario.endsWith("_invalid_input")) draft.clear();
@@ -310,7 +328,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     return previews.count() == 1 && sounds.isEmpty() && server.requests == requests && rules() == baseline;
                 }
                 if (scenario.endsWith("_scope_reset")) workspace.alerts()->showSession("");
-                if (scenario.endsWith("_cache_changed") && !workspace.refresh()) return false;
+                if (scenario.endsWith("_refresh_in_flight") && !workspace.refresh()) return false;
                 if (!waitFor([&] { return !workspace.alerts()->zoomPreviewBusy(); })) return false;
                 return previews.isEmpty() && sounds.isEmpty() && rules() == baseline && !QFile::exists(profile + "/alert-rules.json")
                     && (scenario.endsWith("_scope_reset") ? workspace.alerts()->zoomPreviewError().isEmpty()
@@ -625,9 +643,28 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         if (!click(window, "radarWorkspaceButton") || !waitFor([&] { return item(window, "radarTile_0")!=nullptr; })) return false;
         if (scenario=="radar_loading_partial") {
             const auto* summary=item(window, "radarHealthSummary");
-            if (!summary || !summary->property("text").toString().contains("1 cached") || !summary->property("text").toString().contains("Loading")) return false;
+            if (!summary || !summary->property("text").toString().contains("1 cached") || !summary->property("text").toString().contains("Loading")
+                || !workspace.alerts()->matches().isEmpty() || !focus.isEmpty()) return false;
             if (!waitFor([&] { return !workspace.loading() && workspace.resourceCount()==2; })) return false;
             return summary->property("text").toString().contains("2 cached") && !summary->property("text").toString().contains("Loading");
+        }
+        if (scenario=="radar_refresh_preserves_alarm") {
+            const auto problemCount=[&] {
+                for (const auto& match : workspace.alerts()->matches()) {
+                    const auto value=match.toMap();
+                    if (value["name"].toString()=="Problem color") return value["count"].toInt();
+                }
+                return 0;
+            };
+            const auto red=QColor("#FF5C5C");
+            if (!waitFor([&] { return problemCount()==1 && item(window,"radarTile_0")->property("alertColor").value<QColor>()==red; }) || !focus.isEmpty()) return false;
+            server.holdPodResponses=true;
+            server.phase="Running";
+            if (!click(window,"refreshButton") || !waitFor([&] { return workspace.loading() && !server.heldPodResponses.isEmpty(); })) return false;
+            const bool preserved=problemCount()==1 && item(window,"radarTile_0")->property("alertColor").value<QColor>()==red && focus.isEmpty();
+            if (!server.releasePodResponses()) return false;
+            if (!preserved) { std::fputs("Background sync removed an alarm from the still-visible cached resource.\n",stderr); return false; }
+            return waitFor([&] { return !workspace.loading() && problemCount()==0 && item(window,"radarTile_0")->property("alertColor").value<QColor>()!=red; }) && focus.isEmpty();
         }
         if (scenario.startsWith("radar_focus_")) {
             if (!focus.isEmpty()) return false;
@@ -690,17 +727,22 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             std::fprintf(stderr,"Real health failure at %s: cached=%d filtered=%d loading=%d status=%s error=%s matches=%s\n",
                 stage,workspace.totalResourceCount(),workspace.resourceCount(),workspace.loading(),qPrintable(workspace.status()),
                 qPrintable(workspace.error()),QJsonDocument::fromVariant(workspace.alerts()->matches()).toJson(QJsonDocument::Compact).constData());
+            std::fprintf(stderr,"Render surface: platform=%s exposed=%d active=%d.\n",qPrintable(QGuiApplication::platformName()),window->isExposed(),window->isActive());
             return false;
         };
         if (realConfig.isEmpty() || !waitFor([&] { return !workspace.loading(); },180000)) return failure("completed initial sync");
+        if (QGuiApplication::platformName()=="cocoa") {
+            window->requestActivate();
+            if (!waitFor([&] { return window->isExposed() && window->isActive(); },5000)) return failure("foreground desktop availability");
+        }
         const auto* problems=item(window,"alertMatch_0");
         if (!problems || !problems->property("text").toString().startsWith("Problem color:") || problems->property("text").toString().section(':',1).trimmed().toInt()<34) return failure("default problem alarm");
         if (!workspace.filter("no-resource-matches-this") || workspace.resourceCount()!=0 || !alphaMatch()) return failure("session-wide alarm despite empty filter");
+        QSignalSpy inspectorFrames(window,&QQuickWindow::frameSwapped);
         if (!workspace.filter("visual-pending-storage-1") || !workspace.setWorkspacePage("resources") || !workspace.inspectPath("/api/v1/namespaces/visual-a/persistentvolumeclaims/visual-pending-storage-1")) return failure("open pending PVC inspector");
         if (!waitFor([&] { for (const auto& field : workspace.overviewFields()) if (field.toMap()["label"].toString()=="Issue" && field.toMap()["value"].toString().contains("Pending")) return true; return false; })) return failure("pending PVC issue display");
         if (!capturePath.isEmpty()) {
-            QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
-            if (!frames.wait(2000)) return failure("inspector frame");
+            if (!waitFor([&] { return inspectorFrames.count()>0; },2000)) return failure("natural inspector frame");
             const auto captured=window->grabWindow();
             if (captured.isNull() || !captured.save(capturePath,"PNG")) return failure("inspector screenshot");
         }
@@ -710,6 +752,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             || !click(window, "radarWorkspaceButton")) return failure("open real Radar");
         const auto radarFrames=qEnvironmentVariable("PODLORD_REAL_RADAR_HIGHLIGHTS");
         for (const auto& target : {QString("visual-pending-storage-1"), QString("visual-crash-loop")}) {
+            QSignalSpy frames(window,&QQuickWindow::frameSwapped);
             if (!workspace.filterField("namespace", target=="visual-crash-loop" ? "\"visual-b\"" : "\"visual-a\"")
                 || !type(window, "resourceFilter", '"'+target+'"')
                 || !click(window,"radarWorkspaceButton")) return failure("filter real Radar resource");
@@ -717,8 +760,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!waitFor([&] { return workspace.resourceCount()==1 && item(window,"radarTile_0")!=nullptr; })) return failure("focus real Radar resource");
             const QColor expected(target=="visual-crash-loop" ? "#FF5C5C" : "#FFE866");
             if (!waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && tile->property("alertColor").value<QColor>()==expected; },60000)) return failure("real Radar severity highlight");
-            QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
-            if (!frames.wait(2000)) return failure("real Radar frame");
+            if (!waitFor([&] { return frames.count()>0; },2000)) return failure("natural real Radar frame");
+            if (QGuiApplication::platformName()=="cocoa" && (!window->isExposed() || !window->isActive())) return failure("foreground lost during real Radar frame");
             if (!radarFrames.isEmpty() && !window->grabWindow().save(radarFrames+'-'+target+".png")) return failure("real Radar screenshot");
         }
         std::fprintf(stdout,"Real Kubernetes health: Pending PVCs and failure Pods match the default alarm; filters do not hide the alarm; inspector shows Pending.\n");

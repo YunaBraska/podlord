@@ -19,8 +19,9 @@ async function exercise(scenario) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-cleanup-'));
     const socket = path.join(directory, 'docker.sock');
     const trace = [];
-    let name = '', exists = false, owned = false;
+    let name = '', exists = false, owned = false, boundaryFailure;
     const server = http.createServer(async (request, response) => {
+        try {
         const url = new URL(request.url, 'http://localhost');
         const route = url.pathname.replace(/^\/v\d+\.\d+/, '');
         const json = (status, value) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(value)); };
@@ -73,6 +74,11 @@ async function exercise(scenario) {
         }
         if (route === '/volumes') { json(200, { Volumes: [], Warnings: [] }); return; }
         json(500, { message: `Unexpected Docker boundary request: ${request.method} ${route}` });
+        } catch (error) {
+            boundaryFailure = error;
+            response.writeHead(500, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify({ message: error.message }));
+        }
     });
     try {
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
@@ -88,6 +94,7 @@ async function exercise(scenario) {
             child.once('error', error => { clearTimeout(timeout); reject(error); });
             child.once('close', (code, signal) => { clearTimeout(timeout); resolve({ code, signal, output }); });
         });
+        assert.ifError(boundaryFailure);
         assert.notEqual(result.code, 0, `The deliberate external failure must be reported: ${result.output}`);
         assert.equal(result.signal, null, `The runner must finish without timeout: ${result.output}`);
         const deletes = trace.filter(call => call.method === 'DELETE');
@@ -120,7 +127,9 @@ for (const missing of ['metric-filter-ui-test', 'workspace_ui_test']) {
 test(`visual runner rejects missing ${missing} before Docker access`, { timeout: 5000 }, async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-incomplete-build-'));
     try {
+        await fs.symlink(path.join(build, 'CMakeCache.txt'), path.join(directory, 'CMakeCache.txt'));
         await fs.symlink(path.join(build, 'alert_ui_test'), path.join(directory, 'alert_ui_test'));
+        await fs.symlink(path.join(build, 'container-terminal-ui-test'), path.join(directory, 'container-terminal-ui-test'));
         if (missing === 'workspace_ui_test') await fs.symlink(path.join(build, 'metric-filter-ui-test'), path.join(directory, 'metric-filter-ui-test'));
         const result = await new Promise((resolve, reject) => {
             const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), 'native-e2e'], {

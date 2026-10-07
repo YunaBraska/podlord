@@ -30,6 +30,13 @@ Alerts use the existing Podlord matcher behavior:
 
 Rules evaluate cached rows only. The UI updates immediately when a rule changes; Kubernetes sync cadence remains controlled by the existing cache, request queue, TTL, and request-limit settings.
 
+The first synchronization establishes a silent baseline: partial loading must not
+emit alarms, freshness indicators, focus actions or sounds. After that initial
+synchronization, background requests must not clear alarms or highlights from
+the still-visible cache. Incoming snapshots update matches normally; starting
+or completing a request alone must not replay an action. The editor's explicit
+Radar preview remains unavailable while synchronization is in progress.
+
 ## Default Alerts
 
 | Alert | Trigger | Action |

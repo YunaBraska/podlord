@@ -4065,3 +4065,47 @@ one core: those classes passed. Cached-session-tab p95 was 96.50 ms with a
 The 50 ms tab and 250 MB resident limits remain failed release gates. Neither
 limits nor unsuccessful samples were removed. This driver is not an installed
 startup or complete UI-work-per-frame benchmark.
+
+## Which Alarm And Visible-Filter Regressions Passed On 2026-10-07?
+
+| Behavior | Public boundary | Evidence | Remaining gap |
+|---|---|---|---|
+| Preserve a cached problem alarm while a background list response is held; clear it when the recovered resource arrives, without replaying focus | Main QML Refresh, Radar color and public alarm matches; only external Kubernetes HTTP is held | `native.alert_ui.radar_refresh_preserves_alarm`; failed before the owner correction in `20261007-background-alert-failing-first.log` | Complete installed view/theme matrix |
+| Suppress matches and focus during a partial first sync | Main QML Radar and health summary | Strengthened `native.alert_ui.radar_loading_partial` | Initial-load sound and progress cases remain independently registered |
+| Reject a draft preview if synchronization starts before it completes | Public draft preview and Refresh | `reference_zoom_preview_refresh_in_flight_Basic/Fusion`, renamed from the inaccurate `cache_changed` name | Actual changed-cache invalidation is a distinct condition, not proven by starting an unchanged refresh |
+| Cache-filter input changes the rendered name cell without extra requests | Main QML input, TableView and natural `frameSwapped`, before/after name-cell pixels | `native.field_filter.filter_render_frame_Basic/Fusion`; additional native Cocoa/Metal/Fusion execution in `20261007-filter-render-frame-metal.log` | Large installed-package viewport and repeated lifecycle reproduction |
+| Real Pending PVC and failed Pod render yellow/red after cached filtering | Real owned local Kubernetes, public inspector and Radar; no forced `window->update()` | `20261007-natural-metal-real-health.log`, exit 0; owned cluster `podlord-visual-run-k8gvt6` removed | This driver is not the installed package or a C# paired frame |
+
+All 427 affected Mac alarm/filter registrations passed with 12 isolated workers
+in 69.81 seconds (`20261007-alert-filter-public-review.log/xml`). The final Linux
+ARM64 focused run passed 12/12 registrations in 6.72 seconds with six workers
+(`2026-10-07-linux-values/background-alert-tests.log/xml`); its container used
+`--rm`. Neither subset is reported as a new complete-suite run. The final native
+inventory is 3,749 registrations: 2,867 behavior cases and 882 genuine style
+variants, with no identical command/environment/working-directory invocation.
+
+The real runner cleanup checks passed 15/15 (`20261007-real-health-cleanup-final.log`).
+Their external Docker HTTP callback now reports asynchronous assertion failures
+instead of leaving a CLI request unanswered. Missing-executable cases provide the
+real build metadata and the already-required terminal driver. Coverage-retention
+checks use the retained instrumented help executable, not the uninstrumented
+performance/package binary; this proves retention, not current-product coverage.
+
+Five original C#/C++ desktop pairs are preserved in
+`2026-10-07-current-desktop-pair/index.html` under the local release-evidence
+directory. The compositor's decoded-pixel check passed. These are review evidence,
+not accepted parity: projections/resource totals differ, one inspector obscures
+an Events capture, and the native Problems/filter captures retained an older
+visible frame despite newer accessibility state. The desktop lane reached its
+900-second deadline and cleaned up its owned apps/cluster/profile; it did not
+complete successfully. Small Metal and real Kubernetes natural-frame checks pass,
+but do not establish why that installed-desktop observation occurred.
+
+Feature-branch pushes now invoke the existing CI/native preflight rather than
+only storing a backup. The configured Linux AMD64/ARM64 and Mac Intel/ARM64 lanes
+still require actual hosted results; configuration is not execution evidence.
+Signing/notarization remain intentionally deferred for private distribution.
+Alerts/Diagnostics column tools, complete saved-profile migration, multi-window,
+localization, installed view/theme/terminal comparisons, startup/frame-work/RSS
+performance and the 95% line/90% branch coverage gates remain open. The recorded
+50 ms cached-tab and 250 MB RSS failures are unchanged by this alarm correction.

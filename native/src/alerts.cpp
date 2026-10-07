@@ -267,7 +267,7 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
     connect(client_, &ResourceClient::rowsChanged, this, [this](const QString& session) { queue(session); });
     connect(client_, &ResourceClient::changed, this, [this](const QString& session) {
         if (session.isEmpty() || closed_.contains(session)) return;
-        const bool loading = client_->syncLoading(session) || !client_->initialSyncComplete(session);
+        const bool loading = !client_->initialSyncComplete(session);
         if (states_[session].loading != loading) { states_[session].loading = loading; queue(session); }
     });
     busy_=false; reload();
@@ -338,7 +338,7 @@ bool Alerts::queue(const QString& session) {
 bool Alerts::dispatch() {
     if (evaluating_ || !ready_ || pending_.isEmpty()) return false;
     const auto session=*pending_.cbegin(); pending_.remove(session); auto& state=states_[session];
-    if (client_->syncLoading(session) || !client_->initialSyncComplete(session)) {
+    if (!client_->initialSyncComplete(session)) {
         const bool changed = !state.matches.isEmpty() || !state.effects.isEmpty();
         state.matches.clear(); state.effects.clear(); state.colorUntil.clear(); state.animationUntil.clear();
         if (changed && session == shown_) { ++revision_; emit presentationChanged(); }
@@ -436,7 +436,8 @@ bool Alerts::previewZoom(const QVariantMap& draft, const QStringList& visiblePat
     connect(watcher, &QFutureWatcher<Evaluated>::finished, this, [this, watcher, session, generation, cacheGeneration = state.generation, visiblePaths, rule] {
         const auto result = watcher->result(); watcher->deleteLater(); zoomPreviewBusy_ = false;
         if (generation != zoomPreviewGeneration_ || session != shown_ || closed_.contains(session)) { emit zoomPreviewChanged(); return; }
-        if (states_.value(session).generation != cacheGeneration) zoomPreviewError_ = "The session cache changed. Preview again explicitly.";
+        if (client_->syncLoading(session)) zoomPreviewError_ = "The session is synchronizing. Preview again explicitly after it finishes.";
+        else if (states_.value(session).generation != cacheGeneration) zoomPreviewError_ = "The session cache changed. Preview again explicitly.";
         else if (!result.errors.isEmpty()) zoomPreviewError_ = result.errors.join('\n');
         else {
             QSet<QString> matching;
