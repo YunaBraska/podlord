@@ -346,7 +346,8 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
         }
         scheduleSync(); return true;
     }
-    it->syncTotal = 0; it->syncCompleted = 0; it->progress = 0;
+    it->syncTotal = 0; it->syncCompleted = 0;
+    if (!it->initialized) it->progress = 0;
     if (!foreground && !it->collections.isEmpty()) {
         const auto cutoff = now_().addSecs(-25);
         for (auto collection = it->collections.cbegin(); collection != it->collections.cend(); ++collection) {
@@ -596,7 +597,10 @@ QString ResourceClient::status(const QString& id) const {
 }
 bool ResourceClient::loading(const QString& id) const { return states_.contains(id) && states_[id].pending > 0; }
 bool ResourceClient::syncLoading(const QString& id) const { return states_.contains(id) && states_[id].syncPending > 0; }
-double ResourceClient::loadingProgress(const QString& id) const { return states_.value(id).progress; }
+double ResourceClient::loadingProgress(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state == states_.cend() ? 0 : state->progress;
+}
 bool ResourceClient::initialSyncComplete(const QString& id) const { return states_.contains(id) && states_[id].initialized; }
 bool ResourceClient::collectionRead(Read read) { return read == Read::Core || read == Read::Groups || read == Read::Discovery || read == Read::List; }
 bool ResourceClient::parallelRead(const Task& task) { return !task.change && task.forwardToken.isEmpty() && (collectionRead(task.read) || task.read == Read::Detail); }

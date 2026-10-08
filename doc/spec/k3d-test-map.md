@@ -4507,3 +4507,49 @@ mobile release support, performance gates or notarization. No Kubernetes stack,
 Docker image or container was created in this increment. Test profiles and the
 package builder's temporary tree are owned and cleaned by their existing
 lifecycles; the unrelated `default.profraw` remains untouched.
+
+## Does initial health stay filled, and can files/sessions open quickly?
+
+Requirements: LOAD-002 and SHL-011; decision: ADR-0033.
+
+| Scenario | Public boundary | Executable evidence | Remaining gap |
+| --- | --- | --- | --- |
+| Passive sync, explicit rediscovery, authentication rejection and fresh cached reopen retain completed health | ResourceClient with a local external Kubernetes HTTP server | native.read_overlap.progress_auto, progress_refresh, progress_auth, progress_reopen | Actual-device rendering and slow-cluster visual matrix |
+| Rendered health strip stays full throughout explicit refresh | Real QML window/menu and external HTTP boundary | native.ui.shell_health_refresh_{Basic,Fusion} | Installed desktop/theme matrix |
+| Extensionless file and local file URL import by content without opening/authenticating a session | Workspace public quickImportFile entrypoint and real private store | native.ui.quick_file_extensionless_{Basic,Fusion}, quick_file_url_{Basic,Fusion} | Native OS file-picker acceptance on unlocked desktop/device |
+| Malformed/missing input does nothing; owned-profile corruption remains visible | Same public entrypoint and actual files/catalog | native.ui.quick_file_invalid_{Basic,Fusion}, quick_file_missing_{Basic,Fusion}, quick_file_profile_{Basic,Fusion} | Real-device file providers |
+| Invalid quick-open preserves existing context, session, filter and notices | Real populated QML workspace and private store | native.ui.shell_quick_invalid_existing_{Basic,Fusion} | None for the exercised local input path |
+| Dropdown activates current/closed sessions and contexts without unnecessary reads | Actual menu clicks, session/cache owners and external HTTP request counts | native.ui.shell_quick_sessions_{Basic,Fusion}, shell_quick_reopen_{Basic,Fusion}, shell_quick_context_{Basic,Fusion} | Detached app-window UI, rather than client view-binding tests |
+| Anchored dropdown and its entries fit a 320-pixel window with 44-pixel targets | Actual rendered QML window and pointer input | native.ui.shell_quick_narrow_{Basic,Fusion} | Physical mobile interaction and table layout |
+
+Evidence: `release-evidence/2026-10-08-health-quick`. The failing-first run
+(`before.log/xml`) reproduces three progress-reset failures and the missing
+quick-open behavior; cached reopen already passed. Intermediate failures remain
+in their logs. The final selected run (`accepted.log/xml`) passes 159/159 checks
+in 40.78 seconds with twelve workers: 106 behavior targets and 53 style variants.
+The increment adds 15 behavior targets and eleven additional style executions,
+not 26 independent features. Related source import, source layout, view restore,
+draft/tab/window guards, shell/HUD and shared-client view cases are included.
+This is not a full-suite, coverage or performance-gate run.
+
+`quick-open-phone-Basic.png` and `quick-open-phone-Fusion.png` are real Qt
+software/offscreen captures using the external HTTP boundary, not screenshots
+of an installed mobile app or a C#/C++ pair. The mobile table still needs a
+readable identity-first presentation instead of only horizontal scrolling.
+The desktop-control inventory reports a locked Mac. Device enumeration lists
+only the host Mac; simulator setup requires local installer authorization.
+No physical iOS/Android evidence or completed multiwindow UI is claimed.
+No Kubernetes stack or container was created. Temporary test profiles clean up
+through their existing owners; the unrelated `default.profraw` stays untouched.
+
+A fresh private arm64 package passes dependency-path, local ad-hoc integrity,
+notice-metadata and size preflight checks. Output:
+`release-evidence/2026-10-08-health-quick-package`; log:
+`20261008-health-quick-package.log`. ZIP size is 31,723,549 bytes; installed
+regular-file logical sum is 85,048,843 bytes. Executable SHA-256:
+`2ddd2252f865d91ff575145d3181a4eedde5856b7033de991f5b951c7b14657e`;
+ZIP SHA-256:
+`5a29d19bdf4120404c9737364b856700117dc9286934e0121e02f5af5bc97646`.
+This does not establish installed startup, OS file-picker operation, physical
+mobile support, full visual/terminal equivalence, performance or coverage gates.
+Developer ID signing/notarization remains explicitly outside this private stage.

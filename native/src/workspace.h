@@ -272,7 +272,7 @@ public:
     Q_INVOKABLE bool saveWorkspaceRestore(bool enabled);
     bool loading() const;
     bool syncLoading() const { return authenticationRunning() || client_.syncLoading(active_); }
-    double loadingProgress() const { return authenticationRunning() ? 0 : client_.loadingProgress(active_); }
+    double loadingProgress() const { return authenticationRunning() && !client_.initialSyncComplete(active_) ? 0 : client_.loadingProgress(active_); }
     bool problemsOnly() const { return navigation_.value(active_).mode == "problems"; }
     bool activityOnly() const { return navigation_.value(active_).mode == "activity"; }
     Q_INVOKABLE bool setFilterMode(const QString& mode);
@@ -491,6 +491,8 @@ public:
     Q_INVOKABLE bool saveUiLanguage(const QString& language);
     Q_INVOKABLE bool reload();
     Q_INVOKABLE bool importFile(const QString& path);
+    /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
+    Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importK3d();
     Q_INVOKABLE bool openContext(const QString& context);
     Q_INVOKABLE bool activate(const QString& id);
@@ -598,7 +600,7 @@ private:
     QString sourceImportError_, sessionManagementError_, sessionManagementNotice_;
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
-    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice = {});
+    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice = {}, bool ignoreInvalid = false);
     bool contextUsable(const QString& id) const;
     QVariantList sourceImportIssues_;
     SessionCatalog catalog_;

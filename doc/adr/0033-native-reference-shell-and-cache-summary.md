@@ -100,3 +100,22 @@ The footer has one fixed line with elision and the full accessible status. Narro
 navigation uses the same actions with 44-pixel targets. One scrollable filter
 surface sits below the retained Radar; there is no additional camera, timer,
 request owner or profile schema. Binary rollback restores the previous shell.
+
+### Why does health stay filled and quick-open retain import safety?
+
+The client's existing per-session initial-sync state owns the one-time health
+fill. Passive synchronization, explicit rediscovery, cached reopen and subsequent
+authentication do not reset an established baseline. Authentication status remains
+separate from cached health; the strip does not claim that a later login succeeded.
+The progress getter reads its state without copying the collection/detail caches.
+
+Quick-open reuses the native file dialog and existing kubeconfig/session owners.
+Acceptance is content-based, not filename-based. The source boundary marks file
+read/parse failures; only those failures are silent in quick-open. Owned-profile,
+lock and write failures remain visible. Existing explicit import still reports
+input errors. Valid import does not implicitly activate or authenticate a context.
+The anchored dropdown reads the existing usage-ranked session selection and
+imported contexts, with 44-pixel entries in narrow windows. There is no second
+recent-files store, refresh timer, parser or session owner. Existing discard and
+authentication guards still govern selection. No persisted schema changes;
+rollback replaces the binary without converting profiles.

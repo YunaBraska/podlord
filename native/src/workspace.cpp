@@ -791,6 +791,13 @@ bool Workspace::select(const SessionCatalog& catalog) {
 bool Workspace::importFile(const QString& path) {
     return importSource([path](const KubeconfigStore& store) { return store.importPath(path); });
 }
+bool Workspace::quickImportFile(const QString& path) {
+    return importSource([path](const KubeconfigStore& store) -> Result<SourceImportReport> {
+        const auto imported = store.importFile(path);
+        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+        return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
+    }, {}, true);
+}
 bool Workspace::importK3d() {
     return importSource([](const KubeconfigStore& store) {
         QString executable = QStandardPaths::findExecutable("k3d");
@@ -896,16 +903,22 @@ bool Workspace::confirmSourceRemoval() {
     watcher->setFuture(sessionMutationFuture_);
     return true;
 }
-bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice) {
+bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice, bool ignoreInvalid) {
     if (busy_) return false;
-    sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear();
+    if (!ignoreInvalid) { sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear(); }
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<SourceImportReport>>(this);
-    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, notice] {
+    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, notice, ignoreInvalid] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
-        if (const auto* failure = std::get_if<Failure>(&result)) { sourceImportError_ = failure->message; error_ = failure->message; emit changed(); emit sourceImportFinished(false); }
+        if (const auto* failure = std::get_if<Failure>(&result)) {
+            if (!ignoreInvalid || !failure->sourceInput) {
+                sourceImportError_ = failure->message; error_ = failure->message;
+            }
+            emit changed(); emit sourceImportFinished(false);
+        }
         else {
             const auto& report = std::get<SourceImportReport>(result);
+            sourceImportError_.clear(); sourceImportIssues_.clear();
             sourceImportNotice_ = notice.isEmpty() ? QString("Imported %1 source(s); %2 input(s) failed. Existing snapshots and sessions were retained.")
                 .arg(report.sources.size()).arg(report.errors.size())
                 : notice;

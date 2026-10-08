@@ -181,6 +181,13 @@ ApplicationWindow {
         title: "Import kubeconfig"
         onAccepted: { sourcePath.text = selectedFile.toString(); workspace.importFile(sourcePath.text) }
     }
+    FileDialog {
+        id: quickChooser
+        objectName: "quickFileDialog"
+        title: "Open kubeconfig file"
+        onAccepted: workspace.quickImportFile(selectedFile.toString())
+    }
+    Shortcut { sequences: [StandardKey.Open]; enabled: !workspace.busy; onActivated: quickChooser.open() }
     FolderDialog {
         id: folderChooser
         title: "Import kubeconfig folder"
@@ -406,6 +413,34 @@ ApplicationWindow {
         MenuItem { objectName: "commandPaletteButton"; text: "Commands"; Accessible.name: "Open command palette"; onTriggered: commands.open() }
         MenuItem { objectName: "refreshButton"; text: "Refresh"; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
     }
+    Menu {
+        id: quickOpenMenu
+        objectName: "quickOpenMenu"
+        width: Math.min(360, window.width - 24)
+        height: Math.min(implicitHeight, window.height - 48)
+        MenuItem { text: "Open kubeconfig file..."; implicitHeight: window.wideLayout ? 32 : 44; enabled: !workspace.busy; onTriggered: quickChooser.open() }
+        MenuSeparator {}
+        Instantiator {
+            active: quickOpenMenu.visible
+            model: [{name: "Saved sessions", header: true}]
+                .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
+                    [{name: "Imported contexts", header: true}],
+                    workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true})))
+            delegate: MenuItem {
+                required property var modelData
+                implicitHeight: window.wideLayout ? 32 : 44
+                objectName: modelData.header ? "" : (modelData.context ? "quickContext_" : "quickSession_") + modelData.id
+                text: modelData.name
+                enabled: !modelData.header && !workspace.busy
+                checkable: !modelData.header && !modelData.context
+                checked: checkable && modelData.id === workspace.currentSession
+                Accessible.name: modelData.header ? text : (modelData.context ? "Open context " : "Open session ") + text
+                onTriggered: modelData.context ? workspace.openContext(modelData.id) : workspace.activate(modelData.id)
+            }
+            onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + 2, object)
+            onObjectRemoved: (index, object) => quickOpenMenu.removeItem(object)
+        }
+    }
     Drawer {
         id: sidebarDrawer
         objectName: "sidebarDrawer"
@@ -465,11 +500,17 @@ ApplicationWindow {
                 }
             }
         }
-        ScrollView {
+        RowLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             Layout.preferredHeight: openTabs.implicitHeight
-            visible: workspace.tabs.length > 0
+            spacing: 2
+            IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; enabled: !workspace.busy; onClicked: quickChooser.open() }
+            IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
+            ScrollView {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.preferredHeight: openTabs.implicitHeight
             contentWidth: openTabs.implicitWidth
             Row {
                 id: openTabs
@@ -502,6 +543,7 @@ ApplicationWindow {
                         IconButton { objectName: "closeSession_" + modelData.id; glyph: "Close"; text: workspace.uiText["action.close"]; Accessible.name: "Close " + modelData.name; enabled: !workspace.busy; onClicked: workspace.close(modelData.id) }
                     }
                 }
+            }
             }
         }
         RowLayout {

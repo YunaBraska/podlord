@@ -575,6 +575,29 @@ bool execute(const QString& scenario) {
         const QRectF message(label->mapToScene(QPointF{}), QSizeF(label->width(), label->height()));
         return label->isVisible() && pane.contains(message) && server.requests.isEmpty();
     }
+    if (scenario.startsWith("quick_file_")) {
+        const auto path = temporary.filePath("extensionless");
+        if (scenario == "quick_file_invalid") {
+            QFile invalid(path);
+            if (!invalid.open(QIODevice::WriteOnly) || invalid.write("not a kubeconfig") < 0) return false;
+        } else if (!QFile::copy(source, path)) return false;
+        const auto input = scenario == "quick_file_missing" ? temporary.filePath("missing")
+            : scenario == "quick_file_url" ? QUrl::fromLocalFile(path).toString() : path;
+        if (scenario == "quick_file_profile") {
+            if (!QDir().mkpath(profile)) return false;
+            QFile corrupt(QDir(profile).filePath("sessions.json"));
+            if (!corrupt.open(QIODevice::WriteOnly) || corrupt.write("invalid saved catalog") < 0) return false;
+        }
+        bool admitted = false;
+        if (!QMetaObject::invokeMethod(&workspace, "quickImportFile", Q_RETURN_ARG(bool, admitted), Q_ARG(QString, input))
+            || !admitted || !waitFor([&] { return !workspace.busy(); })) return false;
+        if (scenario == "quick_file_profile") return !workspace.error().isEmpty() && workspace.contexts().isEmpty() && server.requests.isEmpty();
+        if (scenario == "quick_file_invalid" || scenario == "quick_file_missing")
+            return workspace.contexts().isEmpty() && workspace.sessions().isEmpty() && workspace.error().isEmpty()
+                && workspace.sourceImportNotice().isEmpty() && server.requests.isEmpty();
+        return workspace.contexts().size() == 1 && workspace.sessions().isEmpty() && workspace.currentSession().isEmpty()
+            && server.requests.isEmpty();
+    }
     if (!type(window, item(window, "sourcePath"), source) || !click(window, item(window, "importButton"))) return false;
     if (scenario.startsWith("settings_inline_")) {
         if (!waitFor([&] { return !workspace.busy(); }) || !click(window,item(window,"settingsWorkspaceButton"))) return false;
@@ -704,6 +727,57 @@ bool execute(const QString& scenario) {
             QTest::keyClick(window, Qt::Key_Escape);
             return !input->isVisible() && workspace.resourceCount() == 1
                 && item(window, "workspaceSearchButton")->hasActiveFocus() && server.requests.size() == calls;
+        }
+        if (scenario == "shell_health_refresh") {
+            auto* health = item(window, "sessionHealthSegments");
+            if (!health || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
+            if (!podlord::test::revealWorkspaceAction(window, "refreshButton") || !click(window, item(window, "refreshButton"))) return false;
+            if (!workspace.syncLoading() || workspace.loadingProgress() != 1) return false;
+            bool stable = true;
+            if (!waitFor([&] {
+                stable = stable && workspace.loadingProgress() == 1 && qAbs(health->height() - health->parentItem()->height()) < 1;
+                return !workspace.syncLoading();
+            }, 10000)) return false;
+            return stable && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
+        }
+        if (scenario == "shell_quick_invalid_existing") {
+            const auto session = workspace.currentSession(), notice = workspace.sourceImportNotice(), error = workspace.error();
+            const auto contexts = workspace.contexts();
+            if (!workspace.filter("alpha")) return false;
+            const auto path = temporary.filePath("invalid");
+            QFile invalid(path);
+            if (!invalid.open(QIODevice::WriteOnly) || invalid.write("invalid source") < 0) return false;
+            invalid.close();
+            if (!workspace.quickImportFile(path) || !waitFor([&] { return !workspace.busy(); })) return false;
+            return workspace.currentSession() == session && workspace.contexts() == contexts && workspace.filterText() == "alpha"
+                && workspace.sourceImportNotice() == notice && workspace.error() == error && server.requests.size() == calls;
+        }
+        if (scenario == "shell_quick_sessions" || scenario == "shell_quick_reopen" || scenario == "shell_quick_context") {
+            const auto session = workspace.currentSession();
+            if (scenario == "shell_quick_reopen" && (!workspace.close(session) || !waitFor([&] { return !workspace.busy(); }))) return false;
+            if (!click(window, item(window, "quickOpenDropdown"))) return false;
+            const auto target = scenario == "shell_quick_context" ? "quickContext_" + workspace.contexts().first().toMap()["id"].toString() : "quickSession_" + session;
+            if (!waitFor([&] { return item(window, target) && item(window, target)->isVisible(); })
+                || !click(window, item(window, target)) || !waitFor([&] { return !workspace.busy(); })) return false;
+            return workspace.currentSession() == session && server.requests.size() == calls;
+        }
+        if (scenario == "shell_quick_narrow") {
+            window->resize(320, 720);
+            if (!waitFor([&] {
+                for (const auto& name : {"quickOpenFile", "quickOpenDropdown"}) {
+                    auto* control = item(window, name);
+                    if (!control || control->width() < 44 || control->height() < 44
+                        || !displayedWithin(window->contentItem(), control)) return false;
+                }
+                return true;
+            })) return false;
+            if (!click(window, item(window, "quickOpenDropdown"))) return false;
+            if (!waitFor([&] {
+                auto* context = item(window, "quickContext_" + workspace.contexts().first().toMap()["id"].toString());
+                return context && context->height() >= 44 && displayedWithin(window->contentItem(), context);
+            }) || server.requests.size() != calls) return false;
+            const auto evidence = qEnvironmentVariable("PODLORD_SHELL_EVIDENCE");
+            return evidence.isEmpty() || window->grabWindow().save(evidence + "/quick-open-phone-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png");
         }
         if (scenario == "shell_tools_menu") {
             if (item(window, "refreshButton")->isVisible() || !click(window, item(window, "workspaceActionsButton"))) return false;
