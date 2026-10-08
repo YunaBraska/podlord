@@ -627,7 +627,7 @@ ApplicationWindow {
         Label { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
         RowLayout {
             Layout.fillWidth: true
-            visible: workspace.sourceImportNotice !== "" && (window.sourcesExpanded || workspace.currentSession === "" || workspace.sourceImportIssues.length > 0)
+            visible: workspace.workspacePage !== "settings" && workspace.sourceImportNotice !== "" && (window.sourcesExpanded || workspace.currentSession === "" || workspace.sourceImportIssues.length > 0)
             Label { objectName: "sourceImportNotice"; Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
             Button { objectName: "sourceImportDetailsButton"; text: "View failures"; visible: workspace.sourceImportIssues.length > 0; onClicked: sourceImportDetails.open() }
         }
@@ -721,6 +721,7 @@ ApplicationWindow {
                         onSourcesRequested: window.sourcesExpanded = true
                         onFileRequested: chooser.open()
                         onFolderRequested: folderChooser.open()
+                        onSourceFailuresRequested: sourceImportDetails.open()
                     }
                 }
                 }

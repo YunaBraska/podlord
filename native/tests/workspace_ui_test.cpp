@@ -748,7 +748,8 @@ bool execute(const QString& scenario) {
         if (section=="diagnostics") return click(window,item(window,"refreshSettingsDiagnostics")) && item(window,"settingsRequestAudit")->property("count").toInt()==0 && workspace.settingsDiagnostics()["metrics"].toList().size()>=11 && server.requests.isEmpty();
         if (section=="privacy") return item(window,"privacyTelemetry")->isVisible() && text(window,"privacyTelemetry")=="Off" && type(window,item(window,"inlineYamlLimit"),"4") && click(window,item(window,"inlineSaveYamlLimit")) && waitFor([&] { return !workspace.busy() && workspace.yamlLimitMiB()==4; }) && server.requests.isEmpty();
         if (section=="workspace") return click(window,item(window,"settingsResourceColumns")) && waitFor([&] { return item(window,"resourceColumnVisible_kind") && item(window,"resourceColumnVisible_kind")->isVisible(); }) && server.requests.isEmpty();
-        if (section=="sources") return item(window,"settingsSourcePath")->isVisible() && item(window,"settingsSourceList")->property("count").toInt()==1 && server.requests.isEmpty();
+        if (section=="sources") return item(window,"settingsSourcePath")->isVisible()
+            && waitFor([&] { return item(window,"settingsSourceList")->property("count").toInt()==1; }) && server.requests.isEmpty();
         if (section=="about") return item(window,"settingsVersion")->isVisible() && server.requests.isEmpty();
         if (section=="sync") return item(window,"inlineRequestLimit")->isVisible() && server.requests.isEmpty();
         if (section=="narrow") window->setWidth(360);

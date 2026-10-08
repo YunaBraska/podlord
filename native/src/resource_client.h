@@ -30,6 +30,9 @@ public:
     QJsonArray rows(const QString& id) const;
     /** Bounded in-memory request metadata. Reading this snapshot never schedules transport. */
     QVariantList requestAudit(const QString& id) const;
+    /** Current collection/detail JSON and retained log text across sessions, including closed caches.
+     * This byte estimate excludes allocation overhead and shared projections; it never schedules transport. */
+    QVariantMap cacheDiagnostics() const;
     QJsonObject detail(const QString& id, const QString& path) const;
     /** Full accepted GET document with the detail lease and current UID; never persisted. */
     QJsonObject document(const QString& id, const QString& path) const;

@@ -228,8 +228,15 @@ The operating system owns RSS, physical/private memory, cumulative process CPU
 seconds and thread count. Unavailable counters remain unavailable. macOS physical
 footprint is not labeled private virtual memory; cumulative CPU seconds are not
 presented as a utilization percentage. Native code does not invent .NET heap or
-GC counters. Cache-byte accounting and remaining reference telemetry still need
-separate evidence.
+GC counters. Cache payload accounting belongs to the existing ResourceClient,
+not another UI counter or persisted index. Explicit Diagnostics snapshots sum
+retained collection JSON, accepted detail documents and UTF-8 log text across
+sessions, including closed caches awaiting TTL expiry. Shared UI projections and
+allocation overhead are excluded. The byte value is therefore a payload estimate,
+not process memory; RSS/physical footprint remain separate operating-system
+measurements. Serialization happens only during that explicit snapshot, never
+from paint, hover, resource filtering or a diagnostic timer. The presentation
+reports counts but never resource contents, credentials or Secret values.
 
 Request-duration text is converted once at snapshot publication into the shared
 model's typed sort role. Its displayed milliseconds remain unchanged. Queued or
@@ -248,3 +255,32 @@ rollback. No session-view or credential format changes with this increment.
 Executed scenarios, failed regressions and image limitations are recorded in the
 existing test map. Shared table behavior does not establish complete Settings,
 whole-view, physical-device or release parity.
+
+### How Does Sources Reuse The Table Contract?
+
+Sources publishes the authoritative imported-context catalog through the same
+snapshot model, sorting proxy and virtualized grid. Catalog changes refresh only
+the visible Sources section; entering it publishes the current cached metadata.
+Health ticks do not rebuild this table. Opening a context, importing, renaming or
+confirmed removal remain explicit existing actions. Sorting, Find, column tools,
+copy and overflow presentation do not contact Kubernetes or reread source files.
+Rename and Remove are pinned narrow columns by default, with canonical context
+identities and accessible names. The model respects row-owned cluster metadata;
+resource snapshots still use their existing shared cluster projection.
+
+Layout version 9 adds `source`. Valid older versions gain missing defaults in
+memory, without writing or changing existing choices. Explicit saves retain the
+existing atomic/conflict-protected path. Invalid and incomplete current schemas
+are retained. Rollback requires a compatible binary or the pre-save profile.
+
+Column reordering initializes Qt's row mapping as well as its column mapping.
+Qt 6.11.2 can retain that row mapping after insertion/removal, causing an
+out-of-range lookup when an imported snapshot adds contexts. The shared grid
+clears only derived row reordering when visible membership changes; it preserves
+column reordering, model identity and selection. There is no framework fork,
+private Qt API, model reset or additional refresh timer. The relevant lifecycle
+is visible in the [Qt 6.11.2 TableView implementation](https://raw.githubusercontent.com/qt/qtdeclarative/v6.11.2/src/quick/items/qquicktableview.cpp).
+
+UI tests reacquire controls by canonical accessible identity after actual scroll
+settling, because virtualized delegates may be reused. They must not click a
+retained pointer that has become a different row.

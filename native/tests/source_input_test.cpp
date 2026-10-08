@@ -49,13 +49,7 @@ Response run(const QString& executable, const QString& profile, const QStringLis
 }
 bool click(QQuickWindow* window, QQuickItem* target) {
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
-    QList<QQuickItem*> ancestors;
-    for (auto* item = target; item; item = item->parentItem()) ancestors.prepend(item);
-    for (auto* item : ancestors) item->ensurePolished();
-    QCoreApplication::processEvents();
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-        target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
-    return true;
+    return podlord::test::clickVisible(window,target->objectName());
 }
 bool ui(const QString& profile, const QString& directory, bool partial, int width = 0) {
     podlord::Workspace workspace(profile);

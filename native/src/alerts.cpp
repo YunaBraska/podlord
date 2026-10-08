@@ -17,7 +17,7 @@
 namespace podlord {
 namespace {
 const QStringList scopes{"search", "kind", "namespace", "name", "status", "node", "image", "owner", "ready", "restarts", "age", "issue", "eventReason", "eventMessage", "problems", "activity", "recentlyChanged", "newInView", "cpu", "memory", "storage"};
-const QStringList modes{"no-match", "duration", "new-in-view"};
+const QStringList modes{"no-match", "duration", "new-in-view", "once"};
 QJsonObject encoded(const AlertCatalog& catalog) {
     QJsonArray rules; for (const auto& rule : catalog.rules) rules.append(rule.value);
     return {{"version", 1}, {"rules", rules}, {"muted", catalog.muted}, {"reducedMotion", catalog.reducedMotion}};
@@ -94,7 +94,8 @@ Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, cons
         auto row = value.toObject(); const auto path = row["path"].toString();
         const auto changed = changes.value(path); const auto created=QDateTime::fromString(row["createdAt"].toString(), Qt::ISODateWithMs);
         row["recentlyChanged"] = changed.isValid() && changed.msecsTo(now) < 30000;
-        row["newInView"] = row["recentlyChanged"];
+        // View-entry timing belongs to filtered membership, not resource freshness.
+        row["newInView"] = true;
         // Activity is classified once by the session cache, shared with resource filtering.
         deadline(changed.addSecs(30)); deadline(changed.addSecs(900)); deadline(created.addSecs(900));
         result.rows.insert(path, row);
@@ -433,6 +434,28 @@ bool Alerts::setPreferences(bool muted, bool reducedMotion) { auto desired=catal
 bool Alerts::showSession(const QString& session) {
     closed_.remove(session); if (shown_==session) return true; shown_=session; ++zoomPreviewGeneration_; zoomPreviewError_.clear(); emit zoomPreviewChanged(); ++revision_; emit presentationChanged(); return true;
 }
+bool Alerts::setVisibleResources(const QString& session, const QStringList& paths) {
+    if (session.isEmpty() || closed_.contains(session) || !client_->connection(session)) return false;
+    QSet<QString> visible;
+    for (const auto& path : paths) {
+        if (!client_->containsResource(session, path)) return false;
+        visible.insert(path);
+    }
+    auto& state = states_[session];
+    if (state.visibleInitialized && state.visiblePaths == visible) return true;
+    const bool firstView = !state.visibleInitialized;
+    state.visiblePaths = visible; state.visibleInitialized = true;
+    for (auto it = state.visibleMatches.begin(); it != state.visibleMatches.end();) {
+        if (!visible.contains(it->section('\n', 1, 1))) it = state.visibleMatches.erase(it);
+        else ++it;
+    }
+    if (firstView) {
+        for (auto it = state.triggered.cbegin(); it != state.triggered.cend(); ++it)
+            if (visible.contains(it.key().section('\n', 1, 1))) state.visibleMatches.insert(it.key());
+    }
+    if (state.initialized) queue(session);
+    return true;
+}
 bool Alerts::closeSession(const QString& session) { closed_.insert(session); pending_.remove(session); states_.remove(session); if (session == shown_) ++zoomPreviewGeneration_; return true; }
 QVariantMap Alerts::effect(const QString& path) const { const auto state=states_.constFind(shown_); return state==states_.cend() ? QVariantMap{} : state->effects.value(path); }
 bool Alerts::queue(const QString& session) {
@@ -460,7 +483,7 @@ bool Alerts::dispatch() {
         const auto result=watcher->result(); watcher->deleteLater(); evaluating_=false;
         auto found=states_.find(session);
         if (found==states_.end() || found->generation!=generation || closed_.contains(session)) { dispatch(); return; }
-        auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,QJsonObject> triggered; QSet<QString> alive;
+        auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,QJsonObject> triggered; QSet<QString> alive, visibleMatches;
         state.initialized = true;
         QDateTime next=result.next;
         const auto deadline=[&](QDateTime at) { if (at>now && (!next.isValid() || at<next)) next=at; };
@@ -477,7 +500,20 @@ bool Alerts::dispatch() {
                     || (changedAt==latestChange && (severity>focusSeverity || (severity==focusSeverity && path<focusPath))))) {
                     focusPath=path; latestChange=changedAt; focusSeverity=severity;
                 }
-                if (entered) { state.colorUntil[key]=now.addSecs(rule.value["colorSeconds"].toInt()); if (!baseline) state.animationUntil[key]=now.addSecs(rule.value["animationSeconds"].toInt()); }
+                const bool visible = state.visiblePaths.contains(path);
+                if (visible) visibleMatches.insert(key);
+                const auto startHold = [&](const QString& action, QMap<QString, QDateTime>& holds) {
+                    const auto mode = rule.value[action + "Mode"].toString();
+                    if (mode == "no-match" || (action == "animation" && baseline)) return;
+                    if (mode == "new-in-view") {
+                        if (!baseline && visible && !state.visibleMatches.contains(key))
+                            holds[key] = now.addSecs(rule.value[action + "Seconds"].toInt());
+                    } else if (entered && (!holds.contains(key) || holds.value(key) <= now)) {
+                        holds[key] = mode == "once" ? now.addMSecs(1350) : now.addSecs(rule.value[action + "Seconds"].toInt());
+                    }
+                };
+                if (rule.value["color"] != "none") startHold("color", state.colorUntil);
+                if (rule.value["animation"] != "none") startHold("animation", state.animationUntil);
             }
             if (count) matches.append(QVariantMap{{"id", id}, {"name", rule.value["name"].toString()}, {"count", count}, {"path", first}});
             if (!baseline && changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
@@ -488,7 +524,8 @@ bool Alerts::dispatch() {
                 const bool matching=alive.contains(key);
                 const auto active=[&](const QString& action, const QMap<QString,QDateTime>& holds) {
                     const auto mode=rule.value[action+"Mode"].toString(); if (mode=="no-match") return matching;
-                    const auto until=holds.value(key); deadline(until); return until>now && (mode=="duration" || matching);
+                    const auto until=holds.value(key); deadline(until);
+                    return until>now && (mode!="new-in-view" || (matching && state.visiblePaths.contains(path)));
                 };
                 auto effect=effects.value(path);
                 if (rule.value["color"]!="none" && active("color", state.colorUntil) && !(rule.value["color"]=="fresh" && effect.contains("color"))) effect["color"]=rule.value["color"].toString();
@@ -497,6 +534,7 @@ bool Alerts::dispatch() {
             }
         }
         state.triggered=triggered;
+        state.visibleMatches=visibleMatches;
         const auto prune=[&](QMap<QString,QDateTime>& holds) { for (auto it=holds.begin(); it!=holds.end();) { const auto parts=it.key().split('\n'); const bool exists=parts.size()==3 && result.rows.contains(parts[1]) && result.rows[parts[1]]["uid"]==parts[2]; if (!exists || it.value()<=now) it=holds.erase(it); else ++it; } };
         prune(state.colorUntil); prune(state.animationUntil);
         const auto failure=result.errors.join('\n');

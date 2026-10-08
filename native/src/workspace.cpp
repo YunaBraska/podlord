@@ -78,7 +78,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     }
     const auto& field = fields_[index.column()];
     const auto cell = row[field];
-    const auto text = field == "cluster" ? cluster_ : cell.toString();
+    const auto text = field == "cluster" && !row.contains(field) ? cluster_ : cell.toString();
     const bool presentation = role == Qt::DisplayRole || role == Qt::ToolTipRole;
     const bool age = field == "createdAt" && (presentation || role == Qt::UserRole + 6 || role == Qt::UserRole + 11);
     const auto created = age ? QDateTime::fromString(text, Qt::ISODateWithMs) : QDateTime{};
@@ -156,7 +156,7 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
             for (int column = 0; column < fields_.size(); ++column) {
                 const auto& field = fields_[column];
                 const bool metric = field == "cpu" || field == "memory" || field == "storage";
-                const bool changed = field == "cluster" ? clusterChanged
+                const bool changed = field == "cluster" ? (value.contains(field) || previous.contains(field) ? value[field] != previous[field] : clusterChanged)
                     : field == "createdAt" || value[field] != previous[field]
                         || (field == "preview" && value["value"] != previous["value"])
                         || (metric && (value["metricComplete"] != previous["metricComplete"] || value["metricStale"] != previous["metricStale"]));
@@ -259,6 +259,15 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
     reloadFilterPresets();
     connect(&client_, &ResourceClient::changed, this, [this](const QString& id) { if (id == active_) { publishInspector(); emit changed(); } });
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) { if (id == active_) publish(); });
+    sourceTable_.setSourceModel(&sourceRows_);
+    sourceTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
+    connect(this, &Workspace::resourcePresentationChanged, this, [this] {
+        QStringList visible;
+        visible.reserve(table_.rowCount());
+        for (int row = 0; row < table_.rowCount(); ++row)
+            visible.append(table_.index(row, 0).data(Qt::UserRole).toString());
+        alerts_.setVisibleResources(active_, visible);
+    });
     connect(&client_, &ResourceClient::detailFinished, this, [this](const QString& id, const QString& path, bool accepted) {
         if (id != active_ || path != inspectorPath()) return;
         publishInspector(); yamlFresh_ = accepted; emit yamlEditChanged();
@@ -417,7 +426,12 @@ bool Workspace::valuesVisible() const { return navigation_.value(active_).page =
 bool Workspace::valuesAvailable() const { return isCoreValueResource(client_.resource(active_, inspectorPath())); }
 QString Workspace::monospaceFamily() const { return QFontDatabase::families().contains("Menlo") ? QString("Menlo") : QFontDatabase::systemFont(QFontDatabase::FixedFont).family(); }
 QVariantMap Workspace::settingsDiagnostics() const {
+    const auto cache = client_.cacheDiagnostics();
     QVariantList metrics{
+        QVariantMap{{"id", "cachePayload"}, {"label", "Cached payload (bytes)"}, {"value", cache.value("payloadBytes")},
+            {"description", QString("%1 collections, %2 resources, %3 details, %4 log histories, %5 log lines. JSON/text estimate across sessions, including closed caches; excludes allocation overhead and shared UI projections.")
+                .arg(cache.value("collections").toLongLong()).arg(cache.value("resources").toLongLong()).arg(cache.value("details").toLongLong())
+                .arg(cache.value("logHistories").toLongLong()).arg(cache.value("logLines").toLongLong())}},
         QVariantMap{{"label","Cached resources"},{"value",rows_.rowCount()},{"description","Current session snapshot, before view filters"}},
         QVariantMap{{"label","Matching resources"},{"value",table_.rowCount()},{"description","Current cached filter result"}},
         QVariantMap{{"label","Cached Events"},{"value",eventRows_.rowCount()},{"description","Canonical Events, without duplicate API aliases"}},

@@ -85,6 +85,7 @@ Pane {
     signal sourcesRequested()
     signal fileRequested()
     signal folderRequested()
+    signal sourceFailuresRequested()
     property string section: "alerts"
     readonly property var sections: ["alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
     property string diagnosticTimestamp: ""
@@ -96,6 +97,7 @@ Pane {
     }
     function synchronize() {
         synchronizeAppearance()
+        if (visible && section === "sources") workspace.refreshSourceTable()
         requests.value = workspace.requestLimit
         inactive.value = workspace.inactiveSyncMinutes
         logs.text = workspace.logLimitMb.toString()
@@ -104,7 +106,12 @@ Pane {
     onSectionChanged: { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
     onVisibleChanged: if (visible) { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
     Component.onCompleted: synchronize()
-    Connections { target: workspace; function onAppearanceChanged() { settings.synchronizeAppearance() } function onLanguageChanged() { settings.synchronizeAppearance() } }
+    Connections {
+        target: workspace
+        function onAppearanceChanged() { settings.synchronizeAppearance() }
+        function onLanguageChanged() { settings.synchronizeAppearance() }
+        function onCatalogsChanged() { if (settings.visible && settings.section === "sources") workspace.refreshSourceTable() }
+    }
     padding: 14
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
     component SectionButton: Button {
@@ -215,39 +222,53 @@ Pane {
                     RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } Button { objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
                     Flow {
                         Layout.fillWidth: true; spacing: 6
-                        Button { text: "Browse file"; enabled: !workspace.busy; onClicked: settings.fileRequested() }
-                        Button { text: "Browse folder"; enabled: !workspace.busy; onClicked: settings.folderRequested() }
-                        Button { text: "Reload sources"; enabled: !workspace.busy; onClicked: workspace.reload() }
-                        Button { objectName: "pasteSourceButton"; text: "Paste kubeconfig"; enabled: !workspace.busy; onClicked: pasteSourceDialog.open() }
-                        Button { objectName: "importHomeButton"; text: "Import ~/.kube/config"; enabled: !workspace.busy; onClicked: workspace.importHome() }
-                        Button { objectName: "refreshSourceFilesButton"; text: "Refresh source files"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: workspace.refreshSources() }
+                        IconButton { glyph: "ConfigMap"; text: "Browse file"; enabled: !workspace.busy; onClicked: settings.fileRequested() }
+                        IconButton { glyph: "Namespace"; text: "Browse folder"; enabled: !workspace.busy; onClicked: settings.folderRequested() }
+                        IconButton { glyph: "Reset"; text: "Reload imported metadata"; enabled: !workspace.busy; onClicked: workspace.reload() }
+                        IconButton { objectName: "pasteSourceButton"; glyph: "Pencil"; text: "Paste kubeconfig"; enabled: !workspace.busy; onClicked: pasteSourceDialog.open() }
+                        IconButton { objectName: "importHomeButton"; glyph: "Cluster"; text: "Import ~/.kube/config"; enabled: !workspace.busy; onClicked: workspace.importHome() }
+                        IconButton { objectName: "refreshSourceFilesButton"; glyph: "Reset"; text: "Reimport changed source files"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: workspace.refreshSources() }
                     }
                     Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
-                    Label { Layout.fillWidth: true; text: workspace.sourceImportNotice; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-                    ListView {
+                    RowLayout {
+                        Layout.fillWidth: true; visible: workspace.sourceImportNotice !== ""
+                        Label { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+                        IconButton { objectName: "settingsSourceImportDetails"; glyph: "Event"; text: "View import failures"; visible: workspace.sourceImportIssues.length > 0; onClicked: settings.sourceFailuresRequested() }
+                    }
+                    ResourceGrid {
                         objectName: "settingsSourceList"
-                        Layout.fillWidth: true; Layout.preferredHeight: Math.min(400, Math.max(96, count * 96))
-                        clip: true; reuseItems: true; model: settings.visible && settings.section === "sources" ? workspace.contexts : []; ScrollBar.vertical: ScrollBar {}
-                        delegate: ItemDelegate {
-                            required property var modelData
-                            width: ListView.view.width; height: 96
-                            enabled: !workspace.busy
-                            Accessible.name: modelData.name + ", " + modelData.cluster + ", " + modelData.auth
-                            onClicked: if (modelData.usable) workspace.openContext(modelData.id)
-                            contentItem: ColumnLayout {
-                                RowLayout { Label { Layout.fillWidth: true; text: modelData.name; textFormat: Text.PlainText; font.bold: true; elide: Text.ElideRight } Label { Layout.preferredWidth: 160; Layout.maximumWidth: 160; text: modelData.cluster + " / " + modelData.auth; textFormat: Text.PlainText; elide: Text.ElideRight } }
-                                Label { Layout.fillWidth: true; text: modelData.source; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; elide: Text.ElideMiddle }
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Label { Layout.fillWidth: true; text: modelData.detail || modelData.imported; textFormat: Text.PlainText; color: modelData.usable ? workspace.appearanceColors.muted : workspace.appearanceColors.danger; elide: Text.ElideRight }
-                                    Button { objectName: "renameSource_" + modelData.id; text: "Rename..."; Accessible.name: "Rename source context " + modelData.name; onClicked: sourceAliasDialog.edit(modelData) }
-                                    Button { objectName: "removeSource_" + modelData.id; text: "Remove..."; Accessible.name: "Remove source context " + modelData.name; onClicked: workspace.requestSourceRemoval(modelData.id) }
+                        Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: 400
+                        visible: settings.section === "sources"; prefix: "source"
+                        tableModel: workspace.sourceTable; columns: workspace.sourceColumns
+                        sortColumn: workspace.sourceSortColumn; sortDirection: workspace.sourceSortDirection
+                        rowHeight: settings.width < 650 ? 44 : 32
+                        sortableColumns: 7; actionColumns: [7,8]; accessoryColumns: [7,8]
+                        emptyText: "No imported contexts. Open or paste a kubeconfig."
+                        onSortRequested: column => workspace.sortSourceColumn(column)
+                        onCopyRequested: (row,column) => workspace.copySourceCell(pathAt(row),column)
+                        onCopyPathRequested: (identity,column) => workspace.copySourceCell(identity,column)
+                        onInspectRequested: identity => { if (!workspace.busy) workspace.openContext(identity) }
+                        onActionRequested: (identity,column) => {
+                            if (workspace.busy) return
+                            if (column === 8) workspace.requestSourceRemoval(identity)
+                            else { const context = workspace.contexts.find(context => context.id === identity); if (context) sourceAliasDialog.edit(context) }
+                        }
+                        cellAccessory: Component {
+                            IconButton {
+                                id: sourceAction
+                                readonly property string identity: parent.identity
+                                readonly property bool isRemoval: parent.column === 8
+                                objectName: (isRemoval ? "removeSource_" : "renameSource_") + identity
+                                glyph: isRemoval ? "Close" : "Pencil"
+                                text: (isRemoval ? "Remove source context " : "Rename source context ") + parent.resourceName
+                                enabled: !workspace.busy
+                                onClicked: {
+                                    if (sourceAction.isRemoval) workspace.requestSourceRemoval(sourceAction.identity)
+                                    else { const context = workspace.contexts.find(context => context.id === sourceAction.identity); if (context) sourceAliasDialog.edit(context) }
                                 }
                             }
-                            ToolTip.visible: hovered; ToolTip.text: modelData.source + "\n" + (modelData.detail || "Open context")
                         }
                     }
-                    Label { visible: workspace.contexts.length === 0; text: "No imported contexts." }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "diagnostics"

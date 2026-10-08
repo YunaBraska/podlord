@@ -87,6 +87,8 @@ public:
     Q_INVOKABLE bool copyText(const QString& text);
     Q_INVOKABLE QVariantMap effect(const QString& path) const;
     bool showSession(const QString& session);
+    /** Publishes filtered cache membership. View-entry effects never change global alert matches or schedule transport. */
+    bool setVisibleResources(const QString& session, const QStringList& paths);
     bool closeSession(const QString& session);
 signals:
     void rulesChanged();
@@ -102,11 +104,13 @@ private:
         QMap<QString, QDateTime> changedAt;
         QMap<QString, QJsonObject> triggered;
         QMap<QString, QDateTime> colorUntil, animationUntil;
+        QSet<QString> visiblePaths, visibleMatches;
         QVariantList matches;
         QString evaluationError;
         QMap<QString, QVariantMap> effects;
         quint64 generation = 0;
         bool initialized = false;
+        bool visibleInitialized = false;
         bool loading = true;
     };
     const QString profile_;

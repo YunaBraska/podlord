@@ -346,12 +346,17 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             } else if (mode == "hold") {
                 if (!choose("alertColorMode", 1) || !choose("alertAnimationMode", 2)) return false;
                 expectedMode = "duration";
+            } else if (mode == "once") {
+                if (!choose("alertColorMode", 3) || !choose("alertAnimationMode", 3)
+                    || item(window, "alertColorSeconds")->isVisible() || item(window, "alertAnimationSeconds")->isVisible()) return false;
+                expectedMode = "once";
             } else return false;
             if (!click(window, "saveAlert") || !settle() || rules().size() != baseline.size() + 1) return false;
             const auto rule = rules().last().toMap();
             const auto criterion = rule["groups"].toList().first().toList().first().toMap();
             if (rule["color"] != expectedColor || rule["colorMode"] != expectedMode || criterion["field"] != expectedField
-                || criterion["expression"] != expectedExpression || (mode == "hold" && rule["animationMode"] != "new-in-view")) return false;
+                || criterion["expression"] != expectedExpression || (mode == "hold" && rule["animationMode"] != "new-in-view")
+                || (mode == "once" && rule["animationMode"] != "once")) return false;
             podlord::Workspace restored(profile);
             return waitFor([&] { return !restored.alerts()->busy(); }) && restored.alerts()->rules() == rules() && server.requests == 0;
         }

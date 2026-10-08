@@ -4763,3 +4763,113 @@ and both original frames are retained. `capture-boundaries.json` declares the
 unequal capture boundaries and empty-session/source-import difference. This is
 neither a fresh dual-desktop pair nor evidence that the whole view is visually
 identical, that memory improved by the shown numbers, or that the release is done.
+
+## Which Alarm Lifecycles And Sources Workflows Were Completed Next?
+
+| Behavior | Public entrypoint | Executed scenarios / boundary |
+| --- | --- | --- |
+| Finite alert holds | ResourceClient ingestion and Alerts rules | `native.alert_lifecycle.{once_color,once_animation,duration_color,duration_animation,duration_survives_unmatch}` checks 1350 ms once, bounded duration, no update extension and survival after unmatch. Only the external Kubernetes HTTP boundary is replaced. |
+| View-entry effects | Public visible-membership publication and actual session cache | `view_entry`, `view_reentry`, `view_expiry`, `view_hidden`, `view_false`, `view_global`, `view_repeat`, `view_invalid`, `session_close` cover silent initial membership, boolean criteria, filtered view entry and whole-session matching. |
+| Once editor/persistence | Actual AlertView and public rule store | Once saves/reopens without a seconds field. The focused alarm/filter run passed 527 executions in 75.17 s: 346 behavior executions and 181 style variants. `once-baseline.xml` retains the initial failure; final evidence is `alert-filter-final.log/xml`. |
+| Sources table | Actual Settings section and private imported kubeconfig | `native.sources_table.{table,narrow,sort,copy_keyboard,find,find_empty,find_keyboard,columns,columns_restart}_{Basic,Fusion}` checks row-owned clusters, ASC/DESC/NONE, canonical clipboard, wrap Find and persistent hidden/pinned columns. No session is opened and no Kubernetes request is needed. |
+| Sources mutations | Actual pointer/keyboard controls and confirmation dialogs | `rename`, `remove_cancel`, `remove`, `remove_all`, `refresh_changed`, `hidden`, `repeat` preserve existing source actions and cover growth from two to four contexts after actual changed-file reimport. Empty tables and hidden-section stability are explicit outcomes. |
+| Rejected Sources actions | Public Workspace actions | Negative/high/action-column sort indices and invalid copy indices/identities leave sorting and clipboard unchanged. |
+| Sources layout migration | Public TableLayoutStore | `source_upgrade_read/save/current_missing/unknown/invalid` checks version-9 explicit save, read-only migration and preservation on failure. Existing lock/conflict/concurrent-save cases remain applicable. |
+| Virtualized row membership | Real shared TableView and source-file reimport | The changed-file workflow first aborted with stale Qt row mapping after column pinning. `sources-crash-stack-final.log` records the actual Cocoa/Qt stack. Clearing derived row reordering fixes both styles without resetting the model or relaxing the expected four contexts. |
+
+The Sources-focused run passed 437 executions in 14.62 s with twelve workers:
+302 behavior executions and 135 style variants. Final focused evidence is
+`sources-membership.log/xml`. Two additional UI scenarios were then added;
+their current complete-suite result must be reported separately. Earlier failed
+focused runs are retained, not relabeled as passing evidence.
+
+Evidence root:
+`/Users/yuna/.local/share/podlord-comparison/release-evidence/2026-10-08-parity-desktop`.
+Nine `comparison-settings-*.png` pairs retain original C#/C++ Cocoa pixels. They
+compare the preserved C# app against native commit `774adc2`, before this alarm
+and Sources increment, on an owned real local Kubernetes fixture with 1051
+labelled resources. Different cache counts and persisted water settings mean
+these are presentation evidence, not exact equal-data radar or full-theme passes.
+`native-settings-sources-current.png` is a later actual Cocoa frame of the current
+Sources table with two imported contexts and no opened session; it is not a
+populated-cluster comparison. Both runs' owned processes/profiles were cleaned up.
+The separate `2026-10-08-sources-current-comparison` directory retains a lossless
+C#-left/current-C++-right Sources image and `capture-boundaries.json` explicitly
+declaring those different datasets. It is progress evidence, not an equal-fixture
+comparison.
+
+The separate real Kubernetes terminal run passed `real_shell`, `real_vi`,
+`real_interrupt` and `real_touch_interrupt`; see `terminal-real-e2e.log` and
+`2026-10-08-alert-terminal-e2e` under the evidence root's parent. The scripts
+cleaned their owned Kubernetes containers, volumes and temporary profiles.
+
+The current Sources private macOS arm64 package passed dependency/ad-hoc integrity
+and the unchanged size gates: 32406009 ZIP bytes and 85756795 installed regular-file
+logical bytes. Directory: `2026-10-08-sources-table-package` under the same evidence
+parent; log: `sources-package.log`. Executable SHA-256:
+`513c2f27e4036ec7ed683f862421970f4d385edf21fdb650591db1c4359228a0`.
+ZIP SHA-256:
+`5d7fca3f8462048d56663a9f7b2c373564993876f5357d99d5b3c8eb0ff600a0`.
+Signing/notarization remain deliberately deferred. Package preflight and these
+scoped workflows do not close remaining camera/imported-sound, update-policy,
+translation, cache-byte, coverage, performance or physical-device/image gates.
+
+## What Did The Subsequent Complete Settings Check Establish?
+
+The first complete run above executed 4039 registrations in 578.51 s: 4037
+passed and the Basic/Fusion port-forward context-removal workflows failed. Those
+tests retained a delegate/navigation assumption from the old Sources cards.
+They now use the real visible section selector and reacquire the canonical
+removal control after virtualized layout. The focused recovery passed both
+styles in 3.39 s; `full-current.log/xml` retains the failed complete run.
+
+| Behavior | Public entrypoint | Current executed evidence |
+| --- | --- | --- |
+| Cache payload estimate | Workspace Diagnostics snapshot and real shared model | `native.cache_diagnostics.{empty,missing,populated,detail,unicode,secret,repeat,filtered,refresh,rejected,close,multiple,logs}` checks zero/real byte values, UTF-8 detail size, all-session aggregation, retained closed cache, changed lists, read failure, stable filtering/reuse, logs and no Secret contents in diagnostics. The external Kubernetes HTTP boundary alone is replaced. 13/13 passed in 5.68 s; `cache-baseline.log/xml` retains the initial missing-metric failure. |
+| Stable displayed bytes | Public Diagnostics refresh and model display | Empty and populated cases assert the actual grid model displays the measured byte value, without another request. The estimate excludes allocation overhead and shared projections, and is not labeled RSS. |
+| Import feedback placement | Actual Main/Settings pointer routes | `native.settings_notice.{once,unrelated,failures}_{Basic,Fusion}` checks one notice in Sources, none in unrelated Settings, and the still-working failure-details dialog. All six baseline executions failed before the presentation fix. |
+| Audio first use and reuse | Real embedded asset playback | Each of the 116 assets now has one named repeat scenario that decodes the first play and its replay. The separate one-play process repeated the already asserted first-play path and was removed; no asset, repeat assertion or failure handling was removed. Tests use QCoreApplication and Qt's FFmpeg backend, not terminal windows or a new GUI for each alert. Physical audible/device comparison remains separate. |
+
+The resulting complete current native suite passed **3942/3942** registrations in
+**348.81 s** with 24 workers: **2907 behavior executions and 1035 style variants**.
+Evidence: `closure-full.log/xml` in `2026-10-08-parity-desktop`. These are not 3942
+distinct product features. Private profiles, offscreen windows and loopback
+listeners isolate this lane; actual desktop/performance comparisons retain their
+separate serial lane. The changed registration set and worker count mean the
+wall-time difference is workflow evidence, not a like-for-like application speed
+benchmark.
+
+The updated private macOS arm64 package also passes the unchanged size,
+dependency and ad-hoc integrity gates: **32408033 ZIP bytes**, **85773307 installed
+regular-file logical bytes**. Directory: `2026-10-08-settings-closure-package`;
+log: `closure-package.log`. It uses the same explicit Qt 6.11.2 and portable
+OpenSSL/yaml-cpp prefixes as the tested build. An incorrect default-Homebrew SDK
+attempt failed before packaging and is retained as
+`closure-package-wrong-sdk.log`, not counted as a passing supplier check.
+Executable SHA-256:
+`877cc05a5151bdaef95fa7894f131e263a69e70948e8675f700dc985ba96dc85`.
+ZIP SHA-256:
+`cd7e1c854f10747c3c56b58256161f3d9dc17463ae4450429942bf8b12de6801`.
+
+The attempted current foreground benchmark lost desktop focus and stopped before
+completing its protocol; see `2026-10-08-sources-foreground`. It does not replace
+the prior open performance gates. A later current-desktop launch encountered a
+locked Mac and was cleaned up without capturing or fabricating a new frame.
+The earlier current Sources screenshot therefore predates the notice/cache
+changes. Update policy, remaining action/imported-sound capabilities,
+translations, coverage, full image/device comparisons and performance remain
+explicit gates; complete execution of these component tests does not close them.
+
+The unchanged C# reference sources also passed their current four test projects:
+Core **91**, App **214**, Kubernetes **84** and headless Layout **69**, **458**
+executions total, none skipped. Kubernetes includes the 25 real local K3D
+scenarios. Evidence: `legacy-current` for Core/Layout and `legacy-recovery` for
+App/Kubernetes under `2026-10-08-parity-desktop`. The initial isolated-home
+Kubernetes attempt failed because Docker resolved `/var/run/docker.sock`; the
+recovery explicitly selected the validated local Colima Unix socket. No
+production/shared cluster or default kubeconfig was used. The App project's
+initial no-restore invocation produced no test results and is not counted;
+after package restore, all 214 actually executed. The fixture and wrapper
+cleaned their run-owned cluster/volumes and temporary homes/profiles using
+ownership labels. Reference tests prove those executed C# paths, not native
+functional or visual equivalence.

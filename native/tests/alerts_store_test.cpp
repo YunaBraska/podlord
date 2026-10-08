@@ -29,6 +29,7 @@ bool run(const QString& scenario) {
     }
     auto desired=original;
     auto custom=original.rules[0].value; custom["id"]="custom"; custom["builtIn"]=false; custom["name"]="Custom";
+    if (scenario == "once") { custom["colorMode"] = "once"; custom["animationMode"] = "once"; }
     const auto parsed=podlord::parseAlertRule(custom); if (!std::holds_alternative<podlord::AlertRule>(parsed)) return false;
     desired.rules.append(std::get<podlord::AlertRule>(parsed));
     if (scenario=="invalid_save") { desired.rules.last().value["name"]=""; return std::holds_alternative<podlord::Failure>(store.save(desired, original)) && !QFile::exists(profile); }
@@ -81,7 +82,8 @@ bool run(const QString& scenario) {
         return permissions.testFlag(QFile::ReadOwner) && permissions.testFlag(QFile::WriteOwner)
             && !(permissions & (QFile::ReadGroup|QFile::WriteGroup|QFile::ExeGroup|QFile::ReadOther|QFile::WriteOther|QFile::ExeOther));
     }
-    if (scenario=="restore") { const auto result=store.load(); return std::holds_alternative<podlord::AlertCatalog>(result) && std::get<podlord::AlertCatalog>(result).rules.size()==4; }
+    if (scenario=="restore" || scenario=="once") { const auto result=store.load(); return std::holds_alternative<podlord::AlertCatalog>(result) && std::get<podlord::AlertCatalog>(result).rules.size()==4
+        && (scenario != "once" || std::get<podlord::AlertCatalog>(result).rules.last().value == custom); }
     if (scenario=="conflict") { const auto result=store.save(original, original); return std::holds_alternative<podlord::Failure>(result) && std::get<podlord::Failure>(result).code==podlord::StoreError::Conflict; }
     if (scenario=="repeat") return std::holds_alternative<podlord::AlertCatalog>(store.save(desired, desired));
     QFile file(path); if (!file.open(QIODevice::ReadOnly)) return false;
