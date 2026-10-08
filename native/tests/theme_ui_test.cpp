@@ -85,24 +85,23 @@ bool exercise(const QStringList& arguments) {
     require(!names.isEmpty(), "The shipped theme catalog is not exposed");
     require(workspace.property("themeName").toString() == "Sirocco Command"
         && workspace.property("themeVariant").toString() == "dark"
-        && workspace.property("themeIntensity").toString() == "subtle", "Legacy appearance defaults were not retained");
+       , "Legacy appearance defaults were not retained");
     require(click(window, "settingsWorkspaceButton") && click(window, "settingsAppearanceSection"), "Appearance settings are missing from the public UI");
+    if (scenario == "removed_intensity")
+        return require(!window->findChild<QObject*>("inlineAppearanceIntensity"), "Removed intensity selector is still present");
     if (scenario == "invalid_name" || scenario == "empty_name" ||
-        scenario == "invalid_variant" || scenario == "invalid_intensity" ||
+        scenario == "invalid_variant" ||
         scenario == "repeat") {
         const auto originalPalette = workspace.appearancePalette();
         const auto name = scenario == "invalid_name" ? QStringLiteral("Unknown Theme") :
                           scenario == "empty_name" ? QString{} : workspace.themeName();
         const auto variant = scenario == "invalid_variant" ? QStringLiteral("automatic") :
                              workspace.themeVariant();
-        const auto intensity = scenario == "invalid_intensity" ? QStringLiteral("animated") :
-                               workspace.themeIntensity();
-        require(workspace.saveAppearance(name, variant, intensity) == (scenario == "repeat"),
+        require(workspace.saveAppearance(name, variant) == (scenario == "repeat"),
                 "Appearance validation or repeated selection returned the wrong result");
         require(workspace.appearancePalette() == originalPalette &&
                     workspace.themeName() == "Sirocco Command" &&
-                    workspace.themeVariant() == "dark" &&
-                    workspace.themeIntensity() == "subtle",
+                    workspace.themeVariant() == "dark",
                 "Rejected or repeated appearance changed the active theme");
         require(!QDir(profile).exists(), "Rejected or repeated appearance created profile data");
         if (scenario != "repeat")
@@ -128,17 +127,15 @@ bool exercise(const QStringList& arguments) {
         require(window->findChild<QObject*>("inlineAppearanceTheme")->property("currentIndex").toInt() == 1, "Failed save left a misleading selected theme");
         return true;
     }
-    QString selected = "Gunmetal Sector", variant = "light", intensity = "arcade";
+    QString selected = "Gunmetal Sector", variant = "light";
     if (scenario == "palette") {
-        require(arguments.size() == 6, "Expected palette, variant and intensity");
-        selected = arguments[3]; variant = arguments[4]; intensity = arguments[5];
+        require(arguments.size() == 5, "Expected palette and variant");
+        selected = arguments[3]; variant = arguments[4];
     }
     require(names.contains(selected), "Shipped theme is missing");
     choose(window, workspace, "inlineAppearanceTheme", static_cast<int>(names.indexOf(selected)));
     choose(window, workspace, "inlineAppearanceVariant", variant == "light" ? 1 : 0);
-    choose(window, workspace, "inlineAppearanceIntensity", QStringList{"subtle", "medium", "arcade"}.indexOf(intensity));
-    require(workspace.property("themeName").toString() == selected && workspace.property("themeVariant").toString() == variant
-        && workspace.property("themeIntensity").toString() == intensity, "Public selection did not apply appearance settings");
+    require(workspace.property("themeName").toString() == selected && workspace.property("themeVariant").toString() == variant, "Public selection did not apply appearance settings");
     int count = 0;
     const auto colors = legacyColors(legacy, selected, variant, count);
     require(names.size() == count, "Native and legacy theme inventories differ");
@@ -155,17 +152,16 @@ bool exercise(const QStringList& arguments) {
     const QStringList colorNames{"app", "panel", "raised", "inset", "border", "strongBorder", "accent", "accentMuted", "accentGlow", "text", "muted", "success", "warning", "danger", "unknown", "radarShell", "radarGlass"};
     for (int index = 0; index < colors.size(); ++index)
         require(surfaces[colorNames[index]].value<QColor>() == colors[index], "A shipped semantic surface color changed");
-    require(!surfaces["texture"].toString().isEmpty(), "Intensity has no visible texture output");
+    require(!surfaces["texture"].toString().isEmpty(), "Theme has no static texture output");
     if (QFileInfo::exists(profile + "/read-settings.json")) {
         const auto settings = QJsonDocument::fromJson(read(profile + "/read-settings.json")).object();
-        require(settings["themeName"] == selected && settings["themeVariant"] == variant && settings["themeIntensity"] == intensity, "Appearance selection was not persisted");
-    } else require(selected == "Sirocco Command" && variant == "dark" && intensity == "subtle", "Nondefault appearance was not persisted");
+        require(settings["themeName"] == selected && settings["themeVariant"] == variant && !settings.contains("themeIntensity"), "Appearance selection was not persisted");
+    } else require(selected == "Sirocco Command" && variant == "dark", "Nondefault appearance was not persisted");
     require(workspace.contexts().isEmpty() && workspace.currentSession().isEmpty(), "Appearance changed cluster/session selection");
     if (scenario == "restore") {
         podlord::Workspace reopened(profile);
         require(QTest::qWaitFor([&] { return !reopened.busy(); }, 5000), "Restored settings did not settle");
-        require(reopened.property("themeName").toString() == selected && reopened.property("themeVariant").toString() == variant
-            && reopened.property("themeIntensity").toString() == intensity, "Restart lost appearance choices");
+        require(reopened.property("themeName").toString() == selected && reopened.property("themeVariant").toString() == variant, "Restart lost appearance choices");
     }
     if (scenario == "preserve") {
         require(workspace.saveReadSettings(120, 2, "7"), "Cannot save read policy after appearance");
@@ -173,14 +169,14 @@ bool exercise(const QStringList& arguments) {
         const auto result = podlord::ReadSettingsStore(profile).load();
         require(std::holds_alternative<podlord::ReadSettings>(result), "Cannot read combined settings");
         const auto persisted = QJsonDocument::fromJson(read(profile + "/read-settings.json")).object();
-        require(persisted["themeName"] == selected && persisted["themeVariant"] == variant && persisted["themeIntensity"] == intensity
+        require(persisted["themeName"] == selected && persisted["themeVariant"] == variant && !persisted.contains("themeIntensity")
             && persisted["requestHardLimitPerMinute"] == 120 && persisted["logLimitMb"] == 7, "Policy save overwrote appearance");
     }
     const QString screenshotDirectory = qEnvironmentVariable("PODLORD_THEME_SCREENSHOT_DIR");
     if (!screenshotDirectory.isEmpty()) {
         require(QDir().mkpath(screenshotDirectory), "Cannot create screenshot evidence directory");
         require(QTest::qWaitFor([&] { return !window->grabWindow().isNull(); }, 5000), "Theme surface did not render");
-        const QString name = selected.toLower().replace(' ', '-') + '-' + variant + '-' + intensity;
+        const QString name = selected.toLower().replace(' ', '-') + '-' + variant;
         require(window->grabWindow().save(QDir(screenshotDirectory).filePath(name + ".png")), "Cannot capture rendered theme");
     }
     require(warnings.isEmpty(), "The actual theme UI reported a QML warning");

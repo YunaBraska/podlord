@@ -493,7 +493,7 @@ bool execute(const QString& scenario) {
     const bool twoContexts = scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
-    KubernetesBoundary server(scenario == "shell_search_events" ? "filter_event_message" : scenario);
+    KubernetesBoundary server(scenario == "shell_search_events" ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     const auto source = temporary.filePath("source.config");
     QFile file(source);
@@ -539,6 +539,11 @@ bool execute(const QString& scenario) {
     if (!waitFor([&] { return item(window, "importButton")->isEnabled(); })) return false;
     if (scenario == "accessibility_empty") return accessibleName(window, "Workspace actions")
         && accessibleName(window, "Kubeconfig file or folder path") && server.requests.isEmpty();
+    if (scenario == "empty_brand") {
+        auto* logo = item(window, "resourceEmptyLogo");
+        return logo && waitFor([&] { return logo->isVisible() && logo->property("status").toInt() == 1; })
+            && !text(window, "emptyResources").isEmpty() && server.requests.isEmpty();
+    }
     if (scenario == "shell_footer_empty") return text(window, "resourceMatchCount") == "visible: 0/0"
         && text(window, "syncStatus") == "API: 0/min  Synced: never" && server.requests.isEmpty();
     if (scenario.startsWith("radar_water_")) {
@@ -627,6 +632,50 @@ bool execute(const QString& scenario) {
     }
     if (!waitFor([&] { return item(window, "contexts")->property("count").toInt() == (twoContexts ? 2 : 1) && item(window, "openContext")->isEnabled(); })) return false;
     if (!click(window, item(window, "openContext"))) return false;
+    if (scenario.startsWith("query_")) {
+        const bool events = scenario == "query_event";
+        if (!waitFor([&] { return !workspace.loading() && workspace.table()->rowCount() >= 3; }, 15000)) return false;
+        if (events && (!waitFor([&] { return workspace.eventTable()->rowCount() == 2; }) || !workspace.setWorkspacePage("events"))) return false;
+        const auto calls = server.requests.size();
+        const auto inputName = events ? "eventFilter" : "resourceFilter";
+        const auto query = scenario == "query_none" ? QString("absent") : scenario == "query_invalid" ? QString("/[invalid/") : events ? QString("Probe") : QString("Pod");
+        if (scenario == "query_narrow") window->resize(600, 390);
+        if (!type(window, item(window, inputName), query)) return false;
+        auto* count = item(window, "queryMatchCount");
+        auto* next = item(window, "queryNext");
+        auto* previous = item(window, "queryPrevious");
+        if (!count || !next || !previous) return false;
+        auto* model = events ? workspace.eventTable() : workspace.table();
+        const auto selection = item(window, events ? "eventTable" : "resourceTable")->property("selectionModel").value<QItemSelectionModel*>();
+        if (!selection) return false;
+        if (scenario == "query_none" || scenario == "query_invalid")
+            return waitFor([&] { return count->property("text") == "0/0"; }) && !next->isEnabled() && !previous->isEnabled()
+                && server.requests.size() == calls && (scenario != "query_invalid" || !workspace.filterError().isEmpty());
+        if (!waitFor([&] { return count->property("text") == "1/2" && selection->currentIndex().row() == 0; })) return false;
+        if (scenario == "query_keyboard") {
+            item(window, inputName)->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return);
+        } else if (!click(window, next)) return false;
+        if (count->property("text") != "2/2" || selection->currentIndex().row() != 1) return false;
+        if (scenario == "query_previous") {
+            if (!click(window, previous) || count->property("text") != "1/2") return false;
+        } else if (scenario == "query_keyboard") {
+            item(window, inputName)->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return, Qt::ShiftModifier);
+            if (count->property("text") != "1/2") return false;
+        } else if (scenario == "query_wrap") {
+            if (!click(window, next) || count->property("text") != "1/2"
+                || !click(window, previous) || count->property("text") != "2/2") return false;
+        } else if (scenario == "query_clear") {
+            if (!type(window, item(window, inputName), "") || count->property("text") != "0/0" || next->isEnabled()) return false;
+        } else if (scenario == "query_narrow") {
+            if (!displayedWithin(window->contentItem(), next) || !displayedWithin(window->contentItem(), previous)
+                || !displayedWithin(window->contentItem(), item(window, inputName))) return false;
+        } else if (scenario == "query_logo") {
+            if (!type(window, item(window, inputName), "absent")) return false;
+            auto* logo = item(window, "resourceEmptyLogo");
+            if (!logo || !waitFor([&] { return logo->isVisible() && logo->property("status").toInt() == 1; })) return false;
+        } else if (scenario == "query_next" && (model->data(selection->currentIndex(), Qt::UserRole).toString().isEmpty())) return false;
+        return workspace.inspectorPath().isEmpty() && server.requests.size() == calls;
+    }
     if (scenario.startsWith("find_")) {
         if (scenario == "find_event") {
             if (!waitFor([&] { return !workspace.loading() && workspace.eventTable()->rowCount() == 2; }, 15000) || !workspace.setWorkspacePage("events")) return false;
@@ -2179,7 +2228,7 @@ bool execute(const QString& scenario) {
         }
         if (scenario == "radar_theme") {
             for (const auto& theme : workspace.themeNames()) for (const auto& variant : {QString("dark"), QString("light")}) {
-                if (!workspace.saveAppearance(theme, variant, "subtle") || !waitFor([&] { return !workspace.busy(); })) return false;
+                if (!workspace.saveAppearance(theme, variant) || !waitFor([&] { return !workspace.busy(); })) return false;
                 auto* tile = item(window, "radarTile_0");
                 const auto expected = workspace.table()->data(workspace.table()->index(0, 0), Qt::UserRole + 5).value<QColor>();
                 if (!tile || !waitFor([&] { return tile->property("statusColor").value<QColor>() == expected; })) return false;

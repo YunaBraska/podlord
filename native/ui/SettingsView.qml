@@ -91,7 +91,6 @@ Pane {
     function synchronizeAppearance() {
         theme.currentIndex = workspace.themeNames.indexOf(workspace.themeName)
         variant.currentIndex = variant.model.indexOf(workspace.themeVariant)
-        intensity.currentIndex = intensity.model.indexOf(workspace.themeIntensity)
         language.currentIndex = language.model.findIndex(option => option.code === workspace.uiLanguage)
     }
     function synchronize() {
@@ -171,9 +170,8 @@ Pane {
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
                     SettingRow { label: workspace.uiText["settings.language"]; help: workspace.uiText["settings.languageHelp"]; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
-                    SettingRow { label: workspace.uiText["settings.theme"]; help: workspace.uiText["settings.themeHelp"]; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.theme"]; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant, workspace.themeIntensity) } }
-                    SettingRow { label: workspace.uiText["settings.variant"]; help: workspace.uiText["settings.variantHelp"]; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText, workspace.themeIntensity) } }
-                    SettingRow { label: workspace.uiText["settings.themeIntensity"]; help: workspace.uiText["settings.themeIntensityHelp"]; ComboBox { id: intensity; objectName: "inlineAppearanceIntensity"; Layout.fillWidth: true; model: ["subtle", "medium", "arcade"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.themeIntensity"]; onActivated: workspace.saveAppearance(workspace.themeName, workspace.themeVariant, currentText) } }
+                    SettingRow { label: workspace.uiText["settings.theme"]; help: workspace.uiText["settings.themeHelp"]; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.theme"]; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant) } }
+                    SettingRow { label: workspace.uiText["settings.variant"]; help: workspace.uiText["settings.variantHelp"]; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "graphics"
