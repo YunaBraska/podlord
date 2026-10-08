@@ -77,7 +77,6 @@ class Workspace final : public QObject {
     Q_PROPERTY(QStringList themeNames READ themeNames CONSTANT)
     Q_PROPERTY(QString themeName READ themeName NOTIFY appearanceChanged)
     Q_PROPERTY(QString themeVariant READ themeVariant NOTIFY appearanceChanged)
-    Q_PROPERTY(QString themeIntensity READ themeIntensity NOTIFY appearanceChanged)
     Q_PROPERTY(QPalette appearancePalette READ appearancePalette NOTIFY appearanceChanged)
     Q_PROPERTY(QVariantMap appearanceColors READ appearanceColors NOTIFY appearanceChanged)
     Q_PROPERTY(QString sourceImportNotice READ sourceImportNotice NOTIFY changed)
@@ -259,10 +258,9 @@ public:
     QStringList themeNames() const { return podlord::themeNames(); }
     QString themeName() const { return settings_.themeName; }
     QString themeVariant() const { return settings_.themeVariant; }
-    QString themeIntensity() const { return settings_.themeIntensity; }
     QPalette appearancePalette() const { return appearance_.palette; }
     QVariantMap appearanceColors() const { return appearance_.colors; }
-    Q_INVOKABLE bool saveAppearance(const QString& name, const QString& variant, const QString& intensity);
+    Q_INVOKABLE bool saveAppearance(const QString& name, const QString& variant);
     bool radarWaterEnabled() const { return settings_.radarWaterEnabled; }
     int radarWaterSpeedPercent() const { return settings_.radarWaterSpeedPercent; }
     Q_INVOKABLE bool saveRadarWater(bool enabled, int speedPercent);

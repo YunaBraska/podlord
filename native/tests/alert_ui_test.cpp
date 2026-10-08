@@ -381,7 +381,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         }
         if (scenario=="reference_layout" || scenario=="reference_layout_narrow" || scenario=="reference_layout_light") {
             if (scenario=="reference_layout_narrow") { window->setWidth(720); window->setHeight(720); }
-            if (scenario=="reference_layout_light" && (!workspace.saveAppearance(workspace.themeName(),"light",workspace.themeIntensity()) || !waitFor([&] { return !workspace.busy(); }))) return false;
+            if (scenario=="reference_layout_light" && (!workspace.saveAppearance(workspace.themeName(),"light") || !waitFor([&] { return !workspace.busy(); }))) return false;
             QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update(); if (!frames.wait(2000)) return false;
             const auto* table=item(window,"alertRulesTable"); const auto* editor=item(window,"alertEditor"); const auto* add=item(window,"addAlert");
             if (!table || !editor || table->width()<=0 || editor->width()<=0 || table->mapToScene({0,table->height()}).y()>add->mapToScene({0,0}).y()+1 || add->mapToScene({0,add->height()}).y()>editor->mapToScene({0,0}).y()+1) return false;
@@ -949,7 +949,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             int themeIndex=0;
             for (const auto& theme : workspace.themeNames()) {
                 for (const auto& variant : {QString("dark"), QString("light")}) {
-                    if (!workspace.saveAppearance(theme,variant,"subtle") || !waitFor([&] { return !workspace.busy(); })) return false;
+                    if (!workspace.saveAppearance(theme,variant) || !waitFor([&] { return !workspace.busy(); })) return false;
                     if (!waitFor([&] { return item(window,"radarTile_0")!=nullptr; })) return failure("themed Pod viewport");
                     radarTile=item(window,"radarTile_0");
                     radarTile->forceActiveFocus();

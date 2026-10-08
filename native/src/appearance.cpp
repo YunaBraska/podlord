@@ -55,23 +55,22 @@ QStringList themeNames() {
     if (const auto* themes = std::get_if<QList<Theme>>(&catalog())) for (const auto& theme : *themes) names.append(theme.name);
     return names;
 }
-bool validAppearance(const QString& name, const QString& variant, const QString& intensity) {
-    return (variant == "dark" || variant == "light") && (intensity == "subtle" || intensity == "medium" || intensity == "arcade")
-        && themeNames().contains(name);
+bool validAppearance(const QString& name, const QString& variant) {
+    return (variant == "dark" || variant == "light") && themeNames().contains(name);
 }
-Result<Appearance> makeAppearance(const QString& name, const QString& variant, const QString& intensity) {
+Result<Appearance> makeAppearance(const QString& name, const QString& variant) {
     if (const auto* failure = std::get_if<Failure>(&catalog())) return *failure;
-    if (!validAppearance(name, variant, intensity)) return Failure{StoreError::InvalidInput, "Choose a shipped theme, dark/light, and subtle/medium/arcade."};
+    if (!validAppearance(name, variant)) return Failure{StoreError::InvalidInput, "Choose a shipped theme and dark/light."};
     const auto& themes = std::get<QList<Theme>>(catalog());
     const auto selected = std::find_if(themes.cbegin(), themes.cend(), [&](const auto& theme) { return theme.name == name; });
     const auto& colors = variant == "light" ? selected->light : selected->dark;
     const QStringList keys{"app", "panel", "raised", "inset", "border", "strongBorder", "accent", "accentMuted", "accentGlow", "text", "muted", "success", "warning", "danger", "unknown", "radarShell", "radarGlass"};
-    Appearance appearance{name, variant, intensity, {}, {}};
+    Appearance appearance{name, variant, {}, {}};
     for (int index = 0; index < colors.size(); ++index) appearance.colors.insert(keys[index], colors[index]);
     const QColor selection = mix(colors[3], colors[6], 0.28);
     appearance.colors.insert("selection", selection);
     appearance.colors.insert("hover", mix(colors[3], colors[7], 0.22));
-    QColor glow = colors[8]; glow.setAlpha(intensity == "arcade" ? 184 : intensity == "medium" ? 120 : 72);
+    QColor glow = colors[8]; glow.setAlpha(72);
     appearance.colors.insert("glow", glow);
     for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
         auto& palette = appearance.palette;
@@ -99,8 +98,8 @@ Result<Appearance> makeAppearance(const QString& name, const QString& variant, c
     }
     QImage texture(16, 16, QImage::Format_RGBA8888);
     texture.fill(Qt::transparent);
-    QColor grain = colors[9]; grain.setAlpha(intensity == "arcade" ? 38 : intensity == "medium" ? 22 : 10);
-    const QColor scratch(0, 0, 0, intensity == "arcade" ? 24 : intensity == "medium" ? 12 : 5);
+    QColor grain = colors[9]; grain.setAlpha(10);
+    const QColor scratch(0, 0, 0, 5);
     for (int y = 0; y < texture.height(); ++y) for (int x = 0; x < texture.width(); ++x) {
         const int position = (x * 13 + y * 7 + x * y * 3) % 17;
         if (position < 4) texture.setPixelColor(x, y, grain);

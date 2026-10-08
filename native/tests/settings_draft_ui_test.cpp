@@ -103,11 +103,10 @@ int main(int argc, char** argv) {
         }
         const auto name = workspace.themeName();
         const auto variant = workspace.themeVariant() == "dark" ? QString("light") : QString("dark");
-        const auto intensity = workspace.themeIntensity();
-        if (scenario == "invalid") require(!workspace.saveAppearance("missing-theme", variant, intensity), "Unknown theme was accepted.");
+        if (scenario == "invalid") require(!workspace.saveAppearance("missing-theme", variant), "Unknown theme was accepted.");
         else {
             // A real public preference update, not a fabricated notification or store replacement.
-            require(workspace.saveAppearance(name, variant, intensity), "Appearance change was rejected.");
+            require(workspace.saveAppearance(name, variant), "Appearance change was rejected.");
             require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.themeVariant() == variant; }, 5000), "Appearance change did not complete.");
         }
         QCoreApplication::processEvents();
@@ -123,8 +122,7 @@ int main(int argc, char** argv) {
         if (scenario != "invalid") {
             click("settingsAppearanceSection");
             require(item("inlineAppearanceTheme")->property("currentText").toString() == name
-                && item("inlineAppearanceVariant")->property("currentText").toString() == variant
-                && item("inlineAppearanceIntensity")->property("currentText").toString() == intensity, "Appearance controls do not reflect the saved theme.");
+                && item("inlineAppearanceVariant")->property("currentText").toString() == variant, "Appearance controls do not reflect the saved theme.");
         }
         return 0;
     } catch (const std::exception& error) {

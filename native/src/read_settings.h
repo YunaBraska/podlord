@@ -9,7 +9,6 @@ struct ReadSettings final {
     int yamlLimitMiB = 3;
     QString themeName = "Sirocco Command";
     QString themeVariant = "dark";
-    QString themeIntensity = "subtle";
     bool radarWaterEnabled = true;
     int radarWaterSpeedPercent = 45;
     bool workspaceRestore = true;

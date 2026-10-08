@@ -306,20 +306,30 @@ work indicator; independent reads overlap in four globally rate-limited slots.
 [ADR 0034](adr/0034-silent-sync-baseline-and-bounded-reads.md) and the
 [test map](spec/k3d-test-map.md) distinguish executed evidence from remaining gaps.
 
-1. Complete the remaining filter contract: Age, UID, row Limit, legacy-preset
-   import and the missing-restart decision. Retain cache-only filtering and
-   full-session alarm evaluation; native presets currently capture fourteen
-   fields, global text and Problems/Activity mode.
-2. Align table column order, compact typography and field-picker presentation
-   against real paired screenshots without losing sorting, copying, pinned
-   columns, keyboard access or scroll retention.
-3. Complete one Settings section at a time: Sources, Sync, Appearance/Graphics,
-   Alerts, Workspace, Diagnostics, Privacy and About/update behavior. Inventory
-   each control before enabling it; test validation, persistence and failure paths.
-4. Close remaining inspector/actions/session/window comparisons and packaged
-   platform gates, then run the final full suite, coverage and performance gates.
-   Keep the old executable runnable until the requirement-to-evidence ledger is
-   complete. Never infer release readiness from component test totals.
+The capability inventory remains the function-by-function authority. Complete the
+following increments in order; each closes its declared controls, failure paths,
+public tests and paired presentation evidence before the next UI redesign. A
+passing component suite is not a completed view. Keep the current working branch
+and the runnable C# reference; do not start another parallel migration.
+
+| Order | Complete increment | Acceptance / current disposition |
+| --- | --- | --- |
+| 1 | Empty-state branding, global search navigation, approved intensity removal | Restore the actual logo; wrap Previous/Next/Enter/Shift+Enter over cached Resources/Events without requests; retain old profiles and all palettes/variants. Implemented on 2026-10-08; scoped evidence belongs in the test map, not an all-view parity claim. |
+| 2 | Settings navigation and Alerts | Reduce always-visible chrome. Compare every reference rule column and editor field, criteria groups, live preview, default-rule locks, sound catalog/import/audition, enabled/mute/motion, validation and persistence. Complete empty/populated/edit/error/keyboard/narrow states without dropping actions. |
+| 3 | Sources | Reference-shaped readable source/context inventory, import channels, aliases, refresh/recovery, source/session configuration and confirmed removal. Preserve original files, canonical identities, snapshots, permissions and sessions; pair populated/narrow/error screens. |
+| 4 | About | Product branding/version, reference project/support links, update/download ownership and offline licenses/attributions. Do not offer C# update assets to the C++ app. Verify real destinations and native presentation; no invented release data. |
+| 5 | Diagnostics | Real process runtime measurements and timestamps with explicit unavailable states, cache/request telemetry and reference table tools. Refresh only the visible section at bounded cadence or explicitly; no hidden timer and no cluster request from diagnostics rendering. |
+| 6 | Remaining Settings sections | Appearance, Graphics, Sync, Privacy and Workspace: each reference control, help, validation, unsaved inputs, atomic persistence and failure feedback. Theme intensity is the only newly approved removal. Close translations and keyboard/contrast/narrow presentation, not just selectors. |
+| 7 | Filters and all table surfaces | Complete row limit and reference preset/field behavior; preserve actual-measurement semantics. Resources, Events, Ports, Alerts, diagnostics and inspector tables require consistent sorting, columns, copy, hover, match navigation, scroll retention and responsive targets. |
+| 8 | Inspector and embedded terminal | Compare every page and eligible action, cache/freshness/edit/Secret boundaries, logs/container selection, guidance/quick fixes and forwards. Prove interactive PTY/ANSI input, resize, exit, reconnect/error and teardown through the real container workflow; pair rendered terminal screens. |
+| 9 | Radar, sessions, tabs and windows | Same reference projection/pose for deterministic topology evidence, water/background, filtered selection, issue/fresh highlights after initial load, stable health baseline, camera/navigation. Complete detach/move/close/restart with one session placement and correct forward ownership. |
+| 10 | Release evidence | Full required function/view/theme comparison matrix, actual mobile/platform targets, accessibility and packaged startup. Run the final complete suite, unique behavior accounting, coverage and repeatable public-boundary CPU/memory/latency gates; report failures honestly. Private unsigned distribution remains allowed; signing/notarization is deferred by the user. |
+
+For each row, use the existing capability inventory and test map to record:
+reference action, native public entrypoint, implementation status, exact executed
+scenario, original paired image and remaining gap. Update a row when evidence
+changes. Test counts, palette equality and headless frames must never substitute
+for whole-view or real-device evidence.
 
 ## Which RTS Experience Improvements Are Proposed After The Parity Audit?
 

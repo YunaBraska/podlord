@@ -4618,3 +4618,70 @@ ZIP SHA-256:
 `39abad16535c601779720033992b9a65a1f4ba8f15ca2bb1a773069e7df8bab9`.
 Developer ID signing/notarization remains outside this private stage. No complete
 release, real mobile device, full picture matrix or new performance gate is claimed.
+
+## Which empty-state, global search and appearance checks passed on 2026-10-08?
+
+Scope: the Resources empty-state logo, cache-only global Resources/Events match
+navigation, and the explicitly approved removal of theme intensity. This closes
+this increment, not Alerts/Sources/About/Diagnostics presentation or whole-view
+parity. The ordered remaining view/function gates live in `doc/ROADMAP.md`.
+
+| Behavior | Public entrypoint | Executed scenario / remaining gap |
+| --- | --- | --- |
+| Missing empty-state branding | Actual Main.qml Resources view | `native.ui.empty_brand_{Basic,Fusion}` loads the bundled reference logo and real explanation without a request. No generated replacement asset. |
+| Next/Previous and wrap | Global Resources search and row selection | `query_next`, `query_previous`, `query_wrap`, `query_keyboard` drive real buttons/Enter/Shift+Enter, match counter and selection. Inspector stays closed and the external HTTP request count stays unchanged. |
+| Empty, invalid and zero-match queries | Same global search | `query_none`, `query_invalid`, `query_clear` disable navigation and show 0/0; malformed expressions retain visible error feedback. |
+| Narrow navigation and filtered empty logo | Real QML window and filtered cache | `query_narrow`, `query_logo` cover 600x390 control visibility and zero-result branding. This is a headless Qt layout check, not a physical phone result. |
+| Events navigation | Global Events search | `query_event` drives the current cached Event table, wraps through visible results without inspection or extra HTTP. |
+| Independent table-local finder | Resources/Events table Find | Existing `native.table_find.*` passes unchanged: global filters and finder remain independent. |
+| All retained appearance choices | Inline Settings Appearance controls | All 19 themes x dark/light, invalid names/variants, repeat/no-save, lock/conflict, restore and read-policy preservation pass. Palette/control-role equality is not whole-view visual parity. |
+| Removed intensity | Actual Appearance view and public settings store | `native.appearance.removed_intensity`, `native.settings.appearance_upgrade_{subtle,medium,arcade}` and `appearance_removed_field`. Versions 4-7 read without rewriting; explicit save produces version 8 without the removed field and preserves unrelated policy/language/water/restoration. Current version rejects the removed field. |
+| Draft and language regressions | Existing Settings and profile entrypoints | Existing `native.settings.draft.*`, `native.ui.settings_inline_*`, language catalog/old-profile/error cases pass. Appearance changes do not save/discard unrelated drafts. |
+
+The three initial public regression checks failed before production changes:
+missing logo, missing global Next and the still-present intensity control.
+Evidence: `/Users/yuna/.local/share/podlord-comparison/release-evidence/2026-10-08-empty-query-appearance/baseline.log`
+and `baseline.xml`. An intermediate own QML separator error was corrected;
+its failures are not counted as accepted behavior evidence.
+
+Final selected run: **237/237 executions passed in 17.66 s with 12 workers**,
+comprising **189 behavior executions and 48 style variants**, not 237 unique
+features. Evidence: the same directory's `final.log` and `final.xml`.
+The prior 114 intensity matrix executions became 38 retained theme/variant
+executions; three obsolete intensity-validation executions were removed.
+No full-suite, fresh coverage, CPU/RSS latency gate, all-view screenshot matrix
+or real-device pass is claimed. No Kubernetes container was needed or created
+for this deterministic external-HTTP-boundary/QML increment.
+
+The same increment also passed private macOS arm64 Release package preflight:
+32,383,977 ZIP bytes; 85,722,219 installed regular-file logical bytes. Bundled
+load paths and ad-hoc integrity passed. Executable SHA-256:
+`638b0e7572ba82bf2115ef2193964c491f39699fe6230610caf80e24b42db85e`.
+ZIP SHA-256:
+`60e13d496e97002ecb329c8e3b26b2e09e7ea9fa5d64a55cee4297de0f9c4e3e`.
+Artifacts: `/Users/yuna/.local/share/podlord-comparison/release-evidence/2026-10-08-empty-query-package`;
+log: `release-evidence/20261008-empty-query-package.log` under the same comparison root.
+Signing/notarization remains deliberately deferred for private use.
+
+Actual native package and preserved C# source build were launched through
+separate newly created empty profiles. No ambient kubeconfig, production
+credentials, update check or external audio player was used. Original desktop
+images and six lossless side-by-side pairs (Empty, Appearance and the pending
+Alerts/Diagnostics/Sources/About surfaces) are in
+`/Users/yuna/.local/share/podlord-comparison/release-evidence/2026-10-08-empty-query-desktop`,
+with `comparisons.json` and `index.html`. The native logo is visibly rendered;
+the C# empty-state accessibility tree includes its logo but its captured frame
+does not show it. This is not represented as exact empty-state pixel parity.
+The images confirm substantial remaining Settings presentation differences;
+they are before-evidence for those open increments, not completed-view passes.
+Both owned desktop processes and temporary profiles were cleaned up.
+
+Concrete remaining defects from this review: Sources import controls remain
+visible above unrelated Settings sections, consuming vertical space; the native
+Alerts editor exposes raw field/enum expressions instead of reference-shaped
+typed controls and swatches; Diagnostics shows seven cache/policy rows but omits
+actual process RSS/private memory/thread values; About lacks the reference
+branding composition. The current C# reference also opens a selected default
+rule's editor, so that alone is not a legacy/native behavioral discrepancy.
+These observations refine the ordered view gates rather than approve dropping
+any capability or fabricate native equivalents for .NET-only heap counters.

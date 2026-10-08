@@ -574,6 +574,10 @@ ApplicationWindow {
             }
         }
         RowLayout {
+            id: queryRow
+            readonly property var activeGrid: workspace.workspacePage === "events" ? eventGrid : resourceGrid
+            readonly property bool navigating: window.searchOpen && ["resources", "events"].indexOf(workspace.workspacePage) >= 0
+            readonly property bool hasQuery: (workspace.workspacePage === "events" ? workspace.eventFilterText : workspace.filterText).trim() !== ""
             Layout.fillWidth: true
             visible: (window.searchOpen && ["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0) || workspace.authenticationRequired || workspace.authenticationRunning
             TextField {
@@ -589,10 +593,30 @@ ApplicationWindow {
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
                 ToolTip.visible: hovered; ToolTip.text: Accessible.description
                 visible: window.searchOpen && ["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0
-                onTextEdited: workspace.filter(text)
+                onTextEdited: { workspace.filter(text); resourceGrid.navigateRows(0) }
+                Keys.onPressed: event => {
+                    if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
+                        resourceGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
+                    }
+                }
                 Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
             }
-            TextField { id: eventFilterInput; objectName: "eventFilter"; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32; visible: window.searchOpen && workspace.workspacePage === "events"; text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"; onTextEdited: workspace.filterEvents(text); Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() } }
+            TextField {
+                id: eventFilterInput; objectName: "eventFilter"
+                Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32
+                visible: window.searchOpen && workspace.workspacePage === "events"
+                text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"
+                onTextEdited: { workspace.filterEvents(text); eventGrid.navigateRows(0) }
+                Keys.onPressed: event => {
+                    if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
+                        eventGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
+                    }
+                }
+                Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
+            }
+            IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
+            IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
+            Label { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
             Button { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             Button { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
@@ -643,6 +667,7 @@ ApplicationWindow {
                     objectName: "workspaceContent"
                     SplitView.fillHeight: true; SplitView.minimumHeight: Math.min(120, workspaceSplit.height * 0.25)
                 ResourceGrid {
+                    id: resourceGrid
                     anchors.fill: parent
                     visible: workspace.workspacePage === "resources"
                     tableModel: workspace.table
@@ -654,6 +679,7 @@ ApplicationWindow {
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
                 }
                 ResourceGrid {
+                    id: eventGrid
                     anchors.fill: parent
                     visible: workspace.workspacePage === "events"
                     prefix: "event"; tableModel: workspace.eventTable

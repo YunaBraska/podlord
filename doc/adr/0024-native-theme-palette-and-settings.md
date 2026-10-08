@@ -5,8 +5,9 @@ Status: accepted for the native appearance implementation.
 ## Decision
 
 Preserve all 19 named palettes from the C# theme catalog, their dark/light
-variants, the subtle/medium/arcade choices, and the Sirocco Command/dark/subtle
-defaults. The native runtime reads one compiled JSON catalog; the migration
+variants and the Sirocco Command/dark defaults. On 2026-10-08 the user explicitly
+approved removing theme intensity because its visual difference does not justify
+the control. This is an accepted parity exception, not an unimplemented feature. The native runtime reads one compiled JSON catalog; the migration
 tests compare every semantic color against the C# source catalog.
 
 Use Qt's standard Fusion controls for the desktop application. Apply semantic
@@ -14,14 +15,16 @@ palette roles to the application, its window, and inherited controls, including
 placeholder and disabled text. Tests can retain their explicit Basic style.
 Do not build a second control toolkit to reproduce Avalonia internals.
 
-Intensity changes a cached static texture and glow strength. It does not own an
-animation timer, network request, sync loop, or independent settings store.
+A single restrained static texture and glow strength remain. There is no intensity
+selector, runtime state, API parameter, translation key or adjustable render branch.
 Identity colors use the existing theme-derived deterministic hash behavior.
 Recolor table data without resetting the model.
 
-Keep appearance in version 4 of the existing atomic, locked read-settings file.
-Versions 1 through 3 retain their existing policy migration and receive the
-appearance defaults. Validate canonical choices before saving. A failed or
+Keep appearance in version 8 of the existing atomic, locked read-settings file.
+Versions 1 through 7 remain readable without rewriting them on load. The removed
+intensity field in versions 4 through 7 is ignored; the next explicit save writes
+version 8 without it. Theme, variant, language, read policy, water and restoration
+remain unchanged. Versions 1 through 3 receive the appearance defaults. Validate canonical choices before saving. A failed or
 conflicting save retains the active appearance and restores the visible choice.
 Read-policy saves preserve appearance and appearance saves preserve policy.
 
@@ -46,7 +49,7 @@ the legacy renderer.
 
 Ship Fusion and its Basic fallback, not every toolkit control style discovered
 through the runtime-selected `QtQuick.Controls` import. This does not remove any
-of the 19 product palettes, variants or intensities. The current QGuiApplication
+of the 19 product palettes, variants. The current QGuiApplication
 does not use QWidget controls; their style plugin/framework are not required.
 Unused Timeline plugins discovered by deployment are also omitted, rather than
 shipping plugins whose dependent frameworks were absent.
@@ -60,7 +63,7 @@ clean-machine startup, signed distribution, license clearance or mobile proof.
 ## Verification
 
 `native.appearance.*` drives the actual inline Settings controls, compares all 19 palettes
-across both variants and all three intensities, and checks real control palette
+across both variants, and checks real control palette
 roles. Separate cases exercise restart, policy preservation, unchanged navigation,
 lock contention, cross-window conflict, invalid choices, and unchanged choices.
 
@@ -72,7 +75,7 @@ the evidence and its limitations.
 ## Which settings surface owns appearance editing?
 
 The inline Appearance, Graphics, Sync and Privacy sections are the sole editors
-for palettes, variants, intensity, water, reduced motion, read policy, retained
+for palettes, variants, water, reduced motion, read policy, retained
 logs and YAML limits. Remove duplicate appearance and synchronization dialogs
 and their routing rather than retaining hidden controls, compatibility
 identifiers or a second presentation state. Existing persistence, validation,

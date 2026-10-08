@@ -27,6 +27,14 @@ ColumnLayout {
     readonly property real contentHeight: table.contentHeight
     readonly property real viewportHeight: table.height
     readonly property int count: table.rows
+    readonly property int navigationIndex: selection.currentIndex.valid ? selection.currentIndex.row : -1
+    function navigateRows(offset) {
+        if (count === 0) return
+        const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
+        const column = columns.find(column => column.visible).column
+        selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+        if (visible) table.positionViewAtRow(row, TableView.Contain)
+    }
     readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
     onContextScopeChanged: { cellMenu.close(); valueTip.target = null; if (selection) selection.clear() }
     signal actionRequested(string identity, int column, string label)
@@ -371,6 +379,26 @@ ColumnLayout {
                 }
             }
         }
-        Label { objectName: grid.emptyObjectName; anchors.centerIn: parent; visible: table.rows === 0; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; width: Math.min(320, parent.width - 24); horizontalAlignment: Text.AlignHCenter }
+        ColumnLayout {
+            anchors.centerIn: parent; width: Math.min(420, parent.width - 24)
+            visible: table.rows === 0; spacing: 10
+            Image {
+                objectName: grid.prefix + "EmptyLogo"
+                visible: grid.prefix === "resource"
+                Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: Math.min(220, parent.width)
+                Layout.preferredHeight: Math.min(210, Math.max(0, grid.height - emptyTitle.implicitHeight - emptyMessage.implicitHeight - 110))
+                source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit
+                sourceSize.width: 440; sourceSize.height: 420; asynchronous: true
+                Accessible.ignored: true
+            }
+            Label {
+                id: emptyTitle; visible: grid.prefix === "resource"
+                Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                text: workspace.uiText[workspace.totalResourceCount > 0 ? "resource.noMatchingTitle" : workspace.loading ? "resource.loadingTitle" : "resource.emptyTitle"]
+                textFormat: Text.PlainText; font.pixelSize: 24; font.bold: true
+                color: workspace.appearanceColors.accent; wrapMode: Text.Wrap
+            }
+            Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: workspace.appearanceColors.muted }
+        }
     }
 }

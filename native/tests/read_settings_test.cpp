@@ -42,6 +42,26 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile");
     const auto path = QDir(profile).filePath("read-settings.json");
     const ReadSettingsStore store(profile);
+    if (name.startsWith("appearance_upgrade_")) {
+        const auto intensity = name.mid(QString("appearance_upgrade_").size());
+        QJsonObject root{{"version",7},{"requestHardLimitPerMinute",120},{"inactiveSyncMinutes",2},{"logLimitMb",7},{"yamlLimitMiB",4},
+            {"themeName","Gunmetal Sector"},{"themeVariant","light"},{"themeIntensity",intensity},
+            {"radarWaterEnabled",false},{"radarWaterSpeedPercent",25},{"workspaceRestore",false},{"language","de"}};
+        if (!QDir().mkpath(profile)) return false;
+        const auto bytes = QJsonDocument(root).toJson();
+        if (!write(path, bytes)) return false;
+        auto expected = ReadSettings{120,2,7,4}; expected.themeName = "Gunmetal Sector"; expected.themeVariant = "light";
+        expected.radarWaterEnabled = false; expected.radarWaterSpeedPercent = 25; expected.workspaceRestore = false; expected.language = "de";
+        if (!value(store.load(), expected) || read(path) != bytes || !value(store.save(expected, expected), expected)) return false;
+        const auto saved = QJsonDocument::fromJson(read(path)).object();
+        return value(store.load(), expected) && saved["version"] == 8 && !saved.contains("themeIntensity");
+    }
+    if (name == "appearance_removed_field") {
+        if (!value(store.save({}, {}), {})) return false;
+        auto root = QJsonDocument::fromJson(read(path)).object(); root["themeIntensity"] = "subtle";
+        const auto bytes = QJsonDocument(root).toJson();
+        return write(path, bytes) && failure(store.load(), StoreError::InvalidData) && read(path) == bytes;
+    }
     if (name.startsWith("water_")) {
         auto desired=ReadSettings{};
         desired.radarWaterEnabled=false; desired.radarWaterSpeedPercent=0;
@@ -99,7 +119,7 @@ bool scenario(const QString& name) {
     if (!QDir().mkpath(profile)) return false;
     if (name == "schema_v3_upgrade") {
         if (!write(path, "{\"version\":3,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6,\"yamlLimitMiB\":4}")) return false;
-        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 7;
+        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 8;
     }
     if (name == "version_two_yaml_upgrade") {
         if (!write(path, "{\"version\":2,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6}")) return false;
@@ -107,7 +127,7 @@ bool scenario(const QString& name) {
     }
     if (name == "version_one_upgrade") {
         if (!write(path, "{\"version\":1,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2}")) return false;
-        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 7;
+        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 8;
     }
     if (name == "conflict" || name == "repeat") {
         if (!value(store.save({120, 1}, {}), {120, 1})) return false;
@@ -195,10 +215,8 @@ bool scenario(const QString& name) {
             else if (name == "schema_v3_extra" || name == "schema_v4_extra") root["extra"] = 0;
             else if (name == "schema_theme_name_number") root["themeName"] = 1;
             else if (name == "schema_theme_variant_null") root["themeVariant"] = QJsonValue::Null;
-            else if (name == "schema_theme_intensity_object") root["themeIntensity"] = QJsonObject{};
             else if (name == "schema_theme_name_unknown") root["themeName"] = "Unknown";
             else if (name == "schema_theme_variant_unknown") root["themeVariant"] = "Unknown";
-            else if (name == "schema_theme_intensity_unknown") root["themeIntensity"] = "Unknown";
             else return require(false, "Unknown settings schema scenario.");
         } else if (name.startsWith("log_")) {
             root["version"] = 2;
