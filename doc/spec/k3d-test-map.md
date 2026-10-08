@@ -4685,3 +4685,81 @@ branding composition. The current C# reference also opens a selected default
 rule's editor, so that alone is not a legacy/native behavioral discrepancy.
 These observations refine the ordered view gates rather than approve dropping
 any capability or fabricate native equivalents for .NET-only heap counters.
+
+## Which Settings Controls And Diagnostics Tables Were Completed On 2026-10-08?
+
+Scope: typed alert editing, Settings navigation, About branding/support links,
+real process diagnostics and the common runtime/audit table toolbox. The owning
+remaining view gates are unchanged in `doc/ROADMAP.md`; this increment does not
+claim complete Settings or product parity.
+
+| Behavior | Public entrypoint | Executed scenario / remaining gap |
+| --- | --- | --- |
+| Unrelated source controls in Settings | Main.qml Settings entry | Existing `settings_inline_*` scenarios require the global source-management panel to stay hidden. Sources keeps its own import controls. The real `closeSourceControls` icon also closes expanded controls in narrow Resources. |
+| Section navigation | Visible Settings buttons or compact picker | Static desktop controls preserve accessible identities. Below 650 logical pixels, tests operate the actual section ComboBox by keyboard. Existing source-removal, restoration and unsaved-draft callers use that visible route. |
+| Alert fields, colors and holds | Actual AlertView editor | `native.alert_ui.reference_controls_{boolean,boolean_invalid,color_status,color_custom,color_cancel,hold,narrow,locked}_{Basic,Fusion}` preserves canonical IDs, rejected expressions, custom color cancellation, built-in locks, save and reopen. Matcher help is collapsed until requested. Imported sounds and exact legacy view-entry/hold/action semantics remain separate gaps. |
+| About | Real AboutView buttons and bundled image | `native.about.{liberapay,branding,branding_narrow}` passes with both control styles. All seven reference project/support destinations remain available; offline licenses and attribution tests pass. Native update/download ownership and complete presentation remain open. |
+| Runtime measurements | Real Settings UI and actual OS process | `settings_inline_runtime`, `runtime_snapshot`, `runtime_keyboard` check RSS, physical/private memory, CPU seconds and threads, stable displayed values after touching 64 MiB, then explicit pointer/keyboard refresh. No synthetic runtime numbers or process-shell commands. Non-macOS measurement branches still require execution on those targets. |
+| Runtime/audit tables | Shared grid controls | `settings_inline_diagnostic_{tables,sort,copy,columns,columns_restart,find,find_empty,find_keyboard,narrow,audit_sort,audit_copy,audit_find_keyboard,audit_duration}` covers actual headers, ASC/DESC/NONE, clipboard, persisted hidden/pinned columns, wrap navigation, focused Find and numeric duration sorting. Audit cases run the existing local HTTP fake only at the external Kubernetes boundary; workspace, caches, audit, store and QML are real. |
+| Rejected diagnostic actions | Public Workspace entrypoints | `diagnostic_sort_{table,negative,high}` and `diagnostic_copy_{table,negative,high,empty,missing}` reject unsupported inputs without changing sorting, clipboard or request count. These supplement, not replace, the reachable UI workflows. |
+| Layout migration | Public TableLayoutStore | `native.table_layout.diagnostics_upgrade_{read,save,current_missing,unknown,invalid}` checks read-only version-7 migration, explicit version-8 save and preservation of existing choices/data on failure. Existing layout conflict, locking, concurrent save and older migrations remain covered. |
+| Stable snapshot during resource filtering | Visible Diagnostics audit table | `native.ui.diagnostics_snapshot` keeps the retained audit unchanged while resource filters change, then refreshes explicitly without another request. The virtualized table must be scrolled into view before its rendered row count is asserted. |
+
+Evidence directory:
+`/Users/yuna/.local/share/podlord-comparison/release-evidence/2026-10-08-settings-controls`.
+Initial branding, alert and source-control regressions failed before their fixes.
+`diagnostic-baseline.log/xml` proves the missing shared table; after real vertical
+and horizontal scrolling, `diagnostic-duration-scrolled-baseline.log/xml` proves
+that request durations had no numeric sort value.
+
+The earlier complete native run passed **3924/3924** executions in **636.11 s**
+with twelve workers: 2937 behavior executions and 987 style variants, not 3924
+independent features. The completed diagnostic-focused run passed **427/427**
+in **27.60 s**: 263 behavior executions and 164 style variants. Logs/XML:
+`full-final.*` and `diagnostic-final.*`.
+
+The later complete suite executed **3971** registrations in **568.27 s**, with
+**3970 passed and one failed** (`native.ui.diagnostics_snapshot`), recorded in
+`full-diagnostic-final.log/xml`. That test still read a virtualized row count
+before revealing the table; its subsequent recovery result is recorded in
+`diagnostic-recovery.log/xml`. Do not relabel the failed complete run as a clean
+pass. Component results do not establish coverage, physical UI or release gates.
+
+The current private macOS arm64 Release package passed the unchanged dependency,
+ad-hoc integrity and size preflight: **32400245 ZIP bytes** and **85739723 installed
+regular-file logical bytes**. Package directory:
+`/Users/yuna/.local/share/podlord-comparison/release-evidence/2026-10-08-diagnostics-tables-package`.
+Log: `release-evidence/20261008-diagnostics-tables-package.log` under the same
+comparison root. Executable SHA-256:
+`d08cccb07a456da73d6dc59beebb353fcdcc82809ffb673c31cfda029ed527df`.
+ZIP SHA-256:
+`fb7c0ef97fff303fcf4a46674b9f1baafb58fabb7880af810f86d6f4bef51d3e`.
+Developer ID signing and notarization remain deliberately deferred for private use.
+
+`native-diagnostics-qt-fusion.png` is a real two-times-scale headless Qt frame,
+not a current Cocoa desktop capture or a fabricated screenshot. The preserved
+C# desktop reference in `2026-10-08-empty-query-desktop` remains before-evidence.
+New desktop comparisons could not run: the desktop controller reported a locked
+Mac and the isolated C# process failed its native render-timer startup. The owned
+native/reference launch attempt and temporary profiles were cleaned up. No
+Kubernetes/Docker stack was created for this increment; no shared resources or
+`default.profraw` were touched.
+
+Remaining gates include Sources table/presentation, About update/download handling,
+cache-byte telemetry, complete translations, remaining alert capabilities,
+all-view/theme/terminal image evidence, physical target devices and the already
+open coverage/foreground performance thresholds. Test count is not parity evidence.
+
+The corrected snapshot test and all related Settings/table regressions subsequently
+passed **429/429** executions in **25.20 s**, with twelve workers: 265 behavior
+executions and 164 style variants. This recovery changes only the test's real
+scroll/settling interaction; the production package above is unchanged. The
+earlier full-run failure is retained as evidence rather than overwritten.
+
+A lossless progress comparison is available in
+`release-evidence/2026-10-08-diagnostics-controls-comparison` under the comparison
+root: C# desktop reference left, current headless Qt Fusion right. Original pixels
+and both original frames are retained. `capture-boundaries.json` declares the
+unequal capture boundaries and empty-session/source-import difference. This is
+neither a fresh dual-desktop pair nor evidence that the whole view is visually
+identical, that memory improved by the shown numbers, or that the release is done.

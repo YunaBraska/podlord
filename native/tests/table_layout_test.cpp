@@ -35,6 +35,32 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile"), path = QDir(profile).filePath("table-layouts.json");
     const TableLayoutStore store(profile, schemas);
     auto layout = defaults.value("resource");
+    if (name.startsWith("diagnostics_upgrade_")) {
+        auto expanded=schemas;
+        expanded["diagnostic"]={"label","value","description"};
+        expanded["audit"]={"time","method","path","priority","status","duration","outcome"};
+        auto retained=layout; retained[0].pinned=true; retained[1].width=231;
+        QJsonObject values{{"resource",input(retained)},{"event",input(defaults.value("event"))}};
+        if (name=="diagnostics_upgrade_unknown") values["unknown"]=QJsonArray{};
+        if (name=="diagnostics_upgrade_invalid") {
+            auto invalid=input(retained); auto column=invalid[0].toObject(); column["width"]=0; invalid[0]=column; values["resource"]=invalid;
+        }
+        const auto bytes=QJsonDocument(QJsonObject{{"version",name=="diagnostics_upgrade_current_missing" ? 8 : 7},{"layouts",values}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path,bytes)) return false;
+        const TableLayoutStore upgraded(profile,expanded);
+        const auto loaded=upgraded.load();
+        if (name!="diagnostics_upgrade_read" && name!="diagnostics_upgrade_save") return failure(loaded,StoreError::InvalidData) && read(path)==bytes;
+        if (!std::holds_alternative<TableLayouts>(loaded) || read(path)!=bytes) return false;
+        const auto actual=std::get<TableLayouts>(loaded);
+        if (actual.value("resource")!=retained || actual.value("diagnostic")!=defaultTableLayouts(expanded).value("diagnostic")
+            || actual.value("audit")!=defaultTableLayouts(expanded).value("audit")) return false;
+        if (name=="diagnostics_upgrade_read") return true;
+        auto columns=actual.value("diagnostic"); columns[0].pinned=true; columns[2].visible=false;
+        if (!std::holds_alternative<TableLayouts>(upgraded.save("diagnostic",input(columns),actual.value("diagnostic")))) return false;
+        const auto saved=upgraded.load();
+        return std::holds_alternative<TableLayouts>(saved) && std::get<TableLayouts>(saved).value("diagnostic")==columns
+            && std::get<TableLayouts>(saved).value("resource")==retained && QJsonDocument::fromJson(read(path)).object()["version"]==8;
+    }
     if (name.startsWith("alert_upgrade_")) {
         auto expanded = schemas;
         expanded["alert"] = {"enabled", "active", "name", "when", "actions", "soundLabel"};
@@ -71,7 +97,7 @@ bool scenario(const QString& name) {
         return std::holds_alternative<TableLayouts>(saved)
             && std::get<TableLayouts>(upgraded.load()).value("alert") == columns
             && std::get<TableLayouts>(upgraded.load()).value("resource") == retained
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 7;
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 8;
     }
     if (name.startsWith("values_upgrade_")) {
         auto expanded = schemas;
@@ -112,7 +138,7 @@ bool scenario(const QString& name) {
         if (name == "inspector_upgrade_read") return true;
         auto links = actual.value("inspectorLink"); links[0].pinned = true;
         return std::holds_alternative<TableLayouts>(upgraded.save("inspectorLink", input(links), actual.value("inspectorLink")))
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 7 && failure(store.load(), StoreError::InvalidData);
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 8 && failure(store.load(), StoreError::InvalidData);
     }
     if (name.startsWith("ports_upgrade_")) {
         auto expanded = schemas; expanded["port"] = {"endpoint", "name"};
@@ -132,7 +158,7 @@ bool scenario(const QString& name) {
         if (name == "ports_upgrade_read") return true;
         auto ports = actual.value("port"); ports[0].pinned = true;
         return std::holds_alternative<TableLayouts>(upgraded.save("port", input(ports), actual.value("port")))
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 7
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 8
             && std::get<TableLayouts>(upgraded.load()).value("resource") == retained
             && failure(store.load(), StoreError::InvalidData);
     }
@@ -166,7 +192,7 @@ bool scenario(const QString& name) {
         if (actual != expected || read(path) != bytes) return false;
         if (name == "upgrade_columns_save") {
             if (!std::holds_alternative<TableLayouts>(upgraded.save("resource", input(actual), actual))) return false;
-            return QJsonDocument::fromJson(read(path)).object()["version"] == 7 && std::get<TableLayouts>(upgraded.load()).value("resource") == expected;
+            return QJsonDocument::fromJson(read(path)).object()["version"] == 8 && std::get<TableLayouts>(upgraded.load()).value("resource") == expected;
         }
         return true;
     }
@@ -287,7 +313,7 @@ bool scenario(const QString& name) {
     }
     QJsonObject encoded{{"resource", value}, {"event", input(defaults.value("event"))}};
     QJsonObject root{{"version", 1}, {"layouts", encoded}};
-    if (name == "version") root["version"] = 8;
+    if (name == "version") root["version"] = 9;
     else if (name == "extra_root") root["extra"] = 1;
     else if (name == "layout_type") root["layouts"] = QJsonArray{};
     else if (name == "unknown_key") { encoded.remove("event"); encoded["unknown"] = QJsonArray{}; root["layouts"] = encoded; }

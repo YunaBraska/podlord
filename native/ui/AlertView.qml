@@ -1,15 +1,24 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs as Dialogs
 
 Pane {
     id: view
     padding: 0
+    Layout.minimumWidth: 0
     property var draft: null
     property bool savedSelection: false
     property bool selectNew: false
     property string sourceError: ""
     property string selectedSoundId: "none"
+    readonly property var fieldOptions: workspace.alerts.fields.map(field => ({id: field, label: workspace.uiText["alert.field." + field]}))
+    readonly property var holdOptions: [
+        {id: "no-match", label: workspace.uiText["alert.hold.match"]},
+        {id: "duration", label: workspace.uiText["alert.hold.duration"]},
+        {id: "new-in-view", label: workspace.uiText["alert.hold.new"]}
+    ]
+    readonly property var animationOptions: ["none", "blink", "pulse", "sweep", "outline"].map(id => ({id: id, label: workspace.uiText["alert.animation." + id]}))
     readonly property var soundCatalog: workspace.alerts.sounds
     readonly property var soundsById: {
         const entries = {}
@@ -44,8 +53,8 @@ Pane {
         for (let g = 0; g < rule.groups.length; ++g)
             for (const c of rule.groups[g]) criteria.append({group: g, field: c.field, expression: c.expression})
         name.text = rule.name; description.text = rule.description; ruleEnabled.checked = rule.enabled
-        color.text = rule.color; colorMode.currentIndex = colorMode.model.indexOf(rule.colorMode); colorSeconds.value = rule.colorSeconds
-        animation.currentIndex = animation.model.indexOf(rule.animation); animationMode.currentIndex = animationMode.model.indexOf(rule.animationMode); animationSeconds.value = rule.animationSeconds
+        alertColorInput.text = rule.color; colorMode.currentIndex = holdOptions.findIndex(option => option.id === rule.colorMode); colorSeconds.value = rule.colorSeconds
+        animation.currentIndex = animationOptions.findIndex(option => option.id === rule.animation); animationMode.currentIndex = holdOptions.findIndex(option => option.id === rule.animationMode); animationSeconds.value = rule.animationSeconds
         zoom.value = rule.zoom; selectedSoundId = rule.sound; soundSearch.text = ""; soundMinimum.value = rule.soundMinimumMatches
         editor.contentItem.contentY = 0
     }
@@ -80,8 +89,8 @@ Pane {
             groups[c.group].push({field: c.field, expression: c.expression})
         }
         return {id: draft.id, name: name.text, description: description.text, enabled: ruleEnabled.checked, builtIn: draft.builtIn,
-            groups: groups.filter(g => g !== undefined), color: color.text, colorMode: colorMode.currentText, colorSeconds: colorSeconds.value,
-            animation: animation.currentText, animationMode: animationMode.currentText, animationSeconds: animationSeconds.value,
+            groups: groups.filter(g => g !== undefined), color: alertColorInput.text, colorMode: colorMode.currentValue, colorSeconds: colorSeconds.value,
+            animation: animation.currentValue, animationMode: animationMode.currentValue, animationSeconds: animationSeconds.value,
             zoom: zoom.value, sound: selectedSoundId, soundMinimumMatches: soundMinimum.value}
     }
     function save() {
@@ -137,6 +146,18 @@ Pane {
         data: [Label { text: parent.label; Layout.preferredWidth: parent.columns === 1 ? -1 : 130; color: workspace.appearanceColors.muted },
             RowLayout { id: values; Layout.fillWidth: true; spacing: 6 }]
     }
+    component HoldMode: ComboBox {
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        model: view.holdOptions; textRole: "label"; valueRole: "id"
+    }
+    Dialogs.ColorDialog {
+        id: colorDialog
+        objectName: "alertColorDialog"
+        title: workspace.uiText["alert.chooseColor"]
+        options: Dialogs.ColorDialog.DontUseNativeDialog
+        onAccepted: alertColorInput.text = selectedColor.toString()
+    }
     contentItem: ColumnLayout {
         spacing: 8
         Label { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
@@ -145,7 +166,10 @@ Pane {
             id: ruleGrid
             objectName: "alertRulesTable"
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(220, Math.max(112, view.height * 0.32))
+            Layout.minimumWidth: 0
+            Layout.preferredHeight: view.width < 600 ? Math.min(112, Math.max(56, view.height * 0.2)) : Math.min(220, Math.max(112, view.height * 0.32))
+            Layout.minimumHeight: view.width < 600 ? 0 : implicitHeight
+            Layout.maximumHeight: view.width < 600 ? Layout.preferredHeight : Number.POSITIVE_INFINITY
             prefix: "alert"
             emptyText: "No alarm rules."
             tableModel: workspace.alerts.tableModel
@@ -166,33 +190,40 @@ Pane {
         }
         Flow {
             Layout.fillWidth: true; spacing: 6
-            ActionButton { objectName: "addAlert"; text: "Add"; enabled: !workspace.alerts.busy; onClicked: view.add() }
-            ActionButton { objectName: "duplicateAlert"; text: "Duplicate"; enabled: !workspace.alerts.busy && view.draft !== null && view.draft.id !== ""; onClicked: view.changeSelection("duplicate") }
-            ActionButton { objectName: "deleteAlert"; text: "Delete"; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
-            ActionButton { objectName: "saveAlert"; text: "Save"; enabled: !workspace.alerts.busy && view.draft !== null; onClicked: view.save() }
-            ActionButton { objectName: "reloadAlerts"; text: "Reload"; enabled: !workspace.alerts.busy; onClicked: view.changeSelection("reload") }
-            CheckBox { id: ruleEnabled; objectName: "alertEnabled"; text: "Enabled"; enabled: !workspace.alerts.busy && view.draft !== null }
-            CheckBox { objectName: "muteAlerts"; text: "Mute"; checked: workspace.alerts.muted; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(checked, workspace.alerts.reducedMotion) }
+            ActionButton { objectName: "addAlert"; text: workspace.uiText["action.add"]; enabled: !workspace.alerts.busy; onClicked: view.add() }
+            ActionButton { objectName: "duplicateAlert"; text: workspace.uiText["action.duplicate"]; enabled: !workspace.alerts.busy && view.draft !== null && view.draft.id !== ""; onClicked: view.changeSelection("duplicate") }
+            ActionButton { objectName: "deleteAlert"; text: workspace.uiText["action.delete"]; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
+            ActionButton { objectName: "saveAlert"; text: workspace.uiText["action.save"]; enabled: !workspace.alerts.busy && view.draft !== null; onClicked: view.save() }
+            ActionButton { objectName: "reloadAlerts"; text: workspace.uiText["alert.retryLoad"]; visible: workspace.alerts.error !== ""; enabled: !workspace.alerts.busy; onClicked: view.changeSelection("reload") }
+            CheckBox { id: ruleEnabled; objectName: "alertEnabled"; text: workspace.uiText["alert.active"]; enabled: !workspace.alerts.busy && view.draft !== null }
+            CheckBox { objectName: "muteAlerts"; text: workspace.uiText["audio.mute"]; checked: workspace.alerts.muted; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(checked, workspace.alerts.reducedMotion) }
             CheckBox { objectName: "reduceAlertMotion"; text: "Reduce motion"; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) }
         }
         ScrollView {
             id: editor
             objectName: "alertEditor"
-            Layout.fillWidth: true; Layout.fillHeight: true; visible: view.draft !== null; clip: true; contentWidth: availableWidth
+            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; visible: view.draft !== null; clip: true; contentWidth: availableWidth
+            Layout.minimumHeight: 80
+            Layout.maximumWidth: view.availableWidth
             ColumnLayout {
                 id: form
                 width: editor.availableWidth; spacing: 8
                 property bool editable: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn
-                FormRow { label: "Name"; TextField { id: name; objectName: "alertName"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert name" } }
-                FormRow { label: "Description"; TextField { id: description; objectName: "alertDescription"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert description" } }
-                Label { text: view.draft && view.draft.builtIn ? "Locked. Duplicate this definition to customize it." : "Editable"; color: workspace.appearanceColors.muted }
-                Label { text: "Matchers"; font.bold: true; color: workspace.appearanceColors.accent }
-                Label { Layout.fillWidth: true; text: "Criteria within a group are AND; groups are OR. Text: substring, \"exact\", ~prefix, suffix~, /regex/. Numbers: >5, >=5. Age: >5m. Stats: outlier, p95."; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted }
+                FormRow { label: workspace.uiText["alert.name"]; TextField { id: name; objectName: "alertName"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert name" } }
+                FormRow { label: workspace.uiText["alert.description"]; TextField { id: description; objectName: "alertDescription"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert description" } }
+                Label { visible: view.draft !== null && view.draft.builtIn; text: workspace.uiText["alert.builtinHelp"]; color: workspace.appearanceColors.muted; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { Layout.fillWidth: true; text: workspace.uiText["alert.matchers"]; font.bold: true; color: workspace.appearanceColors.accent }
+                    ActionButton { id: matcherHelp; objectName: "alertMatcherHelp"; text: workspace.uiText["alert.syntax"]; checkable: true; Accessible.name: text; Accessible.description: workspace.uiText["alert.syntaxHelp"] }
+                }
+                Label { Layout.fillWidth: true; visible: matcherHelp.checked; text: workspace.uiText["alert.syntaxHelp"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted }
                 Repeater {
                     model: criteria
                     ColumnLayout {
                         id: criterion
                         required property int index; required property int group; required property string field; required property string expression
+                        readonly property bool booleanField: ["problems", "activity", "recentlyChanged", "newInView"].includes(field)
                         Layout.fillWidth: true; spacing: 4
                         enabled: form.editable
                         RowLayout {
@@ -201,11 +232,16 @@ Pane {
                             ActionButton { objectName: "addAlertCriterion_" + criterion.group; text: "+"; Accessible.name: "Add AND criterion to group " + (criterion.group + 1); onClicked: view.addCriterion(criterion.group) }
                             ActionButton { objectName: "removeAlertGroup_" + criterion.group; text: "Remove group"; enabled: criteria.count > 0 && criteria.get(criteria.count - 1).group > 0; onClicked: view.removeGroup(criterion.group) }
                         }
-                        RowLayout {
+                        GridLayout {
                             Layout.fillWidth: true
+                            columns: width < 520 ? 1 : 4
                             Label { text: "AND"; color: workspace.appearanceColors.muted }
-                            ComboBox { objectName: "alertField_" + criterion.index; Layout.preferredWidth: 160; model: workspace.alerts.fields; currentIndex: model.indexOf(criterion.field); Accessible.name: "Matcher field " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "field", currentText) }
-                            TextField { objectName: "alertExpression_" + criterion.index; Layout.fillWidth: true; text: criterion.expression; Accessible.name: "Matcher expression " + (criterion.index + 1); onTextEdited: criteria.setProperty(criterion.index, "expression", text) }
+                            ComboBox { objectName: "alertField_" + criterion.index; Layout.fillWidth: true; Layout.preferredWidth: 160; model: view.fieldOptions; textRole: "label"; valueRole: "id"; currentIndex: model.findIndex(option => option.id === criterion.field); Accessible.name: "Matcher field " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "field", currentValue) }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                ComboBox { objectName: "alertBoolean_" + criterion.index; Layout.fillWidth: true; visible: criterion.booleanField; model: ["true", "false"]; currentIndex: model.indexOf(criterion.expression); Accessible.name: "Boolean matcher " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "expression", currentText) }
+                                TextField { objectName: "alertExpression_" + criterion.index; Layout.fillWidth: true; visible: !criterion.booleanField || !["true", "false"].includes(criterion.expression); text: criterion.expression; placeholderText: workspace.uiText["alert.expressionHint"]; Accessible.name: "Matcher expression " + (criterion.index + 1); onTextEdited: criteria.setProperty(criterion.index, "expression", text) }
+                            }
                             ActionButton { objectName: "removeAlertCriterion_" + criterion.index; text: "X"; Accessible.name: "Remove criterion " + (criterion.index + 1); enabled: view.groupSize(criterion.group) > 1; onClicked: criteria.remove(criterion.index) }
                         }
                     }
@@ -215,10 +251,52 @@ Pane {
                     ActionButton { objectName: "addAlertAnd"; text: "Add AND criterion"; onClicked: view.addCriterion(criteria.get(criteria.count - 1).group) }
                     ActionButton { objectName: "addAlertOr"; text: "Add OR group"; onClicked: criteria.append({group: criteria.get(criteria.count - 1).group + 1, field: "name", expression: ""}) }
                 }
-                Label { Layout.fillWidth: true; text: "CPU, memory and storage match measured values only. Unavailable metrics never match."; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-                FormRow { label: "Color"; enabled: form.editable; TextField { id: color; objectName: "alertColor"; Layout.fillWidth: true; placeholderText: "none, status, fresh or #RRGGBB"; Accessible.name: "Radar alert color" } ComboBox { id: colorMode; model: ["no-match", "duration", "new-in-view"]; Accessible.name: "Color hold mode" } SpinBox { id: colorSeconds; from: 1; to: 60; editable: true; visible: colorMode.currentText !== "no-match"; Accessible.name: "Color hold seconds" } }
-                FormRow { label: "Animation"; enabled: form.editable; ComboBox { id: animation; Layout.fillWidth: true; model: ["none", "blink", "pulse", "sweep", "outline"]; Accessible.name: "Radar animation" } ComboBox { id: animationMode; model: ["no-match", "duration", "new-in-view"]; Accessible.name: "Animation hold mode" } SpinBox { id: animationSeconds; from: 1; to: 60; editable: true; visible: animationMode.currentText !== "no-match"; Accessible.name: "Animation hold seconds" } }
-                FormRow { label: "Zoom (%)"; SpinBox { id: zoom; objectName: "alertZoom"; enabled: form.editable; from: 0; to: 200; editable: true; Accessible.name: "Radar zoom percent" } ActionButton { objectName: "previewAlertZoom"; text: "Preview"; enabled: view.draft !== null && !workspace.alerts.busy && !workspace.alerts.zoomPreviewBusy; Accessible.name: "Preview draft radar zoom without saving"; onClicked: workspace.previewAlertZoom(view.ruleDraft()) } Label { Layout.fillWidth: true; text: "0 disables automatic focus"; color: workspace.appearanceColors.muted } }
+                Label { text: workspace.uiText["alert.actions"]; font.bold: true; color: workspace.appearanceColors.accent }
+                FormRow {
+                    label: workspace.uiText["alert.color"]; enabled: form.editable
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ComboBox {
+                                objectName: "alertColorChoice"; Layout.fillWidth: true; Layout.minimumWidth: 0; textRole: "label"; valueRole: "id"
+                                model: [{id: "none", label: workspace.uiText["alert.color.none"]}, {id: "status", label: workspace.uiText["alert.color.status"]}, {id: "fresh", label: workspace.uiText["alert.color.fresh"]}, {id: "custom", label: workspace.uiText["alert.color.custom"]}]
+                                currentIndex: ["none", "status", "fresh"].includes(alertColorInput.text) ? ["none", "status", "fresh"].indexOf(alertColorInput.text) : 3
+                                Accessible.name: workspace.uiText["alert.color"]
+                                onActivated: alertColorInput.text = currentValue === "custom" ? (alertColorInput.text.startsWith("#") ? alertColorInput.text : "#e3aa46") : currentValue
+                            }
+                            ActionButton {
+                                id: chooseColor
+                                objectName: "alertChooseColor"; text: workspace.uiText["alert.chooseColor"]; Accessible.name: text
+                                onClicked: { colorDialog.selectedColor = /^#[0-9a-f]{6}$/i.test(alertColorInput.text) ? alertColorInput.text : "#e3aa46"; colorDialog.open() }
+                                contentItem: RowLayout {
+                                    spacing: 6
+                                    Rectangle { Layout.preferredWidth: 16; Layout.preferredHeight: 16; color: /^#[0-9a-f]{6}$/i.test(alertColorInput.text) ? alertColorInput.text : workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border; Accessible.ignored: true }
+                                    Label { text: chooseColor.text; font: chooseColor.font; color: chooseColor.palette.buttonText }
+                                }
+                            }
+                        }
+                        TextField { id: alertColorInput; objectName: "alertColor"; Layout.fillWidth: true; visible: !["none", "status", "fresh"].includes(text); placeholderText: "#RRGGBB"; Accessible.name: "Radar alert color" }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            HoldMode { id: colorMode; objectName: "alertColorMode"; Accessible.name: "Color hold mode" }
+                            SpinBox { id: colorSeconds; from: 1; to: 60; editable: true; visible: colorMode.currentValue !== "no-match"; Accessible.name: "Color hold seconds" }
+                        }
+                    }
+                }
+                FormRow {
+                    label: workspace.uiText["alert.animation"]; enabled: form.editable
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        ComboBox { id: animation; Layout.fillWidth: true; model: view.animationOptions; textRole: "label"; valueRole: "id"; Accessible.name: "Radar animation" }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            HoldMode { id: animationMode; objectName: "alertAnimationMode"; Accessible.name: "Animation hold mode" }
+                            SpinBox { id: animationSeconds; from: 1; to: 60; editable: true; visible: animationMode.currentValue !== "no-match"; Accessible.name: "Animation hold seconds" }
+                        }
+                    }
+                }
+                FormRow { label: "Zoom (%)"; SpinBox { id: zoom; objectName: "alertZoom"; enabled: form.editable; from: 0; to: 200; editable: true; Accessible.name: "Radar zoom percent" } ActionButton { objectName: "previewAlertZoom"; text: "Preview"; enabled: view.draft !== null && !workspace.alerts.busy && !workspace.alerts.zoomPreviewBusy; Accessible.name: "Preview draft radar zoom without saving"; onClicked: workspace.previewAlertZoom(view.ruleDraft()) } Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "0 disables automatic focus"; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted } }
                 Label { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
                 FormRow { label: "Find sound"; TextField { id: soundSearch; objectName: "alertSoundSearch"; Layout.fillWidth: true; enabled: form.editable; placeholderText: "Name, purpose, author, license or music"; Accessible.name: "Find alert sound" } }
                 FormRow { label: "Sound"; ComboBox { id: sound; objectName: "alertSound"; Layout.fillWidth: true; enabled: form.editable; model: view.soundOptions; currentIndex: view.soundOptions.findIndex(s => s.id === view.selectedSoundId); textRole: "name"; valueRole: "id"; Accessible.name: "Alert sound"; onActivated: view.selectedSoundId = currentValue } ActionButton { objectName: "previewAlertSound"; text: "Preview"; enabled: !workspace.alerts.busy && !workspace.alerts.muted && view.selectedSoundId !== "none"; onClicked: workspace.alerts.previewSound(view.selectedSoundId) } ActionButton { objectName: "openAlertSoundSource"; text: "Source"; enabled: view.selectedSound !== undefined; Accessible.name: "Open selected sound source in the external browser"; onClicked: view.sourceError = Qt.openUrlExternally(view.selectedSound.source) ? "" : "The browser could not open this link. Please try again explicitly." } }

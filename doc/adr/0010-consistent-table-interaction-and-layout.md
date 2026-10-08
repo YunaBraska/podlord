@@ -213,3 +213,38 @@ sound labels change with definitions, not presentation ticks. Current-cell
 presentation derives from the shared canonical selection index, including after
 Qt recycles a delegate. Table positioning has no extra animation, and the grid
 reserves enough height for its toolbar, header and at least one readable row.
+
+### How Do Native Diagnostics Reuse The Table Contract?
+
+Runtime counters and the bounded request audit reuse the existing snapshot model,
+Qt sorting proxy, virtualized grid, Find navigation, overflow tip and column
+editor. Entering the visible Diagnostics section or explicitly refreshing it
+publishes one snapshot and its UTC observation time. The UI keeps only that time,
+not another copy of both datasets. Hidden tables detach their rendered models;
+there is no diagnostics timer, request, credential retry or storage read from
+paint, focus, hover, scrolling, sorting, finding or copying.
+
+The operating system owns RSS, physical/private memory, cumulative process CPU
+seconds and thread count. Unavailable counters remain unavailable. macOS physical
+footprint is not labeled private virtual memory; cumulative CPU seconds are not
+presented as a utilization percentage. Native code does not invent .NET heap or
+GC counters. Cache-byte accounting and remaining reference telemetry still need
+separate evidence.
+
+Request-duration text is converted once at snapshot publication into the shared
+model's typed sort role. Its displayed milliseconds remain unchanged. Queued or
+otherwise unmeasured durations do not become measured zeroes. Clipboard actions
+resolve the retained row identity, not the current sorted position. Each table's
+Find shortcut follows focus so the two visible tables do not compete for it.
+
+Layout version 8 adds `diagnostic` and `audit`. Reading versions 1 through 7 adds
+only missing model-derived defaults without changing existing layouts or writing
+the profile. Explicit save uses the existing lock, optimistic conflict check and
+atomic replacement. Missing current-version tables, unknown types and invalid
+columns remain errors. Older binaries must reject a version-8 profile rather
+than erase these columns; retain a compatible binary or the pre-save profile for
+rollback. No session-view or credential format changes with this increment.
+
+Executed scenarios, failed regressions and image limitations are recorded in the
+existing test map. Shared table behavior does not establish complete Settings,
+whole-view, physical-device or release parity.

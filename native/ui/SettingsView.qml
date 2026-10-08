@@ -86,8 +86,9 @@ Pane {
     signal fileRequested()
     signal folderRequested()
     property string section: "alerts"
-    property var diagnosticSnapshot: ({metrics: [], requests: []})
-    function refreshDiagnostics() { diagnosticSnapshot = workspace.settingsDiagnostics() }
+    readonly property var sections: ["alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
+    property string diagnosticTimestamp: ""
+    function refreshDiagnostics() { diagnosticTimestamp = workspace.refreshSettingsDiagnostics() }
     function synchronizeAppearance() {
         theme.currentIndex = workspace.themeNames.indexOf(workspace.themeName)
         variant.currentIndex = variant.model.indexOf(workspace.themeVariant)
@@ -101,7 +102,7 @@ Pane {
         yaml.text = workspace.yamlLimitMiB.toString()
     }
     onSectionChanged: { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
-    onVisibleChanged: if (visible) synchronize()
+    onVisibleChanged: if (visible) { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
     Component.onCompleted: synchronize()
     Connections { target: workspace; function onAppearanceChanged() { settings.synchronizeAppearance() } function onLanguageChanged() { settings.synchronizeAppearance() } }
     padding: 14
@@ -139,6 +140,7 @@ Pane {
         Label { text: workspace.uiText["settings.title"]; font.pixelSize: 16; font.bold: true; color: workspace.appearanceColors.accent }
         Flow {
             Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 4
+            visible: settings.width >= 650
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
             SectionButton { objectName: "settingsDiagnosticsSection"; text: workspace.uiText["settings.diagnostics"]; destination: "diagnostics" }
@@ -149,8 +151,15 @@ Pane {
             SectionButton { objectName: "settingsWorkspaceSection"; text: workspace.uiText["settings.workspace"]; destination: "workspace" }
             SectionButton { objectName: "settingsAboutSection"; text: workspace.uiText["settings.about"]; destination: "about" }
         }
+        ComboBox {
+            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 650
+            model: settings.sections; textRole: "label"; valueRole: "id"
+            currentIndex: model.findIndex(option => option.id === settings.section)
+            Accessible.name: workspace.uiText["settings.title"]
+            onActivated: { settings.section = currentValue; if (currentValue === "alerts") workspace.setWorkspacePage("alerts") }
+        }
         Loader {
-            Layout.fillWidth: true; Layout.fillHeight: true; visible: settings.section === "alerts"
+            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; visible: settings.section === "alerts"
             property bool opened: false
             active: opened; onVisibleChanged: if (visible) opened = true
             Component.onCompleted: if (visible) opened = true
@@ -243,21 +252,34 @@ Pane {
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "diagnostics"
                     RowLayout { Layout.fillWidth: true; Label { Layout.fillWidth: true; text: "Runtime diagnostics"; font.bold: true } Button { objectName: "refreshSettingsDiagnostics"; text: "Refresh snapshot"; onClicked: settings.refreshDiagnostics() } }
-                    Repeater { model: settings.diagnosticSnapshot.metrics; RowLayout { required property var modelData; Layout.fillWidth: true; Label { Layout.preferredWidth: 190; text: modelData.label; textFormat: Text.PlainText; elide: Text.ElideRight } Label { Layout.preferredWidth: 170; text: modelData.value; textFormat: Text.PlainText; elide: Text.ElideRight } Label { Layout.fillWidth: true; text: modelData.description; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap } } }
-                    Label { text: "Request audit"; font.bold: true; color: workspace.appearanceColors.accent }
-                    ListView {
-                        objectName: "settingsRequestAudit"
-                        Layout.fillWidth: true; Layout.preferredHeight: Math.max(160, Math.min(440, count * 52))
-                        clip: true; reuseItems: true; model: settings.diagnosticSnapshot.requests; ScrollBar.vertical: ScrollBar {}
-                        delegate: ItemDelegate {
-                            required property var modelData
-                            width: ListView.view.width; height: 52
-                            contentItem: ColumnLayout { Label { Layout.fillWidth: true; text: modelData.method + " " + modelData.path; textFormat: Text.PlainText; elide: Text.ElideMiddle } Label { Layout.fillWidth: true; text: modelData.status + " / " + modelData.priority + " / " + modelData.duration + " / " + modelData.outcome; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; elide: Text.ElideRight } }
-                            Accessible.name: modelData.method + " " + modelData.path + ", " + modelData.status
-                            ToolTip.visible: hovered; ToolTip.text: modelData.time + "\n" + modelData.method + " " + modelData.path
-                        }
+                    Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: settings.diagnosticTimestamp ? "Snapshot: " + new Date(settings.diagnosticTimestamp).toLocaleString(Qt.locale()) : ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                    ResourceGrid {
+                        id: diagnosticGrid
+                        Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: 480
+                        visible: settings.section === "diagnostics"; prefix: "diagnostic"; inspectable: false
+                        findShortcutEnabled: !auditGrid.containsActiveFocus
+                        tableModel: workspace.diagnosticTable; columns: workspace.diagnosticColumns
+                        sortColumn: workspace.diagnosticSortColumn; sortDirection: workspace.diagnosticSortDirection
+                        emptyText: "No runtime snapshot."
+                        cellName: function(row,column,identity) { return column===1 ? "diagnosticValue_"+identity : "diagnosticCell_"+row+"_"+column }
+                        onSortRequested: column => workspace.sortDiagnosticColumn("diagnostic",column)
+                        onCopyRequested: (row,column) => workspace.copyDiagnosticCell("diagnostic",pathAt(row),column)
+                        onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("diagnostic",identity,column)
                     }
-                    Label { visible: settings.diagnosticSnapshot.requests.length === 0; text: "No requests in this session." }
+                    Label { text: "Request audit"; font.bold: true; color: workspace.appearanceColors.accent }
+                    ResourceGrid {
+                        id: auditGrid
+                        objectName: "settingsRequestAudit"
+                        Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: 300
+                        visible: settings.section === "diagnostics"; prefix: "audit"; inspectable: false
+                        findShortcutEnabled: auditGrid.containsActiveFocus
+                        tableModel: workspace.requestAuditTable; columns: workspace.auditColumns
+                        sortColumn: workspace.auditSortColumn; sortDirection: workspace.auditSortDirection
+                        emptyText: "No requests in this session."
+                        onSortRequested: column => workspace.sortDiagnosticColumn("audit",column)
+                        onCopyRequested: (row,column) => workspace.copyDiagnosticCell("audit",pathAt(row),column)
+                        onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("audit",identity,column)
+                    }
                 }
                 AboutView { Layout.fillWidth: true; visible: settings.section === "about" }
                 Label { objectName: "inlineSettingsError"; Layout.fillWidth: true; visible: workspace.error !== ""; text: workspace.error; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap }

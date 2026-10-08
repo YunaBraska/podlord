@@ -101,6 +101,12 @@ ColumnLayout {
         }
     }
     property bool findOpen: false
+    property bool findShortcutEnabled: true
+    readonly property bool containsActiveFocus: {
+        let target = grid.Window.window ? grid.Window.window.activeFocusItem : null
+        while (target) { if (target === grid) return true; target = target.parent }
+        return false
+    }
     property int findCount: 0
     property int findIndex: -1
     property bool findValid: true
@@ -171,7 +177,7 @@ ColumnLayout {
         function onModelReset() { Qt.callLater(grid.updateFindCount, false) }
         function onLayoutChanged() { Qt.callLater(grid.updateFindCount, false) }
     }
-    Shortcut { sequences: [StandardKey.Find]; enabled: grid.visible; onActivated: grid.openFind() }
+    Shortcut { sequences: [StandardKey.Find]; enabled: grid.visible && grid.findShortcutEnabled; onActivated: grid.openFind() }
     TableColumnsDialog { id: columnsDialog; tableType: grid.prefix; columns: grid.columns }
     PlainToolTip { id: valueTip; objectName: grid.prefix + "ValueTooltip" }
     RowLayout {
@@ -238,7 +244,7 @@ ColumnLayout {
             contentItem: RowLayout {
                 spacing: 6
                 KindGlyph {
-                    visible: grid.prefix !== "alert"
+                    visible: ["alert", "diagnostic", "audit"].indexOf(grid.prefix) < 0
                     Layout.preferredWidth: 12; Layout.preferredHeight: 12
                     kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
                     fill: workspace.appearanceColors.accent

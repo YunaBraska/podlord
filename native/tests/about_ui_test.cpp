@@ -50,6 +50,7 @@ bool run(const QString& scenario) {
         {"sponsors", {"aboutSponsors", "https://github.com/sponsors/YunaBraska"}},
         {"coffee", {"aboutCoffee", "https://buymeacoffee.com/YunaBraska"}},
         {"kofi", {"aboutKofi", "https://ko-fi.com/YunaBraska"}},
+        {"liberapay", {"aboutLiberapay", "https://liberapay.com/YunaBraska"}},
         {"sound_warning", {"aboutSoundSource_interface-sounds", "https://kenney.nl/assets/interface-sounds"}},
         {"sound_critical", {"aboutSoundSource_sci-fi-sounds", "https://kenney.nl/assets/sci-fi-sounds"}},
         {"sound_ui", {"aboutSoundSource_ui-audio", "https://kenney.nl/assets/ui-audio"}},
@@ -57,6 +58,20 @@ bool run(const QString& scenario) {
         {"sound_digital", {"aboutSoundSource_digital-audio", "https://kenney.nl/assets/digital-audio"}},
         {"sound_impact", {"aboutSoundSource_impact-sounds", "https://kenney.nl/assets/impact-sounds"}},
         {"sound_rpg", {"aboutSoundSource_rpg-audio", "https://kenney.nl/assets/rpg-audio"}}};
+    if (scenario == "branding" || scenario == "branding_narrow") {
+        if (scenario.endsWith("_narrow")) window->resize(360, 600);
+        auto* logo = item(window->contentItem(), "aboutLogo");
+        auto* tagline = item(window->contentItem(), "aboutTagline");
+        if (!logo || !tagline || !waitFor([&] { return logo->property("status").toInt() == 1; })) return false;
+        for (auto* control : {logo, tagline}) {
+            if (!podlord::test::scrollIntoView(window, control)) return false;
+            const auto bounds = control->mapRectToScene({0, 0, control->width(), control->height()});
+            if (bounds.left() < 0 || bounds.right() > window->width() || bounds.top() < 0 || bounds.bottom() > window->height()) return false;
+        }
+        return tagline->property("text").toString() == workspace.uiText()["about.tagline"].toString()
+            && click(window, "aboutLiberapay") && browser.urls == QList<QUrl>{QUrl("https://liberapay.com/YunaBraska")}
+            && requests.isEmpty();
+    }
     if (links.contains(scenario)) {
         const auto [name, url] = links.value(scenario);
         return click(window, name) && waitFor([&] { return browser.urls.size() == 1; }) && browser.urls.first() == QUrl(url) && requests.isEmpty();

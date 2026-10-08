@@ -481,7 +481,7 @@ ApplicationWindow {
             id: sourcePanel
             objectName: "sourceManagementPanel"
             Layout.fillWidth: true
-            visible: window.sourcesExpanded || workspace.currentSession === ""
+            visible: !settingsLoader.visible && (window.sourcesExpanded || workspace.currentSession === "")
             contentItem: ColumnLayout {
                 GridLayout {
                     Layout.fillWidth: true
@@ -523,7 +523,11 @@ ApplicationWindow {
                         Accessible.name: "Imported context"
                     }
                     Button { objectName: "openContext"; text: "Open context"; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { if (workspace.openContext(contexts.currentValue)) window.sourcesExpanded = false } }
-                    Button { objectName: "reloadSources"; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy; onClicked: workspace.reload() }
+                    RowLayout {
+                        Layout.fillWidth: parent.columns === 2
+                        Button { objectName: "reloadSources"; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.reload() }
+                        IconButton { objectName: "closeSourceControls"; glyph: "Close"; text: "Close source controls"; visible: workspace.currentSession !== ""; onClicked: window.sourcesExpanded = false }
+                    }
                 }
             }
         }

@@ -111,4 +111,23 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
     }
     return false;
 }
+/** Select the visible desktop tab or the compact section picker through input. */
+inline bool selectSettingsSection(QQuickWindow* window, const QString& section) {
+    const QString name = section == "alerts" ? "alertsWorkspaceButton" : "settings" + section.left(1).toUpper() + section.mid(1) + "Section";
+    auto* control = visibleItem(window->contentItem(), name);
+    if (control) {
+        if (!control->isEnabled() || !scrollIntoView(window, control)) return false;
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, control->mapToScene({control->width()/2, control->height()/2}).toPoint());
+        return true;
+    }
+    auto* picker = visibleItem(window->contentItem(), "settingsSectionPicker");
+    const QStringList order{"alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"};
+    const int row = order.indexOf(section);
+    if (!picker || !picker->isEnabled() || row < 0 || !scrollIntoView(window, picker)) return false;
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, picker->mapToScene({picker->width()/2, picker->height()/2}).toPoint());
+    QTest::keyClick(window, Qt::Key_Home);
+    for (int i = 0; i < row; ++i) QTest::keyClick(window, Qt::Key_Down);
+    QTest::keyClick(window, Qt::Key_Return);
+    return QTest::qWaitFor([&] { return picker->property("currentValue").toString() == section; });
+}
 }

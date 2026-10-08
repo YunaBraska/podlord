@@ -43,6 +43,7 @@ QQuickItem* item(QObject* root, const QString& name) {
     return window->findChild<QQuickItem*>(name);
 }
 bool click(QQuickWindow* window, const QString& name) {
+    if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     if (name=="radarWorkspaceButton") {
         auto* target=item(window,name);
         if (target && !target->isVisible()) {
@@ -289,6 +290,71 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         const auto selected = [&] { return item(window,"alertName")->property("text").toString(); };
         const auto baseline = rules();
         if (selected() != baseline.first().toMap()["name"].toString()) return false;
+        if (scenario.startsWith("reference_controls_")) {
+            const auto mode = scenario.mid(QString("reference_controls_").size());
+            const auto choose = [&](const QString& control, int index) {
+                if (!click(window, control)) return false;
+                QTest::keyClick(window, Qt::Key_Home);
+                for (int i = 0; i < index; ++i) QTest::keyClick(window, Qt::Key_Down);
+                QTest::keyClick(window, Qt::Key_Return);
+                return waitFor([&] { return item(window, control)->property("currentIndex").toInt() == index; });
+            };
+            if (item(window, "sourceManagementPanel")->isVisible()) return false;
+            if (mode == "locked")
+                return !item(window, "alertColorChoice")->isEnabled() && !item(window, "alertChooseColor")->isEnabled()
+                    && !item(window, "alertColorMode")->isEnabled() && rules() == baseline && server.requests == 0;
+            if (!click(window, "addAlert") || !type(window, "alertName", "Control regression") || !type(window, "alertExpression_0", "alpha")) return false;
+            QString expectedColor = "#e3aa46", expectedMode = "no-match", expectedField = "name", expectedExpression = "alpha";
+            if (mode.startsWith("boolean")) {
+                if (!choose("alertField_0", workspace.alerts()->fields().indexOf("problems"))) return false;
+                expectedField = "problems"; expectedExpression = mode == "boolean_invalid" ? "false" : "true";
+                if (mode == "boolean_invalid") {
+                    if (!click(window, "saveAlert") || workspace.alerts()->error().isEmpty() || rules() != baseline
+                        || item(window, "alertBoolean_0")->property("currentIndex").toInt() != -1
+                        || item(window, "alertExpression_0")->property("text").toString() != "alpha") return false;
+                }
+                if (!choose("alertBoolean_0", expectedExpression == "true" ? 0 : 1)) return false;
+                if (item(window, "alertExpression_0")->isVisible()) return false;
+            } else if (mode == "color_status") {
+                if (!choose("alertColorChoice", 1)) return false;
+                expectedColor = "status";
+            } else if (mode == "color_custom" || mode == "color_cancel" || mode == "narrow") {
+                if (mode == "narrow") window->resize(360, 600);
+                if (!choose("alertColorChoice", 3) || !type(window, "alertColor", "#124abc")) return false;
+                expectedColor = "#124abc";
+                if (mode == "color_cancel") {
+                    if (!click(window, "alertChooseColor")) return false;
+                    auto* dialog = window->findChild<QObject*>("alertColorDialog");
+                    if (!dialog || !waitFor([&] { return dialog->property("visible").toBool(); })) return false;
+                    QTest::keyClick(QGuiApplication::focusWindow(), Qt::Key_Escape);
+                    if (!waitFor([&] { return !dialog->property("visible").toBool(); })) {
+                        std::fprintf(stderr, "Color dialog stayed open after Escape.\n"); return false;
+                    }
+                    if (!waitFor([&] { return item(window, "alertColor")->property("text").toString() == expectedColor; })) return false;
+                }
+                if (mode == "narrow") {
+                    for (const auto& controlName : {"alertColorChoice", "alertColor", "alertChooseColor", "alertColorMode"}) {
+                        auto* control = item(window, controlName);
+                        if (!control || !podlord::test::scrollIntoView(window, control)) return false;
+                        const auto bounds = control->mapRectToScene({0, 0, control->width(), control->height()});
+                        if (bounds.left() < 0 || bounds.right() > window->width() || bounds.top() < 0 || bounds.bottom() > window->height()) {
+                            std::fprintf(stderr, "Narrow alert control outside window: %s (%g,%g %gx%g) window=%dx%d scene=%g\n", controlName, bounds.x(), bounds.y(), bounds.width(), bounds.height(), window->width(), window->height(), window->contentItem()->width());
+                            return false;
+                        }
+                    }
+                }
+            } else if (mode == "hold") {
+                if (!choose("alertColorMode", 1) || !choose("alertAnimationMode", 2)) return false;
+                expectedMode = "duration";
+            } else return false;
+            if (!click(window, "saveAlert") || !settle() || rules().size() != baseline.size() + 1) return false;
+            const auto rule = rules().last().toMap();
+            const auto criterion = rule["groups"].toList().first().toList().first().toMap();
+            if (rule["color"] != expectedColor || rule["colorMode"] != expectedMode || criterion["field"] != expectedField
+                || criterion["expression"] != expectedExpression || (mode == "hold" && rule["animationMode"] != "new-in-view")) return false;
+            podlord::Workspace restored(profile);
+            return waitFor([&] { return !restored.alerts()->busy(); }) && restored.alerts()->rules() == rules() && server.requests == 0;
+        }
         if (scenario.startsWith("reference_zoom_preview_")) {
             const bool noSession = scenario.endsWith("_no_session");
             if (!noSession && !loadSession()) return false;
