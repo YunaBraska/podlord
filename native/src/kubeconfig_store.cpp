@@ -308,13 +308,13 @@ Result<SourceImportReport> KubeconfigStore::importK3d(const QString& executable)
 }
 Result<SourceSnapshot> KubeconfigStore::importFile(QString path) const {
     const auto normalized = sourcePath(std::move(path));
-    if (const auto* failure = std::get_if<Failure>(&normalized)) return *failure;
+    if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};
     path = std::get<QString>(normalized);
-    if (!QFileInfo(path).isFile()) return Failure{StoreError::ReadFailed, "Source must be a readable regular kubeconfig file."};
+    if (!QFileInfo(path).isFile()) return Failure{StoreError::ReadFailed, "Source must be a readable regular kubeconfig file.", true};
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source."};
+    if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source.", true};
     const auto bytes = file.read(maximumKubeconfigBytes + 1);
-    if (file.error() != QFileDevice::NoError) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source."};
+    if (file.error() != QFileDevice::NoError) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source.", true};
     return importContent(std::move(path), bytes);
 }
 Result<SourceSnapshot> KubeconfigStore::importText(QString originPath, const QString& yaml) const {
@@ -329,7 +329,7 @@ Result<SourceSnapshot> KubeconfigStore::importText(QString originPath, const QSt
 }
 Result<SourceSnapshot> KubeconfigStore::importContent(QString path, const QByteArray& bytes) const {
     auto parsed = parse(path, bytes, QDateTime::currentDateTimeUtc());
-    if (std::holds_alternative<Failure>(parsed)) return parsed;
+    if (auto* failure = std::get_if<Failure>(&parsed)) { failure->sourceInput = true; return parsed; }
     const auto directory = sourceDirectory(profile_, true);
     if (std::holds_alternative<Failure>(directory)) return std::get<Failure>(directory);
     QLockFile lock(QDir(std::get<QString>(directory)).filePath("sources.lock"));

@@ -234,7 +234,9 @@ bool run(const QString& scenario) {
     if (scenario.startsWith("view_")) return viewScenario(scenario);
     if (scenario.startsWith("provider_")) return providerScenario(scenario);
     Kubernetes server; if (!server.listen(QHostAddress::LocalHost, 0)) return false;
-    podlord::ResourceClient client; podlord::ClusterConnection connection;
+    auto reference = QDateTime::currentDateTimeUtc();
+    podlord::ResourceClient client(nullptr, [&] { return scenario == "progress_auto" ? reference : QDateTime::currentDateTimeUtc(); });
+    podlord::ClusterConnection connection;
     connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); connection.credentialId = "local";
     podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
     settings.requestHardLimitPerMinute = scenario == "limit" ? 60 : 0;
@@ -245,6 +247,30 @@ bool run(const QString& scenario) {
     if (!client.open("session", connection, {})) return false;
     if (scenario == "coalesce") for (int repeat = 0; repeat < 10; ++repeat) if (!client.refresh("session")) return false;
     if (!waitFor([&] { return !client.loading("session") && client.rows("session").size() == 1; })) return false;
+    if (scenario.startsWith("progress_")) {
+        if (!client.initialSyncComplete("session") || client.loadingProgress("session") != 1) return false;
+        bool retained = true;
+        QObject observer;
+        QObject::connect(&client, &podlord::ResourceClient::changed, &observer, [&](const QString& id) {
+            if (id == "session") retained = retained && client.loadingProgress(id) == 1;
+        });
+        const auto before = server.requests;
+        server.version = 2;
+        if (scenario == "progress_auto") {
+            reference = reference.addSecs(300);
+            if (!client.synchronize()) return false;
+        } else if (scenario == "progress_reopen") {
+            if (!client.close("session") || !client.open("session", connection, {})) return false;
+        } else {
+            if (scenario == "progress_auth") server.listStatus = 401;
+            if (!client.refresh("session")) return false;
+        }
+        if (!retained || client.loadingProgress("session") != 1) return false;
+        if (scenario == "progress_reopen") return !client.loading("session") && server.requests == before;
+        if (!waitFor([&] { return !client.loading("session"); }) || !retained || server.requests <= before) return false;
+        return scenario == "progress_auth" ? client.authenticationRequired("session")
+            : client.resource("session", "/api/v1/namespaces/default/pods/alpha")["resourceVersion"] == "2";
+    }
     for (qsizetype i = 1; i < starts.size(); ++i) if (starts[i] - starts[i-1] < (scenario == "limit" ? 1000 : 400)) return false;
     if (scenario == "parallel" || scenario == "limit" || scenario == "coalesce")
         return server.maximum >= 2 && server.maximum <= 4 && (scenario != "parallel" || server.maximum == 4)

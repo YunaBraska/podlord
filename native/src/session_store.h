@@ -16,6 +16,8 @@ enum class StoreError { InvalidInput, NotFound, Busy, ReadFailed, InvalidData,
 struct Failure final {
     StoreError code;
     QString message;
+    /** Invalid external source input, not an owned-profile/read/write failure. */
+    bool sourceInput = false;
 };
 template<class T> using Result = std::variant<T, Failure>;
 

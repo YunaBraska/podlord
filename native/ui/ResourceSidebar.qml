@@ -38,6 +38,7 @@ Pane {
             color: workspace.appearanceColors.inset
             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: parent.height * workspace.loadingProgress; color: sidebar.palette.text; opacity: 0.15 }
             Column {
+                objectName: "sessionHealthSegments"
                 anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
                 height: parent.height * workspace.loadingProgress
                 Behavior on height { enabled: !workspace.alerts.reducedMotion; NumberAnimation { duration: 180 } }
@@ -50,7 +51,11 @@ Pane {
             }
             Accessible.name: (workspace.syncLoading ? "Loading session. " : "Session health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
             ToolTip.visible: healthHover.hovered
-            ToolTip.text: workspace.authenticationRunning ? "Authentication in progress; loading percentage is not yet known." : workspace.syncLoading ? "Loading collections; progress grows as requests finish." : Accessible.name
+            ToolTip.text: workspace.authenticationRunning
+                ? (workspace.loadingProgress < 1 ? "Authentication in progress; loading percentage is not yet known." : "Authentication in progress; cached health is retained.")
+                : workspace.syncLoading
+                    ? (workspace.loadingProgress < 1 ? "Loading collections; progress grows as requests finish." : "Updating the cached session; health is retained.")
+                    : Accessible.name
             HoverHandler { id: healthHover }
         }
         ColumnLayout {
