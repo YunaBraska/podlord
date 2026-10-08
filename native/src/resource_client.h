@@ -35,6 +35,8 @@ public:
     QJsonObject document(const QString& id, const QString& path) const;
     QString detailStatus(const QString& id, const QString& path) const;
     QString status(const QString& id) const;
+    QString failureStatus(const QString& id) const;
+    QString syncSummary(const QString& id) const;
     bool loading(const QString& id) const;
     bool syncLoading(const QString& id) const;
     double loadingProgress(const QString& id) const;
@@ -151,6 +153,7 @@ private:
         bool initialized = false;
         quint64 revision = 0;
         QDateTime lastSync;
+        QList<QDateTime> requestStarts;
         QDateTime healthExpiry;
     };
     enum class Read { Core, Groups, Discovery, List, Detail, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket };
@@ -211,6 +214,7 @@ private:
     bool logsShown(const QString& id, const QString& key) const;
     void discardHiddenReads();
     void dispatch();
+    void recordRequestStarted(const Task& task);
     void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter);
     void consume(const Task& task, const QJsonObject& document);
     void fail(const Task& task, QString message);

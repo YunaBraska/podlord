@@ -102,6 +102,8 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool viewStateFailed READ viewStateFailed NOTIFY changed)
     Q_PROPERTY(bool viewCloseNeedsDecision READ viewCloseNeedsDecision NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString syncSummary READ syncSummary NOTIFY changed)
+    Q_PROPERTY(QString syncProblem READ syncProblem NOTIFY changed)
     Q_PROPERTY(QString currentSession READ currentSession NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString sessionRenameError READ sessionRenameError NOTIFY changed)
@@ -291,6 +293,8 @@ public:
     QString authenticationPrompt() const;
     QString error() const;
     QString status() const;
+    QString syncSummary() const { return client_.syncSummary(active_); }
+    QString syncProblem() const { return client_.failureStatus(active_); }
     QString currentSession() const;
     QString title() const;
     QString sessionRenameError() const { return sessionRenameError_; }

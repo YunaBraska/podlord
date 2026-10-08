@@ -8,7 +8,7 @@ ToolButton {
     required property string glyph
     property bool showText: false
     property bool activeIndicator: false
-    readonly property int targetSize: Window.window && Window.window.width < 900 ? 44 : 32
+    readonly property int targetSize: Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32
     implicitWidth: Math.max(targetSize, implicitContentWidth + leftPadding + rightPadding)
     implicitHeight: targetSize
     padding: 6

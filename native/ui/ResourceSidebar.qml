@@ -7,6 +7,8 @@ import Podlord.Graphics 1.0
 
 Pane {
     id: sidebar
+    property bool collapsibleFilters: false
+    property bool filtersExpanded: false
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
     SessionManager { id: sessionManager }
@@ -60,10 +62,24 @@ Pane {
         }
         ColumnLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 4
-            ResourceRadar { id: radar; compact: true; Layout.fillWidth: true; Layout.preferredHeight: Math.min(190, sidebar.height * 0.45) }
+            ResourceRadar {
+                id: radar; compact: true; Layout.fillWidth: true
+                Layout.fillHeight: sidebar.collapsibleFilters && !sidebar.filtersExpanded
+                Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45)
+            }
+            IconButton {
+                objectName: "toggleLandscapeFilters"
+                visible: sidebar.collapsibleFilters
+                Layout.fillWidth: true
+                glyph: "Filters"; text: "Show or hide filters"
+                checkable: true; checked: sidebar.filtersExpanded
+                activeIndicator: workspace.filterText !== "" || workspace.problemsOnly || workspace.activityOnly || workspace.selectedFilterPreset !== "default"
+                onClicked: sidebar.filtersExpanded = !sidebar.filtersExpanded
+            }
             ScrollView {
                 id: sidebarScroll
                 objectName: "sidebarFilterScroll"
+                visible: !sidebar.collapsibleFilters || sidebar.filtersExpanded
                 Layout.fillWidth: true; Layout.fillHeight: true
                 contentWidth: availableWidth; contentHeight: sidebarControls.implicitHeight
                 clip: true

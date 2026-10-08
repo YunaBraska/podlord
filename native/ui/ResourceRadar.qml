@@ -42,7 +42,7 @@ Pane {
             IconButton { objectName: "radarWorkspaceButton"; glyph: "Cluster"; text: "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
             Item { Layout.fillWidth: true }
             IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
-            Label { text: Math.round(grid.viewPose.zoom * 100) + "%" }
+            Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }
             IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
             IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetView() }
         }

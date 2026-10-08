@@ -582,12 +582,44 @@ bool ResourceClient::containsResource(const QString& id, const QString& path) co
     const auto state = states_.constFind(id);
     return state != states_.cend() && state->resources.contains(path);
 }
+QString ResourceClient::failureStatus(const QString& id) const {
+    const auto it = states_.constFind(id);
+    if (it == states_.cend()) return {};
+    QStringList messages;
+    for (auto failure = it->failures.cbegin(); failure != it->failures.cend(); ++failure)
+        messages.append(failure.key() + ": " + failure.value());
+    return messages.join("\n");
+}
+QString ResourceClient::syncSummary(const QString& id) const {
+    const auto state = states_.constFind(id);
+    if (state == states_.cend()) return "API: 0/min  Synced: never";
+    const auto now = now_();
+    const auto calls = std::count_if(state->requestStarts.cbegin(), state->requestStarts.cend(), [&](const auto& at) { return at > now.addSecs(-60) && at <= now; });
+    QDateTime latest;
+    for (const auto& collection : state->collections)
+        if (!latest.isValid() || collection.at > latest) latest = collection.at;
+    QString since = "never";
+    if (latest.isValid()) {
+        const auto seconds = std::max<qint64>(0, latest.secsTo(now));
+        since = seconds < 60 ? QString::number(seconds) + "s" : seconds < 3600 ? QString::number(seconds / 60) + "m" : QString::number(seconds / 3600) + "h";
+        since += " ago";
+    }
+    return QString("API: %1/min  Synced: %2").arg(calls).arg(since);
+}
+void ResourceClient::recordRequestStarted(const Task& task) {
+    const auto now = now_();
+    auto& starts = states_[task.id].requestStarts;
+    starts.removeIf([&](const auto& at) { return at <= now.addSecs(-60) || at > now; });
+    starts.append(now);
+    emit requestStarted(task.id, task.path, lastStart_);
+    emit changed(task.id);
+}
 QString ResourceClient::status(const QString& id) const {
     const auto it = states_.constFind(id);
     if (it == states_.cend()) return "No session selected";
     QStringList messages;
-    for (auto failure = it->failures.cbegin(); failure != it->failures.cend(); ++failure)
-        messages.append(failure.key() + ": " + failure.value());
+    const auto failures = failureStatus(id);
+    if (!failures.isEmpty()) messages.append(failures);
     QDateTime oldest;
     for (const auto& collection : it->collections)
         if (!oldest.isValid() || collection.at < oldest) oldest = collection.at;
@@ -888,14 +920,14 @@ void ResourceClient::dispatch() {
     if (task.read == Read::TerminalSocket) {
         const auto terminal = terminals_.value(task.terminalToken);
         const bool sent = terminal.screen->open(request, terminal.container, terminal.shell);
-        if (sent) emit requestStarted(task.id, task.path, lastStart_);
+        if (sent) recordRequestStarted(task);
         else terminalHandshakeFinished(task.terminalToken, false, false);
         return;
     }
     if (task.read == Read::ForwardSocket) {
         const auto forward = forwards_.value(task.forwardToken);
         const bool sent = forward.transport->connectStream(task.streamToken, request, forward.remotePort);
-        if (sent) emit requestStarted(task.id, task.path, lastStart_);
+        if (sent) recordRequestStarted(task);
         else forwardHandshakeFinished(task.forwardToken, task.streamToken, false, false);
         return;
     }
@@ -934,7 +966,7 @@ void ResourceClient::dispatch() {
         emit changed(task.id);
         dispatch(); scheduleSync(); scheduleLogs();
     });
-    emit requestStarted(task.id, task.path, lastStart_);
+    recordRequestStarted(task);
     if (parallel) dispatch();
 }
 void ResourceClient::fail(const Task& task, QString message) {

@@ -4553,3 +4553,68 @@ ZIP SHA-256:
 This does not establish installed startup, OS file-picker operation, physical
 mobile support, full visual/terminal equivalence, performance or coverage gates.
 Developer ID signing/notarization remains explicitly outside this private stage.
+
+## What proves the compact landscape shell and reference footer on 2026-10-08?
+
+| Behavior | Public boundary | Executable scenario | Remaining gap |
+| --- | --- | --- | --- |
+| Empty footer reports no snapshot or requests | Native QML application | `native.ui.shell_footer_empty_{Basic,Fusion}` | Installed empty-profile accessibility |
+| Footer shows visible/cached counts, real request admission and second/minute/hour age | Real workspace and external HTTP boundary with controlled UTC clock | `native.ui.shell_footer_reference_{Basic,Fusion}` | Independent live telemetry comparison over long runs |
+| Cached reopen retains accepted snapshot age and its session request history | Native QML and persisted sessions | `native.ui.shell_footer_reopen_{Basic,Fusion}` | Physical-device lifecycle |
+| Left icon rail, docked Radar and collapsed filters at landscape breakpoints | Native QML, 600/640/800/896/1080 logical pixels | `native.ui.shell_landscape_{Basic,Fusion}` | Real touch input and safe-area/device hardware |
+| Filter disclosure preserves effective Problems filtering without transport | Native QML controls and external HTTP request observation | `native.ui.shell_landscape_filters_{Basic,Fusion}` | Complete saved/field-filter visual matrix |
+| Portrait/open drawer/landscape/desktop rotation retains one Radar, camera and query; no orphan modal drawer or requests | Native QML application | `native.ui.shell_landscape_rotate_{Basic,Fusion}` | Installed mobile orientation |
+| Read/auth/validation/rate-limit failures remain visibly reported outside the footer | Existing native UI failure/lifecycle scenarios | `auth`, `redirect`, `malformed`, `invalid_discovery`, `invalid_list`, `repeated_page`, `rate_limit`, `forbidden`, `slow_close` | Complete release coverage/performance gates |
+
+Evidence root: `/Users/yuna/.local/share/podlord-comparison/release-evidence`.
+Layout renders in `2026-10-08-landscape-ui` are actual Qt software/offscreen
+application frames against the external Kubernetes HTTP boundary, not mobile
+screenshots. Six new behaviors are exercised in two control styles; style
+variants are not counted as additional product features. The first attempted
+build used a nonexistent test entrypoint name; the test was corrected to the
+existing public filter entrypoint. An early run using the previously built test
+binary is not accepted evidence.
+
+Three disposable real Kubernetes stacks ran serially with private profiles and
+owned containers/volumes. The desktop captures in `2026-10-08-landscape-desktop`
+show the packaged native app and C# reference against the same second cluster,
+using different Sirocco Command variants (C# dark, native light) and the same eight `visual-config-0001` ConfigMaps.
+The lossless paired image preserves both originals. Native cache membership was
+1832 at query capture, then 1834 after background synchronization; C# reported
+1410. Those total-membership differences are not resolved or presented as full
+functional parity. API/minute and sync ages legitimately differ because the
+applications have independent request schedules.
+
+C# enforces a minimum 1120-by-720 window. Its desktop capture therefore cannot be
+presented as a smartphone reference. Native installed-window drag attempts did
+not resize the captured window; landscape/rotation evidence remains the public
+Qt application harness. The desktop package capture precedes the final
+open-drawer rotation safeguard; that safeguard has separate regression evidence.
+All owned stack processes, containers, volumes, credentials and temporary profiles
+were cleaned by the existing driver. Pre-existing resources and `default.profraw`
+were left untouched. Physical devices, complete theme/presentation equivalence,
+full coverage and release performance remain unproven.
+
+Final accepted selected run: `2026-10-08-landscape-ui/final.log` and `final.xml`,
+61/61 passed in 17.86 seconds with 12 workers: 39 behavior executions and 22
+control-style variants. This is not a full-suite or coverage result. The initial
+rotation regression queried a Popup as a visual Item and crashed the test itself;
+it was corrected to read the public QML Popup's visibility, with a checked lookup.
+Secret-leak presentation checks include the new error banner, not only the footer.
+
+The final binary was also started against the third real local cluster. Its
+same-cluster C#/C++ captures are in `2026-10-08-landscape-final-desktop`, with
+both applications using the dark surface and the same eight ConfigMaps. Final
+captured cache counts were 1412 (C#) and 1836 (native). The native header summarizes
+the filtered cache, per SHL-003, whereas the reference header retains global usage;
+the screenshots do not assert that those differing summary scopes are identical.
+The native final package includes the open-drawer rotation fix. Its private
+packaging preflight passes dependency paths, ad-hoc integrity, notices and sizes:
+ZIP 31,725,931 bytes; installed regular-file logical sum 85,065,595 bytes.
+Package: `2026-10-08-landscape-final-package`; log:
+`20261008-landscape-final-package.log`. Executable SHA-256:
+`a851468583ad29ea7006cdd18b7b714e5f2574d32923019f4ffb90ddcecf6d84`;
+ZIP SHA-256:
+`39abad16535c601779720033992b9a65a1f4ba8f15ca2bb1a773069e7df8bab9`.
+Developer ID signing/notarization remains outside this private stage. No complete
+release, real mobile device, full picture matrix or new performance gate is claimed.
