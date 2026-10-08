@@ -130,7 +130,7 @@ run_cached_field_test() {
 run_terminal_tests() {
     cp "$BUILD/container-terminal-ui-test" "$RUN/container-terminal-ui-test"
     shasum -a 256 "$RUN/container-terminal-ui-test" > "$EVIDENCE/$NAME-terminal-binary.sha256"
-    for terminal_scenario in real_shell real_vi real_interrupt real_touch_interrupt; do
+    for terminal_scenario in real_shell real_vi real_control_vi real_interrupt real_touch_interrupt; do
         printf 'Native Kubernetes interactive terminal: %s\n' "$terminal_scenario"
         PODLORD_TERMINAL_FRAME="$EVIDENCE/$NAME-terminal-$terminal_scenario.png" \
         QT_QPA_PLATFORM=${PODLORD_TERMINAL_QPA_PLATFORM:-offscreen} QT_QUICK_BACKEND=${PODLORD_TERMINAL_QUICK_BACKEND-software} QT_QUICK_CONTROLS_STYLE=Basic \

@@ -27,7 +27,7 @@ ColumnLayout {
     readonly property real contentHeight: table.contentHeight
     readonly property real viewportHeight: table.height
     readonly property int count: table.rows
-    readonly property int navigationIndex: selection.currentIndex.valid ? selection.currentIndex.row : -1
+    readonly property int navigationIndex: selection.currentIndex.valid && selection.currentIndex.row >= 0 && selection.currentIndex.row < count ? selection.currentIndex.row : -1
     function navigateRows(offset) {
         if (count === 0) return
         const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count

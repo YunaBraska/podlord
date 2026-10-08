@@ -198,7 +198,7 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     }
     return true;
 }
-Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()> now) : QObject(parent), profile_(std::move(profile)), client_(nullptr, now), alerts_(profile_, &client_, this, std::move(now)),
+Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()> now, QUrl releaseEndpoint) : QObject(parent), profile_(std::move(profile)), client_(nullptr, now), releaseUpdates_(profile_, this, now, std::move(releaseEndpoint)), alerts_(profile_, &client_, this, std::move(now)),
     eventRows_(nullptr, {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage"},
         {"Last observed", "Type", "Reason", "Namespace", "Regarding", "Count", "Message"}),
     portRows_(nullptr, {"endpoint", "name", "kind", "namespace", "remotePort", "resolvedPort", "status"},

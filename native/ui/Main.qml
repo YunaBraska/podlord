@@ -597,7 +597,7 @@ ApplicationWindow {
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
                 ToolTip.visible: hovered; ToolTip.text: Accessible.description
                 visible: window.searchOpen && ["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0
-                onTextEdited: { workspace.filter(text); resourceGrid.navigateRows(0) }
+                onTextEdited: if (workspace.filter(text)) Qt.callLater(resourceGrid.navigateRows, 0)
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
                         resourceGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
@@ -610,7 +610,7 @@ ApplicationWindow {
                 Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32
                 visible: window.searchOpen && workspace.workspacePage === "events"
                 text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"
-                onTextEdited: { workspace.filterEvents(text); eventGrid.navigateRows(0) }
+                onTextEdited: if (workspace.filterEvents(text)) Qt.callLater(eventGrid.navigateRows, 0)
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
                         eventGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true

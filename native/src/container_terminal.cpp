@@ -167,7 +167,9 @@ bool ContainerTerminal::key(int key, const QString& text, Qt::KeyboardModifiers 
     default: if (key >= Qt::Key_F1 && key <= Qt::Key_F35) terminalKey = static_cast<VTermKey>(VTERM_KEY_FUNCTION(key - Qt::Key_F1 + 1));
     }
     if (terminalKey != VTERM_KEY_NONE) vterm_keyboard_key(term_, terminalKey, mod);
-    else if ((mod & VTERM_MOD_CTRL) && key >= Qt::Key_A && key <= Qt::Key_Z) vterm_keyboard_unichar(term_, static_cast<uint32_t>(key - Qt::Key_A + 'a'), mod);
+    // The advertised xterm PTY expects C0 controls, not unnegotiated CSI-u sequences.
+    else if ((mod & VTERM_MOD_CTRL) && ((key >= Qt::Key_A && key <= Qt::Key_Underscore) || key == Qt::Key_Space))
+        vterm_keyboard_unichar(term_, static_cast<uint32_t>(key & 0x1f), static_cast<VTermModifier>(mod & VTERM_MOD_ALT));
     else for (const auto c : text.toUcs4()) vterm_keyboard_unichar(term_, c, mod);
     return terminalKey != VTERM_KEY_NONE || !text.isEmpty() || (mod & VTERM_MOD_CTRL);
 }

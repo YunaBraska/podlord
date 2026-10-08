@@ -44,6 +44,12 @@ int main(int argc, char** argv) {
     engine.rootContext()->setContextProperty("workspace", &workspace);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
+    if (!engine.rootObjects().isEmpty()) {
+        QTimer::singleShot(0, workspace.releaseUpdates(), &podlord::ReleaseUpdates::startAutomaticChecks);
+        QObject::connect(&app, &QGuiApplication::applicationStateChanged, workspace.releaseUpdates(), [&workspace](Qt::ApplicationState state) {
+            if (state == Qt::ApplicationActive) workspace.releaseUpdates()->checkIfDue();
+        });
+    }
     QTimer startupImport;
     startupImport.setSingleShot(true);
     if (parser.isSet("kubeconfig")) {

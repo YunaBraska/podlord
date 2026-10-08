@@ -123,8 +123,19 @@ bool run(const QString& scenario, const QString& configPath) {
     if (real) {
         type("printf '\\033[32mPODLORD_NATIVE_PTY_OK\\033[0m\\n'; stty size");
         REQUIRE(waitFor([&] { return surface->visibleText().contains("PODLORD_NATIVE_PTY_OK") && surface->visibleText().contains(QString::number(terminal->columns())); }, 15000));
-        if (scenario == "real_vi") {
-            type("vi /tmp/podlord-terminal-check.txt"); QTest::qWait(1000); QTest::keyClick(window, 'i'); keys("PODLORD_VI_WRITTEN"); REQUIRE(click("terminalKeys")); REQUIRE(click("terminalKey_escape")); QTest::qWait(250); type(":wq"); QTest::qWait(500);
+        if (scenario == "real_vi" || scenario == "real_control_vi") {
+            type("vi /tmp/podlord-terminal-check.txt"); QTest::qWait(1000); QTest::keyClick(window, 'i'); keys("PODLORD_VI_WRITTEN");
+            if (scenario == "real_vi") { REQUIRE(click("terminalKeys")); REQUIRE(click("terminalKey_escape")); }
+            else {
+#ifdef Q_OS_MACOS
+                const auto control = Qt::MetaModifier;
+#else
+                const auto control = Qt::ControlModifier;
+#endif
+                QKeyEvent escape(QEvent::KeyPress, Qt::Key_BracketLeft, control, QString{});
+                QCoreApplication::sendEvent(window, &escape);
+            }
+            QTest::qWait(250); type(":wq"); QTest::qWait(500);
             type("printf '\\033[2J\\033[H'; printf 'READBACK_BEGIN\\n'; cat /tmp/podlord-terminal-check.txt; rm /tmp/podlord-terminal-check.txt; printf 'READBACK_END\\n'");
             const bool verified = waitFor([&] { return surface->visibleText().contains("READBACK_BEGIN\nPODLORD_VI_WRITTEN\nREADBACK_END"); });
             if (!verified) { std::fprintf(stderr, "Real vi screen at failed read-back:\n%s\n", qPrintable(surface->visibleText())); const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FRAME"); if (!frame.isEmpty()) window->grabWindow().save(frame + ".failure.png"); }
@@ -147,7 +158,28 @@ bool run(const QString& scenario, const QString& configPath) {
         const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FRAME"); if (!frame.isEmpty()) { QTest::qWait(150); REQUIRE(window->grabWindow().save(frame)); }
         type("exit 0"); REQUIRE(waitFor([&] { return !terminal->active(); })); std::fprintf(stderr, "Real terminal exit: %s\n", qPrintable(terminal->status())); REQUIRE(terminal->status() == "Shell exited successfully."); return true;
     }
-    if (scenario == "input") { type("echo native"); REQUIRE(waitFor([&] { return input == "echo native\r"; })); }
+    if (scenario == "empty_escape" || scenario.startsWith("control_")) {
+        const QMap<QString, QPair<int, char>> controls{
+            {"control_escape", {Qt::Key_BracketLeft, 27}}, {"control_tab", {Qt::Key_I, 9}},
+            {"control_linefeed", {Qt::Key_J, 10}}, {"control_enter", {Qt::Key_M, 13}},
+            {"control_space", {Qt::Key_Space, 0}}, {"control_backslash", {Qt::Key_Backslash, 28}},
+            {"control_bracket_right", {Qt::Key_BracketRight, 29}}, {"control_caret", {Qt::Key_AsciiCircum, 30}},
+            {"control_underscore", {Qt::Key_Underscore, 31}}};
+        REQUIRE(scenario == "empty_escape" || controls.contains(scenario));
+        const auto expected = scenario == "empty_escape" ? QPair<int, char>{Qt::Key_Escape, 27} : controls[scenario];
+#ifdef Q_OS_MACOS
+        const auto control = Qt::MetaModifier;
+#else
+        const auto control = Qt::ControlModifier;
+#endif
+        QKeyEvent event(QEvent::KeyPress, expected.first,
+            scenario == "empty_escape" ? Qt::NoModifier : control, QString{});
+        QCoreApplication::sendEvent(window, &event);
+        const auto observed = waitFor([&] { return !input.isEmpty(); });
+        if (!observed || input != QByteArray(1, expected.second)) std::fprintf(stderr, "Terminal control bytes: %s, accepted=%d, focused=%d\n", input.toHex().constData(), event.isAccepted(), surface->hasActiveFocus());
+        REQUIRE(input == QByteArray(1, expected.second));
+    }
+    else if (scenario == "input") { type("echo native"); REQUIRE(waitFor([&] { return input == "echo native\r"; })); }
     else if (scenario == "shortcut_input") {
 #ifdef Q_OS_MACOS
         QTest::keyClick(window, Qt::Key_K, Qt::MetaModifier);
