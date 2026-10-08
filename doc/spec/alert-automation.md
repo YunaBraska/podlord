@@ -11,8 +11,8 @@ An alert is built from a guided top-to-bottom inspector flow:
 | Name | Human-readable alert name. |
 | Description | Short operator note explaining why the rule exists. |
 | Matchers | One or more matcher blocks. Criteria inside a block are `AND`; blocks are `OR`. |
-| Color | Optional radar block color with `none`, `no-match`, or duration hold behavior. |
-| Animation | Optional radar animation with `none`, `no-match`, or duration hold behavior. |
+| Color | Optional radar block color with `none`, `once`, `no-match`, duration or `new-in-view` hold behavior. |
+| Animation | Optional radar animation with the same hold modes. |
 | Zoom | Optional radar zoom percentage when the rule fires. |
 | Sound | Select a bundled or imported sound with visible author, license, and source link. |
 
@@ -29,6 +29,14 @@ Alerts use the existing Podlord matcher behavior:
 - scopes: kind, namespace, name, status, issue, node, image, owner, CPU, memory, storage, restarts, age, event reason, event message, activity, problems
 
 Rules evaluate cached rows only. The UI updates immediately when a rule changes; Kubernetes sync cadence remains controlled by the existing cache, request queue, TTL, and request-limit settings.
+
+`once` holds an effect for 1350 ms. Duration holds use the configured seconds.
+Neither hold is extended by updates while it is active; a finite hold can outlive
+a lost match while its resource still exists. `newInView` is a boolean criterion,
+not resource freshness. A `new-in-view` hold starts when a matching resource
+enters the visible filtered table, ends on expiry or departure, and can start
+again on re-entry. Establishing the initial visible membership is silent. These
+view-entry effects do not restrict whole-session rule matching to filtered rows.
 
 The first synchronization establishes a silent baseline: partial loading must not
 emit alarms, freshness indicators, focus actions or sounds. After that initial
@@ -85,4 +93,11 @@ Public QML tests exercise CRUD, invalid input, locking, restart persistence, who
 
 The native catalog now preserves all 117 reference entries and embeds all 116 audio files. Its searchable chooser retains selection when results disappear; every ID has a public persistence check, and each actual embedded asset has native Cocoa/Darwin decoding and repeated-playback checks. The chosen sound exposes its source through an explicit external-browser action. Source-opening failure must remain visible, preserve the draft and allow only explicit retry. Searching, previewing and opening a source must neither save an alert implicitly nor contact Kubernetes. About credits group assets by author/license/source instead of creating one control per file.
 
-Native parity is still incomplete: imported sounds, complete legacy view-entry/camera/once semantics, audible physical-device comparison, and full theme/device/accessibility comparison remain open. These are release gaps, not accepted removals; source-catalog and component tests do not establish whole-product parity.
+Public lifecycle regressions now cover once/duration/view-entry effects, hidden
+and repeated membership, rejected paths and session closure. Imported sounds,
+complete camera/action semantics, audible physical-device comparison and full
+theme/device/accessibility comparison remain open. These are release gaps, not
+accepted removals; lifecycle and component tests do not establish whole-product
+parity. The preserved C# sound catalog contains bundled sounds only: importing
+user sounds is a specification capability, not an already shipped reference
+implementation to copy.

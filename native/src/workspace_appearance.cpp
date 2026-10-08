@@ -13,6 +13,7 @@ bool Workspace::publishAppearance() {
     inspectorLinkRows_.setAppearance(appearance_);
     diagnosticRows_.setAppearance(appearance_);
     requestAuditRows_.setAppearance(appearance_);
+    sourceRows_.setAppearance(appearance_);
     emit appearanceChanged(); return true;
 }
 bool Workspace::saveAppearance(const QString& name, const QString& variant) {

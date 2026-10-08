@@ -205,6 +205,10 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString monospaceFamily READ monospaceFamily CONSTANT)
     Q_PROPERTY(QAbstractItemModel* table READ table CONSTANT)
     Q_PROPERTY(QVariantList resourceColumns READ resourceColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QAbstractItemModel* sourceTable READ sourceTable CONSTANT)
+    Q_PROPERTY(QVariantList sourceColumns READ sourceColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int sourceSortColumn READ sourceSortColumn NOTIFY sourcesPresentationChanged)
+    Q_PROPERTY(QString sourceSortDirection READ sourceSortDirection NOTIFY sourcesPresentationChanged)
     Q_PROPERTY(QVariantList eventColumns READ eventColumns NOTIFY tableLayoutChanged)
     Q_PROPERTY(QString tableLayoutError READ tableLayoutError NOTIFY tableLayoutStatusChanged)
     Q_PROPERTY(bool tableLayoutSaving READ tableLayoutSaving NOTIFY tableLayoutStatusChanged)
@@ -469,6 +473,14 @@ public:
     Q_INVOKABLE bool copyValue(const QString& id, const QString& representation = "preferred");
     QAbstractItemModel* table();
     QVariantList resourceColumns() const;
+    QAbstractItemModel* sourceTable() { return &sourceTable_; }
+    QVariantList sourceColumns() const;
+    int sourceSortColumn() const { return sourceTable_.sortColumn(); }
+    QString sourceSortDirection() const { return sourceTable_.sortColumn() < 0 ? "NONE" : sourceTable_.sortOrder() == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    /** Publishes imported context metadata only; never reads files or requests cluster data. */
+    Q_INVOKABLE bool refreshSourceTable();
+    Q_INVOKABLE bool sortSourceColumn(int column);
+    Q_INVOKABLE bool copySourceCell(const QString& identity, int column);
     Q_PROPERTY(QVariantList alertColumns READ alertColumns NOTIFY tableLayoutChanged)
     QVariantList alertColumns() const;
     QVariantList eventColumns() const;
@@ -531,6 +543,7 @@ signals:
     void sourceRemovalChanged();
     void diagnosticsPresentationChanged();
     void sessionRenamed(const QString& id);
+    void sourcesPresentationChanged();
     /** Request scheduler admission; safe metadata only, using the owning client's clock. */
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
     void changed();
@@ -642,6 +655,9 @@ private:
     QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
     ResourceTable valueRows_;
     QSortFilterProxyModel valuesTable_;
+    ResourceTable sourceRows_{nullptr, {"name", "cluster", "context", "auth", "source", "imported", "status", "rename", "remove"},
+        {"Name", "Cluster", "Context", "Authentication", "Source", "Imported", "Status", "Rename", "Remove"}, "id"};
+    QSortFilterProxyModel sourceTable_;
     ResourceTable diagnosticRows_, requestAuditRows_;
     QSortFilterProxyModel diagnosticTable_, requestAuditTable_;
     bool publishPorts();

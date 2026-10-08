@@ -111,6 +111,17 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
     }
     return false;
 }
+/** Reacquire a named delegate when wheel/layout work reuses its old item for another row. */
+inline bool clickVisible(QQuickWindow* window, const QString& name) {
+    for (int attempt=0;attempt<4;++attempt) {
+        const QPointer<QQuickItem> target(visibleItem(window->contentItem(),name));
+        if (!target || !target->isEnabled() || !scrollIntoView(window,target)) return false;
+        if (!target || target->objectName()!=name) continue;
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,target->mapToScene({target->width()/2,target->height()/2}).toPoint());
+        return true;
+    }
+    return false;
+}
 /** Select the visible desktop tab or the compact section picker through input. */
 inline bool selectSettingsSection(QQuickWindow* window, const QString& section) {
     const QString name = section == "alerts" ? "alertsWorkspaceButton" : "settings" + section.left(1).toUpper() + section.mid(1) + "Section";

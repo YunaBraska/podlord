@@ -22,7 +22,7 @@ TableSchemas Workspace::layoutSchemas() const {
     for (int column = 0; column < model->columnCount(); ++column)
         ids.append(model->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
     result.insert("alert", ids);
-    for (const auto& entry:QList<QPair<QString,const QAbstractItemModel*>>{{"diagnostic",&diagnosticRows_},{"audit",&requestAuditRows_}}) {
+    for (const auto& entry:QList<QPair<QString,const QAbstractItemModel*>>{{"diagnostic",&diagnosticRows_},{"audit",&requestAuditRows_},{"source",&sourceRows_}}) {
         QStringList columns;
         for (int column=0;column<entry.second->columnCount();++column)
             columns.append(entry.second->headerData(column,Qt::Horizontal,Qt::UserRole).toString());
@@ -49,7 +49,8 @@ QVariantList Workspace::defaultTableColumns(const QString& table) const {
     return table=="resource" ? tableColumns(table,rows_,true) : table=="event" ? tableColumns(table,eventRows_,true) : table=="port" ? tableColumns(table,portRows_,true)
         : table=="inspectorEvent" ? tableColumns(table,inspectorEventRows_,true) : table=="inspectorLink" ? tableColumns(table,inspectorLinkRows_,true)
         : table=="value" ? tableColumns(table,valueRows_,true) : table=="alert" ? tableColumns(table,*alerts_.tableModel(),true)
-        : table=="diagnostic" ? tableColumns(table,diagnosticRows_,true) : table=="audit" ? tableColumns(table,requestAuditRows_,true) : QVariantList{};
+        : table=="diagnostic" ? tableColumns(table,diagnosticRows_,true) : table=="audit" ? tableColumns(table,requestAuditRows_,true)
+        : table=="source" ? tableColumns(table,sourceRows_,true) : QVariantList{};
 }
 bool Workspace::reloadTableLayouts() {
     if (tableLayoutSaving_) return false;

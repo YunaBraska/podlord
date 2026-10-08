@@ -592,9 +592,14 @@ bool run(const QString& scenario, const QString& configPath) {
                 || !workspace.sourceRemoval().isEmpty() || workspace.portForwards().isEmpty()) return false;
             if (workspace.leaveYamlEdit() || !workspace.discardPending() || !workspace.confirmDiscard(true)) return false;
         }
-        if (!click("settingsWorkspaceButton") || !click("settingsSourcesSection")) return false;
+        if (!click("settingsWorkspaceButton") || !podlord::test::selectSettingsSection(window, "sources")) {
+            std::fprintf(stderr, "Forward owner removal could not open Sources.\n"); return false;
+        }
         const auto removal = "removeSource_" + source->contexts.first().id;
-        if (!click(removal.toUtf8().constData())) return false;
+        if (!waitFor([&] { return podlord::test::visibleItem(window->contentItem(), removal); })
+            || !podlord::test::clickVisible(window, removal)) {
+            std::fprintf(stderr, "Forward owner removal control is unavailable: %s\n", qPrintable(removal)); return false;
+        }
         const auto confirmationFrame = qEnvironmentVariable("PODLORD_SOURCE_REMOVAL_FRAME");
         if (!confirmationFrame.isEmpty()) {
             QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();

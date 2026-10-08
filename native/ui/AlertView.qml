@@ -16,7 +16,8 @@ Pane {
     readonly property var holdOptions: [
         {id: "no-match", label: workspace.uiText["alert.hold.match"]},
         {id: "duration", label: workspace.uiText["alert.hold.duration"]},
-        {id: "new-in-view", label: workspace.uiText["alert.hold.new"]}
+        {id: "new-in-view", label: workspace.uiText["alert.hold.new"]},
+        {id: "once", label: workspace.uiText["alert.hold.once"]}
     ]
     readonly property var animationOptions: ["none", "blink", "pulse", "sweep", "outline"].map(id => ({id: id, label: workspace.uiText["alert.animation." + id]}))
     readonly property var soundCatalog: workspace.alerts.sounds
@@ -280,7 +281,7 @@ Pane {
                         RowLayout {
                             Layout.fillWidth: true
                             HoldMode { id: colorMode; objectName: "alertColorMode"; Accessible.name: "Color hold mode" }
-                            SpinBox { id: colorSeconds; from: 1; to: 60; editable: true; visible: colorMode.currentValue !== "no-match"; Accessible.name: "Color hold seconds" }
+                            SpinBox { id: colorSeconds; objectName: "alertColorSeconds"; from: 1; to: 60; editable: true; visible: colorMode.currentValue !== "no-match" && colorMode.currentValue !== "once"; Accessible.name: "Color hold seconds" }
                         }
                     }
                 }
@@ -292,7 +293,7 @@ Pane {
                         RowLayout {
                             Layout.fillWidth: true
                             HoldMode { id: animationMode; objectName: "alertAnimationMode"; Accessible.name: "Animation hold mode" }
-                            SpinBox { id: animationSeconds; from: 1; to: 60; editable: true; visible: animationMode.currentValue !== "no-match"; Accessible.name: "Animation hold seconds" }
+                            SpinBox { id: animationSeconds; objectName: "alertAnimationSeconds"; from: 1; to: 60; editable: true; visible: animationMode.currentValue !== "no-match" && animationMode.currentValue !== "once"; Accessible.name: "Animation hold seconds" }
                         }
                     }
                 }

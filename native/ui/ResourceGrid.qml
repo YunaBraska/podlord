@@ -171,6 +171,12 @@ ColumnLayout {
     }
     ResourceFindFilter { id: findMatches; sourceModel: grid.findOpen && grid.visible ? grid.tableModel : null }
     Connections {
+        target: grid.visible ? grid.tableModel : null
+        // Column reordering also seeds Qt's row map; membership changes must not retain it.
+        function onRowsInserted() { table.clearRowReordering() }
+        function onRowsRemoved() { table.clearRowReordering() }
+    }
+    Connections {
         target: findMatches
         function onRowsInserted() { Qt.callLater(grid.updateFindCount, false) }
         function onRowsRemoved() { Qt.callLater(grid.updateFindCount, false) }
@@ -297,10 +303,11 @@ ColumnLayout {
                 maximumLineCount: grid.wrapCells ? 3 : 1
                 Loader {
                     anchors.fill: parent
-                    active: grid.cellAccessory !== null && grid.accessoryColumns.indexOf(cell.column) >= 0
+                    active: cell.width > 0 && grid.cellAccessory !== null && grid.accessoryColumns.indexOf(cell.column) >= 0
                     visible: active
                     sourceComponent: grid.cellAccessory
                     property string identity: cell.resourcePath
+                    property string resourceName: grid.tableModel.data(grid.tableModel.index(cell.row,0),Qt.UserRole+1) || ""
                     property int row: cell.row
                     property int column: cell.column
                     property var tableView: cell.TableView.view
