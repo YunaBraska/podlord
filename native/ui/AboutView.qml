@@ -36,6 +36,14 @@ ColumnLayout {
             Label { objectName: "settingsVersion"; Layout.fillWidth: true; text: workspace.uiText["about.version"].replace("{0}", Qt.application.version); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
         }
     }
+    Label { objectName: "aboutUpdateStatus"; Layout.fillWidth: true; text: workspace.releaseUpdates.state.status; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.releaseUpdates.state.error ? workspace.appearanceColors.danger : workspace.appearanceColors.muted; Accessible.name: text }
+    Flow {
+        Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6
+        Button { objectName: "aboutCheckUpdates"; text: "Check for updates"; enabled: workspace.releaseUpdates.state.enabled && !workspace.releaseUpdates.state.busy; Accessible.description: "Explicit anonymous release check; automatic checks run once a week"; onClicked: workspace.releaseUpdates.checkNow() }
+        Button { objectName: "aboutDownloadUpdate"; visible: workspace.releaseUpdates.state.available; text: workspace.uiText["update.availableStatus"].replace("{0}", workspace.releaseUpdates.state.latestVersion); Accessible.name: "Download compatible native update"; onClicked: workspace.releaseUpdates.openDownload(); ToolTip.visible: hovered || activeFocus; ToolTip.text: workspace.uiText["update.downloadTip"].replace("{0}", workspace.releaseUpdates.state.latestVersion).replace("{1}", Qt.application.version) }
+        Button { objectName: "aboutReleasePage"; visible: workspace.releaseUpdates.state.releaseUrl !== ""; text: "Release notes"; Accessible.description: "Open the verified project release page; does not install software"; onClicked: workspace.releaseUpdates.openRelease() }
+    }
+    Label { objectName: "aboutUpdateCheckedAt"; Layout.fillWidth: true; visible: workspace.releaseUpdates.state.lastCheckedAt !== ""; text: "Last checked: " + workspace.releaseUpdates.state.lastCheckedAt; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
     Label { text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
     Flow {
         Layout.fillWidth: true

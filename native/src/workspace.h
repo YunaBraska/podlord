@@ -6,6 +6,7 @@
 #include "appearance.h"
 #include "table_layout.h"
 #include "view_state.h"
+#include "release_updates.h"
 #include <QFuture>
 #include "alerts.h"
 #include <QAbstractTableModel>
@@ -74,6 +75,7 @@ class Workspace final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList contexts READ contexts NOTIFY catalogsChanged)
     Q_PROPERTY(podlord::Alerts* alerts READ alerts CONSTANT)
+    Q_PROPERTY(podlord::ReleaseUpdates* releaseUpdates READ releaseUpdates CONSTANT)
     Q_PROPERTY(QStringList themeNames READ themeNames CONSTANT)
     Q_PROPERTY(QString themeName READ themeName NOTIFY appearanceChanged)
     Q_PROPERTY(QString themeVariant READ themeVariant NOTIFY appearanceChanged)
@@ -252,9 +254,11 @@ public:
     Q_INVOKABLE bool copyPortForwardEndpoint(const QString& token);
     /** Explicitly open an active session's loopback endpoint. Never accepts an arbitrary URL. */
     Q_INVOKABLE bool openPortForwardEndpoint(const QString& token, bool secure);
-    explicit Workspace(QString profile, QObject* parent = nullptr, std::function<QDateTime()> now = QDateTime::currentDateTimeUtc);
+    explicit Workspace(QString profile, QObject* parent = nullptr, std::function<QDateTime()> now = QDateTime::currentDateTimeUtc,
+        QUrl releaseEndpoint = ReleaseUpdates::officialEndpoint());
     ~Workspace() override;
     Alerts* alerts() { return &alerts_; }
+    ReleaseUpdates* releaseUpdates() { return &releaseUpdates_; }
     Q_INVOKABLE int alertResourceIndex(const QString& path) const;
     Q_INVOKABLE bool previewAlertZoom(const QVariantMap& draft);
     QString sourceImportNotice() const { return sourceImportNotice_; }
@@ -643,6 +647,7 @@ private:
     quint64 selectionRevision_ = 0;
     void refreshSessionSelection();
     ResourceClient client_;
+    ReleaseUpdates releaseUpdates_;
     Alerts alerts_;
     CredentialProcess credentials_;
     ResourceTable rows_;

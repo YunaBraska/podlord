@@ -1471,3 +1471,18 @@ separate.
 - UI-EMPTY-01: Resources with no loaded or matching rows show the existing product logo, a localized state title and the actual empty/loading/filter explanation. The logo is bundled, non-interactive, proportionally scaled and bounded by the available space. It must not cover loaded rows or create a network request.
 - UI-SEARCH-01: The on-demand Resources/Events global search includes Previous, Next and a current/total match label. Previous and Next loop in the current cached table order, select and reveal a row, and do not open the inspector or fetch data. Enter advances; Shift+Enter goes backwards. Editing the expression starts at the first matching row. Empty expressions, zero matches and invalid expressions have disabled navigation and a 0/0 label. Existing field filters remain effective. Table-local Find remains independent and does not alter global filters.
 - UI-APPEAR-01: Theme intensity was explicitly removed on 2026-10-08. All 19 named palettes and dark/light remain. Remove the selector, runtime state, API argument, adjustable render branches and translation keys. Read old settings without implicit writes; the next explicit save discards only the obsolete field. ADR 0024 owns migration and rollback.
+
+## How are native release updates discovered?
+
+Confirmed on 2026-10-08: automatic checks are weekly, not daily. See [ADR 0043](../adr/0043-weekly-native-release-checks.md).
+
+| ID | Requirement |
+|---|---|
+| UPD-001 | The native application MUST check the latest stable release anonymously at most once per seven days by default, including across restarts and simultaneous windows/processes. Explicit Check for updates MUST bypass the time interval, but MUST NOT duplicate an in-flight request. |
+| UPD-002 | About MUST render cached status without network activity caused by displaying, scrolling or hovering. It MUST expose an accessible explicit check action and verified release/download actions when applicable. |
+| UPD-003 | A download MUST be offered only for a newer stable version with an uploaded native package matching the running OS and architecture, within the distribution size budget. C# packages and guessed cross-platform installers MUST NOT be offered. |
+| UPD-004 | Release/download URLs MUST exactly match the repository and validated version/asset. Redirects MUST NOT be followed. Opening a URL requires deliberate user input; automatic installation and browser login MUST NOT occur. |
+| UPD-005 | Checks MUST have one lifecycle owner, a bounded metadata response and a 10-second metadata deadline. Failures, malformed metadata, authentication failures and rate limits MUST surface a readable error without immediate retries or upstream response-body disclosure. Existing verified update information MUST survive failed checks. |
+| UPD-006 | Attempts/results MUST be stored atomically in a private operational cache without overwriting settings, sessions or sources. Invalid, unsupported or symlinked cache/lock paths MUST fail explicitly without destroying existing data. |
+| UPD-007 | Startup MUST NOT wait for release HTTP before opening the workspace. A running application MUST schedule the next due weekly check. Application activation MUST NOT bypass the interval. `PODLORD_DISABLE_UPDATE_CHECK=1` MUST suppress automatic and explicit checks. |
+| UPD-008 | Public behavior MUST be tested through HTTP and actual About controls, including weekly boundaries, failure retention, concurrency, invalid metadata, incompatible assets and deliberate safe browser handoff. Published native assets and current desktop/mobile visual proof remain separate release evidence. |

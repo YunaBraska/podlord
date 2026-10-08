@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include <QInputMethodEvent>
 #include "ui_input.h"
 #include <QClipboard>
 #include <QAccessible>
@@ -832,6 +833,21 @@ bool execute(const QString& scenario) {
             }
             if (scenario == "find_enter") { input->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Return); if (!selected().endsWith("/alpha")) return false; }
             if (scenario == "find_narrow" && (!displayedWithin(window->contentItem(),item(window,"resourceFindNext")) || !displayedWithin(window->contentItem(),input))) return false;
+        }
+        if (scenario == "find_filter_shrink" || scenario == "find_filter_ime") {
+            if (!click(window,item(window,"workspaceSearchButton"))) return false;
+            auto* filter = item(window,"resourceFilter");
+            if (!filter || !filter->isVisible()) return false;
+            filter->forceActiveFocus();
+            if (scenario == "find_filter_ime") {
+                QInputMethodEvent commit; commit.setCommitString("~alpha");
+                QCoreApplication::sendEvent(window,&commit);
+            } else if (!type(window,filter,"~alpha")) return false;
+            if (!waitFor([&] { return workspace.resourceCount()==1 && text(window,"resourceFindCount")=="1/1"; })
+                || !selected().endsWith("/alpha") || !click(window,item(window,"resourceFindNext"))
+                || text(window,"resourceFindCount")!="1/1" || !workspace.inspectorPath().isEmpty()
+                || server.requests.size()!=calls) return false;
+            return true;
         }
         if (scenario == "find_escape") { input->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Escape); if (input->isVisible()) return false; }
         else if (!click(window,item(window,"resourceFindClose")) || input->isVisible()) return false;
