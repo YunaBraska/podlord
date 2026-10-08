@@ -609,8 +609,132 @@ bool execute(const QString& scenario) {
     if (scenario.startsWith("settings_inline_")) {
         if (!waitFor([&] { return !workspace.busy(); }) || !click(window,item(window,"settingsWorkspaceButton"))) return false;
         const auto section=scenario.mid(QString("settings_inline_").size());
-        const auto destination=section=="invalid" || section=="save" ? QString("Sync") : section=="narrow" ? QString("Appearance") : section.left(1).toUpper()+section.mid(1);
+        const auto destination=section=="invalid" || section=="save" ? QString("Sync") : section=="narrow" ? QString("Appearance") : section.startsWith("runtime") || section.startsWith("diagnostic_") ? QString("Diagnostics") : section.left(1).toUpper()+section.mid(1);
         if (!click(window,item(window,"settings"+destination+"Section"))) return false;
+        if (item(window,"sourceManagementPanel")->isVisible()) return false;
+        if (section.startsWith("diagnostic_")) {
+            const bool audit=section.contains("audit_");
+            if (audit) {
+                if (!workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
+                    || !waitFor([&] { return !workspace.loading() && !server.requests.isEmpty(); })
+                    || !click(window,item(window,"settingsWorkspaceButton"))
+                    || !podlord::test::selectSettingsSection(window,"diagnostics")) return false;
+            }
+            const auto prefix=audit ? QString("audit") : QString("diagnostic");
+            if (!waitFor([&] { auto* table=item(window,prefix+"Table"); return table && table->property("rows").toInt()>(audit ? 0 : 10); })) {
+                std::fprintf(stderr,"Shared diagnostic tables are absent.\n"); return false;
+            }
+            const auto calls=server.requests.size();
+            auto* model=workspace.property(audit ? "requestAuditTable" : "diagnosticTable").value<QAbstractItemModel*>();
+            if (!model) return false;
+            if (section=="diagnostic_tables") {
+                if (model->columnCount()!=3 || !item(window,"diagnosticSampledAt")
+                    || item(window,"diagnosticSampledAt")->property("text").toString().isEmpty()) return false;
+            } else if (section.endsWith("sort")) {
+                auto* proxy=qobject_cast<QSortFilterProxyModel*>(model); if (!proxy) return false;
+                for (int step=0;step<3;++step) {
+                    if (!click(window,item(window,prefix+"Header_0")) || !waitFor([&] { return proxy->sortColumn()==(step==2 ? -1 : 0)
+                        && (step==2 || proxy->sortOrder()==(step==0 ? Qt::AscendingOrder : Qt::DescendingOrder)); })) return false;
+                }
+            } else if (section.endsWith("copy")) {
+                const int column=audit ? 2 : 1;
+                const auto expected=model->index(0,column).data().toString();
+                const auto name=audit ? prefix+"Cell_0_2" : "diagnosticValue_"+model->index(0,0).data(Qt::UserRole).toString();
+                QGuiApplication::clipboard()->setText("untouched");
+                if (!click(window,item(window,name))) return false;
+                QTest::keySequence(window,QKeySequence::Copy);
+                if (QGuiApplication::clipboard()->text()!=expected) return false;
+            } else if (section=="diagnostic_audit_duration") {
+                auto* table=item(window,"auditTable"); if (!table) return false;
+                if (!podlord::test::scrollIntoView(window,table)) return false;
+                for (int attempt=0;attempt<8 && !item(window,"auditHeader_5");++attempt) {
+                    const auto position=table->mapToScene(QPointF(table->width()/2,table->height()/2));
+                    QWheelEvent wheel(position,window->mapToGlobal(position.toPoint()),QPoint(-200,0),QPoint(-120,0),Qt::NoButton,Qt::NoModifier,Qt::ScrollUpdate,false);
+                    QCoreApplication::sendEvent(window,&wheel); QTest::qWait(10);
+                }
+                if (!click(window,item(window,"auditHeader_5"))) { std::fprintf(stderr,"Request duration header is not reachable.\n"); return false; }
+                qint64 previous=-1; int measured=0;
+                for (int row=0;row<model->rowCount();++row) {
+                    const auto cell=model->index(row,5); const auto display=cell.data().toString();
+                    if (display=="-") continue;
+                    bool numeric=false; const auto duration=cell.data(Qt::UserRole+6).toLongLong(&numeric);
+                    if (!numeric || duration<previous || duration!=display.section(' ',0,0).toLongLong()) {
+                        std::fprintf(stderr,"Request duration has no numeric sort value.\n"); return false;
+                    }
+                    previous=duration; ++measured;
+                }
+                if (measured==0) { std::fprintf(stderr,"No completed request duration is visible.\n"); return false; }
+            } else if (section.startsWith("diagnostic_sort_")) {
+                const auto* proxy=qobject_cast<QSortFilterProxyModel*>(model); if (!proxy) return false;
+                const auto column=section.endsWith("negative") ? -1 : section.endsWith("high") ? model->columnCount() : 0;
+                const auto table=section.endsWith("table") ? QString("unsupported") : QString("diagnostic");
+                const auto before=proxy->sortColumn();
+                if (workspace.sortDiagnosticColumn(table,column) || proxy->sortColumn()!=before) return false;
+            } else if (section.startsWith("diagnostic_copy_")) {
+                const auto column=section.endsWith("negative") ? -1 : section.endsWith("high") ? model->columnCount() : 1;
+                const auto table=section.endsWith("table") ? QString("unsupported") : QString("diagnostic");
+                const auto identity=section.endsWith("empty") ? QString{} : section.endsWith("missing") ? QString("missing-counter")
+                    : model->index(0,0).data(Qt::UserRole).toString();
+                QGuiApplication::clipboard()->setText("untouched");
+                if (workspace.copyDiagnosticCell(table,identity,column) || QGuiApplication::clipboard()->text()!="untouched") return false;
+            } else if (section.endsWith("columns") || section.endsWith("columns_restart")) {
+                if (!click(window,item(window,"diagnosticColumnsButton"))
+                    || !click(window,item(window,"diagnosticColumnVisible_description"))
+                    || !click(window,item(window,"diagnosticColumnPinned_label"))
+                    || !click(window,item(window,"diagnosticSaveColumns"))
+                    || !waitFor([&] { return !workspace.tableLayoutSaving(); }) || !workspace.tableLayoutError().isEmpty()) return false;
+                const auto verify=[](const QVariantList& columns) {
+                    bool hidden=false,pinned=false;
+                    for (const auto& value:columns) { const auto column=value.toMap();
+                        if (column["id"]=="description") hidden=!column["visible"].toBool();
+                        if (column["id"]=="label") pinned=column["pinned"].toBool(); }
+                    return hidden && pinned;
+                };
+                if (section.endsWith("_restart")) { podlord::Workspace reopened(profile); if (!verify(reopened.property("diagnosticColumns").toList())) return false; }
+                else if (!verify(workspace.property("diagnosticColumns").toList())) return false;
+            } else if (section.contains("find") || section.endsWith("narrow")) {
+                if (section.endsWith("narrow")) {
+                    window->resize(360,600);
+                    if (!waitFor([&] { return window->contentItem()->width()==360 && window->contentItem()->height()==600; })
+                        || !podlord::test::selectSettingsSection(window,"diagnostics")) return false;
+                }
+                if (section.endsWith("keyboard")) {
+                    if (!click(window,item(window,audit ? "auditCell_0_2" : "diagnosticCell_0_0"))) return false;
+                    QTest::keySequence(window,QKeySequence::Find);
+                } else if (!click(window,item(window,prefix+"FindButton"))) return false;
+                const bool empty=section.endsWith("find_empty");
+                const auto expected=empty ? QString("0/0") : audit ? "1/"+QString::number(model->rowCount()) : QString("1/1");
+                if (!type(window,item(window,prefix+"FindInput"),empty ? "no-such-counter" : audit ? "GET" : "RSS")
+                    || !waitFor([&] { return text(window,prefix+"FindCount")==expected; })) return false;
+                if (!empty && (!click(window,item(window,prefix+"FindNext")) || !click(window,item(window,prefix+"FindPrevious")))) return false;
+            } else return false;
+            const auto capture=qEnvironmentVariable("PODLORD_DIAGNOSTIC_SCREENSHOT");
+            if (!capture.isEmpty() && !window->grabWindow().save(capture)) return false;
+            return server.requests.size()==calls;
+        }
+        if (section.startsWith("runtime")) {
+            if (!waitFor([&] { return item(window,"diagnosticValue_rss") && item(window,"diagnosticValue_memory")
+                && item(window,"diagnosticValue_cpuTime") && item(window,"diagnosticValue_threads"); })) return false;
+            auto* rss = item(window, "diagnosticValue_rss");
+            auto* memory = item(window, "diagnosticValue_memory");
+            auto* cpu = item(window, "diagnosticValue_cpuTime");
+            auto* threads = item(window, "diagnosticValue_threads");
+            if (!rss || !memory || !cpu || !threads || !rss->isVisible()) return false;
+            const auto initial = rss->property("text").toString();
+            const auto value = initial.section(' ', 0, 0).toDouble();
+            if (value <= 0 || threads->property("text").toString().toInt() <= 0
+                || memory->property("text").toString() == "Unavailable" || !cpu->property("text").toString().endsWith(" s")) return false;
+            if (section == "runtime") return server.requests.isEmpty();
+            const QByteArray allocation(64 * 1024 * 1024, 'a');
+            QTest::qWait(100);
+            if (rss->property("text").toString() != initial) return false;
+            auto* refresh = item(window, "refreshSettingsDiagnostics");
+            if (section == "runtime_keyboard") {
+                refresh->forceActiveFocus(Qt::TabFocusReason); QTest::keyClick(window, Qt::Key_Space);
+            } else if (!click(window, refresh)) return false;
+            return waitFor([&] { auto* current = item(window, "diagnosticValue_rss"); return current && current->property("text").toString().section(' ', 0, 0).toDouble() > value + 40; })
+                && allocation.size() == 64 * 1024 * 1024 && server.requests.isEmpty();
+        }
         if (section=="save") {
             auto* input=item(window,"inlineRequestLimit")->property("contentItem").value<QQuickItem*>();
             if (!type(window,input,"120")) return false;
@@ -621,7 +745,7 @@ bool execute(const QString& scenario) {
         }
         if (section=="invalid") return type(window,item(window,"inlineLogLimit"),"0") && click(window,item(window,"inlineSaveSync")) && !workspace.error().isEmpty() && workspace.logLimitMb()==5 && server.requests.isEmpty();
         if (section=="graphics") return item(window,"inlineRadarWaterEnabled")->isVisible() && click(window,item(window,"inlineRadarWaterEnabled")) && waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); }) && server.requests.isEmpty();
-        if (section=="diagnostics") return click(window,item(window,"refreshSettingsDiagnostics")) && item(window,"settingsRequestAudit")->property("count").toInt()==0 && workspace.settingsDiagnostics()["metrics"].toList().size()==7 && server.requests.isEmpty();
+        if (section=="diagnostics") return click(window,item(window,"refreshSettingsDiagnostics")) && item(window,"settingsRequestAudit")->property("count").toInt()==0 && workspace.settingsDiagnostics()["metrics"].toList().size()>=11 && server.requests.isEmpty();
         if (section=="privacy") return item(window,"privacyTelemetry")->isVisible() && text(window,"privacyTelemetry")=="Off" && type(window,item(window,"inlineYamlLimit"),"4") && click(window,item(window,"inlineSaveYamlLimit")) && waitFor([&] { return !workspace.busy() && workspace.yamlLimitMiB()==4; }) && server.requests.isEmpty();
         if (section=="workspace") return click(window,item(window,"settingsResourceColumns")) && waitFor([&] { return item(window,"resourceColumnVisible_kind") && item(window,"resourceColumnVisible_kind")->isVisible(); }) && server.requests.isEmpty();
         if (section=="sources") return item(window,"settingsSourcePath")->isVisible() && item(window,"settingsSourceList")->property("count").toInt()==1 && server.requests.isEmpty();
@@ -716,21 +840,21 @@ bool execute(const QString& scenario) {
     if (scenario.startsWith("accessibility_")) {
         if (!waitFor([&] { return workspace.totalResourceCount() == 3 && !workspace.loading(); })) return false;
         const auto calls = server.requests.size();
-        if (!accessibleName(window, "Open command palette")) return false;
+        if (!accessibleName(window,"Workspace actions")) return false;
         if (scenario == "accessibility_populated") {
             window->hide(); QTest::qWait(20); window->show(); window->requestActivate();
-            return waitFor([&] { return window->isVisible(); }) && accessibleName(window, "Open command palette") && server.requests.size() == calls;
+            return waitFor([&] { return window->isVisible(); }) && accessibleName(window,"Workspace actions") && server.requests.size() == calls;
         }
         if (scenario == "accessibility_settings") return click(window, item(window, "settingsWorkspaceButton"))
             && click(window, item(window, "settingsSourcesSection"))
-            && accessibleName(window, "Open command palette") && server.requests.size() == calls;
+            && accessibleName(window,"Workspace actions") && server.requests.size() == calls;
         if (scenario == "accessibility_dialog") {
             if (!click(window, item(window, "commandPaletteButton"))
                 || !waitFor([&] { return item(window, "commandPaletteSearch")->isVisible(); })
                 || !accessibleName(window, "Find a command")) return false;
             QTest::keyClick(window, Qt::Key_Escape);
             return waitFor([&] { return !item(window, "commandPaletteSearch")->isVisible(); })
-                && accessibleName(window, "Open command palette") && server.requests.size() == calls;
+                && accessibleName(window,"Workspace actions") && server.requests.size() == calls;
         }
         return false;
     }
@@ -1124,7 +1248,7 @@ bool execute(const QString& scenario) {
             field->forceActiveFocus(Qt::TabFocusReason);
             if (!field->hasActiveFocus()) return false;
             toggle->forceActiveFocus(Qt::TabFocusReason); QTest::keyClick(window, Qt::Key_Space);
-        } else if (!click(window, toggle)) { std::fprintf(stderr,"Cannot close source controls through the visible Sources action.\n"); return false; }
+        } else if (!click(window, scenario == "sources_narrow" ? item(window, "closeSourceControls") : toggle)) { std::fprintf(stderr,"Cannot close source controls through the visible Sources action.\n"); return false; }
         return !panel->isVisible() && !field->isVisible() && !selector->isVisible() && workspace.currentSession() == firstSession
             && workspace.table()->rowCount() == rows && server.requests.size() == calls;
     }
@@ -1825,7 +1949,9 @@ bool execute(const QString& scenario) {
         if (bytes.contains("local-test-token") || bytes.contains("secret-value")) return false;
         if (scenario=="diagnostics_snapshot") {
             if (!workspace.filter("no-matches")) return false;
-            if (item(window,"settingsRequestAudit")->property("count").toInt()!=audit.size()) return false;
+            auto* table=item(window,"settingsRequestAudit");
+            if (!table || !podlord::test::scrollIntoView(window,table)
+                || !waitFor([&] { return table->property("count").toInt()==audit.size(); })) return false;
         }
         return click(window,item(window,"refreshSettingsDiagnostics")) && server.requests.size()==calls;
     }
@@ -2054,11 +2180,12 @@ bool execute(const QString& scenario) {
             if (scenario == "radar_island_filter") {
                 auto* second=item(window,"radarTile_1");
                 if (!displayedWithin(radar,second)) return false;
-                const auto greyPoint=second->mapToScene(QPointF(second->width()/2,second->height()/2));
+                const auto greyPosition=second->mapToItem(radar,QPointF(second->width()/2,second->height()/2));
+                QPointF greyPoint;
                 if (!type(window,item(window,"resourceFilter"),"alpha") || !waitFor([&] { return radar->property("count").toInt()==1; })) return false;
                 auto* tile=item(window,"radarTile_0");
                 if (!tile || QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()>1) return false;
-                if (!waitFor([&] { const auto image=window->grabWindow(); const auto scale=double(image.width())/window->width(); return image.pixelColor(qRound(greyPoint.x()*scale),qRound(greyPoint.y()*scale))==QColor("#50575B"); })) return false;
+                if (!waitFor([&] { greyPoint=radar->mapToScene(greyPosition); const auto image=window->grabWindow(); const auto scale=double(image.width())/window->width(); return image.pixelColor(qRound(greyPoint.x()*scale),qRound(greyPoint.y()*scale))==QColor("#50575B"); })) return false;
                 QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,greyPoint.toPoint());
                 if (!workspace.inspectorPath().isEmpty() || server.requests.size()!=calls) return false;
                 return type(window,item(window,"resourceFilter"),"") && waitFor([&] { return radar->property("count").toInt()==expectedRows; }) && server.requests.size()==calls;

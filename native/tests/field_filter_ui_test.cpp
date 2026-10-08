@@ -51,7 +51,10 @@ bool click(QQuickWindow* window, const QString& name) {
     if (name=="resourceFieldFilters" || name=="radarWorkspaceButton") {
         auto* target=item(window,name);
         if (target && !target->isVisible()) {
-            if (!click(window,"toggleSidebar") || !waitFor([&] { return target->isVisible(); })) return false;
+            const auto* expander=item(window,"toggleLandscapeFilters");
+            const auto action=name=="resourceFieldFilters" && expander && expander->isVisible()
+                ? "toggleLandscapeFilters" : "toggleSidebar";
+            if (!click(window,action) || !waitFor([&] { return target->isVisible(); })) return false;
         }
     }
     auto* target = item(window, name);

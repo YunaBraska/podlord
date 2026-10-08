@@ -11,6 +11,8 @@ bool Workspace::publishAppearance() {
     portRows_.setAppearance(appearance_);
     inspectorEventRows_.setAppearance(appearance_);
     inspectorLinkRows_.setAppearance(appearance_);
+    diagnosticRows_.setAppearance(appearance_);
+    requestAuditRows_.setAppearance(appearance_);
     emit appearanceChanged(); return true;
 }
 bool Workspace::saveAppearance(const QString& name, const QString& variant) {

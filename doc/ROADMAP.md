@@ -325,6 +325,15 @@ and the runnable C# reference; do not start another parallel migration.
 | 9 | Radar, sessions, tabs and windows | Same reference projection/pose for deterministic topology evidence, water/background, filtered selection, issue/fresh highlights after initial load, stable health baseline, camera/navigation. Complete detach/move/close/restart with one session placement and correct forward ownership. |
 | 10 | Release evidence | Full required function/view/theme comparison matrix, actual mobile/platform targets, accessibility and packaged startup. Run the final complete suite, unique behavior accounting, coverage and repeatable public-boundary CPU/memory/latency gates; report failures honestly. Private unsigned distribution remains allowed; signing/notarization is deferred by the user. |
 
+On 2026-10-08, row 2 gained typed boolean/color/hold controls and compact Settings
+navigation; row 4 gained reference branding and the missing Liberapay link;
+row 5 gained actual OS runtime counters, observation time and the shared
+runtime/audit table toolbox. Those are completed implementation increments,
+not completed rows: imported alert sounds/remaining action semantics, Sources,
+native updates, cache-byte telemetry, translations and full image/device evidence
+remain open. Executed regressions, the full-run failure/recovery and the exact
+private package are recorded in the existing test map.
+
 For each row, use the existing capability inventory and test map to record:
 reference action, native public entrypoint, implementation status, exact executed
 scenario, original paired image and remaining gap. Update a row when evidence

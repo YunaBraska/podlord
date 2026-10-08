@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
             QTest::keyClick(window, Qt::Key_Tab);
         };
         click("settingsWorkspaceButton");
-        click(yaml ? "settingsPrivacySection" : "settingsSyncSection");
+        require(podlord::test::selectSettingsSection(window, yaml ? "privacy" : "sync"), "Draft settings section is not reachable.");
         if (yaml) fill("inlineYamlLimit", scenario == "yaml_invalid" ? "0" : "6");
         else {
             fill("inlineInactiveMinutes", "12");
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
             if (scenario.endsWith("_leave")) {
                 click("resourcesWorkspaceButton");
                 click("settingsWorkspaceButton");
-                click(yaml ? "settingsPrivacySection" : "settingsSyncSection");
+                require(podlord::test::selectSettingsSection(window, yaml ? "privacy" : "sync"), "Draft settings section is not reachable.");
                 require(yaml ? item("inlineYamlLimit")->property("text").toString() == "3"
                     : item("inlineLogLimit")->property("text").toString() == "5", "Leaving settings implicitly saved an unconfirmed draft.");
                 require(workspace.requestLimit() == 0 && workspace.logLimitMb() == 5 && workspace.yamlLimitMiB() == 3, "Leaving settings changed the active configuration.");
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
             require(workspace.logLimitMb() == 5, "Appearance update saved the sync draft implicitly.");
         }
         if (scenario != "invalid") {
-            click("settingsAppearanceSection");
+            require(podlord::test::selectSettingsSection(window, "appearance"), "Appearance section is not reachable.");
             require(item("inlineAppearanceTheme")->property("currentText").toString() == name
                 && item("inlineAppearanceVariant")->property("currentText").toString() == variant, "Appearance controls do not reflect the saved theme.");
         }

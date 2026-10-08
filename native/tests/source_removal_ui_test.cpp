@@ -144,7 +144,7 @@ void run(const QString& scenario) {
         require(window, "Application window is missing.");
         if (scenario == "narrow") { window->setWidth(390); window->setHeight(720); }
         require(QTest::qWaitForWindowExposed(window, 5000), "Application window is not exposed.");
-        click("settingsWorkspaceButton"); click("settingsSourcesSection");
+        click("settingsWorkspaceButton"); require(podlord::test::selectSettingsSection(window, "sources"), "Sources section is not reachable.");
         QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
         require(frames.wait(1000), "Settings did not render.");
         click("removeSource_" + alpha, scenario == "keyboard");

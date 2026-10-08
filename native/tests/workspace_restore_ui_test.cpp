@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include <QFile>
 #include <QGuiApplication>
 #include <QJsonDocument>
@@ -123,7 +124,7 @@ void run(const QString& scenario) {
         else QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
         QCoreApplication::processEvents();
     };
-    click("settingsWorkspaceButton"); click("settingsWorkspaceSection");
+    click("settingsWorkspaceButton"); require(podlord::test::selectSettingsSection(window, "workspace"), "Workspace section is not reachable.");
     click("inlineWorkspaceRestore", scenario == "keyboard"); settle(workspace);
     require(!workspace.property("workspaceRestoreEnabled").toBool(), "Real control did not persist restoration preference.");
     require(workspace.tabs().size() == 2 && contents(profile + "/sessions.json") == sessionBytes, "Preference change closed current tabs or changed session history.");

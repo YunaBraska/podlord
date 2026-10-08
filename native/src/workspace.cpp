@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "resource_guidance.h"
+#include "runtime_diagnostics.h"
 #include <QDir>
 #include <QStandardPaths>
 #include "resource_metrics.h"
@@ -107,6 +108,8 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         return identities.contains(field) && !text.isEmpty() ? appearanceIdentity(appearance_, text) : QColor(Qt::transparent);
     }
     if (role == Qt::UserRole + 6) {
+        const auto sortValue=row["sortValues"].toObject().value(field);
+        if (!sortValue.isUndefined()) return sortValue.toVariant();
         if (field == "preview") return row["value"].toString();
         if (field == "eventTime") return QDateTime::fromString(text, Qt::ISODateWithMs);
         if (field == "createdAt") return created.isValid() && created <= now ? QVariant(-created.toMSecsSinceEpoch()) : QVariant{};
@@ -202,7 +205,14 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
         {"Local endpoint", "Name", "Kind", "Namespace", "Remote", "Resolved", "Status"}, "id"),
     inspectorEventRows_(nullptr, {"time", "type", "reason", "count", "message"}, {"Last observed", "Type", "Reason", "Count", "Message"}),
     inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status"}, {"From", "Link", "To", "Namespace", "Status"}),
-    valueRows_(nullptr, {"name", "encoding", "preview", "copy", "reveal"}, {"Key", "Encoding", "Value", "Copy", "Reveal"}, "id") {
+    valueRows_(nullptr, {"name", "encoding", "preview", "copy", "reveal"}, {"Key", "Encoding", "Value", "Copy", "Reveal"}, "id"),
+    diagnosticRows_(nullptr, {"label", "value", "description"}, {"Metric", "Value", "Description"}, "id"),
+    requestAuditRows_(nullptr, {"time", "method", "path", "priority", "status", "duration", "outcome"},
+        {"Time", "Method", "Path", "Priority", "Status", "Duration", "Outcome"}, "id") {
+    diagnosticTable_.setSourceModel(&diagnosticRows_); diagnosticTable_.setSortRole(Qt::UserRole + 6);
+    diagnosticTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
+    requestAuditTable_.setSourceModel(&requestAuditRows_); requestAuditTable_.setSortRole(Qt::UserRole + 6);
+    requestAuditTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
     valuesTable_.setSourceModel(&valueRows_);
     valuesTable_.setSortRole(Qt::UserRole + 6);
     valuesTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
@@ -407,7 +417,7 @@ bool Workspace::valuesVisible() const { return navigation_.value(active_).page =
 bool Workspace::valuesAvailable() const { return isCoreValueResource(client_.resource(active_, inspectorPath())); }
 QString Workspace::monospaceFamily() const { return QFontDatabase::families().contains("Menlo") ? QString("Menlo") : QFontDatabase::systemFont(QFontDatabase::FixedFont).family(); }
 QVariantMap Workspace::settingsDiagnostics() const {
-    const QVariantList metrics{
+    QVariantList metrics{
         QVariantMap{{"label","Cached resources"},{"value",rows_.rowCount()},{"description","Current session snapshot, before view filters"}},
         QVariantMap{{"label","Matching resources"},{"value",table_.rowCount()},{"description","Current cached filter result"}},
         QVariantMap{{"label","Cached Events"},{"value",eventRows_.rowCount()},{"description","Canonical Events, without duplicate API aliases"}},
@@ -415,7 +425,8 @@ QVariantMap Workspace::settingsDiagnostics() const {
         QVariantMap{{"label","Sync progress"},{"value",QString::number(loadingProgress()*100,'f',0)+"%"},{"description",status()}},
         QVariantMap{{"label","Request limit"},{"value",settings_.requestHardLimitPerMinute},{"description","Per minute; 0 adds no extra limit; reads have at least 400 ms spacing"}},
         QVariantMap{{"label","Retained logs"},{"value",QString::number(settings_.logLimitMb)+" MB / Pod"},{"description","Bounded in-memory log retention"}}};
-    return {{"metrics",metrics},{"requests",client_.requestAudit(active_)}};
+    metrics.append(runtimeDiagnostics());
+    return {{"metrics",metrics},{"requests",client_.requestAudit(active_)},{"sampledAt",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
 }
 bool Workspace::publishInspector(bool revealChanged) {
     const auto path = inspectorPath();

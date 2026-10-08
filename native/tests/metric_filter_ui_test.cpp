@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include <QClipboard>
 #include <QElapsedTimer>
 #include <QFile>
@@ -123,13 +124,18 @@ QString text(QObject* root, const QString& name) {
     auto* value = item(root, name); return value ? value->property("text").toString() : QString{};
 }
 bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt::LeftButton) {
-    if (target && !target->isVisible() && (target->objectName()=="radarWorkspaceButton" || target->objectName()=="resourceFieldFilters"))
-        if (!click(window,item(window,"toggleSidebar"))) return false;
+    if (target && !target->isVisible() && (target->objectName()=="radarWorkspaceButton" || target->objectName()=="resourceFieldFilters")) {
+        const auto* expander=item(window,"toggleLandscapeFilters");
+        const auto action=target->objectName()=="resourceFieldFilters" && expander && expander->isVisible()
+            ? "toggleLandscapeFilters" : "toggleSidebar";
+        if (!click(window,item(window,action)) || !waitFor([&] { return target->isVisible(); })) return false;
+    }
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
     QList<QQuickItem*> ancestors;
     for (auto* parent = target; parent; parent = parent->parentItem()) ancestors.prepend(parent);
     for (auto* parent : ancestors) parent->ensurePolished();
     QCoreApplication::processEvents();
+    if (!podlord::test::scrollIntoView(window,target)) return false;
     const auto position = target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint();
     QTest::mouseClick(window, button, Qt::NoModifier, position); return true;
 }
@@ -142,11 +148,6 @@ bool type(QQuickWindow* window, QQuickItem* target, const QString& value) {
     return true;
 }
 
-QQuickItem* findControl(QQuickItem* root, const std::function<bool(QQuickItem*)>& predicate) {
-    if (root->isVisible() && predicate(root)) return root;
-    for (auto* child : root->childItems()) if (auto* found = findControl(child, predicate)) return found;
-    return nullptr;
-}
 struct Case final { QString field, expression; QStringList names; bool invalid = false; };
 std::optional<Case> testcase(const QString& scenario) {
     const QMap<QString, Case> cases{
@@ -315,7 +316,7 @@ bool execute(const QString& scenario) {
     }
     if (scenario == "radar" || scenario == "restart_radar") {
         QTest::keyClick(window, Qt::Key_Escape);
-        auto* radarButton = findControl(window->contentItem(), [](auto* control) { return control->property("text").toString() == "Radar" && control->isEnabled(); });
+        auto* radarButton = item(window,"radarWorkspaceButton");
         if (!click(window, radarButton) || !waitFor([&] {
             auto* radar = item(window, "resourceRadar"); return radar && radar->isVisible() && radar->property("count").toInt() == 1;
         })) return false;
@@ -371,7 +372,7 @@ bool realCluster(const QString& source) {
     }
     if (ownedConfigMaps != 128) return fail("owned ConfigMap inventory");
     expectedConfigMaps.sort();
-    auto* fieldsButton = findControl(window->contentItem(), [](auto* control) { return control->property("text").toString().startsWith("Fields") && control->isEnabled(); });
+    auto* fieldsButton = item(window,"resourceFieldFilters");
     if (!click(window, fieldsButton)) return fail("open field dialog");
     const auto setField = [&](const QString& field, const QString& expression) {
         auto* choice = item(window, "fieldFilterColumn");

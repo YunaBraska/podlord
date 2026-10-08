@@ -438,6 +438,25 @@ public:
     QString monospaceFamily() const;
     /** Explicit, stable diagnostics snapshot; contains no credentials or response bodies. */
     Q_INVOKABLE QVariantMap settingsDiagnostics() const;
+    Q_INVOKABLE QString refreshSettingsDiagnostics();
+    Q_PROPERTY(QAbstractItemModel* diagnosticTable READ diagnosticTable CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* requestAuditTable READ requestAuditTable CONSTANT)
+    Q_PROPERTY(QVariantList diagnosticColumns READ diagnosticColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QVariantList auditColumns READ auditColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int diagnosticSortColumn READ diagnosticSortColumn NOTIFY diagnosticsPresentationChanged)
+    Q_PROPERTY(int auditSortColumn READ auditSortColumn NOTIFY diagnosticsPresentationChanged)
+    Q_PROPERTY(QString diagnosticSortDirection READ diagnosticSortDirection NOTIFY diagnosticsPresentationChanged)
+    Q_PROPERTY(QString auditSortDirection READ auditSortDirection NOTIFY diagnosticsPresentationChanged)
+    QAbstractItemModel* diagnosticTable() { return &diagnosticTable_; }
+    QAbstractItemModel* requestAuditTable() { return &requestAuditTable_; }
+    QVariantList diagnosticColumns() const { return tableColumns("diagnostic", diagnosticRows_); }
+    QVariantList auditColumns() const { return tableColumns("audit", requestAuditRows_); }
+    int diagnosticSortColumn() const { return diagnosticTable_.sortColumn(); }
+    int auditSortColumn() const { return requestAuditTable_.sortColumn(); }
+    QString diagnosticSortDirection() const { return diagnosticTable_.sortOrder()==Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QString auditSortDirection() const { return requestAuditTable_.sortOrder()==Qt::AscendingOrder ? "ASC" : "DESC"; }
+    Q_INVOKABLE bool sortDiagnosticColumn(const QString& table, int column);
+    Q_INVOKABLE bool copyDiagnosticCell(const QString& table, const QString& identity, int column);
     /** Read the immutable bundled license only on an explicit About action. */
     Q_INVOKABLE QString applicationLicense() const;
     /** Read immutable dependency notices only on an explicit About action. */
@@ -510,6 +529,7 @@ signals:
     void deletionAvailabilityChanged();
     void sourceImportFinished(bool success);
     void sourceRemovalChanged();
+    void diagnosticsPresentationChanged();
     void sessionRenamed(const QString& id);
     /** Request scheduler admission; safe metadata only, using the owning client's clock. */
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
@@ -622,6 +642,8 @@ private:
     QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
     ResourceTable valueRows_;
     QSortFilterProxyModel valuesTable_;
+    ResourceTable diagnosticRows_, requestAuditRows_;
+    QSortFilterProxyModel diagnosticTable_, requestAuditTable_;
     bool publishPorts();
     LogRows logs_;
     QMap<QString, LogPosition> logPositions_;

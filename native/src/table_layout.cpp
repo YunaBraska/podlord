@@ -66,6 +66,11 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
             for (auto& column : layout) column.width = widths.value(column.id,170);
         }
         result.insert(table.key(), layout);
+        if (table.key()=="diagnostic" || table.key()=="audit") {
+            const QMap<QString,int> widths{{"label",190},{"value",170},{"description",560},{"time",205},{"method",90},
+                {"path",480},{"priority",120},{"status",110},{"duration",130},{"outcome",180}};
+            for (auto& column:result[table.key()]) column.width=widths.value(column.id,170);
+        }
         if (table.key() == "inspectorEvent" || table.key() == "inspectorLink") {
             const QMap<QString, int> widths{{"time",180},{"type",110},{"reason",180},{"count",110},{"message",480},
                 {"from",240},{"relation",110},{"to",240},{"namespace",160},{"status",160}};
@@ -87,7 +92,7 @@ Result<TableLayouts> TableLayoutStore::load() const {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
-    if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4 && root["version"] != 5 && root["version"] != 6 && root["version"] != 7) || !root["layouts"].isObject())
+    if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4 && root["version"] != 5 && root["version"] != 6 && root["version"] != 7 && root["version"] != 8) || !root["layouts"].isObject())
         return Failure{StoreError::InvalidData, "Invalid table layout document; existing data was retained."};
     const auto values = root["layouts"].toObject();
     QStringList added;
@@ -95,7 +100,8 @@ Result<TableLayouts> TableLayoutStore::load() const {
         if (!values.contains(table.key()) && ((table.key() == "port" && root["version"].toInt() <= 3)
             || ((table.key() == "inspectorEvent" || table.key() == "inspectorLink") && root["version"].toInt() <= 4)
             || (table.key() == "value" && root["version"].toInt() <= 5)
-            || (table.key() == "alert" && root["version"].toInt() <= 6))) added.append(table.key());
+            || (table.key() == "alert" && root["version"].toInt() <= 6)
+            || ((table.key()=="diagnostic" || table.key()=="audit") && root["version"].toInt()<=7))) added.append(table.key());
     if (values.size() + added.size() != schemas_.size()) return Failure{StoreError::InvalidData, "Table layouts must describe the supported table types."};
     for (const auto& key : values.keys()) if (!schemas_.contains(key)) return Failure{StoreError::InvalidData, "Unsupported table layout type; existing data was retained."};
     TableLayouts result;
@@ -140,7 +146,7 @@ Result<TableLayouts> TableLayoutStore::save(const QString& table, const QJsonArr
     layouts[table] = *layout;
     QJsonObject encoded;
     for (auto entry = layouts.cbegin(); entry != layouts.cend(); ++entry) encoded[entry.key()] = encode(entry.value());
-    const auto bytes = QJsonDocument(QJsonObject{{"version", 7}, {"layouts", encoded}}).toJson(QJsonDocument::Indented);
+    const auto bytes = QJsonDocument(QJsonObject{{"version", 8}, {"layouts", encoded}}).toJson(QJsonDocument::Indented);
     QSaveFile file(path); file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) || file.write(bytes) != bytes.size() || !file.commit())
         return Failure{StoreError::WriteFailed, "Cannot atomically save private table layouts."};
