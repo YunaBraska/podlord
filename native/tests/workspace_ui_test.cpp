@@ -539,6 +539,8 @@ bool execute(const QString& scenario) {
     if (!waitFor([&] { return item(window, "importButton")->isEnabled(); })) return false;
     if (scenario == "accessibility_empty") return accessibleName(window, "Workspace actions")
         && accessibleName(window, "Kubeconfig file or folder path") && server.requests.isEmpty();
+    if (scenario == "shell_footer_empty") return text(window, "resourceMatchCount") == "visible: 0/0"
+        && text(window, "syncStatus") == "API: 0/min  Synced: never" && server.requests.isEmpty();
     if (scenario.startsWith("radar_water_")) {
         if (!waitFor([&] { return !workspace.alerts()->busy(); })) return false;
         for (const auto& entry:workspace.alerts()->rules()) {
@@ -692,23 +694,83 @@ bool execute(const QString& scenario) {
     if (scenario == "plugin" || scenario == "invalid_ca" || scenario == "empty_token")
         return waitFor([&] { return !text(window, "errorMessage").isEmpty(); }) && server.requests.isEmpty();
     if (scenario == "auth") {
-        if (!waitFor([&] { return text(window, "syncStatus").contains("Authentication failed"); })) return false;
+        if (!waitFor([&] { return text(window, "syncProblemMessage").contains("Authentication failed"); })) return false;
         const int count = server.requests.size();
         QTest::qWait(100);
         return server.requests.size() == count && item(window, "authenticationButton")->isVisible() && !item(window, "refreshButton")->isEnabled();
     }
-    if (scenario == "redirect") return waitFor([&] { return text(window, "syncStatus").contains("Redirect refused"); }) && !server.requests.contains("/credential-leak");
-    if (scenario == "malformed") return waitFor([&] { return text(window, "syncStatus").contains("Malformed API response"); }) && !text(window, "syncStatus").contains("secret-value");
-    if (scenario == "invalid_discovery") return waitFor([&] { return text(window, "syncStatus").contains("Invalid core API version"); }) && !server.requests.contains("/escape");
+    if (scenario == "redirect") return waitFor([&] { return text(window, "syncProblemMessage").contains("Redirect refused"); }) && !server.requests.contains("/credential-leak");
+    if (scenario == "malformed") return waitFor([&] { return text(window, "syncProblemMessage").contains("Malformed API response"); }) && !text(window, "syncProblemMessage").contains("secret-value");
+    if (scenario == "invalid_discovery") return waitFor([&] { return text(window, "syncProblemMessage").contains("Invalid core API version"); }) && !server.requests.contains("/escape");
     if (scenario == "invalid_list") {
-        const bool reported=waitFor([&] { return text(window, "syncStatus").contains("Invalid resource list entry"); });
-        if (!reported) std::fprintf(stderr, "Invalid list response was not reported; visible status: %s; requests: %s\n", qPrintable(text(window, "syncStatus")), qPrintable(server.requests.join('\n')));
+        const bool reported=waitFor([&] { return text(window, "syncProblemMessage").contains("Invalid resource list entry"); });
+        if (!reported) std::fprintf(stderr, "Invalid list response was not reported; visible status: %s; requests: %s\n", qPrintable(text(window, "syncProblemMessage")), qPrintable(server.requests.join('\n')));
         return reported;
     }
     if (scenario.startsWith("shell_")) {
         if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" ? 5 : 3) && !workspace.loading(); },10000)) return false;
         const auto calls=server.requests.size();
         auto* radar=item(window,"resourceRadar");
+        if (scenario == "shell_footer_reference") {
+            if (text(window, "resourceMatchCount") != "visible: 3/3"
+                || text(window, "syncStatus") != QString("API: %1/min  Synced: 0s ago").arg(calls)) return false;
+            reference = reference.addSecs(59);
+            if (!workspace.filter("alpha") || text(window, "resourceMatchCount") != "visible: 1/3"
+                || text(window, "syncStatus") != QString("API: %1/min  Synced: 59s ago").arg(calls)) return false;
+            reference = reference.addSecs(1);
+            if (!workspace.filter("") || text(window, "syncStatus") != "API: 0/min  Synced: 1m ago") return false;
+            reference = reference.addSecs(3540);
+            return workspace.filter("alpha") && text(window, "syncStatus") == "API: 0/min  Synced: 1h ago" && server.requests.size() == calls;
+        }
+        if (scenario == "shell_footer_reopen") {
+            const auto session = workspace.currentSession();
+            if (!workspace.close(session) || !waitFor([&] { return !workspace.busy(); })
+                || text(window, "syncStatus") != "API: 0/min  Synced: never"
+                || !workspace.activate(session) || !waitFor([&] { return !workspace.busy(); })) return false;
+            return text(window, "syncStatus") == QString("API: %1/min  Synced: 0s ago").arg(calls) && server.requests.size() == calls;
+        }
+        if (scenario == "shell_landscape" || scenario == "shell_landscape_filters" || scenario == "shell_landscape_rotate") {
+            window->resize(800,390);
+            if (!waitFor([&] { return item(window, "landscapeNavigation")->isVisible() && radar->isVisible()
+                && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
+            if (scenario == "shell_landscape_filters") {
+                if (!click(window, item(window, "toggleLandscapeFilters")) || !waitFor([&] { return item(window, "sidebarFilterScroll")->isVisible(); })
+                    || !podlord::test::scrollIntoView(window, item(window, "problemsOnly")) || !click(window, item(window, "problemsOnly"))
+                    || !workspace.problemsOnly() || !click(window, item(window, "toggleLandscapeFilters"))) return false;
+                return !item(window, "sidebarFilterScroll")->isVisible() && workspace.problemsOnly() && server.requests.size() == calls;
+            }
+            if (!workspace.filter("alpha") || !click(window, item(window, "radarZoom"))) return false;
+            const auto pose = radar->property("viewPose").toMap();
+            const auto evidence = qEnvironmentVariable("PODLORD_SHELL_EVIDENCE");
+            const QList<QSize> sizes = scenario == "shell_landscape_rotate" ? QList<QSize>{QSize(800,390),QSize(390,720),QSize(800,390),QSize(1440,920)}
+                : QList<QSize>{QSize(600,360),QSize(640,360),QSize(800,390),QSize(896,414),QSize(1080,480)};
+            for (const auto size : sizes) {
+                window->resize(size);
+                const bool landscape = size.width() >= 600 && size.height() < 600;
+                if (!waitFor([&] {
+                    auto* rail = item(window, "landscapeNavigation");
+                    auto* host = item(window, "workspaceSidebarHost");
+                    return rail->isVisible() == landscape && (landscape ? host->isVisible() && host->width() <= 320 : true)
+                        && item(window, "resourceTable")->height() >= 32;
+                })) return false;
+                if (scenario == "shell_landscape_rotate") {
+                    auto* drawer = window->findChild<QObject*>("sidebarDrawer");
+                    if (!drawer) return false;
+                    if (size.width() == 390) {
+                        if (!click(window, item(window,"toggleSidebar")) || !waitFor([&] { return drawer->property("visible").toBool() && radar->isVisible(); })) return false;
+                    } else if (!waitFor([&] { return !drawer->property("visible").toBool(); })) return false;
+                }
+                if (landscape) for (const auto* name : {"workspaceSearchButton","resourcesWorkspaceButton","eventsWorkspaceButton","portForwardTasksButton","settingsWorkspaceButton","workspaceActionsButton","toggleSidebar"}) {
+                    auto* control = item(window,name);
+                    if (!control || control->width() < 44 || control->height() < 44 || !podlord::test::scrollIntoView(window, control)
+                        || control->mapToScene(QPointF{}).x() >= 56) return false;
+                }
+                if (radar != item(window,"resourceRadar") || radar->property("viewPose").toMap() != pose || workspace.filterText() != "alpha"
+                    || workspace.resourceCount() != 1 || server.requests.size() != calls) return false;
+                if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "/landscape-" + QString::number(size.width()) + "x" + QString::number(size.height()) + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png")) return false;
+            }
+            return true;
+        }
         if (scenario == "shell_search_demand" || scenario == "shell_search_events") {
             auto* input = item(window, "resourceFilter");
             if (input->isVisible() || !click(window, item(window, "workspaceSearchButton"))
@@ -880,8 +942,8 @@ bool execute(const QString& scenario) {
         const bool problem=scenario.endsWith("unready") || scenario.endsWith("failed") || scenario.endsWith("pending") || scenario.endsWith("terminating");
         return workspace.resourceCount()==(problem ? 1 : 0) && (!problem || workspace.table()->data(workspace.table()->index(0,0),Qt::UserRole+1)=="target") && server.requests.size()==calls;
     }
-    if (scenario == "repeated_page") return waitFor([&] { return text(window, "syncStatus").contains("Repeated list continuation"); });
-    if (scenario == "rate_limit") return waitFor([&] { return text(window, "syncStatus").contains("Rate limited"); });
+    if (scenario == "repeated_page") return waitFor([&] { return text(window, "syncProblemMessage").contains("Repeated list continuation"); });
+    if (scenario == "rate_limit") return waitFor([&] { return text(window, "syncProblemMessage").contains("Rate limited"); });
     if (scenario == "priority") {
         if (!waitFor([&] { const auto* cell = item(window, "cell_0_0"); return workspace.table()->rowCount() > 0 && cell && cell->width() > 0 && cell->height() > 0; })) return false;
         if (!click(window, item(window, "cell_0_0")) || !waitFor([&] { return workspace.inspected().contains("fetchedAt"); })) {
@@ -897,7 +959,7 @@ bool execute(const QString& scenario) {
     }
     const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == expectedRows && !workspace.loading(); }, 10000)) {
-        std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncStatus"))); return false;
+        std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
     }
     if (scenario.startsWith("dock_")) {
         window->resize(scenario=="dock_narrow" ? 390 : 1440,900);
@@ -2167,7 +2229,7 @@ bool execute(const QString& scenario) {
             if (!click(window, item(window, "toggleSidebar"))) return false;
             QTest::qWait(200); return !radar->isVisible() && server.requests.size() == calls;
         }
-        return text(window, "resourceMatchCount").contains("1 / " + QString::number(expectedRows));
+        return text(window, "resourceMatchCount").contains("visible: 1/" + QString::number(expectedRows));
     }
     if (scenario.startsWith("inspector_related_")) {
         if (scenario.startsWith("inspector_related_alias_")) {
@@ -2318,7 +2380,7 @@ bool execute(const QString& scenario) {
         if (server.requests.size() != calls) return false;
         return click(window, item(window, "inspectorLinkCell_0_2")) && waitFor([&] { return workspace.inspectorName() == "bravo"; });
     }
-    if (scenario == "forbidden") return text(window, "syncStatus").contains("Authorization denied");
+    if (scenario == "forbidden") return text(window, "syncProblemMessage").contains("Authorization denied");
     if (scenario == "relative_token") return server.authorization == "Bearer local-test-token";
     if (scenario == "basic") return server.authorization == "Basic " + QByteArray("local-user:local-password").toBase64();
     if (scenario == "markup") {
@@ -2350,7 +2412,7 @@ bool execute(const QString& scenario) {
     if (scenario == "cache_expiry") {
         reference = reference.addSecs(86401);
         if (!click(window, item(window, "refreshButton"))) return false;
-        return waitFor([&] { return workspace.table()->rowCount() == 0 && text(window, "syncStatus").contains("HTTP 500"); });
+        return waitFor([&] { return workspace.table()->rowCount() == 0 && text(window, "syncProblemMessage").contains("HTTP 500"); });
     }
     if (scenario == "sync" || scenario == "periodic_sync" || scenario == "inactive_sync") {
         reference = reference.addSecs(26);
@@ -2402,7 +2464,7 @@ bool execute(const QString& scenario) {
     }
     if (scenario == "retain") {
         if (!click(window, item(window, "refreshButton"))) return false;
-        return waitFor([&] { return text(window, "syncStatus").contains("HTTP 500"); }) && item(window, "resourceTable")->property("rows").toInt() == 3;
+        return waitFor([&] { return text(window, "syncProblemMessage").contains("HTTP 500"); }) && item(window, "resourceTable")->property("rows").toInt() == 3;
     }
     if (scenario.startsWith("inspector_")) {
         QString otherSession;
@@ -2548,11 +2610,11 @@ bool execute(const QString& scenario) {
             return workspace.inspectorPath().isEmpty() && text(window, "inspectorYaml").isEmpty() && noWrites();
         }
         if (scenario == "inspector_list_wrong_version") {
-            if (!click(window, item(window, "refreshButton")) || !waitFor([&] { return !workspace.loading() && text(window, "syncStatus").contains("Invalid resource list entry"); })) return false;
+            if (!click(window, item(window, "refreshButton")) || !waitFor([&] { return !workspace.loading() && text(window, "syncProblemMessage").contains("Invalid resource list entry"); })) return false;
             return workspace.table()->rowCount() == 1 && text(window, "inspectorYaml") == oldYaml;
         }
         const auto noLeak = [&] {
-            const auto presentation = text(window, "inspectorYaml") + workspace.inspected() + text(window, "inspectorReadStatus") + text(window, "syncStatus") + text(window, "errorMessage");
+            const auto presentation = text(window, "inspectorYaml") + workspace.inspected() + text(window, "inspectorReadStatus") + text(window, "syncStatus") + text(window, "syncProblemMessage") + text(window, "errorMessage");
             return !presentation.contains("alpha-private-value") && !presentation.contains("beta-private-value")
                 && !presentation.contains("YWxwaGEtcHJpdmF0ZS12YWx1ZQ==") && !presentation.contains("YmV0YS1wcml2YXRlLXZhbHVl") && !presentation.contains("string-private-value");
         };
@@ -2851,9 +2913,9 @@ bool execute(const QString& scenario) {
     if (scenario == "slow_close") {
         if (!waitFor([&] { return server.requests.join('\n').contains("/api/v1/namespaces/default/pods/alpha"); })) return false;
         auto* close = item(window, "closeSession");
-        if (!click(window, close) || !waitFor([&] { return text(window, "syncStatus").contains("No session selected"); })) return false;
+        if (!click(window, close) || !waitFor([&] { return workspace.currentSession().isEmpty(); })) return false;
         if (!waitFor([&] { return server.delayedReadDelivered || server.prematureDisconnect; })) return false;
-        return server.delayedReadDelivered && !server.prematureDisconnect && workspace.inspected().isEmpty() && text(window, "syncStatus").contains("No session selected");
+        return server.delayedReadDelivered && !server.prematureDisconnect && workspace.inspected().isEmpty() && workspace.currentSession().isEmpty();
     }
     if (!waitFor([&] { return workspace.inspected().contains("fetchedAt"); })) {
         std::fprintf(stderr, "Inspector %s; requests %s\n", qPrintable(workspace.inspected()), qPrintable(server.requests.join('\n'))); return false;
@@ -2902,7 +2964,7 @@ bool realCluster(const QString& source) {
         std::fprintf(stderr, "TLS backend: %s; built library: %s; runtime library: %s\n",
             qPrintable(QSslSocket::activeBackend()), qPrintable(QSslSocket::sslLibraryBuildVersionString()),
             qPrintable(QSslSocket::sslLibraryVersionString()));
-        std::fprintf(stderr, "Real cluster load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncStatus"))); return false;
+        std::fprintf(stderr, "Real cluster load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
     }
     if (!click(window, item(window, "cell_0_0"))) return failed("open ConfigMap row");
     if (!waitFor([&] { return workspace.inspected().contains("fetchedAt"); })

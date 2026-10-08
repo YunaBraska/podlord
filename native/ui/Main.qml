@@ -16,6 +16,9 @@ ApplicationWindow {
     property bool sidebarOpen: true
     property bool searchOpen: false
     readonly property bool wideLayout: width >= 900
+    readonly property bool compactLandscape: width >= 600 && height < 600 && width > height
+    readonly property bool touchLayout: !wideLayout || compactLandscape
+    readonly property bool sidebarDocked: wideLayout || compactLandscape
     visible: true
     property bool sourcesExpanded: false
     FieldFiltersDialog { id: fieldFiltersDialog; controller: workspace }
@@ -67,7 +70,7 @@ ApplicationWindow {
         function onZoomPreviewReady(session, path, percent) {
             if (session !== workspace.currentSession) return
             window.sidebarOpen = true
-            if (!window.wideLayout) sidebarDrawer.open()
+            if (!window.sidebarDocked) sidebarDrawer.open()
             Qt.callLater(function() { if (session === workspace.currentSession) sidebar.focusPath(path, percent) })
         }
     }
@@ -350,14 +353,14 @@ ApplicationWindow {
         }
     }
     component NavButton: IconButton {
-        showText: window.width >= 600
+        showText: window.width >= 600 && !window.compactLandscape
         font.bold: true
         font.pixelSize: 13
         checkable: true
         leftPadding: showText ? 10 : 6; rightPadding: leftPadding
     }
     function toggleSidebar() {
-        if (wideLayout) sidebarOpen = !sidebarOpen
+        if (sidebarDocked) sidebarOpen = !sidebarOpen
         else if (sidebarDrawer.visible) sidebarDrawer.close()
         else sidebarDrawer.open()
     }
@@ -370,16 +373,22 @@ ApplicationWindow {
         GridLayout {
             id: headerLayout
             anchors.fill: parent; anchors.margins: 6
-            columns: window.width >= 1000 ? 2 : 1
+            columns: window.width >= 1000 && !window.compactLandscape ? 2 : 1
             columnSpacing: 12; rowSpacing: 4
-            Flow {
+            Item {
+                id: navigationSlot
+                visible: !window.compactLandscape
                 Layout.fillWidth: true; Layout.minimumWidth: 0
-                Layout.preferredWidth: children.reduce((total, control) => total + control.implicitWidth, 0) + spacing * Math.max(0, children.length - 1)
-                Layout.preferredHeight: Math.max(34, implicitHeight)
+                Layout.preferredWidth: navigationRow.children.reduce((total, control) => total + control.implicitWidth, 0) + navigationRow.spacing * Math.max(0, navigationRow.children.length - 1)
+                Layout.preferredHeight: Math.max(34, navigationRow.implicitHeight)
+                Flow {
                     id: navigationRow
+                    parent: window.compactLandscape ? railContent : navigationSlot
+                    width: parent.width
+                    height: implicitHeight
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
-                    spacing: window.width < 600 ? 0 : 4
+                    spacing: window.touchLayout ? 0 : 4
                     IconButton {
                         id: searchToggle
                         objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
@@ -404,8 +413,9 @@ ApplicationWindow {
                     NavButton { objectName: "settingsWorkspaceButton"; glyph: "Filters"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
                 IconButton { objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup() }
                 IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
+                }
             }
-            PulseStrip { Layout.fillWidth: true; Layout.preferredHeight: implicitHeight; onDetailsRequested: workspace.setWorkspacePage("dashboard") }
+            PulseStrip { condensed: window.compactLandscape; Layout.fillWidth: true; Layout.preferredHeight: implicitHeight; onDetailsRequested: workspace.setWorkspacePage("dashboard") }
         }
     }
     Menu {
@@ -418,7 +428,7 @@ ApplicationWindow {
         objectName: "quickOpenMenu"
         width: Math.min(360, window.width - 24)
         height: Math.min(implicitHeight, window.height - 48)
-        MenuItem { text: "Open kubeconfig file..."; implicitHeight: window.wideLayout ? 32 : 44; enabled: !workspace.busy; onTriggered: quickChooser.open() }
+        MenuItem { text: "Open kubeconfig file..."; implicitHeight: window.touchLayout ? 44 : 32; enabled: !workspace.busy; onTriggered: quickChooser.open() }
         MenuSeparator {}
         Instantiator {
             active: quickOpenMenu.visible
@@ -428,7 +438,7 @@ ApplicationWindow {
                     workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true})))
             delegate: MenuItem {
                 required property var modelData
-                implicitHeight: window.wideLayout ? 32 : 44
+                implicitHeight: window.touchLayout ? 44 : 32
                 objectName: modelData.header ? "" : (modelData.context ? "quickContext_" : "quickSession_") + modelData.id
                 text: modelData.name
                 enabled: !modelData.header && !workspace.busy
@@ -446,10 +456,27 @@ ApplicationWindow {
         objectName: "sidebarDrawer"
         edge: Qt.RightEdge
         width: Math.min(392, window.width - 24); height: window.height
-        onVisibleChanged: if (visible && window.wideLayout) close()
+        onVisibleChanged: if (visible && window.sidebarDocked) close()
+        Connections {
+            target: window
+            function onSidebarDockedChanged() { if (window.sidebarDocked) sidebarDrawer.close() }
+        }
+    }
+    ScrollView {
+        id: navigationRail
+        objectName: "landscapeNavigation"
+        visible: window.compactLandscape
+        anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+        anchors.margins: 6
+        width: 44
+        contentWidth: 44; contentHeight: navigationRow.implicitHeight
+        clip: true
+        Item { id: railContent; width: 44; height: navigationRow.implicitHeight }
     }
     ColumnLayout {
-        anchors.fill: parent; anchors.margins: 6; spacing: 4
+        anchors.fill: parent; anchors.margins: 6
+        anchors.leftMargin: window.compactLandscape ? 56 : 6
+        spacing: 4
         Frame {
             id: sourcePanel
             objectName: "sourceManagementPanel"
@@ -521,7 +548,7 @@ ApplicationWindow {
                         required property var modelData
                         Button {
                             objectName: "activateSession_" + modelData.id
-                            implicitHeight: window.wideLayout ? 32 : 44
+                            implicitHeight: window.touchLayout ? 44 : 32
                             text: modelData.name
                             width: Math.min(implicitWidth, window.wideLayout ? 240 : 160)
                             contentItem: Label { text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight }
@@ -555,7 +582,7 @@ ApplicationWindow {
                 enabled: workspace.currentSession !== "" && !workspace.busy
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
-                implicitHeight: window.wideLayout ? 32 : 44
+                implicitHeight: window.touchLayout ? 44 : 32
                 text: workspace.filterText
                 placeholderText: "Search cached resources"
                 Accessible.name: "Filter cached resources"
@@ -565,7 +592,7 @@ ApplicationWindow {
                 onTextEdited: workspace.filter(text)
                 Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
             }
-            TextField { id: eventFilterInput; objectName: "eventFilter"; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.wideLayout ? 32 : 44; visible: window.searchOpen && workspace.workspacePage === "events"; text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"; onTextEdited: workspace.filterEvents(text); Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() } }
+            TextField { id: eventFilterInput; objectName: "eventFilter"; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32; visible: window.searchOpen && workspace.workspacePage === "events"; text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"; onTextEdited: workspace.filterEvents(text); Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() } }
             Button { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             Button { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
@@ -577,6 +604,15 @@ ApplicationWindow {
             Button { objectName: "sourceImportDetailsButton"; text: "View failures"; visible: workspace.sourceImportIssues.length > 0; onClicked: sourceImportDetails.open() }
         }
         Label { objectName: "errorMessage"; Layout.fillWidth: true; text: workspace.error; textFormat: Text.PlainText; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
+        Label {
+            objectName: "syncProblemMessage"
+            Layout.fillWidth: true; Layout.minimumWidth: 0
+            text: workspace.syncProblem; textFormat: Text.PlainText
+            visible: text !== ""; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight
+            color: workspace.appearanceColors.danger; Accessible.name: text
+            ToolTip.visible: problemHover.hovered; ToolTip.text: text
+            HoverHandler { id: problemHover }
+        }
         Button { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
         SplitView {
             id: workspaceSplit
@@ -586,7 +622,7 @@ ApplicationWindow {
             SplitView {
                 id: inspectorSplit
                 objectName: "workspaceInspectorSplit"
-                SplitView.fillWidth: true; SplitView.minimumWidth: Math.min(300, window.width - 12)
+                SplitView.fillWidth: true; SplitView.minimumWidth: Math.min(window.compactLandscape ? 240 : 300, window.width - 12)
                 orientation: Qt.Vertical
                 handle: Rectangle {
                     objectName: "inspectorResizeHandle"
@@ -669,8 +705,10 @@ ApplicationWindow {
             Item {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
-                visible: window.wideLayout && window.sidebarOpen
-                SplitView.preferredWidth: 392; SplitView.minimumWidth: 300; SplitView.maximumWidth: 720
+                visible: window.sidebarDocked && window.sidebarOpen
+                SplitView.preferredWidth: window.compactLandscape ? 240 : 392
+                SplitView.minimumWidth: window.compactLandscape ? 228 : 300
+                SplitView.maximumWidth: window.compactLandscape ? 320 : 720
             }
         }
         RowLayout {
@@ -678,19 +716,20 @@ ApplicationWindow {
             objectName: "workspaceFooter"
             Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "events" ? workspace.eventCount + " / " + workspace.totalEventCount + " Events" : workspace.resourceCount + " / " + workspace.totalResourceCount + " resources"; Accessible.name: text }
-            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.title + ": " + workspace.status; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: "visible: " + workspace.resourceCount + "/" + workspace.totalResourceCount; Accessible.name: text }
+            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
     ResourceSidebar {
         id: sidebar
-        parent: window.wideLayout ? sidebarHost : sidebarDrawer.contentItem
+        parent: window.sidebarDocked ? sidebarHost : sidebarDrawer.contentItem
+        collapsibleFilters: window.compactLandscape
         anchors.fill: parent
-        visible: window.wideLayout ? sidebarHost.visible : sidebarDrawer.visible
-        onFieldRequested: function(field, anchor) { fieldFiltersDialog.openField(field, window.wideLayout ? anchor : null); if (!window.wideLayout) sidebarDrawer.close() }
-        onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.wideLayout) sidebarDrawer.close() }
+        visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible
+        onFieldRequested: function(field, anchor) { fieldFiltersDialog.openField(field, window.sidebarDocked ? anchor : null); if (!window.sidebarDocked) sidebarDrawer.close() }
+        onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.sidebarDocked) sidebarDrawer.close() }
         onRenameRequested: renameSessionDialog.openFor(workspace.currentSession, workspace.title)
-        onFiltersRequested: { fieldFiltersDialog.openFilters(); if (!window.wideLayout) sidebarDrawer.close() }
+        onFiltersRequested: { fieldFiltersDialog.openFilters(); if (!window.sidebarDocked) sidebarDrawer.close() }
         onFiltersScrolled: if (fieldFiltersDialog.anchorItem) fieldFiltersDialog.close()
     }
 }

@@ -119,3 +119,22 @@ imported contexts, with 44-pixel entries in narrow windows. There is no second
 recent-files store, refresh timer, parser or session owner. Existing discard and
 authentication guards still govern selection. No persisted schema changes;
 rollback replaces the binary without converting profiles.
+
+### Why is the compact landscape layout a rearrangement rather than another UI?
+
+Small landscape windows retain the same navigation Flow, Radar instance, filter
+surface and session/cache owners. Reparenting the navigation into a scrollable
+left icon rail and retaining the Radar on the right frees vertical workspace
+space. Only filter disclosure is window-local presentation state; hidden filters
+remain effective. Portrait keeps its drawer, orientation is not forced, and no
+new rendering or refresh loop is added. All primary icon targets remain 44 pixels.
+
+The footer uses the reference's resource count, session API/minute and snapshot-age
+categories, not the session title and multi-line diagnostic status. Admission is
+recorded at the existing transport boundary, including failed requests and
+WebSocket handshakes, with only the latest minute retained at admission. Freshness
+comes from accepted collection timestamps, never the scheduler's last-attempt
+clock. Read errors move to a separate bounded accessible banner rather than
+vanishing behind elision. Existing client notifications update the summary; no
+additional polling timer or persisted telemetry store is introduced. Existing
+profiles and binaries require no migration.
