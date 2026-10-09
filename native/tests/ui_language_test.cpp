@@ -31,6 +31,7 @@ bool write(const QString& path, const QByteArray& bytes) {
     return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
 }
 bool click(QQuickWindow* window, const QString& name) {
+    require(podlord::test::revealWorkspaceAction(window, name), "Cannot open the workspace action menu.");
     auto* target = podlord::test::visibleItem(window->contentItem(), name);
     require(target && target->isEnabled() && podlord::test::scrollIntoView(window, target), "Language control is not reachable.");
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene({target->width() / 2, target->height() / 2}).toPoint());
@@ -39,6 +40,23 @@ bool click(QQuickWindow* window, const QString& name) {
 bool scenario(const QStringList& args) {
     require(args.size() >= 2, "Expected a language scenario.");
     const auto mode = args[1];
+    if (mode == "alert_catalog" || mode == "retired_theme_catalog") {
+        require(args.size() == 3 && podlord::validUiLanguage(args[2]), "Expected a shipped language.");
+        const auto text = podlord::uiText(args[2]);
+        if (mode == "retired_theme_catalog")
+            return require(!text.contains("settings.themeIntensity") && !text.contains("settings.themeIntensityHelp"),
+                "Retired theme intensity remains in the public language catalog.");
+        QStringList keys{"alert.chooseColor", "alert.retryLoad", "alert.builtinHelp", "alert.syntax", "alert.expressionHint", "alert.syntaxHelp"};
+        for (const auto& field : QStringList{"search", "kind", "namespace", "name", "status", "node", "image", "owner", "ready", "restarts", "age", "issue",
+                "eventReason", "eventMessage", "problems", "activity", "recentlyChanged", "newInView", "cpu", "memory", "storage"})
+            keys.append("alert.field." + field);
+        for (const auto& hold : QStringList{"match", "duration", "new", "once"}) keys.append("alert.hold." + hold);
+        for (const auto& animation : QStringList{"none", "blink", "pulse", "sweep", "outline"}) keys.append("alert.animation." + animation);
+        for (const auto& color : QStringList{"none", "status", "fresh", "custom"}) keys.append("alert.color." + color);
+        for (const auto& key : keys)
+            require(text.contains(key) && !text.value(key).toString().trimmed().isEmpty(), qPrintable("Missing alarm label: " + key));
+        return true;
+    }
     if (mode == "catalog") {
         require(args.size() == 3, "Expected the exported reference catalog.");
         const auto root = QJsonDocument::fromJson(read(args[2])).object();
