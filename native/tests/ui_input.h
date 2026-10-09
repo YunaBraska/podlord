@@ -124,7 +124,9 @@ inline bool clickVisible(QQuickWindow* window, const QString& name) {
         QTest::mouseMove(window,point);
         QCoreApplication::processEvents();
         if (!target || target->objectName()!=name) continue;
-        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,point);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,point);
+        QTest::qWait(10);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,point);
         return true;
     }
     return false;

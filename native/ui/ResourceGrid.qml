@@ -330,6 +330,7 @@ ColumnLayout {
             onClicked: { forceActiveFocus(Qt.MouseFocusReason); grid.activateCell(row, column) }
             Keys.onReturnPressed: grid.activateCell(row, column)
             Keys.onEnterPressed: grid.activateCell(row, column)
+            Keys.priority: Keys.BeforeItem
             Keys.onPressed: function(event) {
                 event.accepted = grid.handleCellKey(event, row, column, cell)
             }
