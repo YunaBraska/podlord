@@ -179,6 +179,6 @@ Dialog {
             wrapMode: Text.Wrap
             color: dialog.controller.appearanceColors.muted
         }
-        Button { objectName: "clearFieldFilters"; text: "Reset all resource filters"; onClicked: dialog.controller.resetResourceFilters() }
+        IconButton { objectName: "clearFieldFilters"; glyph: "Reset"; text: "Reset all resource filters"; onClicked: dialog.controller.resetResourceFilters() }
     }
 }

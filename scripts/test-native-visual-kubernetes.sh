@@ -4,17 +4,7 @@ set -eu
 PATH="/opt/homebrew/bin:$PATH"
 export PATH
 umask 077
-for tool in docker kubectl node rg; do
-    command -v "$tool" >/dev/null 2>&1 || { printf 'Missing tool: %s\n' "$tool" >&2; exit 1; }
-done
 BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
-if [ "$(uname -s)" = Darwin ]; then
-    # Standalone drivers need the configured SSL runtime after the shell has started.
-    ssl=$(awk '/^OPENSSL_SSL_LIBRARY:FILEPATH=/ {sub(/^[^=]*=/, ""); print; exit}' "$BUILD/CMakeCache.txt")
-    [ -n "$ssl" ] && [ -f "$ssl" ] || { printf 'The built native OpenSSL runtime is unavailable.\n' >&2; exit 1; }
-    DYLD_LIBRARY_PATH="$(dirname -- "$ssl")${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-    export DYLD_LIBRARY_PATH
-fi
 NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
 MODE=${1:-desktop}
 [ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
@@ -53,12 +43,29 @@ if [ "$MODE" = desktop ] || [ "$MODE" = release-review ]; then
     if [ "$(uname -s)" = Darwin ]; then
         [ -d "${NATIVE%/MacOS/*}/Frameworks/QtCore.framework" ] || { printf 'Desktop evidence requires a deployed native app; an unbundled build does not prove its runtime dependencies.\n' >&2; exit 1; }
         case "$LEGACY" in *.app/Contents/MacOS/*) ;; *) printf 'Desktop evidence requires the packaged reference app for isolated application identity.\n' >&2; exit 1 ;; esac
+        for executable in "$NATIVE" "$LEGACY"; do
+            declared=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${executable%/Contents/MacOS/*}/Contents/Info.plist")
+            [ "$(basename -- "$executable")" = "$declared" ] || {
+                printf 'Comparison input %s does not match its declared bundle executable %s.\n' "$executable" "$declared" >&2
+                exit 1
+            }
+        done
     fi
 fi
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
     for executable in "$BUILD/alert_ui_test" "$BUILD/workspace_ui_test" "$BUILD/resource-delete-ui-test" "$BUILD/inspector-navigation-ui-test" "$BUILD/port-forward-ui-test"; do
         [ -x "$executable" ] || { printf 'Required native UI test executable is missing: %s\n' "$executable" >&2; exit 1; }
     done
+fi
+for tool in docker kubectl node rg; do
+    command -v "$tool" >/dev/null 2>&1 || { printf 'Missing tool: %s\n' "$tool" >&2; exit 1; }
+done
+if [ "$(uname -s)" = Darwin ]; then
+    # Standalone drivers need the configured SSL runtime after the shell has started.
+    ssl=$(awk '/^OPENSSL_SSL_LIBRARY:FILEPATH=/ {sub(/^[^=]*=/, ""); print; exit}' "$BUILD/CMakeCache.txt")
+    [ -n "$ssl" ] && [ -f "$ssl" ] || { printf 'The built native OpenSSL runtime is unavailable.\n' >&2; exit 1; }
+    DYLD_LIBRARY_PATH="$(dirname -- "$ssl")${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    export DYLD_LIBRARY_PATH
 fi
 if [ -n "${DOCKER_CONTEXT:-}" ]; then
     endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}')
@@ -437,6 +444,10 @@ printf 'NATIVE_APP=%s\n' "${NATIVE%/Contents/MacOS/*}"
 printf 'Capture and assert public desktop behavior, then create %s/complete.\n' "$RUN"
 attempt=0
 while [ ! -f "$RUN/complete" ]; do
+    if ! kill -0 "$NATIVE_PID" 2>/dev/null || ! kill -0 "$LEGACY_PID" 2>/dev/null; then
+        printf 'A comparison application exited; refusing to relaunch outside its isolated profile.\n' >&2
+        exit 1
+    fi
     attempt=$((attempt + 1))
     [ "$attempt" -lt "$((DESKTOP_TIMEOUT / 2))" ] || { printf 'Desktop review exceeded %s seconds; cleaning up.\n' "$DESKTOP_TIMEOUT" >&2; exit 1; }
     sleep 2

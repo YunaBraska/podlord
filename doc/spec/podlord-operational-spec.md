@@ -1346,9 +1346,17 @@ Kontextidentität, Original-YAML, Credentials, Sessionnamen, Session-Konfigurati
 - Native preflight CI retains dependency-boundary and packaged-startup evidence
   separately. These checks do not establish Metal rendering, visual parity,
   signing/notarization, license compliance, or other-platform support.
-- Both implementation coverage gates remain 95% lines and 90% branches. Lower
+- Both implementation release coverage gates remain 95% lines and 90% branches. Lower
   historical thresholds and excluded legacy UI files do not establish release
   readiness. Coverage requires a complete, isolated instrumented execution.
+  CI reports coverage and performance target misses diagnostically; functional
+  failures remain authoritative CI failures. A successful CI status does not waive
+  unmet release coverage or performance requirements.
+- Desktop comparisons MUST select each bundle's declared executable before
+  starting Kubernetes. An exited comparison process MUST fail the comparison and
+  trigger owned cleanup, never an automatic application relaunch outside its
+  isolated profile. Screenshots from mismatched resource snapshots MUST identify
+  that limitation rather than claim exact Radar parity.
 
 ### When is a mutation result trustworthy?
 

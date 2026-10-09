@@ -3,6 +3,7 @@
 #include "ui_input.h"
 #include <QElapsedTimer>
 #include <QAbstractItemModelTester>
+#include <QAccessible>
 #include <QClipboard>
 #include <QFile>
 #include <QFontMetricsF>
@@ -760,7 +761,15 @@ bool run(const QString& scenario, const QString& referencePresets) {
         else if (scenario == "picker_search") passed = type(window, "fieldFilterOptionSearch", "BRAV") && waitFor([&] {
             const auto* first = item(window, "fieldFilterValue_0"), *second = item(window, "fieldFilterValue_1");
             return (!first || !first->isVisible()) && second && second->isVisible(); }) && click(window, "fieldFilterValue_1") && count(1);
-        else if (scenario == "reset") passed = expression("kind", "Pod") && expression("name", "alpha") && click(window, "clearFieldFilters") && count(3);
+        else if (scenario == "reset") {
+            if (!expression("kind", "Pod") || !expression("name", "alpha") || !count(1)) return false;
+            auto* reset = item(window, "clearFieldFilters");
+            const auto* accessible = reset ? QAccessible::queryAccessibleInterface(reset) : nullptr;
+            if (!reset || reset->width() > 44 || !accessible
+                || accessible->text(QAccessible::Name) != "Reset all resource filters") return false;
+            reset->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
+            passed = count(3);
+        }
         else if (scenario == "stable_picker" || scenario == "refresh_picker") {
             if (!click(window, "fieldFilterValue_0") || !count(1)) return false;
             const auto before = workspace.property("filterPickerValues").toStringList();
