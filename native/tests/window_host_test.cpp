@@ -11,6 +11,8 @@
 #include <QTemporaryDir>
 #include <QLockFile>
 #include <QElapsedTimer>
+#include <QPointer>
+#include <QSignalSpy>
 #include <QUrlQuery>
 #include <QtTest/QTest>
 #include <cstdio>
@@ -165,7 +167,16 @@ bool run(const QString& scenario) {
             return menu && menu->property("opened").toBool();
         }));
         REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "quickWindowSession_" + a) != nullptr; }));
+        const QPointer<QQuickItem> entry(podlord::test::visibleItem(main->contentItem(), "quickWindowSession_" + a));
+        QSignalSpy triggered(entry, SIGNAL(triggered()));
+        REQUIRE(triggered.isValid());
         REQUIRE(click("quickWindowSession_" + a));
+        if (!waitFor([&] { return !triggered.isEmpty(); }, 2000)) {
+            if (entry) std::fprintf(stderr, "Separate-window menu did not receive the pointer: position=(%g,%g) size=%gx%g sameWindow=%d enabled=%d\n",
+                entry->mapToScene({entry->width()/2, entry->height()/2}).x(), entry->mapToScene({entry->width()/2, entry->height()/2}).y(),
+                entry->width(), entry->height(), entry->window() == main, entry->isEnabled());
+            return false;
+        }
     } else if (scenario == "new_context_window") {
         REQUIRE(primary.close(b)); REQUIRE(waitFor([&] { return !primary.busy(); }));
         const auto current = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(current));

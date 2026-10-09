@@ -52,7 +52,14 @@ Window {
     } else {
         const auto original = frame(window);
         if (original.isNull() || coloredPixels(original, true) < 30) return false;
-        if (scenario == "kind") {
+        if (scenario == "visibility") {
+            glyph->setProperty("kind", "Visible");
+            const auto visible = frame(window);
+            if (visible.isNull() || visible == original) return false;
+            glyph->setProperty("kind", "Hidden");
+            const auto hidden = frame(window);
+            if (hidden.isNull() || visible == hidden) return false;
+        } else if (scenario == "kind") {
             glyph->setProperty("kind", "Secret");
             if (original == frame(window)) return false;
         } else if (scenario == "fill") {

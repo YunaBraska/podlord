@@ -82,6 +82,10 @@ const QHash<QString, Glyph>& catalog() {
         polygon({{.14,.36},{.35,.36},{.62,.15},{.62,.85},{.35,.64},{.14,.64}},Fill::None);
         line(.72,.35,.92,.65); line(.72,.65,.92,.35); finish({"Mute"});
         polygon({{.2,.68},{.68,.2},{.82,.34},{.34,.82},{.16,.86}},Fill::None); finish({"Pencil"});
+        polygon({{.08,.5},{.28,.28},{.5,.2},{.72,.28},{.92,.5},{.72,.72},{.5,.8},{.28,.72}},Fill::None);
+        ellipse(.5,.5,.13,.13,Fill::Main,false);
+        result.insert("Visible", parts);
+        line(.16,.84,.84,.16); finish({"Hidden"});
         return result;
     }();
     return value;

@@ -124,15 +124,17 @@ Pane {
     }
     Component {
         id: toggleComponent
-        Button {
+        IconButton {
             readonly property var rule: workspace.alerts.rules.find(candidate => candidate.id === parent.identity)
+            implicitWidth: ruleGrid.rowHeight
+            implicitHeight: ruleGrid.rowHeight
             padding: 4
             activeFocusOnTab: true
             onActiveFocusChanged: if (activeFocus) ruleGrid.focusCell(parent.row, parent.column, parent.tableView)
             objectName: "toggleAlert_" + parent.row
-            text: rule && rule.enabled ? "On" : "Off"
+            glyph: rule && rule.enabled ? "Visible" : "Hidden"
+            text: rule ? (rule.enabled ? "Disable " : "Enable ") + rule.name : "Toggle alarm"
             enabled: !!rule && !workspace.alerts.busy
-            Accessible.name: rule ? (rule.enabled ? "Disable " : "Enable ") + rule.name : "Toggle alarm"
             onClicked: view.toggleRule(parent.identity)
         }
     }
@@ -177,7 +179,7 @@ Pane {
             columns: workspace.alertColumns
             sortColumn: workspace.alerts.tableSortColumn
             sortDirection: workspace.alerts.tableSortDirection
-            rowHeight: 28
+            rowHeight: view.width < 600 ? 44 : 28
             inspectable: false
             actionColumns: [0, 1, 2, 3, 4, 5]
             accessoryColumns: [0]

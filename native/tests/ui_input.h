@@ -4,6 +4,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QPointer>
+#include <QSignalSpy>
 #include <QWheelEvent>
 #include <QTest>
 #include <cstdio>
@@ -53,6 +54,10 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
         window->requestActivate();
     }
     const QPointer<QQuickItem> retained(target);
+    for (auto* parent = target; parent; parent = parent->parentItem()) parent->ensurePolished();
+    QSignalSpy frame(window, &QQuickWindow::afterAnimating);
+    window->update();
+    if (frame.isEmpty() && !frame.wait(2000)) return false;
     if (!QTest::qWaitFor([&] { return retained && target->width() > 0 && target->height() > 0; }, 2000)) return false;
     QElapsedTimer clock; clock.start();
     bool wheeled = false;
