@@ -50,14 +50,19 @@ bool run(const QString& config) {
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !waitFor([&] { return window->isVisible() && !workspace.busy(); })) return false;
+    window->raise(); window->requestActivate();
+    if (desktop && !waitFor([&] { return window->isExposed() && window->isActive(); })) {
+        report({{"type", "failure"}, {"reason", "foreground desktop unavailable"}, {"visible", window->isVisible()},
+                {"exposed", window->isExposed()}, {"active", window->isActive()}});
+        return false;
+    }
     auto* settings = podlord::test::visibleItem(window->contentItem(), "settingsWorkspaceButton");
     if (!settings || !podlord::test::scrollIntoView(window, settings)) return false;
     if (!report({{"type", "construction"}, {"milliseconds", startup.nsecsElapsed() / 1000000.0},
                  {"scope", "Workspace/QML construction, not installed-process startup"}})) return false;
     const auto frame = [&](const std::function<bool()>& action, const std::function<bool()>& visible) -> std::optional<FrameTiming> {
         if (!waitFor([&] { return !workspace.busy(); })) return {};
-        window->raise(); window->requestActivate();
-        if (desktop && !waitFor([&] { return window->isExposed() && window->isActive(); })) {
+        if (desktop && (!window->isExposed() || !window->isActive())) {
             report({{"type", "failure"}, {"reason", "foreground desktop unavailable"}, {"visible", window->isVisible()},
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};

@@ -17,17 +17,19 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
 MODE=${1:-desktop}
-[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-window-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
-case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-window-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ]; then
+[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
+case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
     command -v go >/dev/null 2>&1 || { printf 'Missing tool: go\n' >&2; exit 1; }
-    [ -x "$BUILD/window-host-test" ] || { printf 'Required native multiwindow test executable is missing.\n' >&2; exit 1; }
+    if [ "$MODE" != native-forward-e2e ]; then
+        [ -x "$BUILD/window-host-test" ] || { printf 'Required native multiwindow test executable is missing.\n' >&2; exit 1; }
+    fi
 fi
 DESKTOP_TIMEOUT=${PODLORD_DESKTOP_TIMEOUT_SECONDS:-3600}
 case "$DESKTOP_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
 [ "${#DESKTOP_TIMEOUT}" -le 5 ] && [ "$DESKTOP_TIMEOUT" -ge 60 ] && [ "$DESKTOP_TIMEOUT" -le 21600 ] || { printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
 LEGACY=${PODLORD_LEGACY_APP:-}
-if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
+if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
     printf 'Required native field filter UI test executable is missing.\n' >&2
     exit 1
 fi
@@ -36,6 +38,12 @@ if [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-e2e ] || [ "$MODE" = 
 fi
 if [ "$MODE" = native-health-e2e ]; then
     [ -x "$BUILD/alert_ui_test" ] || { printf 'Required native health UI test executable is missing.\n' >&2; exit 1; }
+fi
+if [ "$MODE" = native-forward-e2e ]; then
+    [ -x "$BUILD/port-forward-ui-test" ] || { printf 'Required native port-forward UI test executable is missing.\n' >&2; exit 1; }
+fi
+if [ "$MODE" = native-search-e2e ]; then
+    [ -x "$BUILD/workspace_ui_test" ] || { printf 'Required native discovery/search UI test executable is missing.\n' >&2; exit 1; }
 fi
 if [ "$MODE" = radar-parity ]; then
     [ -x "$BUILD/radar_reference_test" ] && [ -f "${PODLORD_RADAR_REFERENCE_DLL:-}" ] && [ -x "${PODLORD_DOTNET:-}" ] || { printf 'Built native and C# radar reference tools are required.\n' >&2; exit 1; }
@@ -142,15 +150,17 @@ run_terminal_tests() {
             run_native_test "$RUN/container-terminal-ui-test" "$terminal_scenario" "$RUN/kubeconfig" > "$EVIDENCE/$NAME-terminal-$terminal_scenario.log" 2>&1
     done
 }
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
+if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-forward-e2e ]; then
     mkdir "$RUN/bin"
-    for executable in alert_ui_test workspace_ui_test resource-delete-ui-test inspector-navigation-ui-test port-forward-ui-test; do
+    executables='alert_ui_test workspace_ui_test resource-delete-ui-test inspector-navigation-ui-test port-forward-ui-test'
+    if [ "$MODE" = native-forward-e2e ]; then executables=port-forward-ui-test; fi
+    for executable in $executables; do
         cp "$BUILD/$executable" "$RUN/bin/$executable"
     done
     node - "$RUN/bin" > "$EVIDENCE/$NAME-test-builds.json" <<'JS'
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const directory=process.argv[2];
-const executables=['alert_ui_test','workspace_ui_test','resource-delete-ui-test','inspector-navigation-ui-test','port-forward-ui-test'].map(name=>{
+const executables=fs.readdirSync(directory).sort().map(name=>{
   const bytes=fs.readFileSync(path.join(directory,name));
   return {name,bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
 });
@@ -186,6 +196,34 @@ while [ -z "$(kubectl --kubeconfig "$RUN/kubeconfig" get nodes -o name)" ]; do
     sleep 2
 done
 kubectl --kubeconfig "$RUN/kubeconfig" wait --for=condition=Ready node --all --timeout=120s
+cat > "$RUN/radar-crd.yaml" <<'YAML'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: radarprobes.podlord.test
+spec:
+  group: podlord.test
+  scope: Namespaced
+  names:
+    plural: radarprobes
+    singular: radarprobe
+    kind: RadarProbe
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                message:
+                  type: string
+YAML
+kubectl --kubeconfig "$RUN/kubeconfig" create -f "$RUN/radar-crd.yaml" > "$RUN/crd-create.log"
+kubectl --kubeconfig "$RUN/kubeconfig" wait --for=condition=Established --timeout=60s crd/radarprobes.podlord.test > "$RUN/crd-ready.log"
 node - "$NAME" > "$RUN/resources.json" <<'JS'
 const owner=process.argv[2], items=[];
 const add=(apiVersion,kind,name,namespace,body={})=>items.push({apiVersion,kind,metadata:{name,...(namespace?{namespace}:{}),labels:{'podlord.visual.owner':owner}},...body});
@@ -211,6 +249,8 @@ for(const letter of 'abcdefgh') {
   add('batch/v1','Job','visual-suspended-job',ns,{spec:{suspend:true,template:{spec:{automountServiceAccountToken:false,restartPolicy:'Never',containers:[container]}}}});
 }
 add('v1','Pod','visual-multi-container','visual-a',{spec:{serviceAccountName:'visual-account-1',automountServiceAccountToken:false,containers:[{...container,name:'alpha',command:['/bin/sh','-c','while :; do echo visual-alpha-log; sleep 5; done']},{...container,name:'beta',command:['/bin/sh','-c','while :; do echo visual-beta-log; sleep 5; done']}]}});
+for (const ns of ['visual-a','visual-b','visual-c','visual-d','visual-e','visual-f','visual-g','visual-h'])
+    add('podlord.test/v1','RadarProbe','visual-radar-probe',ns,{spec:{message:'Actual custom-resource discovery and cached Radar projection'}});
 add('v1','Pod','visual-image-error','visual-a',{spec:{serviceAccountName:'visual-account-1',automountServiceAccountToken:false,containers:[{name:'missing',image:'podlord-visual-absent:local',imagePullPolicy:'Never'}]}});
 add('v1','Pod','visual-crash-loop','visual-b',{spec:{serviceAccountName:'visual-account-1',automountServiceAccountToken:false,containers:[{...container,command:['/bin/sh','-c','echo visual-expected-failure; exit 7']}]}});
 process.stdout.write(JSON.stringify({apiVersion:'v1',kind:'List',items}));
@@ -259,8 +299,16 @@ if [ "$MODE" = native-health-e2e ]; then
     printf 'Native Kubernetes health and Radar scenario passed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ]; then
-    if [ "$MODE" != native-window-e2e ]; then run_terminal_tests; fi
+if [ "$MODE" = native-search-e2e ]; then
+    cp "$BUILD/workspace_ui_test" "$RUN/workspace_ui_test"
+    shasum -a 256 "$RUN/workspace_ui_test" > "$EVIDENCE/$NAME-search-binary.sha256"
+    PODLORD_E2E_SCREENSHOT="$EVIDENCE/$NAME-search-radar.png" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
+        run_native_test "$RUN/workspace_ui_test" real_search "$RUN/kubeconfig" > "$EVIDENCE/$NAME-real_search.log" 2>&1
+    printf 'Native Kubernetes discovery/search and Radar scenarios passed; cleaning up owned cluster and profiles.\n'
+    exit 0
+fi
+if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
+    if [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ]; then run_terminal_tests; fi
     if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
         kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-e2e -n visual-a --from-literal="owner=$NAME"
         kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-race-e2e -n visual-a --from-literal="owner=$NAME"
@@ -319,12 +367,14 @@ YAML
         tail -n 15 "$EVIDENCE/$NAME-forward-setup.txt" >&2
         exit 1
     fi
-    cp "$BUILD/window-host-test" "$RUN/window-host-test"
-    shasum -a 256 "$RUN/window-host-test" > "$EVIDENCE/$NAME-window-binary.sha256"
-    printf 'Native Kubernetes window transfer: terminal and isolated forwards\n'
-    PODLORD_WINDOW_EVIDENCE="$EVIDENCE/$NAME-windows" \
-        QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Fusion \
-        run_native_test "$RUN/window-host-test" real_transfer "$RUN/kubeconfig" > "$EVIDENCE/$NAME-windows.log" 2>&1
+    if [ "$MODE" != native-forward-e2e ]; then
+        cp "$BUILD/window-host-test" "$RUN/window-host-test"
+        shasum -a 256 "$RUN/window-host-test" > "$EVIDENCE/$NAME-window-binary.sha256"
+        printf 'Native Kubernetes window transfer: terminal and isolated forwards\n'
+        PODLORD_WINDOW_EVIDENCE="$EVIDENCE/$NAME-windows" \
+            QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Fusion \
+            run_native_test "$RUN/window-host-test" real_transfer "$RUN/kubeconfig" > "$EVIDENCE/$NAME-windows.log" 2>&1
+    fi
     if [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ]; then
         printf 'Native Kubernetes window transfer and selected terminal scenarios passed; cleaning up owned cluster and profiles.\n'
         exit 0
@@ -336,6 +386,10 @@ YAML
         QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
             run_native_test "$RUN/bin/port-forward-ui-test" "$scenario" "$RUN/kubeconfig" > "$EVIDENCE/$NAME-forward-$scenario.log" 2>&1
     done
+    if [ "$MODE" = native-forward-e2e ]; then
+        printf 'Native Kubernetes port-forward UI scenarios passed; cleaning up owned cluster and profiles.\n'
+        exit 0
+    fi
     for scenario in real real_race; do
         printf 'Native Kubernetes UI deletion scenario: %s\n' "$scenario"
         PODLORD_DELETE_FRAME="$EVIDENCE/$NAME-delete-$scenario-confirmation.png" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic run_native_test "$RUN/bin/resource-delete-ui-test" "$scenario" "$RUN/kubeconfig" > "$EVIDENCE/$NAME-delete-$scenario.log" 2>&1

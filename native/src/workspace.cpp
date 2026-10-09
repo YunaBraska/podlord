@@ -62,35 +62,37 @@ ResourceTable::ResourceTable(QObject* parent, QStringList fields, QStringList ca
 int ResourceTable::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(rows_.size()); }
 int ResourceTable::columnCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(fields_.size()); }
 QVariant ResourceTable::data(const QModelIndex& index, int role) const {
+    using namespace Qt::StringLiterals;
     if (!index.isValid() || index.row() >= rows_.size() || index.column() >= fields_.size()) return {};
     const auto& row = rows_[index.row()];
     switch (role) {
     case Qt::UserRole: return row[identityField_].toString();
-    case Qt::UserRole + 1: return row["name"].toString();
-    case Qt::UserRole + 2: return row["kind"].toString();
-    case Qt::UserRole + 3: return row["namespace"].toString();
-    case Qt::UserRole + 4: return row["status"].toString();
-    case Qt::UserRole + 5: return appearanceStatus(appearance_, row["status"].toString());
+    case Qt::UserRole + 1: return row["name"_L1].toString();
+    case Qt::UserRole + 2: return row["kind"_L1].toString();
+    case Qt::UserRole + 3: return row["namespace"_L1].toString();
+    case Qt::UserRole + 4: return row["status"_L1].toString();
+    case Qt::UserRole + 5: return appearanceStatus(appearance_, row["status"_L1].toString());
     case Qt::UserRole + 7: return resourceMetricPresentation(row);
-    case Qt::UserRole + 8: return row.contains("metricReferences");
-    case Qt::UserRole + 9: return row["problemSeverity"].toInt();
-    case Qt::UserRole + 10: return row["activity"].toBool();
-    case Qt::UserRole + 13: return row["value"].toString();
-    case Qt::UserRole + 14: return row["base64"].toBool();
+    case Qt::UserRole + 8: return row.contains("metricReferences"_L1);
+    case Qt::UserRole + 9: return row["problemSeverity"_L1].toInt();
+    case Qt::UserRole + 10: return row["activity"_L1].toBool();
+    case Qt::UserRole + 13: return row["value"_L1].toString();
+    case Qt::UserRole + 14: return row["base64"_L1].toBool();
     default: break;
     }
     const auto& field = fields_[index.column()];
     if (role == Qt::UserRole + 6) {
-        const auto sortValue = row["sortValues"].toObject().value(field);
+        if (index.column() == sortValueColumn_ && sortValues_.size() == rows_.size()) return sortValues_[index.row()];
+        const auto sortValue = row["sortValues"_L1].toObject().value(field);
         if (!sortValue.isUndefined()) return sortValue.toVariant();
-        if (field == "preview") return row["value"].toString();
+        if (field == "preview") return row["value"_L1].toString();
         if (field == "eventTime") return QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
         if (field == "createdAt") {
             const auto created = QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
             return created.isValid() && created <= QDateTime::currentDateTimeUtc() ? QVariant(-created.toMSecsSinceEpoch()) : QVariant{};
         }
-        if (field == "ready") return !row[field].toString().isEmpty() && row["containerCount"].toInt() > 0
-            ? QVariant(double(row["readyCount"].toInt())/row["containerCount"].toInt()) : QVariant{};
+        if (field == "ready") return !row[field].toString().isEmpty() && row["containerCount"_L1].toInt() > 0
+            ? QVariant(double(row["readyCount"_L1].toInt())/row["containerCount"_L1].toInt()) : QVariant{};
         if (field == "cluster") return row.contains(field) ? row[field].toString() : cluster_;
         return row[field].toVariant();
     }
@@ -144,6 +146,7 @@ bool ResourceTable::setAppearance(const Appearance& appearance) {
     return true;
 }
 bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
+    sortValues_.clear(); sortValueColumn_ = -1;
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
     QMap<QString, QJsonObject> incoming;
@@ -202,6 +205,16 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
         endInsertRows();
     }
     return true;
+}
+void ResourceTable::prepareSort(int column) {
+    if (column < -1 || column >= fields_.size()) return;
+    if (column == sortValueColumn_ && sortValues_.size() == rows_.size()) return;
+    sortValues_.clear(); sortValueColumn_ = -1;
+    // Age validity depends on the current clock; other keys belong to this snapshot.
+    if (column < 0 || fields_[column] == "createdAt") return;
+    sortValues_.reserve(rows_.size());
+    for (int row = 0; row < rows_.size(); ++row) sortValues_.append(data(index(row, column), Qt::UserRole + 6));
+    sortValueColumn_ = column;
 }
 Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()> now, QUrl releaseEndpoint)
     : Workspace(std::make_shared<WorkspaceRuntime>(std::move(profile), std::move(now), std::move(releaseEndpoint)), parent, true) {}

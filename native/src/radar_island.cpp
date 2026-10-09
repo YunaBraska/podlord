@@ -176,7 +176,9 @@ void RadarIsland::synchronize() {
     }
     filtered_.clear(); groups_.clear();
     if (source_) for (int row=0;row<source_->rowCount();++row) {
-        const auto index=source_->index(row,0); filtered_.insert(index.data(Qt::UserRole).toString(),index);
+        const auto index=source_->index(row,0);
+        // Full-cache identities need stable cache indices, not persistent sorted projections.
+        filtered_.insert(index.data(Qt::UserRole).toString(),proxy ? proxy->mapToSource(index) : index);
     }
     for (const auto& row:signature_) if (filtered_.contains(row.path)) { groups_.insert(row.cluster); groups_.insert(row.cluster+"/"+row.scope); }
     project(true); update(); emit currentResourceChanged();
@@ -259,7 +261,10 @@ bool RadarIsland::focusResource(int index,double zoom) {
 }
 int RadarIsland::currentIndex() const {
     const auto found=filtered_.constFind(currentPath_);
-    return found==filtered_.cend() || !found->isValid() ? -1 : found->row();
+    if (!source_ || found==filtered_.cend() || !found->isValid()) return -1;
+    const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
+    if (found->model()!=(proxy ? proxy->sourceModel() : source_.data())) return -1;
+    return proxy ? proxy->mapFromSource(*found).row() : found->row();
 }
 bool RadarIsland::selectResource(int index) {
     if (index < -1 || (index>=0 && (!source_ || index>=source_->rowCount()))) return false;
@@ -271,14 +276,18 @@ bool RadarIsland::resetView() { setViewPose({{"x",0},{"y",0},{"zoom",1}}); retur
 QRectF RadarIsland::worldViewport() const { return {QPointF(-width()/2/zoom_,-height()/2/zoom_)-pan_,QSizeF(width()/zoom_,height()/zoom_)}; }
 void RadarIsland::project(bool refresh) {
     QList<RadarTiles::Entry> visible;
+    const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
     if (isVisible() && width()>0 && height()>0) {
         const auto viewport=worldViewport().adjusted(-step,-step,step,step);
         inBuckets(viewport,[&](const QPoint& area) {
             const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
             for (const auto& path:*found) {
                 const auto source=filtered_.constFind(path); if (source==filtered_.cend() || !source->isValid()) continue;
+                if (source->model()!=(proxy ? proxy->sourceModel() : source_.data())) continue;
+                const auto index=proxy ? proxy->mapFromSource(*source) : QModelIndex(*source);
+                if (!index.isValid()) continue;
                 const auto point=positions_.value(path);
-                if (viewport.contains(point)) visible.append({path,*source,point});
+                if (viewport.contains(point)) visible.append({path,index,point});
             }
         });
         std::sort(visible.begin(),visible.end(),[](const auto& a,const auto& b) { return a.path<b.path; });

@@ -2,6 +2,8 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QJsonDocument>
+#include <QDateTime>
+#include <QtCore/qtestsupport_core.h>
 #include <algorithm>
 #include <cstdio>
 
@@ -60,6 +62,54 @@ bool run(const QString& scenario) {
         QJsonObject{{"path", "b"}, {"name", "bravo"}, {"kind", "Pod"}, {"restarts", 2}},
         QJsonObject{{"path", "c"}, {"name", "custom-widget"}, {"kind", "Widget"}}});
     podlord::ResourceFilter filter; filter.setSourceModel(&rows);
+    if (scenario.startsWith("sort_")) {
+        const auto ordered = [&] {
+            QString paths;
+            for (int row = 0; row < filter.rowCount(); ++row) paths += filter.index(row, 0).data(Qt::UserRole).toString();
+            return paths;
+        };
+        filter.sort(0);
+        if (ordered() != "abc") return false;
+        auto a = rows.row(0), b = rows.row(1), c = rows.row(2);
+        if (scenario == "sort_refresh") { a["name"] = "zulu"; rows.publish({a, b, c}); return ordered() == "bca"; }
+        if (scenario == "sort_insert") { rows.publish({a, b, c, QJsonObject{{"path", "d"}, {"name", "aardvark"}}}); return ordered() == "dabc"; }
+        if (scenario == "sort_remove") { rows.publish({a, c}); return ordered() == "ac"; }
+        if (scenario == "sort_missing") {
+            a["name"] = ""; rows.publish({a, b, c});
+            if (ordered() != "bca") return false;
+            filter.sort(0, Qt::DescendingOrder); return ordered() == "cba";
+        }
+        if (scenario == "sort_ties") {
+            a["name"] = "same"; b["name"] = "same"; c["name"] = "same"; rows.publish({a, b, c});
+            if (ordered() != "abc") return false;
+            filter.sort(0, Qt::DescendingOrder); return ordered() == "abc";
+        }
+        if (scenario == "sort_changed_column") { filter.sort(2); return ordered() == "bac"; }
+        if (scenario == "sort_numeric") {
+            filter.sort(2); a["restarts"] = 1; b["restarts"] = 20; c["restarts"] = 0;
+            rows.publish({a, b, c}); return ordered() == "cab";
+        }
+        if (scenario == "sort_none") { filter.sort(0, Qt::DescendingOrder); filter.sort(-1); return ordered() == "abc"; }
+        if (scenario == "sort_unicode") {
+            a["name"] = QString::fromUtf8("\xc3\x85ngstr\xc3\xb6m"); b["name"] = "Zebra"; c["name"] = QString::fromUtf8("\xc3\x96rn");
+            rows.publish({a, b, c}); return ordered() == "bac";
+        }
+        if (scenario == "sort_cluster") {
+            podlord::ResourceTable clusters(nullptr, {"cluster"}, {"Cluster"});
+            a["cluster"] = "bravo"; b["cluster"] = "alpha";
+            clusters.publish({a, b, c}, "zulu"); filter.setSourceModel(&clusters); filter.sort(0);
+            if (ordered() != "bac") return false;
+            clusters.publish({a, b, c}, "aardvark"); return ordered() == "cba";
+        }
+        if (scenario == "sort_future_age") {
+            podlord::ResourceTable ages(nullptr, {"createdAt"}, {"Age"});
+            a["createdAt"] = QDateTime::currentDateTimeUtc().addMSecs(500).toString(Qt::ISODateWithMs);
+            ages.publish({a}); filter.setSourceModel(&ages); filter.sort(0);
+            if (filter.index(0, 0).data(Qt::UserRole + 6).isValid()) return false;
+            return QTest::qWaitFor([&] { return filter.index(0, 0).data(Qt::UserRole + 6).isValid(); }, 3000);
+        }
+        return false;
+    }
     QString expression, expected;
     bool valid = true;
     if (scenario == "contains") { expression="alp"; expected="a"; }

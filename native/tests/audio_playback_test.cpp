@@ -1,13 +1,13 @@
 #include <QAudioOutput>
 #include <QFile>
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QMediaPlayer>
 #include <QTimer>
 #include <QUrl>
 #include <cstdio>
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
     Q_INIT_RESOURCE(alert_audio);
     if (argc != 3) return 2;
     const QUrl source(QString::fromLocal8Bit(argv[1]));

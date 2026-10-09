@@ -5,6 +5,7 @@
 #include <QAbstractItemModelTester>
 #include <QClipboard>
 #include <QFile>
+#include <QFontMetricsF>
 #include <QSignalSpy>
 #include <QGuiApplication>
 #include <QImage>
@@ -240,7 +241,16 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     const auto* expander = item(window, "toggleLandscapeFilters");
                     if (!click(window, expander && expander->isVisible() ? "toggleLandscapeFilters" : "toggleSidebar")) return false;
                 }
-                if (!waitFor([&] { return control->isVisible(); }) || !podlord::test::scrollIntoView(window, control)) return false;
+                if (!waitFor([&] {
+                    const auto* activity = item(window, "activityOnly");
+                    const auto* firstFilter = item(window, "sidebarField_cluster");
+                    if (!activity || !firstFilter || !control->isVisible()) return false;
+                    const auto origin = control->mapToItem(window->contentItem(), QPointF{});
+                    const auto activityOrigin = activity->mapToItem(window->contentItem(), QPointF{});
+                    if (origin.y() >= firstFilter->mapToItem(window->contentItem(), QPointF{}).y()) return false;
+                    return scenario == "limit_narrow" || (origin.x() >= activityOrigin.x() + activity->width()
+                        && qAbs(origin.y() + control->height()/2 - activityOrigin.y() - activity->height()/2) < 8);
+                }) || !podlord::test::scrollIntoView(window, control)) return false;
                 control->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Up);
                 return waitFor([&] { return workspace.property("resourceLimit").toInt() == 257 && displayed->rowCount() == 257
                     && item(window, "resourceTable")->property("rows").toInt() == 257; }) && server.requests == requests;
@@ -657,6 +667,11 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })) return false;
             }
             if (!click(window, "resetResourceFilters") || workspace.resourceCount() != 3 || !click(window, "filterPreset")) return false;
+            const auto* preset = item(window, "filterPreset");
+            const auto* popup = preset->property("popup").value<QObject*>();
+            const auto textWidth = QFontMetricsF(preset->property("font").value<QFont>()).horizontalAdvance("Broken pods");
+            if (!popup || !waitFor([&] { return popup->property("visible").toBool()
+                && popup->property("width").toDouble() >= textWidth + 24; })) return false;
             QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Return);
             const auto expected = scenario == "preset_overwrite" ? 2 : 1;
             return waitFor([&] { return workspace.resourceCount() == expected; }) && server.requests == requests;

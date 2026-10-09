@@ -111,17 +111,42 @@ Pane {
                 IconButton { objectName: "resourceFieldFilters"; glyph: "Filters"; text: "Resource field filters"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: filtersRequested() }
                 IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0 || workspace.resourceLimit !== 256; onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
             }
-            RowLayout {
-                ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
-                ScopeCheckBox { objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
-            }
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
-                ComboBox { id: preset; objectName: "filterPreset"; Layout.fillWidth: true; Layout.minimumWidth: 0; model: workspace.filterPresets; currentIndex: model.indexOf(workspace.selectedFilterPreset); displayText: currentIndex < 0 ? "Custom filter" : currentText; Accessible.name: "Load saved filter"; enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""; onActivated: { workspace.loadFilterPreset(currentText); presetName.text = currentText === "default" ? "" : currentText } }
+                columns: sidebarControls.width >= 340 ? 3 : 2
+                columnSpacing: 4; rowSpacing: 4
+                ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; Layout.fillWidth: true; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
+                ScopeCheckBox { objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; Layout.fillWidth: true; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
+                SpinBox {
+                    objectName: "resourceLimit"
+                    Layout.columnSpan: parent.columns === 2 ? 2 : 1
+                    Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 110
+                    from: 1; to: 5000; editable: true
+                    value: workspace.resourceLimit
+                    enabled: workspace.currentSession !== "" && !workspace.busy
+                    Accessible.name: "Displayed resource row limit"
+                    Accessible.description: "Limits table rows only. Radar, filters and alarms keep the complete cache."
+                    ToolTip.visible: hovered || activeFocus; ToolTip.text: Accessible.name
+                    onValueModified: workspace.setResourceLimit(String(value))
+                }
             }
             RowLayout {
                 Layout.fillWidth: true
                 TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text) }
+                ComboBox {
+                    id: preset; objectName: "filterPreset"
+                    Layout.preferredWidth: 32; Layout.minimumWidth: 32
+                    model: workspace.filterPresets
+                    currentIndex: model.indexOf(workspace.selectedFilterPreset)
+                    displayText: ""
+                    popup.width: sidebarControls.width
+                    popup.x: -x
+                    Accessible.name: "Load saved filter"
+                    ToolTip.visible: hovered || activeFocus
+                    ToolTip.text: currentIndex < 0 ? "Custom filter" : currentText
+                    enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""
+                    onActivated: { workspace.loadFilterPreset(currentText); presetName.text = currentText === "default" ? "" : currentText }
+                }
                 Button { objectName: "saveFilterPreset"; text: workspace.uiText["action.save"]; implicitHeight: 28; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
                 IconButton { objectName: "filterPresetActions"; glyph: "Menu"; text: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.open() }
                 Menu { id: presetActions
@@ -172,20 +197,6 @@ Pane {
                     Accessible.name: "Filter " + modelData.name
                     ToolTip.visible: hovered; ToolTip.text: text
                     onClicked: fieldRequested(modelData.id, fieldButton)
-                }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Label { text: "Limit"; color: workspace.appearanceColors.accent; font.bold: true }
-                SpinBox {
-                    objectName: "resourceLimit"
-                    Layout.fillWidth: true; Layout.minimumWidth: 0
-                    from: 1; to: 5000; editable: true
-                    value: workspace.resourceLimit
-                    enabled: workspace.currentSession !== "" && !workspace.busy
-                    Accessible.name: "Displayed resource row limit"
-                    Accessible.description: "Limits table rows only. Radar, filters and alarms keep the complete cache."
-                    onValueModified: workspace.setResourceLimit(String(value))
                 }
             }
             RowLayout {
