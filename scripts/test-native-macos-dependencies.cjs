@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { test } = require('node:test');
 const execute = promisify(execFile);
@@ -146,3 +146,62 @@ for (const scenario of ['escape-executable', 'escape-loader', 'escape-rpath', 'e
         } finally { await fs.rm(directory, { recursive: true, force: true }); }
     });
 }
+
+for (const lane of ['native', 'reference']) {
+    test(`desktop comparison rejects an undeclared ${lane} executable before contacting Docker`, { timeout: 30000 }, async () => {
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-comparison-entry-'));
+        const app = path.join(directory, 'Owned comparison.app');
+        try {
+            await fs.cp(bundle, app, { recursive: true, dereference: false, verbatimSymlinks: true });
+            const declared = path.join(app, 'Contents/MacOS/podlord-native');
+            const unrelated = path.join(app, 'Contents/MacOS/undeclared-executable');
+            await fs.copyFile(declared, unrelated);
+            const env = { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${directory}/absent-docker.sock`,
+                PODLORD_NATIVE_APP: lane === 'native' ? unrelated : declared,
+                PODLORD_LEGACY_APP: lane === 'reference' ? unrelated : declared };
+            const script = path.join(__dirname, 'test-native-visual-kubernetes.sh');
+            await assert.rejects(execute('/bin/sh', [script, 'desktop'], { env, timeout: 15000 }), error => {
+                assert.equal(error.code, 1);
+                assert.match(error.stderr, /does not match its declared bundle executable/);
+                assert.doesNotMatch(error.stdout, /VISUAL_RUN=|NATIVE_PID=|LEGACY_PID=/);
+                return true;
+            });
+        } finally { await fs.rm(directory, { recursive: true, force: true }); }
+    });
+}
+
+test('an exited real comparison app fails the review and cleans up its owned stack', {
+    skip: !process.env.PODLORD_LEGACY_APP, timeout: 210000
+}, async () => {
+    const child = spawn('/bin/sh', [path.join(__dirname, 'test-native-visual-kubernetes.sh'), 'desktop'], {
+        env: { ...process.env, PODLORD_NATIVE_APP: path.join(bundle, 'Contents/MacOS/podlord-native') },
+        signal: AbortSignal.timeout(180000)
+    });
+    let stdout = '', stderr = '', stopped = false, failure;
+    const finished = new Promise(resolve => child.once('close', resolve));
+    child.on('error', error => { failure = error; });
+    child.stdout.on('data', chunk => {
+        stdout += chunk;
+        const native = stdout.match(/^NATIVE_PID=(\d+)$/m);
+        if (native && !stopped) {
+            stopped = true;
+            try { process.kill(Number(native[1]), 'SIGTERM'); } catch (error) { failure = error; }
+        }
+    });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    try {
+        const code = await finished;
+        assert.ifError(failure);
+        assert.equal(code, 1, stderr);
+        assert.equal(stopped, true, stdout);
+        assert.match(stderr, /A comparison application exited; refusing to relaunch outside its isolated profile/);
+        const run = stdout.match(/^VISUAL_RUN=(.+)$/m)?.[1];
+        const owner = stdout.match(/^CLUSTER=(podlord-visual-run-[a-z0-9]+)$/m)?.[1];
+        assert.ok(run && owner, stdout);
+        await assert.rejects(fs.stat(run), { code: 'ENOENT' });
+        const remaining = await execute('docker', ['container', 'ls', '-a', '--filter', `label=podlord.native.e2e=${owner}`, '--format', '{{.ID}}']);
+        assert.equal(remaining.stdout.trim(), '', 'The comparison left its owned container behind.');
+    } finally {
+        if (child.exitCode === null && child.signalCode === null) { child.kill('SIGTERM'); await finished; }
+    }
+});

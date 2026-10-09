@@ -1,6 +1,6 @@
 # Why Must Native Preflight Gate CI And Release?
 
-Status: accepted implementation gate, 2026-10-05.
+Status: accepted implementation gate, 2026-10-05; CI reporting clarified 2026-10-09.
 
 ## Context
 
@@ -22,8 +22,12 @@ Production packages are exercised using Cocoa through the existing isolated
 application startup test. Offscreen remains the component-test default.
 Native coverage includes the read-overlap and reference-radar executable paths,
 is reported even after a CTest failure, and never replaces that failure with
-success. The 95% line and 90% branch thresholds remain unchanged. Owned raw
-profiles are removed on exit; retained reports identify the failed gate.
+success. The 95% line and 90% branch release thresholds remain unchanged. Under
+the confirmed 2026-10-09 CI policy, coverage and performance target misses are
+reported diagnostically rather than replacing functional check results. Green
+CI is necessary evidence, not proof that every release requirement is satisfied.
+Owned raw profiles are removed on exit; retained reports identify target misses
+and functional failures separately.
 
 CI uploads evidence only, not unsigned or legally unreviewed native release
 binaries. macOS Developer ID/notarization, license notices, clean-device
@@ -109,10 +113,11 @@ Native macOS CI runs six isolated test processes, matching the already bounded
 Linux pool. The same 146 public Terminal scenarios passed locally with four and
 six processes: 130.83 s and 76.08 s. This motivates bounded concurrency, not a
 hosted-run performance claim. Desktop focus, CPU and RSS measurements remain
-exclusive. The 60-minute job budget and coverage/performance gates are unchanged;
+exclusive. The 60-minute job budget and release coverage/performance targets are unchanged;
 Intel's previous incomplete run must be replaced by executed evidence.
 
 The C# comparison CI requests Release compilation so runtime budgets exercise
 optimized code. It does not remove legacy regression cases or change their
-thresholds. Source/binary parity, hosted execution and runtime budgets remain
+thresholds. Target misses are reported without failing CI; functional regressions
+still fail it. Source/binary parity, hosted execution and runtime budgets remain
 separate checks.
