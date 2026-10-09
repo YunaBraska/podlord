@@ -49,6 +49,7 @@ QQuickItem* item(QQuickWindow* window, const QString& name) {
     return window->findChild<QQuickItem*>(name);
 }
 bool click(QQuickWindow* window, const QString& name) {
+    if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
     if (!frames.wait(1000)) return false;
     if (name=="resourceFieldFilters" || name=="radarWorkspaceButton") {

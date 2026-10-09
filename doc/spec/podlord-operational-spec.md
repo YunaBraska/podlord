@@ -858,16 +858,16 @@ Infrastructure calls may legitimately take longer, including discovery or retrie
 
 | Requirement | Public scenario | Expected result | Evidence status |
 |---|---|---|---|
-| PER-001 | Repeatedly change filters and sort states in the agreed profile. | Public-action-to-visible-response p95 is at most 100 ms for each interaction class. | Planned benchmark; not measured. |
-| PER-002 | Repeatedly open cached inspector content in the agreed profile. | Public-action-to-visible-content p95 is at most 50 ms. | Planned benchmark; not measured. |
+| PER-001 | Repeatedly change filters and sort states in the agreed profile. | Public-action-to-visible-response p95 is at most 100 ms for each interaction class. | 2026-10-09 Cocoa/Metal Release run: filter 43.16 ms, sort 33.02 ms. Scoped pass; see the current [measurement ledger](k3d-test-map.md#2026-10-09-native-catalog-refresh-and-release-measurements). |
+| PER-002 | Repeatedly open cached inspector content in the agreed profile. | Public-action-to-visible-content p95 is at most 50 ms. | Same run: 34.22 ms. Scoped pass, not all-device clearance. |
 | PER-003 | Start the release app while cluster connections or login are delayed. | The app is usable within 1 second without waiting for infrastructure readiness. | Planned benchmark; not measured. |
 | PER-004 | Scroll and operate the public UI repeatedly in the agreed profile. | No UI stall longer than 100 ms is reproducible under the recorded protocol. | Planned benchmark; not measured. |
-| PER-005 | Observe the app for 60 seconds after settling, without active synchronization. | Mean process CPU is no more than 2 percent of one core. | Planned benchmark; not measured. |
-| PER-006, PER-007 | Warm the agreed workload and repeatedly open and close views while recording process RSS. | RSS remains within 250 MB and does not continue growing under the recorded repetition protocol. | Planned benchmark; not measured. |
+| PER-005 | Observe the app for 60 seconds after settling, without active synchronization. | Mean process CPU is no more than 2 percent of one core. | Same run: 60.001 seconds, 1.62 percent of one core, foreground retained. Scoped pass. Earlier interrupted windows are not accepted idle evidence. |
+| PER-006, PER-007 | Warm the agreed workload and repeatedly open and close views while recording process RSS. | RSS remains within 250 MB and does not continue growing under the recorded repetition protocol. | Same run: peak RSS 275,038,208 bytes, failing PER-006. Warm growth 3,293,184 bytes stays below the recorded 5 MB tolerance; broader leak/lifecycle evidence remains separate. |
 | PER-008, PER-009, SYN-001 | Delay a dispatched Kubernetes custom-resource response beyond the UI budgets while usable cached content exists, then eventually return the response. | Cached presentation remains responsive; the request is not cancelled because of the UI budget and its eventual response is processed in its original context. | Planned check; implementation review pending. |
-| PER-010 | Repeatedly switch between cached sessions in the agreed profile. | Public-action-to-visible-response p95 is at most 50 ms. | Planned benchmark; not measured. |
+| PER-010 | Repeatedly switch between cached sessions in the agreed profile. | Public-action-to-visible-response p95 is at most 50 ms. | Same run: 49.82 ms. Scoped pass with little margin; repeated-run and other-device stability remain to be established. |
 | PER-011 | Profile frames while scrolling, switching views, and operating the actual public UI in the agreed profile. | Local UI processing per frame p95 is at most 8 ms, with the profiling method and external/display waiting distinguished. | Planned benchmark; not measured. |
-| PER-012, PER-013 | Package and install a release for each claimed platform/architecture target, counting required runtime dependencies. | Download is at most 50 MB and installed footprint is at most 100 MB; separately distributed debug symbols are excluded transparently. | Planned packaging check; not measured. |
+| PER-012, PER-013 | Package and install a release for each claimed platform/architecture target, counting required runtime dependencies. | Download is at most 50 MB and installed footprint is at most 100 MB; separately distributed debug symbols are excluded transparently. | 2026-10-09 macOS arm64 private package: ZIP 32,459,039 bytes; installed regular-file logical sum 85,883,451 bytes. Both size targets pass for this artifact only. |
 
 ## Confirmed C++ Rewrite Direction
 

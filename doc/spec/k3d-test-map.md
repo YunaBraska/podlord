@@ -5206,3 +5206,25 @@ performance acceptance, complete matched-corpus view/theme evidence and the
 claimed platform/device runtime matrix. Headless style variants are meaningful
 compatibility cases, not additional independent product capabilities. Existing
 focused and full runners retain per-case names and bounded parallel execution.
+
+## 2026-10-09 native catalog refresh and release measurements
+
+The shared branch's CI changes report coverage and C# performance targets without failing functional verification. A green report is not evidence that the operational performance budgets, required presentation, device support or coverage targets were met. No native runtime budget was relaxed.
+
+The catalog refresh removed forty native alarm-editor strings and restored retired theme-intensity strings. The reference exporter now preserves native-only English and translated controls, updates reference-owned strings, and excludes the two retired intensity keys. Export followed by `--check` succeeds. The installed native app still needs no .NET SDK; this exporter belongs only to reference comparison tooling.
+
+| Behavior / public boundary | Executed scenario or test | Outcome and evidence |
+| --- | --- | --- |
+| Alarm labels and English fallback in every shipped language | `native.language.alert_catalog_<language>` through `uiText` | English fails before correction (`Missing alarm label: alert.chooseColor`). All 21 language rows pass afterward. |
+| Retired appearance capability stays absent | `native.language.retired_theme_catalog_<language>` through `uiText` | English fails before correction. All 21 language rows pass afterward; no theme-intensity runtime control was reintroduced. |
+| Translated table tools remain reachable through the actual workspace menu | `native.language.table_tools_<en,de,ar>_<Basic,Fusion>` | Existing scenarios failed at the hidden old button; actual public menu input now opens Columns. Full language subset: 118/118, 87 behavior and 31 style variants, 4.79 seconds. |
+| Pinned-cell keyboard inspection/copy | `native.field_filter.table_keyboard_pinned_<copy,inspect>_<menu,f10>_<Basic,Fusion>` | 8/8 pass through the real menu and keyboard controls, 4.73 seconds. |
+| Complete pre-correction SDK run | `scripts/test-native.sh` frozen runner, source `791b0c1` | 2/2 preflight; 4,263/4,277 main tests pass in 2,006.60 seconds. All fourteen failures are the two menu-entry groups above and are corrected by their targeted reruns. This is not described as a new all-green complete run. Coverage: 97.45% lines and 83.42% branches. Benchmarks after the failed main suite were not executed; copied older benchmark files must not be treated as current results. |
+| Private deployed macOS arm64 artifact | `scripts/check-native-macos-package.sh` | Dependency closure and size pass. ZIP 32,459,039 bytes; installed regular-file logical sum 85,883,451 bytes. Ad-hoc signing only; Developer ID/notarization remain explicitly deferred. |
+| Real Cocoa/Metal cached presentation | `scripts/measure-native-performance.sh` with Release helper, no concurrent owned build/test | Filter p95 43.16 ms, sort 33.02 ms, cached tabs 49.82 ms, cached inspector 34.22 ms. Each measured class passes in this run; tabs have little margin. Workspace/QML construction 531.36 ms is not installed-process startup. |
+| Actual nonsync foreground idle | Same public workload, 60.001 seconds | 1.62% of one core; foreground retained. Pass for this run, not inferred from earlier interrupted samples. |
+| Warm runtime memory | Same public workload, ten post-warm batches | Peak RSS 275,038,208 bytes exceeds the unchanged 250 MB target. Warm growth 3,293,184 bytes remains below the protocol's 5 MB tolerance. Runtime preflight still fails because of RSS. |
+
+Evidence is under `/Users/yuna/.local/share/podlord-comparison/release-evidence/`: `2026-10-09-language-catalog-regression` retains before/after logs and XML; `2026-10-09-compact-tables-complete` retains the failed complete run and its matching profile/report; `2026-10-09-canonical-private-package` retains the actual bundle, ZIP, hashes and package/dependency evidence; `2026-10-09-canonical-cache-metal` retains the environment, public measurements and external API audit. The performance workload is 5,000 resources total across three sessions (1,500 Pods, 2,334 ConfigMaps, 1,166 Secrets), table limit 256, configured log retention 5 MB and 97 displayed log rows. Its fake is only the external Kubernetes HTTP boundary; Workspace, caches, QML and rendering are real.
+
+Whole-product readiness remains open: RSS, installed startup and frame-work profiling, repeated-run stability, matched-state view/theme/device presentation, and actual target-specific installation. Functional/menu corrections do not close those gates.

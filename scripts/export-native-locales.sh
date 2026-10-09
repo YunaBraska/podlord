@@ -30,16 +30,25 @@ using System.Text.RegularExpressions;
 using Podlord.App;
 
 var source = File.ReadAllText(args[0]);
+var native = JsonSerializer.Deserialize(File.ReadAllText(args[2]), CatalogJson.Default.Catalog)
+    ?? throw new InvalidDataException("The native language catalog is empty.");
+var retired = new HashSet<string>(["settings.themeIntensity", "settings.themeIntensityHelp"], StringComparer.Ordinal);
 var keys = Regex.Matches(source, "\"(?<key>[a-z]+(?:\\.[a-zA-Z][a-zA-Z0-9]*)+)\"")
-    .Select(match => match.Groups["key"].Value).Distinct().Order(StringComparer.Ordinal).ToArray();
-var english = new SortedDictionary<string, string>(StringComparer.Ordinal);
-foreach (var key in keys) english.Add(key, PodlordLocalizer.Text(key, "en"));
+    .Select(match => match.Groups["key"].Value).Where(key => !retired.Contains(key)).Distinct().Order(StringComparer.Ordinal).ToArray();
+// Reference refreshes own shared strings, not native-only controls.
+var english = new SortedDictionary<string, string>(native.English, StringComparer.Ordinal);
+foreach (var key in retired) english.Remove(key);
+foreach (var key in keys) english[key] = PodlordLocalizer.Text(key, "en");
 var languages = PodlordLocalizer.SupportedLocales.Select(option => {
-    var text = new SortedDictionary<string, string>(StringComparer.Ordinal);
+    var retained = native.Languages.SingleOrDefault(language => language.Code == option.Code);
+    var text = retained is null ? new SortedDictionary<string, string>(StringComparer.Ordinal)
+        : new SortedDictionary<string, string>(retained.Text, StringComparer.Ordinal);
+    foreach (var key in retired) text.Remove(key);
     if (option.Code != "system")
         foreach (var key in keys) {
             var translated = PodlordLocalizer.Text(key, option.Code);
-            if (translated != english[key]) text.Add(key, translated);
+            if (translated != english[key]) text[key] = translated;
+            else text.Remove(key);
         }
     return new Language(option.Code, option.NativeName, text);
 }).ToArray();
@@ -53,7 +62,7 @@ internal sealed record Catalog(int Version, SortedDictionary<string, string> Eng
 internal partial class CatalogJson : JsonSerializerContext;
 EOF
 "$DOTNET" build "$RUN/export.csproj" -p:ReferenceSource="$ROOT/src/Podlord.App/PodlordLocalizer.cs" --configfile "$RUN/NuGet.Config" --nologo > "$RUN/build.log" 2>&1 || { cat "$RUN/build.log" >&2; exit 1; }
-"$DOTNET" "$RUN/bin/Debug/net10.0/export.dll" "$ROOT/src/Podlord.App/PodlordLocalizer.cs" "$RUN/locales.json"
+"$DOTNET" "$RUN/bin/Debug/net10.0/export.dll" "$ROOT/src/Podlord.App/PodlordLocalizer.cs" "$RUN/locales.json" "$ROOT/native/ui/locales.json"
 if [ "$OUT" = '--check' ]; then
     cmp "$RUN/locales.json" "$ROOT/native/ui/locales.json"
 else
