@@ -54,6 +54,7 @@ bool run(const QString& scenario) {
         auto* item = control(name);
         require(item && test::scrollIntoView(window,item), "Sources focus target missing.");
         item->forceActiveFocus(Qt::TabFocusReason);
+        require(QTest::qWaitFor([&] { return item->hasActiveFocus(); }), "Sources focus target did not activate.");
     };
     click("settingsWorkspaceButton");
     require(test::selectSettingsSection(window, "sources"), "Cannot select Sources.");
