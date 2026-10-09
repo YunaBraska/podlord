@@ -28,12 +28,12 @@ scripts/test.sh
 
 The full suite creates a disposable k3d cluster. It is intentionally slower than pure unit tests because Kubernetes behavior is the thing being proved.
 
-Coverage gates:
+Coverage targets:
 
 - Line coverage: 95%
 - Branch coverage: 80%
 
-The coverage gate targets domain/runtime behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and should be covered with focused behavior or layout tests when they carry logic.
+Coverage is diagnostic and does not fail CI. The report targets domain/runtime behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric target and should be covered with focused behavior or layout tests when they carry logic.
 
 ## Architecture Rules
 
