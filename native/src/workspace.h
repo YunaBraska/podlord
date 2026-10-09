@@ -277,6 +277,8 @@ public:
     Q_INVOKABLE bool attachWindow(QObject* window);
     Q_INVOKABLE bool setWindowFocused(bool focused);
     bool windowActionsAvailable() const;
+    /** Returns whether this workspace can move one of its tabs into a window now. */
+    bool windowActionsReady() const;
     Alerts* alerts() { return &alerts_; }
     ReleaseUpdates* releaseUpdates() { return &releaseUpdates_; }
     Q_INVOKABLE int alertResourceIndex(const QString& path) const;

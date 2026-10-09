@@ -120,7 +120,11 @@ inline bool clickVisible(QQuickWindow* window, const QString& name) {
         if (!target || !target->isEnabled()) return false;
         if (!scrollIntoView(window,target)) continue;
         if (!target || target->objectName()!=name) continue;
-        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,target->mapToScene({target->width()/2,target->height()/2}).toPoint());
+        const auto point=target->mapToScene({target->width()/2,target->height()/2}).toPoint();
+        QTest::mouseMove(window,point);
+        QCoreApplication::processEvents();
+        if (!target || target->objectName()!=name) continue;
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,point);
         return true;
     }
     return false;

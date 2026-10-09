@@ -53,6 +53,11 @@ bool Workspace::windowActionsAvailable() const {
 #endif
 }
 
+bool Workspace::windowActionsReady() const {
+    return windowActionsAvailable() && !windowClosed_ && !busy_ && !pendingLeave_
+        && !viewSaving_ && pendingViews_.isEmpty() && !viewStateFailed() && !presetsBusy_ && !tableLayoutSaving_;
+}
+
 bool Workspace::attachWindow(QObject* window) {
     if (!qobject_cast<QQuickWindow*>(window) || windowClosed_) return false;
     if (window_) window_->removeEventFilter(this);

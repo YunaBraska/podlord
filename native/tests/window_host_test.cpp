@@ -185,7 +185,7 @@ bool run(const QString& scenario) {
         REQUIRE(primary.confirmDiscard(scenario == "dirty_discard"));
         if (scenario == "dirty_stay") { REQUIRE(primary.yamlDirty() && host.windows().size() == 1); return true; }
     } else {
-        if (scenario == "filter") { REQUIRE(primary.filter("=alpha")); QTest::qWait(100); }
+        if (scenario == "filter") { REQUIRE(primary.filter("=alpha") && waitFor([&] { return primary.windowActionsReady(); })); }
         if (scenario == "logs") { REQUIRE(primary.setLogsVisible(true)); REQUIRE(waitFor([&] { return primary.logRows()->rowCount() > 0; })); }
         if (scenario == "terminal" || scenario == "close_terminal") {
             REQUIRE(primary.startContainerTerminal("alpha", "/bin/sh"));
