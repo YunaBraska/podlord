@@ -66,6 +66,9 @@ const QHash<QString, Glyph>& catalog() {
         polygon({{.86,.28},{.5,.48},{.5,.9},{.86,.7}}); finish({"CustomResourceDefinition"});
         ellipse(.4,.4,.27,.27,Fill::None); line(.6,.6,.9,.9); finish({"Search"});
         line(.2,.2,.8,.8); line(.2,.8,.8,.2); finish({"Close"});
+        line(.16,.26,.84,.26); line(.4,.26,.44,.14); line(.44,.14,.56,.14); line(.56,.14,.6,.26);
+        polygon({{.24,.3},{.76,.3},{.7,.9},{.3,.9}});
+        line(.42,.38,.42,.82); line(.58,.38,.58,.82); finish({"Trash"});
         for (const auto y : {.25,.5,.75}) line(.15,y,.85,y); finish({"Menu"});
         rect(.15,.15,.7,.7,Fill::None); line(.6,.15,.6,.85); finish({"Sidebar"});
         rect(.15,.15,.7,.7,Fill::None); line(.38,.15,.38,.85); line(.62,.15,.62,.85); finish({"Columns"});

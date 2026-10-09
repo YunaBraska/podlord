@@ -13,7 +13,7 @@ ToolButton {
     implicitHeight: targetSize
     padding: 6
     Accessible.name: text
-    ToolTip.visible: hovered || activeFocus
+    ToolTip.visible: !showText && (hovered || activeFocus)
     ToolTip.text: text
     background: Rectangle {
         color: control.down || control.checked ? workspace.appearanceColors.selection

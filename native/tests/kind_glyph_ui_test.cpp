@@ -52,7 +52,15 @@ Window {
     } else {
         const auto original = frame(window);
         if (original.isNull() || coloredPixels(original, true) < 30) return false;
-        if (scenario == "visibility") {
+        if (scenario == "trash") {
+            glyph->setProperty("kind", "Close");
+            const auto close = frame(window);
+            glyph->setProperty("kind", "UnknownResource");
+            const auto unknown = frame(window);
+            glyph->setProperty("kind", "Trash");
+            const auto trash = frame(window);
+            if (trash.isNull() || trash == close || trash == unknown || coloredPixels(trash, true) < 30) return false;
+        } else if (scenario == "visibility") {
             glyph->setProperty("kind", "Visible");
             const auto visible = frame(window);
             if (visible.isNull() || visible == original) return false;

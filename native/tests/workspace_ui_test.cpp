@@ -275,6 +275,7 @@ public:
                             auto event = pod("related-event", "Event");
                             event["involvedObject"] = QJsonObject{{"uid", scenario == "inspector_related_wrong_uid" || scenario == "inspector_related_event_missing" ? "replaced-alpha" : "uid-alpha"}, {"name", "alpha"}, {"namespace", "default"}};
                             event["reason"] = "Scheduled"; event["message"] = "Local event message"; event["type"] = "Normal"; event["count"] = 3;
+                            if (scenario.contains("_color_")) event["type"] = scenario.endsWith("normal") ? "Normal" : scenario.endsWith("warning") ? "Warning" : scenario.endsWith("empty") ? "" : "Unrecognized";
                             event["lastTimestamp"] = "2026-10-03T10:00:00Z";
                             document["items"] = QJsonArray{event};
                             if (scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_")) {
@@ -1435,10 +1436,19 @@ bool execute(const QString& scenario) {
         }
         return false;
     }
+    const auto eventColor = [&](const char* name) {
+        const auto expected = workspace.appearanceColors()[scenario.endsWith("normal") ? "success" : scenario.endsWith("warning") ? "warning" : scenario.endsWith("empty") ? "text" : "unknown"].value<QColor>();
+        return waitFor([&] {
+            auto* cell = item(window, name);
+            auto* caption = cell ? cell->property("contentItem").value<QObject*>() : nullptr;
+            return caption && caption->property("color").value<QColor>() == expected;
+        });
+    };
     if (scenario.startsWith("filter_event_")) {
         const int requests = server.requests.size();
         if (!type(window,item(window,"resourceFilter"),"\"alpha\"") || !click(window,item(window,"eventsWorkspaceButton"))) return false;
         if (!waitFor([&] { return item(window,"eventFilter")->isVisible() && workspace.totalEventCount()==2; })) return false;
+        if (scenario.contains("_color_")) return eventColor("eventCell_0_1") && server.requests.size() == requests;
         QString expression="\"Second event message\"", expected="Started";
         if (scenario=="filter_event_or") { expression="Scheduled Started"; expected="Scheduled,Started"; }
         else if (scenario=="filter_event_prefix") expression="~Started";
@@ -1656,8 +1666,15 @@ bool execute(const QString& scenario) {
                 return workspace.inspectorScope()==scope && qAbs(item(window,"overviewReadinessBar")->property("value").toDouble()-1)<0.001;
             }
             if (scenario=="table_overview_metric_size") {
-                auto* scroll=item(window,"overviewScroll"); scroll->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
-                return waitFor([&] { const auto* metric=item(window,"metric_memory_bar"); return metric && metric->isVisible() && metric->height()>=6 && metric->height()<=10; }) && server.requests.size()==calls;
+                auto* scroll=item(window,"overviewScroll");
+                if (!podlord::test::scrollIntoView(window,scroll)) return false;
+                scroll->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
+                const bool compact=waitFor([&] { const auto* metric=item(window,"metric_storage_bar"); return metric && metric->isVisible() && metric->height()>=6 && metric->height()<=10; });
+                if (!compact) {
+                    const auto* metric=item(window,"metric_storage_bar");
+                    std::fprintf(stderr,"Rendered metric: present=%d visible=%d height=%g rows=%d scroll=%g/%g\n",metric!=nullptr,metric && metric->isVisible(),metric ? metric->height() : -1,scroll->property("count").toInt(),scroll->property("contentY").toDouble(),scroll->property("contentHeight").toDouble());
+                }
+                return compact && server.requests.size()==calls;
             }
             return server.requests.size()==calls;
         }
@@ -2494,6 +2511,7 @@ bool execute(const QString& scenario) {
             if (!click(window, item(window, event ? "inspectorEventsButton" : "inspectorLinksButton"))) return false;
             auto* model = workspace.property(event ? "inspectorEventTable" : "inspectorLinkTable").value<QAbstractItemModel*>();
             if (!model || model->rowCount() != 2 || model->columnCount() != 5) return false;
+            if (scenario.contains("_color_")) return eventColor("inspectorEventCell_0_1") && server.requests.size() == calls;
             const auto operation = scenario.section('_', -1);
             const int column = event ? 3 : 0;
             const auto header = name("Header_" + QString::number(column));
@@ -2568,6 +2586,30 @@ bool execute(const QString& scenario) {
                 return restored.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList().last().toMap()["width"].toInt() == 222;
             }
             return saved["width"].toInt() == 222 && server.requests.size() == calls;
+        }
+        if (scenario.startsWith("inspector_related_chrome")) {
+            if (scenario.endsWith("narrow")) window->setWidth(360);
+            const auto compact = [&] {
+                const auto* back = item(window, "inspectorBack");
+                const auto* forward = item(window, "inspectorForward");
+                const auto* close = item(window, "closeInspector");
+                const auto* title = item(window, "inspectorResourceName");
+                const auto* overview = item(window, "overviewButton");
+                const auto* field = item(window, "overviewFieldHeader");
+                return back && forward && close && title && overview && field
+                    && !back->property("showText").toBool() && !forward->property("showText").toBool()
+                    && close->property("glyph") == "Close"
+                    && title->property("text") == "Pod/alpha"
+                    && qAbs(back->mapToScene({0,0}).y() - close->mapToScene({0,0}).y()) < 1
+                    && back->mapToScene({0,0}).x() < forward->mapToScene({0,0}).x()
+                    && title->mapToScene({0,0}).x() < close->mapToScene({0,0}).x()
+                    && overview->height() >= (scenario.endsWith("narrow") ? 44 : 32)
+                    && field->isVisible() && text(window, "overview_name") == "alpha";
+            };
+            return waitFor(compact) && server.requests.size() == calls
+                && click(window, item(window, "yamlButton")) && workspace.inspectorPage() == "yaml"
+                && click(window, item(window, "overviewButton")) && workspace.inspectorPage() == "overview"
+                && click(window, item(window, "closeInspector")) && workspace.inspectorPath().isEmpty();
         }
         if (scenario == "inspector_related_overview") {
             return text(window, "overview_name") == "alpha" && text(window, "overview_kind") == "Pod" && text(window, "overview_namespace") == "default"
@@ -2688,13 +2730,13 @@ bool execute(const QString& scenario) {
         auto* yamlView = item(window, "inspectorYaml");
         if (!yamlView || !yamlView->isVisible() || !yamlView->property("readOnly").toBool() || !text(window, "inspectorReadStatus").contains("Refreshing")) return false;
         const auto expectedName = secret ? "alpha" : scenario == "inspector_custom_secret" ? "custom-secret" : "bravo";
-        if (text(window, "inspectorResourceName") != expectedName) return false;
+        if (!text(window, "inspectorResourceName").endsWith("/" + QString(expectedName))) return false;
         if (scenario.startsWith("inspector_edit_")) {
             auto* edit = item(window, "editYaml");
             if (!edit || edit->isEnabled()) return false;
             if (scenario == "inspector_edit_late") {
                 if (!waitFor([&] { return server.detailReads == 1; }) || !type(window, item(window, "resourceFilter"), "charlie") || !waitFor([&] { return workspace.table()->rowCount() == 1; }) || !click(window, item(window, "cell_0_0"))) return false;
-                if (!waitFor([&] { return server.detailReads == 2; }) || edit->isEnabled() || !yamlView->property("readOnly").toBool() || text(window, "inspectorResourceName") != "charlie") return false;
+                if (!waitFor([&] { return server.detailReads == 2; }) || edit->isEnabled() || !yamlView->property("readOnly").toBool() || text(window, "inspectorResourceName") != "ConfigMap/charlie") return false;
                 return waitFor([&] { return edit->isEnabled() && !workspace.loading(); }) && click(window, edit) && !yamlView->property("readOnly").toBool() && text(window, "inspectorYaml").contains("\"name\": \"charlie\"");
             }
         }
@@ -2809,7 +2851,7 @@ bool execute(const QString& scenario) {
                 if (!retained) std::fprintf(stderr, "Stay: draft=%d readOnly=%d session=%d inspector=%s visible=%d writes=%d\n", text(window,"inspectorYaml")==draft, yamlView->property("readOnly").toBool(), workspace.currentSession()==originalSession, qPrintable(workspace.inspectorPath()), window->isVisible(), !noWrites());
                 return retained;
             }
-            if (scenario.startsWith("inspector_edit_resource_")) return waitFor([&] { return text(window, "inspectorResourceName") == "charlie" && !workspace.loading(); }) && !text(window, "inspectorYaml").contains("# operator draft") && yamlView->property("readOnly").toBool() && noWrites();
+            if (scenario.startsWith("inspector_edit_resource_")) return waitFor([&] { return text(window, "inspectorResourceName") == "ConfigMap/charlie" && !workspace.loading(); }) && !text(window, "inspectorYaml").contains("# operator draft") && yamlView->property("readOnly").toBool() && noWrites();
             if (scenario == "inspector_edit_window_accept") return !window->isVisible() && noWrites();
             if (scenario == "inspector_edit_tab_accept") return waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); }) && noWrites();
             if (scenario == "inspector_edit_session_accept" || scenario == "inspector_edit_open_context_accept") return waitFor([&] { return workspace.currentSession() != originalSession && !workspace.busy(); }) && noWrites();

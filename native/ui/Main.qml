@@ -12,7 +12,8 @@ ApplicationWindow {
     minimumWidth: 320
     minimumHeight: 360
     font.family: workspace.monospaceFamily
-    font.pixelSize: 13
+    font.pixelSize: 14
+    font.weight: Font.DemiBold
     property bool sidebarOpen: true
     property bool searchOpen: false
     readonly property bool wideLayout: width >= 900

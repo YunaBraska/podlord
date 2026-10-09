@@ -5258,3 +5258,50 @@ The test inventory contains 3187 `behavior` labels and 1136 additional `style-va
 The integrated test-input change initially exposed a missing direct `QSignalSpy` include and 46 input failures. The shared input helper now completes scheduled ancestor layout and waits for a real `afterAnimating` frame; it fails explicitly if that frame is unavailable. This retains the removal of unconditional one-second `frameSwapped` waits. The separate-window case also checks the public menu `triggered` signal before expecting a second window.
 
 The older instrumented run passed its 2 preflight cases and 4273/4319 remaining cases before this repair. Its archived coverage is 97.42% lines and 83.33% branches, not coverage evidence for the later helper/icon changes. CI diagnostics do not waive the 95% line / 90% branch release gates. The latest exclusive Metal memory evidence still exceeds the 250 MiB RSS gate; no memory improvement is claimed here. Complete installed C#/C++ view/theme comparison and remaining device/startup/frame evidence are still open. The previously packaged private app predates these UI changes and is not relabeled as a current release.
+
+## Which Settings And Theme Comparisons Were Captured On 2026-10-09?
+
+| Requirement / scenario | Public boundary | Evidence / test | Result and remaining gap |
+| --- | --- | --- | --- |
+| Localized alarm matcher labels, grouped actions and compact Settings controls | Actual Qt editor, persistence and selected language | `native.alert.copyWhen_<de,ja>_<Basic,Fusion>`, action-row cases, `2026-10-09-visual-ui-regression/ctest-final.log` | Earlier integrated increment passes 4331/4331 executions in 622.64 s: 3191 behavior cases and 1140 style variants. This run precedes the subsequent Event-color and inspector-chrome changes. |
+| Expand attributed sound credits without losing their real source links | Actual About controls | About credits cases and seven existing attribution URL cases | Pass in the integrated run; collapsed presentation preserves attribution and explicit navigation. |
+| Every shared named theme, dark and light | Deployed C# and C++ applications, real isolated K3s resource corpus on Colima | `2026-10-09-visual-themes-64992/`: 38 `comparison-theme-*.png` pairs; `comparisons.json`, `index.html` | All 19 selected theme names and both variants were observed in the actual controls. Original full-window pixels are placed side by side, C# left and C++ right, without resizing, cropping or retouching. Appearance-page comparisons are not a complete view-by-theme cross-product. |
+| Every Settings section | Deployed applications, real private fixture profiles | `2026-10-09-visual-settings-updated-55478/comparison-settings-*.png` | Nine actual section pairs captured: Alerts, Appearance, Diagnostics, Graphics, Privacy, Sources, Sync, Workspace, About. The matrix records presentation differences; it does not assert pixel equality. |
+| Resources, Events, Ports and ConfigMap inspector pages before the latest inspector correction | Same installed-window boundary | `2026-10-09-visual-themes-64992/comparison-workspace-*.png`, `comparison-inspector-*.png` | Three workspace and five inspector pairs. These frames exposed the wide text-action row and unstyled inspector tabs, corrected by UI-INSP-01 through UI-INSP-04. They remain before-change evidence, not screenshots of the corrected inspector. |
+| Normal, Warning, unknown and empty Event types in both event tables | Real Workspace/QML; only the external Kubernetes HTTP boundary is simulated | `native.ui.{filter,inspector}_event_color_{normal,warning,unknown,empty}_{Basic,Fusion}`; `event-colors-before.log`, `event-colors-after.log` | Twelve of sixteen executions fail before the shared semantic-color correction; all sixteen pass afterward. Empty types already used ordinary text. |
+| Desktop and narrow inspector header, tabs, metadata and navigation | Real Qt pointer input and visible control geometry | `native.ui.inspector_related_chrome[_narrow]_{Basic,Fusion}` | Four executions fail before the layout correction and pass afterward. These supplement rather than replace YAML, Secret, related-table, port-forward and terminal behavior cases. |
+| Delete remains visually distinct from Close and unknown-resource fallback | Rendered shipped KindGlyph | `native.glyph.trash` | Fails before adding the reference Trash geometry; passes afterward. |
+
+The named fixtures use 512 ConfigMaps, 256 Secrets, 64 Deployments, 32 StatefulSets,
+32 DaemonSets, 32 CronJobs, 32 PVCs, 64 Services, 16 ServiceAccounts, 8 Jobs and
+3 Pods, plus Kubernetes system resources. Native discovery includes additional
+kinds; two independently created sessions/snapshots are not an exact Radar-world
+coordinate proof. The local node reported image-filesystem pressure; shared disk
+contents were not pruned. No application performance claim is derived from this
+loaded environment. Owned comparison apps, clusters and private profiles are
+removed through the existing guarded runner; the user's application is untouched.
+
+The subsequent complete run executes all 4352 cases in 639.47 seconds: 4350
+pass and two existing `native.forward.terminal_<Basic,Fusion>` cases fail.
+The compact port-forward icon retained its visibility guard but lost its enabled
+guard. Restoring the same authoritative `canPortForward` binding corrects this
+regression without changing transport. All 224 Forward and inspector-chrome
+executions pass afterward in 90.43 seconds (`forward-state-fixed.log`). The full
+run is retained as a failed-before-correction record, not relabeled all-green.
+The inventory contains 3202 behavior labels and 1150 additional style variants.
+
+The final SDK-pinned private package is in `2026-10-09-visual-parity-final-6333/`:
+ZIP 32,459,896 bytes, installed regular-file logical sum 85,883,595 bytes;
+dependency closure and strict local ad-hoc signature validation pass. Native
+executable SHA-256 is
+`c0c48247415ec5a1f5ea4bf2de1252f90826a0bd6b75a23b600b43aa694bccd0`.
+The initial packaging invocation omitted the established portable dependency
+prefixes and pulled Homebrew libraries; its retained failure is not successful
+SDK-package evidence. The corrected invocation uses the same Qt, yaml-cpp and
+OpenSSL roots as the functional build. Developer ID/notarization remain deferred.
+
+Remaining presentation gates: final inspector framebuffer verification, primary
+header/table sizing and default Event layout, matched-state Radar viewport,
+complete populated/empty/error/selection and narrow/device view matrix. The
+previously measured RSS and branch-coverage misses remain release blockers;
+these UI changes neither waive those budgets nor establish new measurements.

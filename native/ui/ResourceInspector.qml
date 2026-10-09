@@ -4,6 +4,23 @@ import QtQuick.Layouts
 
 Pane {
     padding: 6
+    component InspectorTab: TabButton {
+        id: tab
+        width: visible ? implicitWidth : 0
+        implicitHeight: inspector.width < 600 ? 44 : 32
+        padding: 8
+        font.bold: true
+        contentItem: Label {
+            text: tab.text; textFormat: Text.PlainText; font: tab.font
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            color: tab.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
+        }
+        background: Rectangle {
+            color: tab.checked || tab.down ? workspace.appearanceColors.selection
+                : tab.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
+            border.color: tab.checked || tab.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+        }
+    }
     background: Rectangle {
         color: workspace.appearanceColors.panel
         border.width: 1
@@ -43,31 +60,33 @@ Pane {
     }
     RowLayout {
         Layout.fillWidth: true
-        ToolButton { objectName: "inspectorBack"; text: "Back"; enabled: workspace.canInspectBack; Accessible.name: workspace.uiText["tooltip.previousResource"]; onClicked: workspace.navigateInspector(-1) }
-        ToolButton { objectName: "inspectorForward"; text: "Forward"; enabled: workspace.canInspectForward; Accessible.name: workspace.uiText["tooltip.nextResource"]; onClicked: workspace.navigateInspector(1) }
-        Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; text: workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap; Accessible.name: "Inspecting " + text }
+        spacing: 4
+        IconButton { objectName: "inspectorBack"; glyph: "Previous"; text: workspace.uiText["tooltip.previousResource"]; enabled: workspace.canInspectBack; onClicked: workspace.navigateInspector(-1) }
+        IconButton { objectName: "inspectorForward"; glyph: "Next"; text: workspace.uiText["tooltip.nextResource"]; enabled: workspace.canInspectForward; onClicked: workspace.navigateInspector(1) }
+        Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; elide: Text.ElideMiddle; Accessible.name: "Inspecting " + text }
+        IconButton { objectName: "refreshInspector"; glyph: "Reset"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
+        IconButton { objectName: "deleteResource"; glyph: "Trash"; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
+        IconButton { objectName: "preparePortForward"; glyph: "Service"; text: "Port forward " + workspace.inspectorName; visible: workspace.canPortForward; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
+        IconButton { objectName: "closeInspector"; glyph: "Close"; text: "Close inspector"; onClicked: workspace.closeInspector() }
     }
     TabBar {
         Layout.fillWidth: true
         currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
-        TabButton { objectName: "overviewButton"; width: implicitWidth; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
-        TabButton { objectName: "yamlButton"; width: implicitWidth; text: workspace.uiText["inspector.yaml"]; onClicked: workspace.setInspectorPage("yaml") }
-        TabButton { objectName: "inspectorEventsButton"; width: implicitWidth; text: workspace.uiText["inspector.events"]; onClicked: workspace.setInspectorPage("events") }
-        TabButton { objectName: "inspectorLinksButton"; width: implicitWidth; text: workspace.uiText["inspector.links"]; onClicked: workspace.setInspectorPage("links") }
-        TabButton { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; visible: workspace.valuesAvailable; width: visible ? implicitWidth : 0; onClicked: workspace.setInspectorPage("values") }
-        TabButton { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; width: visible ? implicitWidth : 0; onClicked: workspace.setLogsVisible(true) }
-        TabButton { objectName: "terminalButton"; text: "Terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; width: visible ? implicitWidth : 0; onClicked: workspace.setInspectorPage("terminal") }
+        InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
+        InspectorTab { objectName: "yamlButton"; text: workspace.uiText["inspector.yaml"]; onClicked: workspace.setInspectorPage("yaml") }
+        InspectorTab { objectName: "inspectorEventsButton"; text: workspace.uiText["inspector.events"]; onClicked: workspace.setInspectorPage("events") }
+        InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; onClicked: workspace.setInspectorPage("links") }
+        InspectorTab { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; visible: workspace.valuesAvailable; onClicked: workspace.setInspectorPage("values") }
+        InspectorTab { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; onClicked: workspace.setLogsVisible(true) }
+        InspectorTab { objectName: "terminalButton"; text: "Terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; onClicked: workspace.setInspectorPage("terminal") }
     }
     Flow {
         Layout.fillWidth: true
         spacing: 6
-        Button { objectName: "refreshInspector"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
-        Button { objectName: "copyYaml"; text: "Copy visible YAML"; visible: workspace.yamlVisible; enabled: !workspace.yamlEditing && workspace.yamlText !== ""; onClicked: workspace.copyYaml() }
-        Button { objectName: "deleteResource"; text: "Delete..."; enabled: workspace.canDeleteResource; Accessible.name: "Review deletion of " + workspace.inspectorName; onClicked: workspace.previewDeletion() }
-        Button { objectName: "preparePortForward"; text: "Port forward..."; enabled: workspace.canPortForward; Accessible.name: "Port forward " + workspace.inspectorName; onClicked: workspace.preparePortForward() }
-        Button { objectName: "closeInspector"; text: workspace.uiText["action.close"]; Accessible.name: "Close inspector"; onClicked: workspace.closeInspector() }
-        Button { objectName: "expandTerminal"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: terminalDialog.open() }
-        Button { objectName: "readBackResourceDelete"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
+        visible: workspace.yamlVisible || workspace.inspectorPage === "terminal" || workspace.canReadBackDeletion
+        IconButton { objectName: "copyYaml"; glyph: "ConfigMap"; text: "Copy visible YAML"; visible: workspace.yamlVisible; enabled: !workspace.yamlEditing && workspace.yamlText !== ""; onClicked: workspace.copyYaml() }
+        IconButton { objectName: "expandTerminal"; glyph: "Sidebar"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: terminalDialog.open() }
+        IconButton { objectName: "readBackResourceDelete"; glyph: "Reset"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
     }
     Label {
         objectName: "inspectorReadStatus"
@@ -76,6 +95,7 @@ Pane {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
         Accessible.name: text
+        color: workspace.appearanceColors.muted
     }
     Label { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     Label { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
@@ -134,6 +154,20 @@ Pane {
                 }
             }
     }
+    Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: inspector.width < 600 ? 44 : 38
+        visible: workspace.inspectorPage === "overview"
+        color: workspace.appearanceColors.panel
+        border.color: workspace.appearanceColors.border
+        RowLayout {
+            anchors.fill: parent; anchors.margins: 6
+            spacing: 12
+            Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: 100; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
+            Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
+            Label { Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
+        }
+    }
     ListView {
         id: overviewScroll
         objectName: "overviewScroll"
@@ -148,9 +182,15 @@ Pane {
         ScrollBar.vertical: ScrollBar {}
         activeFocusOnTab: true
         Keys.onPressed: function(event) { if (event.key===Qt.Key_End) { positionViewAtIndex(count-1,ListView.End); event.accepted=true } else if (event.key===Qt.Key_Home) { positionViewAtIndex(0,ListView.Beginning); event.accepted=true } }
-        delegate: ColumnLayout {
+        delegate: Rectangle {
             required property var modelData
             width: overviewScroll.width
+            height: Math.max(32, overviewRow.implicitHeight + 8)
+            color: workspace.appearanceColors.inset
+            border.color: workspace.appearanceColors.border
+            ColumnLayout {
+            id: overviewRow
+            anchors.fill: parent; anchors.margins: 4
             RowLayout {
                 Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
                 Label { Layout.preferredWidth: 100; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
@@ -179,6 +219,7 @@ Pane {
                 }
             }
             Loader { Layout.fillWidth: true; active: modelData.metric!==undefined; sourceComponent: MetricGauge { metric: modelData.metric } }
+            }
         }
     }
     ResourceGrid {

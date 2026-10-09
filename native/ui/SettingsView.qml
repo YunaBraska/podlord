@@ -30,8 +30,8 @@ Pane {
             Label { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
-            Button { objectName: "cancelSourceRemoval"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
-            Button { objectName: "confirmSourceRemoval"; text: workspace.busy ? "Removing..." : "Remove"; enabled: !workspace.busy; Accessible.name: "Remove imported context and its listed sessions"; onClicked: workspace.confirmSourceRemoval() }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceRemoval"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? "Removing..." : "Remove"; enabled: !workspace.busy; Accessible.name: "Remove imported context and its listed sessions"; onClicked: workspace.confirmSourceRemoval() }
         }
         onClosed: workspace.cancelSourceRemoval()
         Connections {
@@ -60,8 +60,8 @@ Pane {
             Label { objectName: "sourceAliasError"; Layout.fillWidth: true; visible: text !== ""; text: sourceAliasDialog.failure; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
-            Button { objectName: "cancelSourceAlias"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceAliasDialog.close() }
-            Button { objectName: "saveSourceAlias"; text: workspace.busy ? "Saving..." : "Save"; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceAlias"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceAliasDialog.close() }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "saveSourceAlias"; text: workspace.busy ? "Saving..." : "Save"; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }
         }
         function edit(context) {
             contextId = context.id; canonicalName = context.context; failure = ""
@@ -114,7 +114,7 @@ Pane {
     }
     padding: 14
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
-    component SectionButton: Button {
+    component SectionButton: IconButton { glyph: ""; showText: true;
         required property string destination
         readonly property bool selected: settings.section === destination
         font.bold: true; implicitHeight: 32; padding: 8
@@ -135,7 +135,7 @@ Pane {
         columnSpacing: 14; rowSpacing: 6
         data: [
         Label { Layout.row: 0; Layout.column: 0; Layout.preferredWidth: parent.narrow ? -1 : 240; text: parent.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
-        ,ColumnLayout { id: editor; Layout.row: parent.narrow ? 1 : 0; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true }
+        ,ColumnLayout { id: editor; Layout.row: parent.narrow ? 1 : 0; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; Layout.maximumWidth: parent.narrow ? Number.POSITIVE_INFINITY : 420 }
         ,Label { Layout.row: parent.narrow ? 2 : 1; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; text: parent.help; visible: text !== ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
         ,Rectangle { Layout.row: parent.narrow ? 3 : 2; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
         ]
@@ -200,26 +200,26 @@ Pane {
                     SettingRow { label: "Inactive session sync"; help: "Minutes. 0 disables inactive sync. Closed sessions never synchronize."; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: "Inactive session sync in minutes" } }
                     SettingRow { label: "Request limit per minute"; help: "0 adds no extra limit. Requests remain at least 400 ms apart, with up to four parallel reads. Inspector reads have priority."; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; enabled: !workspace.busy; Accessible.name: "Request limit per minute" } }
                     SettingRow { label: "Retained logs per Pod"; help: "Positive whole MB. Default 5 MB."; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Retained logs per Pod in MB" } }
-                    Button { objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text) }
+                    IconButton { glyph: ""; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text) }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "privacy"
                     SettingRow { label: "Telemetry"; help: "No product telemetry is sent. Kubernetes and explicitly confirmed authentication contact the configured endpoints."; Label { objectName: "privacyTelemetry"; text: "Off"; font.bold: true } }
                     SettingRow { label: "Secret values"; help: "Loaded Secret values and diff previews are masked. Explicitly revealed values and self-entered local YAML drafts may be visible."; Label { text: "Masked by default" } }
-                    SettingRow { label: "YAML document / patch limit"; help: "Positive whole MiB. Default 3 MiB. Checked before sending, not by interrupting running requests."; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "YAML document and patch limit in MiB" } Button { objectName: "inlineSaveYamlLimit"; text: "Save"; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
+                    SettingRow { label: "YAML document / patch limit"; help: "Positive whole MiB. Default 3 MiB. Checked before sending, not by interrupting running requests."; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "YAML document and patch limit in MiB" } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "inlineSaveYamlLimit"; text: "Save"; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
                     SettingRow { label: "Request audit retention"; help: "At most 200 completed requests in memory. No authorization headers, response bodies, log contents or query parameters are retained. Diagnostics refresh explicitly."; Label { text: "In memory only" } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "workspace"
                     SettingRow { label: "Workspace restoration"; help: "Reopen saved tabs on next launch. Off starts with closed tabs but retains sessions and their view preferences. Changing this does not close current tabs or port forwards; forwards never restart automatically."; CheckBox { objectName: "inlineWorkspaceRestore"; text: "Restore tabs on launch"; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: "Restore workspace tabs on launch"; onClicked: workspace.saveWorkspaceRestore(checked) } }
-                    SettingRow { label: "Session configuration"; help: "Save closed configuration snapshots or independent copies without changing the active session."; Button { objectName: "settingsManageSessions"; text: "Manage sessions"; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
-                    SettingRow { label: "Resource columns"; help: "Show, hide, order, resize and pin columns. Saved layouts are not overwritten by new defaults."; Button { objectName: "settingsResourceColumns"; text: "Configure resource columns"; onClicked: resourceColumns.open() } }
-                    SettingRow { label: "Event columns"; help: "Event layouts are independent from resource layouts."; Button { objectName: "settingsEventColumns"; text: "Configure Event columns"; onClicked: eventColumns.open() } }
-                    SettingRow { label: "Saved views"; help: "Reload persisted layouts and filters without querying Kubernetes."; Button { objectName: "settingsReloadViews"; text: "Reload saved views"; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
+                    SettingRow { label: "Session configuration"; help: "Save closed configuration snapshots or independent copies without changing the active session."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsManageSessions"; text: "Manage sessions"; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
+                    SettingRow { label: "Resource columns"; help: "Show, hide, order, resize and pin columns. Saved layouts are not overwritten by new defaults."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsResourceColumns"; text: "Configure resource columns"; onClicked: resourceColumns.open() } }
+                    SettingRow { label: "Event columns"; help: "Event layouts are independent from resource layouts."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsEventColumns"; text: "Configure Event columns"; onClicked: eventColumns.open() } }
+                    SettingRow { label: "Saved views"; help: "Reload persisted layouts and filters without querying Kubernetes."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsReloadViews"; text: "Reload saved views"; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
-                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } Button { objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
+                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
                     Flow {
                         Layout.fillWidth: true; spacing: 6
                         IconButton { glyph: "ConfigMap"; text: "Browse file"; enabled: !workspace.busy; onClicked: settings.fileRequested() }
@@ -272,7 +272,7 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "diagnostics"
-                    RowLayout { Layout.fillWidth: true; Label { Layout.fillWidth: true; text: "Runtime diagnostics"; font.bold: true } Button { objectName: "refreshSettingsDiagnostics"; text: "Refresh snapshot"; onClicked: settings.refreshDiagnostics() } }
+                    RowLayout { Layout.fillWidth: true; Label { Layout.fillWidth: true; text: "Runtime diagnostics"; font.bold: true } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "refreshSettingsDiagnostics"; text: "Refresh snapshot"; onClicked: settings.refreshDiagnostics() } }
                     Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: settings.diagnosticTimestamp ? "Snapshot: " + new Date(settings.diagnosticTimestamp).toLocaleString(Qt.locale()) : ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
                     ResourceGrid {
                         id: diagnosticGrid

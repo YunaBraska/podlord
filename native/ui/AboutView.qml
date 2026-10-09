@@ -18,7 +18,10 @@ ColumnLayout {
         return Object.keys(groups).map(key => groups[key])
     }
     function openLink(url) { linkError = Qt.openUrlExternally(url) ? "" : "The browser could not open this link. Please try again explicitly." }
-    component LinkButton: Button {
+    component LinkButton: IconButton {
+        glyph: ""
+        showText: true
+        font.bold: true
         required property var modelData
         objectName: "about" + modelData.id; text: modelData.text
         Accessible.description: "Open " + modelData.url + " in the external browser"
@@ -39,9 +42,9 @@ ColumnLayout {
     Label { objectName: "aboutUpdateStatus"; Layout.fillWidth: true; text: workspace.releaseUpdates.state.status; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.releaseUpdates.state.error ? workspace.appearanceColors.danger : workspace.appearanceColors.muted; Accessible.name: text }
     Flow {
         Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6
-        Button { objectName: "aboutCheckUpdates"; text: "Check for updates"; enabled: workspace.releaseUpdates.state.enabled && !workspace.releaseUpdates.state.busy; Accessible.description: "Explicit anonymous release check; automatic checks run once a week"; onClicked: workspace.releaseUpdates.checkNow() }
-        Button { objectName: "aboutDownloadUpdate"; visible: workspace.releaseUpdates.state.available; text: workspace.uiText["update.availableStatus"].replace("{0}", workspace.releaseUpdates.state.latestVersion); Accessible.name: "Download compatible native update"; onClicked: workspace.releaseUpdates.openDownload(); ToolTip.visible: hovered || activeFocus; ToolTip.text: workspace.uiText["update.downloadTip"].replace("{0}", workspace.releaseUpdates.state.latestVersion).replace("{1}", Qt.application.version) }
-        Button { objectName: "aboutReleasePage"; visible: workspace.releaseUpdates.state.releaseUrl !== ""; text: "Release notes"; Accessible.description: "Open the verified project release page; does not install software"; onClicked: workspace.releaseUpdates.openRelease() }
+        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutCheckUpdates"; text: "Check for updates"; enabled: workspace.releaseUpdates.state.enabled && !workspace.releaseUpdates.state.busy; Accessible.description: "Explicit anonymous release check; automatic checks run once a week"; onClicked: workspace.releaseUpdates.checkNow() }
+        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutDownloadUpdate"; visible: workspace.releaseUpdates.state.available; text: workspace.uiText["update.availableStatus"].replace("{0}", workspace.releaseUpdates.state.latestVersion); Accessible.name: "Download compatible native update"; onClicked: workspace.releaseUpdates.openDownload(); ToolTip.visible: hovered || activeFocus; ToolTip.text: workspace.uiText["update.downloadTip"].replace("{0}", workspace.releaseUpdates.state.latestVersion).replace("{1}", Qt.application.version) }
+        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutReleasePage"; visible: workspace.releaseUpdates.state.releaseUrl !== ""; text: "Release notes"; Accessible.description: "Open the verified project release page; does not install software"; onClicked: workspace.releaseUpdates.openRelease() }
     }
     Label { objectName: "aboutUpdateCheckedAt"; Layout.fillWidth: true; visible: workspace.releaseUpdates.state.lastCheckedAt !== ""; text: "Last checked: " + workspace.releaseUpdates.state.lastCheckedAt; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
     Label { text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
@@ -73,18 +76,18 @@ ColumnLayout {
     }
     Flow {
         Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6
-        Button { objectName: "aboutLicense"; text: "License"; Accessible.name: "Podlord MIT license"; onClicked: { licenseDialog.title = "Podlord license"; licenseText.text = workspace.applicationLicense(); licenseDialog.open() } }
-        Button { objectName: "aboutDependencyNotices"; text: "Third-party notices"; Accessible.name: "Read complete bundled dependency license texts"; onClicked: { licenseDialog.title = "Third-party notices"; licenseText.text = workspace.dependencyNotices(); licenseDialog.open() } }
+        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutLicense"; text: "License"; Accessible.name: "Podlord MIT license"; onClicked: { licenseDialog.title = "Podlord license"; licenseText.text = workspace.applicationLicense(); licenseDialog.open() } }
+        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutDependencyNotices"; text: "Third-party notices"; Accessible.name: "Read complete bundled dependency license texts"; onClicked: { licenseDialog.title = "Third-party notices"; licenseText.text = workspace.dependencyNotices(); licenseDialog.open() } }
     }
     Label { Layout.fillWidth: true; text: "Qt, FFmpeg, OpenSSL, yaml-cpp and libvterm retain their own licenses. Podlord's license does not replace their distribution obligations."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-    Label { text: "Sound credits"; font.bold: true }
+    IconButton { id: credits; objectName: "aboutSoundCredits"; glyph: checked ? "Visible" : "Hidden"; text: "Sound credits"; showText: true; checkable: true; Accessible.description: "Expand or collapse bundled sound attribution and source links" }
     Repeater {
-        model: about.visible ? about.soundCredits : []
+        model: about.visible && credits.checked ? about.soundCredits : []
         RowLayout {
             required property var modelData
             Layout.fillWidth: true
             Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.pack.replace(/-/g, " ") + " (" + modelData.count + " sound" + (modelData.count === 1 ? "" : "s") + ") / " + modelData.author + " / " + modelData.license; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            Button { objectName: "aboutSoundSource_" + modelData.pack; text: "Source"; Accessible.name: "Open source for " + modelData.pack; onClicked: about.openLink(modelData.source); ToolTip.visible: hovered || activeFocus; ToolTip.text: modelData.source }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutSoundSource_" + modelData.pack; text: "Source"; Accessible.name: "Open source for " + modelData.pack; onClicked: about.openLink(modelData.source); ToolTip.visible: hovered || activeFocus; ToolTip.text: modelData.source }
         }
     }
     Label { objectName: "aboutLinkError"; Layout.fillWidth: true; visible: text !== ""; text: about.linkError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
