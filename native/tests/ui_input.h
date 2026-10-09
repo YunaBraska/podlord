@@ -4,6 +4,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QPointer>
+#include <QSignalSpy>
 #include <QWheelEvent>
 #include <QTest>
 #include <cstdio>
@@ -53,7 +54,10 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
         window->requestActivate();
     }
     const QPointer<QQuickItem> retained(target);
-    if (!QTest::qWaitFor([&] { return retained && target->width() > 0 && target->height() > 0; }, 2000)) return false;
+    QSignalSpy initialFrame(window,&QQuickWindow::frameSwapped);
+    window->update();
+    (void)initialFrame.wait(1000);
+    if (!retained) return false;
     QElapsedTimer clock; clock.start();
     bool wheeled = false;
     QPointF wheelPosition;
@@ -83,7 +87,11 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
                 }
                 return false;
             }
-            const bool fits=retained && QRectF(0,0,window->width(),window->height()).contains(target->mapToScene({target->width()/2,target->height()/2}));
+            QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
+            (void)frames.wait(1000);
+            if (!retained) return false;
+            if (clippedBy()) continue;
+            const bool fits=QRectF(0,0,window->width(),window->height()).contains(target->mapToScene({target->width()/2,target->height()/2}));
             if (!fits) std::fprintf(stderr,"Pointer target %s is outside the window=%dx%d at=(%g,%g) size=%gx%g\n",qPrintable(target->objectName()),window->width(),window->height(),bounds.x(),bounds.y(),bounds.width(),bounds.height());
             return fits;
         }
