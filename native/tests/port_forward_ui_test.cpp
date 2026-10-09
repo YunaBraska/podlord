@@ -295,8 +295,16 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "switch") {
         if (!workspace.openContext(source->contexts.last().id) || !waitFor([&] { return !workspace.busy(); }) || !workspace.property("portForwards").toList().isEmpty()) return false;
     }
+    const auto failed = [&](const char* stage) {
+        std::fprintf(stderr,"Forward stage failed: %s; scenario=%s busy=%d loading=%d forwards=%lld error=%s transport=%s\n",
+            stage,qPrintable(scenario),workspace.busy(),workspace.loading(),static_cast<long long>(workspace.portForwards().size()),
+            qPrintable(workspace.error()),qPrintable(workspace.portForwardError()));
+        const auto evidence=qEnvironmentVariable("PODLORD_FORWARD_FRAME");
+        if (!evidence.isEmpty()) window->grabWindow().save(evidence+".failure.png","PNG");
+        return false;
+    };
     QTcpSocket client; client.connectToHost(QHostAddress::LocalHost, localPort);
-    if (!waitFor([&] { return client.state() == QAbstractSocket::ConnectedState; })) return false;
+    if (!waitFor([&] { return client.state() == QAbstractSocket::ConnectedState; })) return failed("local connection");
     const QByteArray message = real ? QByteArray("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         : scenario == "bulk" ? QByteArray(2 * 1024 * 1024, 'b')
         : scenario == "large_frame" ? QByteArray(256 * 1024, 'l') : QByteArray::fromHex("00017f80ff010203706f646c6f7264");
@@ -583,7 +591,7 @@ bool run(const QString& scenario, const QString& configPath) {
         return false;
     }
     const auto frame = qEnvironmentVariable("PODLORD_FORWARD_FRAME");
-    if (!frame.isEmpty()) { if (!click("portForwardTasksButton")) return false; QTest::qWait(120); if (!window->grabWindow().save(frame)) return false; QTest::keyClick(window, Qt::Key_Escape); }
+    if (!frame.isEmpty()) { if (!click("portForwardTasksButton")) return failed("open Ports for evidence"); QTest::qWait(120); if (!window->grabWindow().save(frame)) return failed("capture Ports"); QTest::keyClick(window, Qt::Key_Escape); }
     client.abort();
     if (scenario == "real_context_removal" || scenario == "real_context_draft" || scenario == "context_removal") {
         if (scenario == "real_context_draft") {
@@ -614,12 +622,12 @@ bool run(const QString& scenario, const QString& configPath) {
     } else if (scenario == "close") {
         if (!workspace.close(workspace.currentSession()) || !waitFor([&] { return !workspace.busy(); })) return false;
     } else {
-        if (!click("preparePortForward") || named("startPortForward")->isVisible()) return false;
+        if (!click("preparePortForward") || named("startPortForward")->isVisible()) return failed("reopen existing forward controls");
         if (scenario == "repeat" && (workspace.startPreparedPortForward(QString::number(localPort), "8080") || workspace.portForwards().size() != 1)) return false;
-        if (!click("stopPortForward")) return false;
+        if (!click("stopPortForward")) return failed("stop existing forward");
     }
     QTcpServer reusable;
-    if (!waitFor([&] { return workspace.property("portForwards").toList().isEmpty(); }) || !reusable.listen(QHostAddress::LocalHost, localPort) || !safe) return false;
+    if (!waitFor([&] { return workspace.property("portForwards").toList().isEmpty(); }) || !reusable.listen(QHostAddress::LocalHost, localPort) || !safe) return failed("release local listener");
     if (scenario == "reuse") {
         reusable.close();
         if (!click("preparePortForward")) return false;

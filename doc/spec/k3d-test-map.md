@@ -5034,3 +5034,153 @@ native accessibility children became unavailable; titlebar/coordinate/keyboard
 attempts did not restore reliable interaction. Only the reference Settings image
 was captured. This partial comparison does not clear the paired view/theme matrix;
 the fixture completion marker requests cleanup, not parity approval.
+
+### How are sorting and Radar selection kept cheap without stale identities?
+
+The canonical resource snapshot prepares one sort column at the explicit sort
+boundary. Publishing any new snapshot invalidates those keys before model
+notifications; age remains clock-dependent and is not cached. Radar retains
+canonical cache indices for full-cache identities and maps only visible tiles
+to the current filter/sort projection. Selected resources retain their path,
+not a mutable sorted row number.
+
+| Behavior | Public entrypoint | Test / evidence | Remaining gap |
+| --- | --- | --- | --- |
+| Sorting after changed values, insertions, removals, missing values, ties, column changes and numeric input | ResourceTable / ResourceFilter model API | `native.filter.sort_refresh`, `sort_insert`, `sort_remove`, `sort_missing`, `sort_ties`, `sort_changed_column`, `sort_numeric`; `2026-10-09-sort-key-regressions.xml` | Physical table interaction matrix |
+| No-sort, Unicode, cluster fallback and clock-dependent age | ResourceTable / ResourceFilter model API | `native.filter.sort_none`, `sort_unicode`, `sort_cluster`, `sort_future_age` | None for these scoped paths |
+| Radar selection survives sorting, is unavailable when filtered out, and disappears on deletion | RadarIsland selection and visible tile models | `radar-reference-selection_sort`, `radar-reference-selection_filter`, `radar-reference-selection_remove`; `2026-10-09-radar-index-regressions.xml` | Paired physical rendering |
+| Full-cache discovery reaches table and Radar for standard and custom Kubernetes resources | Actual local Kubernetes API through native UI | `native-search-e2e` / `real_search`; `2026-10-09-discovery-search-kubernetes/` | Complete combined lane and paired physical rendering |
+
+The sort-key scoped lane passed 119 executions; the Radar-index scoped lane
+passed 155. `2026-10-09-radar-index-clean-performance/` passes the unchanged
+headless/software gates: filter p95 34.45 ms, sort 43.38 ms, cached tabs 46.26 ms,
+cached inspector 25.91 ms, peak RSS 192,806,912 bytes, steady growth 442,368 bytes,
+and 60,002 ms nonsync idle at 0.841% of one core. This is not physical macOS
+foreground or installed-startup evidence.
+
+The subsequent physical attempt in
+`2026-10-09-sort-radar-desktop-performance/` could not establish an active
+foreground window. Desktop control explicitly reported a locked Mac. The
+earlier accessibility/focus loss is therefore not sufficient evidence of an
+application defect, and the physical performance/view/theme gates remain open.
+
+### Which subsequent release checks have executable evidence?
+
+The complete instrumented lane in `2026-10-09-sort-radar-complete-suite.log`
+passed all 4,226 executions in 479.62 seconds including preflight: 3,091 behavior
+executions and 1,135 style variants. Its immutable coverage archive is
+`2026-10-09-sort-radar-coverage/`: line 97.45%, branch 83.18%. The branch gate
+still fails; passing test executions are not a substitute for the 90% gate.
+
+`2026-10-09-alert-document-boundaries/` subsequently passed all 91 scoped alert
+store executions, including 49 new persisted-document rejection cases. They
+exercise `AlertStore::load` and `save` through actual private files: wrong field
+types, unsupported colors, identity/matcher shape, malformed JSON, non-object
+roots, unknown built-ins, oversized documents and numeric type/range/integrality
+boundaries. Every rejection retains the exact file bytes. The combined source
+coverage in `2026-10-09-alert-document-coverage/` is line 97.45%, branch 83.44%,
+still below the branch gate. These additions do not claim a second complete
+suite run or change any product implementation.
+
+`native-search-e2e` checks discovered cache rows by kind and owned name prefix,
+then checks global search and Radar projection separately. Global search also
+matches related-resource values, so a Service-name search is not a valid
+Service-only discovery count. The focused lane passed ConfigMaps, Secrets,
+Deployments, StatefulSets, DaemonSets, CronJobs, PVCs, Services, ServiceAccounts,
+Jobs, Namespaces, the multi-container Pod and eight actual custom `RadarProbe`
+objects. Regex, alternatives, invalid input and reset remain cache-only queries.
+Its owned cluster and temporary profiles were removed.
+
+`2026-10-09-sort-radar-kubernetes-e2e/` failed an incorrect Service-only global
+search expectation; the test was corrected without changing search behavior.
+The subsequent combined attempt in `2026-10-09-sort-radar-kubernetes-final/`
+failed intermittently at `real_service`. Stage diagnostics and failure frames
+were added, and `2026-10-09-forward-stage-kubernetes/` passed all four focused
+Pod/Service/context-removal/draft-removal cases. That pass does not establish the
+cause of the intermittent combined-lane failure. `native-forward-e2e` provides
+the shorter real-cluster reproduction lane with the same ownership cleanup.
+
+The fresh private arm64 package in `2026-10-09-sort-radar-private-package/`
+passes dependency-path and size preflights: 32,459,011 ZIP bytes and 85,883,451
+installed regular-file bytes. Executable SHA-256:
+`d401f1ef38c10fb48064d6c6fc4773777ae6dc0c93621aadcd02f4236144cf0e`;
+ZIP SHA-256:
+`6d8fd5b4dee3d3cb1fd2b75d6121b40c55342a697f9f56c87a7c13a3eeeeea63`.
+All 27 packaged dependency-boundary tests, seven Cocoa event-loop startup cases,
+five CLI metadata cases and three actual mutual-TLS trust/rejection cases pass.
+The package intentionally bundles Cocoa, not the headless `offscreen` plugin;
+an earlier offscreen startup invocation was invalid for this package. Cocoa
+startup does not establish active-foreground rendering or performance.
+Signing/notarization remain deliberately deferred; physical parity, performance,
+supported-device evidence and the remaining branch gate are not cleared.
+
+`2026-10-09-kubernetes-complete-stable/` subsequently passed the entire combined
+native lane against its owned local cluster: all five interactive-terminal
+scenarios, window transfer and isolated forwards, all four forward/removal
+scenarios, deletion and race observation, inspector history, discovery/search,
+metrics and all 38 native Radar theme captures, health/Radar and cached field
+filters. The fixture removed its owned container, volumes and temporary profiles.
+The test script and executable hashes are retained. This is actual local API
+and native headless evidence, not a paired physical C#/C++ matrix, and does not
+explain the preceding intermittent Service test failure.
+
+The subtraction review keeps sort preparation private to ResourceTable and its
+sorting proxy. Its helper-only test was removed rather than exposing cache
+internals as a product API. Remaining sort tests drive the public model/proxy
+boundary. Existing `native.ui.markup` and `native.ui.inspector_markup` passed in
+the complete lane, covering untrusted resource markup without render-time image
+requests; no parallel presentation-sanitizer implementation was added.
+
+### What do the latest physical Settings comparisons and runner corrections prove?
+
+`2026-10-09-current-desktop-parity-final/` contains actual C# and C++ captures
+for Alerts, Appearance, Diagnostics, Graphics, Privacy, Sources, Sync,
+Workspace and About. Each `*-side-by-side.png` keeps both original images
+unchanged, with C# left and C++ right and a separate label strip. This is one
+physical palette comparison, not the complete views/themes/device matrix.
+The native captures precede the compact row-limit/preset layout below. Resource
+counts differed between the two independently populated caches, so these frames
+do not establish resource-set equality or identical topology for different sets.
+
+The row limit now sits beside Problems/Activity on wide sidebars and immediately
+below them on narrow ones, before the field filters. The preset name, dropdown,
+Save and actions share one row. `2026-10-09-limit-placement/` records four failing
+layout regressions before the fix and 78 passing limit/preset/sidebar/style
+executions afterwards. Limits still affect displayed table rows only, not cache,
+Radar or alarm scope. The compact dropdown must retain a readable popup; the
+`preset_overwrite` public UI flow now checks that its saved name fits before
+selection. `2026-10-09-preset-popup/before.xml` records both styles failing with
+the original 32-pixel popup.
+
+Audio repeat tests now use the same GUI/Cocoa event loop as the application,
+inside a background-only `LSUIElement` test bundle without a window. The prior
+Core-only helper timed out for 116 repeat cases in the existing Homebrew build;
+the GUI helper passes all 116 there and in the official SDK build. No decoder
+reset or other speculative production playback change remains. The application
+continues to use its owned media player directly; it does not launch a terminal
+or test helper per sound. Evidence: `2026-10-09-audio-backend-boundary/` and
+`2026-10-09-current-sdk-boundaries/`, respectively 118 and 168 scoped passing
+executions including the two runner-argument cases.
+
+`scripts/test-native.sh` selects its build only through
+`PODLORD_NATIVE_BUILD_DIR`, never a positional argument. Extra and empty
+arguments now fail explicitly before tools or profiles are touched, as tested
+by `native.runner.argument_extra` and `native.runner.argument_empty`. A previous
+argument-based invocation tested the existing Homebrew directory, not the
+intended official SDK directory. The subsequent correctly addressed SDK run
+passed all 4,274 test executions, but editing its running POSIX shell file
+invalidated the post-test script stream. Its log is retained in
+`2026-10-09-official-current-complete-suite.log`; that run proves those tests,
+not fresh coverage. Later complete runs use an immutable adjacent script copy
+and archive it with their evidence.
+
+`2026-10-09-current-metal-performance/` is actual foreground Cocoa/Metal data,
+not a headless substitute: filter p95 32.78 ms, sort p95 66.76 ms, cached-tab p95
+141.11 ms, cached-inspector p95 108.28 ms, maximum RSS 276,365,312 bytes. Tabs,
+inspector and the 250 MB memory gate fail. Foreground was lost after 31.19
+seconds, so the 60-second idle gate is also unproven. The measurement helper
+previously requested macOS window activation before every measured action;
+it now activates once and rejects foreground loss instead of including
+repeated OS activation work in ordinary in-app tab/filter timings. A fresh
+foreground run is required before claiming any resulting gain. The acceptance
+limits and complete loaded-data workload remain unchanged.

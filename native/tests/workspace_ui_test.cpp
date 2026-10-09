@@ -3216,7 +3216,30 @@ bool realSearchCluster(const QString& source) {
     if (!click(window,item(window,"openContext")) || !waitFor([&] { return workspace.totalResourceCount()>=1051 && !workspace.loading(); },120000)) {
         std::fprintf(stderr,"Real search load: total=%d; %s; %s\n",workspace.totalResourceCount(),qPrintable(workspace.error()),qPrintable(workspace.status())); return false;
     }
+    const QMap<QString,QPair<QString,int>> expectedKinds{
+        {"ConfigMap",{"visual-config-",512}}, {"Secret",{"visual-secret-",256}},
+        {"Deployment",{"visual-worker-",64}}, {"StatefulSet",{"visual-state-",32}},
+        {"DaemonSet",{"visual-daemon-",32}}, {"CronJob",{"visual-scheduled-",32}},
+        {"PersistentVolumeClaim",{"visual-pending-storage-",32}}, {"Service",{"visual-service-",64}},
+        {"ServiceAccount",{"visual-account-",16}}, {"Job",{"visual-suspended-job",8}},
+        {"Namespace",{"visual-",8}}, {"RadarProbe",{"visual-radar-probe",8}},
+        {"Pod",{"visual-multi-container",1}}};
+    QMap<QString,int> discovered;
+    for (int row=0;row<workspace.table()->rowCount();++row) {
+        const auto index=workspace.table()->index(row,0);
+        const auto kind=index.data(Qt::UserRole+2).toString();
+        const auto found=expectedKinds.constFind(kind);
+        if (found!=expectedKinds.cend() && index.data(Qt::UserRole+1).toString().startsWith(found->first))
+            ++discovered[kind];
+    }
+    for (auto it=expectedKinds.cbegin();it!=expectedKinds.cend();++it) {
+        if (discovered.value(it.key())!=it->second) {
+            std::fprintf(stderr,"Real discovery %s: count=%d expected=%d\n",qPrintable(it.key()),discovered.value(it.key()),it->second);
+            return false;
+        }
+    }
     const QList<QPair<QString,int>> queries{{"~visual-config-",512},{"~visual-secret-",256},
+        {"\"visual-radar-probe\"",8},
         {"/^visual-config-000[1-3]$/",24},{"\"visual-config-0001\" \"visual-secret-0001\"",16},
         {"/[/",0},{"not-a-resource-in-this-owned-cluster",0}};
     for (const auto& query:queries) {
@@ -3233,7 +3256,7 @@ bool realSearchCluster(const QString& source) {
     if (!waitFor([&] { return item(window,"resourceRadar")->property("count").toInt()==24; })) return false;
     const auto screenshot=qEnvironmentVariable("PODLORD_E2E_SCREENSHOT");
     if (!screenshot.isEmpty()) { QTest::qWait(50); if (!window->grabWindow().save(screenshot,"PNG")) return false; }
-    std::printf("Real Kubernetes search: 512 ConfigMaps, 256 Secrets, regex 24, alternatives 16; radar/table agree; invalid/empty/reset verified.\n");
+    std::printf("Real Kubernetes discovery/search: ConfigMaps, Secrets, workloads, storage, services, accounts, namespaces, error Pods and custom RadarProbes; radar/table agree; regex, alternatives, invalid/empty/reset verified.\n");
     return true;
 }
 bool applicationBoundary(const QString& scenario, const QString& binary) {

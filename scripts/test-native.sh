@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+[ "$#" -eq 0 ] || { printf 'No arguments are supported. Set PODLORD_NATIVE_BUILD_DIR to select the build directory.\n' >&2; exit 2; }
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
 find_tool() {

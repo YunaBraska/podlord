@@ -114,14 +114,63 @@ bool run(const QString& scenario) {
         return scenario=="legacy_descriptions_save" && std::holds_alternative<podlord::AlertCatalog>(store.save(catalog,catalog))
             && file.open(QIODevice::ReadOnly) && !file.readAll().contains("Built-in desktop alert");
     }
-    if (scenario=="future") root["version"]=2;
+    if (scenario.startsWith("document_")) {
+        const auto action=scenario.mid(9);
+        auto rules=root["rules"].toArray(); auto rule=rules.last().toObject();
+        const QMap<QString,QPair<QString,QJsonValue>> mutations{
+            {"enabled_type",{"enabled","false"}}, {"builtin_type",{"builtIn","false"}},
+            {"id_type",{"id",1}}, {"id_empty",{"id",""}}, {"name_type",{"name",true}},
+            {"description_type",{"description",false}}, {"color_type",{"color",1}},
+            {"color_named",{"color","red"}}, {"color_hex",{"color","#xyz"}},
+            {"color_mode_type",{"colorMode",1}}, {"animation_type",{"animation",false}},
+            {"animation_mode_type",{"animationMode",1}}, {"sound_type",{"sound",1}},
+            {"groups_type",{"groups",QJsonObject{}}}, {"unknown_builtin",{"builtIn",true}},
+            {"oversized",{"description",QString(70000,'x')}}};
+        if (mutations.contains(action)) { const auto mutation=mutations.value(action); rule[mutation.first]=mutation.second; }
+        else if (action=="same_size_missing_key") { rule.remove("description"); rule["unsupported"]=false; }
+        else if (action=="group_type") rule["groups"]=QJsonArray{QJsonObject{}};
+        else if (action.startsWith("number_")) {
+            const auto parts=action.mid(7).split('_');
+            const QMap<QString,QPair<int,int>> bounds{{"colorSeconds",{1,60}}, {"animationSeconds",{1,60}},
+                {"zoom",{0,200}}, {"soundMinimumMatches",{1,2147483647}}};
+            if (parts.size()!=2 || !bounds.contains(parts[0])) return false;
+            const auto range=bounds.value(parts[0]);
+            if (parts[1]=="type") rule[parts[0]]="1";
+            else if (parts[1]=="low") rule[parts[0]]=double(range.first)-1;
+            else if (parts[1]=="high") rule[parts[0]]=double(range.second)+1;
+            else if (parts[1]=="fraction") rule[parts[0]]=1.5;
+            else return false;
+        } else if (action.startsWith("criterion_")) {
+            QJsonObject criterion{{"field","name"},{"expression","alpha"}};
+            if (action=="criterion_keys") criterion["extra"]=1;
+            else if (action=="criterion_field_type") criterion["field"]=1;
+            else if (action=="criterion_expression_type") criterion["expression"]=false;
+            else if (action=="criterion_empty") criterion["expression"]=" ";
+            else if (action=="criterion_regex_unclosed") criterion["expression"]="/alpha";
+            else if (action=="criterion_regex_empty") criterion["expression"]="//";
+            else if (action=="criterion_exact_unclosed") criterion["expression"]="\"alpha";
+            else if (action!="criterion_type") return false;
+            rule["groups"]=QJsonArray{QJsonValue(QJsonArray{action=="criterion_type" ? QJsonValue(1) : QJsonValue(criterion)})};
+        } else if (action=="muted_type") root["muted"]=1;
+        else if (action=="reduced_motion_type") root["reducedMotion"]="false";
+        else if (action=="version_fraction") root["version"]=1.5;
+        else if (action=="rules_type") root["rules"]=QJsonObject{};
+        else if (action=="entry_type") { rules.append(1); root["rules"]=rules; }
+        else if (action!="json" && action!="array") return false;
+        if (mutations.contains(action) || action=="same_size_missing_key" || action=="group_type"
+            || action.startsWith("number_") || action.startsWith("criterion_")) {
+            rules[rules.size()-1]=rule; root["rules"]=rules;
+        }
+    }
+    else if (scenario=="future") root["version"]=2;
     else if (scenario=="extra_root") root["unknown"]=true;
     else if (scenario=="duplicate") { auto rules=root["rules"].toArray(); rules.append(rules.last()); root["rules"]=rules; }
     else if (scenario=="locked") { auto rules=root["rules"].toArray(); auto rule=rules[0].toObject(); rule["name"]="Changed built-in"; rules[0]=rule; root["rules"]=rules; }
     else if (scenario=="locked_description") { auto rules=root["rules"].toArray(); auto rule=rules[0].toObject(); rule["description"]="Changed built-in"; rules[0]=rule; root["rules"]=rules; }
     else if (scenario=="malformed") root={};
     else return false;
-    const auto invalid=QJsonDocument(root).toJson(); if (!file.open(QIODevice::WriteOnly|QIODevice::Truncate) || file.write(invalid)!=invalid.size()) return false; file.close();
+    const auto invalid=scenario=="document_json" ? QByteArray("{") : scenario=="document_array" ? QByteArray("[]") : QJsonDocument(root).toJson();
+    if (!file.open(QIODevice::WriteOnly|QIODevice::Truncate) || file.write(invalid)!=invalid.size()) return false; file.close();
     if (!std::holds_alternative<podlord::Failure>(store.load()) || !std::holds_alternative<podlord::Failure>(store.save(desired, desired))) return false;
     if (!file.open(QIODevice::ReadOnly)) return false; return file.readAll()==invalid;
 }

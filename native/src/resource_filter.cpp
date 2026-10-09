@@ -10,6 +10,10 @@ ResourceFilter::ResourceFilter(QObject* parent) : QSortFilterProxyModel(parent) 
     setFilterRole(Qt::UserRole);
     setFilterKeyColumn(-1);
 }
+void ResourceFilter::sort(int column, Qt::SortOrder order) {
+    if (auto* rows = qobject_cast<ResourceTable*>(sourceModel())) rows->prepareSort(column);
+    QSortFilterProxyModel::sort(column, order);
+}
 Result<QList<ResourceFilter::Token>> ResourceFilter::compile(const QString& text) {
     if (text.toUtf8().size() > 65536)
         return Failure{StoreError::InvalidInput, "The filter exceeds the 64 KiB expression boundary."};

@@ -66,6 +66,39 @@ bool exercise(const QStringList& args) {
         return matched == wanted.size();
     };
     if (args[1] == "reference") return check(expected);
+    if (args[1] == "selection_sort" || args[1] == "selection_filter" || args[1] == "selection_remove") {
+        const int selected = filter->rowCount()/2;
+        const auto path = filter->index(selected, 0).data(Qt::UserRole).toString();
+        if (!geometry.selectResource(selected)) return false;
+        if (args[1] == "selection_sort") {
+            filter->sort(0, Qt::DescendingOrder);
+            const int actual = geometry.currentIndex();
+            if (actual < 0 || filter->index(actual, 0).data(Qt::UserRole).toString() != path) return false;
+            QTest::qWait(30);
+            const auto names = roles(geometry.tiles());
+            for (int row = 0; row < geometry.tiles()->rowCount(); ++row) {
+                const auto tile = geometry.tiles()->index(row, 0);
+                const int index = tile.data(names["resourceIndex"]).toInt();
+                if (filter->index(index, 0).data(Qt::UserRole) != tile.data(names["resourcePath"])) return false;
+            }
+            return check(expected);
+        }
+        if (args[1] == "selection_filter") {
+            if (!filter->filter("\"no-reference-resource-has-this-name\"") || geometry.currentIndex() != -1) return false;
+            if (!filter->filter({})) return false;
+            QTest::qWait(30);
+            const int actual = geometry.currentIndex();
+            return actual >= 0 && filter->index(actual, 0).data(Qt::UserRole).toString() == path && check(expected);
+        }
+        QJsonArray retained;
+        for (const auto value : rows) if (value.toObject()["path"].toString() != path) retained.append(value);
+        if (!cache->publish(retained, document["cluster"].toString()) || geometry.currentIndex() != -1) return false;
+        QTest::qWait(30);
+        const auto names = roles(geometry.tiles());
+        for (int row = 0; row < geometry.tiles()->rowCount(); ++row)
+            if (geometry.tiles()->index(row, 0).data(names["resourcePath"]).toString() == path) return false;
+        return true;
+    }
     if (args[1] == "cached_scope_replay" || args[1] == "cached_scope_hit") {
         const auto scope = document["sessionId"].toString();
         const int visited = args[1] == "cached_scope_hit" ? 2 : 4;

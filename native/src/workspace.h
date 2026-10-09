@@ -34,9 +34,13 @@ public:
     QJsonObject row(int index) const;
     bool setAppearance(const Appearance& appearance);
 private:
+    friend class ResourceFilter;
+    void prepareSort(int column);
     const QStringList fields_, captions_;
     const QString identityField_;
     QList<QJsonObject> rows_;
+    QList<QVariant> sortValues_;
+    int sortValueColumn_ = -1;
     Appearance appearance_;
     QString cluster_;
 };
@@ -45,6 +49,7 @@ class ResourceFilter : public QSortFilterProxyModel {
     Q_PROPERTY(QString error READ error NOTIFY filterStateChanged)
 public:
     explicit ResourceFilter(QObject* parent = nullptr);
+    void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
     Q_INVOKABLE bool filter(const QString& text, const QMap<QString, QString>& fields = {}, const QString& mode = {});
     static QStringList exactValues(const QString& expression);
     static Result<QString> selectValue(const QString& expression, const QString& value, bool selected);
