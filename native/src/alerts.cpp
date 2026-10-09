@@ -276,7 +276,7 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
     connect(&expiry_, &QTimer::timeout, this, [this] { for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); });
     connect(client_, &ResourceClient::rowsChanged, this, [this](const QString& session) { queue(session); });
     connect(client_, &ResourceClient::changed, this, [this](const QString& session) {
-        if (session.isEmpty() || closed_.contains(session)) return;
+        if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return;
         const bool loading = !client_->initialSyncComplete(session);
         if (states_[session].loading != loading) { states_[session].loading = loading; queue(session); }
     });
@@ -405,7 +405,7 @@ bool Alerts::persist(AlertCatalog desired) {
     connect(watcher, &QFutureWatcher<Result<AlertCatalog>>::finished, this, [this, watcher] {
         const auto result=watcher->result(); watcher->deleteLater(); busy_=false;
         if (const auto* failure=std::get_if<Failure>(&result)) error_=failure->message;
-        else { catalog_=std::get<AlertCatalog>(result); error_.clear(); if (catalog_.muted && player_) player_->stop(); for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); }
+        else { catalog_=std::get<AlertCatalog>(result); error_.clear(); if (catalog_.muted && player_) player_->stop(); for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); emit catalogSaved(); }
         emit rulesChanged();
     });
     const auto profile=profile_; const auto expected=catalog_;
@@ -457,9 +457,31 @@ bool Alerts::setVisibleResources(const QString& session, const QStringList& path
     return true;
 }
 bool Alerts::closeSession(const QString& session) { closed_.insert(session); pending_.remove(session); states_.remove(session); if (session == shown_) ++zoomPreviewGeneration_; return true; }
+bool Alerts::setSessionOwnership(std::function<bool(const QString&)> owns) {
+    if (!owns) return false;
+    owns_ = std::move(owns); return true;
+}
+bool Alerts::synchronizeCatalog(const Alerts& source) {
+    if (&source == this || source.profile_ != profile_ || !source.ready_) return false;
+    catalog_ = source.catalog_; ready_ = true; error_.clear();
+    if (catalog_.muted && player_) player_->stop();
+    for (auto it = states_.cbegin(); it != states_.cend(); ++it) queue(it.key());
+    emit rulesChanged(); return true;
+}
+bool Alerts::transferSession(const QString& session, Alerts& target) {
+    if (&target == this || session.isEmpty() || client_ != target.client_) return false;
+    if (states_.contains(session)) {
+        auto state = states_.take(session); ++state.generation;
+        target.states_.insert(session, std::move(state));
+    }
+    pending_.remove(session); closed_.insert(session); ++zoomPreviewGeneration_;
+    target.closed_.remove(session); target.queue(session);
+    if (states_.isEmpty()) expiry_.stop();
+    return true;
+}
 QVariantMap Alerts::effect(const QString& path) const { const auto state=states_.constFind(shown_); return state==states_.cend() ? QVariantMap{} : state->effects.value(path); }
 bool Alerts::queue(const QString& session) {
-    if (session.isEmpty() || closed_.contains(session)) return false;
+    if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return false;
     ++states_[session].generation; pending_.insert(session); return dispatch();
 }
 bool Alerts::dispatch() {

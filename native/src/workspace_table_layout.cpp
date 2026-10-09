@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "workspace_runtime.h"
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -82,7 +83,12 @@ bool Workspace::saveTableLayout(const QString& table, const QVariantList& column
         const auto result = watcher->result(); watcher->deleteLater();
         tableLayoutSaving_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) tableLayoutError_ = failure->message;
-        else if (const auto& layouts = std::get<TableLayouts>(result); layouts != tableLayouts_) { tableLayouts_ = layouts; emit tableLayoutChanged(); }
+        else if (const auto& layouts = std::get<TableLayouts>(result); layouts != tableLayouts_) {
+            tableLayouts_ = layouts; emit tableLayoutChanged();
+            for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_) {
+                other->tableLayouts_ = layouts; emit other->tableLayoutChanged();
+            }
+        }
         emit tableLayoutStatusChanged();
     });
     watcher->setFuture(QtConcurrent::run([profile = profile_, schemas, table, value, expected = tableLayouts_.value(table)] {

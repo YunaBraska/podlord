@@ -106,9 +106,16 @@ SES-025 through real QML controls, the existing request owner and actual local
 TCP traffic. Pod and named-Service forwarding, stopping and port reuse also
 pass against an owned local Kubernetes cluster. [ADR 0030](../adr/0030-native-port-forward-transport-and-session-ownership.md)
 owns transport/lifecycle decisions; [the test map](k3d-test-map.md#what-proves-native-pod-and-service-port-forwarding)
-owns execution evidence and remaining gaps. Detached-window ownership,
-complete upgrade-error classification and installed-app task-table parity remain
-open. These scoped results do not establish full migration or release readiness.
+owns execution evidence and remaining gaps. Native detached windows now share
+the same transport owner and preserve active shells and forward endpoints.
+The owned real Kubernetes window-transfer lane verifies SES-023/024 with two
+independent sessions, live TCP traffic and a retained remote shell variable.
+[ADR 0044](../adr/0044-shared-native-window-ownership.md) owns window placement;
+[the window test map](k3d-test-map.md#what-proves-native-window-ownership-and-transfer)
+records public UI, close-failure and shared-preference coverage. Complete upgrade
+error classification, installed-app task-table parity and physical multiwindow
+presentation remain open. These scoped results do not establish full migration
+or release readiness.
 
 ### How Must The Native Ports Table Behave?
 
@@ -157,8 +164,8 @@ layout document to version 4 without discarding Resources/Events preferences.
 | SES-020, SES-021 | Start a forward in each of two session tabs, then close only one tab. | The closed tab's forward stops; the other tab's forward continues to serve connections. | Planned check; implementation review pending. |
 | SES-022 | Warm a session cache, close its tab, and reopen it before cache expiry. | The cached data remains available according to the existing freshness and display TTL rules. | Planned check; implementation review pending. |
 | SES-022 | Close and reopen a session tab after its existing cache TTL expires. | Reopening does not revive expired cache data or renew its lifetime merely because the tab was closed. | Planned check; implementation review pending. |
-| SES-023 | Start a port-forward in a session tab, move that tab to a detached window, and use the same local endpoint. | The forward remains running with the same local endpoint; moving the tab does not stop or recreate it. | Planned check; implementation review pending. |
-| SES-021, SES-024 | Run forwards in a detached session window and another open session, then close the detached window. | Only the closed window's session forwards stop and release their local ports; the other session's forwards continue. | Planned check; implementation review pending. |
+| SES-023 | Start a port-forward in a session tab, move that tab to a detached window, and use the same local endpoint. | The forward remains running with the same local endpoint; moving the tab does not stop or recreate it. | Passing native `window.forward` Basic/Fusion and owned real Kubernetes `window-host-test real_transfer`; physical installed-app presentation remains open. |
+| SES-021, SES-024 | Run forwards in a detached session window and another open session, then close the detached window. | Only the closed window's session forwards stop and release their local ports; the other session's forwards continue. | Passing native `window.close_isolation` Basic/Fusion and owned real Kubernetes `real_transfer`, including released-port bind and other-session HTTP traffic. |
 | SES-025 | Start forwards in two session tabs and switch between the tabs without closing either. | Both forwards remain running at their existing local endpoints. | Planned check; implementation review pending. |
 | SES-026 | Open a polling log view, then switch to another session tab or hide the log view. | No further polling requests are initiated for the hidden view while it remains hidden. | Planned check; implementation review pending. |
 | SES-027 | Return to a log view with available cached logs while the next refresh is delayed. | Cached logs appear immediately, before the refresh returns; polling resumes while the view is visible. | Planned check; implementation review pending. |

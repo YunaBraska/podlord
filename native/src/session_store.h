@@ -72,6 +72,9 @@ public:
     Result<SessionCatalog> activate(QUuid id) const;
     /** Closes the session without deleting it or its usage history. */
     Result<SessionCatalog> close(QUuid id) const;
+    /** Closes only the specified sessions in one commit. Missing, null or repeated IDs
+     * fail without changing any session, its configuration or usage history. */
+    Result<SessionCatalog> closeSessions(const QList<QUuid>& ids) const;
     /** Atomically clears open placement and activation, retaining sessions, order and usage.
      * Used at startup when workspace restoration is disabled; never stops live transports.
      */

@@ -21,6 +21,10 @@ ApplicationWindow {
     readonly property bool sidebarDocked: wideLayout || compactLandscape
     visible: true
     property bool sourcesExpanded: false
+    readonly property var quickOpenEntries: [{name: "Saved sessions", header: true}]
+        .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
+            [{name: "Imported contexts", header: true}],
+            workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true})))
     FieldFiltersDialog { id: fieldFiltersDialog; controller: workspace }
     Action { id: resourcesCommand; text: "Open Resources"; onTriggered: workspace.setWorkspacePage("resources") }
     Action { id: eventsCommand; text: "Open Events"; onTriggered: workspace.setWorkspacePage("events") }
@@ -34,7 +38,9 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Back]; enabled: workspace.canInspectBack; onActivated: workspace.navigateInspector(-1) }
     Shortcut { sequences: [StandardKey.Forward]; enabled: workspace.canInspectForward; onActivated: workspace.navigateInspector(1) }
     onVisibilityChanged: function(visibility) { workspace.setWindowVisible(visibility !== Window.Hidden && visibility !== Window.Minimized) }
-    onClosing: function(close) { close.accepted = workspace.requestWindowClose() }
+    Component.onCompleted: workspace.attachWindow(window)
+    onActiveChanged: workspace.setWindowFocused(active)
+    onClosing: function(close) { close.accepted = workspace.requestWindowClose(); if (close.accepted) workspace.finishWindowClose() }
     title: "Podlord Native - " + workspace.title
     palette.window: workspace.appearanceColors.app
     palette.windowText: workspace.appearanceColors.text
@@ -432,10 +438,7 @@ ApplicationWindow {
         MenuSeparator {}
         Instantiator {
             active: quickOpenMenu.visible
-            model: [{name: "Saved sessions", header: true}]
-                .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
-                    [{name: "Imported contexts", header: true}],
-                    workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true})))
+            model: window.quickOpenEntries
             delegate: MenuItem {
                 required property var modelData
                 implicitHeight: window.touchLayout ? 44 : 32
@@ -447,9 +450,39 @@ ApplicationWindow {
                 Accessible.name: modelData.header ? text : (modelData.context ? "Open context " : "Open session ") + text
                 onTriggered: modelData.context ? workspace.openContext(modelData.id) : workspace.activate(modelData.id)
             }
-            onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + 2, object)
+            onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + (workspace.windowActionsAvailable ? 3 : 2), object)
             onObjectRemoved: (index, object) => quickOpenMenu.removeItem(object)
         }
+    }
+    Instantiator {
+        model: workspace.windowActionsAvailable ? 1 : 0
+        delegate: Menu {
+            id: quickWindowMenu
+            objectName: "quickOpenWindowMenu"
+            title: "Open in separate window"
+            width: Math.min(360, window.width - 24)
+            height: Math.min(implicitHeight, window.height - 48)
+        Instantiator {
+            active: quickWindowMenu.visible
+            model: window.quickOpenEntries
+            delegate: MenuItem {
+                required property var modelData
+                implicitHeight: window.touchLayout ? 44 : 32
+                objectName: modelData.header ? "" : (modelData.context ? "quickWindowContext_" : "quickWindowSession_") + modelData.id
+                text: modelData.name
+                enabled: !modelData.header && !workspace.busy
+                Accessible.name: "Open " + text + " in a separate window"
+                onTriggered: modelData.context ? workspace.openContext(modelData.id, true) : workspace.openSessionWindow(modelData.id)
+            }
+            onObjectAdded: (index, object) => quickWindowMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => quickWindowMenu.removeItem(object)
+        }
+        }
+        onObjectAdded: (index, object) => {
+            quickOpenMenu.insertMenu(1, object)
+            quickOpenMenu.itemAt(1).objectName = "quickOpenWindow"
+        }
+        onObjectRemoved: (index, object) => quickOpenMenu.removeMenu(object)
     }
     Drawer {
         id: sidebarDrawer
@@ -569,8 +602,10 @@ ApplicationWindow {
                             Menu {
                                 id: tabMenu
                                 MenuItem { objectName: "renameTab_" + modelData.id; text: "Rename session..."; enabled: !workspace.busy; onTriggered: renameSessionDialog.openFor(modelData.id, modelData.name) }
+                                MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: !workspace.busy; onTriggered: workspace.detachSession(modelData.id) }
                             }
                         }
+                        IconButton { objectName: "detachSession_" + modelData.id; glyph: "OpenExternal"; text: "Open " + modelData.name + " in a separate window"; visible: workspace.windowActionsAvailable; enabled: !workspace.busy; onClicked: workspace.detachSession(modelData.id) }
                         IconButton { objectName: "closeSession_" + modelData.id; glyph: "Close"; text: workspace.uiText["action.close"]; Accessible.name: "Close " + modelData.name; enabled: !workspace.busy; onClicked: workspace.close(modelData.id) }
                     }
                 }

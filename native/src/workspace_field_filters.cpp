@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "workspace_runtime.h"
 #include "resource_metrics.h"
 #include <QClipboard>
 #include <QGuiApplication>
@@ -116,7 +117,13 @@ bool Workspace::updateFilterPresets(const std::function<Result<TableViewStates>(
         if (const auto* failure = std::get_if<Failure>(&result)) {
             if (reload) presetsReady_ = false;
             presetsError_ = failure->message;
-        } else { presets_ = std::get<TableViewStates>(result); presetsReady_ = true; presetsError_.clear(); }
+        } else {
+            presets_ = std::get<TableViewStates>(result); presetsReady_ = true; presetsError_.clear();
+            if (!reload) for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_) {
+                other->presets_ = presets_; other->presetsReady_ = true;
+                emit other->filterPresetsChanged(); emit other->fieldFiltersChanged();
+            }
+        }
         emit filterPresetsChanged(); emit fieldFiltersChanged(); emit changed();
         if (viewClosePending_ && !viewSaving_ && pendingViews_.isEmpty() && !viewStateFailed()) emit windowCloseApproved();
     });

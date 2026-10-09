@@ -12,8 +12,12 @@
 #include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
 #include <QVariantList>
+#include <QPointer>
+#include <memory>
 
 namespace podlord {
+class WorkspaceRuntime;
+class WindowHost;
 class ResourceTable final : public QAbstractTableModel {
     Q_OBJECT
 public:
@@ -85,6 +89,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantList sourceImportIssues READ sourceImportIssues NOTIFY changed)
     Q_PROPERTY(QVariantList sessions READ sessions NOTIFY catalogsChanged)
     Q_PROPERTY(QVariantList tabs READ tabs NOTIFY catalogsChanged)
+    Q_PROPERTY(bool windowActionsAvailable READ windowActionsAvailable CONSTANT)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool workspaceRestoreEnabled READ workspaceRestoreEnabled NOTIFY changed)
     Q_PROPERTY(bool loading READ loading NOTIFY changed)
@@ -257,6 +262,12 @@ public:
     explicit Workspace(QString profile, QObject* parent = nullptr, std::function<QDateTime()> now = QDateTime::currentDateTimeUtc,
         QUrl releaseEndpoint = ReleaseUpdates::officialEndpoint());
     ~Workspace() override;
+    Q_INVOKABLE bool detachSession(const QString& id);
+    Q_INVOKABLE bool openSessionWindow(const QString& id);
+    Q_INVOKABLE bool finishWindowClose();
+    Q_INVOKABLE bool attachWindow(QObject* window);
+    Q_INVOKABLE bool setWindowFocused(bool focused);
+    bool windowActionsAvailable() const;
     Alerts* alerts() { return &alerts_; }
     ReleaseUpdates* releaseUpdates() { return &releaseUpdates_; }
     Q_INVOKABLE int alertResourceIndex(const QString& path) const;
@@ -531,7 +542,7 @@ public:
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importK3d();
-    Q_INVOKABLE bool openContext(const QString& context);
+    Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false);
     Q_INVOKABLE bool activate(const QString& id);
     Q_INVOKABLE bool close(const QString& id);
     Q_INVOKABLE bool refresh(bool confirmedAuthentication = false);
@@ -571,7 +582,16 @@ signals:
     void yamlApplyChanged();
     void yamlConflictsChanged();
     void windowCloseApproved();
+    void windowClosed();
 private:
+    friend class WorkspaceRuntime;
+    friend class WindowHost;
+    explicit Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent, bool restore);
+    std::shared_ptr<WorkspaceRuntime> runtime_;
+    const QString viewId_;
+    QPointer<QObject> window_;
+    bool windowFocused_ = true, detached_ = false, windowClosed_ = false, windowCloseReady_ = false;
+    bool prepareWindowClose();
     QVariantMap portForwardTarget_;
     TableViewStates presets_;
     QString presetsError_;
@@ -595,7 +615,7 @@ private:
     bool yamlChecking_ = false;
     QString yamlCheckToken_;
     bool bindYamlApply();
-    enum class Leave { Resource, Session, Context, Tab, Inspector, Window, Draft, Reload, History };
+    enum class Leave { Resource, Session, Context, Tab, Inspector, Window, Draft, Reload, History, Detach };
     struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
     struct Navigation final {
         QString filter, mode;
@@ -646,10 +666,10 @@ private:
     SessionCatalog selection_;
     quint64 selectionRevision_ = 0;
     void refreshSessionSelection();
-    ResourceClient client_;
-    ReleaseUpdates releaseUpdates_;
+    ResourceClient& client_;
+    ReleaseUpdates& releaseUpdates_;
     Alerts alerts_;
-    CredentialProcess credentials_;
+    CredentialProcess& credentials_;
     ResourceTable rows_;
     ResourceFilter table_;
     ResourceTable eventRows_;
@@ -689,9 +709,9 @@ private:
     bool settingsReady_ = false;
     bool busy_ = false;
     bool windowVisible_ = true;
-    bool select(const SessionCatalog& catalog);
+    bool select(const SessionCatalog& catalog, bool local = true);
     bool resolve(const QString& id, bool retry = false);
-    bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, const QString& renamedSession = {}, const QString& managementNotice = {});
+    bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, const QString& renamedSession = {}, const QString& managementNotice = {}, bool inWindow = false);
     bool publish();
     QString activeCluster() const;
     bool publishLogs();

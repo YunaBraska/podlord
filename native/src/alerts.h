@@ -90,7 +90,13 @@ public:
     /** Publishes filtered cache membership. View-entry effects never change global alert matches or schedule transport. */
     bool setVisibleResources(const QString& session, const QStringList& paths);
     bool closeSession(const QString& session);
+    /** Transfer live holds and deduplication without replaying sound or resetting freshness. */
+    bool transferSession(const QString& session, Alerts& target);
+    bool setSessionOwnership(std::function<bool(const QString&)> owns);
+    /** Publish a successfully persisted same-profile catalog without a second disk read. */
+    bool synchronizeCatalog(const Alerts& source);
 signals:
+    void catalogSaved();
     void rulesChanged();
     void presentationChanged();
     void tableSortChanged();
@@ -116,6 +122,7 @@ private:
     const QString profile_;
     ResourceClient* const client_;
     const std::function<QDateTime()> now_;
+    std::function<bool(const QString&)> owns_ = [](const QString&) { return true; };
     AlertCatalog catalog_;
     QStandardItemModel ruleRows_{this};
     QSortFilterProxyModel table_{this};

@@ -1,4 +1,7 @@
 #include "workspace.h"
+#include "workspace_runtime.h"
+#include "window_host.h"
+#include <QQuickWindow>
 #include "resource_guidance.h"
 #include "runtime_diagnostics.h"
 #include <QDir>
@@ -198,7 +201,12 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     }
     return true;
 }
-Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()> now, QUrl releaseEndpoint) : QObject(parent), profile_(std::move(profile)), client_(nullptr, now), releaseUpdates_(profile_, this, now, std::move(releaseEndpoint)), alerts_(profile_, &client_, this, std::move(now)),
+Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()> now, QUrl releaseEndpoint)
+    : Workspace(std::make_shared<WorkspaceRuntime>(std::move(profile), std::move(now), std::move(releaseEndpoint)), parent, true) {}
+Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent, bool restore)
+    : QObject(parent), runtime_(std::move(runtime)), viewId_(restore ? QString{} : QUuid::createUuid().toString(QUuid::WithoutBraces)),
+    profile_(runtime_->profile), client_(runtime_->client), releaseUpdates_(runtime_->releases),
+    alerts_(profile_, &client_, this, runtime_->now), credentials_(runtime_->credentials),
     eventRows_(nullptr, {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage"},
         {"Last observed", "Type", "Reason", "Namespace", "Regarding", "Count", "Message"}),
     portRows_(nullptr, {"endpoint", "name", "kind", "namespace", "remotePort", "resolvedPort", "status"},
@@ -230,7 +238,14 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
     Q_UNUSED(terminalSessionType);
     static const int findType = qmlRegisterType<ResourceFilter>("Podlord.Graphics", 1, 0, "ResourceFindFilter");
     Q_UNUSED(findType);
-    client_.enableRequests(false);
+    runtime_->windows.append(this);
+    alerts_.setSessionOwnership([this](const QString& id) {
+        return !windowClosed_ && (runtime_->owners.value(id) == this || (!runtime_->owners.contains(id) && !detached_));
+    });
+    connect(&alerts_, &Alerts::catalogSaved, this, [this] {
+        for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_) other->alerts_.synchronizeCatalog(alerts_);
+    });
+    if (restore) client_.enableRequests(false);
     connect(&client_, &ResourceClient::requestStarted, this, &Workspace::requestStarted);
     connect(&client_, &ResourceClient::portForwardsChanged, this, [this](const QString& id) { if (id == active_) { publishPorts(); emit changed(); } });
     connect(&client_, &ResourceClient::terminalChanged, this, [this](const QString& id) { if (id == active_) emit changed(); });
@@ -240,9 +255,10 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
     connect(this, &Workspace::yamlTextChanged, this, &Workspace::clearYamlCheck);
     connect(this, &Workspace::yamlEditChanged, this, &Workspace::clearYamlCheck);
     if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
-        app->installEventFilter(this);
-        client_.setFocused(app->applicationState() == Qt::ApplicationActive);
-        connect(app, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) { client_.setFocused(state == Qt::ApplicationActive); });
+        client_.setFocused(app->applicationState() == Qt::ApplicationActive, viewId_);
+        connect(app, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+            if (!windowClosed_) client_.setFocused(windowVisible_ && windowFocused_ && state == Qt::ApplicationActive, viewId_);
+        });
     }
     table_.setSourceModel(&rows_);
     events_.setSourceModel(&eventRows_);
@@ -275,17 +291,8 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
     connect(&client_, &ResourceClient::logsChanged, this, [this](const QString& id, const QString& path) {
         if (id == active_ && path == navigation_.value(active_).inspected) { publishLogs(); emit changed(); }
     });
-    connect(&client_, &ResourceClient::authenticationRejected, &credentials_, &CredentialProcess::invalidate);
     connect(&credentials_, &CredentialProcess::changed, this, &Workspace::changed);
-    connect(&credentials_, &CredentialProcess::completed, this, [this](const QString& credential, const QString& session) {
-        const auto result = credentials_.result(credential);
-        if (const auto* connection = std::get_if<ClusterConnection>(&result)) {
-            const auto current = client_.connection(active_);
-            client_.authenticate(*connection, current && current->credentialId == credential ? active_ : session);
-        }
-        emit changed();
-    });
-    reload();
+    if (restore) reload();
 }
 QVariantList Workspace::contexts() const {
     QVariantList result;
@@ -297,7 +304,13 @@ QVariantList Workspace::contexts() const {
     return result;
 }
 QVariantList Workspace::sessions() const { return sessionRows(selection_, false); }
-QVariantList Workspace::tabs() const { return sessionRows(catalog_, true); }
+QVariantList Workspace::tabs() const {
+    auto result = sessionRows(catalog_, true);
+    result.erase(std::remove_if(result.begin(), result.end(), [this](const auto& row) {
+        return runtime_->owners.value(row.toMap()["id"].toString()) != this;
+    }), result.end());
+    return result;
+}
 bool Workspace::busy() const { return busy_; }
 bool Workspace::loading() const { return authenticationRunning() || client_.loading(active_); }
 bool Workspace::authenticationRequired() const { return client_.authenticationRequired(active_); }
@@ -391,11 +404,11 @@ bool Workspace::allowLeave(Leave action, const QString& target, int historyIndex
 bool Workspace::leaveYamlEdit() { return allowLeave(Leave::Draft) && clearYamlDraft(); }
 bool Workspace::requestWindowClose() {
     if (!allowLeave(Leave::Window)) { viewCloseDiscardApproved_ = false; return false; }
-    if (viewCloseDiscardApproved_) return true;
+    if (viewCloseDiscardApproved_) return prepareWindowClose();
     if (viewSaving_ || presetsBusy_ || !pendingViews_.isEmpty() || viewStateFailed()) {
         viewClosePending_ = true; emit changed(); return false;
     }
-    return true;
+    return prepareWindowClose();
 }
 bool Workspace::confirmDiscard(bool discard) {
     if (!pendingLeave_) return false;
@@ -410,6 +423,7 @@ bool Workspace::confirmDiscard(bool discard) {
     case Leave::Tab: return close(pending.target);
     case Leave::Inspector: return closeInspector();
     case Leave::Window: emit windowCloseApproved(); return true;
+    case Leave::Detach: return detachSession(pending.target);
     case Leave::Draft: return true;
     case Leave::Reload: return reload();
     case Leave::History: return inspectHistory(pending.target, pending.historyIndex);
@@ -555,14 +569,14 @@ bool Workspace::setInspectorPage(const QString& page) {
     if (page == "terminal" && !podInspected() && !containerTerminal()) return false;
     if (page == "values" && !valuesAvailable()) return false;
     if (navigation_.value(active_).page == page) return true;
-    client_.hideLogs(); navigation_[active_].page = page;
+    client_.hideLogs(viewId_); navigation_[active_].page = page;
     publishLogs(); emit changed();
     if (page == "yaml" && !yamlDraft_ && inspectorDocument_.isEmpty()) refreshInspector();
     return true;
 }
 bool Workspace::closeInspector() {
     if (!allowLeave(Leave::Inspector)) return false;
-    client_.dismissInspector(active_); client_.hideLogs();
+    client_.dismissInspector(active_); client_.hideLogs(viewId_);
     navigation_[active_].inspected.clear(); navigation_[active_].page = "overview";
     publishInspector(); publishLogs(); emit changed(); return true;
 }
@@ -619,7 +633,16 @@ bool Workspace::savePolicy(ReadSettings desired) {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         const auto previousLanguage = settings_.language;
         if (const auto* failure = std::get_if<Failure>(&result)) settingsError_ = failure->message;
-        else { settings_ = std::get<ReadSettings>(result); settingsError_.clear(); settingsReady_ = true; publishAppearance(); client_.configure(settings_); client_.enableRequests(true); }
+        else {
+            settings_ = std::get<ReadSettings>(result); settingsError_.clear(); settingsReady_ = true;
+            publishAppearance(); client_.configure(settings_); client_.enableRequests(true);
+            for (auto* other : runtime_->windows) {
+                if (other == this || other->windowClosed_) continue;
+                const auto language = other->settings_.language;
+                other->settings_ = settings_; other->settingsReady_ = true; other->publishAppearance(); emit other->changed();
+                if (language != settings_.language) emit other->languageChanged();
+            }
+        }
         emit changed(); emit appearanceChanged();
         if (previousLanguage != settings_.language || std::holds_alternative<Failure>(result)) emit languageChanged();
     });
@@ -687,23 +710,24 @@ bool Workspace::publishLogs() {
 }
 bool Workspace::setLogsVisible(bool visible) {
     emit logViewChanging();
-    if (visible && (!podInspected() || !client_.showLogs(active_, navigation_.value(active_).inspected))) { error_ = "Logs require a Pod with valid cached container metadata."; emit changed(); return false; }
+    if (visible && (!podInspected() || !client_.showLogs(active_, navigation_.value(active_).inspected, viewId_))) { error_ = "Logs require a Pod with valid cached container metadata."; emit changed(); return false; }
     navigation_[active_].page = visible ? "logs" : "overview";
-    if (!visible) client_.hideLogs();
+    if (!visible) client_.hideLogs(viewId_);
     publishLogs(); emit changed(); return true;
 }
 bool Workspace::setWindowVisible(bool visible) {
     if (windowVisible_ == visible) return true;
     emit logViewChanging(); windowVisible_ = visible;
     if (!visible && !revealedValues_.isEmpty()) { revealedValues_.clear(); publishInspector(true); }
-    if (logsVisible()) client_.showLogs(active_, navigation_.value(active_).inspected);
-    else client_.hideLogs();
+    setWindowFocused(windowFocused_);
+    if (logsVisible()) client_.showLogs(active_, navigation_.value(active_).inspected, viewId_);
+    else client_.hideLogs(viewId_);
     publishLogs(); emit changed(); return true;
 }
-bool Workspace::selectLogContainer(const QString& container) { emit logViewChanging(); return client_.selectLogContainer(container); }
-bool Workspace::pauseLogs(bool paused) { return client_.pauseLogs(paused); }
+bool Workspace::selectLogContainer(const QString& container) { emit logViewChanging(); return client_.selectLogContainer(container, viewId_); }
+bool Workspace::pauseLogs(bool paused) { return client_.pauseLogs(paused, viewId_); }
 bool Workspace::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress || event->type() == QEvent::Wheel || event->type() == QEvent::TouchBegin) client_.userActivity();
+    if (watched == window_ && (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress || event->type() == QEvent::Wheel || event->type() == QEvent::TouchBegin)) client_.userActivity(viewId_);
     return QObject::eventFilter(watched, event);
 }
 QString Workspace::activeCluster() const {
@@ -798,19 +822,25 @@ bool Workspace::reload() {
     watcher->setFuture(QtConcurrent::run([profile] { return Catalogs{KubeconfigStore(profile).list(), SessionStore(profile).selection(), ReadSettingsStore(profile).load()}; }));
     return true;
 }
-bool Workspace::select(const SessionCatalog& catalog) {
-    const auto next = catalog.activeSession ? sessionId(*catalog.activeSession) : QString{};
+bool Workspace::select(const SessionCatalog& catalog, bool local) {
+    if (local) runtime_->publishCatalog(catalog, this);
+    const auto selected = catalog.activeSession ? sessionId(*catalog.activeSession) : QString{};
+    QString next = local && runtime_->owners.value(selected) == this ? selected
+        : runtime_->owners.value(active_) == this ? active_ : QString{};
+    if (!local && next.isEmpty())
+        for (const auto& session : catalog.sessions)
+            if (session.open && runtime_->owners.value(sessionId(session.id)) == this) { next = sessionId(session.id); break; }
     const bool sessionChanged = next != active_;
     if (sessionChanged && !allowLeave(Leave::Reload)) return false;
     emit logViewChanging();
     catalog_ = catalog;
     active_ = next;
-    client_.showSession(active_);
+    client_.showSession(active_, viewId_);
     emit catalogsChanged();
     if (sessionChanged || active_.isEmpty()) publish();
     else emit changed();
-    if (logsVisible()) client_.showLogs(active_, navigation_.value(active_).inspected);
-    else { client_.hideLogs(); publishLogs(); }
+    if (logsVisible()) client_.showLogs(active_, navigation_.value(active_).inspected, viewId_);
+    else { client_.hideLogs(viewId_); publishLogs(); }
     return true;
 }
 bool Workspace::importFile(const QString& path) {
@@ -892,6 +922,11 @@ bool Workspace::confirmSourceRemoval() {
     if (busy_ || pendingLeave_ || sourceRemoval_.isEmpty()) return false;
     const auto contextId = sourceRemoval_["contextId"].toString();
     const auto ids = sourceRemoval_["sessionIds"].toStringList();
+    for (const auto& id : ids)
+        if (const auto* owner = runtime_->owners.value(id); owner && owner != this && (owner->busy_ || owner->yamlDirty() || owner->pendingLeave_)) {
+            sourceImportError_ = "Finish the operation or YAML draft in the owning window before removing this context.";
+            emit changed(); return false;
+        }
     if (yamlDirty() && ids.contains(active_)) {
         sourceImportError_ = "Save or discard the YAML draft before removing its context.";
         emit changed(); return false;
@@ -957,11 +992,11 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
     watcher->setFuture(sourceImportFuture_);
     return true;
 }
-bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target, const QString& renamedSession, const QString& managementNotice) {
+bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target, const QString& renamedSession, const QString& managementNotice, bool inWindow) {
     if (busy_) return false;
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<SessionCatalog>>(this);
-    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, target, renamedSession, managementNotice] {
+    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, target, renamedSession, managementNotice, inWindow] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) {
             if (!managementNotice.isEmpty()) { sessionManagementError_ = failure->message; emit changed(); }
@@ -972,9 +1007,18 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
         const auto catalog = std::get<SessionCatalog>(result);
         if (!target.isEmpty()) { client_.close(target); alerts_.closeSession(target); }
         if (!managementNotice.isEmpty()) {
+            runtime_->publishCatalog(catalog, this);
             catalog_ = catalog; sessionManagementError_.clear(); sessionManagementNotice_ = managementNotice; emit catalogsChanged(); emit changed();
         } else if (!renamedSession.isEmpty()) {
+            runtime_->publishCatalog(catalog, this);
             catalog_ = catalog; sessionRenameError_.clear(); emit catalogsChanged(); emit changed(); emit sessionRenamed(renamedSession);
+        } else if (inWindow && catalog.activeSession) {
+            catalog_ = catalog; runtime_->publishCatalog(catalog, this);
+            const auto id = sessionId(*catalog.activeSession);
+            if (!runtime_->host || !runtime_->host->detach(*this, id)) {
+                error_ = "The saved session is open, but its separate window could not be created. Retry from its tab.";
+                emit changed(); emit catalogsChanged();
+            } else if (auto* owner = runtime_->owners.value(id)) owner->resolve(id);
         } else {
             if (!select(catalog)) return;
             if (!active_.isEmpty()) {
@@ -999,7 +1043,9 @@ void Workspace::refreshSessionSelection() {
     connect(ranking, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, ranking, revision] {
         const auto result = ranking->result(); ranking->deleteLater();
         if (revision == selectionRevision_)
-            if (const auto* value = std::get_if<SessionCatalog>(&result)) { selection_ = *value; emit catalogsChanged(); }
+            if (const auto* value = std::get_if<SessionCatalog>(&result)) {
+                for (auto* window : runtime_->windows) if (!window->windowClosed_) { window->selection_ = *value; emit window->catalogsChanged(); }
+            }
     });
     const auto profile = profile_;
     ranking->setFuture(QtConcurrent::run([profile] { return SessionStore(profile).selection(); }));
@@ -1032,9 +1078,18 @@ bool Workspace::duplicateSession(const QString& id, const QString& name) {
     return mutate([config, name](const SessionStore& store) { return store.create(config, name); }, {}, {},
         "Independent session copy saved, closed and without usage history. Open it from Saved sessions.");
 }
-bool Workspace::openContext(const QString& context) {
+bool Workspace::openContext(const QString& context, bool inWindow) {
     if (busy_ || pendingLeave_) return false;
     if (!contextUsable(context)) { error_ = "Choose an available, usable imported context."; emit changed(); return false; }
+    if (inWindow && !windowActionsAvailable()) return false;
+    if (inWindow) {
+        for (const auto& session : catalog_.sessions) if (session.config == SessionConfig{context, {}}) return openSessionWindow(sessionId(session.id));
+        if (viewSaving_ || !pendingViews_.isEmpty() || viewStateFailed()) return false;
+    }
+    for (const auto& session : catalog_.sessions)
+        if (session.config == SessionConfig{context, {}})
+            if (auto* owner = runtime_->owners.value(sessionId(session.id)); owner && owner != this)
+                return owner->activate(sessionId(session.id)) && runtime_->host && runtime_->host->focus(*owner);
     if (std::any_of(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) {
         return sessionId(session.id) == active_ && session.open && session.config == SessionConfig{context, {}};
     })) {
@@ -1042,7 +1097,7 @@ bool Workspace::openContext(const QString& context) {
         return true;
     }
     const auto existing = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return session.config == SessionConfig{context, {}}; });
-    if ((existing == catalog_.sessions.cend() || sessionId(existing->id) != active_) && !allowLeave(Leave::Context, context)) return false;
+    if (!inWindow && (existing == catalog_.sessions.cend() || sessionId(existing->id) != active_) && !allowLeave(Leave::Context, context)) return false;
     return mutate([context](const SessionStore& store) -> Result<SessionCatalog> {
         const auto catalog = store.list();
         if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
@@ -1051,7 +1106,7 @@ bool Workspace::openContext(const QString& context) {
         const auto created = store.create({context, {}});
         if (const auto* failure = std::get_if<Failure>(&created)) return *failure;
         return store.activate(std::get<SessionCatalog>(created).sessions.last().id);
-    });
+    }, {}, {}, {}, inWindow);
 }
 bool Workspace::contextUsable(const QString& id) const {
     for (const auto& source : sources_.sources)
@@ -1064,13 +1119,18 @@ bool Workspace::activate(const QString& id) {
     // The cached navigation changes immediately; persistence and resolution do not block painting.
     const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return sessionId(session.id) == id; });
     if (busy_ || found == catalog_.sessions.cend()) return false;
+    if (auto* owner = runtime_->owners.value(id); owner && owner != this)
+        return owner->activate(id) && runtime_->host && runtime_->host->focus(*owner);
+    if (id == active_ && found->open) return true;
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
-    emit logViewChanging(); active_ = id; client_.showSession(id); publish();
-    if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected);
+    if (!client_.showSession(id, viewId_)) return false;
+    emit logViewChanging(); active_ = id; publish();
+    if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected, viewId_);
     else publishLogs();
     return mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });
 }
 bool Workspace::close(const QString& id) {
+    if (auto* owner = runtime_->owners.value(id); owner && owner != this) return owner->close(id);
     if (busy_ || pendingLeave_ || (id == active_ && !allowLeave(Leave::Tab, id))) return false;
     return mutate([id](const SessionStore& store) { return store.close(QUuid(id)); }, id);
 }
@@ -1101,6 +1161,7 @@ bool Workspace::resolve(const QString& id, bool retry) {
                 }
             }
             client_.open(id, connection, config.namespaces);
+            if (id == active_ && !yamlFresh_ && !inspectorPath().isEmpty()) client_.inspect(id, inspectorPath());
             if (retry) {
                 if (connection.exec) credentials_.start(std::get<ClusterConnection>(result), id);
                 else client_.refresh(id, true);
@@ -1236,8 +1297,8 @@ bool Workspace::openInspector(const QString& path, int historyIndex) {
     yamlFresh_ = false;
     publishInspector();
     emit yamlEditChanged();
-    if (logsVisible()) client_.showLogs(active_, navigation_[active_].inspected);
-    else { client_.hideLogs(); publishLogs(); }
+    if (logsVisible()) client_.showLogs(active_, navigation_[active_].inspected, viewId_);
+    else { client_.hideLogs(viewId_); publishLogs(); }
     emit changed();
     return client_.inspect(active_, navigation_[active_].inspected);
 }

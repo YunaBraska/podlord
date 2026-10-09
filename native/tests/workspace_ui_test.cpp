@@ -1428,8 +1428,10 @@ bool execute(const QString& scenario) {
             if (!waitFor([&] { return restored.viewCloseNeedsDecision() && item(reopened, "stayViewClose")->isVisible(); })) return false;
             if (scenario == "view_restore_close_escape") { QTest::keyClick(reopened, Qt::Key_Escape); return waitFor([&] { return !restored.viewCloseNeedsDecision(); }) && reopened->isVisible(); }
             if (!click(reopened, item(reopened, scenario == "view_restore_close_stay" ? "stayViewClose" : "discardViewClose"))) return false;
-            return waitFor([&] { return !restored.viewCloseNeedsDecision(); })
-                && reopened->isVisible() == (scenario == "view_restore_close_stay") && restored.filterText() == "bravo";
+            if (!waitFor([&] { return !restored.viewCloseNeedsDecision(); })) return false;
+            if (scenario == "view_restore_close_stay") return reopened->isVisible() && restored.filterText() == "bravo";
+            return !reopened->isVisible() && restored.currentSession().isEmpty()
+                && restored.resourceCount() == 0 && restored.logRows()->rowCount() == 0;
         }
         return false;
     }
