@@ -1,10 +1,16 @@
 #include "workspace.h"
+#include "workspace_runtime.h"
 #include <QDebug>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace podlord {
 Workspace::~Workspace() {
+    runtime_->windows.removeAll(this);
+    for (auto it = runtime_->owners.begin(); it != runtime_->owners.end();)
+        if (it.value() == this) { client_.close(it.key()); it = runtime_->owners.erase(it); }
+        else ++it;
+    client_.showSession({}, viewId_);
     disconnect(&client_, nullptr, this, nullptr);
     sourceImportFuture_.waitForFinished();
     sessionMutationFuture_.waitForFinished();

@@ -1,8 +1,8 @@
 #include "workspace.h"
+#include "window_host.h"
 #include "graphics_configuration.h"
 #include <QCommandLineParser>
 #include <QGuiApplication>
-#include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QStandardPaths>
@@ -36,15 +36,16 @@ int main(int argc, char** argv) {
     podlord::Workspace workspace(profile);
     app.styleHints()->setColorScheme(workspace.themeVariant() == "dark" ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
     app.setPalette(workspace.appearancePalette());
-    QObject::connect(&workspace, &podlord::Workspace::appearanceChanged, &app, [&app, &workspace] {
-        app.styleHints()->setColorScheme(workspace.themeVariant() == "dark" ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
-        app.setPalette(workspace.appearancePalette());
+    podlord::WindowHost windows(workspace);
+    QObject::connect(&windows, &podlord::WindowHost::windowOpened, &app, [&app](QQuickWindow* window) {
+        auto* projection = qobject_cast<podlord::Workspace*>(QQmlEngine::contextForObject(window)->contextProperty("workspace").value<QObject*>());
+        if (projection) QObject::connect(projection, &podlord::Workspace::appearanceChanged, &app, [&app, projection] {
+            app.styleHints()->setColorScheme(projection->themeVariant() == "dark" ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+            app.setPalette(projection->appearancePalette());
+        });
     });
-    QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("workspace", &workspace);
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
-    engine.load(QUrl("qrc:/podlord/Main.qml"));
-    if (!engine.rootObjects().isEmpty()) {
+    if (!windows.open()) { std::fputs("Cannot create the native application window.\n", stderr); return 1; }
+    {
         QTimer::singleShot(0, workspace.releaseUpdates(), &podlord::ReleaseUpdates::startAutomaticChecks);
         QObject::connect(&app, &QGuiApplication::applicationStateChanged, workspace.releaseUpdates(), [&workspace](Qt::ApplicationState state) {
             if (state == Qt::ApplicationActive) workspace.releaseUpdates()->checkIfDue();

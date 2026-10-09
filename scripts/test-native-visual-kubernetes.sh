@@ -17,16 +17,17 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
 MODE=${1:-desktop}
-[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
-case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
+[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-window-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
+case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-window-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ]; then
     command -v go >/dev/null 2>&1 || { printf 'Missing tool: go\n' >&2; exit 1; }
+    [ -x "$BUILD/window-host-test" ] || { printf 'Required native multiwindow test executable is missing.\n' >&2; exit 1; }
 fi
 DESKTOP_TIMEOUT=${PODLORD_DESKTOP_TIMEOUT_SECONDS:-3600}
 case "$DESKTOP_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
 [ "${#DESKTOP_TIMEOUT}" -le 5 ] && [ "$DESKTOP_TIMEOUT" -ge 60 ] && [ "$DESKTOP_TIMEOUT" -le 21600 ] || { printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
 LEGACY=${PODLORD_LEGACY_APP:-}
-if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
+if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
     printf 'Required native field filter UI test executable is missing.\n' >&2
     exit 1
 fi
@@ -246,11 +247,6 @@ if [ "$MODE" = native-fields-e2e ]; then
     printf 'Native Kubernetes cached field scenario passed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
-if [ "$MODE" = native-terminal-e2e ]; then
-    run_terminal_tests
-    printf 'Native Kubernetes interactive terminal scenarios passed; cleaning up owned cluster and profiles.\n'
-    exit 0
-fi
 if [ "$MODE" = native-health-e2e ]; then
     cp "$BUILD/alert_ui_test" "$RUN/alert_ui_test"
     shasum -a 256 "$RUN/alert_ui_test" > "$EVIDENCE/$NAME-health-binary.sha256"
@@ -259,10 +255,12 @@ if [ "$MODE" = native-health-e2e ]; then
     printf 'Native Kubernetes health and Radar scenario passed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
-    run_terminal_tests
-    kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-e2e -n visual-a --from-literal="owner=$NAME"
-    kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-race-e2e -n visual-a --from-literal="owner=$NAME"
+if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ]; then
+    if [ "$MODE" != native-window-e2e ]; then run_terminal_tests; fi
+    if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
+        kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-e2e -n visual-a --from-literal="owner=$NAME"
+        kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-race-e2e -n visual-a --from-literal="owner=$NAME"
+    fi
     cat > "$RUN/echo.go" <<'GO'
 package main
 import ("io"; "log"; "net/http")
@@ -316,6 +314,16 @@ YAML
         kubectl --kubeconfig "$RUN/kubeconfig" logs -n visual-a podlord-forward-echo --all-containers > "$EVIDENCE/$NAME-forward-setup.log" 2>&1 || :
         tail -n 15 "$EVIDENCE/$NAME-forward-setup.txt" >&2
         exit 1
+    fi
+    cp "$BUILD/window-host-test" "$RUN/window-host-test"
+    shasum -a 256 "$RUN/window-host-test" > "$EVIDENCE/$NAME-window-binary.sha256"
+    printf 'Native Kubernetes window transfer: terminal and isolated forwards\n'
+    PODLORD_WINDOW_EVIDENCE="$EVIDENCE/$NAME-windows" \
+        QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Fusion \
+        run_native_test "$RUN/window-host-test" real_transfer "$RUN/kubeconfig" > "$EVIDENCE/$NAME-windows.log" 2>&1
+    if [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ]; then
+        printf 'Native Kubernetes window transfer and selected terminal scenarios passed; cleaning up owned cluster and profiles.\n'
+        exit 0
     fi
     for scenario in real_pod real_service real_context_removal real_context_draft; do
         printf 'Native Kubernetes UI port-forward scenario: %s\n' "$scenario"

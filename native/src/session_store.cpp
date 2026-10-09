@@ -316,12 +316,20 @@ Result<SessionCatalog> SessionStore::activate(QUuid id) const {
 }
 
 Result<SessionCatalog> SessionStore::close(QUuid id) const {
-    if (id.isNull()) return Failure{StoreError::InvalidInput, "A valid session identifier is required."};
-    return mutate([id](SessionCatalog catalog) -> Result<SessionCatalog> {
-        const auto session = findSession(catalog, id);
-        if (session == catalog.sessions.end()) return missing();
-        session->open = false;
-        if (catalog.activeSession == id) catalog.activeSession.reset();
+    return closeSessions({id});
+}
+
+Result<SessionCatalog> SessionStore::closeSessions(const QList<QUuid>& ids) const {
+    QSet<QUuid> selected;
+    for (const auto& id : ids) {
+        if (id.isNull() || selected.contains(id)) return Failure{StoreError::InvalidInput, "Choose distinct, valid session identifiers."};
+        selected.insert(id);
+    }
+    if (selected.isEmpty()) return Failure{StoreError::InvalidInput, "Choose at least one session to close."};
+    return mutate([selected](SessionCatalog catalog) -> Result<SessionCatalog> {
+        for (const auto& id : selected) if (findSession(catalog, id) == catalog.sessions.end()) return missing();
+        for (auto& session : catalog.sessions) if (selected.contains(session.id)) session.open = false;
+        if (catalog.activeSession && selected.contains(*catalog.activeSession)) catalog.activeSession.reset();
         return catalog;
     });
 }

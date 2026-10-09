@@ -4894,3 +4894,72 @@ The terminal regression identified missing empty-text Ctrl+[ handling and unnego
 Execution results for this increment: the complete native lane passed 4,022/4,022 executions in 301.78 seconds with 24 workers (2,971 baseline behavior executions and 1,051 style variants, not 4,022 product features). The subsequently added running-weekly-timer case passed with the complete 57-case release-check lane; 4,023 registered cases have executable passing evidence across those runs. The unchanged C# lane was not rerun; its preceding 458-case result remains separate evidence. The five real Kubernetes terminal scenarios passed, including Ctrl+[ vi readback; the owner verified removal of `podlord-visual-run-lhlavw` and its volumes/profile.
 
 The private arm64 package at `~/.local/share/podlord-comparison/release-evidence/2026-10-08-weekly-update-package/podlord-native.zip` passed the packaging preflight using the official Qt 6.11.2 SDK. Executable SHA-256: `69032a71d02edf4090250bf792e2ede944974663d3847df5c8413c1331d1383e`; ZIP SHA-256: `cc529fbe4ddb1ac27c4ad5f6ed1e7bb936c93ff722bb5128da1f19bc6e2629d5`. This is local ad-hoc signing, not Developer ID/notarization. It does not establish clean-device, full parity, performance or all-platform readiness. The earlier branch-coverage failure has not been remeasured or cleared by these functional runs.
+
+### What proves native window ownership and transfer?
+
+`native.window.*` drives the real QML shell through `WindowHost` and public
+workspace actions. Each scenario has its own private profile and its own minimal
+external Kubernetes HTTP/WebSocket boundary; stores, schedulers, view models,
+terminal emulator, forwarding transport and window creation are real.
+
+| Behavior | Public entrypoint | Executable scenario | Remaining boundary |
+|---|---|---|---|
+| Selected/background tab transfer and one placement | Tab detach icon, session activation | `active`, `background`, `focus` | Physical desktop input and C#/C++ paired images |
+| Quick-open saved/existing/closed sessions and imported contexts | Actual dropdown/submenu, public context/session window actions | `menu_window`, `context_window`, `new_context_window`, `reopen`, `repeat` | Physical native menus and installed startup |
+| A multi-tab detached window can split another tab | Duplicate, activate, separate-window action, scoped close | `nested` | Physical desktop |
+| Unrelated editor draft stays in its window | Background-tab detach icon | `background_dirty` | Physical desktop |
+| Active draft asks before transfer | Detach, discard confirmation | `dirty_stay`, `dirty_discard` | Physical desktop |
+| Per-window search and shared saved filters | Workspace filter/preset controls | `filter`, `preset` | Installed legacy preset migration remains separate |
+| Shared rename, request settings, radar preferences and columns | Public settings/session/layout actions | `rename`, `settings`, `columns` | Complete Settings/table visual parity |
+| Shared alarm preferences without duplicate transport owners | Public alarm preference action and immediate window startup | `alerts`, `alerts_initial` | Audible playback and effect-continuity matrix |
+| Context deletion and remote-window draft protection | Source removal confirmation | `source`, `source_dirty` | Installed source-management comparison |
+| Cached logs belong to the detached view | Log controls, tab detach | `logs` | Physical scrolling/trackpad behavior |
+| Running terminal remains connected and interactive | Terminal controls, detach, keyboard | `terminal`, `close_terminal` | Physical platform key handling |
+| Same forward survives transfer; other window survives closure | Ports controls, local TCP, window close | `forward`, `close_isolation` | Actual Kubernetes transfer lane below |
+| Window close, real store lock failure/retry and last-main-window restoration | Native window close, persistent catalog and real `QLockFile` | `close`, `close_locked`, `main_close`, `root_restore` | Installed restart, write failure and platform lifecycle matrix |
+| Atomic scoped close, invalid/repeated/missing IDs | `SessionStore.closeSessions` | `batch_subset`, `batch_empty`, `batch_null`, `batch_duplicate`, `batch_missing` | Runtime lock/write failure matrix |
+| Invalid session and missing QML resource do not create a window | Public detach and host startup | `missing`, `missing_resource` | Partial platform window-creation failures |
+
+The Basic/Fusion executions are style variants of the same named behaviors,
+not independent product features. The terminal local-cluster lane additionally
+runs `window-host-test real_transfer`: 1000+ real listed resources, two sessions,
+two real forwards, one real interactive shell, a remote shell environment value
+that survives detachment, unchanged forward identity/port, and another working
+forward after the detached window closes. Its pictures are explicitly headless
+Qt renders, not physical desktop or C#/C++ parity evidence. The existing fixture
+script owns and removes its cluster, volumes, copied binaries and profiles.
+`native-window-e2e` selects this same real window scenario without rerunning the
+five independent terminal scenarios; this is a focused test lane, not a product
+mode or a weaker simulated transport.
+
+The complete native lane passed 4,095/4,095 executions in 308.98 seconds with
+24 workers: 3,008 baseline behavior executions and 1,087 style variants. These
+are not 4,095 distinct product features. The existing close-with-discard tests
+now assert that a closed projection releases its models/session instead of
+asserting stale UI state after closure. Initial alarm preference and store-lock
+failure cases passed without production changes. The subsequently added nested
+window regression failed first against the single-detached-window restriction.
+After removing that restriction for multi-tab windows, all 80 scoped window and
+close-regression executions passed in 31.75 seconds, including both new nested
+cases. The 4,097 currently registered executions have passing evidence across
+these runs; there is no claim of a single complete 4,097-case run.
+
+Real Kubernetes evidence is under
+`~/.local/share/podlord-comparison/release-evidence/2026-10-09-window-input-kubernetes/`.
+`podlord-visual-run-xeozfn-windows.log` records the passing same-shell/forward
+transfer and close isolation; paired main/detached images are headless Qt renders.
+The fixture removed its owned cluster and temporary profiles/volumes. The five
+real terminal scenarios also passed in the preceding full terminal lane, whose
+window step failed before the test was corrected to wait for processed shell
+output and actual rendered keyboard focus. Those failed attempts are retained,
+not represented as successful complete lanes.
+
+The final private arm64 bundle passed the official Qt 6.11.2 packaging preflight
+at `~/.local/share/podlord-comparison/release-evidence/2026-10-09-windows-final-private-package/`.
+It is 32,454,514 ZIP bytes and 85,866,171 installed regular-file bytes, below the
+50 MB/100 MB package boundaries. Executable SHA-256:
+`3f17f0cf5b88d6f9af0d729b2f4cf8a1d7f47f55e3a3cba65d4f3b99ab7e9838`;
+ZIP SHA-256: `f76e7efbb53c70a6ebe1290ce1f2aa1c2ed19905eefdbd1779912ea40976916f`.
+This is local ad-hoc signing and a packaging preflight, not Developer ID,
+notarization, clean-device or full migration/release readiness. The preceding
+foreground performance and branch-coverage failures remain open.
