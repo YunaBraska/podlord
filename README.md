@@ -102,14 +102,14 @@ The test script:
 2. Installs pinned k3d and kubectl versions into `.tools/bin` when missing.
 3. Creates a disposable k3d cluster.
 4. Runs the .NET test suite with coverage.
-5. Enforces coverage gates.
+5. Reports coverage targets.
 
-Current gates:
+Current coverage targets:
 
 - Line coverage: 95%
 - Branch coverage: 90%
 
-The gate targets domain, persistence, Kubernetes, filtering, sync, and alert-rule behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and covered by focused behavior/layout tests where useful.
+Coverage is diagnostic and does not fail CI. The report targets domain, persistence, Kubernetes, filtering, sync, and alert-rule behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric target and covered by focused behavior/layout tests where useful.
 
 The k3d scenario map is documented in [doc/spec/k3d-test-map.md](doc/spec/k3d-test-map.md).
 

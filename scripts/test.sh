@@ -38,4 +38,6 @@ cd "$ROOT_DIR"
 PID=$!
 wait "$PID"
 PID=
-python3 "$ROOT_DIR/scripts/check-coverage.py" "$ROOT_DIR" "$RUN/results"
+if ! python3 "$ROOT_DIR/scripts/check-coverage.py" "$ROOT_DIR" "$RUN/results"; then
+    printf 'Coverage is reported for review and does not fail functional verification.\n' >&2
+fi

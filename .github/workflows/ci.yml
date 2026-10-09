@@ -45,7 +45,7 @@ jobs:
         shell: sh
         run: scripts/test.sh --configuration Release
 
-      - name: Verify coverage gate boundaries
+      - name: Verify coverage report boundaries
         shell: sh
         run: python3 scripts/test-coverage-gates.py
 

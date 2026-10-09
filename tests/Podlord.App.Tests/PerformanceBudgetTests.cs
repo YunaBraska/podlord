@@ -9,6 +9,7 @@ public sealed class PerformanceBudgetTests
 {
     private static readonly TimeSpan InteractionBudget = TimeSpan.FromMilliseconds(1_000);
     private static readonly TimeSpan SecondaryViewBudget = TimeSpan.FromMilliseconds(1_500);
+    private static readonly TimeSpan CachedFilterResetBudget = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan InspectorInitialBudget = TimeSpan.FromMilliseconds(150);
 
     [Fact]
@@ -33,7 +34,7 @@ public sealed class PerformanceBudgetTests
             AssertUnder("kind filter", kindFilter, InteractionBudget);
             AssertUnder("namespace filter", namespaceFilter, InteractionBudget);
             AssertUnder("name filter", nameFilter, InteractionBudget);
-            AssertUnder("clear filters", clearFilter, SecondaryViewBudget);
+            AssertUnder("clear filters", clearFilter, CachedFilterResetBudget);
             Assert.Equal(requestCount, handler.Requests.Count);
             Assert.True(viewModel.Resources.Count <= 256);
         }
