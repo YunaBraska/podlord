@@ -20,7 +20,8 @@ inline QQuickItem* visibleItem(QQuickItem* root, const QString& name) {
 }
 /** Open the actual workspace menu before operating its non-primary actions. */
 inline bool revealWorkspaceAction(QQuickWindow* window, const QString& name) {
-    if (name != "refreshButton" && name != "commandPaletteButton") return true;
+    if (name != "refreshButton" && name != "commandPaletteButton" && name != "resourceFindButton"
+        && name != "eventFindButton" && name != "resourceColumnsButton" && name != "eventColumnsButton") return true;
     if (visibleItem(window->contentItem(), name)) return true;
     auto* trigger = visibleItem(window->contentItem(), "workspaceActionsButton");
     if (!trigger || !trigger->isEnabled()) return false;

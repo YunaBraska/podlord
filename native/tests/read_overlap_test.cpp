@@ -247,6 +247,18 @@ bool run(const QString& scenario) {
     if (!client.open("session", connection, {})) return false;
     if (scenario == "coalesce") for (int repeat = 0; repeat < 10; ++repeat) if (!client.refresh("session")) return false;
     if (!waitFor([&] { return !client.loading("session") && client.rows("session").size() == 1; })) return false;
+    if (scenario == "snapshot_fields") {
+        const auto snapshot = client.rows("session");
+        const auto row = snapshot.first().toObject();
+        for (const auto& field : {"kubernetesEvent", "changedAt", "createdAt", "restarts", "eventTime", "metricAt", "cpu", "memory", "storage"}) {
+            if (row.contains(field)) {
+                std::fprintf(stderr, "Absent resource field was manufactured: %s\n", field);
+                return false;
+            }
+        }
+        return client.refresh("session") && waitFor([&] { return !client.loading("session"); })
+            && client.rows("session") == snapshot;
+    }
     if (scenario.startsWith("progress_")) {
         if (!client.initialSyncComplete("session") || client.loadingProgress("session") != 1) return false;
         bool retained = true;

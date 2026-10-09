@@ -174,12 +174,14 @@ void RadarIsland::synchronize() {
             terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_});
         }
     }
-    filtered_.clear(); groups_.clear();
+    QHash<QString,QPersistentModelIndex> filtered;
+    groups_.clear();
     if (source_) for (int row=0;row<source_->rowCount();++row) {
         const auto index=source_->index(row,0);
         // Full-cache identities need stable cache indices, not persistent sorted projections.
-        filtered_.insert(index.data(Qt::UserRole).toString(),proxy ? proxy->mapToSource(index) : index);
+        filtered.insert(index.data(Qt::UserRole).toString(),proxy ? proxy->mapToSource(index) : index);
     }
+    filtered_.swap(filtered);
     for (const auto& row:signature_) if (filtered_.contains(row.path)) { groups_.insert(row.cluster); groups_.insert(row.cluster+"/"+row.scope); }
     project(true); update(); emit currentResourceChanged();
 }

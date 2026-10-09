@@ -101,6 +101,7 @@ ColumnLayout {
         }
     }
     property bool findOpen: false
+    property bool inlineTools: true
     property bool findShortcutEnabled: true
     readonly property bool containsActiveFocus: {
         let target = grid.Window.window ? grid.Window.window.activeFocusItem : null
@@ -122,6 +123,7 @@ ColumnLayout {
         table.positionViewAtRow(source.row, TableView.Contain)
     }
     function openFind() { findOpen = true; findInput.forceActiveFocus(); findInput.selectAll() }
+    function openColumns() { columnsDialog.open() }
     readonly property real pinnedWidth: columns.filter(function(column) { return column.visible && column.pinned }).reduce(function(width, column) { return width + column.width }, 0)
     readonly property bool hasScrollingColumns: columns.some(function(column) { return column.visible && !column.pinned })
     signal sortRequested(int column)
@@ -188,9 +190,10 @@ ColumnLayout {
     PlainToolTip { id: valueTip; objectName: grid.prefix + "ValueTooltip" }
     RowLayout {
         Layout.fillWidth: true
+        visible: grid.inlineTools
         Item { Layout.fillWidth: true }
         IconButton { objectName: grid.prefix + "FindButton"; glyph: "Search"; text: workspace.uiText["nav.search"]; Accessible.name: "Find within cached " + grid.prefix + " rows"; onClicked: grid.openFind() }
-        IconButton { objectName: grid.prefix + "ColumnsButton"; glyph: "Columns"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: columnsDialog.open() }
+        IconButton { objectName: grid.prefix + "ColumnsButton"; glyph: "Columns"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: grid.openColumns() }
     }
     RowLayout {
         Layout.fillWidth: true
@@ -263,7 +266,12 @@ ColumnLayout {
             onClicked: if (sortable) grid.sortRequested(column)
             ToolTip.visible: (hovered || activeFocus) && contentItem.implicitWidth > availableWidth
             ToolTip.text: text
-            TapHandler { acceptedButtons: Qt.RightButton; onTapped: columnsDialog.open() }
+            TapHandler { acceptedButtons: Qt.RightButton; onTapped: grid.openColumns() }
+            Keys.onPressed: event => {
+                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                    grid.openColumns(); event.accepted = true
+                }
+            }
         }
     }
     Component {

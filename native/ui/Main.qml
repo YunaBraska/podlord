@@ -427,6 +427,20 @@ ApplicationWindow {
     Menu {
         id: workspaceActions
         MenuItem { objectName: "commandPaletteButton"; text: "Commands"; Accessible.name: "Open command palette"; onTriggered: commands.open() }
+        MenuItem {
+            objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
+            text: workspace.uiText["nav.search"]
+            visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
+            Accessible.name: "Find within the current cached table"
+            onTriggered: (workspace.workspacePage === "events" ? eventGrid : resourceGrid).openFind()
+        }
+        MenuItem {
+            objectName: workspace.workspacePage === "events" ? "eventColumnsButton" : "resourceColumnsButton"
+            text: "Columns"
+            visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
+            Accessible.name: "Columns for the current table"
+            onTriggered: (workspace.workspacePage === "events" ? eventGrid : resourceGrid).openColumns()
+        }
         MenuItem { objectName: "refreshButton"; text: "Refresh"; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
     }
     Menu {
@@ -709,6 +723,7 @@ ApplicationWindow {
                     id: resourceGrid
                     anchors.fill: parent
                     visible: workspace.workspacePage === "resources"
+                    inlineTools: false
                     tableModel: workspace.visibleResourceTable
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
                     emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
@@ -721,6 +736,7 @@ ApplicationWindow {
                     id: eventGrid
                     anchors.fill: parent
                     visible: workspace.workspacePage === "events"
+                    inlineTools: false
                     prefix: "event"; tableModel: workspace.eventTable
                     sortColumn: workspace.eventSortColumnIndex; sortDirection: workspace.eventSortDirection
                     emptyText: workspace.loading ? "Loading Events. Cached Events appear immediately." : "No matching Events in this cache."

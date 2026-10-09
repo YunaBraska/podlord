@@ -5184,3 +5184,25 @@ it now activates once and rejects foreground loss instead of including
 repeated OS activation work in ordinary in-app tab/filter timings. A fresh
 foreground run is required before claiming any resulting gain. The acceptance
 limits and complete loaded-data workload remain unchanged.
+
+## 2026-10-09 compact tables and real packaged terminal
+
+Evidence root: `/Users/yuna/.local/share/podlord-comparison/release-evidence/`.
+These results do not declare complete visual or release acceptance.
+
+| Behavior / requirement | Public boundary | Test / evidence | Result and remaining gap |
+|---|---|---|---|
+| Canonical health snapshots do not manufacture absent resource fields | Real `ResourceClient` ingress from a local Kubernetes HTTP boundary, including repeated refresh | `native.read_overlap.snapshot_fields`; `2026-10-09-canonical-cache-fields/before.txt`, `after.xml` | Failing first on an inserted `kubernetesEvent: null`; 27 scheduler/view/cache cases pass after immutable input reads. No private helper is tested. |
+| Resources/Events have no unused toolbar row; find and column commands remain reachable | Rendered QML, real menu clicks and keyboard input | `native.ui.table_compact_tools_{Basic,Fusion}`, existing `native.table_find.*`, `native.ui.columns_*`; `compact-before.log`, `compact-after.xml` | Both styles originally expose a 32 px gap. All 130 scoped table/find/column/shell cases pass after moving main-table tools to the workspace menu; nested tables retain their local tools. |
+| Radar identity, filtering, motion and view restoration survive index reuse | Rendered resource radar, canonical source updates and real UI input | `2026-10-09-radar-index-reuse/public-radar.xml` | 114/114 pass. Rebuilding the identity map retains the previous persistent indices until replacement; no topology or selection contract changes. Whole-UI performance gates are separate. |
+| Packaged terminal is a real interactive PTY, not a command-output substitute | Fresh private Release bundle, native keyboard input, owned local K3s Pod `visual-a/visual-multi-container`, container `alpha` | `2026-10-09-compact-desktop-parity/native-terminal-{pty,vi,resize-ansi-interrupt,disconnected}.png` | Actual `/dev/pts/0`; resize from 12x121 to 46x167; vi input saved and read back; ANSI green; Ctrl-C interrupts sleep and restores prompt; shell exit disconnects. Test file removed, both comparison applications and owned cluster cleaned up. |
+| Original C#/C++ image evidence | Two real packaged applications on the same owned K3s cluster, Sirocco Command dark | `2026-10-09-compact-desktop-parity/{resources,events,ports}-side-by-side.png`, `paired-frames.json` | Original full-resolution images side by side, C# left/C++ right, no crop/resize/retouch. Cache populations differ (1413/1844); these are layout evidence, not equal-corpus topology proof or the complete theme/device matrix. These captures precede the toolbar removal. |
+| Private macOS package boundaries | Packaged Release executable, deployed dependencies, real startup/CLI/mutual TLS | `2026-10-09-compact-filters-private-package/`, `2026-10-09-compact-package-boundaries/` | 42/42 pass: 27 dependencies, 7 Cocoa startups, 5 CLI, 3 mutual TLS. ZIP 32,459,080 bytes; installed logical files 85,883,451 bytes. This package precedes the canonical-health and toolbar changes. Signing/notarization remain intentionally deferred. |
+| Full executable suite and coverage before these final changes | Frozen native runner, official Qt 6.11.2 SDK, real public application/model/UI boundaries | `2026-10-09-sdk-final-complete/` | 4276/4276 tests pass: 3141 behavior cases plus 1135 style variants. Line coverage 97.45%; branch coverage 83.42%, below the unchanged 90% gate. A current-source full run is recorded separately in `2026-10-09-compact-tables-complete/`. |
+| Foreground Mac interaction/memory gates | Real Cocoa/Metal, 5000 resources across 3 sessions, 5 MB log budget | `2026-10-09-held-foreground-metal/`, `2026-10-09-radar-reuse-metal/` | Filter/sort/inspector meet their action-to-frame limits in these runs. Cached tabs remain about 55.7 ms p95 versus 50 ms. RSS remains above 250 MB. Foreground loss invalidates the 60-second idle proof. No headless substitution or relaxed gate. |
+
+Current private-release blockers remain branch coverage, installed/foreground
+performance acceptance, complete matched-corpus view/theme evidence and the
+claimed platform/device runtime matrix. Headless style variants are meaningful
+compatibility cases, not additional independent product capabilities. Existing
+focused and full runners retain per-case names and bounded parallel execution.
