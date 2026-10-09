@@ -17,6 +17,7 @@ public:
     ReleaseUpdates releases;
     QList<Workspace*> windows;
     QMap<QString, Workspace*> owners;
+    quint64 selectionRevision = 0;
     WindowHost* host = nullptr;
     bool publishCatalog(const SessionCatalog& catalog, Workspace* source);
 };

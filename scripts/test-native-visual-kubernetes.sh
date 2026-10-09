@@ -42,6 +42,10 @@ if [ "$MODE" = radar-parity ]; then
 fi
 if [ "$MODE" = desktop ] || [ "$MODE" = release-review ]; then
     [ -x "$NATIVE" ] && [ -n "$LEGACY" ] && [ -x "$LEGACY" ] || { printf 'Both application builds are required.\n' >&2; exit 1; }
+    if [ "$(uname -s)" = Darwin ]; then
+        [ -d "${NATIVE%/MacOS/*}/Frameworks/QtCore.framework" ] || { printf 'Desktop evidence requires a deployed native app; an unbundled build does not prove its runtime dependencies.\n' >&2; exit 1; }
+        case "$LEGACY" in *.app/Contents/MacOS/*) ;; *) printf 'Desktop evidence requires the packaged reference app for isolated application identity.\n' >&2; exit 1 ;; esac
+    fi
 fi
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
     for executable in "$BUILD/alert_ui_test" "$BUILD/workspace_ui_test" "$BUILD/resource-delete-ui-test" "$BUILD/inspector-navigation-ui-test" "$BUILD/port-forward-ui-test"; do
@@ -354,11 +358,21 @@ YAML
 fi
 mkdir -p "$RUN/legacy/home/.kube" "$RUN/legacy/config/podlord"
 cp "$RUN/kubeconfig" "$RUN/legacy/home/.kube/config"
+if [ "$(uname -s)" = Darwin ]; then
+    # A unique test identity prevents desktop controls from selecting a user's running app.
+    cp -R "${LEGACY%/Contents/MacOS/*}" "$RUN/PodlordReference.app"
+    /usr/bin/plutil -replace CFBundleIdentifier -string "dev.podlord.reference.$NAME" "$RUN/PodlordReference.app/Contents/Info.plist"
+    /usr/bin/plutil -replace CFBundleName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
+    /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
+    /usr/bin/codesign --force --deep --sign - "$RUN/PodlordReference.app"
+    LEGACY="$RUN/PodlordReference.app/Contents/MacOS/$(basename -- "$LEGACY")"
+fi
 (unset QT_QPA_PLATFORM QT_QUICK_BACKEND QT_QUICK_CONTROLS_STYLE QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH QML_IMPORT_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_FRAMEWORK_PATH KUBECONFIG; exec "$NATIVE" --profile "$RUN/native" --kubeconfig "$RUN/kubeconfig") > "$RUN/native.log" 2>&1 &
 NATIVE_PID=$!
 (export HOME="$RUN/legacy/home" PODLORD_HOME="$RUN/legacy/home" PODLORD_CONFIG_HOME="$RUN/legacy/config/podlord" PODLORD_DISABLE_UPDATE_CHECK=1 PODLORD_DISABLE_AUDIO=1 KUBECONFIG="$RUN/kubeconfig"; exec "$LEGACY") > "$RUN/legacy.log" 2>&1 &
 LEGACY_PID=$!
 printf 'VISUAL_RUN=%s\nKUBECONFIG_FILE=%s\nCLUSTER=%s\nNATIVE_PID=%s\nLEGACY_PID=%s\n' "$RUN" "$RUN/kubeconfig" "$NAME" "$NATIVE_PID" "$LEGACY_PID"
+printf 'REFERENCE_APP=%s\n' "${LEGACY%/Contents/MacOS/*}"
 printf 'Capture and assert public desktop behavior, then create %s/complete.\n' "$RUN"
 attempt=0
 while [ ! -f "$RUN/complete" ]; do

@@ -63,6 +63,10 @@ if(BUILD_TESTING)
 endif()
 if(BUILD_TESTING)
     add_executable(performance-ui-test tests/performance_ui_test.cpp tests/ui_input.h)
+    if(APPLE AND NOT IOS)
+        set_target_properties(performance-ui-test PROPERTIES MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "dev.podlord.performance" MACOSX_BUNDLE_BUNDLE_NAME "Podlord Performance")
+    endif()
     foreach(scenario next previous wrap enter keyboard escape empty no_match invalid regex narrow event)
         foreach(style Basic Fusion)
             add_test(NAME native.table_find.${scenario}_${style} COMMAND workspace_ui_test find_${scenario})
@@ -268,7 +272,7 @@ if(BUILD_TESTING)
     add_executable(window-host-test tests/window_host_test.cpp)
     target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test)
     foreach(style Basic Fusion)
-        foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal close_isolation main_close root_restore dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
+        foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus cross_focus filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal close_isolation main_close root_restore dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
             add_test(NAME native.window.${scenario}_${style} COMMAND window-host-test ${scenario})
             set_tests_properties(native.window.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_UPDATE_CHECK=1")
         endforeach()
@@ -301,7 +305,11 @@ if(BUILD_TESTING)
     add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
     target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario connect input shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
-        status_success status_failure status_malformed status_fragmented status_tcp_eof bad_channel text_frame oversized disconnect repeat session_close session_switch reconnect narrow hidden
+        status_success status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
+        status_invalid_exit_reason status_invalid_exit_text status_invalid_exit_zero status_invalid_exit_large status_invalid_exit_fraction status_invalid_exit_missing
+        frame_empty close_bad_size close_bad_channel stderr_frame
+        key_enter key_backspace key_backtab key_insert key_delete key_home key_end key_pageup key_pagedown key_f1 key_alt
+        bad_channel text_frame oversized disconnect repeat session_close session_switch reconnect narrow hidden
         invalid_container invalid_shell empty_shell relative_shell completed recreated container_removed target_auth target_forbidden target_rate target_redirect upgrade_auth upgrade_forbidden upgrade_rate upgrade_redirect protocol)
         foreach(style Basic Fusion)
             add_test(NAME native.terminal.${scenario}_${style} COMMAND container-terminal-ui-test ${scenario})
@@ -372,6 +380,8 @@ if(BUILD_TESTING)
         table_keyboard_copy_menu table_keyboard_copy_f10 table_keyboard_inspect_menu table_keyboard_inspect_f10
         table_keyboard_pinned_copy_menu table_keyboard_pinned_copy_f10 table_keyboard_pinned_inspect_menu table_keyboard_pinned_inspect_f10
         table_keyboard_event_copy_menu table_keyboard_event_copy_f10 table_keyboard_event_inspect_menu table_keyboard_event_inspect_f10
+        limit_default limit_ui limit_narrow limit_sort limit_filter limit_picker limit_reset limit_preset limit_session limit_refresh limit_radar limit_restart
+        limit_normalize_empty limit_normalize_zero limit_normalize_negative limit_normalize_invalid limit_normalize_overflow limit_normalize_upper limit_normalize_spaces limit_normalize_one limit_normalize_max
         filter_render_frame mode_problems mode_activity mode_reset mode_field mode_session preset_load preset_overwrite preset_delete preset_restart loading_silent loading_parallel name kind namespace status node image cluster owner issue and or exact prefix suffix regex empty missing invalid unclosed invalid_picker clear_expression keyboard copy narrow selection picker custom_picker picker_search reset stable_picker refresh_picker restart session radar global_and)
         foreach(style Basic Fusion)
             add_test(NAME native.field_filter.${scenario}_${style} COMMAND field-filter-ui-test ${scenario})
@@ -402,7 +412,7 @@ if(BUILD_TESTING)
         set_tests_properties(native.alert_store.${scenario} PROPERTIES TIMEOUT 30)
     endforeach()
     target_link_libraries(alert_ui_test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario empty create invalid busy duplicate delete restart filter disable exact prefix suffix regex and or numeric missing_metric hold no_replay regex_limit metric_empty metric_success metric_zero radar_health_warning radar_health_critical radar_health_fresh radar_health_restarts radar_focus_changed radar_focus_filtered radar_loading_partial radar_refresh_preserves_alarm)
+    foreach(scenario empty create invalid busy duplicate delete restart filter disable exact prefix suffix regex and or numeric missing_metric hold no_replay regex_limit metric_empty metric_success metric_zero radar_health_warning radar_health_critical radar_health_fresh radar_health_restarts radar_focus_changed radar_focus_filtered radar_loading_partial radar_refresh_preserves_alarm radar_search_on_demand)
         add_test(NAME native.alert_ui.${scenario} COMMAND alert_ui_test ${scenario})
         set_tests_properties(native.alert_ui.${scenario} PROPERTIES TIMEOUT 35 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
@@ -564,7 +574,7 @@ if(BUILD_TESTING)
     target_link_libraries(workspace_ui_test PRIVATE podlord_workspace Qt6::Test)
     add_executable(radar_reference_test tests/radar_reference_test.cpp)
     target_link_libraries(radar_reference_test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario reference reordered filtered namespaces pose render-check cached_scope_replay cached_uid_recreation)
+    foreach(scenario reference reordered filtered namespaces pose render-check cached_scope_replay cached_scope_hit cached_uid_recreation metric_update)
         add_test(NAME radar-reference-${scenario} COMMAND radar_reference_test ${scenario} "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/radar-reference.json")
         set_tests_properties(radar-reference-${scenario} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
@@ -844,7 +854,8 @@ endif()
 if(BUILD_TESTING)
     add_executable(view_state_test tests/view_state_test.cpp)
     target_link_libraries(view_state_test PRIVATE podlord_workspace)
-    set(view_state_cases auxiliary_read auxiliary_save auxiliary_unknown auxiliary_current_missing missing empty_profile relative_profile invalid_id noncanonical_id empty_id unknown_table unknown_column
+    set(view_state_cases preset_default_limit preset_limit_invalid preset_upgrade_limit limit_saved limit_conflict limit_other_table limit_invalid_input limit_event_input limit_missing limit_zero limit_negative limit_large limit_fraction limit_string limit_null limit_upgrade_v5
+        auxiliary_read auxiliary_save auxiliary_unknown auxiliary_current_missing missing empty_profile relative_profile invalid_id noncanonical_id empty_id unknown_table unknown_column
         descending_none profile_file file_directory busy lock_directory oversized_input save repeat clear conflict other_table
         other_session stable_ids version root_extra missing_table unknown_table_stored missing_field extra_field filter_type
         column_type direction_type column_unknown none_descending malformed oversized_file root_array)
@@ -1092,7 +1103,7 @@ if(BUILD_TESTING)
         add_test(NAME native.view_state.${scenario} COMMAND view_state_test ${scenario})
         set_tests_properties(native.table_layout.${scenario} native.view_state.${scenario} PROPERTIES TIMEOUT 30)
     endforeach()
-    foreach(scenario read activity save invalid duplicate conflicting_modes)
+    foreach(scenario read activity save invalid duplicate conflicting_modes limit)
         add_test(NAME native.view_state.legacy_preset_${scenario} COMMAND view_state_test legacy_preset_${scenario})
         set_tests_properties(native.view_state.legacy_preset_${scenario} PROPERTIES TIMEOUT 30)
     endforeach()

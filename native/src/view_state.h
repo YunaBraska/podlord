@@ -2,12 +2,15 @@
 #include "table_layout.h"
 
 namespace podlord {
+/** Reference input: invalid/nonpositive values use 256; positive values cap at 5000. */
+int resourceDisplayLimit(const QString& text);
 struct TableViewState final {
     QString filter;
     QString column;
     bool descending = false;
     QMap<QString, QString> fields = {};
     QString mode = {};
+    int limit = 256;
     bool operator==(const TableViewState&) const = default;
 };
 using TableViewStates = QMap<QString, TableViewState>;

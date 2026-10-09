@@ -109,7 +109,7 @@ Pane {
                 Layout.fillWidth: true
                 Label { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
                 IconButton { objectName: "resourceFieldFilters"; glyph: "Filters"; text: "Resource field filters"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: filtersRequested() }
-                IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0; onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
+                IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0 || workspace.resourceLimit !== 256; onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
             }
             RowLayout {
                 ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
@@ -172,6 +172,20 @@ Pane {
                     Accessible.name: "Filter " + modelData.name
                     ToolTip.visible: hovered; ToolTip.text: text
                     onClicked: fieldRequested(modelData.id, fieldButton)
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: "Limit"; color: workspace.appearanceColors.accent; font.bold: true }
+                SpinBox {
+                    objectName: "resourceLimit"
+                    Layout.fillWidth: true; Layout.minimumWidth: 0
+                    from: 1; to: 5000; editable: true
+                    value: workspace.resourceLimit
+                    enabled: workspace.currentSession !== "" && !workspace.busy
+                    Accessible.name: "Displayed resource row limit"
+                    Accessible.description: "Limits table rows only. Radar, filters and alarms keep the complete cache."
+                    onValueModified: workspace.setResourceLimit(String(value))
                 }
             }
             RowLayout {

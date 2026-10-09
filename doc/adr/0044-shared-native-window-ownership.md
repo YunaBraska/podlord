@@ -39,6 +39,11 @@ and alarm catalogs. Persistence keeps the existing optimistic conflict checks.
 Each window evaluates alarms only for its own sessions. Each view owns its
 focus/activity and log visibility, while the request budget/jitter remains
 application-wide. Authentication is coordinated once, not once per window.
+Focusing a session in another window updates the same durable last-used and
+usage-frequency authority even if that window already displays it. Repeated
+focus without a selection change is not another use. One runtime generation
+guards asynchronous ranking reads so an older completion cannot replace the
+newer selection order in a different window.
 
 Closing an individual window atomically closes only its sessions before releasing
 its transports. A failed persistence operation keeps that window open. Closing

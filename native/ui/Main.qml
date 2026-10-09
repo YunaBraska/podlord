@@ -709,7 +709,7 @@ ApplicationWindow {
                     id: resourceGrid
                     anchors.fill: parent
                     visible: workspace.workspacePage === "resources"
-                    tableModel: workspace.table
+                    tableModel: workspace.visibleResourceTable
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
                     emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
                     onSortRequested: function(column) { workspace.sortColumn(column) }
@@ -782,7 +782,7 @@ ApplicationWindow {
             objectName: "workspaceFooter"
             Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: "visible: " + workspace.resourceCount + "/" + workspace.totalResourceCount; Accessible.name: text }
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: text + ", " + workspace.resourceCount + " matching resources" }
             Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
