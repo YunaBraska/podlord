@@ -113,6 +113,13 @@ ApplicationWindow {
                 objectName: "discardStay"
                 text: "Stay"
                 DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Space) {
+                        discardChanges.reject()
+                        event.accepted = true
+                    }
+                }
                 Keys.onReturnPressed: discardChanges.reject()
                 Keys.onEnterPressed: discardChanges.reject()
             }

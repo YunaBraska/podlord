@@ -76,11 +76,7 @@ bool run(const QString& scenario) {
         require(workspace.property("sourceSortDirection") == "NONE" && model->index(0,0).data() == firstName, "Unsorted source order failed.");
     } else if (scenario == "copy_keyboard") {
         focus("sourceCell_0_0");
-#ifdef Q_OS_MACOS
-        QTest::keyClick(window, Qt::Key_C, Qt::MetaModifier);
-#else
-        QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
-#endif
+        QTest::keySequence(window, QKeySequence::Copy);
         require(QTest::qWaitFor([&] { return QGuiApplication::clipboard()->text() == firstName; }), "Source clipboard value incorrect.");
     } else if (scenario == "find" || scenario == "find_empty" || scenario == "find_keyboard") {
         if (scenario == "find_keyboard") { focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Find); }

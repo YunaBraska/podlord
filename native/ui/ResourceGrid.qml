@@ -65,6 +65,10 @@ ColumnLayout {
             if (label !== "") actionRequested(pathAt(row), column, label)
         } else if (inspectable) inspectRequested(endpointAt(row, column))
     }
+    function isCopyShortcut(event) {
+        return event.matches(StandardKey.Copy)
+            || (event.key === Qt.Key_C && (event.modifiers === Qt.ControlModifier || event.modifiers === Qt.MetaModifier))
+    }
     function handleCellKey(event, row, column, anchor) {
         const current = selection.currentIndex
         if (current.valid) { row = current.row; column = current.column }
@@ -75,7 +79,7 @@ ColumnLayout {
                 table.positionViewAtRow(target, TableView.Contain)
                 table.forceActiveFocus(Qt.TabFocusReason)
             }
-        } else if (event.matches(StandardKey.Copy)) grid.copyRequested(row, column)
+        } else if (isCopyShortcut(event)) grid.copyRequested(row, column)
         else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
             cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column
             cellMenu.popup(anchor, 0, anchor.height)
