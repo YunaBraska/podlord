@@ -21,6 +21,7 @@
 #include <QWebSocketServer>
 #include <QWebSocket>
 #include <QPointer>
+#include <QSignalSpy>
 #include <QtTest/QTest>
 #include <cstdio>
 #include <functional>

@@ -752,11 +752,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             return rules().last().toMap()["sound"].toString()==expected && server.requests==0;
         }
         if (scenario=="reference_toggle" || scenario=="reference_toggle_failure") {
+            auto* toggle = item(window, "toggleAlert_0");
+            if (!toggle || toggle->property("glyph").toString() != (baseline.first().toMap()["enabled"].toBool() ? "Visible" : "Hidden")) return false;
             QLockFile failureLock(profile+"/alert-rules.json.lock");
             if (scenario=="reference_toggle_failure" && (!QDir().mkpath(profile) || !failureLock.tryLock(0))) return false;
             if (!click(window,"toggleAlert_0") || !settle()) return false;
             if (scenario=="reference_toggle_failure") return rules()==baseline && !workspace.alerts()->error().isEmpty() && !selected().isEmpty();
             if (rules().first().toMap()["enabled"]==baseline.first().toMap()["enabled"] || server.requests!=0) return false;
+            if (toggle->property("glyph").toString() != (rules().first().toMap()["enabled"].toBool() ? "Visible" : "Hidden")) return false;
             if (!click(window,"toggleAlert_0") || !settle() || rules()!=baseline) return false;
             podlord::Workspace restored(profile);
             return waitFor([&] { return !restored.alerts()->busy(); }) && restored.alerts()->rules()==baseline;
