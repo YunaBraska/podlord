@@ -80,10 +80,24 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     default: break;
     }
     const auto& field = fields_[index.column()];
+    if (role == Qt::UserRole + 6) {
+        const auto sortValue = row["sortValues"].toObject().value(field);
+        if (!sortValue.isUndefined()) return sortValue.toVariant();
+        if (field == "preview") return row["value"].toString();
+        if (field == "eventTime") return QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
+        if (field == "createdAt") {
+            const auto created = QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
+            return created.isValid() && created <= QDateTime::currentDateTimeUtc() ? QVariant(-created.toMSecsSinceEpoch()) : QVariant{};
+        }
+        if (field == "ready") return !row[field].toString().isEmpty() && row["containerCount"].toInt() > 0
+            ? QVariant(double(row["readyCount"].toInt())/row["containerCount"].toInt()) : QVariant{};
+        if (field == "cluster") return row.contains(field) ? row[field].toString() : cluster_;
+        return row[field].toVariant();
+    }
     const auto cell = row[field];
     const auto text = field == "cluster" && !row.contains(field) ? cluster_ : cell.toString();
     const bool presentation = role == Qt::DisplayRole || role == Qt::ToolTipRole;
-    const bool age = field == "createdAt" && (presentation || role == Qt::UserRole + 6 || role == Qt::UserRole + 11);
+    const bool age = field == "createdAt" && (presentation || role == Qt::UserRole + 11);
     const auto created = age ? QDateTime::fromString(text, Qt::ISODateWithMs) : QDateTime{};
     const auto now = age ? QDateTime::currentDateTimeUtc() : QDateTime{};
     if (presentation) {
@@ -109,16 +123,6 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         if (field=="status") return appearanceStatus(appearance_,text);
         static const QStringList identities{"kind", "namespace", "status", "node", "image", "cluster", "eventType", "type", "from", "to"};
         return identities.contains(field) && !text.isEmpty() ? appearanceIdentity(appearance_, text) : QColor(Qt::transparent);
-    }
-    if (role == Qt::UserRole + 6) {
-        const auto sortValue=row["sortValues"].toObject().value(field);
-        if (!sortValue.isUndefined()) return sortValue.toVariant();
-        if (field == "preview") return row["value"].toString();
-        if (field == "eventTime") return QDateTime::fromString(text, Qt::ISODateWithMs);
-        if (field == "createdAt") return created.isValid() && created <= now ? QVariant(-created.toMSecsSinceEpoch()) : QVariant{};
-        if (field == "ready") return !text.isEmpty() && row["containerCount"].toInt() > 0
-            ? QVariant(double(row["readyCount"].toInt())/row["containerCount"].toInt()) : QVariant{};
-        return field == "cluster" ? QVariant(text) : cell.toVariant();
     }
     if (role == Qt::UserRole + 11) return age && created.isValid() && created <= now ? QVariant(created.secsTo(now)) : QVariant{};
     return {};
@@ -156,15 +160,13 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
         const auto value = incoming.take(rows_[index][identityField_].toString());
         if (value != rows_[index]) {
             const auto& previous = rows_[index];
-            for (int column = 0; column < fields_.size(); ++column) {
-                const auto& field = fields_[column];
-                const bool metric = field == "cpu" || field == "memory" || field == "storage";
-                const bool changed = field == "cluster" ? (value.contains(field) || previous.contains(field) ? value[field] != previous[field] : clusterChanged)
-                    : field == "createdAt" || value[field] != previous[field]
-                        || (field == "preview" && value["value"] != previous["value"])
-                        || (metric && (value["metricComplete"] != previous["metricComplete"] || value["metricStale"] != previous["metricStale"]));
-                if (changed) { firstColumn = std::min(firstColumn,column); lastColumn = std::max(lastColumn,column); }
-            }
+            const bool presentationChanged = fields_.contains("createdAt") || std::any_of(fields_.cbegin(), fields_.cend(), [&](const auto& field) {
+                return field == "cluster" ? (value.contains(field) || previous.contains(field) ? value[field] != previous[field] : clusterChanged)
+                    : value[field] != previous[field] || (field == "preview" && value["value"] != previous["value"])
+                        || ((field == "cpu" || field == "memory" || field == "storage")
+                            && (value["metricComplete"] != previous["metricComplete"] || value["metricStale"] != previous["metricStale"]));
+            });
+            if (presentationChanged) { firstColumn = 0; lastColumn = columnCount()-1; }
             rows_[index] = value;
             if (firstChanged < 0) firstChanged = index;
             lastChanged = index;
@@ -456,7 +458,7 @@ QVariantMap Workspace::settingsDiagnostics() const {
     metrics.append(runtimeDiagnostics());
     return {{"metrics",metrics},{"requests",client_.requestAudit(active_)},{"sampledAt",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
 }
-bool Workspace::publishInspector(bool revealChanged) {
+bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     const auto path = inspectorPath();
     auto summary = path.isEmpty() ? QJsonObject{} : client_.resource(active_, path);
     const auto document = path.isEmpty() ? QJsonObject{} : client_.document(active_, path);
@@ -465,7 +467,10 @@ bool Workspace::publishInspector(bool revealChanged) {
     const bool documentChanged = document != inspectorDocument_;
     if (!path.isEmpty() && summary.isEmpty()) summary = {{"path", path}, {"name", QUrl::fromPercentEncoding(path.section('/', -1).toLatin1())}};
     if (!summary.isEmpty()) summary["cluster"] = activeCluster();
-    if (!revealChanged && scope == inspectorScope_ && summary == inspectorSummary_ && document == inspectorDocument_) return true;
+    if (!revealChanged && scope == inspectorScope_ && summary == inspectorSummary_ && document == inspectorDocument_) {
+        if (resourcesChanged) publishRelated();
+        return true;
+    }
     emit inspectorPresentationChanging();
     if (scopeChanged) yamlFresh_ = false;
     if (yamlDraft_ && (yamlDraft_->session != active_ || yamlDraft_->path != path)) clearYamlDraft();
@@ -518,7 +523,7 @@ bool Workspace::publishInspector(bool revealChanged) {
     emit inspectorPresentationChanged();
     if (!yamlDraft_ && (documentChanged || scopeChanged)) emit yamlTextChanged();
     if (documentChanged || scopeChanged) emit yamlEditChanged();
-    if (scopeChanged || documentChanged) publishRelated();
+    if (resourcesChanged || scopeChanged || documentChanged) publishRelated();
     return true;
 }
 bool Workspace::publishRelated() {
@@ -740,6 +745,10 @@ bool Workspace::publish() {
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
+    const auto nav = navigation_.value(active_);
+    // Do not sort incoming rows using the outgoing session's discarded order.
+    visibleTable_.setLimit(nav.limit);
+    if (table_.sortColumn() != nav.column || table_.sortOrder() != nav.order) table_.sort(-1);
     rows_.publish(snapshot, cluster);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;
@@ -754,7 +763,6 @@ bool Workspace::publish() {
     healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
     eventRows_.publish(eventSnapshot, cluster);
     publishPorts();
-    const auto nav = navigation_.value(active_);
     table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);
     if (filterPickerSession_ != active_) {
         filterPickerSession_.clear(); filterPickerField_.clear(); filterPickerValues_.clear();
@@ -762,12 +770,12 @@ bool Workspace::publish() {
     }
     events_.filter(nav.eventFilter); events_.sort(nav.eventColumn, nav.eventOrder);
     dashboardDirty_=true; publishDashboard();
-    publishInspector(); publishRelated(); emit resourcePresentationChanged(); emit changed();
+    publishInspector(false, true); emit resourcePresentationChanged(); emit changed();
     return true;
 }
 bool Workspace::reload() {
     if (busy_) return false;
-    ++selectionRevision_;
+    ++runtime_->selectionRevision;
     busy_ = true; emit changed();
     using Catalogs = std::tuple<Result<SourceCatalog>, Result<SessionCatalog>, Result<ReadSettings>>;
     auto* watcher = new QFutureWatcher<Catalogs>(this);
@@ -1038,11 +1046,11 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
 }
 void Workspace::refreshSessionSelection() {
     // User actions own ranking refresh; stale completions cannot revive deleted sessions.
-    const auto revision = ++selectionRevision_;
+    const auto revision = ++runtime_->selectionRevision;
     auto* ranking = new QFutureWatcher<Result<SessionCatalog>>(this);
     connect(ranking, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, ranking, revision] {
         const auto result = ranking->result(); ranking->deleteLater();
-        if (revision == selectionRevision_)
+        if (revision == runtime_->selectionRevision)
             if (const auto* value = std::get_if<SessionCatalog>(&result)) {
                 for (auto* window : runtime_->windows) if (!window->windowClosed_) { window->selection_ = *value; emit window->catalogsChanged(); }
             }
@@ -1121,7 +1129,7 @@ bool Workspace::activate(const QString& id) {
     if (busy_ || found == catalog_.sessions.cend()) return false;
     if (auto* owner = runtime_->owners.value(id); owner && owner != this)
         return owner->activate(id) && runtime_->host && runtime_->host->focus(*owner);
-    if (id == active_ && found->open) return true;
+    if (id == active_ && found->open && catalog_.activeSession == QUuid(id)) return true;
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
     if (!client_.showSession(id, viewId_)) return false;
     emit logViewChanging(); active_ = id; publish();

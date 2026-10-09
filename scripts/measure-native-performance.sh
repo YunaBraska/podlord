@@ -6,6 +6,9 @@ BUILD=${1:?Usage: measure-native-performance.sh BUILD_DIRECTORY FRESH_EVIDENCE_D
 OUT=${2:?A fresh evidence directory is required}
 NODE=${PODLORD_NODE:-node}
 BIN="$BUILD/performance-ui-test"
+if [ -x "$BUILD/performance-ui-test.app/Contents/MacOS/performance-ui-test" ]; then
+    BIN="$BUILD/performance-ui-test.app/Contents/MacOS/performance-ui-test"
+fi
 [ -x "$BIN" ] || { printf '%s\n' 'Build the performance-ui-test target first.' >&2; exit 2; }
 [ ! -e "$OUT" ] || { printf '%s\n' 'Evidence output already exists; refusing to replace it.' >&2; exit 2; }
 mkdir -p "$OUT"
@@ -35,8 +38,12 @@ while [ ! -f "$RUN/ready" ]; do
     [ "$attempt" -lt 100 ] || { printf '%s\n' 'Local API did not become ready.' >&2; exit 1; }
     sleep 0.1
 done
-export QT_QPA_PLATFORM=cocoa QT_QUICK_CONTROLS_STYLE=Fusion
-unset QT_QUICK_BACKEND
+export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-cocoa} QT_QUICK_CONTROLS_STYLE=Fusion
+if [ "$QT_QPA_PLATFORM" = offscreen ]; then
+    QT_QUICK_BACKEND=software; export QT_QUICK_BACKEND
+else
+    unset QT_QUICK_BACKEND
+fi
 "$BIN" "$RUN/kubeconfig" > "$OUT/measurements.jsonl" 2> "$OUT/ui.log" &
 APP=$!
 while kill -0 "$APP" 2>/dev/null; do

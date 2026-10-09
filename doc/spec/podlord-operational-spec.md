@@ -480,6 +480,8 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | FLT-012 | A field value picker MUST read the complete current session cache. Its open option snapshot MUST stay stable until an explicit reload, preserve selected values absent from a refreshed cache, and close on a session change. |
 | FLT-013 | CPU, memory and storage quantity filters MUST compare actual cached measurements only. Missing measurements MUST NOT match a numeric comparison or be substituted with zero, requests, limits or capacity. References remain separate from measured usage. |
 | FLT-014 | Wide-window sidebar fields MUST open a nonmodal, viewport-bounded flyout at the selected field, leaving workspace navigation operable. Escape, outside presses, session changes and an anchor leaving or being reused in the list MUST close it. The complete field picker and narrow-window selection MUST remain centered and operable. Checkbox state, borders and keyboard focus MUST remain visible in the selected theme. |
+| FLT-015 | The reference row Limit MUST remain available, default to 256 and accept 1 through 5,000 rows. It MUST cap table presentation after filtering and sorting, not discovery, synchronization, the complete filtered match count, Radar, field-picker values or alarm evaluation. Invalid/nonpositive textual input uses the reference default; positive values above the maximum clamp to 5,000. Changing the Limit MUST NOT initiate a Kubernetes request or replay alerts. |
+| FLT-016 | The row Limit MUST follow its session across tab/window changes and restart, be retained by saved presets and legacy preset import, and return to 256 when resource filters are reset or the protected default preset is loaded. Earlier native view/preset records MUST read as 256 without an implicit write. Invalid current records MUST be retained and rejected explicitly. |
 
 Filter and sort retention across app restarts is governed by STR-003 and STR-004,
 with the native storage boundary recorded in [ADR 0027](../adr/0027-session-filter-and-sort-persistence.md).
@@ -519,8 +521,10 @@ not an inferred change to other counters. These quantities use actual measuremen
 under FLT-013; quantity ranges use AND and exact numeric alternatives use OR.
 Display-text filters can explicitly match unavailable/stale/incomplete labels
 without inventing a measurement. Problems/Activity and native saved presets now
-have the scoped contracts below; Age, UID, row Limit and importing the legacy
-preset schema remain separate gaps. Implementation and public-boundary evidence
+have the scoped contracts below. Age, UID and explicit legacy preset import have
+public-boundary coverage. The row Limit now retains reference display semantics
+under FLT-015/016; installed-process migration and complete paired presentation
+remain separate gates. Implementation and public-boundary evidence
 are tracked independently in the [test map](k3d-test-map.md).
 
 ### How Must Radar Present Arriving Resources And New Problems?

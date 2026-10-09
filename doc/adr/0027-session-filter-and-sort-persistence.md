@@ -28,8 +28,9 @@ session does not prevent independent sessions from saving. Only pending edits of
 the failed session are stopped; unrelated pending saves are still drained. Errors
 remain visible, with the active session's error preferred when applicable.
 
-Record version 5 owns those six actual table schemas, including inspector
-Values sorting. Reading versions 1 through 4 adds empty defaults only for
+Record version 6 owns those six actual table schemas, including inspector
+Values sorting and the resource display Limit. Reading versions 1 through 5
+uses a Limit of 256 and adds empty defaults only for
 known, missing auxiliary tables and does
 not write. Unknown tables and incomplete current records fail explicitly. The
 existing atomic writer performs the next upgrade; malformed files remain
@@ -67,8 +68,13 @@ Explicit import reads the existing C# saved-filter array or native preset record
 through the same bounded store boundary. Field names map to stable native IDs;
 Problems and Activity retain their distinct modes. As in the reference loader,
 the old saved ID does not become a resource predicate. Its display Limit is not
-a predicate either; ADR 0031 deliberately retains all matching rows in the native
-virtualized view rather than introducing a separate cap that could hide resources.
+a predicate either. The 2026-10-09 parity correction retains it in the resource
+view/preset record and caps only the sorted table projection. Radar, counts,
+pickers and alarms keep their complete authoritative sets. Native preset version
+2 adds Limit; version 1 reads as 256 without rewriting. Existing optimistic
+same-table conflict checks include the Limit, while unrelated table saves merge.
+Older executables reject the new versions; rollback uses a preserved older
+private profile, not destructive down-conversion of current records.
 
 Import keeps the source bytes unchanged, protects the empty default, rejects
 conflicting names rather than replacing existing filters, and uses the existing

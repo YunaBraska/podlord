@@ -66,13 +66,24 @@ bool exercise(const QStringList& args) {
         return matched == wanted.size();
     };
     if (args[1] == "reference") return check(expected);
-    if (args[1] == "cached_scope_replay") {
+    if (args[1] == "cached_scope_replay" || args[1] == "cached_scope_hit") {
         const auto scope = document["sessionId"].toString();
-        for (int index = 0; index < 4; ++index) {
+        const int visited = args[1] == "cached_scope_hit" ? 2 : 4;
+        for (int index = 0; index < visited; ++index) {
             geometry.setProperty("identityScope", scope + "-revisit-" + QString::number(index));
             QTest::qWait(30);
         }
         geometry.setProperty("identityScope", scope);
+        QTest::qWait(30);
+        return check(expected);
+    }
+    if (args[1] == "metric_update") {
+        QJsonArray updated;
+        for (const auto value : rows) {
+            auto row = value.toObject(); row["cpu"] = 42.0; row["metricStale"] = false;
+            updated.append(row);
+        }
+        if (!cache->publish(updated, document["cluster"].toString())) return false;
         QTest::qWait(30);
         return check(expected);
     }

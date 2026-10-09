@@ -20,10 +20,12 @@
 #include <optional>
 
 namespace {
+struct FrameTiming final { double renderedMs, actionMs; };
 bool waitFor(const std::function<bool()>& ready, int timeout = 15000) { return QTest::qWaitFor(ready, timeout); }
 bool report(const QJsonObject& value) {
     auto record = value;
     record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    record["renderingBoundary"] = QGuiApplication::platformName() == "offscreen" ? "headless-software" : "foreground-cocoa";
     const auto bytes = QJsonDocument(record).toJson(QJsonDocument::Compact);
     const bool written = std::fwrite(bytes.constData(), 1, bytes.size(), stdout) == size_t(bytes.size());
     return std::fputc('\n', stdout) != EOF && std::fflush(stdout) == 0 && written;
@@ -37,6 +39,7 @@ std::optional<qint64> residentBytes() {
     return valid && kib > 0 ? std::optional<qint64>{kib * 1024} : std::nullopt;
 }
 bool run(const QString& config) {
+    const bool desktop = QGuiApplication::platformName() == "cocoa";
     QElapsedTimer startup; startup.start();
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
@@ -51,10 +54,10 @@ bool run(const QString& config) {
     if (!settings || !podlord::test::scrollIntoView(window, settings)) return false;
     if (!report({{"type", "construction"}, {"milliseconds", startup.nsecsElapsed() / 1000000.0},
                  {"scope", "Workspace/QML construction, not installed-process startup"}})) return false;
-    const auto frame = [&](const std::function<bool()>& action, const std::function<bool()>& visible) -> std::optional<double> {
+    const auto frame = [&](const std::function<bool()>& action, const std::function<bool()>& visible) -> std::optional<FrameTiming> {
         if (!waitFor([&] { return !workspace.busy(); })) return {};
         window->raise(); window->requestActivate();
-        if (!waitFor([&] { return window->isExposed() && window->isActive(); })) {
+        if (desktop && !waitFor([&] { return window->isExposed() && window->isActive(); })) {
             report({{"type", "failure"}, {"reason", "foreground desktop unavailable"}, {"visible", window->isVisible()},
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};
@@ -65,7 +68,9 @@ bool run(const QString& config) {
         QObject::connect(window, &QQuickWindow::frameSwapped, &frameObserver,
             [&] { if (!rendered && visible()) rendered = elapsed.nsecsElapsed() / 1000000.0; }, Qt::QueuedConnection);
         elapsed.start();
-        if (!action()) {
+        const bool acted = action();
+        const double actionMs = elapsed.nsecsElapsed() / 1000000.0;
+        if (!acted) {
             report({{"type", "failure"}, {"reason", "public action rejected"}, {"error", workspace.error()},
                     {"busy", workspace.busy()}, {"loading", workspace.loading()}});
             return {};
@@ -76,12 +81,12 @@ bool run(const QString& config) {
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};
         }
-        if (!window->isExposed() || !window->isActive()) {
+        if (desktop && (!window->isExposed() || !window->isActive())) {
             report({{"type", "failure"}, {"reason", "foreground lost during measured frame"},
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};
         }
-        return rendered;
+        return FrameTiming{*rendered, actionMs};
     };
     if (!workspace.importFile(config) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 3; })) return false;
     QStringList sessions, clusters;
@@ -103,21 +108,27 @@ bool run(const QString& config) {
     if (!report({{"type", "profile"}, {"sessions", 3}, {"resources", total}, {"pods", 1500},
                  {"configMaps", 2334}, {"secrets", 1166}, {"logLimitMb", workspace.logLimitMb()},
                  {"logRows", workspace.logRows()->rowCount()}, {"qt", qVersion()},
+                 {"displayLimit", workspace.resourceLimit()}, {"displayedTableRows", workspace.displayedResourceCount()},
                  {"boundary", "external local HTTP API; real Workspace, caches, QML and render loop"},
                  {"protocol", "5 warmups, 30 retained action-to-frame samples per class; 10 steady batches; RSS tolerance 5 MB; 60 seconds nonsync idle"}})) return false;
     bool accepted = true;
     const auto benchmark = [&](const QString& name, double limit, const std::function<bool(int)>& action, const std::function<bool(int)>& visible) {
         if (!report({{"type", "interactionStart"}, {"name", name}})) return false;
-        QList<double> samples;
+        QList<double> samples, actions, afterAction;
         for (int i = 0; i < 35; ++i) {
             const auto elapsed = frame([&] { return action(i); }, [&] { return visible(i); });
             if (!elapsed) { report({{"type", "failure"}, {"interaction", name}, {"sample", i}, {"error", workspace.error()}}); return false; }
-            if (i >= 5) samples.append(*elapsed);
+            if (i >= 5) {
+                samples.append(elapsed->renderedMs); actions.append(elapsed->actionMs);
+                afterAction.append(elapsed->renderedMs - elapsed->actionMs);
+            }
         }
         std::sort(samples.begin(), samples.end());
+        std::sort(actions.begin(), actions.end()); std::sort(afterAction.begin(), afterAction.end());
         const bool passed = samples[28] <= limit && samples.last() <= 100;
         return report({{"type", "interaction"}, {"name", name}, {"samples", samples.size()},
                        {"p50Ms", samples[14]}, {"p95Ms", samples[28]}, {"maxMs", samples.last()},
+                       {"publicActionP95Ms", actions[28]}, {"postActionP95Ms", afterAction[28]},
                        {"p95LimitMs", limit}, {"passed", passed}}) && passed;
     };
     accepted = benchmark("filter", 100, [&](int i) { return workspace.filter(i % 2 ? "load-1" : ""); },
@@ -129,7 +140,9 @@ bool run(const QString& config) {
             const auto* model = workspace.table();
             return workspace.currentSession() == sessions[i % 3] && workspace.totalResourceCount() == counts[i % 3]
                 && model->rowCount() > 0
-                && model->data(model->index(0, 6)).toString() == clusters[i % 3];
+                && model->data(model->index(0, 6)).toString() == clusters[i % 3]
+                && (i % 3 == 0 ? workspace.sortColumnIndex() == 0 && workspace.sortDirection() == "DESC"
+                    && model->data(model->index(0, 0)).toString() == "load-99" : workspace.sortColumnIndex() == -1);
         }) && accepted;
     if (!frame([&] { return workspace.activate(sessions.first()); }, [&] { return !workspace.busy() && workspace.currentSession() == sessions.first(); })) return false;
     accepted = benchmark("cached-inspector", 50, [&](int) { return workspace.closeInspector() && workspace.inspectPath(path); },
@@ -157,9 +170,9 @@ bool run(const QString& config) {
     QEventLoop idle;
     QTimer quiet, timeout, foregroundGuard;
     quiet.setSingleShot(true); timeout.setSingleShot(true);
-    QObject::connect(&quiet, &QTimer::timeout, &idle, &QEventLoop::quit);
+    quiet.setTimerType(Qt::PreciseTimer);
     bool timedOut = false;
-    bool foregroundLost = !window->isExposed() || !window->isActive();
+    bool foregroundLost = desktop && (!window->isExposed() || !window->isActive());
     QObject::connect(&foregroundGuard, &QTimer::timeout, &idle, [&] {
         if (window->isExposed() && window->isActive()) return;
         foregroundLost = true; idle.quit();
@@ -168,7 +181,6 @@ bool run(const QString& config) {
     QElapsedTimer period;
     double cpuSeconds = 0;
     qint64 idleMilliseconds = 0;
-    int remaining = 60000;
     bool synchronizing = workspace.loading() || workspace.busy();
     auto cpu = std::clock(); period.start();
     if (cpu == std::clock_t(-1)) return false;
@@ -178,19 +190,24 @@ bool run(const QString& config) {
             idleMilliseconds += period.elapsed();
         }
     };
+    QObject::connect(&quiet, &QTimer::timeout, &idle, [&] {
+        const auto remaining = 60000 - idleMilliseconds - period.elapsed();
+        if (remaining > 0) quiet.start(static_cast<int>(remaining));
+        else idle.quit();
+    });
     const auto sync = QObject::connect(&workspace, &podlord::Workspace::changed, &idle, [&] {
         const bool next = workspace.loading() || workspace.busy();
         if (next == synchronizing) return;
         accumulate();
-        if (next) { remaining = quiet.remainingTime(); quiet.stop(); }
-        else quiet.start(std::max(1, remaining));
+        if (next) quiet.stop();
+        else quiet.start(static_cast<int>(std::max<qint64>(1, 60000 - idleMilliseconds)));
         synchronizing = next; cpu = std::clock(); period.restart();
     });
-    if (!synchronizing) quiet.start(remaining);
+    if (!synchronizing) quiet.start(60000);
     if (!report({{"type", "phase"}, {"name", "idle"}, {"logPaused", true}, {"requiredNonsyncMilliseconds", 60000}})) return false;
-    timeout.start(120000); foregroundGuard.start(1000); idle.exec(); accumulate(); QObject::disconnect(sync);
+    timeout.start(120000); if (desktop) foregroundGuard.start(1000); idle.exec(); accumulate(); QObject::disconnect(sync);
     const double percent = idleMilliseconds > 0 ? cpuSeconds / (idleMilliseconds / 1000.0) * 100 : 100;
-    const bool idlePassed = !timedOut && !foregroundLost && idleMilliseconds >= 59990 && percent <= 2;
+    const bool idlePassed = !timedOut && !foregroundLost && idleMilliseconds >= 60000 && percent <= 2;
     if (!report({{"type", "idle"}, {"milliseconds", double(idleMilliseconds)}, {"cpuPercentOneCore", percent}, {"foregroundLost", foregroundLost}, {"passed", idlePassed}})) return false;
     accepted = idlePassed && accepted;
     if (qEnvironmentVariableIsSet("PODLORD_PERFORMANCE_INSPECT")) {
@@ -204,8 +221,8 @@ int main(int argc, char** argv) {
     if (!podlord::configureGraphics()) { std::fputs("Cannot configure native graphics.\n", stderr); return 1; }
     QGuiApplication app(argc, argv);
     if (argc != 2) return 2;
-    if (QGuiApplication::platformName() != "cocoa") {
-        std::fprintf(stderr, "This performance protocol requires the macOS Cocoa renderer.\n");
+    if (QGuiApplication::platformName() != "cocoa" && !(QGuiApplication::platformName() == "offscreen" && qEnvironmentVariable("QT_QUICK_BACKEND") == "software")) {
+        std::fprintf(stderr, "Use the foreground macOS Cocoa renderer or explicit offscreen/software regression measurement.\n");
         return 2;
     }
     const bool passed = run(QString::fromLocal8Bit(argv[1]));

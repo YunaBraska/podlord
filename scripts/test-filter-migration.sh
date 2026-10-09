@@ -50,7 +50,7 @@ FilterPresetStore.Save([
     defaults with {
         Name = "Pod alpha", Search = "Pod", Id = "not-an-existing-resource-id",
         NameFilter = "alpha", Namespace = "team-a", Kind = "Pod", Cluster = "local", Status = "Running",
-        Age = ">=1m <2m", Node = "node-a", Image = "busybox:1", Ready = "1/1", Restarts = "=0", Owner = "owner-a"
+        Age = ">=1m <2m", Node = "node-a", Image = "busybox:1", Ready = "1/1", Restarts = "=0", Owner = "owner-a", Limit = "7"
     },
     defaults with { Name = "Problem pods", ProblemsOnly = true, Kind = "Pod", Issue = "CrashLoopBackOff" },
     defaults with { Name = "Recently active", ActivityOnly = true, Kind = "Pod" },

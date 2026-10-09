@@ -4963,3 +4963,74 @@ ZIP SHA-256: `f76e7efbb53c70a6ebe1290ce1f2aa1c2ed19905eefdbd1779912ea40976916f`.
 This is local ad-hoc signing and a packaging preflight, not Developer ID,
 notarization, clean-device or full migration/release readiness. The preceding
 foreground performance and branch-coverage failures remain open.
+
+### What proves the restored row limit and current terminal boundaries?
+
+The 2026-10-09 increment restores the reference application's default 256-row
+display cap and configurable 1..5000 limit without truncating the filtered cache,
+Radar, field-value discovery or session-wide alarms. Saved views use version 6;
+native presets use version 2. Older inputs are read without rewriting them and
+receive the reference default. Unsupported or malformed current files remain
+untouched. Rollback requires retaining the preceding profile, not down-conversion.
+
+| Behavior | Public entrypoint | Executable evidence |
+|---|---|---|
+| Display cap, ordering, filters beyond the cap, complete picker/Radar, refresh and session isolation | Actual Workspace/QML table and limit control | `native.field_filter.limit_{default,ui,narrow,sort,filter,picker,reset,preset,session,refresh,radar,restart}_{Basic,Fusion}` |
+| Invalid, empty, zero, negative, overflow and bounded positive limits | Public limit setter and saved-view/preset stores | `native.field_filter.limit_normalize_*`, `native.view_state.limit_*`, `native.view_state.preset_*limit*` |
+| Actual C# preset export retains its limit across native import/restart | Reference `FilterPresetStore`, native preset controls and fresh Workspace | `scripts/test-filter-migration.sh`, 14 passing executions; reference export remains byte-identical |
+| Cross-window activation updates durable usage instead of treating a local active tab as globally active | Public window/session activation and persistent SessionStore | `native.window.cross_focus_{Basic,Fusion}` |
+| Cached island replay and metric-only updates preserve reference topology | Public Radar model/render boundary | `radar-reference-cached_scope_hit`, `radar-reference-metric_update` |
+| Physical key translation, stderr, invalid exit statuses and malformed stream closures | Real QML keyboard input and Kubernetes WebSocket boundary | `native.terminal.key_*`, `status_invalid_exit_*`, `status_{array,other_failure,oversized,output_first}`, `frame_empty`, `close_bad_{size,channel}`, `stderr_frame`, each in Basic/Fusion |
+| On-demand search remains cache-only and filters the Radar | Search toggle, actual field input and rendered Radar | `native.alert_ui.radar_search_on_demand`; real local Kubernetes `real_health` |
+
+Evidence is under `~/.local/share/podlord-comparison/release-evidence/`:
+`2026-10-09-row-limit-final` records 153 passing scoped executions;
+`2026-10-09-reference-limit-restart.log` records the actual C# migration;
+`2026-10-09-model-notification-regressions` records 547 passing notification,
+filter and UI regressions; `2026-10-09-terminal-boundary-final` records 60 passing
+terminal boundary executions. Basic/Fusion repetitions are style variants, not
+additional product capabilities.
+
+The complete instrumented lane passed 4,210 executions: 3,075 baseline behavior
+executions and 1,135 style variants, including the two preflights. Its remaining
+branch gate failed: line coverage is 97.44%, branch coverage is 83.18%, against
+95%/90%. The immutable report, profile and binary manifest are in
+`2026-10-09-terminal-coverage/`. The subsequently added on-demand search test
+passed with all 10 scoped Radar/alert executions; this is not a claim that a
+newer complete suite has run.
+
+`2026-10-09-current-kubernetes-e2e/` records actual PTY/vi/control-key, window
+transfer/forward isolation, context deletion, resource deletion/history/search
+and measured-metric scenarios, plus 38 native Radar captures across all 19
+themes in dark/light variants. That whole lane failed at an obsolete test that
+typed into the hidden search. After correcting the test to use the actual search
+toggle, `2026-10-09-health-search-kubernetes/` passed the focused health/Radar
+scenario. Both fixtures removed their owned clusters and temporary profiles.
+Those captures are native headless renders, not paired physical C#/C++ evidence.
+
+The current private arm64 package is
+`2026-10-09-filter-limit-private-package/podlord-native.zip`: 32,458,319 ZIP bytes,
+85,882,923 installed regular-file bytes. Executable SHA-256:
+`9dea8072d29921d1357d884fff46e5dc8ef4fa7311494e7c23209278b7bc6da0`;
+ZIP SHA-256: `a6a030a45dac562ca398300055a1c1d5dec1c15e981d30a1e7b5de6932a6a2b3`.
+This clears the packaging preflight, not full release readiness. Signing and
+notarization remain deliberately deferred. Physical paired-view/theme evidence,
+foreground performance, branch coverage and actual supported-device evidence
+remain independent gates.
+
+`2026-10-09-model-clean-performance/` is the subsequent clean headless/software
+run: filter p95 32.02 ms, sort 55.84 ms, inspector 24.77 ms, peak RSS 193,134,592
+bytes, steady growth 409,600 bytes and 60,001 ms nonsync idle at 0.733% of one
+core pass. Cached tab p95 67.69 ms fails the unchanged 50 ms limit. Headless
+numbers do not clear the physical foreground gate. `2026-10-09-tab-sampling/`
+is deliberately profiler-perturbed diagnostic evidence, not a performance pass.
+
+`2026-10-09-current-desktop-parity/` retains raw physical Resources images from
+the current deployed native package and an isolated C# reference against the
+same owned cluster. `resources-side-by-side.png` places unchanged windows next
+to each other with labels only. Ordering, current resource/metric snapshots,
+toolbar density and Radar coloring still differ. After switching applications,
+native accessibility children became unavailable; titlebar/coordinate/keyboard
+attempts did not restore reliable interaction. Only the reference Settings image
+was captured. This partial comparison does not clear the paired view/theme matrix;
+the fixture completion marker requests cleanup, not parity approval.

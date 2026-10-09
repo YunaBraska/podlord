@@ -6,6 +6,7 @@
 #include "appearance.h"
 #include "table_layout.h"
 #include "view_state.h"
+#include "resource_display_model.h"
 #include "release_updates.h"
 #include <QFuture>
 #include "alerts.h"
@@ -122,6 +123,9 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
     Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
     Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(int resourceLimit READ resourceLimit NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(int displayedResourceCount READ displayedResourceCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* visibleResourceTable READ visibleResourceTable CONSTANT)
     Q_PROPERTY(QString filterPickerField READ filterPickerField NOTIFY filterPickerChanged)
     Q_PROPERTY(QStringList filterPickerValues READ filterPickerValues NOTIFY filterPickerChanged)
     Q_PROPERTY(QString filterError READ filterError NOTIFY changed)
@@ -297,6 +301,10 @@ public:
     Q_INVOKABLE bool setFilterMode(const QString& mode);
     QStringList filterPresets() const;
     QString selectedFilterPreset() const;
+    int resourceLimit() const { return navigation_.value(active_).limit; }
+    int displayedResourceCount() const { return visibleTable_.rowCount(); }
+    QAbstractItemModel* visibleResourceTable() { return &visibleTable_; }
+    Q_INVOKABLE bool setResourceLimit(const QString& text);
     bool filterPresetsBusy() const { return presetsBusy_; }
     QString filterPresetsError() const { return presetsError_; }
     Q_INVOKABLE bool reloadFilterPresets();
@@ -621,6 +629,7 @@ private:
         QString filter, mode;
         QMap<QString, QString> fields;
         int column = -1;
+        int limit = 256;
         Qt::SortOrder order = Qt::AscendingOrder;
         QString inspected, page = "overview", workspace = "resources";
         QVariantMap radarView{{"x",0},{"y",0},{"zoom",1}};
@@ -664,7 +673,6 @@ private:
     QVariantList sourceImportIssues_;
     SessionCatalog catalog_;
     SessionCatalog selection_;
-    quint64 selectionRevision_ = 0;
     void refreshSessionSelection();
     ResourceClient& client_;
     ReleaseUpdates& releaseUpdates_;
@@ -672,6 +680,7 @@ private:
     CredentialProcess& credentials_;
     ResourceTable rows_;
     ResourceFilter table_;
+    ResourceDisplayModel visibleTable_{&table_};
     ResourceTable eventRows_;
     ResourceFilter events_;
     ResourceTable portRows_;
@@ -715,7 +724,7 @@ private:
     bool publish();
     QString activeCluster() const;
     bool publishLogs();
-    bool publishInspector(bool revealChanged = false);
+    bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);
     bool publishRelated();
     bool inspectResource(const QString& path);
     bool openInspector(const QString& path, int historyIndex = -1);

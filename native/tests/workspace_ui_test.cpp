@@ -771,7 +771,6 @@ bool execute(const QString& scenario) {
         auto* next = item(window, "queryNext");
         auto* previous = item(window, "queryPrevious");
         if (!count || !next || !previous) return false;
-        auto* model = events ? workspace.eventTable() : workspace.table();
         const auto selection = item(window, events ? "eventTable" : "resourceTable")->property("selectionModel").value<QItemSelectionModel*>();
         if (!selection) return false;
         if (scenario == "query_none" || scenario == "query_invalid")
@@ -799,7 +798,7 @@ bool execute(const QString& scenario) {
             if (!type(window, item(window, inputName), "absent")) return false;
             auto* logo = item(window, "resourceEmptyLogo");
             if (!logo || !waitFor([&] { return logo->isVisible() && logo->property("status").toInt() == 1; })) return false;
-        } else if (scenario == "query_next" && (model->data(selection->currentIndex(), Qt::UserRole).toString().isEmpty())) return false;
+        } else if (scenario == "query_next" && selection->currentIndex().data(Qt::UserRole).toString().isEmpty()) return false;
         return workspace.inspectorPath().isEmpty() && server.requests.size() == calls;
     }
     if (scenario.startsWith("find_")) {
@@ -820,7 +819,7 @@ bool execute(const QString& scenario) {
         const auto query = scenario == "find_empty" ? QString{} : scenario == "find_no_match" ? QString("absent") : scenario == "find_invalid" ? QString("/[invalid/") : scenario == "find_regex" ? QString("/^(alpha|bravo)$/") : QString("Pod");
         if (!type(window, input, query)) return false;
         const auto selection = item(window, "resourceTable")->property("selectionModel").value<QItemSelectionModel*>(); if (!selection) return false;
-        const auto selected = [&] { return workspace.table()->data(selection->currentIndex(), Qt::UserRole).toString(); };
+        const auto selected = [&] { return selection->currentIndex().data(Qt::UserRole).toString(); };
         if (scenario == "find_empty" || scenario == "find_no_match" || scenario == "find_invalid") {
             if (!waitFor([&] { return text(window, "resourceFindCount") == "0/0"; }) || item(window,"resourceFindNext")->isEnabled()) return false;
             if (scenario == "find_invalid" && (!item(window,"resourceFindError")->isVisible() || text(window,"resourceFindError").isEmpty())) return false;
@@ -1148,7 +1147,8 @@ bool execute(const QString& scenario) {
         return true;
     }
     const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
-    if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == expectedRows && !workspace.loading(); }, 10000)) {
+    if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
+        && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
     }
     if (scenario.startsWith("dock_")) {

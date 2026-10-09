@@ -247,6 +247,29 @@ bool run(const QString& scenario) {
         REQUIRE(detached->tabs().size() == 1 && primary.tabs().size() == 1); return true;
     }
     if (scenario == "background_dirty") { REQUIRE(primary.yamlDirty() && !primary.discardPending() && !detached->yamlEditing()); return true; }
+    if (scenario == "cross_focus") {
+        const auto before = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(before));
+        const auto prior = std::get<podlord::SessionCatalog>(before);
+        REQUIRE(prior.activeSession == firstId);
+        REQUIRE(primary.activate(b));
+        REQUIRE(waitFor([&] {
+            const auto saved = store.list();
+            return !primary.busy() && std::holds_alternative<podlord::SessionCatalog>(saved)
+                && std::get<podlord::SessionCatalog>(saved).activeSession == secondId;
+        }));
+        const auto selected = std::get<podlord::SessionCatalog>(store.list());
+        REQUIRE(selected.sessions[1].usageAt.size() == prior.sessions[1].usageAt.size() + 1);
+        REQUIRE(detached->activate(a));
+        REQUIRE(waitFor([&] {
+            const auto saved = store.list();
+            return !detached->busy() && std::holds_alternative<podlord::SessionCatalog>(saved)
+                && std::get<podlord::SessionCatalog>(saved).activeSession == firstId
+                && primary.sessions().first().toMap()["id"].toString() == a
+                && detached->sessions().first().toMap()["id"].toString() == a;
+        }));
+        const auto repeated = store.list();
+        REQUIRE(primary.activate(a) && unchanged(store, repeated)); return true;
+    }
     if (scenario == "focus") {
         const auto before = store.list();
         REQUIRE(primary.activate(a) && primary.currentSession() == b && host.windows().size() == 2);

@@ -160,25 +160,25 @@ void RadarIsland::synchronize() {
             rows.append({row["path"].toString(),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
         }
     }
-    std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
-        const int aRank = rank(a.kind), bRank = rank(b.kind);
-        return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
-            < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
-    });
     if (rows!=signature_) {
         signature_=rows;
         if (const auto* terrain=terrains_.object(identityScope_); terrain && terrain->signature==rows) {
             positions_=terrain->positions; resourceBuckets_=terrain->buckets; markers_=terrain->markers;
         } else {
+            std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
+                const int aRank = rank(a.kind), bRank = rank(b.kind);
+                return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
+                    < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
+            });
             layout(rows);
-            terrains_.insert(identityScope_,new Terrain{rows,positions_,resourceBuckets_,markers_});
+            terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_});
         }
     }
     filtered_.clear(); groups_.clear();
     if (source_) for (int row=0;row<source_->rowCount();++row) {
         const auto index=source_->index(row,0); filtered_.insert(index.data(Qt::UserRole).toString(),index);
     }
-    for (const auto& row:rows) if (filtered_.contains(row.path)) { groups_.insert(row.cluster); groups_.insert(row.cluster+"/"+row.scope); }
+    for (const auto& row:signature_) if (filtered_.contains(row.path)) { groups_.insert(row.cluster); groups_.insert(row.cluster+"/"+row.scope); }
     project(true); update(); emit currentResourceChanged();
 }
 void RadarIsland::layout(const QList<Row>& rows) {

@@ -123,8 +123,14 @@ validator and conflict-checked atomic save.
 Search, Problems/Activity and supported field expressions are preserved. C#'s
 `nameFilter` maps to Name and `age` to the native age field. C# ApplyPreset clears
 Id, so importing its stored Id does not introduce an otherwise absent predicate.
-The former row-limit is a display cap, not a resource predicate; native virtualized
-views show all matching cached rows. Invalid types, conflicting modes, duplicate
+The row-limit is a display cap, not a resource predicate. The 2026-10-09 reference
+parity correction replaces the earlier unlimited table projection with the
+reference default of 256 rows and a user-adjustable maximum of 5,000, applied
+after filtering and sorting. The complete filtered proxy remains authoritative
+for Radar and match counts; alarm evaluation and pickers keep the full session
+cache. No additional request or persistent owner is introduced. Limit follows
+the existing session view and preset records under ADR 0027.
+Invalid types, conflicting modes, duplicate
 names, case collisions and unsupported fields fail explicitly. A matching name
 with identical state is an idempotent repeat; differing state never silently
 overwrites an existing preset.

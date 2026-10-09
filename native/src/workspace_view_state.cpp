@@ -52,6 +52,7 @@ bool Workspace::restoreViewStates(const LoadedViewStates& states) {
         const auto resources = views.value("resource"), events = views.value("event");
         nav.filter = resources.filter; nav.fields = resources.fields; nav.column = static_cast<int>(schemas.value("resource").indexOf(resources.column));
         nav.mode = resources.mode;
+        nav.limit = resources.limit;
         nav.order = resources.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
         nav.eventFilter = events.filter; nav.eventColumn = static_cast<int>(schemas.value("event").indexOf(events.column));
         nav.eventOrder = events.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
@@ -81,7 +82,7 @@ bool Workspace::queueViewSave(const QString& table) {
         : table == "inspectorEvent" ? nav.inspectorEventOrder : table == "inspectorLink" ? nav.inspectorLinkOrder : nav.valueOrder;
     pendingViews_[active_][table] = {table == "resource" ? nav.filter : table == "event" ? nav.eventFilter : table == "port" ? nav.portFilter : QString{},
         column < 0 ? QString{} : model->headerData(column, Qt::Horizontal, Qt::UserRole).toString(), column >= 0 && order == Qt::DescendingOrder,
-        table == "resource" ? nav.fields : QMap<QString, QString>{}, table == "resource" ? nav.mode : QString{}};
+        table == "resource" ? nav.fields : QMap<QString, QString>{}, table == "resource" ? nav.mode : QString{}, table == "resource" ? nav.limit : 256};
     viewCloseDiscardApproved_ = false;
     return dispatchViewSave();
 }

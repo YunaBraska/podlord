@@ -179,6 +179,22 @@ bool run(const QString& scenario, const QString& configPath) {
         if (!observed || input != QByteArray(1, expected.second)) std::fprintf(stderr, "Terminal control bytes: %s, accepted=%d, focused=%d\n", input.toHex().constData(), event.isAccepted(), surface->hasActiveFocus());
         REQUIRE(input == QByteArray(1, expected.second));
     }
+    else if (scenario.startsWith("key_")) {
+        const QMap<QString, QPair<int, QByteArray>> cases{
+            {"key_enter", {Qt::Key_Enter, "\r"}}, {"key_backspace", {Qt::Key_Backspace, QByteArray(1, char(127))}},
+            {"key_backtab", {Qt::Key_Backtab, "\033[Z"}}, {"key_insert", {Qt::Key_Insert, "\033[2~"}},
+            {"key_delete", {Qt::Key_Delete, "\033[3~"}}, {"key_home", {Qt::Key_Home, "\033[H"}},
+            {"key_end", {Qt::Key_End, "\033[F"}}, {"key_pageup", {Qt::Key_PageUp, "\033[5~"}},
+            {"key_pagedown", {Qt::Key_PageDown, "\033[6~"}}, {"key_f1", {Qt::Key_F1, "\033OP"}},
+            {"key_alt", {Qt::Key_X, "\033x"}}
+        };
+        REQUIRE(cases.contains(scenario));
+        const auto expected = cases.value(scenario);
+        QTest::keyClick(window, static_cast<Qt::Key>(expected.first), scenario == "key_alt" ? Qt::AltModifier
+            : scenario == "key_backtab" ? Qt::ShiftModifier : Qt::NoModifier);
+        REQUIRE(waitFor([&] { return input == expected.second; }));
+        REQUIRE(inputFrames > 0 && upgrades == 1 && freshReads == 1 && terminal->connected());
+    }
     else if (scenario == "input") { type("echo native"); REQUIRE(waitFor([&] { return input == "echo native\r"; })); }
     else if (scenario == "shortcut_input") {
 #ifdef Q_OS_MACOS
@@ -339,6 +355,41 @@ bool run(const QString& scenario, const QString& configPath) {
         QGuiApplication::clipboard()->setText("reviewed command"); REQUIRE(click("terminalPaste")); QTest::qWait(30); REQUIRE(input.isEmpty());
         if (scenario == "paste_snapshot") QGuiApplication::clipboard()->setText("unreviewed replacement");
         REQUIRE(click(scenario == "paste_cancel" ? "terminalPasteCancel" : "terminalPasteConfirm")); REQUIRE(waitFor([&] { return scenario == "paste_cancel" ? input.isEmpty() : input == "reviewed command"; }));
+    } else if (scenario == "stderr_frame") {
+        peer->sendBinaryMessage(QByteArray(1, char(2)) + "REMOTE_STDERR");
+        REQUIRE(waitFor([&] { return surface->visibleText().contains("REMOTE_STDERR"); }));
+        REQUIRE(terminal->connected() && upgrades == 1 && freshReads == 1);
+    } else if (scenario.startsWith("status_invalid_exit_")) {
+        QJsonObject cause{{"reason", "ExitCode"}, {"message", "7"}};
+        if (scenario == "status_invalid_exit_reason") cause["reason"] = "Unknown";
+        if (scenario == "status_invalid_exit_text") cause["message"] = "not-a-code";
+        if (scenario == "status_invalid_exit_zero") cause["message"] = "0";
+        if (scenario == "status_invalid_exit_large") cause["message"] = "256";
+        if (scenario == "status_invalid_exit_fraction") cause["message"] = "7.5";
+        const QJsonObject status{{"status", "Failure"}, {"reason", "NonZeroExitCode"},
+            {"details", QJsonObject{{"causes", scenario == "status_invalid_exit_missing" ? QJsonArray{} : QJsonArray{cause}}}}};
+        peer->sendBinaryMessage(QByteArray(1, char(3)) + QJsonDocument(status).toJson(QJsonDocument::Compact));
+        peer->sendBinaryMessage(QByteArray::fromHex("ff01")); peer->sendBinaryMessage(QByteArray::fromHex("ff03"));
+        REQUIRE(waitFor([&] { return !terminal->active(); }));
+        REQUIRE(terminal->status() == "Invalid Kubernetes exec exit code.");
+        QTest::qWait(100); REQUIRE(upgrades == 1 && input.isEmpty() && freshReads == 1);
+    } else if (scenario == "status_array" || scenario == "status_other_failure" || scenario == "status_oversized" || scenario == "status_output_first") {
+        const QByteArray status = scenario == "status_array" ? QByteArray("[]") : scenario == "status_other_failure"
+            ? QByteArray("{\"status\":\"Failure\",\"reason\":\"Forbidden\"}") : scenario == "status_oversized"
+            ? QByteArray(65537, 'x') : QByteArray("{\"status\":\"Success\"}");
+        peer->sendBinaryMessage(QByteArray(1, char(3)) + status);
+        if (scenario != "status_oversized") { peer->sendBinaryMessage(QByteArray::fromHex("ff01")); peer->sendBinaryMessage(QByteArray::fromHex("ff03")); }
+        REQUIRE(waitFor([&] { return !terminal->active(); }));
+        const QString expected = scenario == "status_array" ? "Invalid Kubernetes exec exit status."
+            : scenario == "status_other_failure" ? "The API rejected the shell. Check the selected shell path, container and exec permissions."
+            : scenario == "status_oversized" ? "Exec status exceeded the bounded response limit." : "Shell exited successfully.";
+        REQUIRE(terminal->status() == expected);
+        QTest::qWait(100); REQUIRE(upgrades == 1 && input.isEmpty() && freshReads == 1);
+    } else if (scenario == "frame_empty" || scenario == "close_bad_size" || scenario == "close_bad_channel") {
+        peer->sendBinaryMessage(scenario == "frame_empty" ? QByteArray{} : QByteArray::fromHex(scenario == "close_bad_size" ? "ff0101" : "ff05"));
+        REQUIRE(waitFor([&] { return !terminal->active(); }));
+        REQUIRE(!terminal->connected() && !terminal->status().isEmpty());
+        QTest::qWait(100); REQUIRE(upgrades == 1 && input.isEmpty() && freshReads == 1);
     } else if (scenario == "status_success" || scenario == "status_failure" || scenario == "status_malformed" || scenario == "status_fragmented" || scenario == "status_tcp_eof") {
         QByteArray status = scenario == "status_failure" ? "{\"status\":\"Failure\",\"reason\":\"NonZeroExitCode\",\"details\":{\"causes\":[{\"reason\":\"ExitCode\",\"message\":\"7\"}]}}" : scenario == "status_malformed" ? "bad" : "{\"status\":\"Success\"}";
         if (scenario == "status_fragmented") { peer->sendBinaryMessage(QByteArray(1, char(3)) + status.first(8)); status.remove(0, 8); }

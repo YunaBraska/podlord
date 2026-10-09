@@ -1,6 +1,8 @@
 #include "workspace.h"
+#include "radar_island.h"
 #include "ui_input.h"
 #include <QElapsedTimer>
+#include <QAbstractItemModelTester>
 #include <QClipboard>
 #include <QFile>
 #include <QSignalSpy>
@@ -98,6 +100,7 @@ QJsonObject resource(const QString& name, const QString& space, bool problem = f
 class KubernetesBoundary final : public QTcpServer {
 public:
     int requests = 0;
+    int extraConfigurations = 0;
     bool changed = false;
     bool delayed = false;
     bool events = false;
@@ -137,7 +140,12 @@ public:
                         {"involvedObject", QJsonObject{{"apiVersion", "v1"}, {"kind", "Pod"}, {"name", "alpha"}, {"namespace", "team-a"}, {"uid", "uid-alpha"}}}}}}};
                     else if (path == "/api/v1/pods") document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{
                         resource(changed ? "charlie" : "alpha", "team-a"), resource("bravo", "team-b", true)}}};
-                    else if (path == "/api/v1/configmaps" || path == "/api/v1/secrets") document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{configuration()}}};
+                    else if (path == "/api/v1/configmaps" || path == "/api/v1/secrets") {
+                        QJsonArray configurations{configuration()};
+                        for (int index = 0; index < extraConfigurations; ++index)
+                            configurations.append(resource(QString("limit-%1").arg(index, 3, 10, QChar('0')), "team-b", false, true));
+                        document = {{"metadata", QJsonObject{}}, {"items", configurations}};
+                    }
                     else if (path == "/api/v1/namespaces/team-b/configmaps/team-a" || path == "/api/v1/namespaces/team-b/secrets/team-a") document = configuration();
                     else if (path == "/api/v1/namespaces/team-a/pods/alpha") document = resource("alpha", "team-a");
                     else status = 404;
@@ -157,6 +165,7 @@ public:
 const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
 bool run(const QString& scenario, const QString& referencePresets) {
     QTemporaryDir temporary; KubernetesBoundary server;
+    server.extraConfigurations = scenario.startsWith("limit_") ? 298 : 0;
     server.delayed = scenario == "loading_silent" || scenario == "loading_parallel";
     server.events = scenario.startsWith("table_keyboard_event_");
     server.valueCopies = scenario.startsWith("value_copy_");
@@ -198,11 +207,86 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (workspace.property("syncLoading").toBool()) progress.append(workspace.property("loadingProgress").toDouble());
         });
         if (!workspace.openContext(context) || !waitFor([&] { return !workspace.busy() && !workspace.loading()
-            && (server.events ? workspace.totalResourceCount() >= 3 : workspace.totalResourceCount() == 3); })) return false;
+            && (server.events ? workspace.totalResourceCount() >= 3 : workspace.totalResourceCount() == 3 + server.extraConfigurations); })) return false;
         session = workspace.currentSession();
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
+        if (scenario.startsWith("limit_")) {
+            auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
+            if (!displayed || workspace.property("resourceLimit").toInt() != 256 || displayed->rowCount() != 256 || workspace.resourceCount() != 301) return false;
+            QAbstractItemModelTester consistency(displayed, QAbstractItemModelTester::FailureReportingMode::Fatal);
+            const auto setLimit = [&](const QString& text) {
+                bool accepted = false;
+                return QMetaObject::invokeMethod(&workspace, "setResourceLimit", Q_RETURN_ARG(bool, accepted), Q_ARG(QString, text)) && accepted;
+            };
+            if (scenario == "limit_default") return server.requests == requests;
+            if (scenario.startsWith("limit_normalize_")) {
+                const auto value = scenario.mid(QString("limit_normalize_").size());
+                const QMap<QString, QString> inputs{{"empty", ""}, {"zero", "0"}, {"negative", "-1"}, {"invalid", "abc"},
+                    {"overflow", "2147483648"}, {"upper", "2147483647"}, {"spaces", " 7 "}, {"one", "1"}, {"max", "5000"}};
+                const int expected = value == "upper" || value == "max" ? 5000 : value == "spaces" ? 7 : value == "one" ? 1 : 256;
+                return inputs.contains(value) && setLimit(inputs[value]) && workspace.property("resourceLimit").toInt() == expected
+                    && displayed->rowCount() == std::min(expected, 301) && workspace.resourceCount() == 301 && server.requests == requests;
+            }
+            if (scenario == "limit_ui" || scenario == "limit_narrow") {
+                if (scenario == "limit_narrow") {
+                    window->resize(844, 390);
+                    if (!waitFor([&] { return item(window, "landscapeNavigation")->isVisible() && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
+                }
+                auto* control = item(window, "resourceLimit");
+                if (!control) return false;
+                if (!control->isVisible()) {
+                    const auto* expander = item(window, "toggleLandscapeFilters");
+                    if (!click(window, expander && expander->isVisible() ? "toggleLandscapeFilters" : "toggleSidebar")) return false;
+                }
+                if (!waitFor([&] { return control->isVisible(); }) || !podlord::test::scrollIntoView(window, control)) return false;
+                control->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Up);
+                return waitFor([&] { return workspace.property("resourceLimit").toInt() == 257 && displayed->rowCount() == 257
+                    && item(window, "resourceTable")->property("rows").toInt() == 257; }) && server.requests == requests;
+            }
+            if (!setLimit("7") || displayed->rowCount() != 7 || workspace.resourceCount() != 301) return false;
+            if (scenario == "limit_sort") {
+                if (!workspace.sortColumn(0) || !workspace.sortColumn(0) || workspace.sortDirection() != "DESC") return false;
+                for (int row = 0; row < 7; ++row)
+                    if (displayed->data(displayed->index(row, 0), Qt::UserRole) != workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole)) return false;
+                return displayed->data(displayed->index(0, 0)).toString() == "team-a" && server.requests == requests;
+            }
+            if (scenario == "limit_filter") return workspace.filterField("name", "\"limit-297\"") && displayed->rowCount() == 1 && workspace.resourceCount() == 1
+                && displayed->data(displayed->index(0, 0)).toString() == "limit-297" && server.requests == requests;
+            if (scenario == "limit_picker") return workspace.prepareFilterPicker("name") && workspace.filterPickerValues().contains("limit-297") && server.requests == requests;
+            if (scenario == "limit_reset") return workspace.filterField("name", "limit-") && workspace.resetResourceFilters()
+                && workspace.property("resourceLimit").toInt() == 256 && displayed->rowCount() == 256 && workspace.resourceCount() == 301 && server.requests == requests;
+            if (scenario == "limit_preset") {
+                if (!workspace.saveFilterPreset("Seven rows") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
+                    || !workspace.resetResourceFilters() || workspace.selectedFilterPreset() != "default" || !workspace.loadFilterPreset("Seven rows")) return false;
+                return workspace.selectedFilterPreset() == "Seven rows" && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == requests;
+            }
+            if (scenario == "limit_session") {
+                const auto other = workspace.contexts().last().toMap().value("id").toString();
+                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() == 301; })
+                    || workspace.property("resourceLimit").toInt() != 256) return false;
+                const int afterOpen = server.requests;
+                return workspace.activate(session) && waitFor([&] { return !workspace.busy(); })
+                    && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == afterOpen;
+            }
+            if (scenario == "limit_refresh") {
+                server.extraConfigurations = 5;
+                if (!workspace.refresh() || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() == 8; })) return false;
+                return displayed->rowCount() == 7 && workspace.resourceCount() == 8 && workspace.table()->rowCount() == 8 && server.requests > requests;
+            }
+            if (scenario == "limit_radar") {
+                auto* radar = window->findChild<podlord::RadarIsland*>();
+                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 301 && server.requests == requests;
+            }
+            if (scenario == "limit_restart") {
+                if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
+                podlord::Workspace restored(profile);
+                return waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 301; })
+                    && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
+            }
+            return false;
+        }
         if (scenario.startsWith("reference_presets_")) {
             QFile original(referencePresets);
             if (!original.open(QIODevice::ReadOnly)) return false;
@@ -242,17 +326,19 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 const QVariantMap fields{{"name", "alpha"}, {"namespace", "team-a"}, {"kind", "Pod"}, {"cluster", "local"},
                     {"status", "Running"}, {"createdAt", ">=1m <2m"}, {"node", "node-a"}, {"image", "busybox:1"},
                     {"ready", "1/1"}, {"restarts", "=0"}, {"owner", "owner-a"}};
-                if (workspace.resourceFieldFilters() != fields || workspace.filterText() != "Pod") return false;
+                if (workspace.resourceFieldFilters() != fields || workspace.filterText() != "Pod" || workspace.resourceLimit() != 7) return false;
             }
             const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
             if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot)) return false;
             if (scenario != "reference_presets_restart") return true;
+            const auto expectedFields = workspace.resourceFieldFilters();
+            const auto expectedPresets = workspace.filterPresets();
             if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
             podlord::Workspace restored(profile);
             return waitFor([&] { return !restored.busy() && !restored.loading() && !restored.filterPresetsBusy()
                 && restored.currentSession() == session && restored.resourceCount() == 1; })
-                && restored.selectedFilterPreset() == name && restored.resourceFieldFilters() == workspace.resourceFieldFilters()
-                && restored.filterPresets() == workspace.filterPresets() && restored.filterError().isEmpty();
+                && restored.selectedFilterPreset() == name && restored.resourceFieldFilters() == expectedFields
+                && restored.filterPresets() == expectedPresets && restored.resourceLimit() == 7 && restored.filterError().isEmpty();
         }
         if (scenario == "filter_render_frame") {
             window->requestActivate();

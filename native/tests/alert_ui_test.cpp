@@ -69,6 +69,10 @@ bool click(QQuickWindow* window, const QString& name) {
     return true;
 }
 bool type(QQuickWindow* window, const QString& name, const QString& text) {
+    if (name == "resourceFilter") {
+        const auto* target = item(window, name);
+        if ((!target || !target->isVisible()) && !click(window, "workspaceSearchButton")) return false;
+    }
     if (!waitFor([&] { const auto* target=item(window, name); return target && target->isVisible() && target->isEnabled(); })) {
         std::fprintf(stderr, "Unavailable typing target: %s\n", qPrintable(name));
         const auto capture=qEnvironmentVariable("PODLORD_ALERT_FAILURE_FRAME");
@@ -847,6 +851,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     if (!loadSession()) return false;
     if (scenario.startsWith("radar_")) {
         if (!click(window, "radarWorkspaceButton") || !waitFor([&] { return item(window, "radarTile_0")!=nullptr; })) return false;
+        if (scenario == "radar_search_on_demand") {
+            const auto* search = item(window, "resourceFilter");
+            if (!search || search->isVisible()) return false;
+            const auto requests = server.requests;
+            return type(window, "resourceFilter", "\"alpha\"")
+                && waitFor([&] { return workspace.filterText() == "\"alpha\"" && workspace.resourceCount() == 1
+                    && item(window, "resourceFilter")->isVisible(); }) && server.requests == requests;
+        }
         if (scenario=="radar_loading_partial") {
             const auto* summary=item(window, "radarHealthSummary");
             if (!summary || !summary->property("text").toString().contains("1 cached") || !summary->property("text").toString().contains("Loading")
