@@ -122,7 +122,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     }
     if (role == Qt::UserRole + 12) return field == "from" || field == "to" ? row[field + "Path"].toString() : row[identityField_].toString();
     if (role == Qt::ForegroundRole) {
-        if (field=="status") return appearanceStatus(appearance_,text);
+        if (field == "status" || field == "eventType" || (field == "type" && fields_.contains("reason"))) return appearanceStatus(appearance_, text);
         static const QStringList identities{"kind", "namespace", "status", "node", "image", "cluster", "eventType", "type", "from", "to"};
         return identities.contains(field) && !text.isEmpty() ? appearanceIdentity(appearance_, text) : QColor(Qt::transparent);
     }
@@ -254,6 +254,8 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     static const int findType = qmlRegisterType<ResourceFilter>("Podlord.Graphics", 1, 0, "ResourceFindFilter");
     Q_UNUSED(findType);
     runtime_->windows.append(this);
+    alerts_.setPresentationText(uiText());
+    connect(this, &Workspace::languageChanged, this, [this] { alerts_.setPresentationText(uiText()); });
     alerts_.setSessionOwnership([this](const QString& id) {
         return !windowClosed_ && (runtime_->owners.value(id) == this || (!runtime_->owners.contains(id) && !detached_));
     });

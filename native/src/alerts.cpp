@@ -1,4 +1,5 @@
 #include "alerts.h"
+#include "ui_language.h"
 #include <QClipboard>
 #include <QGuiApplication>
 #include "resource_metrics.h"
@@ -272,6 +273,7 @@ Result<AlertCatalog> AlertStore::save(const AlertCatalog& desired, const AlertCa
 }
 Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::function<QDateTime()> now)
     : QObject(parent), profile_(std::move(profile)), client_(client), now_(std::move(now)) {
+    presentationText_ = uiText("en");
     expiry_.setSingleShot(true);
     connect(&expiry_, &QTimer::timeout, this, [this] { for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); });
     connect(client_, &ResourceClient::rowsChanged, this, [this](const QString& session) { queue(session); });
@@ -313,6 +315,11 @@ bool Alerts::publishTableMatches() {
     }
     return true;
 }
+bool Alerts::setPresentationText(const QVariantMap& text) {
+    if (presentationText_ == text) return true;
+    presentationText_ = text;
+    return publishTable();
+}
 bool Alerts::publishTable() {
     QMap<QString, int> counts;
     for (const auto& match : matches()) { const auto value = match.toMap(); counts.insert(value["id"].toString(), value["count"].toInt()); }
@@ -324,7 +331,7 @@ bool Alerts::publishTable() {
         QStringList groups, actions;
         for (const auto& group : catalog_.rules[row].groups) {
             QStringList criteria;
-            for (const auto& criterion : group) criteria.append(criterion.field + ": " + criterion.expression);
+            for (const auto& criterion : group) criteria.append(presentationText_.value("alert.field." + criterion.field).toString() + ": " + criterion.expression);
             groups.append('(' + criteria.join(" AND ") + ')');
         }
         if (rule["color"] != "none") actions.append("color: " + rule["color"].toString());

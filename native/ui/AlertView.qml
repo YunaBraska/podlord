@@ -138,9 +138,12 @@ Pane {
             onClicked: view.toggleRule(parent.identity)
         }
     }
-    component ActionButton: Button {
+    component ActionButton: IconButton {
+        glyph: ""
+        showText: true
+        font.bold: true
         implicitWidth: Math.max(44, implicitContentWidth + leftPadding + rightPadding)
-        implicitHeight: 28; leftPadding: 6; rightPadding: 6; topPadding: 4; bottomPadding: 4
+        implicitHeight: view.width < 600 ? 44 : 28; leftPadding: 6; rightPadding: 6; topPadding: 4; bottomPadding: 4
     }
     component FormRow: GridLayout {
         required property string label
@@ -232,35 +235,36 @@ Pane {
                         RowLayout {
                             Layout.fillWidth: true; visible: criterion.index === 0 || (criterion.index > 0 && criterion.index < criteria.count && criteria.get(criterion.index - 1).group !== criterion.group)
                             Label { Layout.fillWidth: true; text: "OR matcher " + (criterion.group + 1); font.bold: true; color: workspace.appearanceColors.accent }
-                            ActionButton { objectName: "addAlertCriterion_" + criterion.group; text: "+"; Accessible.name: "Add AND criterion to group " + (criterion.group + 1); onClicked: view.addCriterion(criterion.group) }
-                            ActionButton { objectName: "removeAlertGroup_" + criterion.group; text: "Remove group"; enabled: criteria.count > 0 && criteria.get(criteria.count - 1).group > 0; onClicked: view.removeGroup(criterion.group) }
+                            ActionButton { objectName: "addAlertCriterion_" + criterion.group; glyph: "ZoomIn"; showText: false; text: "Add AND criterion to group " + (criterion.group + 1); onClicked: view.addCriterion(criterion.group) }
+                            ActionButton { objectName: "removeAlertGroup_" + criterion.group; glyph: "Close"; showText: false; text: "Remove matcher group " + (criterion.group + 1); enabled: criteria.count > 0 && criteria.get(criteria.count - 1).group > 0; onClicked: view.removeGroup(criterion.group) }
                         }
                         GridLayout {
                             Layout.fillWidth: true
                             columns: width < 520 ? 1 : 4
                             Label { text: "AND"; color: workspace.appearanceColors.muted }
-                            ComboBox { objectName: "alertField_" + criterion.index; Layout.fillWidth: true; Layout.preferredWidth: 160; model: view.fieldOptions; textRole: "label"; valueRole: "id"; currentIndex: model.findIndex(option => option.id === criterion.field); Accessible.name: "Matcher field " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "field", currentValue) }
+                            ComboBox { objectName: "alertField_" + criterion.index; Layout.fillWidth: true; Layout.preferredWidth: 180; Layout.maximumWidth: parent.columns === 1 ? Number.POSITIVE_INFINITY : 220; model: view.fieldOptions; textRole: "label"; valueRole: "id"; currentIndex: model.findIndex(option => option.id === criterion.field); Accessible.name: "Matcher field " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "field", currentValue) }
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 ComboBox { objectName: "alertBoolean_" + criterion.index; Layout.fillWidth: true; visible: criterion.booleanField; model: ["true", "false"]; currentIndex: model.indexOf(criterion.expression); Accessible.name: "Boolean matcher " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "expression", currentText) }
                                 TextField { objectName: "alertExpression_" + criterion.index; Layout.fillWidth: true; visible: !criterion.booleanField || !["true", "false"].includes(criterion.expression); text: criterion.expression; placeholderText: workspace.uiText["alert.expressionHint"]; Accessible.name: "Matcher expression " + (criterion.index + 1); onTextEdited: criteria.setProperty(criterion.index, "expression", text) }
                             }
-                            ActionButton { objectName: "removeAlertCriterion_" + criterion.index; text: "X"; Accessible.name: "Remove criterion " + (criterion.index + 1); enabled: view.groupSize(criterion.group) > 1; onClicked: criteria.remove(criterion.index) }
+                            ActionButton { objectName: "removeAlertCriterion_" + criterion.index; glyph: "Close"; showText: false; text: "Remove criterion " + (criterion.index + 1); enabled: view.groupSize(criterion.group) > 1; onClicked: criteria.remove(criterion.index) }
                         }
                     }
                 }
                 Flow {
                     Layout.fillWidth: true; spacing: 6; enabled: form.editable
-                    ActionButton { objectName: "addAlertAnd"; text: "Add AND criterion"; onClicked: view.addCriterion(criteria.get(criteria.count - 1).group) }
-                    ActionButton { objectName: "addAlertOr"; text: "Add OR group"; onClicked: criteria.append({group: criteria.get(criteria.count - 1).group + 1, field: "name", expression: ""}) }
+                    ActionButton { objectName: "addAlertAnd"; text: "AND +"; Accessible.name: "Add AND criterion"; onClicked: view.addCriterion(criteria.get(criteria.count - 1).group) }
+                    ActionButton { objectName: "addAlertOr"; glyph: "ZoomIn"; showText: false; text: "Add OR group"; onClicked: criteria.append({group: criteria.get(criteria.count - 1).group + 1, field: "name", expression: ""}) }
                 }
                 Label { text: workspace.uiText["alert.actions"]; font.bold: true; color: workspace.appearanceColors.accent }
                 FormRow {
                     label: workspace.uiText["alert.color"]; enabled: form.editable
-                    ColumnLayout {
+                    GridLayout {
                         Layout.fillWidth: true
+                        columns: width < 520 ? 1 : 2
                         RowLayout {
-                            Layout.fillWidth: true
+                            Layout.fillWidth: true; Layout.minimumWidth: 0
                             ComboBox {
                                 objectName: "alertColorChoice"; Layout.fillWidth: true; Layout.minimumWidth: 0; textRole: "label"; valueRole: "id"
                                 model: [{id: "none", label: workspace.uiText["alert.color.none"]}, {id: "status", label: workspace.uiText["alert.color.status"]}, {id: "fresh", label: workspace.uiText["alert.color.fresh"]}, {id: "custom", label: workspace.uiText["alert.color.custom"]}]
@@ -271,27 +275,28 @@ Pane {
                             ActionButton {
                                 id: chooseColor
                                 objectName: "alertChooseColor"; text: workspace.uiText["alert.chooseColor"]; Accessible.name: text
+                                implicitWidth: 32; implicitHeight: 32
                                 onClicked: { colorDialog.selectedColor = /^#[0-9a-f]{6}$/i.test(alertColorInput.text) ? alertColorInput.text : "#e3aa46"; colorDialog.open() }
                                 contentItem: RowLayout {
                                     spacing: 6
                                     Rectangle { Layout.preferredWidth: 16; Layout.preferredHeight: 16; color: /^#[0-9a-f]{6}$/i.test(alertColorInput.text) ? alertColorInput.text : workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border; Accessible.ignored: true }
-                                    Label { text: chooseColor.text; font: chooseColor.font; color: chooseColor.palette.buttonText }
                                 }
                             }
                         }
-                        TextField { id: alertColorInput; objectName: "alertColor"; Layout.fillWidth: true; visible: !["none", "status", "fresh"].includes(text); placeholderText: "#RRGGBB"; Accessible.name: "Radar alert color" }
                         RowLayout {
                             Layout.fillWidth: true
                             HoldMode { id: colorMode; objectName: "alertColorMode"; Accessible.name: "Color hold mode" }
                             SpinBox { id: colorSeconds; objectName: "alertColorSeconds"; from: 1; to: 60; editable: true; visible: colorMode.currentValue !== "no-match" && colorMode.currentValue !== "once"; Accessible.name: "Color hold seconds" }
                         }
+                        TextField { id: alertColorInput; objectName: "alertColor"; Layout.fillWidth: true; Layout.columnSpan: parent.columns; visible: !["none", "status", "fresh"].includes(text); placeholderText: "#RRGGBB"; Accessible.name: "Radar alert color" }
                     }
                 }
                 FormRow {
                     label: workspace.uiText["alert.animation"]; enabled: form.editable
-                    ColumnLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        ComboBox { id: animation; Layout.fillWidth: true; model: view.animationOptions; textRole: "label"; valueRole: "id"; Accessible.name: "Radar animation" }
+                        columns: width < 520 ? 1 : 2
+                        ComboBox { id: animation; objectName: "alertAnimation"; Layout.fillWidth: true; Layout.minimumWidth: 0; model: view.animationOptions; textRole: "label"; valueRole: "id"; Accessible.name: "Radar animation" }
                         RowLayout {
                             Layout.fillWidth: true
                             HoldMode { id: animationMode; objectName: "alertAnimationMode"; Accessible.name: "Animation hold mode" }

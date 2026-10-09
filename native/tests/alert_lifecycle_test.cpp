@@ -7,6 +7,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QSignalSpy>
 #include <cstdio>
 
 namespace {
@@ -68,6 +69,7 @@ bool run(const QString& scenario) {
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     ResourceClient client(nullptr, [&] { return now; });
     Alerts alerts(profile.path(), &client, nullptr, [&] { return now; });
+    QSignalSpy focuses(&alerts, &Alerts::focusRequested);
     if (!waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
     const auto builtins = alerts.rules();
     for (int index = 1; index < builtins.size(); ++index) {
@@ -76,7 +78,7 @@ bool run(const QString& scenario) {
     }
     auto rule = alerts.rules().first().toMap();
     rule["id"] = "view-rule"; rule["name"] = "View rule"; rule["builtIn"] = false;
-    rule["sound"] = "none"; rule["zoom"] = 0; rule["color"] = "#123456"; rule["animation"] = "pulse";
+    rule["sound"] = "none"; rule["zoom"] = scenario.endsWith("animation") ? 125 : 0; rule["color"] = "#123456"; rule["animation"] = "pulse";
     const bool view = scenario.startsWith("view_");
     rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", view ? "newInView" : "name"},
         {"expression", view ? (scenario == "view_false" ? "false" : "true") : "worker"}}})}.toVariantList();
@@ -143,8 +145,10 @@ bool run(const QString& scenario) {
     const auto action = scenario.endsWith("animation") ? QString("animation") : QString("color");
     if (action == "animation") {
         // Animation starts after the silent initial baseline; another status change must not extend it.
+        focuses.clear();
         ++server.version; ++server.restarts;
         if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 2; })) return false;
+        if (!waitFor([&] { return !focuses.isEmpty() && focuses.last().value(2).toInt() == 125; })) return false;
         now = now.addSecs(1); QTest::qWait(2100);
     }
     return waitFor([&] { return !effect().contains(action) || effect()[action] != (action == "color" ? "#123456" : "pulse"); });

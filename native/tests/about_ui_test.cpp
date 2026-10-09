@@ -43,6 +43,12 @@ bool run(const QString& scenario) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !waitFor([&] { return !workspace.busy(); }) || !click(window, "settingsWorkspaceButton") || !click(window, "settingsAboutSection")) return false;
     BrowserBoundary browser;
+    if (scenario == "credits") {
+        if (item(window->contentItem(), "aboutSoundSource_interface-sounds") || !click(window, "aboutSoundCredits")) return false;
+        if (!waitFor([&] { return item(window->contentItem(), "aboutSoundSource_interface-sounds"); })) return false;
+        if (!click(window, "aboutSoundCredits")) return false;
+        return waitFor([&] { return !item(window->contentItem(), "aboutSoundSource_interface-sounds"); }) && requests.isEmpty() && browser.urls.isEmpty();
+    }
     const QMap<QString, QPair<QString, QString>> links{
         {"project", {"aboutProject", "https://github.com/YunaBraska/podlord"}},
         {"issues", {"aboutIssues", "https://github.com/YunaBraska/podlord/issues/new"}},
@@ -73,6 +79,7 @@ bool run(const QString& scenario) {
             && requests.isEmpty();
     }
     if (links.contains(scenario)) {
+        if (scenario.startsWith("sound_") && !click(window, "aboutSoundCredits")) return false;
         const auto [name, url] = links.value(scenario);
         return click(window, name) && waitFor([&] { return browser.urls.size() == 1; }) && browser.urls.first() == QUrl(url) && requests.isEmpty();
     }

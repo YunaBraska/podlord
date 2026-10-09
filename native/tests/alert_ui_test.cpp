@@ -560,10 +560,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         }
         if (scenario.startsWith("reference_cell_")) {
             const auto mode = scenario.mid(QString("reference_cell_").size());
-            if (!QStringList{"copy", "menu", "shift_menu", "escape", "navigation", "copy_active", "copy_when", "copy_actions", "copy_sound", "narrow", "narrow_reverse", "narrow_resize", "home", "end"}.contains(mode)) return false;
+            if (!QStringList{"copy", "menu", "shift_menu", "escape", "navigation", "copy_active", "copy_when", "copy_when_de", "copy_when_ja", "copy_actions", "copy_sound", "narrow", "narrow_reverse", "narrow_resize", "home", "end"}.contains(mode)) return false;
+            if (mode.startsWith("copy_when_")) {
+                const auto language = mode.sliced(QString("copy_when_").size());
+                if (!workspace.saveUiLanguage(language) || !waitFor([&] { return workspace.uiLanguage() == language; })) return false;
+            }
             if (mode.startsWith("narrow") && mode != "narrow_resize") { window->setWidth(720); window->setHeight(720); }
             const QMap<QString, QString> columns{{"copy_active", "Active"}, {"copy_when", "When"}, {"copy_actions", "Actions"}, {"copy_sound", "Sound"}, {"narrow", "Sound"}};
-            const auto column = mode.startsWith("narrow") ? QString("Sound") : columns.value(mode, "Name");
+            const auto column = mode.startsWith("narrow") ? QString("Sound") : mode.startsWith("copy_when") ? QString("When") : columns.value(mode, "Name");
             const QStringList order{"Active", "Name", "When", "Actions", "Sound"};
             const int logicalColumn = order.indexOf(column) + 1;
             const auto cellName = logicalColumn == 2 ? QString("alertRule_0") : "alertCell_" + QString::number(logicalColumn) + "_0";
@@ -579,6 +583,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!waitFor([&] { auto* target = item(window, cellName); return target && target->property("current").toBool(); })) return false;
             auto* cell = item(window, cellName);
             auto expected = cell->property("text").toString();
+            if (mode.startsWith("copy_when") && expected != "(" + workspace.uiText()["alert.field.problems"].toString() + ": true)") return false;
             if (mode.startsWith("narrow")) {
                 if (mode == "narrow_resize") { window->setWidth(720); window->setHeight(720); }
                 auto* table = item(window, "alertRulesTable");
@@ -651,6 +656,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (capture.isEmpty()) return true;
             QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
             return (frames.count() > 0 || frames.wait(2000)) && window->grabWindow().save(capture);
+        }
+        if (scenario=="reference_action_layout") {
+            for (const auto& pair : {qMakePair(QString("alertColorChoice"), QString("alertColorMode")), qMakePair(QString("alertAnimation"), QString("alertAnimationMode"))}) {
+                auto* first = item(window, pair.first); auto* second = item(window, pair.second);
+                if (!first || !second || !podlord::test::scrollIntoView(window, first)) return false;
+                if (qAbs(first->mapToScene({0, first->height()/2}).y() - second->mapToScene({0, second->height()/2}).y()) > 1) return false;
+            }
+            return server.requests == 0;
         }
         if (scenario=="reference_locked") return !item(window,"alertName")->isEnabled() && !item(window,"deleteAlert")->isEnabled() && !item(window,"addAlertOr")->isEnabled() && item(window,"alertEnabled")->isEnabled();
         if (scenario=="reference_keyboard") {

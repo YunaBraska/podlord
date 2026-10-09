@@ -119,7 +119,7 @@ QColor appearanceIdentity(const Appearance& appearance, const QString& value) {
 }
 QColor appearanceStatus(const Appearance& appearance, const QString& status) {
     if (status.isEmpty() || status=="-") return QColor(Qt::transparent);
-    static const QStringList healthy{"Available","Complete","Ready","Running","Succeeded","Observed"};
+    static const QStringList healthy{"Available","Complete","Ready","Running","Succeeded","Observed","Normal"};
     static const QStringList warning{"Pending","Terminating","Suspended","Warning"};
     static const QStringList critical{"CrashLoopBackOff","CreateContainerConfigError","CreateContainerError","ErrImagePull","Error","Failed","ImagePullBackOff","NotReady","OOMKilled","Unavailable"};
     return appearance.colors.value(healthy.contains(status) ? "success" : warning.contains(status) ? "warning" : critical.contains(status) ? "danger" : "unknown").value<QColor>();

@@ -70,6 +70,7 @@ public:
     const QAbstractItemModel* tableModel() const { return &table_; }
     int tableSortColumn() const { return table_.sortColumn(); }
     QString tableSortDirection() const;
+    bool setPresentationText(const QVariantMap& text);
     Q_INVOKABLE bool sortTable(int column);
     Q_INVOKABLE bool copyCell(int row, int column);
     Q_INVOKABLE bool copyIdentity(const QString& identity, int column);
@@ -142,6 +143,7 @@ private:
     bool dispatch();
     bool play(const QString& id);
     bool publishTable();
+    QVariantMap presentationText_;
     bool publishTableMatches();
 };
 } // namespace podlord
