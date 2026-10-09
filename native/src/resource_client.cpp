@@ -190,7 +190,7 @@ QJsonArray withProblemState(const QJsonArray& snapshot, QDateTime now, QDateTime
     const double threshold=restarts.size()<4 ? 3 : std::max(3.0, std::ceil(percentile(.75)+1.5*(percentile(.75)-percentile(.25))));
     QJsonArray result;
     for (const auto& value : snapshot) {
-        auto row=value.toObject(); const auto status=row["status"].toString();
+        const auto row=value.toObject(); const auto status=row["status"].toString();
         QStringList issues;
         if (!row["issue"].toString().isEmpty()) issues.append(row["issue"].toString());
         if (row["kubernetesEvent"].toBool()) {
@@ -214,7 +214,10 @@ QJsonArray withProblemState(const QJsonArray& snapshot, QDateTime now, QDateTime
             if (!starting && notReady) issues.append(QString("Ready %1/%2").arg(row["readyCount"].toInt()).arg(row["containerCount"].toInt()));
             if (pod && row["restarts"].toDouble()>0 && (status!="Running" || row["restarts"].toDouble()>threshold)) issues.append(status=="Running" ? "Restart outlier" : "Container restarts");
         }
-        issues.removeDuplicates(); row["issue"]=issues.join(", "); row["problems"]=!issues.isEmpty();
+        issues.removeDuplicates();
+        const auto problem=issues.join(", ");
+        auto decorated=row;
+        decorated["issue"]=problem; decorated["problems"]=!issues.isEmpty();
         static const QStringList activeStates{"Pending", "Progressing", "Running", "Terminating", "Updating", "Warning", "CrashLoopBackOff", "CreateContainerConfigError", "CreateContainerError", "ErrImagePull", "Error", "Failed", "ImagePullBackOff", "NotReady", "OOMKilled", "Unavailable"};
         const auto recent = [&](const QString& field, qint64 ttl) {
             const auto at = QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
@@ -222,15 +225,14 @@ QJsonArray withProblemState(const QJsonArray& snapshot, QDateTime now, QDateTime
             deadline(at); deadline(at.addMSecs(ttl + 1));
             const auto age = at.msecsTo(now); return age >= 0 && age <= ttl;
         };
-        row["activity"] = row["kubernetesEvent"].toBool()
+        decorated["activity"] = row["kubernetesEvent"].toBool()
             ? status != "Observed" && status != "Historical" && recent(row["eventTime"].toString().isEmpty() ? "createdAt" : "eventTime", row["eventType"] == "Warning" ? 1800000 : 300000)
             : activeStates.contains(status, Qt::CaseInsensitive) || recent("changedAt", 900000) || recent("createdAt", 900000);
-        const auto problem=row["issue"].toString();
         const bool severe=problem.contains("Crash", Qt::CaseInsensitive) || problem.contains("Error", Qt::CaseInsensitive)
             || problem.contains("Failed", Qt::CaseInsensitive) || problem.contains("Unavailable", Qt::CaseInsensitive)
             || severeStates.contains(status);
-        row["problemSeverity"]=issues.isEmpty() ? 0 : severe ? 2 : 1;
-        result.append(row);
+        decorated["problemSeverity"]=issues.isEmpty() ? 0 : severe ? 2 : 1;
+        result.append(decorated);
     }
     return result;
 }

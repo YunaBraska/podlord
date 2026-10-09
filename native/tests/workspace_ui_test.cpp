@@ -1613,6 +1613,17 @@ bool execute(const QString& scenario) {
         };
         const auto value = [&](int row, const QString& field) { return model->data(model->index(row, column(field))).toString(); };
         if (scenario == "table_columns") return model->columnCount() == fields.size() && workspace.resourceColumns().size() == fields.size();
+        if (scenario == "table_compact_tools") {
+            auto* content = item(window, "workspaceContent");
+            auto* header = item(window, "resourceHeaderView");
+            if (!content || !header) return false;
+            const auto gap = header->mapToScene({0, 0}).y() - content->mapToScene({0, 0}).y();
+            if (gap > 1) {
+                std::fprintf(stderr, "Unused toolbar gap above resource table: %g\n", gap);
+                return false;
+            }
+            return server.requests.size() == requests;
+        }
         if (scenario=="table_status_colors") {
             const QStringList colors{"success","warning","danger"};
             for (int row=0;row<3;++row) if (model->data(model->index(row,column("status")),Qt::ForegroundRole).value<QColor>()!=workspace.appearanceColors()[colors[row]].value<QColor>()) return false;

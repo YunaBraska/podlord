@@ -420,6 +420,12 @@ if [ "$(uname -s)" = Darwin ]; then
     /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
     /usr/bin/codesign --force --deep --sign - "$RUN/PodlordReference.app"
     LEGACY="$RUN/PodlordReference.app/Contents/MacOS/$(basename -- "$LEGACY")"
+    cp -R "${NATIVE%/Contents/MacOS/*}" "$RUN/PodlordNative.app"
+    /usr/bin/plutil -replace CFBundleIdentifier -string "dev.podlord.native.$NAME" "$RUN/PodlordNative.app/Contents/Info.plist"
+    /usr/bin/plutil -replace CFBundleName -string 'Podlord Native Comparison' "$RUN/PodlordNative.app/Contents/Info.plist"
+    /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Native Comparison' "$RUN/PodlordNative.app/Contents/Info.plist"
+    /usr/bin/codesign --force --deep --sign - "$RUN/PodlordNative.app"
+    NATIVE="$RUN/PodlordNative.app/Contents/MacOS/$(basename -- "$NATIVE")"
 fi
 (unset QT_QPA_PLATFORM QT_QUICK_BACKEND QT_QUICK_CONTROLS_STYLE QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH QML_IMPORT_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_FRAMEWORK_PATH KUBECONFIG; exec "$NATIVE" --profile "$RUN/native" --kubeconfig "$RUN/kubeconfig") > "$RUN/native.log" 2>&1 &
 NATIVE_PID=$!
@@ -427,6 +433,7 @@ NATIVE_PID=$!
 LEGACY_PID=$!
 printf 'VISUAL_RUN=%s\nKUBECONFIG_FILE=%s\nCLUSTER=%s\nNATIVE_PID=%s\nLEGACY_PID=%s\n' "$RUN" "$RUN/kubeconfig" "$NAME" "$NATIVE_PID" "$LEGACY_PID"
 printf 'REFERENCE_APP=%s\n' "${LEGACY%/Contents/MacOS/*}"
+printf 'NATIVE_APP=%s\n' "${NATIVE%/Contents/MacOS/*}"
 printf 'Capture and assert public desktop behavior, then create %s/complete.\n' "$RUN"
 attempt=0
 while [ ! -f "$RUN/complete" ]; do
