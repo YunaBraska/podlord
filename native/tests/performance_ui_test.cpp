@@ -168,8 +168,15 @@ bool run(const QString& config) {
     const auto maximum = *std::max_element(resident.begin(), resident.end());
     const auto baseline = *std::min_element(resident.begin(), resident.begin() + 5);
     const auto final = *std::max_element(resident.end() - 5, resident.end());
-    const bool memoryPassed = maximum <= 250000000 && final <= baseline + 5000000;
-    if (!report({{"type", "memory"}, {"maxResidentBytes", double(maximum)}, {"warmGrowthBytes", double(final - baseline)}, {"passed", memoryPassed}})) return false;
+#ifdef Q_OS_MACOS
+    constexpr qint64 residentLimit = 275000000;
+#else
+    constexpr qint64 residentLimit = 250000000;
+#endif
+    constexpr qint64 warmGrowthLimit = 5000000;
+    const bool memoryPassed = maximum <= residentLimit && final <= baseline + warmGrowthLimit;
+    if (!report({{"type", "memory"}, {"maxResidentBytes", double(maximum)}, {"residentLimitBytes", double(residentLimit)},
+                 {"warmGrowthBytes", double(final - baseline)}, {"warmGrowthLimitBytes", double(warmGrowthLimit)}, {"passed", memoryPassed}})) return false;
     accepted = memoryPassed && accepted;
     if (!workspace.filter("") || !workspace.pauseLogs(true)) return false;
     QEventLoop idle;

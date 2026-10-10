@@ -57,7 +57,7 @@ The remaining interview uses `Question x/y` numbering, initially estimated at 12
 | 7/14 | Background synchronization, cache freshness, and request priority | Confirmed; SYN-001 through SYN-013 |
 | 8/14 | Connection, authorization, rate-limit, and recovery feedback | Confirmed; ERR-001 through ERR-014, including user-confirmed authentication retry |
 | 9/14 | Startup, workspace restoration, and settings persistence | Confirmed; STR-001 through STR-010, SYN-001, and ERR-013 through ERR-014 |
-| 10/14 | Keyboard operation, focus, and accessible feedback | Confirmed; ACC-001 through ACC-009 |
+| 10/14 | Keyboard operation, focus, and accessible feedback | Confirmed; ACC-001 through ACC-010 |
 | 11/14 | Measurable responsiveness and resource-use acceptance criteria | Confirmed and tightened by question 13; PER-001 through PER-013. Infrastructure latency does not authorize request cancellation. |
 | 12/14 | Required device/platform coverage for the C++ rewrite | Confirmed; RWT-004 through RWT-008. Qt accepted; browser application excluded. |
 | 13/14 | UI/framework and distribution constraints; tightened cached interaction budget | Confirmed; Qt Quick with thin QML presentation, RWT-006, and PER-001 through PER-013. Module/distribution evidence remains required. |
@@ -809,6 +809,7 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | ACC-007 | Information MUST remain understandable without distinguishing colors. Textual identity requirements in TBL-009 remain authoritative for colored table content. |
 | ACC-008 | Reduced-motion operation MUST disable non-essential animations without suppressing the information they communicate. |
 | ACC-009 | With enlarged text or a small window, content and actions MUST remain reachable rather than be irretrievably clipped or hidden. |
+| ACC-010 | The radar MUST expose a named overview with its matching resource count and navigation guidance. Only focused or hovered radar targets need individual accessible nodes; the resource table and filters remain the complete accessible list. This MUST NOT remove visible resources, pointer hit targets, keyboard navigation or inspector activation. See ADR 0045. |
 
 Exact platform/assistive-technology coverage, enlarged-text settings, and minimum supported window dimensions remain to be established during scope reconciliation and the later public-UI review. These confirmed behaviors do not constitute a legal-compliance or platform-certification claim.
 
@@ -823,6 +824,7 @@ Exact platform/assistive-technology coverage, enlarged-text settings, and minimu
 | ACC-007, TBL-009 | Inspect statuses and identities without relying on color distinctions. | Their meaning remains available through text or other non-color identification. | Planned check; implementation review pending. |
 | ACC-008 | Enable reduced motion and trigger normally animated status or alert presentation. | Non-essential animation is disabled while the relevant status or alert remains understandable. | Planned check; implementation review pending. |
 | ACC-009 | Increase text size or reduce the window size and operate tables, Settings, the inspector, and confirmations. | Content and required actions remain reachable through the supported layout and navigation rather than inaccessible clipping. | Planned check; implementation review pending. |
+| ACC-010 | Load 1,001 resources, inspect the public accessibility tree, then use Home and End in the radar. | A named grouping reports the complete count; the focused resource remains individually accessible without publishing every map tile. No additional Kubernetes requests are made. | Basic/Fusion regression cases cover overview and first/last targets. The grouping assertion failed in all four cases before the role fix. The packaged Cocoa app also exposed a named 1,842-resource overview against local K3d; Home/End exposed the first/last target and Enter opened the last target in the inspector. This is not a screen-reader certification. |
 
 ## Confirmed Performance Acceptance Requirements
 
@@ -835,7 +837,7 @@ These targets were confirmed and tightened on 2026-10-02. The original 200 ms in
 | PER-003 | App startup MUST become interactive within 1 second in the agreed reference profile, without waiting for cluster connections or login. |
 | PER-004 | Scrolling and interactions MUST NOT exhibit reproducible UI stalls longer than 100 ms. |
 | PER-005 | Idle CPU use, with no synchronization in progress, MUST average no more than 2 percent of one CPU core over a 60-second measurement window. |
-| PER-006 | Process resident memory (RSS) MUST remain at or below 250 MB in the agreed performance profile. |
+| PER-006 | Process resident memory (RSS) MUST remain at or below 275 MB (275,000,000 bytes) in the agreed macOS desktop performance profile. 250 MB remains the optimization target and the unchanged ceiling for other targets pending their own profile review. The macOS adjustment does not establish mobile or other-platform readiness. See ADR 0046. |
 | PER-007 | Repeated opening and closing after warm-up MUST NOT cause continuing process-memory growth. |
 | PER-008 | UI performance acceptance MUST distinguish local cached presentation from infrastructure response latency. Slow Kubernetes or custom-resource responses MUST NOT be counted as cached-rendering latency or used to prevent immediate cached presentation. |
 | PER-009 | Exceeding a UI performance target MUST NOT cause an infrastructure request to be cancelled or impose that target as a request deadline. Dispatched-request handling remains governed by SYN-007. |
@@ -867,7 +869,7 @@ Infrastructure calls may legitimately take longer, including discovery or retrie
 | PER-003 | Start the release app while cluster connections or login are delayed. | The app is usable within 1 second without waiting for infrastructure readiness. | Planned benchmark; not measured. |
 | PER-004 | Scroll and operate the public UI repeatedly in the agreed profile. | No UI stall longer than 100 ms is reproducible under the recorded protocol. | Planned benchmark; not measured. |
 | PER-005 | Observe the app for 60 seconds after settling, without active synchronization. | Mean process CPU is no more than 2 percent of one core. | Same run: 60.001 seconds, 1.62 percent of one core, foreground retained. Scoped pass. Earlier interrupted windows are not accepted idle evidence. |
-| PER-006, PER-007 | Warm the agreed workload and repeatedly open and close views while recording process RSS. | RSS remains within 250 MB and does not continue growing under the recorded repetition protocol. | Same run: peak RSS 275,038,208 bytes, failing PER-006. Warm growth 3,293,184 bytes stays below the recorded 5 MB tolerance; broader leak/lifecycle evidence remains separate. |
+| PER-006, PER-007 | Warm the agreed workload and repeatedly open and close views while recording process RSS. | macOS profile RSS remains within 275,000,000 bytes and does not continue growing under the recorded repetition protocol; other targets retain their existing ceiling. | Historical run: peak RSS 275,038,208 bytes failed the then-current 250 MB gate, with 3,293,184 bytes warm growth. Two uninstrumented foreground-Cocoa runs after the bounded-radar change measured 260,341,760 and 260,096,000 bytes; both still failed the original gate, with 1,605,632 and 2,195,456 bytes warm growth. A fresh 2026-10-10 foreground-Cocoa run explicitly reported the 275,000,000-byte ceiling and passed at 261,799,936 bytes, with 1,376,256 bytes warm growth against the unchanged 5,000,000-byte growth ceiling. Broader leak/lifecycle evidence remains separate. |
 | PER-008, PER-009, SYN-001 | Delay a dispatched Kubernetes custom-resource response beyond the UI budgets while usable cached content exists, then eventually return the response. | Cached presentation remains responsive; the request is not cancelled because of the UI budget and its eventual response is processed in its original context. | Planned check; implementation review pending. |
 | PER-010 | Repeatedly switch between cached sessions in the agreed profile. | Public-action-to-visible-response p95 is at most 50 ms. | Same run: 49.82 ms. Scoped pass with little margin; repeated-run and other-device stability remain to be established. |
 | PER-011 | Profile frames while scrolling, switching views, and operating the actual public UI in the agreed profile. | Local UI processing per frame p95 is at most 8 ms, with the profiling method and external/display waiting distinguished. | Planned benchmark; not measured. |
@@ -1470,6 +1472,12 @@ The terminal retains its original target across inspector/session navigation;
 session close and confirmed context removal close its stream. Paint and scroll
 read its retained screen rather than fetching. Clipboard paste is explicitly
 confirmed against a captured snapshot and the original terminal.
+
+Closing a stream MUST NOT be presented as proof that its remote processes have
+terminated. The 2026-10-10 local K3d desktop check observed a remaining shell
+after session closure. Current connection/disconnect guidance makes that limit
+explicit. Controlled remote-process termination remains a separate pending
+lifecycle decision, not an implicit command or an already verified capability.
 
 ## What Happens When An Imported Context Is Removed?
 

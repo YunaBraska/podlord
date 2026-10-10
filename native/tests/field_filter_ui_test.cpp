@@ -631,9 +631,12 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!cell || !header || !cell->isVisible() || !header->isVisible()) return false;
             const auto bodyFont = cell->property("font").value<QFont>();
             const auto headerFont = header->property("font").value<QFont>();
-            if (bodyFont.weight() != QFont::Normal || bodyFont.pixelSize() != 13 || !headerFont.bold()) {
-                std::fprintf(stderr, "Table typography: body weight=%d size=%d, header weight=%d\n",
-                    int(bodyFont.weight()), bodyFont.pixelSize(), int(headerFont.weight()));
+            const auto workspaceFont = window->property("font").value<QFont>();
+            const auto* navigation = item(window, "resourcesWorkspaceButton");
+            if (bodyFont.weight() != QFont::Normal || bodyFont.pixelSize() != 13 || !headerFont.bold()
+                || workspaceFont.weight() != QFont::Normal || !navigation || !navigation->property("font").value<QFont>().bold()) {
+                std::fprintf(stderr, "Typography: body weight=%d size=%d, header weight=%d, workspace weight=%d\n",
+                    int(bodyFont.weight()), bodyFont.pixelSize(), int(headerFont.weight()), int(workspaceFont.weight()));
                 return false;
             }
             const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");

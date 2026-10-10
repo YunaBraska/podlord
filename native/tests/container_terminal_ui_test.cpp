@@ -98,6 +98,10 @@ bool run(const QString& scenario, const QString& configPath) {
     };
     REQUIRE(click("terminalButton"));
     REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "terminalConnect") != nullptr; }));
+    if (scenario == "connect") {
+        const auto* status = podlord::test::visibleItem(window->contentItem(), "terminalStatus");
+        REQUIRE(status && status->property("text").toString().contains("remote processes may continue"));
+    }
     if (scenario == "completed") { REQUIRE(!workspace.canStartTerminal()); REQUIRE(!workspace.startContainerTerminal("alpha", "/bin/sh")); return true; }
     if (scenario == "invalid_container" || scenario == "invalid_shell" || scenario == "empty_shell" || scenario == "relative_shell") {
         REQUIRE(!workspace.startContainerTerminal(scenario == "invalid_container" ? "missing" : "alpha", scenario == "empty_shell" ? "" : scenario == "relative_shell" ? "sh" : scenario == "invalid_shell" ? "/bin/sh;id" : "/bin/sh")); REQUIRE(upgrades == 0); return true;
@@ -194,6 +198,21 @@ bool run(const QString& scenario, const QString& configPath) {
             : scenario == "key_backtab" ? Qt::ShiftModifier : Qt::NoModifier);
         REQUIRE(waitFor([&] { return input == expected.second; }));
         REQUIRE(inputFrames > 0 && upgrades == 1 && freshReads == 1 && terminal->connected());
+    }
+    else if (scenario.startsWith("shifted_")) {
+        const QMap<QString, QPair<int, QString>> cases{
+            {"shifted_colon", {Qt::Key_Colon, ":"}}, {"shifted_exclamation", {Qt::Key_Exclam, "!"}},
+            {"shifted_uppercase", {Qt::Key_A, "A"}}, {"shifted_unicode", {Qt::Key_Adiaeresis, QString(QChar(0x00c4))}},
+            {"shifted_alt_colon", {Qt::Key_Colon, ":"}}, {"shifted_alt_unicode", {Qt::Key_Adiaeresis, QString(QChar(0x00c4))}}};
+        REQUIRE(cases.contains(scenario));
+        const auto value = cases.value(scenario);
+        const bool alt = scenario.startsWith("shifted_alt_");
+        QKeyEvent event(QEvent::KeyPress, value.first, Qt::ShiftModifier | (alt ? Qt::AltModifier : Qt::NoModifier), value.second);
+        QCoreApplication::sendEvent(window, &event);
+        REQUIRE(waitFor([&] { return !input.isEmpty(); }));
+        const auto expected = (alt ? QByteArray("\033") : QByteArray{}) + value.second.toUtf8();
+        if (input != expected) std::fprintf(stderr, "Shifted terminal input: expected=%s actual=%s\n", expected.toHex().constData(), input.toHex().constData());
+        REQUIRE(input == expected && inputFrames == 1 && upgrades == 1 && freshReads == 1 && terminal->connected());
     }
     else if (scenario == "input") { type("echo native"); REQUIRE(waitFor([&] { return input == "echo native\r"; })); }
     else if (scenario == "shortcut_input") {

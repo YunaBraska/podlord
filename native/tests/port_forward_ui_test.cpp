@@ -538,7 +538,9 @@ bool run(const QString& scenario, const QString& configPath) {
             }
             std::fprintf(stderr,"Unsupported table scenario %s for %s\n",qPrintable(scenario),qPrintable(actualToken)); return false;
         }
-        if (!click("portCell_0_0")) return false;
+        if (!click("portCell_0_0") || !waitFor([&] { return !workspace.loading() && workspace.inspectorPath() == selected; })) return false;
+        if (requests != calls + 1) return failed("selection did not refresh exactly its target");
+        calls = requests;
         if (scenario.startsWith("ports_open_")) {
             BrowserBoundary browser;
             const auto open = [&](const QString& id, bool secure) {

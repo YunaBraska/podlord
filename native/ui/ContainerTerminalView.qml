@@ -47,7 +47,14 @@ ColumnLayout {
                 if (workspace.startContainerTerminal(container.currentText, shell.text)) Qt.callLater(function() { surface.forceActiveFocus() })
             }
         }
-        Button { objectName: "terminalDisconnect"; text: "Disconnect"; enabled: root.terminal !== null && root.terminal.active; onClicked: workspace.stopContainerTerminal() }
+        Button {
+            objectName: "terminalDisconnect"; text: "Disconnect"
+            enabled: root.terminal !== null && root.terminal.active
+            Accessible.description: "Disconnects this stream. Remote processes may continue; exit the shell first to stop it."
+            ToolTip.visible: hovered || activeFocus
+            ToolTip.text: Accessible.description
+            onClicked: workspace.stopContainerTerminal()
+        }
         Button { id: copyButton; objectName: "terminalCopy"; text: "Copy selection"; enabled: root.terminal !== null; onClicked: surface.copySelection() }
         Button { objectName: "terminalPaste"; text: "Paste..."; enabled: root.terminal !== null && root.terminal.connected; onClicked: pasteReview.open() }
         Button { objectName: "terminalFollow"; text: "Follow output"; enabled: root.terminal !== null; onClicked: surface.followOutput() }
@@ -80,7 +87,7 @@ ColumnLayout {
     Label {
         objectName: "terminalStatus"
         Layout.fillWidth: true
-        text: root.terminal ? root.terminal.target + " / " + root.terminal.status : "Choose a container and connect. Closing this session closes its shell. No automatic reconnect."
+        text: root.terminal ? root.terminal.target + " / " + root.terminal.status : "Choose a container and connect. Session close disconnects the stream; remote processes may continue. No automatic reconnect."
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
         Accessible.name: text

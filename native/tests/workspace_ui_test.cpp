@@ -240,7 +240,7 @@ public:
                             if (path == "/apis/example.test/v1/widgets") document["items"] = QJsonArray{pod("custom-widget", kind, "example.test/v1")};
                         }
                     }
-                    if ((scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
+                    if ((scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
                         QJsonArray values;
                         const int start = url.query().contains("continue=") ? 500 : 0;
                         for (int index = start; index < start + 500; ++index) values.append(pod(QString("radar-%1").arg(index, 4, 10, QChar('0'))));
@@ -533,7 +533,7 @@ bool execute(const QString& scenario) {
     QList<qint64> dispatched;
     if (scenario == "limit") QObject::connect(&workspace, &podlord::Workspace::requestStarted, &workspace,
         [&](const QString&, const QString&, qint64 at) { dispatched.append(at); });
-    if (scenario.startsWith("accessibility_")) QAccessible::setActive(true);
+    if (scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_")) QAccessible::setActive(true);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
@@ -1150,7 +1150,7 @@ bool execute(const QString& scenario) {
         if (listed < 0 || inspected != listed + 1) { std::fprintf(stderr, "Priority order %d -> %d; requests: %s\n", listed, inspected, qPrintable(server.requests.join('\n'))); return false; }
         return true;
     }
-    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
         && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
@@ -2057,6 +2057,33 @@ bool execute(const QString& scenario) {
             if (!frame.isEmpty() && !window->grabWindow().save(frame)) return false;
         }
         const auto calls = server.requests.size();
+        if (scenario.startsWith("radar_accessibility_")) {
+            const auto exposedResources = [&] {
+                QStringList names;
+                QList<QAccessibleInterface*> pending{QAccessible::queryAccessibleInterface(window)};
+                for (qsizetype index = 0; index < pending.size() && index < 10000; ++index) {
+                    auto* entry = pending[index];
+                    if (!entry || !entry->isValid() || entry->state().invisible) continue;
+                    const auto name = entry->text(QAccessible::Name);
+                    if (entry->role() == QAccessible::Button && (name.startsWith("Pod ") || name.startsWith("Widget "))) names.append(name);
+                    for (int child = 0; child < entry->childCount(); ++child) pending.append(entry->child(child));
+                }
+                return names;
+            };
+            if (exposedResources().size() > 1) return failed("unbounded accessibility resources");
+            auto* overview = QAccessible::queryAccessibleInterface(radar);
+            if (!overview || overview->role() != QAccessible::Grouping
+                || overview->text(QAccessible::Name) != "Resource radar, 1001 resources") return failed("accessible overview");
+            if (scenario.endsWith("focus")) {
+                radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
+                const auto first = workspace.table()->data(workspace.table()->index(0,0), Qt::UserRole+1).toString();
+                if (!waitFor([&] { const auto names = exposedResources(); return names.size() == 1 && names.first().contains(first); })) return failed("accessible first resource");
+                QTest::keyClick(window, Qt::Key_End);
+                const auto last = workspace.table()->data(workspace.table()->index(expectedRows-1,0), Qt::UserRole+1).toString();
+                if (!waitFor([&] { const auto names = exposedResources(); return names.size() == 1 && names.first().contains(last); })) return failed("accessible last resource");
+            }
+            return workspace.resourceCount() == expectedRows && server.requests.size() == calls;
+        }
         if (scenario == "radar_compact_controls") {
             for (const auto* name : {"radarZoomOut", "radarZoom", "resetRadar"}) {
                 auto* control = item(window, name);
@@ -2355,7 +2382,7 @@ bool execute(const QString& scenario) {
             if (!alerts->setPreferences(true, false) || !waitFor([&] { return !alerts->busy(); })) return failed("set preferences");
             QVariantMap rule{{"id", ""}, {"name", "Rendered radar action"}, {"description", "Local visual action"},
                 {"enabled", true}, {"builtIn", false},
-                {"groups", QVariantList{QVariantList{QVariantMap{{"field", "name"}, {"expression", "\"alpha\""}}}}},
+                {"groups", QVariantList{QVariant(QVariantList{QVariantMap{{"field", "name"}, {"expression", "\"alpha\""}}})}},
                 {"color", "#0088ff"}, {"colorMode", "no-match"}, {"colorSeconds", 5},
                 {"animation", "none"}, {"animationMode", "no-match"}, {"animationSeconds", 5},
                 {"zoom", 0}, {"sound", "none"}, {"soundMinimumMatches", 1}};
@@ -3050,12 +3077,22 @@ bool execute(const QString& scenario) {
             if (!content) return false;
             double position = 0;
             if (scenario == "inspector_scroll") {
-                QTest::qWait(30);
-                const auto local = yamlView->mapToScene(QPointF(40, 100));
+                QSignalSpy rendered(window, &QQuickWindow::afterAnimating);
+                window->update();
+                if (rendered.isEmpty() && !rendered.wait(2000)) return false;
+                if (!waitFor([&] { return scroll->width() > 0 && scroll->height() > 0
+                    && content->property("contentHeight").toDouble() > content->height(); })) return false;
+                const auto local = scroll->mapToScene(QPointF(scroll->width() / 2, scroll->height() / 2));
+                QTest::mouseMove(window, local.toPoint());
                 QWheelEvent wheel(local, window->mapToGlobal(local.toPoint()), {}, QPoint(0, -1200), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                QElapsedTimer wheelClock; wheelClock.start();
+                wheel.setTimestamp(static_cast<ulong>(wheelClock.msecsSinceReference() + wheelClock.elapsed()));
                 QCoreApplication::sendEvent(window, &wheel);
                 if (!waitFor([&] { return content->property("contentY").toDouble() > 0 && !content->property("moving").toBool(); })) {
-                    std::fprintf(stderr, "YAML wheel did not settle: y=%.1f content=%.1f viewport=%.1f moving=%d\n", content->property("contentY").toDouble(), content->property("contentHeight").toDouble(), content->height(), content->property("moving").toBool()); return false;
+                    std::fprintf(stderr, "YAML wheel did not settle: y=%.1f content=%.1f viewport=%.1f moving=%d pointer=(%.1f,%.1f) accepted=%d focus=%s\n", content->property("contentY").toDouble(), content->property("contentHeight").toDouble(), content->height(), content->property("moving").toBool(), local.x(), local.y(), wheel.isAccepted(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
+                    const auto capture = qEnvironmentVariable("PODLORD_INSPECTOR_FAILURE_FRAME");
+                    if (!capture.isEmpty()) window->grabWindow().save(capture);
+                    return false;
                 }
                 position = content->property("contentY").toDouble();
             }

@@ -315,7 +315,7 @@ if(BUILD_TESTING)
     add_executable(port-forward-ui-test tests/port_forward_ui_test.cpp)
     add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
     target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario connect input shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
+    foreach(scenario connect input shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
         status_success status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
         status_invalid_exit_reason status_invalid_exit_text status_invalid_exit_zero status_invalid_exit_large status_invalid_exit_fraction status_invalid_exit_missing
         frame_empty close_bad_size close_bad_channel stderr_frame
@@ -944,7 +944,7 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
-    foreach(scenario radar_animation_blink radar_animation_pulse radar_animation_sweep radar_animation_outline radar_animation_reduce_blink radar_animation_reduce_pulse)
+    foreach(scenario radar_animation_blink radar_animation_pulse radar_animation_sweep radar_animation_outline radar_animation_reduce_blink radar_animation_reduce_pulse radar_accessibility_overview radar_accessibility_focus)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
