@@ -2138,9 +2138,11 @@ bool execute(const QString& scenario) {
             if (scenario=="radar_water_interaction") {
                 radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Right); QTest::qWait(30);
                 const auto paused=capture(QRectF(8,8,100,80)); QTest::qWait(120);
-                if (paused!=capture(QRectF(8,8,100,80))) return false;
-                QTest::qWait(300);
-                return paused!=capture(QRectF(8,8,100,80)) && server.requests.size()==calls;
+                if (paused!=capture(QRectF(8,8,100,80))) { std::fprintf(stderr,"Radar water moved during interaction pause.\n"); return false; }
+                const bool resumed=waitFor([&] { return paused!=capture(QRectF(8,8,100,80)); },1000);
+                if (!resumed) std::fprintf(stderr,"Radar water did not resume within one second: playing=%d speed=%d visible=%d\n",
+                    water->property("playing").toBool(),water->property("speedPercent").toInt(),water->isVisible());
+                return resumed && server.requests.size()==calls;
             }
             if (scenario.startsWith("radar_water_color_") || scenario=="radar_water_event_tile") {
                 if (!workspace.alerts()->setPreferences(true,true) || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
