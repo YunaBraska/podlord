@@ -625,6 +625,20 @@ bool run(const QString& scenario, const QString& referencePresets) {
             return copy ? QGuiApplication::clipboard()->text() == value && server.requests == requests
                 : waitFor([&] { return workspace.inspectorPath() == (eventTable ? QStringLiteral("/api/v1/namespaces/team-a/pods/alpha") : path); });
         }
+        if (scenario == "typography") {
+            const auto* cell = item(window, "cell_0_0");
+            const auto* header = item(window, "header_0");
+            if (!cell || !header || !cell->isVisible() || !header->isVisible()) return false;
+            const auto bodyFont = cell->property("font").value<QFont>();
+            const auto headerFont = header->property("font").value<QFont>();
+            if (bodyFont.weight() != QFont::Normal || bodyFont.pixelSize() != 13 || !headerFont.bold()) {
+                std::fprintf(stderr, "Table typography: body weight=%d size=%d, header weight=%d\n",
+                    int(bodyFont.weight()), bodyFont.pixelSize(), int(headerFont.weight()));
+                return false;
+            }
+            const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+            return server.requests == requests && (screenshot.isEmpty() || window->grabWindow().save(screenshot));
+        }
         if (scenario.startsWith("mode_") || scenario.startsWith("preset_") || scenario.startsWith("loading_")) {
             if (!item(window, "problemsOnly") || !item(window, "activityOnly")) return false;
             if (scenario == "loading_parallel") return server.maximumActive >= 2 && server.maximumActive <= 4;

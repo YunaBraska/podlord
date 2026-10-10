@@ -109,7 +109,7 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
     }
     QJsonObject result{{"path", path}, {"apiVersion", apiVersion(path)}, {"kind", kind}, {"name", metadata["name"]}, {"namespace", metadata["namespace"]},
         {"uid", metadata["uid"]}, {"resourceVersion", metadata["resourceVersion"]},
-        {"createdAt", metadata["creationTimestamp"]}, {"status", status},
+        {"createdAt", metadata["creationTimestamp"]}, {"status", status}, {"activity", false}, {"problemSeverity", 0},
         {"node", spec["nodeName"]}, {"image", images.join(", ")}, {"containers", containers}, {"owners", owners}};
     QStringList ownerNames;
     for (const auto& value : metadata["ownerReferences"].toArray()) {
@@ -217,7 +217,8 @@ QJsonArray withProblemState(const QJsonArray& snapshot, QDateTime now, QDateTime
         issues.removeDuplicates();
         const auto problem=issues.join(", ");
         auto decorated=row;
-        decorated["issue"]=problem; decorated["problems"]=!issues.isEmpty();
+        if (row["issue"].toString() != problem) decorated["issue"] = problem;
+        if (row["problems"].toBool() != !issues.isEmpty()) decorated["problems"] = !issues.isEmpty();
         static const QStringList activeStates{"Pending", "Progressing", "Running", "Terminating", "Updating", "Warning", "CrashLoopBackOff", "CreateContainerConfigError", "CreateContainerError", "ErrImagePull", "Error", "Failed", "ImagePullBackOff", "NotReady", "OOMKilled", "Unavailable"};
         const auto recent = [&](const QString& field, qint64 ttl) {
             const auto at = QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
@@ -225,13 +226,16 @@ QJsonArray withProblemState(const QJsonArray& snapshot, QDateTime now, QDateTime
             deadline(at); deadline(at.addMSecs(ttl + 1));
             const auto age = at.msecsTo(now); return age >= 0 && age <= ttl;
         };
-        decorated["activity"] = row["kubernetesEvent"].toBool()
+        const bool activity = row["kubernetesEvent"].toBool()
             ? status != "Observed" && status != "Historical" && recent(row["eventTime"].toString().isEmpty() ? "createdAt" : "eventTime", row["eventType"] == "Warning" ? 1800000 : 300000)
             : activeStates.contains(status, Qt::CaseInsensitive) || recent("changedAt", 900000) || recent("createdAt", 900000);
         const bool severe=problem.contains("Crash", Qt::CaseInsensitive) || problem.contains("Error", Qt::CaseInsensitive)
             || problem.contains("Failed", Qt::CaseInsensitive) || problem.contains("Unavailable", Qt::CaseInsensitive)
             || severeStates.contains(status);
-        decorated["problemSeverity"]=issues.isEmpty() ? 0 : severe ? 2 : 1;
+        const int severity = issues.isEmpty() ? 0 : severe ? 2 : 1;
+        // Preserve shared healthy rows instead of copying every JSON object on each publication.
+        if (row["activity"].toBool() != activity) decorated["activity"] = activity;
+        if (row["problemSeverity"].toInt() != severity) decorated["problemSeverity"] = severity;
         result.append(decorated);
     }
     return result;

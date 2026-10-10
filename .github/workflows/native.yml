@@ -86,6 +86,13 @@ jobs:
           status=0
           /bin/sh scripts/test-native.sh > "$RUNNER_TEMP/native-tests.log" 2>&1 || status=$?
           tail -n 45 "$RUNNER_TEMP/native-tests.log"
+          if [ "$status" -ne 0 ]; then
+            profiles=$(mktemp -d "$RUNNER_TEMP/native-failure-profiles.XXXXXX")
+            trap 'find "$profiles" -maxdepth 1 -type f -name "*.profraw" -delete; rmdir "$profiles"' 0
+            LLVM_PROFILE_FILE="$profiles/%p-%m.profraw" ctest --test-dir "$PODLORD_NATIVE_BUILD_DIR" \
+              --rerun-failed --parallel 1 --output-on-failure > "$RUNNER_TEMP/native-failure-reproduction.log" 2>&1 || :
+            tail -n 45 "$RUNNER_TEMP/native-failure-reproduction.log"
+          fi
           exit "$status"
       - name: Build and inspect the native macOS package
         id: package
@@ -136,6 +143,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/native-tests.log
+            ${{ runner.temp }}/native-failure-reproduction.log
             ${{ runner.temp }}/native-radar-failures
             ${{ runner.temp }}/native-toolchain.log
             ${{ runner.temp }}/native-toolchain/build-inputs.txt
