@@ -2062,6 +2062,22 @@ bool execute(const QString& scenario) {
                 if (!unchanged || water->property("playing").toBool() || server.requests.size()!=calls) std::fprintf(stderr,"Idle Radar: unchanged=%d playing=%d visible=%d calls=%d initial=%d\n",unchanged,water->property("playing").toBool(),water->isVisible(),int(server.requests.size()),int(calls));
                 return unchanged && !water->property("playing").toBool() && server.requests.size()==calls;
             };
+            if (scenario.startsWith("radar_water_background")) {
+                if (scenario.endsWith("_light") && (!workspace.saveAppearance("Imperial Ledger", "light")
+                    || !waitFor([&] { return !workspace.busy(); }))) return false;
+                if (!click(window,item(window,"settingsWorkspaceButton"))
+                    || !click(window,item(window,"settingsGraphicsSection"))
+                    || !click(window,item(window,"inlineRadarWaterEnabled"))
+                    || !waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); })
+                    || !click(window,item(window,"resourcesWorkspaceButton")) || !still()) return false;
+                const auto image=capture(QRectF(8,8,100,80));
+                int waterPixels=0;
+                for (int y=0;y<image.height();++y) for (int x=0;x<image.width();++x)
+                    if (image.pixelColor(x,y)==QColor("#061621")) ++waterPixels;
+                if (waterPixels<=image.width()*image.height()/2)
+                    std::fprintf(stderr,"Reference water background missing: %d of %d pixels.\n",waterPixels,image.width()*image.height());
+                return !image.isNull() && waterPixels>image.width()*image.height()/2 && server.requests.size()==calls;
+            }
             if (scenario=="radar_water_rules_disabled") {
                 if (!workspace.alerts()->reload() || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
                 for (const auto& value:workspace.alerts()->rules()) if (value.toMap()["enabled"].toBool()) return false;

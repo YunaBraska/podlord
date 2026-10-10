@@ -163,10 +163,10 @@ Pane {
                 anchors.fill: parent
                 z: -1
                 viewPose: grid.viewPose
-                color: workspace.appearanceColors.radarGlass
-                visible: workspace.radarWaterEnabled && workspace.radarWaterSpeedPercent > 0
-                speedPercent: workspace.radarWaterSpeedPercent
-                playing: grid.renderActive && visible && !mapDrag.active && !workspace.alerts.reducedMotion
+                color: "#061621"
+                visible: grid.count > 0
+                speedPercent: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0
+                playing: grid.renderActive && visible && speedPercent > 0 && !mapDrag.active && !workspace.alerts.reducedMotion
                 Connections {
                     target: workspace
                     function onRequestStarted(session, path, monotonicMs) { if (session === workspace.currentSession) water.noteRequest() }

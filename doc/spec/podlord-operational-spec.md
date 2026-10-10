@@ -578,7 +578,11 @@ user decision on 2026-10-05 supersedes preservation of that legacy effect in
 LEG-026. It does not remove resource highlights or authorize dropping the spatial
 map, pan, zoom, reset or other retained Radar interactions.
 
-Background water remains required; Event-local waves MUST NOT be drawn. Healthy terrain colors MUST match the
+Background water remains required; Event-local waves MUST NOT be drawn. A populated
+Radar retains the reference's fixed deep-blue base `#061621` in every theme and
+variant, including when water motion is disabled or its speed is zero. The theme's
+glass color is not the water base. An empty Radar does not animate idle water.
+Healthy terrain colors MUST match the
 reference: stone `#6B7378`, forest `#2E5941`, grass `#4E6A43`, dirt `#665A3F`,
 sand `#7D7048`, shallow network water `#286473`, deep Event water `#1B4357`.
 Solid resource tiles form the island; invented filled corridors are not part of

@@ -5305,3 +5305,44 @@ header/table sizing and default Event layout, matched-state Radar viewport,
 complete populated/empty/error/selection and narrow/device view matrix. The
 previously measured RSS and branch-coverage misses remain release blockers;
 these UI changes neither waive those budgets nor establish new measurements.
+
+## What Does The 2026-10-10 Matched Desktop Increment Prove?
+
+Evidence directories below are under the existing private comparison
+`release-evidence` root. Screenshots retain the actual full-window pixels;
+compositions place C# left and C++ right without retouching or rescaling.
+
+| Behavior | Public boundary and evidence | Result / remaining gap |
+| --- | --- | --- |
+| Current inspector and workspace arrangement with identical selected appearance | Installed apps against isolated real K3s; `2026-10-10-visual-matched-93762/`: nine view pairs plus Appearance confirmation | Both apps visibly selected Imperial Ledger / dark. ConfigMap Overview, fresh YAML, Events, Links, Values; multi-container Pod Logs; Resources, Events and Ports captured. Values are populated, not an initial loading frame. This is presentation evidence before the water-base correction, not pixel equality or every-theme coverage. |
+| Reference blue water persists when animation is disabled | Actual Settings clicks and rendered Qt pixels; `native.ui.radar_water_background[_light]_{Basic,Fusion}` | All four executions fail before correction and pass afterward. Sirocco dark and Imperial Ledger light both retain `#061621` with no water movement or additional transport. |
+| Water lifecycle, terrain, navigation and retained effects | Real Qt workspace with an external HTTP-boundary fake; `water-background-after.log`, `radar-theme-regression.log` in the matched directory | Focused set: 74/74 in 54.49 s. Expanded Radar set: 118/118 in 85.40 s, comprising 64 behavior labels and 54 style variants. These are two overlapping runs, not 192 unique scenarios. |
+| Shipped palette catalog and canonical reference topology | Actual appearance controls plus the separately recorded reference resource projection; `appearance-reference-regression.log` | 62/62 in 4.30 s. This covers named palettes and deterministic renderer checks, not a full installed-window cross-product or equality of independently changing sessions. |
+| Corrected water in the private shipped bundle | Real isolated K3s and installed apps; `2026-10-10-radar-water-desktop/comparison-workspace-resources.png`, confirmed Sirocco dark on both sides | Blue base is visible after the correction; native Settings disablement and the resulting static workspace have separate screenshots. Different catalog, session identity and camera still prevent an exact topology claim. |
+| Interactive container shell, expansion and disconnect | Real local Kubernetes Exec; `2026-10-10-visual-parity-91617/terminal-shell.png`, `terminal-expanded.png`, observed-state records | Shell command returned the explicit success marker and `aarch64`; `stty size` changed from `11 121` to `45 167` on expansion. Disconnect re-enabled Connect and disabled Disconnect. The multiline paste confirmation was exercised. This is native-only terminal evidence, not a C# embedded-terminal comparison. |
+
+The first `2026-10-10-visual-parity-91617` nine view pairs did not explicitly
+confirm matching themes. They remain structural/transport evidence only and are
+not used to claim color parity. The subsequent matched run exposed the water
+root cause: the reference uses `PlRadarWaterBrush`, not its theme glass color.
+The native correction changes four existing bindings, with no new renderer,
+timer, setting or dependency. An empty cache has no idle-water animation.
+
+The corrected SDK-pinned private package is in
+`2026-10-10-radar-water-package/`; strict ad-hoc signature and dependency closure
+checks pass. Download ZIP is 32,459,896 bytes; installed regular-file logical sum
+is 85,883,595 bytes. Packaging preflight is not a release-readiness certificate.
+All owned comparison apps, clusters and private profiles were removed through
+the existing guarded runner; the user's running app and shared images were not
+touched.
+
+Remaining observed UI gaps: native read-only YAML has no reference-style syntax
+colors or line numbers; Overview metadata lacks the reference's direct field
+filter buttons; empty metric-column behavior, default ordering, typography and
+pane proportions still differ. Full view/theme/error/narrow/device, memory and
+coverage gates remain open. No new performance claim is inferred from the
+loaded local Kubernetes fixture.
+
+The complete suite was not rerun for this four-binding correction. Its earlier
+failed-before-correction record and the focused port-forward follow-up above
+remain unchanged; targeted green runs do not relabel that full run all-green.
