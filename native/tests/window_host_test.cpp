@@ -196,7 +196,11 @@ bool run(const QString& scenario) {
         REQUIRE(primary.confirmDiscard(scenario == "dirty_discard"));
         if (scenario == "dirty_stay") { REQUIRE(primary.yamlDirty() && host.windows().size() == 1); return true; }
     } else {
-        if (scenario == "filter") { REQUIRE(primary.filter("=alpha")); QTest::qWait(100); }
+        if (scenario == "filter") {
+            REQUIRE(primary.filter("=alpha") && !primary.sessionWindowActionsReady());
+            auto* moving = podlord::test::visibleItem(main->contentItem(), "detachSession_" + a);
+            REQUIRE(moving && !moving->isEnabled());
+        }
         if (scenario == "logs") { REQUIRE(primary.setLogsVisible(true)); REQUIRE(waitFor([&] { return primary.logRows()->rowCount() > 0; })); }
         if (scenario == "terminal" || scenario == "close_terminal") {
             REQUIRE(primary.startContainerTerminal("alpha", "/bin/sh"));
@@ -219,8 +223,11 @@ bool run(const QString& scenario) {
                 REQUIRE(primary.beginYamlEdit() && primary.setYamlDraft(primary.yamlText() + "\n# unrelated draft\n"));
             }
         }
-        auto* button = podlord::test::visibleItem(main->contentItem(), "detachSession_" + a); REQUIRE(button && button->isEnabled());
-        QTest::mouseClick(main, Qt::LeftButton, Qt::NoModifier, button->mapToScene({button->width()/2, button->height()/2}).toPoint());
+        REQUIRE(waitFor([&] {
+            auto* button = podlord::test::visibleItem(main->contentItem(), "detachSession_" + a);
+            return primary.sessionWindowActionsReady() && button && button->isEnabled();
+        }));
+        REQUIRE(podlord::test::clickVisible(main, "detachSession_" + a));
     }
     if (!waitFor([&] { return host.windows().size() == 2; })) {
         std::fprintf(stderr, "Separate window not opened: busy=%d presetBusy=%d discard=%d error=%s\n", primary.busy(), primary.filterPresetsBusy(), primary.discardPending(), qPrintable(primary.error()));
@@ -299,13 +306,19 @@ bool run(const QString& scenario) {
     }
     if (scenario == "preset") {
         REQUIRE(detached->filter("=alpha") && detached->saveFilterPreset("Shared filter"));
+        auto* moving = podlord::test::visibleItem(window->contentItem(), "detachSession_" + a);
+        REQUIRE(moving && !moving->isEnabled() && !detached->sessionWindowActionsReady());
         REQUIRE(waitFor([&] { return !detached->filterPresetsBusy() && primary.filterPresets().contains("Shared filter"); }));
+        REQUIRE(waitFor([&] { return detached->sessionWindowActionsReady() && moving->isEnabled(); }));
         REQUIRE(primary.loadFilterPreset("Shared filter") && primary.resourceCount() == 1); return true;
     }
     if (scenario == "columns") {
         auto columns = detached->resourceColumns(); REQUIRE(columns.size() > 1);
         auto firstColumn = columns[0].toMap(); firstColumn["visible"] = false; firstColumn["pinned"] = false; columns[0] = firstColumn;
         REQUIRE(detached->saveTableLayout("resource", columns));
+        auto* moving = podlord::test::visibleItem(window->contentItem(), "detachSession_" + a);
+        REQUIRE(moving && !moving->isEnabled() && !detached->sessionWindowActionsReady());
+        REQUIRE(waitFor([&] { return detached->sessionWindowActionsReady() && moving->isEnabled(); }));
         REQUIRE(waitFor([&] { return !primary.resourceColumns()[0].toMap()["visible"].toBool(); })); return true;
     }
     if (scenario == "alerts") {

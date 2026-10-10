@@ -96,6 +96,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantList sessions READ sessions NOTIFY catalogsChanged)
     Q_PROPERTY(QVariantList tabs READ tabs NOTIFY catalogsChanged)
     Q_PROPERTY(bool windowActionsAvailable READ windowActionsAvailable CONSTANT)
+    Q_PROPERTY(bool sessionWindowActionsReady READ sessionWindowActionsReady NOTIFY sessionWindowActionsReadyChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool workspaceRestoreEnabled READ workspaceRestoreEnabled NOTIFY changed)
     Q_PROPERTY(bool loading READ loading NOTIFY changed)
@@ -272,6 +273,7 @@ public:
         QUrl releaseEndpoint = ReleaseUpdates::officialEndpoint());
     ~Workspace() override;
     Q_INVOKABLE bool detachSession(const QString& id);
+    bool sessionWindowActionsReady() const;
     Q_INVOKABLE bool openSessionWindow(const QString& id);
     Q_INVOKABLE bool finishWindowClose();
     Q_INVOKABLE bool attachWindow(QObject* window);
@@ -579,6 +581,7 @@ signals:
     /** Request scheduler admission; safe metadata only, using the owning client's clock. */
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
     void changed();
+    void sessionWindowActionsReadyChanged();
     void catalogsChanged();
     void resourcePresentationChanged();
     void fieldFiltersChanged();

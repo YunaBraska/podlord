@@ -530,6 +530,9 @@ bool execute(const QString& scenario) {
         if (!invalid.open(QIODevice::WriteOnly) || invalid.write("{\"version\":1,\"requestHardLimitPerMinute\":-1,\"inactiveSyncMinutes\":0}") < 0) return false;
     }
     podlord::Workspace workspace(profile, nullptr, [&] { return reference; });
+    QList<qint64> dispatched;
+    if (scenario == "limit") QObject::connect(&workspace, &podlord::Workspace::requestStarted, &workspace,
+        [&](const QString&, const QString&, qint64 at) { dispatched.append(at); });
     if (scenario.startsWith("accessibility_")) QAccessible::setActive(true);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
@@ -2351,11 +2354,19 @@ bool execute(const QString& scenario) {
             if (!waitFor([&] { return alerts->effect(path).value("color").toString() == "#0088ff"; })) return false;
             const auto renderedTile = [&] {
                 const auto frame = window->grabWindow();
-                if (frame.isNull()) return QImage{};
                 const auto position = tile->mapToScene({0, 0});
                 const double ratio = static_cast<double>(frame.width()) / window->width();
-                return frame.copy(QRect(qRound(position.x() * ratio), qRound(position.y() * ratio),
+                const auto image = frame.copy(QRect(qRound(position.x() * ratio), qRound(position.y() * ratio),
                     qRound(tile->width() * ratio), qRound(tile->height() * ratio)));
+                if (image.isNull()) {
+                    std::fprintf(stderr, "Radar capture unavailable: window=%dx%d frame=%dx%d position=(%g,%g) tile=%gx%g viewport=%d\n",
+                        window->width(), window->height(), frame.width(), frame.height(), position.x(), position.y(),
+                        tile->width(), tile->height(), tile->property("inViewport").toBool());
+                    const auto evidence = qEnvironmentVariable("PODLORD_RADAR_ACTION_EVIDENCE");
+                    if (!evidence.isEmpty() && !frame.isNull()) frame.save(evidence + "/" + scenario + "-"
+                        + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-capture-failure.png", "PNG");
+                }
+                return image;
             };
             QTest::qWait(80);
             const auto baseline = renderedTile();
@@ -2373,8 +2384,21 @@ bool execute(const QString& scenario) {
                 if (frame.isNull()) return false;
                 changed = changed || frame != first;
             }
-            if (animation == "outline") return first != baseline && !changed && server.requests.size() == calls;
-            if (!changed) return false;
+            const bool rendered = animation == "outline" ? first != baseline && !changed : changed;
+            if (!rendered) {
+                std::fprintf(stderr, "Radar action did not render: animation=%s visible=%d viewport=%d animate=%d tile=%gx%g position=(%g,%g) frame=%dx%d effect=%s\n",
+                    qPrintable(animation), tile->isVisible(), tile->property("inViewport").toBool(), tile->property("animate").toBool(),
+                    tile->width(), tile->height(), tile->mapToScene({0, 0}).x(), tile->mapToScene({0, 0}).y(),
+                    first.width(), first.height(), QJsonDocument(QJsonObject::fromVariantMap(alerts->effect(path))).toJson(QJsonDocument::Compact).constData());
+                const auto evidence = qEnvironmentVariable("PODLORD_RADAR_ACTION_EVIDENCE");
+                if (!evidence.isEmpty()) {
+                    baseline.save(evidence + "/" + scenario + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-baseline.png", "PNG");
+                    first.save(evidence + "/" + scenario + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-observed.png", "PNG");
+                    window->grabWindow().save(evidence + "/" + scenario + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-window.png", "PNG");
+                }
+                return false;
+            }
+            if (animation == "outline") return server.requests.size() == calls;
             if (!scenario.startsWith("radar_animation_reduce_")) return server.requests.size() == calls;
             if (!alerts->setPreferences(true, true) || !waitFor([&] { return !alerts->busy() && alerts->reducedMotion(); })) return false;
             for (int sample = 0; sample < 4; ++sample) {
@@ -2697,8 +2721,9 @@ bool execute(const QString& scenario) {
         return waitFor([&] { return server.prematureDisconnect; }) && server.requests.mid(before) == QStringList{"/api"};
     }
     if (scenario == "limit") {
-        for (int i = 1; i < server.starts.size(); ++i) if (server.starts[i] - server.starts[i - 1] < 490) return false;
-        return server.starts.size() >= 7;
+        // TCP receipt timing includes the external server's scheduling delay.
+        for (int i = 1; i < dispatched.size(); ++i) if (dispatched[i] - dispatched[i - 1] < 500) return false;
+        return dispatched.size() >= 7 && server.starts.size() >= 7;
     }
     if (scenario == "cache_expiry") {
         reference = reference.addSecs(86401);
