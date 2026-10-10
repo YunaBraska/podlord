@@ -351,6 +351,10 @@ public:
     QString filterPickerField() const { return filterPickerField_; }
     QStringList filterPickerValues() const { return filterPickerValues_; }
     Q_INVOKABLE bool filterField(const QString& field, const QString& expression);
+    /** Filter the active cache by an exact metadata value from its inspected resource. */
+    Q_INVOKABLE bool filterInspectorField(const QString& field);
+    /** Reuse the active theme's identity/status colors for cached inspector metadata. */
+    Q_INVOKABLE QColor inspectorFieldColor(const QString& field) const;
     Q_INVOKABLE bool resetResourceFilters();
     Q_INVOKABLE bool prepareFilterPicker(const QString& field);
     Q_INVOKABLE bool filterValueSelected(const QString& value) const;

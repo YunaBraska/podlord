@@ -1645,7 +1645,7 @@ bool execute(const QString& scenario) {
             }
             if (!click(window,item(window,"cell_0_0")) || !waitFor([&] { return workspace.canEditYaml(); })) return false;
             const auto calls=server.requests.size();
-            const auto* overview=item(window,"overviewScroll");
+            auto* overview=item(window,"overviewScroll");
             if (!overview) return false;
             if (scenario == "table_overview_custom") return text(window,"overview_cluster")=="local" && !item(window,"overview_ready") && !item(window,"overviewReadinessBar") && server.requests.size()==calls;
             const QString expected=scenario=="table_overview_full" ? "10/10" : scenario=="table_overview_none" || scenario=="table_overview_pending" ? "0/10" : "2/10";
@@ -1655,7 +1655,17 @@ bool execute(const QString& scenario) {
             const QString color=scenario=="table_overview_full" ? "success" : scenario=="table_overview_none" || scenario=="table_overview_pending" ? "danger" : "warning";
             const auto* fill=item(window,"overviewReadinessFill");
             if (!fill || qAbs(bar->property("value").toDouble()-fraction)>0.001 || fill->property("color").value<QColor>() != workspace.appearanceColors()[color].value<QColor>()) return false;
-            if (scenario=="table_overview_metadata") return text(window,"overview_cluster")=="local" && text(window,"overview_owner")=="ReplicaSet/workload" && text(window,"overview_restarts")=="10" && server.requests.size()==calls;
+            if (scenario=="table_overview_metadata") {
+                if (text(window,"overview_cluster")!="local" || text(window,"overview_restarts")!="10") return false;
+                for (int attempt=0; attempt<12 && text(window,"overview_owner")!="ReplicaSet/workload"; ++attempt) {
+                    QSignalSpy frame(window,&QQuickWindow::afterAnimating);
+                    const auto point=overview->mapToScene({overview->width()/2,overview->height()/2});
+                    QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},{0,-120},Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                    QCoreApplication::sendEvent(window,&wheel); window->update();
+                    if (frame.isEmpty() && !frame.wait(1000)) return false;
+                }
+                return text(window,"overview_owner")=="ReplicaSet/workload" && server.requests.size()==calls;
+            }
             if (scenario=="table_overview_copy") {
                 item(window,"overview_ready")->forceActiveFocus(); QTest::keySequence(window,QKeySequence::SelectAll); QTest::keySequence(window,QKeySequence::Copy);
                 return QGuiApplication::clipboard()->text()==expected && server.requests.size()==calls;
@@ -2520,6 +2530,22 @@ bool execute(const QString& scenario) {
             std::fprintf(stderr, "Related inspector not fresh: path=%s; summary=%s; detail=%s; requests=%s; cell-path=%s\n", qPrintable(workspace.inspectorPath()), qPrintable(workspace.inspected()), qPrintable(workspace.inspectorStatus()), qPrintable(server.requests.join('\n')), qPrintable(item(window, "cell_0_0")->property("resourcePath").toString())); return false;
         }
         const auto calls = server.requests.size();
+        if (scenario == "inspector_related_filter" || scenario == "inspector_related_filter_keyboard") {
+            auto* action = item(window, "overviewFilter_kind");
+            if (!action || !action->isVisible() || !action->isEnabled()) return false;
+            if (scenario.endsWith("keyboard")) {
+                action->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
+            } else if (!click(window, action)) return false;
+            const bool passed = waitFor([&] { return workspace.resourceFieldFilters().value("kind").toString() == "\"Pod\""; })
+                && workspace.filterText() == "alpha" && workspace.table()->rowCount() == 2
+                && workspace.table()->data(workspace.table()->index(0,1)).toString() == "Pod"
+                && workspace.table()->data(workspace.table()->index(1,1)).toString() == "Pod"
+                && workspace.inspectorName() == "alpha" && server.requests.size() == calls;
+            if (!passed) std::fprintf(stderr,"Metadata filter: fields=%s global=%s rows=%d inspector=%s calls=%lld/%lld\n",
+                QJsonDocument::fromVariant(workspace.resourceFieldFilters()).toJson().constData(),qPrintable(workspace.filterText()),
+                workspace.table()->rowCount(),qPrintable(workspace.inspectorName()),static_cast<long long>(server.requests.size()),static_cast<long long>(calls));
+            return passed;
+        }
         if (scenario.startsWith("inspector_related_table_")) {
             const bool event = scenario.contains("_events_");
             const auto prefix = event ? QString("inspectorEvent") : QString("inspectorLink");
@@ -2628,8 +2654,9 @@ bool execute(const QString& scenario) {
                 && click(window, item(window, "closeInspector")) && workspace.inspectorPath().isEmpty();
         }
         if (scenario == "inspector_related_overview") {
-            return text(window, "overview_name") == "alpha" && text(window, "overview_kind") == "Pod" && text(window, "overview_namespace") == "default"
-                && text(window, "overview_uid") == "uid-alpha" && server.requests.size() == calls;
+            if (text(window, "overview_name") != "alpha" || text(window, "overview_kind") != "Pod" || text(window, "overview_namespace") != "default") return false;
+            item(window,"overviewScroll")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
+            return waitFor([&] { return text(window,"overview_uid") == "uid-alpha"; }) && server.requests.size() == calls;
         }
         if (scenario == "inspector_related_events" || scenario == "inspector_related_wrong_uid") {
             if (!click(window, item(window, "inspectorEventsButton"))) return false;
@@ -2894,6 +2921,77 @@ bool execute(const QString& scenario) {
             return QGuiApplication::clipboard()->text() == oldYaml && oldYaml.contains("\"numericText\": \"123\"")
                 && oldYaml.contains("\"booleanText\": \"true\"") && oldYaml.contains("\"nullText\": \"null\"")
                 && oldYaml.contains("\"immutable\": false") && server.requests.size() == requests;
+        }
+        if (scenario.startsWith("inspector_yaml_presentation")) {
+            auto* gutter = item(window, "yamlLineNumbers");
+            const auto calls = server.requests.size();
+            if (!gutter || !gutter->isVisible() || gutter->width() < 20) return false;
+            if (scenario.endsWith("draft")) {
+                const QString draft = "# local draft\n\"name\": \"user:value#literal\"\ncount: 42\nflag: false\nmessage: |\n  name: scalar # not a comment\nnext: 'quoted # scalar'\n";
+                if (!click(window,item(window,"editYaml"))) return false;
+                QGuiApplication::clipboard()->setText(draft);
+                yamlView->forceActiveFocus(); QTest::keySequence(window,QKeySequence::SelectAll); QTest::keySequence(window,QKeySequence::Paste);
+                if (!waitFor([&] { return workspace.yamlText() == draft; })) return false;
+                const auto renderedToken = [&](const QString& token,const QColor& expected) {
+                    QRectF start,finish;
+                    const int position = draft.indexOf(token);
+                    if (position < 0 || !QMetaObject::invokeMethod(yamlView,"positionToRectangle",Qt::DirectConnection,Q_RETURN_ARG(QRectF,start),Q_ARG(int,position))
+                        || !QMetaObject::invokeMethod(yamlView,"positionToRectangle",Qt::DirectConnection,Q_RETURN_ARG(QRectF,finish),Q_ARG(int,position+token.size()))) return false;
+                    const auto image = window->grabWindow();
+                    if (image.isNull()) return false;
+                    const auto dpr = image.devicePixelRatio();
+                    const auto origin = yamlView->mapToScene(start.topLeft());
+                    const auto region = QRect(qRound(origin.x()*dpr),qRound(origin.y()*dpr),qRound(qMax(1.0,finish.x()-start.x())*dpr),qRound(start.height()*dpr)).intersected(image.rect());
+                    int pixels = 0;
+                    for (int y=region.top(); y<=region.bottom(); ++y) for (int x=region.left(); x<=region.right(); ++x) {
+                        const auto color = image.pixelColor(x,y);
+                        if (qAbs(color.red()-expected.red())<10 && qAbs(color.green()-expected.green())<10 && qAbs(color.blue()-expected.blue())<10) ++pixels;
+                    }
+                    return pixels > 5;
+                };
+                if (!waitFor([&] { return renderedToken("# local draft",QColor("#6f7f8f")) && renderedToken("\"name\"",QColor("#6ec6ff"))
+                    && renderedToken("user:value#literal",QColor("#7ad8ff")) && renderedToken("42",QColor("#7ddc8d"))
+                    && renderedToken("false",QColor("#f0c44f")) && renderedToken("name: scalar # not a comment",QColor("#d6c39a"))
+                    && renderedToken("quoted # scalar",QColor("#d6c39a")); })) return false;
+                yamlView->forceActiveFocus(); QTest::keySequence(window,QKeySequence::SelectAll); QTest::keySequence(window,QKeySequence::Copy);
+                return QGuiApplication::clipboard()->text() == draft && !yamlView->property("readOnly").toBool()
+                    && yamlView->property("textFormat").toInt() == 0 && server.requests.size() == calls;
+            }
+            if (scenario.endsWith("scroll")) {
+                QSignalSpy rendered(window,&QQuickWindow::afterAnimating);
+                window->update();
+                if (rendered.isEmpty() && !rendered.wait(2000)) return false;
+                const auto local = yamlView->mapToScene(QPointF(40, 100));
+                QWheelEvent wheel(local, window->mapToGlobal(local.toPoint()), {}, QPoint(0, -1200), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                QCoreApplication::sendEvent(window, &wheel);
+                if (!waitFor([&] { return gutter->property("firstVisibleLine").toInt() > 1; })) {
+                    const auto* scroll = item(window,"yamlScroll");
+                    const auto* content = scroll ? scroll->property("contentItem").value<QQuickItem*>() : nullptr;
+                    std::fprintf(stderr,"YAML gutter: line=%d y=%.1f editorY=%.1f viewport=%.1f gutter=%.1f content=%.1f\n",gutter->property("firstVisibleLine").toInt(),
+                        content ? content->property("contentY").toDouble() : -1,yamlView->y(),content ? content->height() : -1,gutter->height(),
+                        content ? content->property("contentHeight").toDouble() : -1);
+                    return false;
+                }
+            }
+            const auto hasSyntax = [&] {
+                const auto image = window->grabWindow();
+                if (image.isNull()) return false;
+                const auto dpr = image.devicePixelRatio();
+                const auto origin = yamlView->mapToScene({0, 0});
+                const auto region = QRect(qRound(origin.x()*dpr), qRound(qMax(origin.y(), gutter->mapToScene({0,0}).y())*dpr),
+                    qRound(qMin(500.0, yamlView->width())*dpr), qRound(qMin(100.0, gutter->height())*dpr)).intersected(image.rect());
+                int keyPixels = 0;
+                for (int y=region.top(); y<=region.bottom(); ++y)
+                    for (int x=region.left(); x<=region.right(); ++x) {
+                        const auto color = image.pixelColor(x,y);
+                        if (qAbs(color.red()-110)<10 && qAbs(color.green()-198)<10 && qAbs(color.blue()-255)<10) ++keyPixels;
+                    }
+                return keyPixels > 10;
+            };
+            return waitFor(hasSyntax) && click(window, item(window, "copyYaml"))
+                && QGuiApplication::clipboard()->text() == oldYaml && text(window, "inspectorYaml") == oldYaml
+                && yamlView->property("readOnly").toBool() && yamlView->property("textFormat").toInt() == 0
+                && server.requests.size() == calls;
         }
         if (scenario == "inspector_expiry") {
             reference = reference.addSecs(301);

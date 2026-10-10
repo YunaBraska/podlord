@@ -9,6 +9,7 @@
 #include "resource_metrics.h"
 #include "kind_glyph.h"
 #include "radar_island.h"
+#include "yaml_presentation.h"
 #include <qqml.h>
 #include <QClipboard>
 #include <QColor>
@@ -253,6 +254,8 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     Q_UNUSED(terminalSessionType);
     static const int findType = qmlRegisterType<ResourceFilter>("Podlord.Graphics", 1, 0, "ResourceFindFilter");
     Q_UNUSED(findType);
+    static const int yamlType = qmlRegisterType<YamlPresentation>("Podlord.Graphics", 1, 0, "YamlPresentation");
+    Q_UNUSED(yamlType);
     runtime_->windows.append(this);
     alerts_.setPresentationText(uiText());
     connect(this, &Workspace::languageChanged, this, [this] { alerts_.setPresentationText(uiText()); });
@@ -495,12 +498,15 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     QStringList overview;
     const QStringList keys{"name", "kind", "namespace", "cluster", "status", "issue", "ready", "restarts", "owner", "node", "image", "createdAt", "uid", "resourceVersion", "fetchedAt"};
     const QStringList labels{"Name", "Kind", "Namespace", "Cluster", "Status", "Issue", "Ready", "Restarts", "Owner", "Node", "Image", "Created", "UID", "Version", "Detail retrieved"};
+    const auto supported = filterFields();
     for (int index = 0; !summary.isEmpty() && index < keys.size(); ++index) {
         const auto cell = summary[keys[index]];
         auto value = cell.isDouble() ? QString::number(cell.toDouble(), 'g', 15) : cell.toString();
         if (value.isEmpty() && keys[index] == "namespace") value = "Cluster-scoped";
         if (value.isEmpty()) continue;
         QVariantMap field{{"id", keys[index]}, {"label", labels[index]}, {"value", value}};
+        field["filterable"] = keys[index] != "createdAt" && cell.isString() && !cell.toString().isEmpty()
+            && std::any_of(supported.cbegin(),supported.cend(),[&](const QVariant& candidate) { return candidate.toMap().value("id") == keys[index]; });
         if (keys[index] == "ready" && summary.contains("readyCount") && summary.contains("containerCount")) {
             const int ready = summary["readyCount"].toInt(), desired = summary["containerCount"].toInt();
             field["readiness"] = QVariantMap{{"fraction", desired > 0 ? std::clamp(double(ready)/desired, 0.0, 1.0) : 0.0},

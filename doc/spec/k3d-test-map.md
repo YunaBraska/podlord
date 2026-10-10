@@ -5346,3 +5346,34 @@ loaded local Kubernetes fixture.
 The complete suite was not rerun for this four-binding correction. Its earlier
 failed-before-correction record and the focused port-forward follow-up above
 remain unchanged; targeted green runs do not relabel that full run all-green.
+
+## What did the inspector and cross-platform release pass establish (2026-10-10)?
+
+Scope: `UI-INSP-05` and `UI-INSP-06`, existing modal confirmation safety, and reproducible native preflight execution. This closes the plain YAML presentation gap, not complete release parity.
+
+| Behavior | Public entrypoint | Executable scenario |
+| --- | --- | --- |
+| Exact metadata filter preserves global search and inspected resource without API reads | Inspector field filter button | `native.ui.inspector_related_filter_{Basic,Fusion}` |
+| Metadata filtering works through keyboard input | Focused field filter button and Space | `native.ui.inspector_related_filter_keyboard_{Basic,Fusion}` |
+| Reference syntax colors and line numbers preserve plain-text copying | Rendered YAML and Copy YAML | `native.ui.inspector_yaml_presentation_{Basic,Fusion}` |
+| Line numbers track the visible portion of a long document | Actual YAML wheel scrolling | `native.ui.inspector_yaml_presentation_scroll_{Basic,Fusion}` |
+| Quoted scalars, comments, numbers, keywords and block scalars retain their text and colors | Fresh-only Edit, paste, Select All and Copy | `native.ui.inspector_yaml_presentation_draft_{Basic,Fusion}` |
+| Metadata outside the first viewport remains available without a fetch | Overview wheel scrolling | `native.ui.table_overview_metadata` |
+| Toggling an alarm tolerates replacement of the rendered row | Actual alarm toggle and persisted catalog reload | `native.alert_ui.reference_toggle_{Basic,Fusion}` |
+| Removing successive contexts waits for the old modal to close; the next action also supports the keyboard | Sources Remove, confirmation, next Remove via Space | `native.sources_table.remove_all_{Basic,Fusion}` |
+| Destructive confirmation settles with Cancel focused and no DELETE sent | Resource deletion preview at narrow width | `native.delete.narrow_{Basic,Fusion}` |
+
+Evidence root: `$HOME/.local/share/podlord-comparison/release-evidence/2026-10-10-inspector-readiness`.
+
+- Eight new presentation/filter executions failed before implementation. The final focused candidate passed 16/16; the draft scenario was added afterward and is not counted as failing-first evidence.
+- Full instrumented execution completed its two preflights and 4,364 other entries: 4,365/4,366 passed. The sole failure was the metadata test reading a virtualized off-screen row. After correcting its real scrolling interaction, the instrumented affected rerun passed 5/5. This is not a second full run of the final modal changes.
+- Final affected macOS Qt 6.11.2 run: 324/324 passed in 173.60 seconds. Final affected Linux ARM Qt 6.10.2 run: 336/336 passed in 171.88 seconds. Ten formerly unstable executions additionally passed five repetitions each. These sets overlap; do not add them as distinct scenarios.
+- Linux reproduction first failed 20/98, including alarm test use-after-replacement crashes. Pointer input now waits for rendered, stable coordinates; keyboard input reacquires a recycled delegate instead of assuming the original object retains its identity. Tests wait for observable popup dismissal and focus. Modal dialogs explicitly acquire focus; source removal cancellation runs when hiding begins, not in a late closed callback.
+- Current inventory: 4,366 executions, 3,206 `behavior` labels and 1,160 `style-variant` labels. Three Fusion variants were misclassified and are now marked correctly. No scenario was removed solely because an E2E test exists. CTest has no global serial or resource-lock registrations in this inventory; six-way execution already works locally. macOS CI has 90 minutes because the previous Intel job exceeded its 60-minute deadline.
+- Fresh native coverage: lines 97.40% (passes 95%); branches 83.43% (fails 90%). Functional CI's diagnostic coverage policy does not waive the release gate. Remaining reachable branches still require evidence or a justified exclusion.
+- Installed final private package passed all twelve isolated startup/metadata checks and three mutual-TLS checks: trusted, untrusted CA and untrusted client. Startup checks also verify that ambient kubeconfigs and authentication providers do not start implicitly.
+- Final macOS ARM package: `$HOME/.local/share/podlord-comparison/release-evidence/2026-10-10-inspector-package-final`. ZIP 32,470,974 bytes; installed regular-file logical sum 85,911,211 bytes. Dependency closure and local ad-hoc signature passed. Executable SHA-256 `8e99d7ba35ccdde9f85e4d7c1996ac79eaa0548c709aad7bb3c98ba7cc0d2e0d`; ZIP SHA-256 `3af241fa364528f64a5e7e76f5fbac844661dd1fdf9fe636645c1c310fdd6fec`.
+- Actual C#/C++ side-by-side images are retained under `2026-10-10-inspector-desktop`: appearance, Overview and fresh YAML, plus native filter application. Both use Sirocco Command/dark and the same real kube-system ConfigMap UID. These pictures precede the final modal-only changes; they are not a complete final-build image matrix. The owned real Kubernetes fixture, isolated profiles and comparison processes were cleaned up.
+- Foreground performance with 5,000 resources over three sessions and retained logs: p95 filter 39.189 ms, sort 28.557 ms, cached tab 47.391 ms, cached inspector 24.415 ms; 60-second idle 1.486% of one core. These interaction and idle limits pass. Maximum RSS 293,175,296 bytes fails the 250,000,000-byte limit; warm growth was 2,064,384 bytes. The later alternate-render-loop attempt had no active foreground and provides no valid performance result. No renderer default was changed on that basis.
+
+Still open: the RSS and branch-coverage gates; full view/theme/empty/error/narrow image matrix; typography, table geometry and YAML serialization/reference-navigation differences; direct UI-processing-per-frame and installed-startup performance evidence; clean-device runtime/dependency and license checks; Windows and real mobile-device evidence. Developer ID signing and notarization remain intentionally deferred for private distribution. Package generation, component coverage and selected screenshots do not establish complete release readiness.

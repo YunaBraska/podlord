@@ -47,6 +47,21 @@ bool Workspace::resetResourceFilters() {
     nav.filter.clear(); nav.fields.clear(); nav.mode.clear(); nav.limit = 256;
     return applyResourceFilters();
 }
+bool Workspace::filterInspectorField(const QString& field) {
+    if (inspectorScope_.isEmpty()) return false;
+    const auto row = std::find_if(overviewFields_.cbegin(),overviewFields_.cend(),[&](const QVariant& candidate) {
+        const auto value = candidate.toMap(); return value.value("id") == field && value.value("filterable").toBool();
+    });
+    if (row == overviewFields_.cend()) return false;
+    const auto expression = ResourceFilter::selectValue({},row->toMap().value("value").toString(),true);
+    if (const auto* accepted = std::get_if<QString>(&expression)) return filterField(field,*accepted);
+    return false;
+}
+QColor Workspace::inspectorFieldColor(const QString& field) const {
+    const auto value = inspectorSummary_.value(field).toString();
+    if (value.isEmpty()) return appearance_.colors.value("text").value<QColor>();
+    return field == "status" ? appearanceStatus(appearance_,value) : appearanceIdentity(appearance_,value);
+}
 bool Workspace::setResourceLimit(const QString& text) {
     if (active_.isEmpty() || busy_) return false;
     const int value = resourceDisplayLimit(text);

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Podlord.Graphics 1.0
 
 Pane {
     padding: 6
@@ -163,7 +164,7 @@ Pane {
         RowLayout {
             anchors.fill: parent; anchors.margins: 6
             spacing: 12
-            Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: 100; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
+                Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
             Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
             Label { Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
         }
@@ -193,8 +194,26 @@ Pane {
             anchors.fill: parent; anchors.margins: 4
             RowLayout {
                 Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
-                Label { Layout.preferredWidth: 100; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
-                TextArea { objectName: "overview_" + modelData.id; Layout.fillWidth: true; readOnly: true; selectByMouse: true; text: modelData.value; textFormat: TextEdit.PlainText; wrapMode: TextArea.Wrap; padding: 0; background: null; Accessible.name: modelData.label + ": " + modelData.value }
+                        Label { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                        TextArea {
+                            objectName: "overview_" + modelData.id
+                            Layout.fillWidth: true
+                            readOnly: true; selectByMouse: true
+                            text: modelData.value
+                            textFormat: TextEdit.PlainText; wrapMode: TextArea.Wrap
+                            padding: 0; background: null
+                            color: { const palette = workspace.appearanceColors; return workspace.inspectorFieldColor(modelData.id) }
+                            Accessible.name: modelData.label + ": " + modelData.value
+                        }
+                        IconButton {
+                            objectName: "overviewFilter_" + modelData.id
+                            Layout.preferredHeight: inspector.width < 600 ? 44 : 24
+                            visible: modelData.filterable === true
+                            enabled: !workspace.busy
+                            glyph: "Filter"
+                            text: workspace.uiText["filters.title"] + ": " + modelData.label + " = " + modelData.value
+                            onClicked: workspace.filterInspectorField(modelData.id)
+                        }
                 Loader {
                     Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28)
                     Layout.alignment: Qt.AlignVCenter
@@ -250,24 +269,47 @@ Pane {
         onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorLink", links.pathAt(row), column)
         onCopyPathRequested: (path, column) => workspace.copyInspectorCell("inspectorLink", path, column)
     }
-    ScrollView {
-        id: yamlScroll
-        objectName: "yamlScroll"
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        visible: workspace.yamlVisible
-        TextArea {
-            objectName: "inspectorYaml"
-            readOnly: !workspace.yamlEditing || workspace.yamlApplyLocked
-            selectByMouse: true
-            textFormat: TextEdit.PlainText
-            text: workspace.yamlText
-            onTextChanged: { if (!readOnly) workspace.setYamlDraft(text) }
-            font.family: workspace.monospaceFamily
-            wrapMode: TextArea.NoWrap
-            Accessible.name: readOnly ? "Resource YAML, read-only" : "Local resource YAML draft"
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 0
+            spacing: 0
+            visible: workspace.yamlVisible
+            YamlPresentation {
+                id: yamlLines
+                objectName: "yamlLineNumbers"
+                Layout.preferredWidth: implicitWidth
+                Layout.fillHeight: true
+                editor: yamlEditor
+                document: workspace.yamlVisible ? yamlEditor.textDocument : null
+                font: yamlEditor.font
+                color: workspace.appearanceColors.muted
+                scrollOffset: yamlScroll.contentItem ? yamlScroll.contentItem.contentY : 0
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "YAML line numbers"
+                Accessible.description: "First visible line: " + firstVisibleLine
+            }
+            ScrollView {
+                id: yamlScroll
+                objectName: "yamlScroll"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 0
+                visible: workspace.yamlVisible
+                TextArea {
+                    id: yamlEditor
+                    objectName: "inspectorYaml"
+                    readOnly: !workspace.yamlEditing || workspace.yamlApplyLocked
+                    selectByMouse: true
+                    textFormat: TextEdit.PlainText
+                    text: workspace.yamlText
+                    onTextChanged: { if (!readOnly) workspace.setYamlDraft(text) }
+                    font.family: workspace.monospaceFamily
+                    wrapMode: TextArea.NoWrap
+                    Accessible.name: readOnly ? "Resource YAML, read-only" : "Local resource YAML draft"
+                }
+            }
         }
-    }
     RowLayout {
         Layout.fillWidth: true
         visible: workspace.yamlVisible

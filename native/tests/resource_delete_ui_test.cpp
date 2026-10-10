@@ -206,8 +206,7 @@ bool run(const QString& scenario, const QString& kubeconfig) {
     if (clusterScoped && (!targetText.contains("cluster scoped") || targetText.contains("default"))) return false;
     if (!real && !clusterScoped && !targetText.contains("default")) return false;
     if (scenario == "preview" || scenario == "narrow") {
-        auto* cancel = item("cancelResourceDelete");
-        return cancel && cancel->hasActiveFocus() && deletes == 0;
+        return waitFor([&] { const auto* cancel = item("cancelResourceDelete"); return cancel && cancel->hasActiveFocus(); }) && deletes == 0;
     }
     if (scenario == "cancel") return click("cancelResourceDelete") && !pending() && deletes == 0;
     if (scenario == "escape") { QTest::keyClick(window, Qt::Key_Escape); return waitFor([&] { return !pending(); }) && deletes == 0; }

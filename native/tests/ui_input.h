@@ -5,6 +5,7 @@
 #include <QQuickWindow>
 #include <QPointer>
 #include <QSignalSpy>
+#include <QSignalSpy>
 #include <QWheelEvent>
 #include <QTest>
 #include <cstdio>
@@ -113,9 +114,16 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target) {
 /** Reacquire a named delegate when wheel/layout work reuses its old item for another row. */
 inline bool clickVisible(QQuickWindow* window, const QString& name) {
     for (int attempt=0;attempt<4;++attempt) {
+        QSignalSpy frame(window,&QQuickWindow::frameSwapped);
+        window->update();
+        if (!frame.wait(2000)) return false;
         const QPointer<QQuickItem> target(visibleItem(window->contentItem(),name));
         if (!target || !target->isEnabled() || !scrollIntoView(window,target)) return false;
         if (!target || target->objectName()!=name) continue;
+        const auto position=target->mapToScene({target->width()/2,target->height()/2});
+        frame.clear(); window->update();
+        if (!frame.wait(2000)) return false;
+        if (!target || target->objectName()!=name || target->mapToScene({target->width()/2,target->height()/2})!=position) continue;
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,target->mapToScene({target->width()/2,target->height()/2}).toPoint());
         return true;
     }
