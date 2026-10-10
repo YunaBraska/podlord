@@ -1187,6 +1187,16 @@ foreach(scenario alert_upgrade_read alert_upgrade_save alert_upgrade_invalid ale
 endforeach()
 endif()
 
+if(TARGET field-filter-ui-test)
+    foreach(style Basic Fusion)
+        add_test(NAME native.filters.typography_${style} COMMAND field-filter-ui-test typography)
+        set_tests_properties(native.filters.typography_${style} PROPERTIES TIMEOUT 45
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+    endforeach()
+    set_tests_properties(native.filters.typography_Basic PROPERTIES LABELS "behavior")
+    set_tests_properties(native.filters.typography_Fusion PROPERTIES LABELS "style-variant")
+endif()
+
 if(TARGET alert_ui_test)
 foreach(scenario reference_table_tab_entry reference_find reference_find_invalid reference_columns_hide reference_columns_show reference_columns_pin reference_columns_order reference_columns_width reference_columns_cancel reference_columns_defaults reference_columns_last_visible reference_columns_invalid_width reference_columns_restart)
     foreach(style Basic Fusion)

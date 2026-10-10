@@ -292,6 +292,7 @@ ColumnLayout {
             implicitWidth: 170
             implicitHeight: grid.rowHeight
             font.pixelSize: 13
+            font.weight: Font.Normal
             padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
             highlighted: selected
             onActiveFocusChanged: if (activeFocus) {

@@ -2016,10 +2016,22 @@ bool execute(const QString& scenario) {
         return click(window,item(window,"refreshSettingsDiagnostics")) && server.requests.size()==calls;
     }
     if (scenario.startsWith("radar_")) {
+        const auto failed = [&](const char* stage) {
+            const auto* alerts = workspace.alerts();
+            std::fprintf(stderr, "Radar setup failed: stage=%s resources=%d busy=%d water=%d alerts_busy=%d error=%s evaluation=%s\n",
+                stage, workspace.resourceCount(), workspace.busy(), workspace.radarWaterEnabled(), alerts->busy(),
+                qPrintable(alerts->error()), qPrintable(alerts->evaluationError()));
+            const auto evidence = qEnvironmentVariable("PODLORD_RADAR_ACTION_EVIDENCE");
+            if (!evidence.isEmpty()) window->grabWindow().save(evidence + "/" + scenario + "-"
+                + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-setup.png", "PNG");
+            return false;
+        };
         if (!scenario.startsWith("radar_water_") && scenario!="radar_navigation_water") {
-            if (!click(window,item(window,"settingsWorkspaceButton")) || !click(window,item(window,"settingsGraphicsSection"))
-                || !click(window,item(window,"inlineRadarWaterEnabled")) || !waitFor([&] { return !workspace.busy(); })
-                || !click(window,item(window,"resourcesWorkspaceButton"))) return false;
+            if (!click(window,item(window,"settingsWorkspaceButton"))) return failed("open settings");
+            if (!click(window,item(window,"settingsGraphicsSection"))) return failed("open graphics");
+            if (!click(window,item(window,"inlineRadarWaterEnabled"))
+                || !waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); })) return failed("freeze background");
+            if (!click(window,item(window,"resourcesWorkspaceButton"))) return failed("open resources");
         }
         if (scenario.startsWith("radar_pooled_")) {
             const auto defaults = workspace.alerts()->rules();
@@ -2034,9 +2046,9 @@ bool execute(const QString& scenario) {
             rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "\"radar-0000\""}}})}.toVariantList();
             if (!workspace.alerts()->saveRule(rule) || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
         }
-        if (!click(window, item(window, "radarWorkspaceButton"))) return false;
+        if (!click(window, item(window, "radarWorkspaceButton"))) return failed("open radar");
         auto* radar = item(window, "resourceRadar");
-        if (!radar || !waitFor([&] { return radar->isVisible() && radar->width() > 0 && radar->height() > 0 && radar->property("count").toInt() == expectedRows; })) return false;
+        if (!radar || !waitFor([&] { return radar->isVisible() && radar->width() > 0 && radar->height() > 0 && radar->property("count").toInt() == expectedRows; })) return failed("populate radar");
         if (scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_island_")) {
             QSignalSpy frames(window, &QQuickWindow::frameSwapped);
             window->update();
@@ -2335,29 +2347,32 @@ bool execute(const QString& scenario) {
         }
         if (scenario.startsWith("radar_animation_")) {
             auto* alerts = workspace.alerts();
-            if (!waitFor([&] { return !alerts->busy(); })) return false;
+            if (!waitFor([&] { return !alerts->busy(); })) return failed("load catalog");
             for (const auto& value : alerts->rules()) {
                 auto rule = value.toMap(); rule["enabled"] = false;
-                if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy(); })) return false;
+                if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy(); })) return failed("disable defaults");
             }
-            if (!alerts->setPreferences(true, false) || !waitFor([&] { return !alerts->busy(); })) return false;
+            if (!alerts->setPreferences(true, false) || !waitFor([&] { return !alerts->busy(); })) return failed("set preferences");
             QVariantMap rule{{"id", ""}, {"name", "Rendered radar action"}, {"description", "Local visual action"},
                 {"enabled", true}, {"builtIn", false},
                 {"groups", QVariantList{QVariantList{QVariantMap{{"field", "name"}, {"expression", "\"alpha\""}}}}},
                 {"color", "#0088ff"}, {"colorMode", "no-match"}, {"colorSeconds", 5},
                 {"animation", "none"}, {"animationMode", "no-match"}, {"animationSeconds", 5},
                 {"zoom", 0}, {"sound", "none"}, {"soundMinimumMatches", 1}};
-            if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy(); })) return false;
+            if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy(); })) return failed("save rule");
+            if (!workspace.filter("\"alpha\"") || !waitFor([&] { return workspace.resourceCount() == 1; })) return failed("select target");
+            radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
+            if (!waitFor([&] { return item(window, "radarTile_0") != nullptr; })) return failed("render target");
             auto* tile = item(window, "radarTile_0");
-            if (!tile) return false;
             const auto path = workspace.table()->data(workspace.table()->index(0, 0), Qt::UserRole).toString();
-            if (!waitFor([&] { return alerts->effect(path).value("color").toString() == "#0088ff"; })) return false;
+            if (!waitFor([&] { return alerts->effect(path).value("color").toString() == "#0088ff"; })) return failed("apply color");
             const auto renderedTile = [&] {
                 const auto frame = window->grabWindow();
-                const auto position = tile->mapToScene({0, 0});
+                const auto position = tile->mapToScene({-2, -2});
                 const double ratio = static_cast<double>(frame.width()) / window->width();
-                const auto image = frame.copy(QRect(qRound(position.x() * ratio), qRound(position.y() * ratio),
-                    qRound(tile->width() * ratio), qRound(tile->height() * ratio)));
+                // The outline extends beyond the tile; include it rather than only the selection border.
+                const auto image = frame.copy(QRectF(position.x() * ratio, position.y() * ratio,
+                    (tile->width() + 4) * ratio, (tile->height() + 4) * ratio).toAlignedRect());
                 if (image.isNull()) {
                     std::fprintf(stderr, "Radar capture unavailable: window=%dx%d frame=%dx%d position=(%g,%g) tile=%gx%g viewport=%d\n",
                         window->width(), window->height(), frame.width(), frame.height(), position.x(), position.y(),
@@ -2374,7 +2389,7 @@ bool execute(const QString& scenario) {
             const QString animation = scenario.endsWith("pulse") ? "pulse" : scenario.endsWith("sweep") ? "sweep"
                 : scenario.endsWith("outline") ? "outline" : "blink";
             rule = alerts->rules().last().toMap(); rule["animation"] = animation;
-            if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy() && alerts->effect(path).value("animation").toString() == animation; })) return false;
+            if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy() && alerts->effect(path).value("animation").toString() == animation; })) return failed("apply animation");
             QTest::qWait(80);
             const auto first = renderedTile();
             bool changed = false;
