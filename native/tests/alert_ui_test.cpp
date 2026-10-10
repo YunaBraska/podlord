@@ -765,16 +765,36 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             return rules().last().toMap()["sound"].toString()==expected && server.requests==0;
         }
         if (scenario=="reference_toggle" || scenario=="reference_toggle_failure") {
-            auto* toggle = item(window, "toggleAlert_0");
-            if (!toggle || toggle->property("glyph").toString() != (baseline.first().toMap()["enabled"].toBool() ? "Visible" : "Hidden")) return false;
+            const auto renderedToggle = [&](bool enabled) {
+                const bool ready = waitFor([&] {
+                    const auto* toggle = item(window, "toggleAlert_0");
+                    return toggle && toggle->isVisible() && toggle->isEnabled()
+                        && toggle->property("glyph").toString() == (enabled ? "Visible" : "Hidden");
+                });
+                if (!ready) std::fprintf(stderr, "Alarm toggle did not render: expected enabled=%d busy=%d error=%s\n",
+                    enabled, workspace.alerts()->busy(), qPrintable(workspace.alerts()->error()));
+                if (!ready) return false;
+                QSignalSpy frame(window, &QQuickWindow::afterAnimating);
+                window->requestUpdate();
+                return waitFor([&] { return !frame.isEmpty(); });
+            };
+            if (!renderedToggle(baseline.first().toMap()["enabled"].toBool())) return false;
             QLockFile failureLock(profile+"/alert-rules.json.lock");
             if (scenario=="reference_toggle_failure" && (!QDir().mkpath(profile) || !failureLock.tryLock(0))) return false;
             if (!click(window,"toggleAlert_0") || !settle()) return false;
             if (scenario=="reference_toggle_failure") return rules()==baseline && !workspace.alerts()->error().isEmpty() && !selected().isEmpty();
-            if (rules().first().toMap()["enabled"]==baseline.first().toMap()["enabled"] || server.requests!=0) return false;
-            toggle = item(window, "toggleAlert_0");
-            if (!toggle || toggle->property("glyph").toString() != (rules().first().toMap()["enabled"].toBool() ? "Visible" : "Hidden")) return false;
-            if (!click(window,"toggleAlert_0") || !settle() || rules()!=baseline) return false;
+            if (rules().first().toMap()["enabled"]==baseline.first().toMap()["enabled"] || server.requests!=0) {
+                std::fprintf(stderr, "Alarm toggle did not persist: requests=%d busy=%d error=%s\n",
+                    server.requests, workspace.alerts()->busy(), qPrintable(workspace.alerts()->error()));
+                return false;
+            }
+            if (!renderedToggle(rules().first().toMap()["enabled"].toBool())) return false;
+            if (!click(window,"toggleAlert_0") || !settle() || rules()!=baseline) {
+                std::fprintf(stderr, "Alarm toggle did not restore its initial rules: enabled=%d expected=%d busy=%d error=%s\n",
+                    rules().first().toMap()["enabled"].toBool(), baseline.first().toMap()["enabled"].toBool(),
+                    workspace.alerts()->busy(), qPrintable(workspace.alerts()->error()));
+                return false;
+            }
             podlord::Workspace restored(profile);
             return waitFor([&] { return !restored.alerts()->busy(); }) && restored.alerts()->rules()==baseline;
         }
