@@ -170,7 +170,12 @@ bool ContainerTerminal::key(int key, const QString& text, Qt::KeyboardModifiers 
     // The advertised xterm PTY expects C0 controls, not unnegotiated CSI-u sequences.
     else if ((mod & VTERM_MOD_CTRL) && ((key >= Qt::Key_A && key <= Qt::Key_Underscore) || key == Qt::Key_Space))
         vterm_keyboard_unichar(term_, static_cast<uint32_t>(key & 0x1f), static_cast<VTermModifier>(mod & VTERM_MOD_ALT));
-    else for (const auto c : text.toUcs4()) vterm_keyboard_unichar(term_, c, mod);
+    else for (const char32_t c : text.toUcs4()) {
+        // libvterm 0.3.3 truncates Alt+Unicode; retain its ESC prefix with valid UTF-8.
+        if ((mod & VTERM_MOD_ALT) && !(mod & VTERM_MOD_CTRL) && c > 0x7f) {
+            if (!send(0, QByteArray("\033") + QString::fromUcs4(&c, 1).toUtf8())) return false;
+        } else vterm_keyboard_unichar(term_, c, mod);
+    }
     return terminalKey != VTERM_KEY_NONE || !text.isEmpty() || (mod & VTERM_MOD_CTRL);
 }
 bool ContainerTerminal::paste(const QString& text) {

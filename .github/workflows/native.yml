@@ -89,9 +89,16 @@ jobs:
           if [ "$status" -ne 0 ]; then
             profiles=$(mktemp -d "$RUNNER_TEMP/native-failure-profiles.XXXXXX")
             trap 'find "$profiles" -maxdepth 1 -type f -name "*.profraw" -delete; rmdir "$profiles"' 0
-            LLVM_PROFILE_FILE="$profiles/%p-%m.profraw" ctest --test-dir "$PODLORD_NATIVE_BUILD_DIR" \
-              --rerun-failed --parallel 1 --output-on-failure > "$RUNNER_TEMP/native-failure-reproduction.log" 2>&1 || :
-            tail -n 45 "$RUNNER_TEMP/native-failure-reproduction.log"
+            # Excluding preflight tests changes ordinals; repeat the recorded names, not their numbers.
+            failed=""
+            if [ -f "$PODLORD_NATIVE_BUILD_DIR/Testing/Temporary/LastTestsFailed.log" ]; then
+              failed=$(sed 's/^[0-9]*://; s/\./\\./g' "$PODLORD_NATIVE_BUILD_DIR/Testing/Temporary/LastTestsFailed.log" | paste -sd '|' -)
+            fi
+            if [ -n "$failed" ]; then
+              LLVM_PROFILE_FILE="$profiles/%p-%m.profraw" ctest --test-dir "$PODLORD_NATIVE_BUILD_DIR" \
+                --tests-regex "^($failed)$" --parallel 1 --output-on-failure > "$RUNNER_TEMP/native-failure-reproduction.log" 2>&1 || :
+              tail -n 45 "$RUNNER_TEMP/native-failure-reproduction.log"
+            fi
           fi
           exit "$status"
       - name: Build and inspect the native macOS package

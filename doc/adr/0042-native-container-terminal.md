@@ -87,3 +87,13 @@ screen update. The surface adjusts its viewport from that displacement rather
 than comparing capped history sizes or keeping a second history cache. Native
 selection copying stays local, including Shift selection while the remote
 application requests mouse tracking.
+
+## Does Disconnect Prove That Remote Processes Have Exited?
+
+No. A 2026-10-10 real K3d check closed the owning session and its stream,
+but an independent container process listing still showed its interactive shell.
+The UI therefore describes disconnection, not guaranteed process termination,
+and warns that remote processes may continue. Explicit shell exit remains
+available. This is also a [documented runtime limitation](https://github.com/opencontainers/runc/issues/3359).
+Controlled termination of only the owned shell and its foreground processes
+requires a separate lifecycle decision; no blind kill or extra exec is implied.

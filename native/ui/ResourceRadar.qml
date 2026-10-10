@@ -94,8 +94,9 @@ Pane {
             readonly property bool renderActive: visible && Window.window !== null && Window.window.visibility !== Window.Hidden && Window.window.visibility !== Window.Minimized
             clip: true
             activeFocusOnTab: true
-            Accessible.name: "Resource radar"
-            Accessible.description: "Deterministic resource island. Drag or use arrow keys to pan, wheel or plus and minus to zoom, Home and End to focus the first and last resource, Enter to inspect. Zero resets the map."
+            Accessible.role: Accessible.Grouping
+            Accessible.name: "Resource radar, " + count + " resources"
+            Accessible.description: "Deterministic resource island. Drag or use arrow keys to pan, wheel or plus and minus to zoom, Home and End to focus the first and last resource, Enter to inspect. Zero resets the map. Use the resource table and filters for the complete accessible resource list."
             property string shownSession: ""
             property bool restoring: false
             function restorePosition() {
@@ -207,6 +208,7 @@ Pane {
                 readonly property string text: resourceKind + " " + resourceName + ", " + (resourceNamespace || "Cluster-scoped") + ", " + resourceStatus
                     + (resourceHealth === 2 ? ", Error" : resourceHealth === 1 ? ", Warning" : alertEffect.color === "fresh" ? ", Recently changed" : "")
                 Accessible.role: Accessible.Button
+                Accessible.ignored: !wantsTip
                 Accessible.name: text
                 Accessible.onPressAction: { grid.selectResource(resourceIndex); workspace.inspectRow(resourceIndex) }
                 Accessible.description: resourcePath === workspace.inspectorPath ? "Selected resource" : "Open resource in inspector"
