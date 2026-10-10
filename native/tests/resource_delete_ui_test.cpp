@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include "kubeconfig_store.h"
 #include <QGuiApplication>
 #include <QFile>
@@ -183,12 +184,7 @@ bool run(const QString& scenario, const QString& kubeconfig) {
         return nullptr;
     };
     const auto click = [&](const char* name) {
-        auto* target = item(name);
-        if (!target || !target->isVisible() || !target->isEnabled()) { std::fprintf(stderr, "Unavailable visible action: %s\n", name); return false; }
-        for (auto* next = target; next; next = next->parentItem()) next->ensurePolished();
-        QCoreApplication::processEvents();
-        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width()/2, target->height()/2)).toPoint());
-        QCoreApplication::processEvents(); return true;
+        return podlord::test::clickVisible(window, QString::fromLatin1(name));
     };
     const auto pending = [&] { return workspace.property("deletionPending").toBool(); };
     const auto status = [&] { return workspace.property("deletionStatus").toString(); };

@@ -53,6 +53,11 @@ bool Workspace::windowActionsAvailable() const {
 #endif
 }
 
+bool Workspace::sessionWindowActionsReady() const {
+    return windowActionsAvailable() && !windowClosed_ && !busy_ && !pendingLeave_ && !viewSaving_
+        && pendingViews_.isEmpty() && !viewStateFailed() && !presetsBusy_ && !tableLayoutSaving_;
+}
+
 bool Workspace::attachWindow(QObject* window) {
     if (!qobject_cast<QQuickWindow*>(window) || windowClosed_) return false;
     if (window_) window_->removeEventFilter(this);
@@ -72,7 +77,7 @@ bool Workspace::detachSession(const QString& id) {
     if (detached_ && tabs().size() == 1) return activate(id) && runtime_->host->focus(*this);
     if (runtime_->owners.value(id) != this) return false;
     if (id == active_ && !allowLeave(Leave::Detach, id)) return false;
-    if (viewSaving_ || !pendingViews_.isEmpty() || viewStateFailed() || presetsBusy_ || tableLayoutSaving_) {
+    if (!sessionWindowActionsReady()) {
         error_ = "Wait for the saved view to finish, or resolve its save error before moving this tab.";
         emit changed(); return false;
     }

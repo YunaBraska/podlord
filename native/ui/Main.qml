@@ -242,6 +242,7 @@ ApplicationWindow {
             Button { id: deleteCancel; objectName: "cancelResourceDelete"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "confirmResourceDelete"; text: "Delete this resource"; enabled: workspace.deletionPending && !workspace.authenticationRequired && !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
+        onAboutToShow: footer.contentItem.currentIndex = -1
         onOpened: deleteCancel.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.confirmDeletion(true)
         onRejected: workspace.confirmDeletion(false)
@@ -486,7 +487,7 @@ ApplicationWindow {
                 implicitHeight: window.touchLayout ? 44 : 32
                 objectName: modelData.header ? "" : (modelData.context ? "quickWindowContext_" : "quickWindowSession_") + modelData.id
                 text: modelData.name
-                enabled: !modelData.header && !workspace.busy
+                enabled: !modelData.header && workspace.sessionWindowActionsReady
                 Accessible.name: "Open " + text + " in a separate window"
                 onTriggered: modelData.context ? workspace.openContext(modelData.id, true) : workspace.openSessionWindow(modelData.id)
             }
@@ -618,10 +619,10 @@ ApplicationWindow {
                             Menu {
                                 id: tabMenu
                                 MenuItem { objectName: "renameTab_" + modelData.id; text: "Rename session..."; enabled: !workspace.busy; onTriggered: renameSessionDialog.openFor(modelData.id, modelData.name) }
-                                MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: !workspace.busy; onTriggered: workspace.detachSession(modelData.id) }
+                                MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onTriggered: workspace.detachSession(modelData.id) }
                             }
                         }
-                        IconButton { objectName: "detachSession_" + modelData.id; glyph: "OpenExternal"; text: "Open " + modelData.name + " in a separate window"; visible: workspace.windowActionsAvailable; enabled: !workspace.busy; onClicked: workspace.detachSession(modelData.id) }
+                        IconButton { objectName: "detachSession_" + modelData.id; glyph: "OpenExternal"; text: "Open " + modelData.name + " in a separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onClicked: workspace.detachSession(modelData.id) }
                         IconButton { objectName: "closeSession_" + modelData.id; glyph: "Close"; text: workspace.uiText["action.close"]; Accessible.name: "Close " + modelData.name; enabled: !workspace.busy; onClicked: workspace.close(modelData.id) }
                     }
                 }

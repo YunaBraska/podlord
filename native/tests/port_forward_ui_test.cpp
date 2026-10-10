@@ -243,15 +243,7 @@ bool run(const QString& scenario, const QString& configPath) {
         return nullptr;
     };
     const auto click = [&](const char* name) {
-        QSignalSpy frame(window, &QQuickWindow::frameSwapped); window->update();
-        if (!frame.wait(1000)) return false;
-        auto* item = named(name); if (!item || !item->isVisible() || !item->isEnabled()) return false;
-        QList<QQuickItem*> parents; for (auto* next = item; next; next = next->parentItem()) parents.prepend(next);
-        for (auto* next : parents) next->ensurePolished();
-        QCoreApplication::processEvents();
-        if (!podlord::test::scrollIntoView(window,item)) return false;
-        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
-        QCoreApplication::processEvents(); return true;
+        return podlord::test::clickVisible(window, QString::fromLatin1(name));
     };
     if (!named("preparePortForward")) { std::fputs("Missing native Inspector port-forward action.\n", stderr); return false; }
     if (scenario == "terminal") return !named("preparePortForward")->isEnabled() && upgrades == 0;

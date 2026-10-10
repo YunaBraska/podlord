@@ -233,6 +233,9 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     diagnosticRows_(nullptr, {"label", "value", "description"}, {"Metric", "Value", "Description"}, "id"),
     requestAuditRows_(nullptr, {"time", "method", "path", "priority", "status", "duration", "outcome"},
         {"Time", "Method", "Path", "Priority", "Status", "Duration", "Outcome"}, "id") {
+    connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
+    connect(this, &Workspace::filterPresetsChanged, this, &Workspace::sessionWindowActionsReadyChanged);
+    connect(this, &Workspace::tableLayoutStatusChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     diagnosticTable_.setSourceModel(&diagnosticRows_); diagnosticTable_.setSortRole(Qt::UserRole + 6);
     diagnosticTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
     requestAuditTable_.setSourceModel(&requestAuditRows_); requestAuditTable_.setSortRole(Qt::UserRole + 6);

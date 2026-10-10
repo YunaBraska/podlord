@@ -5,7 +5,6 @@
 #include <QQuickWindow>
 #include <QPointer>
 #include <QSignalSpy>
-#include <QSignalSpy>
 #include <QWheelEvent>
 #include <QTest>
 #include <cstdio>
