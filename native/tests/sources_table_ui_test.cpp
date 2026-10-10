@@ -51,10 +51,16 @@ bool run(const QString& scenario) {
         QCoreApplication::processEvents();
     };
     const auto focus = [&](const QString& name) {
-        auto* item = control(name);
-        require(item && test::scrollIntoView(window,item), "Sources focus target missing.");
-        item->forceActiveFocus(Qt::TabFocusReason);
-        require(QTest::qWaitFor([&] { return item->hasActiveFocus(); }), "Sources focus target did not activate.");
+        for (int attempt=0; attempt<4; ++attempt) {
+            auto* item = control(name);
+            require(item && test::scrollIntoView(window,item), "Sources focus target missing.");
+            item->forceActiveFocus(Qt::TabFocusReason);
+            QSignalSpy frame(window,&QQuickWindow::frameSwapped);
+            window->update();
+            require(frame.wait(2000), "Sources keyboard target was not rendered.");
+            if (window->activeFocusItem() && window->activeFocusItem()->objectName()==name) return;
+        }
+        require(false, "Sources focus target did not settle.");
     };
     click("settingsWorkspaceButton");
     require(test::selectSettingsSection(window, "sources"), "Cannot select Sources.");
@@ -76,7 +82,9 @@ bool run(const QString& scenario) {
         require(workspace.property("sourceSortDirection") == "NONE" && model->index(0,0).data() == firstName, "Unsorted source order failed.");
     } else if (scenario == "copy_keyboard") {
         focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Copy);
-        require(QGuiApplication::clipboard()->text() == firstName, "Source clipboard value incorrect.");
+        const auto copied = QGuiApplication::clipboard()->text();
+        if (copied != firstName) std::fprintf(stderr,"Source copy: expected=%s actual=%s focus=%s\n",qPrintable(firstName),qPrintable(copied),qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}));
+        require(copied == firstName, "Source clipboard value incorrect.");
     } else if (scenario == "find" || scenario == "find_empty" || scenario == "find_keyboard") {
         if (scenario == "find_keyboard") { focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Find); }
         else click("sourceFindButton");
@@ -141,9 +149,11 @@ bool run(const QString& scenario) {
     } else if (scenario == "remove_cancel" || scenario == "remove" || scenario == "remove_all") {
         click("removeSource_"+identity);
         click(scenario == "remove_cancel" ? "cancelSourceRemoval" : "confirmSourceRemoval");
-        require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount() == (scenario == "remove_cancel" ? 2 : 1); }), "Source removal outcome incorrect.");
+        require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount() == (scenario == "remove_cancel" ? 2 : 1)
+            && !control("confirmSourceRemoval") && !control("cancelSourceRemoval"); }), "Source removal outcome incorrect.");
         if (scenario=="remove_all") {
-            click("removeSource_"+model->index(0,0).data(Qt::UserRole).toString()); click("confirmSourceRemoval");
+            focus("removeSource_"+model->index(0,0).data(Qt::UserRole).toString());
+            QTest::keyClick(window,Qt::Key_Space); click("confirmSourceRemoval");
             require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount()==0 && control("sourceEmpty"); }), "Sources empty state missing after confirmed removal.");
         }
     } else throw std::runtime_error("Unknown Sources scenario.");

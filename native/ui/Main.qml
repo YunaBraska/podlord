@@ -232,6 +232,7 @@ ApplicationWindow {
         width: Math.min(560, window.width - 32)
         anchors.centerIn: parent
         modal: true
+        focus: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
             Label { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }

@@ -13,6 +13,7 @@ Pane {
         objectName: "sourceRemovalDialog"
         title: "Remove imported context"
         modal: true
+        focus: true
         parent: Overlay.overlay
         width: Math.min(520, parent.width - 24)
         x: (parent.width - width) / 2; y: Math.max(12, (parent.height - height) / 2)
@@ -33,7 +34,7 @@ Pane {
             IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceRemoval"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
             IconButton { glyph: ""; showText: true; font.bold: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? "Removing..." : "Remove"; enabled: !workspace.busy; Accessible.name: "Remove imported context and its listed sessions"; onClicked: workspace.confirmSourceRemoval() }
         }
-        onClosed: workspace.cancelSourceRemoval()
+        onAboutToHide: workspace.cancelSourceRemoval()
         Connections {
             target: workspace
             function onSourceRemovalChanged() {
@@ -49,6 +50,7 @@ Pane {
         property string failure: ""
         title: "Rename source context"
         modal: true
+        focus: true
         parent: Overlay.overlay
         width: Math.min(520, parent.width - 24)
         x: (parent.width - width) / 2; y: Math.max(12, (parent.height - height) / 2)
