@@ -56,7 +56,10 @@ QJsonObject resourceMetricReferences(const QJsonObject& document, const QJsonObj
         for (const auto& metric : {"cpu", "memory", "storage"}) {
             if (kind!="Node" && QString(metric)!="storage") continue;
             const auto field=kind=="Node" && QString(metric)=="storage" ? "ephemeral-storage" : metric;
-            const QJsonValue capacity=kind=="PersistentVolume" ? spec["capacity"].toObject()[field] : document["status"].toObject()["capacity"].toObject()[field];
+            const auto status=document["status"].toObject();
+            const auto allocatable=status["allocatable"].toObject().value(field);
+            const QJsonValue capacity=kind=="PersistentVolume" ? spec["capacity"].toObject()[field]
+                : kind=="Node" && allocatable.isString() ? allocatable : status["capacity"].toObject()[field];
             QJsonObject reference{{"source", kind=="Node" ? "Node capacity" : "Volume provisioning"}};
             if (capacity.isString()) if (const auto number=metricQuantity(capacity.toString(), QString(metric)=="cpu")) reference["capacity"]=*number;
             const QJsonValue request=spec["resources"].toObject()["requests"].toObject()[field];

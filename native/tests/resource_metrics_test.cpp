@@ -40,7 +40,12 @@ bool run(const QString& scenario) {
         }
         if (scenario=="reference_pod_level") { auto spec=document["spec"].toObject(); spec["resources"]=QJsonObject{{"requests",QJsonObject{{"cpu","50m"}}}}; document["spec"]=spec; }
         if (scenario=="reference_invalid") { auto spec=document["spec"].toObject(); spec["resources"]=QJsonObject{{"requests",QJsonObject{{"cpu","invalid"}}}}; document["spec"]=spec; }
-        if (scenario=="reference_node") { resource["kind"]="Node"; document={{"status",QJsonObject{{"capacity",QJsonObject{{"cpu","4"},{"memory","8Gi"},{"ephemeral-storage","16Gi"}}}}}}; }
+        if (scenario=="reference_node" || scenario=="reference_node_allocatable") {
+            resource["kind"]="Node";
+            QJsonObject status{{"capacity",QJsonObject{{"cpu","4"},{"memory","8Gi"},{"ephemeral-storage","16Gi"}}}};
+            if (scenario=="reference_node_allocatable") status["allocatable"]=QJsonObject{{"cpu","3"},{"memory","7Gi"},{"ephemeral-storage","12Gi"}};
+            document={{"status",status}};
+        }
         if (scenario=="reference_pvc" || scenario=="reference_pv") {
             resource["kind"]=scenario=="reference_pvc" ? "PersistentVolumeClaim" : "PersistentVolume";
             document={{"spec",QJsonObject{{"resources",QJsonObject{{"requests",QJsonObject{{"storage","1Gi"}}}}},{"capacity",QJsonObject{{"storage","2Gi"}}}}}, {"status",QJsonObject{{"capacity",QJsonObject{{"storage","3Gi"}}}}}};
@@ -54,6 +59,9 @@ bool run(const QString& scenario) {
         if (scenario=="reference_pod_level") return cpu["request"].toDouble()==50 && cpu["requestComplete"].toBool();
         if (scenario=="reference_invalid") return !cpu.contains("request") && cpu["requestInvalid"].toBool();
         if (scenario=="reference_node") return cpu["capacity"].toDouble()==4000;
+        if (scenario=="reference_node_allocatable") return cpu["capacity"].toDouble()==3000
+            && refs["memory"].toObject()["capacity"].toDouble()==7.0*1073741824
+            && refs["storage"].toObject()["capacity"].toDouble()==12.0*1073741824;
         if (scenario=="reference_pvc" || scenario=="reference_pv") return refs.size()==1 && refs["storage"].toObject()["capacity"].toDouble()==(scenario=="reference_pvc" ? 3.0 : 2.0)*1073741824;
         return cpu["request"].toDouble()==10 && cpu["limit"].toDouble()==100 && cpu["requestComplete"].toBool();
     }
