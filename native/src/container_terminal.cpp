@@ -92,7 +92,7 @@ ContainerTerminal::ContainerTerminal(QString target, QObject* parent) : QObject(
     });
     connect(&socket_, &QWebSocket::disconnected, this, [this] {
         if (ended_) return;
-        if (!remoteStatus_.isEmpty() || statusClosed_ || (admitted_ && socket_.closeCode() == QWebSocketProtocol::CloseCodeNormal)) { completeStatus(); return; }
+        if (!remoteStatus_.isEmpty() || statusClosed_) { completeStatus(); return; }
         reject(admitted_ ? "Connection closed without an exit status. No shell was restarted." : "Connection closed before exec negotiation.");
     });
 }

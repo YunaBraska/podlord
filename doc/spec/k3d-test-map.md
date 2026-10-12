@@ -874,6 +874,13 @@ resource table's UI, tri-state sort, copy and escaped overflow behavior. Event
 navigation resolves the target UID or inspects the Event when that target is
 not cached. Context menus retain resource paths rather than recycled row numbers.
 
+Event presentation parity: `native.ui.inspector_related_workspace` asserts the
+Event metadata name and involved `Kind/Name` Object in the public table;
+`native.table_layout.event_parity_upgrade_default/custom` keeps saved custom
+layouts intact while upgrading untouched defaults. `native.ui.settings_diagnostics`
+asserts Process RSS appears first in the explicit runtime snapshot. These checks
+do not establish whole-app image parity or device coverage.
+
 | Scenario | Public entrypoint / test | Current evidence | Remaining gap |
 | --- | --- | --- | --- |
 | Initial missing radar | QML Resources/Radar action; `native.ui.radar_filter` | Failing-first regression recorded before production changes | Pre-change output is not proof of new behavior |
@@ -5234,6 +5241,7 @@ Whole-product readiness remains open: RSS, installed startup and frame-work prof
 | Behavior | Public entrypoint | Executed test | Result / remaining gap |
 | --- | --- | --- | --- |
 | Reject an executable that is not declared by its comparison bundle before Docker or application startup | `scripts/test-native-visual-kubernetes.sh desktop` | `desktop comparison rejects an undeclared native executable before contacting Docker`; equivalent reference lane | Both failed before the guard; both pass afterward against private copies of the actual package. All 29 dependency/boundary tests pass in 57.31 s. |
+| Reject quarantined comparison inputs before Docker or application startup | `scripts/test-native-visual-kubernetes.sh desktop` | `desktop comparison rejects a quarantined bundle before contacting Docker` | The runner preserves macOS quarantine and requires an already-approved local build; signing alone does not grant launch permission. |
 | Stop a comparison when one owned app exits, without relaunching outside its isolated profile | Same desktop script, real local K3s on Colima, actual deployed native/reference applications | `an exited real comparison app fails the review and cleans up its owned stack` | Pass, 33.02 s. Terminating the owned native process produces the explicit failure, removes its isolated run directory and leaves no owned container. This opt-in real-stack case requires `PODLORD_LEGACY_APP`; it is not silently replaced by a simulated internal stack. |
 | Reset resource filters using an icon with an accessible name and keyboard activation, without Kubernetes requests | Actual field-filter dialog, shipped Workspace and Qt scene; simulated external Kubernetes HTTP boundary | Existing `native.field_filter.reset_Basic` and `reset_Fusion` | Both fail against the old wide text button and pass after reusing IconButton. No new overlapping test scenarios. |
 | Preserve narrow layout, filter-mode reset, stable option snapshots and explicit cache-only option reload | Same public Qt/Workspace boundary | `native.field_filter.narrow`, `mode_reset`, `stable_picker`, `refresh_picker`, both styles | Including the reset regression, 10/10 pass in 29.49 s. The completed build includes the production executable. |
@@ -5476,3 +5484,29 @@ These logs live under `<comparison-root>/release-evidence/2026-10-10-table-typog
 [CI run 38062596356](https://github.com/YunaBraska/podlord/actions/runs/38062596356) has passed real K3d, native macOS ARM and native Linux x64. Linux ARM failed the original alarm-toggle test, now reproduced and repaired in the test synchronization. macOS Intel was still running at this checkpoint; no complete green CI matrix is claimed.
 
 Release remains blocked by the 90% branch gate, outstanding matched-corpus/full-view/theme/device visual evidence, frame-work and installed cold-start measurements, and the unresolved remote-process cleanup policy. The measured macOS RSS ceiling in ADR 0046 does not waive any of those gates.
+
+### What does the 2026-10-12 AOT, live-cluster and private-package pass prove?
+
+| Boundary | Evidence | Result and remaining gap |
+| --- | --- | --- |
+| Native public suite | `2026-10-12-full-native-after-lazy.log` | 2/2 startup preflight and 4,390/4,390 remaining registered executions pass in 966.42 s. These include style variants, not 4,392 independent requirements. Line coverage is 10,149/10,419 = 97.41%; branch coverage is 9,268/11,100 = 83.50%, below the unchanged 90% release gate. |
+| Real local Kubernetes | `2026-10-12` visual-Kubernetes runner, `native-e2e` | The owned K3S cluster served 1,051 requested resources including 512 ConfigMaps and 256 Secrets. Search, metrics, health, inspector history, deletion races, forwarding, and a real shell/vi/interrupt flow passed. The runner removed its owned cluster and container. |
+| Installed C#/C++ comparison | `2026-10-12-aot-desktop/{resources,settings,events}-csharp-left-cpp-right.png` | Three side-by-side pairs were captured. The resource frame caught native loading (1,323 resources versus 1,421 in C#), so counts, order and Radar geometry are not matched-snapshot parity evidence. The Settings image predates the retained-sidebar and sound-source-width fixes. The Mac locked before an updated physical capture. |
+| Headless 5,000-resource UI | `2026-10-12-tab-recheck/` and `2026-10-12-lazy-port-performance/` | A single construction sample changed from 258.95 to 210.00 ms after lazy creation of the hidden Ports view; this is not an installed-startup proof or a controlled gain. Tab p95 was 49.20 then 52.50 ms against the unchanged 50 ms target, so stability is open. Filter, sort, cached inspector, bounded RSS and 60-second idle CPU passed both runs. Software rendering is not Metal frame evidence. |
+| Current private macOS arm64 package | `2026-10-12-current-private-package-portable/` | The current source packages with the official Qt SDK and existing portable OpenSSL/yaml-cpp libraries. ZIP is 32,720,920 bytes and installed regular-file logical sum is 86,705,157 bytes. Dependency closure, macOS >=13, ad-hoc signature verification and `--help`/`--version` pass. The first Homebrew yaml-cpp package failed the OS-floor check and was discarded. This is neither Developer ID/notarized distribution nor clean-device or interactive-window evidence. |
+
+The current package uses `macdeployqt -no-codesign` and signs retained binaries/frameworks after pruning and architecture thinning. Its package preflight is the regression check for that order. The remaining blockers are branch coverage, stable 50 ms cached tabs, installed one-second cold start, the 8 ms foreground frame-work gate, matched-state all-view/all-theme desktop comparison, and Windows/real mobile-device evidence. Stream closure remains the explicitly documented terminal limit: remote processes may continue, so no unverified process-kill claim is part of the private package.
+
+### 2026-10-12 installed desktop comparison on an isolated local cluster
+
+The deployed macOS arm64 C++ package and a separately signed, isolated C# reference bundle were launched through their public Cocoa windows against the same task-owned K3S cluster. The seed contained 1,051 objects, including 512 ConfigMaps and 256 Secrets. Public UI evidence was captured for Resources, Problems, Activity, Settings/Alerts, Events, Ports, and a five-result search. Pixel-preserving original captures and seven labeled side-by-side composites are under `~/.local/share/podlord-comparison/release-evidence/2026-10-12-current-desktop-comparison/`.
+
+| Public behavior | Installed desktop observation | Remaining gap |
+| --- | --- | --- |
+| Resource cache and radar | Both displayed the local cluster and populated table, health controls, and radar; C# reported 1,411 discovered resources and C++ 1,842. | Additional native discovery versus missing/duplicate data has not been classified by resource kind; the islands are not image-identical. Do not claim full spatial parity from this run. |
+| Problems and Activity | Problems produced 68 C# table matches and 74 native radar matches. Activity was selectable in both and native's recent-load radar remained fully populated. | Compare exact matching identities after loading settles, not just counts or a transient screenshot. |
+| Cached search | Searching `visual-image-error` yielded five matches in each app; native radar showed exactly five. Five successive Next actions navigated 2/5, 3/5, 4/5, 5/5, 1/5 in both apps. | Other query syntaxes and Previous are covered by component/UI tests, not this installed-package capture. |
+| Inspector, interactive terminal, multi-container logs | Clicking the full Pod row opened its inspector. The embedded PTY connected to container `alpha`, displayed `podlord-pty-ready`, and `exit` ended the remote shell successfully. Logs defaulted to `all` and visibly included both `[alpha]` and `[beta]` lines. | This manual installed-package path does not replace the automated shell-control and interrupted-stream cases. |
+| Runtime and cleanup | The comparison runner completed successfully, removed its labeled K3S container, apps, and profiles. The dedicated `podlord-release` Colima VM was deleted and the prior Docker context restored. | No physical mobile-device, Windows, Metal frame-p95, or installed cold-start pass was established here. |
+
+The side-by-side images show close event-table structure but also distinct session chrome, a denser native radar, and a substantially more compact native Alerts editor. These are review evidence, not a declaration of complete functional or visual parity.

@@ -170,6 +170,24 @@ for (const lane of ['native', 'reference']) {
     });
 }
 
+test('desktop comparison rejects a quarantined bundle before contacting Docker', { timeout: 30000 }, async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-quarantined-comparison-'));
+    const app = path.join(directory, 'PodlordReference.app');
+    try {
+        await fs.cp(bundle, app, { recursive: true, dereference: false, verbatimSymlinks: true });
+        await execute('/usr/bin/xattr', ['-w', 'com.apple.quarantine', '0081;00000000;Podlord;', app]);
+        const executable = path.join(app, 'Contents/MacOS/podlord-native');
+        const env = { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${directory}/absent-docker.sock`,
+            PODLORD_NATIVE_APP: path.join(bundle, 'Contents/MacOS/podlord-native'), PODLORD_LEGACY_APP: executable };
+        await assert.rejects(execute('/bin/sh', [path.join(__dirname, 'test-native-visual-kubernetes.sh'), 'desktop'], { env, timeout: 15000 }), error => {
+            assert.equal(error.code, 1);
+            assert.match(error.stderr, /is quarantined.*runner will not remove macOS quarantine/);
+            assert.doesNotMatch(error.stdout, /VISUAL_RUN=|NATIVE_PID=|LEGACY_PID=/);
+            return true;
+        });
+    } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
 test('an exited real comparison app fails the review and cleans up its owned stack', {
     skip: !process.env.PODLORD_LEGACY_APP, timeout: 210000
 }, async () => {

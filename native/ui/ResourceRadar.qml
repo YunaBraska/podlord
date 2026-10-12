@@ -279,7 +279,7 @@ Pane {
             Label {
                 objectName: "emptyRadar"
                 anchors.centerIn: parent
-                visible: grid.count === 0
+                visible: grid.count === 0 && grid.height >= implicitHeight + 8
                 width: Math.min(320, parent.width - 24)
                 text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources. Cached resources appear as they arrive." : "No resources match. Reset the filters to see the available cache."
                 textFormat: Text.PlainText

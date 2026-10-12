@@ -65,6 +65,7 @@ bool run(const QString& scenario) {
         {"sound_impact", {"aboutSoundSource_impact-sounds", "https://kenney.nl/assets/impact-sounds"}},
         {"sound_rpg", {"aboutSoundSource_rpg-audio", "https://kenney.nl/assets/rpg-audio"}}};
     if (scenario == "branding" || scenario == "branding_narrow") {
+        if (window->title() != "Podlord") return false;
         if (scenario.endsWith("_narrow")) window->resize(360, 600);
         auto* logo = item(window->contentItem(), "aboutLogo");
         auto* tagline = item(window->contentItem(), "aboutTagline");

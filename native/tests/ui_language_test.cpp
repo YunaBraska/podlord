@@ -131,7 +131,6 @@ bool scenario(const QStringList& args) {
     require(click(window, "settingsWorkspaceButton") && click(window, "settingsAppearanceSection"), "Cannot reach language settings.");
     QString code = mode == "language" || mode == "table_tools" ? args.value(2) : QString("de");
     require(podlord::validUiLanguage(code), "Expected a shipped language.");
-    if (mode == "narrow") { window->setWidth(720); window->setHeight(720); }
     std::optional<QLockFile> lock;
     if (mode == "locked" || mode == "conflict") {
         require(QDir().mkpath(profile), "Cannot establish a concurrent settings boundary.");
@@ -148,14 +147,21 @@ bool scenario(const QStringList& args) {
         return require(workspace.uiLanguage() == "system" && !workspace.error().isEmpty() && selector->property("currentIndex").toInt() == 0, "Failed save left misleading language selection.");
     }
     require(workspace.uiLanguage() == code, "Public selector did not apply the chosen language.");
-    if (mode == "narrow") {
-        require(click(window, "toggleSidebar") && QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "problemsOnly") != nullptr; }, 5000), "Cannot open narrow-window filters.");
-    }
     for (const auto& pair : QList<QPair<QString, QString>>{{"resourcesWorkspaceButton", "nav.resources"}, {"eventsWorkspaceButton", "nav.events"},
-        {"settingsWorkspaceButton", "nav.settings"}, {"settingsAppearanceSection", "settings.appearance"}, {"problemsOnly", "filters.problems"}, {"activityOnly", "filters.activity"}}) {
+        {"settingsWorkspaceButton", "nav.settings"}, {"settingsAppearanceSection", "settings.appearance"}}) {
         auto* target = podlord::test::visibleItem(window->contentItem(), pair.first);
         require(target && target->property("text") == podlord::uiText(code)[pair.second], "Visible chrome did not update its translated label.");
     }
+    require(click(window, "resourcesWorkspaceButton"), "Cannot reach translated resource filters.");
+    if (mode == "narrow") {
+        window->setWidth(720); window->setHeight(720);
+        require(click(window, "toggleSidebar") && QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "problemsOnly") != nullptr; }, 5000), "Cannot open narrow-window filters.");
+    }
+    for (const auto& pair : QList<QPair<QString, QString>>{{"problemsOnly", "filters.problems"}, {"activityOnly", "filters.activity"}}) {
+        auto* target = podlord::test::visibleItem(window->contentItem(), pair.first);
+        require(target && target->property("text") == podlord::uiText(code)[pair.second], "Visible filters did not update their translated labels.");
+    }
+    if (mode != "table_tools" && mode != "narrow") require(click(window, "settingsWorkspaceButton") && click(window, "settingsAppearanceSection"), "Cannot return to language settings.");
     require(workspace.currentSession().isEmpty() && workspace.contexts().isEmpty(), "Changing UI language changed cluster/session selection.");
     require(workspace.uiRightToLeft() == (code == "ar" || code == "ur"), "Language reading direction is incorrect.");
     if (mode == "table_tools") {

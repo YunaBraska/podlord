@@ -44,7 +44,7 @@ bool scenario(const QString& name) {
         if (name=="source_upgrade_invalid") {
             auto invalid=input(retained); auto column=invalid[0].toObject(); column["width"]=0; invalid[0]=column; values["resource"]=invalid;
         }
-        const auto bytes=QJsonDocument(QJsonObject{{"version",name=="source_upgrade_current_missing" ? 9 : 8},{"layouts",values}}).toJson();
+        const auto bytes=QJsonDocument(QJsonObject{{"version",name=="source_upgrade_current_missing" ? 10 : 8},{"layouts",values}}).toJson();
         if (!QDir().mkpath(profile) || !write(path,bytes)) return false;
         const TableLayoutStore upgraded(profile,expanded);
         const auto loaded=upgraded.load();
@@ -57,7 +57,7 @@ bool scenario(const QString& name) {
         const auto saved=upgraded.save("source",input(columns),actual.value("source"));
         return std::holds_alternative<TableLayouts>(saved) && std::get<TableLayouts>(saved).value("source")==columns
             && std::get<TableLayouts>(saved).value("resource")==retained
-            && QJsonDocument::fromJson(read(path)).object()["version"]==9
+            && QJsonDocument::fromJson(read(path)).object()["version"]==10
             && failure(store.load(),StoreError::InvalidData);
     }
     if (name.startsWith("diagnostics_upgrade_")) {
@@ -84,7 +84,7 @@ bool scenario(const QString& name) {
         if (!std::holds_alternative<TableLayouts>(upgraded.save("diagnostic",input(columns),actual.value("diagnostic")))) return false;
         const auto saved=upgraded.load();
         return std::holds_alternative<TableLayouts>(saved) && std::get<TableLayouts>(saved).value("diagnostic")==columns
-            && std::get<TableLayouts>(saved).value("resource")==retained && QJsonDocument::fromJson(read(path)).object()["version"]==9;
+            && std::get<TableLayouts>(saved).value("resource")==retained && QJsonDocument::fromJson(read(path)).object()["version"]==10;
     }
     if (name.startsWith("alert_upgrade_")) {
         auto expanded = schemas;
@@ -122,7 +122,7 @@ bool scenario(const QString& name) {
         return std::holds_alternative<TableLayouts>(saved)
             && std::get<TableLayouts>(upgraded.load()).value("alert") == columns
             && std::get<TableLayouts>(upgraded.load()).value("resource") == retained
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 9;
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 10;
     }
     if (name.startsWith("values_upgrade_")) {
         auto expanded = schemas;
@@ -163,7 +163,7 @@ bool scenario(const QString& name) {
         if (name == "inspector_upgrade_read") return true;
         auto links = actual.value("inspectorLink"); links[0].pinned = true;
         return std::holds_alternative<TableLayouts>(upgraded.save("inspectorLink", input(links), actual.value("inspectorLink")))
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 9 && failure(store.load(), StoreError::InvalidData);
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 10 && failure(store.load(), StoreError::InvalidData);
     }
     if (name.startsWith("ports_upgrade_")) {
         auto expanded = schemas; expanded["port"] = {"endpoint", "name"};
@@ -183,22 +183,69 @@ bool scenario(const QString& name) {
         if (name == "ports_upgrade_read") return true;
         auto ports = actual.value("port"); ports[0].pinned = true;
         return std::holds_alternative<TableLayouts>(upgraded.save("port", input(ports), actual.value("port")))
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 9
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 10
             && std::get<TableLayouts>(upgraded.load()).value("resource") == retained
             && failure(store.load(), StoreError::InvalidData);
     }
     if (name=="reference_defaults" || name=="reference_saved") {
-        const TableSchemas full{{"resource",{"name","kind","namespace","status","node","image","cluster","cpu","memory","storage","createdAt","ready","restarts","owner","issue"}}};
+        const TableSchemas full{{"resource",{"name","kind","namespace","status","node","image","cluster","cpu","memory","storage","createdAt","ready","restarts","owner","issue"}},
+            {"event",{"eventTime","eventType","eventReason","namespace","eventTargetName","eventCount","eventMessage","name","owner"}}};
         const TableLayoutStore reference(profile,full);
         const auto loaded=reference.load(); if (!std::holds_alternative<TableLayouts>(loaded)) return false;
         auto actual=std::get<TableLayouts>(loaded).value("resource");
         const QStringList order{"status","kind","name","namespace","cluster","cpu","memory","storage","createdAt","ready","restarts","node","image","owner","issue"};
         QStringList ids; for (const auto& column:actual) ids.append(column.id);
         if (ids!=order || actual[2].width!=280 || actual[5].width!=90 || actual.last().visible) return false;
+        const auto events=std::get<TableLayouts>(loaded).value("event");
+        QStringList eventIds; for (const auto& column:events) eventIds.append(column.id);
+        if (eventIds!=QStringList{"eventType","name","eventReason","owner","namespace","eventMessage","eventTime","eventCount","eventTargetName"}
+            || events[0].width!=120 || events[3].width!=165 || events[5].width!=420
+            || events[4].visible || events[6].visible || events[7].visible || events[8].visible) return false;
         if (name=="reference_defaults") return true;
         auto saved=actual; saved.swapItemsAt(0,2); saved[0].pinned=true; saved[1].width=345;
         if (!std::holds_alternative<TableLayouts>(reference.save("resource",input(saved),actual))) return false;
-        return std::get<TableLayouts>(reference.load()).value("resource")==saved;
+        const auto restored=std::get<TableLayouts>(reference.load());
+        return restored.value("resource")==saved && restored.value("event")==events;
+    }
+    if (name == "event_parity_upgrade_default" || name == "event_parity_upgrade_custom") {
+        const TableSchemas previous{{"event", {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage"}}};
+        auto expanded = previous;
+        expanded["event"].append("name"); expanded["event"].append("owner");
+        TableLayout saved{
+            {"eventType", true, false, 105},
+            {"eventTargetName", true, false, 200},
+            {"eventReason", true, false, 140},
+            {"eventMessage", true, false, 420},
+            {"namespace", true, false, 140},
+            {"eventTime", false, false, 200},
+            {"eventCount", false, false, 85},
+        };
+        if (name == "event_parity_upgrade_custom") { saved.swapItemsAt(0, 2); saved[0].width = 311; }
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 9}, {"layouts", QJsonObject{{"event", input(saved)}}}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path, bytes)) return false;
+        const auto loaded = TableLayoutStore(profile, expanded).load();
+        if (!std::holds_alternative<TableLayouts>(loaded) || read(path) != bytes) return false;
+        auto expected = defaultTableLayouts(expanded).value("event");
+        if (name == "event_parity_upgrade_custom") {
+            expected = saved;
+            expected.append({"name", false, false, 240});
+            expected.append({"owner", false, false, 220});
+        }
+        return std::get<TableLayouts>(loaded).value("event") == expected;
+    }
+    if (name == "event_v9_default" || name == "event_v9_custom") {
+        const TableSchemas full{{"event", {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage", "name", "owner"}}};
+        auto previous = defaultTableLayouts(full).value("event");
+        for (auto& column : previous) {
+            if (column.id == "namespace") column.visible = true;
+            if (column.id == "owner") column.width = 220;
+        }
+        if (name == "event_v9_custom") previous[5].width = 333;
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 9}, {"layouts", QJsonObject{{"event", input(previous)}}}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path, bytes)) return false;
+        const auto loaded = TableLayoutStore(profile, full).load();
+        return std::holds_alternative<TableLayouts>(loaded) && read(path) == bytes
+            && std::get<TableLayouts>(loaded).value("event") == (name == "event_v9_custom" ? previous : defaultTableLayouts(full).value("event"));
     }
     if (name.startsWith("upgrade_columns")) {
         const TableSchemas old{{"resource", {"name", "kind", "namespace", "status", "node", "image"}}, {"event", {"time", "type"}}};
@@ -217,7 +264,7 @@ bool scenario(const QString& name) {
         if (actual != expected || read(path) != bytes) return false;
         if (name == "upgrade_columns_save") {
             if (!std::holds_alternative<TableLayouts>(upgraded.save("resource", input(actual), actual))) return false;
-            return QJsonDocument::fromJson(read(path)).object()["version"] == 9 && std::get<TableLayouts>(upgraded.load()).value("resource") == expected;
+            return QJsonDocument::fromJson(read(path)).object()["version"] == 10 && std::get<TableLayouts>(upgraded.load()).value("resource") == expected;
         }
         return true;
     }
@@ -338,7 +385,7 @@ bool scenario(const QString& name) {
     }
     QJsonObject encoded{{"resource", value}, {"event", input(defaults.value("event"))}};
     QJsonObject root{{"version", 1}, {"layouts", encoded}};
-    if (name == "version") root["version"] = 10;
+    if (name == "version") root["version"] = 11;
     else if (name == "extra_root") root["extra"] = 1;
     else if (name == "layout_type") root["layouts"] = QJsonArray{};
     else if (name == "unknown_key") { encoded.remove("event"); encoded["unknown"] = QJsonArray{}; root["layouts"] = encoded; }

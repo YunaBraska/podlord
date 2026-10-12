@@ -158,11 +158,11 @@ Dialog {
                 }
                 TapHandler {
                     acceptedButtons: Qt.RightButton
-                    onTapped: copyMenu.popup()
+                    onTapped: copyMenu.popup(valueControl, 0, valueControl.height)
                 }
                 Keys.onPressed: function(event) {
                     if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
-                        copyMenu.popup()
+                        copyMenu.popup(valueControl, 0, valueControl.height)
                         event.accepted = true
                     }
                 }

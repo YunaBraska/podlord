@@ -181,15 +181,11 @@ Pane {
             contentWidth: availableWidth; clip: true
             ColumnLayout {
                 width: scroll.availableWidth; spacing: 10
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label { Layout.fillWidth: true; text: workspace.uiText["settings." + settings.section]; font.bold: true; font.pixelSize: 14; color: workspace.appearanceColors.accent }
-                }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
-                    SettingRow { label: workspace.uiText["settings.language"]; help: workspace.uiText["settings.languageHelp"]; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
                     SettingRow { label: workspace.uiText["settings.theme"]; help: workspace.uiText["settings.themeHelp"]; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.theme"]; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant) } }
                     SettingRow { label: workspace.uiText["settings.variant"]; help: workspace.uiText["settings.variantHelp"]; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText) } }
+                    SettingRow { label: workspace.uiText["settings.language"]; help: workspace.uiText["settings.languageHelp"]; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "graphics"
@@ -222,14 +218,34 @@ Pane {
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
                     RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
-                    Flow {
-                        Layout.fillWidth: true; spacing: 6
-                        IconButton { glyph: "ConfigMap"; text: "Browse file"; enabled: !workspace.busy; onClicked: settings.fileRequested() }
-                        IconButton { glyph: "Namespace"; text: "Browse folder"; enabled: !workspace.busy; onClicked: settings.folderRequested() }
-                        IconButton { glyph: "Reset"; text: "Reload imported metadata"; enabled: !workspace.busy; onClicked: workspace.reload() }
-                        IconButton { objectName: "pasteSourceButton"; glyph: "Pencil"; text: "Paste kubeconfig"; enabled: !workspace.busy; onClicked: pasteSourceDialog.open() }
-                        IconButton { objectName: "importHomeButton"; glyph: "Cluster"; text: "Import ~/.kube/config"; enabled: !workspace.busy; onClicked: workspace.importHome() }
-                        IconButton { objectName: "refreshSourceFilesButton"; glyph: "Reset"; text: "Reimport changed source files"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: workspace.refreshSources() }
+                    IconButton {
+                        id: sourceActionsButton
+                        objectName: "sourceActionsMenuButton"
+                        glyph: ""; showText: true; font.bold: true
+                        text: "More source actions"
+                        Layout.alignment: Qt.AlignLeft
+                        enabled: !workspace.busy
+                        onClicked: sourceActions.open()
+                    }
+                    Popup {
+                        id: sourceActions
+                        objectName: "sourceActionsMenu"
+                        parent: sourceActionsButton
+                        x: 0; y: sourceActionsButton.height
+                        width: Math.min(320, settings.width - 28)
+                        padding: 8; focus: true
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                        onOpened: browseSourceFile.forceActiveFocus()
+                        background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
+                        contentItem: ColumnLayout {
+                            spacing: 4
+                            IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: "Browse kubeconfig file"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
+                            IconButton { objectName: "browseSourceFolder"; glyph: ""; showText: true; text: "Browse kubeconfig folder"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
+                            IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: "Paste kubeconfig"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
+                            IconButton { objectName: "importHomeButton"; glyph: ""; showText: true; text: "Import ~/.kube/config"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
+                            IconButton { objectName: "refreshSourceFilesButton"; glyph: ""; showText: true; text: "Reimport changed source files"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
+                            IconButton { glyph: ""; showText: true; text: "Reload imported metadata"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.reload() } }
+                        }
                     }
                     Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
                     RowLayout {
@@ -278,7 +294,8 @@ Pane {
                     Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: settings.diagnosticTimestamp ? "Snapshot: " + new Date(settings.diagnosticTimestamp).toLocaleString(Qt.locale()) : ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
                     ResourceGrid {
                         id: diagnosticGrid
-                        Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: 480
+                        Layout.fillWidth: true; Layout.minimumWidth: 0
+                        Layout.preferredHeight: Math.min(300, Math.max(160, scroll.height * 0.38))
                         visible: settings.section === "diagnostics"; prefix: "diagnostic"; inspectable: false
                         findShortcutEnabled: !auditGrid.containsActiveFocus
                         tableModel: workspace.diagnosticTable; columns: workspace.diagnosticColumns

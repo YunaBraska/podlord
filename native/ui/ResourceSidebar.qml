@@ -148,7 +148,7 @@ Pane {
                     onActivated: { workspace.loadFilterPreset(currentText); presetName.text = currentText === "default" ? "" : currentText }
                 }
                 Button { objectName: "saveFilterPreset"; text: workspace.uiText["action.save"]; implicitHeight: 28; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
-                IconButton { objectName: "filterPresetActions"; glyph: "Menu"; text: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.open() }
+                IconButton { id: filterPresetActions; objectName: "filterPresetActions"; glyph: "Menu"; text: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.popup(filterPresetActions, 0, filterPresetActions.height) }
                 Menu { id: presetActions
                     MenuItem { objectName: "reloadFilterPresets"; text: "Reload saved filters"; enabled: !workspace.filterPresetsBusy; onTriggered: workspace.reloadFilterPresets() }
                     MenuItem { objectName: "importFilterPresets"; text: "Import saved filters..."; onTriggered: importPresets.open() }

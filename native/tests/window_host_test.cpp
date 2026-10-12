@@ -18,7 +18,7 @@
 #include <cstdio>
 
 #define REQUIRE(value) do { if (!(value)) { std::fprintf(stderr, "Failed line %d: %s\n", __LINE__, #value); return false; } } while (false)
-bool unregisterWorkspaceResource() { Q_CLEANUP_RESOURCE(workspace_ui); return true; }
+bool unregisterWorkspaceResource() { Q_CLEANUP_RESOURCE(podlord_workspace_raw_qml_0); Q_CLEANUP_RESOURCE(workspace_ui); return true; }
 namespace {
 bool waitFor(const std::function<bool()>& condition, int limit = 15000) {
     QElapsedTimer timer; timer.start();

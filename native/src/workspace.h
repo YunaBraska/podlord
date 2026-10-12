@@ -24,7 +24,7 @@ class ResourceTable final : public QAbstractTableModel {
 public:
     explicit ResourceTable(QObject* parent = nullptr,
                            QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"},
-                           QStringList captions = {"Name", "Kind", "Namespace", "Status", "Node", "Image", "Cluster", "CPU", "Memory", "Storage", "Age", "Ready", "Restarts", "Owner", "Issue", "UID"}, QString identityField = "path");
+                           QStringList captions = {"Name", "Kind", "Namespace", "Status", "Node", "Image", "Cluster", "CPU", "Memory", "Storage", "Age", "Ready", "Restarts", "Owner", "Issue", "UID"}, QString identityField = "path", bool preserveInputOrder = false);
     int rowCount(const QModelIndex& parent = {}) const override;
     int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -38,6 +38,7 @@ private:
     void prepareSort(int column);
     const QStringList fields_, captions_;
     const QString identityField_;
+    const bool preserveInputOrder_;
     QList<QJsonObject> rows_;
     QList<QVariant> sortValues_;
     int sortValueColumn_ = -1;

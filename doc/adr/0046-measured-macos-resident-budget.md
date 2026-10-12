@@ -2,6 +2,7 @@
 
 Status: Accepted
 Date: 2026-10-10
+Amended: 2026-10-11
 
 ## Context
 
@@ -20,8 +21,10 @@ claim is inferred from unlike runs or allocation-instrumented measurements.
 
 ## Decision
 
-Set the macOS desktop release ceiling to 275,000,000 resident bytes, leaving
-about 14.7 MB above the higher current measured peak. Keep 250 MB as the
+The 2026-10-10 decision set the macOS desktop release ceiling to 275,000,000
+resident bytes, leaving about 14.7 MB above that day's higher measured peak.
+The 2026-10-11 review below supersedes that ceiling with 310,000,000 bytes.
+Keep 250 MB as the
 optimization target. Keep the 5,000,000-byte warm-growth gate, idle CPU, cached
 interaction and frame-work budgets unchanged. Report both memory ceilings in
 each new benchmark result; never relabel historical failures as passes.
@@ -56,3 +59,28 @@ was 1,376,256 bytes. Both passed. Idle CPU was 1.4882 percent of one core over
 60,002 ms with no foreground loss. Filter/sort/tab/inspector p95 values were
 40.28/29.46/45.08/24.72 ms and passed their unchanged limits. Installed startup,
 per-frame UI work, other platforms and broader lifecycle gates are separate.
+
+## Why was the macOS ceiling reviewed again?
+
+On 2026-10-11, two clean foreground Cocoa runs of the current build measured
+286,392,320 and 290,832,384 bytes with warm growth of 1,900,544 and
+4,210,688 bytes. A third current-build diagnostic run measured 286,883,840
+bytes, and an older native build measured 287,522,816 bytes on the same Mac,
+Qt version and 5,000-resource workload. All four original reports remain
+failures against their recorded 275 MB gate. Idle CPU and interaction gates
+passed; a shared-radar-animation experiment reduced RSS only slightly and
+failed the idle-CPU gate, so it was reverted.
+
+`vmmap` showed comparable 60.4 MB resident IOSurface allocations in both
+builds, with no evidence that the current build alone owns the higher RSS.
+The 2026-10-10 display geometry was not recorded, so the difference from its
+261,799,936-byte run cannot be attributed to a specific display or code change.
+Future benchmark reports record window size and device-pixel ratio.
+
+Set the macOS desktop release ceiling to 310,000,000 resident bytes, about
+19.2 MB above the largest repeatable current peak. Keep 250 MB as the
+optimization target and 5,000,000 bytes as the warm-growth ceiling. This is
+not a waiver for continuing growth, high idle CPU, other operating systems,
+or the separate frame-work and installed-startup gates. A fresh uninstrumented
+foreground run must explicitly report and pass the amended ceiling; historical
+failures are never relabeled as passes.

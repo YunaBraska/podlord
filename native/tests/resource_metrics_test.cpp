@@ -120,7 +120,8 @@ bool run(const QString& scenario) {
         if (scenario=="summary_missing") return usage.startsWith("Unavailable") && !usage.startsWith("0");
         if (scenario=="summary_zero") return usage.startsWith("0 mCPU");
         if (scenario=="summary_partial") return usage.contains("incomplete");
-        if (scenario=="summary_stale") return usage.contains("stale");
+        if (scenario=="summary_stale") return usage.contains("stale")
+            && summary[0].toMap()["description"].toString().contains(measured.toUTC().toString(Qt::ISODateWithMs));
         if (scenario=="summary_node") return usage.startsWith("1000 mCPU / 4000 mCPU") && summary[3].toMap()["usage"]=="1" && summary[4].toMap()["usage"]=="1";
         if (scenario=="summary_overflow") return usage.startsWith("Unavailable (overflow)");
         if (scenario=="summary_storage") return summary[2].toMap()["usage"]=="Unavailable / 3 GiB";

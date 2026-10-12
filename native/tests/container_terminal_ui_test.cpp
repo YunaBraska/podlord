@@ -409,10 +409,10 @@ bool run(const QString& scenario, const QString& configPath) {
         REQUIRE(waitFor([&] { return !terminal->active(); }));
         REQUIRE(!terminal->connected() && !terminal->status().isEmpty());
         QTest::qWait(100); REQUIRE(upgrades == 1 && input.isEmpty() && freshReads == 1);
-    } else if (scenario == "status_success" || scenario == "status_failure" || scenario == "status_malformed" || scenario == "status_fragmented" || scenario == "status_tcp_eof") {
+    } else if (scenario == "status_success" || scenario == "status_empty" || scenario == "status_failure" || scenario == "status_malformed" || scenario == "status_fragmented" || scenario == "status_tcp_eof") {
         QByteArray status = scenario == "status_failure" ? "{\"status\":\"Failure\",\"reason\":\"NonZeroExitCode\",\"details\":{\"causes\":[{\"reason\":\"ExitCode\",\"message\":\"7\"}]}}" : scenario == "status_malformed" ? "bad" : "{\"status\":\"Success\"}";
         if (scenario == "status_fragmented") { peer->sendBinaryMessage(QByteArray(1, char(3)) + status.first(8)); status.remove(0, 8); }
-        peer->sendBinaryMessage(QByteArray(1, char(3)) + status);
+        if (scenario != "status_empty") peer->sendBinaryMessage(QByteArray(1, char(3)) + status);
         if (scenario == "status_tcp_eof") QTimer::singleShot(30, &streaming, [&] { if (peer) peer->abort(); });
         else { peer->sendBinaryMessage(QByteArray::fromHex("ff03")); peer->sendBinaryMessage(QByteArray::fromHex("ff01")); }
         REQUIRE(waitFor([&] { return !terminal->active(); })); REQUIRE(scenario == "status_failure" ? terminal->status().contains("code 7") : scenario == "status_malformed" ? terminal->status().contains("Invalid") : terminal->status() == "Shell exited successfully.");
@@ -422,6 +422,7 @@ bool run(const QString& scenario, const QString& configPath) {
         if (scenario == "oversized") peer->sendBinaryMessage(QByteArray(1024 * 1024 + 2, 'a'));
         if (scenario == "disconnect") peer->close();
         REQUIRE(waitFor([&] { return !terminal->active(); })); REQUIRE(!terminal->connected());
+        if (scenario == "disconnect") REQUIRE(terminal->status() == "Connection closed without an exit status. No shell was restarted.");
     } else if (scenario == "repeat") { REQUIRE(!workspace.startContainerTerminal("alpha", "/bin/sh")); REQUIRE(upgrades == 1); }
     else if (scenario == "session_close") {
         REQUIRE(click(qPrintable("closeSession_" + workspace.currentSession())));

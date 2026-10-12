@@ -49,8 +49,19 @@ if [ "$MODE" = desktop ] || [ "$MODE" = release-review ]; then
                 printf 'Comparison input %s does not match its declared bundle executable %s.\n' "$executable" "$declared" >&2
                 exit 1
             }
+            bundle=${executable%/Contents/MacOS/*}
+            if /usr/bin/xattr -p com.apple.quarantine "$bundle" >/dev/null 2>&1 ||
+                /usr/bin/xattr -p com.apple.quarantine "$executable" >/dev/null 2>&1; then
+                printf 'Comparison input %s is quarantined. Use an already-approved local bundle; the runner will not remove macOS quarantine.\n' "$bundle" >&2
+                exit 1
+            fi
         done
     fi
+fi
+if [ "$(uname -s)" = Darwin ] && { [ "$MODE" = desktop ] || [ "$MODE" = release-review ]; }; then
+    VISUAL_SIGN_IDENTITY=${PODLORD_VISUAL_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk '/^[[:space:]]*[0-9]+\) [0-9A-F]+ / { count++; identity=$2 } END { if (count == 1) print identity }')}
+    [ -n "$VISUAL_SIGN_IDENTITY" ] || { printf 'Desktop comparison needs PODLORD_VISUAL_SIGN_IDENTITY or exactly one valid local code-signing identity.\n' >&2; exit 1; }
+    security find-identity -v -p codesigning | rg -F -- "$VISUAL_SIGN_IDENTITY" >/dev/null || { printf 'Desktop comparison signing identity is not available.\n' >&2; exit 1; }
 fi
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
     for executable in "$BUILD/alert_ui_test" "$BUILD/workspace_ui_test" "$BUILD/resource-delete-ui-test" "$BUILD/inspector-navigation-ui-test" "$BUILD/port-forward-ui-test"; do
@@ -420,18 +431,18 @@ fi
 mkdir -p "$RUN/legacy/home/.kube" "$RUN/legacy/config/podlord"
 cp "$RUN/kubeconfig" "$RUN/legacy/home/.kube/config"
 if [ "$(uname -s)" = Darwin ]; then
-    # A unique test identity prevents desktop controls from selecting a user's running app.
+    # Stable signed identities retain macOS desktop permissions across comparison runs.
     cp -R "${LEGACY%/Contents/MacOS/*}" "$RUN/PodlordReference.app"
-    /usr/bin/plutil -replace CFBundleIdentifier -string "dev.podlord.reference.$NAME" "$RUN/PodlordReference.app/Contents/Info.plist"
+    /usr/bin/plutil -replace CFBundleIdentifier -string 'dev.podlord.visual.reference' "$RUN/PodlordReference.app/Contents/Info.plist"
     /usr/bin/plutil -replace CFBundleName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
     /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
-    /usr/bin/codesign --force --deep --sign - "$RUN/PodlordReference.app"
+    /usr/bin/codesign --force --deep --sign "$VISUAL_SIGN_IDENTITY" "$RUN/PodlordReference.app"
     LEGACY="$RUN/PodlordReference.app/Contents/MacOS/$(basename -- "$LEGACY")"
     cp -R "${NATIVE%/Contents/MacOS/*}" "$RUN/PodlordNative.app"
-    /usr/bin/plutil -replace CFBundleIdentifier -string "dev.podlord.native.$NAME" "$RUN/PodlordNative.app/Contents/Info.plist"
+    /usr/bin/plutil -replace CFBundleIdentifier -string 'dev.podlord.visual.native' "$RUN/PodlordNative.app/Contents/Info.plist"
     /usr/bin/plutil -replace CFBundleName -string 'Podlord Native Comparison' "$RUN/PodlordNative.app/Contents/Info.plist"
     /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Native Comparison' "$RUN/PodlordNative.app/Contents/Info.plist"
-    /usr/bin/codesign --force --deep --sign - "$RUN/PodlordNative.app"
+    /usr/bin/codesign --force --deep --sign "$VISUAL_SIGN_IDENTITY" "$RUN/PodlordNative.app"
     NATIVE="$RUN/PodlordNative.app/Contents/MacOS/$(basename -- "$NATIVE")"
 fi
 (unset QT_QPA_PLATFORM QT_QUICK_BACKEND QT_QUICK_CONTROLS_STYLE QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH QML_IMPORT_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_FRAMEWORK_PATH KUBECONFIG; exec "$NATIVE" --profile "$RUN/native" --kubeconfig "$RUN/kubeconfig") > "$RUN/native.log" 2>&1 &
