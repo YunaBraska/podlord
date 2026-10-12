@@ -191,7 +191,10 @@ int main(int argc, char** argv) {
             QTest::keyClick(window, Qt::Key_Return);
             require(QTest::qWaitFor([&] { return !palette->property("visible").toBool(); }, 2000), "Command did not close palette.");
             require(workspace.workspacePage() == (scenario == "sources" ? "settings" : scenario), "Command navigated to the wrong workspace.");
-            if (scenario == "sources") require(item("importHomeButton")->isEnabled(), "Sources command did not select Sources settings.");
+            if (scenario == "sources") {
+                click("sourceActionsMenuButton");
+                require(item("importHomeButton")->isEnabled(), "Sources command did not select Sources settings.");
+            }
         } else if (scenario == "narrow") {
             const auto withinScene = [&] {
                 const auto point = search->mapToScene(QPointF());

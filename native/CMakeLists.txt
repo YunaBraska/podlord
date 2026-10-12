@@ -20,6 +20,13 @@ set_target_properties(podlord_vterm PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED
 target_include_directories(podlord_vterm PUBLIC ${libvterm_SOURCE_DIR}/include)
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(settings-layout-ui-test tests/settings_layout_ui_test.cpp tests/ui_input.h)
+    target_link_libraries(settings-layout-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(style Basic Fusion)
+        add_test(NAME native.settings_layout.sidebar_${style} COMMAND settings-layout-ui-test)
+        set_tests_properties(native.settings_layout.sidebar_${style} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+    endforeach()
     add_executable(settings-notice-ui-test tests/settings_notice_ui_test.cpp tests/ui_input.h)
     target_link_libraries(settings-notice-ui-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario once unrelated failures)
@@ -151,7 +158,7 @@ if(BUILD_TESTING)
         add_test(NAME native.ui.table_${scenario} COMMAND workspace_ui_test table_${scenario})
         set_tests_properties(native.ui.table_${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
-    foreach(scenario upgrade_columns upgrade_columns_save upgrade_columns_invalid reference_defaults reference_saved ports_upgrade_read ports_upgrade_save ports_upgrade_current_missing ports_upgrade_unknown ports_upgrade_invalid ports_upgrade_unsupported
+    foreach(scenario upgrade_columns upgrade_columns_save upgrade_columns_invalid reference_defaults reference_saved event_parity_upgrade_default event_parity_upgrade_custom event_v9_default event_v9_custom ports_upgrade_read ports_upgrade_save ports_upgrade_current_missing ports_upgrade_unknown ports_upgrade_invalid ports_upgrade_unsupported
         inspector_upgrade_read inspector_upgrade_save inspector_upgrade_current_missing inspector_upgrade_unknown inspector_upgrade_invalid)
         add_test(NAME native.table_layout.${scenario} COMMAND table_layout_test ${scenario})
         set_tests_properties(native.table_layout.${scenario} PROPERTIES TIMEOUT 30)
@@ -256,7 +263,27 @@ set(dependency_notice_files licenses/THIRD-PARTY-NOTICES.txt licenses/LGPL-3.0.t
 foreach(file IN LISTS dependency_notice_files)
     set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
 endforeach()
-qt_add_resources(podlord_workspace "workspace_ui" PREFIX "/podlord" BASE ui FILES ui/Main.qml ui/IconButton.qml ui/ResourceSidebar.qml ui/PulseStrip.qml ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml ui/PasteSourceDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml ui/theme-palettes.json "${brand_logo}" "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE" ${dependency_notice_files})
+set(workspace_qml_files
+    ui/Main.qml ui/IconButton.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
+    ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml
+    ui/PasteSourceDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml
+    ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
+    ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
+    ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
+    ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml
+)
+foreach(qml_file IN LISTS workspace_qml_files)
+    get_filename_component(qml_alias "${qml_file}" NAME)
+    set_source_files_properties("${qml_file}" PROPERTIES QT_RESOURCE_ALIAS "${qml_alias}")
+endforeach()
+qt_add_qml_module(podlord_workspace
+    URI podlord
+    VERSION 1.0
+    RESOURCE_PREFIX "/"
+    NO_PLUGIN
+    QML_FILES ${workspace_qml_files}
+)
+qt_add_resources(podlord_workspace "workspace_ui" PREFIX "/podlord" BASE ui FILES ui/theme-palettes.json "${brand_logo}" "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE" ${dependency_notice_files})
 set(alert_audio_files
     ../src/Podlord.App/Assets/Audio/ui/panel-segment-load.ogg
     ../src/Podlord.App/Assets/Audio/events/radar-activated.ogg
@@ -316,7 +343,7 @@ if(BUILD_TESTING)
     add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
     target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario connect input shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
-        status_success status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
+        status_success status_empty status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
         status_invalid_exit_reason status_invalid_exit_text status_invalid_exit_zero status_invalid_exit_large status_invalid_exit_fraction status_invalid_exit_missing
         frame_empty close_bad_size close_bad_channel stderr_frame
         key_enter key_backspace key_backtab key_insert key_delete key_home key_end key_pageup key_pagedown key_f1 key_alt

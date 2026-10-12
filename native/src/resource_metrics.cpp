@@ -122,6 +122,7 @@ QVariantList resourceMetricSummary(const QJsonArray& resources) {
         double used=0, reference=0;
         int eligible=0, observed=0, referenced=0;
         bool incomplete=false, stale=false;
+        QDateTime oldestStaleMeasurement;
     };
     std::array<std::array<Total,3>,4> totals{};
     std::array<int,4> counts{};
@@ -141,6 +142,11 @@ QVariantList resourceMetricSummary(const QJsonArray& resources) {
                 total.used+=used.toDouble(); ++total.observed;
                 total.incomplete=total.incomplete || !row["metricComplete"].toObject()[ids[metric]].toBool();
                 total.stale=total.stale || row["metricStale"].toBool();
+                if (row["metricStale"].toBool()) {
+                    const auto at=QDateTime::fromString(row["metricAt"].toString(), Qt::ISODateWithMs);
+                    if (at.isValid() && (!total.oldestStaleMeasurement.isValid() || at<total.oldestStaleMeasurement))
+                        total.oldestStaleMeasurement=at;
+                }
             }
             const auto reference=row["metricReferences"].toObject()[ids[metric]].toObject();
             const QString key=group==1 ? "limit" : "capacity";
@@ -169,7 +175,8 @@ QVariantList resourceMetricSummary(const QJsonArray& resources) {
         const auto maximum=std::max(measured ? total.used : 0,referenced ? total.reference : 0);
         const QString label=metric==0 ? "CPU" : metric==1 ? "Memory" : "Storage";
         const auto description=label+" from filtered "+scope+". Measured "+QString::number(total.observed)+" of "+QString::number(total.eligible)
-            +" resources. "+(group==1 ? "Configured limits" : "Capacity")+" are references only; missing measurements are not zero. Node and Pod usage are never added together.";
+            +" resources. "+(group==1 ? "Configured limits" : "Capacity")+" are references only; missing measurements are not zero. Node and Pod usage are never added together."
+            +(total.oldestStaleMeasurement.isValid() ? " Oldest stale measurement: "+total.oldestStaleMeasurement.toUTC().toString(Qt::ISODateWithMs)+"." : "");
         result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",true},
             {"fraction",measured && maximum>0 ? total.used/maximum : 0},{"description",description}});
     }

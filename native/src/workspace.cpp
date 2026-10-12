@@ -58,8 +58,8 @@ bool containsValue(const QJsonObject& document, const QString& id) {
         && document[field].toObject().contains(key);
 }
 } // namespace
-ResourceTable::ResourceTable(QObject* parent, QStringList fields, QStringList captions, QString identityField)
-    : QAbstractTableModel(parent), fields_(std::move(fields)), captions_(std::move(captions)), identityField_(std::move(identityField)) {}
+ResourceTable::ResourceTable(QObject* parent, QStringList fields, QStringList captions, QString identityField, bool preserveInputOrder)
+    : QAbstractTableModel(parent), fields_(std::move(fields)), captions_(std::move(captions)), identityField_(std::move(identityField)), preserveInputOrder_(preserveInputOrder) {}
 int ResourceTable::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(rows_.size()); }
 int ResourceTable::columnCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(fields_.size()); }
 QVariant ResourceTable::data(const QModelIndex& index, int role) const {
@@ -150,6 +150,15 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     sortValues_.clear(); sortValueColumn_ = -1;
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
+    if (preserveInputOrder_) {
+        QList<QJsonObject> ordered;
+        ordered.reserve(rows.size());
+        for (const auto& value : rows) ordered.append(value.toObject());
+        if (ordered != rows_ || clusterChanged) {
+            beginResetModel(); rows_ = std::move(ordered); endResetModel();
+        }
+        return true;
+    }
     QMap<QString, QJsonObject> incoming;
     for (const auto& value : rows) { const auto row = value.toObject(); incoming.insert(row[identityField_].toString(), row); }
     for (int last = static_cast<int>(rows_.size()) - 1; last >= 0;) {
@@ -223,14 +232,14 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     : QObject(parent), runtime_(std::move(runtime)), viewId_(restore ? QString{} : QUuid::createUuid().toString(QUuid::WithoutBraces)),
     profile_(runtime_->profile), client_(runtime_->client), releaseUpdates_(runtime_->releases),
     alerts_(profile_, &client_, this, runtime_->now), credentials_(runtime_->credentials),
-    eventRows_(nullptr, {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage"},
-        {"Last observed", "Type", "Reason", "Namespace", "Regarding", "Count", "Message"}),
+    eventRows_(nullptr, {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage", "name", "owner"},
+        {"Last observed", "Status", "Reason", "Namespace", "Target name", "Count", "Message", "Name", "Object"}),
     portRows_(nullptr, {"endpoint", "name", "kind", "namespace", "remotePort", "resolvedPort", "status"},
         {"Local endpoint", "Name", "Kind", "Namespace", "Remote", "Resolved", "Status"}, "id"),
     inspectorEventRows_(nullptr, {"time", "type", "reason", "count", "message"}, {"Last observed", "Type", "Reason", "Count", "Message"}),
     inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status"}, {"From", "Link", "To", "Namespace", "Status"}),
     valueRows_(nullptr, {"name", "encoding", "preview", "copy", "reveal"}, {"Key", "Encoding", "Value", "Copy", "Reveal"}, "id"),
-    diagnosticRows_(nullptr, {"label", "value", "description"}, {"Metric", "Value", "Description"}, "id"),
+    diagnosticRows_(nullptr, {"label", "value", "description"}, {"Metric", "Value", "Description"}, "id", true),
     requestAuditRows_(nullptr, {"time", "method", "path", "priority", "status", "duration", "outcome"},
         {"Time", "Method", "Path", "Priority", "Status", "Duration", "Outcome"}, "id") {
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
@@ -476,7 +485,7 @@ QVariantMap Workspace::settingsDiagnostics() const {
         QVariantMap{{"label","Sync progress"},{"value",QString::number(loadingProgress()*100,'f',0)+"%"},{"description",status()}},
         QVariantMap{{"label","Request limit"},{"value",settings_.requestHardLimitPerMinute},{"description","Per minute; 0 adds no extra limit; reads have at least 400 ms spacing"}},
         QVariantMap{{"label","Retained logs"},{"value",QString::number(settings_.logLimitMb)+" MB / Pod"},{"description","Bounded in-memory log retention"}}};
-    metrics.append(runtimeDiagnostics());
+    metrics = runtimeDiagnostics() + metrics;
     return {{"metrics",metrics},{"requests",client_.requestAudit(active_)},{"sampledAt",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
 }
 bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
@@ -785,7 +794,7 @@ bool Workspace::publish() {
         else ++healthy;
     }
     healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
-    eventRows_.publish(eventSnapshot, cluster);
+    if (!eventSnapshot.isEmpty() || eventRows_.rowCount() != 0) eventRows_.publish(eventSnapshot, cluster);
     publishPorts();
     table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);
     if (filterPickerSession_ != active_) {

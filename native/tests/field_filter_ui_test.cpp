@@ -605,7 +605,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 || !click(window, "resourceSaveColumns") || !waitFor([&] { return !workspace.property("tableLayoutSaving").toBool(); }))) return false;
             QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
             if (!frames.wait(1000)) return false;
-            auto* cell = item(window, eventTable ? "eventCell_0_0" : pinned ? "pinnedCell_0_0" : "cell_0_0");
+            auto* cell = item(window, eventTable ? "eventCell_0_1" : pinned ? "pinnedCell_0_0" : "cell_0_0");
             if (!cell || !cell->isVisible() || !cell->isEnabled()) return false;
             const auto path = cell->property("resourcePath").toString();
             const auto value = cell->property("text").toString();

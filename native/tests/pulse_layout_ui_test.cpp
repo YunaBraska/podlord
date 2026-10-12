@@ -64,6 +64,19 @@ int main(int argc, char** argv) {
             return true;
         };
         require(QTest::qWaitFor(fits, 3000), "HUD metrics are clipped, overlapping or unreachable.");
+        if (width == 390) {
+            workspace.setWorkspacePage("resources");
+            window->resize(844, 390);
+            require(QTest::qWaitFor([&] {
+                auto* radar = findItem(window->contentItem(), "resourceRadar");
+                return radar && radar->isVisible();
+            }, 3000), "Landscape radar is unavailable.");
+            auto* emptyRadar = findItem(window->contentItem(), "emptyRadar");
+            require(emptyRadar && QTest::qWaitFor([&] { return !emptyRadar->isVisible(); }, 3000),
+                "Landscape radar empty-state text overlaps its controls.");
+            window->resize(width, 720);
+            require(QTest::qWaitFor(fits, 3000), "HUD metrics did not recover after landscape resize.");
+        }
         auto* cpu = findItem(window->contentItem(), "pulse_cpu");
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
             cpu->mapToScene(QPointF(cpu->width() / 2, cpu->height() / 2)).toPoint());

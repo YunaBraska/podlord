@@ -39,7 +39,7 @@ Pane {
             Layout.fillWidth: true; spacing: 6
             IconButton { glyph: "Service"; text: "Forward selected resource"; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
             IconButton { objectName: "copyPortForwardTask"; glyph: "ConfigMap"; action: copyEndpoint }
-            IconButton { objectName: "openPortForwardTask"; glyph: "Next"; text: workspace.uiText["action.open"]; enabled: openHttp.enabled; Accessible.name: view.selectedForward ? "Open " + view.selectedForward.endpoint + " in browser" : "Open selected port forward in browser"; onClicked: endpointMenu.popup() }
+            IconButton { id: openPortForwardTask; objectName: "openPortForwardTask"; glyph: "Next"; text: workspace.uiText["action.open"]; enabled: openHttp.enabled; Accessible.name: view.selectedForward ? "Open " + view.selectedForward.endpoint + " in browser" : "Open selected port forward in browser"; onClicked: endpointMenu.popup(openPortForwardTask, 0, openPortForwardTask.height) }
             IconButton { objectName: "stopPortForwardTask"; glyph: "Close"; action: stop }
         }
         Label { Layout.fillWidth: true; visible: workspace.portForwardError !== ""; text: workspace.portForwardError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }

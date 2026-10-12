@@ -50,7 +50,7 @@ if [ ! -x "$DEPLOY" ]; then
 fi
 "$CMAKE" --build "$WORK/build" --target podlord-native --parallel "${PODLORD_BUILD_JOBS:-4}"
 APP="$WORK/build/podlord-native.app"
-"$DEPLOY" "$APP" -qmldir="$ROOT/native/ui" -verbose=2
+"$DEPLOY" "$APP" -qmldir="$ROOT/native/ui" -no-codesign -verbose=2
 # Preserve the notices and matching supplier metadata with the deployed binaries.
 NOTICES="$APP/Contents/Resources/licenses"
 mkdir -p "$NOTICES/qt-spdx"
@@ -112,6 +112,8 @@ case "$ARCHITECTURES" in
 esac
 find "$APP/Contents/Frameworks" -type f -name '*.dylib' \
     -exec /usr/bin/codesign --force --sign - '{}' +
+find "$APP/Contents/Frameworks" -type d -name '*.framework' -prune -print |
+    while IFS= read -r framework; do /usr/bin/codesign --force --sign - "$framework"; done
 /usr/bin/codesign --force --sign - "$APP"
 /usr/bin/codesign --verify --deep --strict "$APP"
 mkdir "$WORK/evidence"

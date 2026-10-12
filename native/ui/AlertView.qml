@@ -150,7 +150,7 @@ Pane {
         default property alias controls: values.data
         Layout.fillWidth: true; columns: width < 600 ? 1 : 2; columnSpacing: 8; rowSpacing: 4
         data: [Label { text: parent.label; Layout.preferredWidth: parent.columns === 1 ? -1 : 130; color: workspace.appearanceColors.muted },
-            RowLayout { id: values; Layout.fillWidth: true; spacing: 6 }]
+            RowLayout { id: values; Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6 }]
     }
     component HoldMode: ComboBox {
         Layout.fillWidth: true
@@ -173,7 +173,7 @@ Pane {
             objectName: "alertRulesTable"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            Layout.preferredHeight: view.width < 600 ? Math.min(112, Math.max(56, view.height * 0.2)) : Math.min(220, Math.max(112, view.height * 0.32))
+            Layout.preferredHeight: view.width < 600 ? Math.min(112, Math.max(56, view.height * 0.2)) : Math.min(160, Math.max(112, view.height * 0.24))
             Layout.minimumHeight: view.width < 600 ? 0 : implicitHeight
             Layout.maximumHeight: view.width < 600 ? Layout.preferredHeight : Number.POSITIVE_INFINITY
             prefix: "alert"
@@ -307,7 +307,7 @@ Pane {
                 FormRow { label: "Zoom (%)"; SpinBox { id: zoom; objectName: "alertZoom"; enabled: form.editable; from: 0; to: 200; editable: true; Accessible.name: "Radar zoom percent" } ActionButton { objectName: "previewAlertZoom"; text: "Preview"; enabled: view.draft !== null && !workspace.alerts.busy && !workspace.alerts.zoomPreviewBusy; Accessible.name: "Preview draft radar zoom without saving"; onClicked: workspace.previewAlertZoom(view.ruleDraft()) } Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "0 disables automatic focus"; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted } }
                 Label { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
                 FormRow { label: "Find sound"; TextField { id: soundSearch; objectName: "alertSoundSearch"; Layout.fillWidth: true; enabled: form.editable; placeholderText: "Name, purpose, author, license or music"; Accessible.name: "Find alert sound" } }
-                FormRow { label: "Sound"; ComboBox { id: sound; objectName: "alertSound"; Layout.fillWidth: true; enabled: form.editable; model: view.soundOptions; currentIndex: view.soundOptions.findIndex(s => s.id === view.selectedSoundId); textRole: "name"; valueRole: "id"; Accessible.name: "Alert sound"; onActivated: view.selectedSoundId = currentValue } ActionButton { objectName: "previewAlertSound"; text: "Preview"; enabled: !workspace.alerts.busy && !workspace.alerts.muted && view.selectedSoundId !== "none"; onClicked: workspace.alerts.previewSound(view.selectedSoundId) } ActionButton { objectName: "openAlertSoundSource"; text: "Source"; enabled: view.selectedSound !== undefined; Accessible.name: "Open selected sound source in the external browser"; onClicked: view.sourceError = Qt.openUrlExternally(view.selectedSound.source) ? "" : "The browser could not open this link. Please try again explicitly." } }
+                FormRow { label: "Sound"; ComboBox { id: sound; objectName: "alertSound"; Layout.fillWidth: true; Layout.minimumWidth: 0; enabled: form.editable; model: view.soundOptions; currentIndex: view.soundOptions.findIndex(s => s.id === view.selectedSoundId); textRole: "name"; valueRole: "id"; Accessible.name: "Alert sound"; onActivated: view.selectedSoundId = currentValue } ActionButton { objectName: "previewAlertSound"; text: "Preview"; enabled: !workspace.alerts.busy && !workspace.alerts.muted && view.selectedSoundId !== "none"; onClicked: workspace.alerts.previewSound(view.selectedSoundId) } ActionButton { objectName: "openAlertSoundSource"; text: "Source"; enabled: view.selectedSound !== undefined; Accessible.name: "Open selected sound source in the external browser"; onClicked: view.sourceError = Qt.openUrlExternally(view.selectedSound.source) ? "" : "The browser could not open this link. Please try again explicitly." } }
                 Label { objectName: "alertSoundNoResults"; Layout.fillWidth: true; visible: view.soundOptions.length === 0; text: "No sounds match. The selected sound is unchanged."; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
                 Label { objectName: "alertSoundAttribution"; Layout.fillWidth: true; text: view.selectedSound ? view.selectedSound.name + "\n" + view.selectedSound.purpose + "\n" + view.selectedSound.author + " / " + view.selectedSound.license + "\n" + view.selectedSound.source : ""; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; Accessible.name: text }
                 Label { objectName: "alertSoundSourceError"; Layout.fillWidth: true; visible: text !== ""; text: view.sourceError; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; Accessible.name: text }

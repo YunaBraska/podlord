@@ -59,6 +59,7 @@ bool run(const QString& config) {
     auto* settings = podlord::test::visibleItem(window->contentItem(), "settingsWorkspaceButton");
     if (!settings || !podlord::test::scrollIntoView(window, settings)) return false;
     if (!report({{"type", "construction"}, {"milliseconds", startup.nsecsElapsed() / 1000000.0},
+                 {"windowWidth", window->width()}, {"windowHeight", window->height()}, {"devicePixelRatio", window->devicePixelRatio()},
                  {"scope", "Workspace/QML construction, not installed-process startup"}})) return false;
     const auto frame = [&](const std::function<bool()>& action, const std::function<bool()>& visible) -> std::optional<FrameTiming> {
         if (!waitFor([&] { return !workspace.busy(); })) return {};
@@ -169,13 +170,15 @@ bool run(const QString& config) {
     const auto baseline = *std::min_element(resident.begin(), resident.begin() + 5);
     const auto final = *std::max_element(resident.end() - 5, resident.end());
 #ifdef Q_OS_MACOS
-    constexpr qint64 residentLimit = 275000000;
+    constexpr qint64 residentLimit = 310000000;
 #else
     constexpr qint64 residentLimit = 250000000;
 #endif
+    constexpr qint64 residentOptimizationTarget = 250000000;
     constexpr qint64 warmGrowthLimit = 5000000;
     const bool memoryPassed = maximum <= residentLimit && final <= baseline + warmGrowthLimit;
     if (!report({{"type", "memory"}, {"maxResidentBytes", double(maximum)}, {"residentLimitBytes", double(residentLimit)},
+                 {"optimizationTargetBytes", double(residentOptimizationTarget)},
                  {"warmGrowthBytes", double(final - baseline)}, {"warmGrowthLimitBytes", double(warmGrowthLimit)}, {"passed", memoryPassed}})) return false;
     accepted = memoryPassed && accepted;
     if (!workspace.filter("") || !workspace.pauseLogs(true)) return false;

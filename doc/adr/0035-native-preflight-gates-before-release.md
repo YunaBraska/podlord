@@ -44,6 +44,10 @@ performance, tests, and the declared coverage gates remain required. A private
 macOS result does not establish public distribution or other-platform support.
 No unsigned native release is published by CI under this decision.
 
+Desktop comparisons reject quarantined input bundles before starting their local
+cluster. The runner does not remove macOS quarantine or treat a locally valid
+code signature as user approval; use an already-approved local reference build.
+
 ## Verification And Rollback
 
 Validate workflow syntax with actionlint, repeat the failing public search

@@ -273,7 +273,7 @@ public:
                         }
                         if (path == "/api/v1/events") {
                             auto event = pod("related-event", "Event");
-                            event["involvedObject"] = QJsonObject{{"uid", scenario == "inspector_related_wrong_uid" || scenario == "inspector_related_event_missing" ? "replaced-alpha" : "uid-alpha"}, {"name", "alpha"}, {"namespace", "default"}};
+                            event["involvedObject"] = QJsonObject{{"uid", scenario == "inspector_related_wrong_uid" || scenario == "inspector_related_event_missing" ? "replaced-alpha" : "uid-alpha"}, {"kind", "Pod"}, {"name", "alpha"}, {"namespace", "default"}};
                             event["reason"] = "Scheduled"; event["message"] = "Local event message"; event["type"] = "Normal"; event["count"] = 3;
                             if (scenario.contains("_color_")) event["type"] = scenario.endsWith("normal") ? "Normal" : scenario.endsWith("warning") ? "Warning" : scenario.endsWith("empty") ? "" : "Unrecognized";
                             event["lastTimestamp"] = "2026-10-03T10:00:00Z";
@@ -453,6 +453,20 @@ QQuickItem* item(QObject* root, const QString& name) {
 QString text(QObject* root, const QString& name) {
     auto* value = item(root, name); return value ? value->property("text").toString() : QString{};
 }
+bool revealTableCell(QQuickWindow* window, const QString& tableName, int row, int column) {
+    auto* view = item(window, tableName);
+    if (!view || !view->isVisible()) return false;
+    QQmlExpression reveal(qmlContext(view), view,
+        QString("positionViewAtIndex(model.index(%1, %2), TableView.Contain); forceLayout()").arg(row).arg(column));
+    reveal.evaluate();
+    if (reveal.hasError()) {
+        std::fprintf(stderr, "Table cell reveal failed: %s\n", qPrintable(reveal.error().toString()));
+        return false;
+    }
+    view->setProperty("contentX", column == 2 ? 0.0 : qMax(0.0, view->property("contentWidth").toDouble() - view->width()));
+    QCoreApplication::processEvents();
+    return true;
+}
 bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt::LeftButton) {
     const auto name = target ? target->objectName() : QString{};
     if (!podlord::test::revealWorkspaceAction(window, name)) return false;
@@ -490,6 +504,14 @@ bool type(QQuickWindow* window, QQuickItem* target, const QString& value) {
     if (value.isEmpty()) QTest::keyClick(window, Qt::Key_Backspace);
     for (const auto c : value) QTest::keyClick(window, c.toLatin1());
     return true;
+}
+bool showEventColumn(QQuickWindow* window, podlord::Workspace& workspace, const QString& column) {
+    if (!click(window, item(window, "eventColumnsButton"))) return false;
+    auto* visible = item(window, "eventColumnVisible_" + column);
+    if (!visible || !visible->isVisible()) return false;
+    if (!visible->property("checked").toBool() && !click(window, visible)) return false;
+    return click(window, item(window, "eventSaveColumns"))
+        && waitFor([&] { return !workspace.tableLayoutSaving(); }) && workspace.tableLayoutError().isEmpty();
 }
 bool execute(const QString& scenario) {
     const bool twoContexts = scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_");
@@ -750,7 +772,13 @@ bool execute(const QString& scenario) {
         }
         if (section=="invalid") return type(window,item(window,"inlineLogLimit"),"0") && click(window,item(window,"inlineSaveSync")) && !workspace.error().isEmpty() && workspace.logLimitMb()==5 && server.requests.isEmpty();
         if (section=="graphics") return item(window,"inlineRadarWaterEnabled")->isVisible() && click(window,item(window,"inlineRadarWaterEnabled")) && waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); }) && server.requests.isEmpty();
-        if (section=="diagnostics") return click(window,item(window,"refreshSettingsDiagnostics")) && item(window,"settingsRequestAudit")->property("count").toInt()==0 && workspace.settingsDiagnostics()["metrics"].toList().size()>=11 && server.requests.isEmpty();
+        if (section=="diagnostics") {
+            if (!click(window,item(window,"refreshSettingsDiagnostics"))) return false;
+            auto* metrics = workspace.property("diagnosticTable").value<QAbstractItemModel*>();
+            return metrics && metrics->index(0,0).data().toString()=="Process RSS"
+                && item(window,"settingsRequestAudit")->property("count").toInt()==0
+                && workspace.settingsDiagnostics()["metrics"].toList().size()>=11 && server.requests.isEmpty();
+        }
         if (section=="privacy") return item(window,"privacyTelemetry")->isVisible() && text(window,"privacyTelemetry")=="Off" && type(window,item(window,"inlineYamlLimit"),"4") && click(window,item(window,"inlineSaveYamlLimit")) && waitFor([&] { return !workspace.busy() && workspace.yamlLimitMiB()==4; }) && server.requests.isEmpty();
         if (section=="workspace") return click(window,item(window,"settingsResourceColumns")) && waitFor([&] { return item(window,"resourceColumnVisible_kind") && item(window,"resourceColumnVisible_kind")->isVisible(); }) && server.requests.isEmpty();
         if (section=="sources") return item(window,"settingsSourcePath")->isVisible()
@@ -1037,6 +1065,10 @@ bool execute(const QString& scenario) {
         if (scenario == "shell_tools_menu") {
             if (item(window, "refreshButton")->isVisible() || !click(window, item(window, "workspaceActionsButton"))) return false;
             if (!waitFor([&] { return item(window, "refreshButton")->isVisible() && item(window, "commandPaletteButton")->isVisible(); })) return false;
+            const auto* anchor = item(window, "workspaceActionsButton");
+            const auto* entry = item(window, "commandPaletteButton");
+            if (qAbs(entry->mapToScene({0,0}).x()-anchor->mapToScene({0,0}).x()) > 220
+                || qAbs(entry->mapToScene({0,0}).y()-anchor->mapToScene({0,0}).y()) > 100) return false;
             QTest::keyClick(window, Qt::Key_Escape);
             return waitFor([&] { return !item(window, "refreshButton")->isVisible(); }) && server.requests.size() == calls;
         }
@@ -1294,6 +1326,11 @@ bool execute(const QString& scenario) {
         if (scenario == "session_rename_context_menu") {
             if (!click(window, item(window, "activateSession_" + id), Qt::RightButton)
                 || !waitFor([&] { return item(window, "renameTab_" + id) && item(window, "renameTab_" + id)->isVisible(); })
+                ) return false;
+            const auto* anchor = item(window, "activateSession_" + id);
+            const auto* entry = item(window, "renameTab_" + id);
+            if (qAbs(entry->mapToScene({0,0}).x()-anchor->mapToScene({0,0}).x()) > 220
+                || qAbs(entry->mapToScene({0,0}).y()-anchor->mapToScene({0,0}).y()) > 100
                 || !click(window, item(window, "renameTab_" + id))) return false;
         } else if (!click(window, item(window, "renameCurrentSession"))) return false;
         if (!waitFor([&] { return item(window, "sessionNameInput") && item(window, "sessionNameInput")->isVisible(); })) return false;
@@ -1324,7 +1361,8 @@ bool execute(const QString& scenario) {
                 && item(window, "sessionNameInput")->isVisible() && workspace.title() == "Unnamed" && server.requests.size() == calls;
         }
         const auto expected = scenario == "session_rename_repeat" || scenario == "session_rename_unnamed" ? "Unnamed" : "Renamed";
-        if (!waitFor([&] { return !workspace.busy() && workspace.title() == expected && !item(window, "sessionNameInput")->isVisible(); })) return false;
+        if (!waitFor([&] { return !workspace.busy() && workspace.title() == expected && window->title() == QStringLiteral("Podlord - ") + expected
+            && !item(window, "sessionNameInput")->isVisible(); })) return false;
         QTest::qWait(50);
         if (workspace.currentSession() != id || server.requests.size() != calls) return false;
         const auto saved = podlord::SessionStore(profile).list();
@@ -1382,7 +1420,7 @@ bool execute(const QString& scenario) {
         const bool event = scenario == "view_restore_event_filter" || scenario == "view_restore_event_sort";
         if (event && !click(window, item(window, "eventsWorkspaceButton"))) return false;
         const auto inputName = event ? "eventFilter" : "resourceFilter";
-        const auto headerName = event ? "eventHeader_5" : "header_0";
+        const auto headerName = event ? "eventHeader_1" : "header_0";
         if (scenario == "view_restore_event_sort" && !waitFor([&] { return item(window, headerName) && item(window, headerName)->width() > 0; })) return false;
         const bool filterCase = scenario == "view_restore_filter" || scenario == "view_restore_clear" || scenario == "view_restore_event_filter";
         if (filterCase && !type(window, item(window, inputName), "alpha")) return false;
@@ -1406,7 +1444,7 @@ bool execute(const QString& scenario) {
         if (scenario == "view_restore_desc") return restored.sortColumnIndex() == 0 && restored.sortDirection() == "DESC";
         if (scenario == "view_restore_none") return restored.sortColumnIndex() == -1;
         if (scenario == "view_restore_event_filter") return restored.eventFilterText() == "alpha";
-        if (scenario == "view_restore_event_sort") return restored.eventSortColumnIndex() == 5 && restored.eventSortDirection() == "ASC";
+        if (scenario == "view_restore_event_sort") return restored.eventSortColumnIndex() == 1 && restored.eventSortDirection() == "ASC";
         if (scenario == "view_restore_corrupt") {
             QFile broken(path); if (!broken.open(QIODevice::WriteOnly) || broken.write("{") != 1) return false; broken.close();
             if (!restored.reloadSavedViews() || !waitFor([&] { return !restored.busy() && restored.viewStateFailed(); })) return false;
@@ -1788,29 +1826,6 @@ bool execute(const QString& scenario) {
     }
     if (scenario.startsWith("columns_")) {
         const auto requests = server.requests.size();
-        const auto clickSetting = [&](const QString& name) {
-            auto* target = item(window, name);
-            if (!target) return false;
-            for (int attempt = 0; attempt < 15; ++attempt) {
-                QQuickItem* clipped = nullptr;
-                QPointF local;
-                for (auto* parent = target->parentItem(); parent; parent = parent->parentItem()) {
-                    if (!parent->clip()) continue;
-                    const auto point = target->mapToItem(parent, {target->width() / 2, target->height() / 2});
-                    if (point.y() - target->height() / 2 < 4 || point.y() + target->height() / 2 > parent->height() - 4) { clipped = parent; local = point; break; }
-                }
-                if (!clipped) return click(window, target);
-                const int direction = local.y() - target->height() / 2 < 4 ? 1 : -1;
-                const auto position = clipped->mapToScene({clipped->width() / 2, clipped->height() / 2});
-                QWheelEvent wheel(position, window->mapToGlobal(position.toPoint()), QPoint(0, direction * 150), QPoint(0, direction * 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-                QCoreApplication::sendEvent(window, &wheel); QTest::qWait(30);
-                if (!waitFor([&] {
-                    for (auto* parent = target->parentItem(); parent; parent = parent->parentItem()) if (parent->property("moving").toBool()) return false;
-                    return true;
-                })) return false;
-            }
-            return false;
-        };
         const auto columns = [&](const QString& type) { return workspace.property((type + "Columns").toLatin1()).toList(); };
         const auto column = [&](const QString& type, const QString& id) {
             for (const auto& value : columns(type)) if (value.toMap().value("id") == id) return value.toMap();
@@ -1965,9 +1980,21 @@ bool execute(const QString& scenario) {
             });
         }
         if (scenario == "columns_isolation") {
-            if (!click(window, item(window, "eventsWorkspaceButton")) || !click(window, item(window, "eventColumnsButton")) || !waitFor([&] { return item(window, "eventColumnVisible_namespace") && item(window, "eventColumnVisible_namespace")->isVisible(); })) return false;
-            if (!clickSetting("eventColumnVisible_namespace") || !click(window, item(window, "eventSaveColumns"))) return false;
-            return waitFor([&] { return !column("event", "namespace")["visible"].toBool(); }) && column("resource", "namespace")["visible"].toBool() && !column("resource", "kind")["visible"].toBool() && server.requests.size() == requests;
+            if (!click(window, item(window, "eventsWorkspaceButton")) || !click(window, item(window, "eventColumnsButton")) || !waitFor([&] { return item(window, "eventColumnVisible_namespace") && item(window, "eventColumnVisible_namespace")->isVisible(); })) {
+                std::fprintf(stderr, "Event columns dialog did not open.\n"); return false;
+            }
+            if (!podlord::test::clickVisible(window, "eventColumnVisible_namespace")) {
+                std::fprintf(stderr, "Event namespace checkbox could not be toggled.\n"); return false;
+            }
+            if (!click(window, item(window, "eventSaveColumns"))) {
+                std::fprintf(stderr, "Event namespace column save button could not be activated.\n"); return false;
+            }
+            const bool passed = waitFor([&] { return column("event", "namespace")["visible"].toBool(); })
+                && column("resource", "namespace")["visible"].toBool() && !column("resource", "kind")["visible"].toBool() && server.requests.size() == requests;
+            if (!passed) std::fprintf(stderr, "Column isolation: event namespace=%d resource namespace=%d resource kind=%d calls=%lld/%lld error=%s\n",
+                column("event", "namespace")["visible"].toBool(), column("resource", "namespace")["visible"].toBool(), column("resource", "kind")["visible"].toBool(),
+                static_cast<long long>(server.requests.size()), static_cast<long long>(requests), qPrintable(workspace.tableLayoutError()));
+            return passed;
         }
         if (scenario == "columns_reveal" || scenario == "columns_reset") {
             if (!click(window, item(window, "resourceColumnsButton"))) return false;
@@ -2553,10 +2580,14 @@ bool execute(const QString& scenario) {
             const int expectedEvents = scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 2 : 1;
             if (workspace.totalEventCount() != expectedEvents || workspace.totalResourceCount() != expectedRows) return false;
             if (!click(window, item(window, "radarWorkspaceButton")) || !waitFor([&] { return item(window, "resourceRadar")->property("count").toInt() == expectedRows; })) return false;
-            if (!click(window, item(window, "eventsWorkspaceButton")) || !waitFor([&] { return item(window, "eventTable")->property("rows").toInt() == expectedEvents; })) return false;
+            if (!click(window, item(window, "eventsWorkspaceButton")) || !waitFor([&] { return item(window, "eventTable")->property("rows").toInt() == expectedEvents; })
+                || !showEventColumn(window, workspace, "eventCount")) return false;
             if (!type(window, item(window, "eventFilter"), "\"Modern event message\"") || !waitFor([&] { return workspace.eventTable()->rowCount() == 1; })) return false;
-            if (!waitFor([&] { return text(window, "eventCell_0_5") == "7"; })) {
-                std::fprintf(stderr, "Modern Event count was not presented: %s; model=%s; filter=%s\n", qPrintable(text(window, "eventCell_0_5")), qPrintable(workspace.eventTable()->data(workspace.eventTable()->index(0, 5), Qt::DisplayRole).toString()), qPrintable(text(window, "eventFilter")));
+            if (!revealTableCell(window, "eventTable", 0, 5) || !waitFor([&] { return text(window, "eventCell_0_5") == "7"; })) {
+                auto* view = item(window, "eventTable");
+                std::fprintf(stderr, "Modern Event count was not presented: %s; model=%s; filter=%s; cell=%d; width=%.0f; contentX=%.0f; contentWidth=%.0f; columns=%d\n",
+                    qPrintable(text(window, "eventCell_0_5")), qPrintable(workspace.eventTable()->data(workspace.eventTable()->index(0, 5), Qt::DisplayRole).toString()), qPrintable(text(window, "eventFilter")),
+                    item(window, "eventCell_0_5") != nullptr, view->width(), view->property("contentX").toDouble(), view->property("contentWidth").toDouble(), view->property("columns").toInt());
                 return false;
             }
             if (scenario == "inspector_related_alias_reuse") {
@@ -2564,19 +2595,26 @@ bool execute(const QString& scenario) {
                 for (int pass = 0; pass < 10; ++pass) {
                     if (!type(window, item(window, "eventFilter"), "") || !waitFor([&] { return item(window, "eventTable")->property("rows").toInt() == 2; })) return false;
                     if (!type(window, item(window, "eventFilter"), "\"Modern event message\"")
+                        || !revealTableCell(window, "eventTable", 0, 5)
                         || !waitFor([&] { return item(window, "eventTable")->property("rows").toInt() == 1 && text(window, "eventCell_0_5") == "7"; })) return false;
                 }
                 if (server.requests.size() != requests) return false;
             }
-            if (scenario == "inspector_related_alias_legacy_time" && text(window, "eventCell_0_0") != "2026-10-03T10:03:00Z") return false;
-            if (!click(window, item(window, "eventCell_0_2")) || !waitFor([&] { return workspace.inspectorName() == "alpha"; })) return false;
+            if (scenario == "inspector_related_alias_legacy_time"
+                && (!showEventColumn(window, workspace, "eventTime") || !revealTableCell(window, "eventTable", 0, 0)
+                    || text(window, "eventCell_0_0") != "2026-10-03T10:03:00Z")) return false;
+            if (!revealTableCell(window, "eventTable", 0, 2) || !click(window, item(window, "eventCell_0_2")) || !waitFor([&] { return workspace.inspectorName() == "alpha"; })) return false;
             return waitFor([&] { return workspace.inspectorEvents().size() == expectedEvents; });
         }
         if (scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_")) {
             const auto calls = server.requests.size();
             if (!click(window, item(window, "eventsWorkspaceButton")) || !waitFor([&] { return item(window, "eventTable")->isVisible() && item(window, "eventTable")->property("rows").toInt() == 2; })) return false;
+            if (scenario == "inspector_related_workspace"
+                && (!waitFor([&] { return text(window, "eventCell_0_7") == "related-event"; })
+                    || text(window, "eventCell_0_8") != "Pod/alpha")) return false;
             if (scenario == "inspector_related_event_sort") {
-                if (!waitFor([&] { return item(window, "eventHeader_5") && item(window, "eventHeader_5")->width() > 0; })) return false;
+                if (!showEventColumn(window, workspace, "eventCount") || !revealTableCell(window, "eventTable", 0, 5)
+                    || !waitFor([&] { return item(window, "eventHeader_5") && item(window, "eventHeader_5")->width() > 0; })) return false;
                 if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "3"; })) return false;
                 if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "12"; })) return false;
                 return click(window, item(window, "eventHeader_5")) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == -1; }) && server.requests.size() == calls;
@@ -2593,9 +2631,27 @@ bool execute(const QString& scenario) {
             if (!click(window, item(window, "eventCell_0_2"))) return false;
             return waitFor([&] { return workspace.inspectorName() == (scenario == "inspector_related_event_missing" ? "related-event" : "alpha"); });
         }
-        if (!type(window, item(window, "resourceFilter"), "alpha") || !waitFor([&] { return workspace.table()->rowCount() == 2; }) || !click(window, item(window, "cell_0_0"))) return false;
+        if (!type(window, item(window, "resourceFilter"), "alpha")) {
+            std::fprintf(stderr, "Related inspector filter input unavailable: page=%s busy=%d\n", qPrintable(workspace.workspacePage()), workspace.busy());
+            return false;
+        }
+        const int matchingRows = scenario.startsWith("inspector_related_table_events_") ? 4 : 3;
+        if (!waitFor([&] { return workspace.table()->rowCount() == matchingRows; })) {
+            std::fprintf(stderr, "Related inspector filter mismatch: rows=%d filter=%s error=%s\n",
+                workspace.table()->rowCount(), qPrintable(workspace.filterText()), qPrintable(workspace.filterError()));
+            return false;
+        }
+        int alphaRow = -1;
+        for (int row = 0; row < workspace.table()->rowCount(); ++row)
+            if (workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole + 1).toString() == "alpha") alphaRow = row;
+        const auto alphaCell = QString("cell_%1_0").arg(alphaRow).toUtf8();
+        if (alphaRow < 0 || !click(window, item(window, alphaCell.constData()))) {
+            std::fprintf(stderr, "Related inspector Pod row unavailable: row=%d page=%s\n",
+                alphaRow, qPrintable(workspace.workspacePage()));
+            return false;
+        }
         if (!waitFor([&] { return workspace.canEditYaml(); })) {
-            std::fprintf(stderr, "Related inspector not fresh: path=%s; summary=%s; detail=%s; requests=%s; cell-path=%s\n", qPrintable(workspace.inspectorPath()), qPrintable(workspace.inspected()), qPrintable(workspace.inspectorStatus()), qPrintable(server.requests.join('\n')), qPrintable(item(window, "cell_0_0")->property("resourcePath").toString())); return false;
+            std::fprintf(stderr, "Related inspector not fresh: path=%s; summary=%s; detail=%s; requests=%s; cell-path=%s\n", qPrintable(workspace.inspectorPath()), qPrintable(workspace.inspected()), qPrintable(workspace.inspectorStatus()), qPrintable(server.requests.join('\n')), qPrintable(item(window, alphaCell.constData())->property("resourcePath").toString())); return false;
         }
         const auto calls = server.requests.size();
         if (scenario == "inspector_related_filter" || scenario == "inspector_related_filter_keyboard") {

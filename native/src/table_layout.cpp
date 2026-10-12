@@ -53,6 +53,18 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
             });
             for (auto& column:layout) { column.width=widths.value(column.id,170); column.visible=column.id!="issue" && column.id!="uid"; }
         }
+        if (table.key() == "event" && table.value().contains("eventTargetName")) {
+            const QStringList order{"eventType", "name", "eventReason", "owner", "namespace", "eventMessage", "eventTime", "eventCount", "eventTargetName"};
+            const QMap<QString, int> widths{{"eventType",120},{"name",240},{"eventReason",180},{"owner",165},
+                {"namespace",160},{"eventMessage",420},{"eventTime",200},{"eventCount",85},{"eventTargetName",200}};
+            std::stable_sort(layout.begin(), layout.end(), [&](const auto& a, const auto& b) {
+                return order.indexOf(a.id) < order.indexOf(b.id);
+            });
+            for (auto& column : layout) {
+                column.width = widths.value(column.id, 170);
+                column.visible = column.id != "eventTime" && column.id != "eventCount" && column.id != "eventTargetName" && column.id != "namespace";
+            }
+        }
         if (table.key() == "port") {
             const QMap<QString, int> widths{{"endpoint",180},{"name",260},{"kind",100},{"namespace",130},{"remotePort",100},{"resolvedPort",110},{"status",110}};
             for (auto& column : layout) column.width = widths.value(column.id,170);
@@ -67,7 +79,11 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
         }
         result.insert(table.key(), layout);
         if (table.key()=="source") {
+            const QStringList order{"rename","remove","name","imported","cluster","context","auth","source","status"};
             const QMap<QString,int> widths{{"name",210},{"cluster",160},{"context",210},{"auth",150},{"source",350},{"imported",205},{"status",240},{"rename",44},{"remove",44}};
+            std::stable_sort(result[table.key()].begin(),result[table.key()].end(),[&](const auto& a,const auto& b) {
+                return order.indexOf(a.id)<order.indexOf(b.id);
+            });
             for (auto& column:result[table.key()]) {
                 column.width=widths.value(column.id,170);
                 column.pinned=column.id=="rename" || column.id=="remove";
@@ -99,7 +115,7 @@ Result<TableLayouts> TableLayoutStore::load() const {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
-    if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4 && root["version"] != 5 && root["version"] != 6 && root["version"] != 7 && root["version"] != 8 && root["version"] != 9) || !root["layouts"].isObject())
+    if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4 && root["version"] != 5 && root["version"] != 6 && root["version"] != 7 && root["version"] != 8 && root["version"] != 9 && root["version"] != 10) || !root["layouts"].isObject())
         return Failure{StoreError::InvalidData, "Invalid table layout document; existing data was retained."};
     const auto values = root["layouts"].toObject();
     QStringList added;
@@ -130,6 +146,36 @@ Result<TableLayouts> TableLayoutStore::load() const {
                 if (layout) layout->append({"uid", false, false, 280});
             }
         }
+        if (!layout && table.key() == "event" && table.value().contains("name") && table.value().contains("owner")) {
+            auto previous = table.value();
+            previous.removeAll("name"); previous.removeAll("owner");
+            layout = decode(values[table.key()], previous);
+            if (layout) {
+                const TableLayout legacyDefault{
+                    {"eventType", true, false, 105},
+                    {"eventTargetName", true, false, 200},
+                    {"eventReason", true, false, 140},
+                    {"eventMessage", true, false, 420},
+                    {"namespace", true, false, 140},
+                    {"eventTime", false, false, 200},
+                    {"eventCount", false, false, 85},
+                };
+                if (*layout == legacyDefault)
+                    layout = defaultTableLayouts(schemas_).value("event");
+                else {
+                    layout->append({"name", false, false, 240});
+                    layout->append({"owner", false, false, 220});
+                }
+            }
+        }
+        if (layout && root["version"] == 9 && table.key() == "event" && table.value().contains("owner")) {
+            auto previousDefault = defaultTableLayouts(schemas_).value("event");
+            for (auto& column : previousDefault) {
+                if (column.id == "namespace") column.visible = true;
+                if (column.id == "owner") column.width = 220;
+            }
+            if (*layout == previousDefault) layout = defaultTableLayouts(schemas_).value("event");
+        }
         if (!layout) return Failure{StoreError::InvalidData, "Invalid column layout; existing data was retained."};
         result.insert(table.key(), *layout);
     }
@@ -154,7 +200,7 @@ Result<TableLayouts> TableLayoutStore::save(const QString& table, const QJsonArr
     layouts[table] = *layout;
     QJsonObject encoded;
     for (auto entry = layouts.cbegin(); entry != layouts.cend(); ++entry) encoded[entry.key()] = encode(entry.value());
-    const auto bytes = QJsonDocument(QJsonObject{{"version", 9}, {"layouts", encoded}}).toJson(QJsonDocument::Indented);
+    const auto bytes = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", encoded}}).toJson(QJsonDocument::Indented);
     QSaveFile file(path); file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) || file.write(bytes) != bytes.size() || !file.commit())
         return Failure{StoreError::WriteFailed, "Cannot atomically save private table layouts."};

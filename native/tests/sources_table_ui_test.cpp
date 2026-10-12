@@ -35,6 +35,7 @@ bool run(const QString& scenario) {
     if (scenario == "narrow") window->setWidth(360);
     const auto control = [&](const QString& name) { return test::visibleItem(window->contentItem(), name); };
     const auto click = [&](const QString& name) {
+        if (name == "refreshSourceFilesButton") require(test::clickVisible(window,"sourceActionsMenuButton"), "Cannot open source actions.");
         const bool available=QTest::qWaitFor([&] { auto* target=control(name); return target && target->isEnabled(); });
         if (!available) {
             std::fprintf(stderr,"Unavailable Sources action: %s\n",qPrintable(name));

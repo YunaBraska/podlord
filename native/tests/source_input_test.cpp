@@ -176,7 +176,11 @@ bool management(const QString& scenario, const QString& root, const QString& pro
             if (target->isVisible()) return target;
         return podlord::test::visibleItem(window->contentItem(), QString::fromLatin1(name));
     };
-    const auto press = [&](const char* name) { return require(click(window, item(name)), name); };
+    const auto press = [&](const char* name) {
+        if (QStringList{"pasteSourceButton", "importHomeButton", "refreshSourceFilesButton"}.contains(QString::fromLatin1(name)))
+            require(click(window, item("sourceActionsMenuButton")), "Cannot open source actions");
+        return require(click(window, item(name)), name);
+    };
     const auto fill = [&](const char* name, const QByteArray& value) {
         auto* target = item(name);
         require(target && target->isEnabled(), "Editable management control is unavailable");

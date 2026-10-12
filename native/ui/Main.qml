@@ -42,7 +42,7 @@ ApplicationWindow {
     Component.onCompleted: workspace.attachWindow(window)
     onActiveChanged: workspace.setWindowFocused(active)
     onClosing: function(close) { close.accepted = workspace.requestWindowClose(); if (close.accepted) workspace.finishWindowClose() }
-    title: "Podlord Native - " + workspace.title
+    title: workspace.currentSession === "" ? "Podlord" : "Podlord - " + workspace.title
     palette.window: workspace.appearanceColors.app
     palette.windowText: workspace.appearanceColors.text
     palette.base: workspace.appearanceColors.inset
@@ -410,7 +410,7 @@ ApplicationWindow {
                         onClicked: {
                             window.searchOpen = !window.searchOpen
                             if (window.searchOpen) Qt.callLater(function() {
-                                if (workspace.workspacePage === "ports") portsView.focusSearch()
+                                if (workspace.workspacePage === "ports") portsView.item.focusSearch()
                                 else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus()
                                 else resourceFilterInput.forceActiveFocus()
                             })
@@ -420,7 +420,7 @@ ApplicationWindow {
                     NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
                     NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
                     NavButton { objectName: "settingsWorkspaceButton"; glyph: "Filters"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
-                IconButton { objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup() }
+                IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
                 }
             }
@@ -601,6 +601,7 @@ ApplicationWindow {
                     Row {
                         required property var modelData
                         Button {
+                            id: sessionTab
                             objectName: "activateSession_" + modelData.id
                             implicitHeight: window.touchLayout ? 44 : 32
                             text: modelData.name
@@ -612,9 +613,9 @@ ApplicationWindow {
                             checked: modelData.id === workspace.currentSession
                             enabled: !workspace.busy
                             onClicked: workspace.activate(modelData.id)
-                            TapHandler { acceptedButtons: Qt.RightButton; onTapped: tabMenu.popup() }
+                            TapHandler { acceptedButtons: Qt.RightButton; onTapped: tabMenu.popup(sessionTab, 0, sessionTab.height) }
                             Keys.onPressed: function(event) {
-                                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) { tabMenu.popup(); event.accepted = true }
+                                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) { tabMenu.popup(sessionTab, 0, sessionTab.height); event.accepted = true }
                             }
                             Menu {
                                 id: tabMenu
@@ -756,13 +757,18 @@ ApplicationWindow {
                     onVisibleChanged: if (visible) opened = true
                     sourceComponent: ResourceDashboard {}
                 }
-                PortForwardView {
+                Loader {
                     id: portsView
                     anchors.fill: parent
                     visible: workspace.workspacePage === "ports"
-                    searchOpen: window.searchOpen
-                    onSearchClosed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
-                    onAuthenticationRequested: authentication.open()
+                    property bool opened: false
+                    active: opened
+                    onVisibleChanged: if (visible) opened = true
+                    sourceComponent: PortForwardView {
+                        searchOpen: window.searchOpen
+                        onSearchClosed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
+                        onAuthenticationRequested: authentication.open()
+                    }
                 }
                 Loader {
                     id: settingsLoader

@@ -338,7 +338,7 @@ ColumnLayout {
             readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > model.display.length)
             onWantsTipChanged: if (wantsTip) valueTip.target=cell
             Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
-            TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup() } }
+            TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup(cell, 0, cell.height) } }
         }
     }
     Item {
