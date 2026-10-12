@@ -325,11 +325,17 @@ endif()
 set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER "dev.podlord.native.reference" MACOSX_BUNDLE_BUNDLE_NAME "Podlord Native")
 set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}" MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
 if(ANDROID)
+    set(PODLORD_ANDROID_OPENSSL_ROOT "" CACHE PATH "Directory containing per-ABI Android OpenSSL 3 libraries")
+    set(android_openssl_dir "${PODLORD_ANDROID_OPENSSL_ROOT}/${ANDROID_ABI}")
+    if(NOT EXISTS "${android_openssl_dir}/libcrypto_3.so" OR NOT EXISTS "${android_openssl_dir}/libssl_3.so")
+        message(FATAL_ERROR "Android HTTPS requires bundled OpenSSL 3 libraries; run scripts/build-native-android-openssl.sh for ${ANDROID_ABI} and set PODLORD_ANDROID_OPENSSL_ROOT.")
+    endif()
     set_target_properties(podlord-native PROPERTIES
         QT_ANDROID_PACKAGE_NAME "dev.podlord.app"
         QT_ANDROID_APP_NAME "Podlord"
         QT_ANDROID_APP_ICON "@drawable/podlord_icon"
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+        QT_ANDROID_EXTRA_LIBS "${android_openssl_dir}/libcrypto_3.so;${android_openssl_dir}/libssl_3.so"
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
 endif()
 if(APPLE AND NOT IOS)
