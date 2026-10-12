@@ -112,9 +112,9 @@ Result<QList<ResourceFilter::Token>> ResourceFilter::compileQuantity(const QStri
             && metricQuantity("1" + normalize(input[index + 1].value), cpu)) token.value += input[++index].value;
         const auto value = metricQuantity(normalize(token.value), cpu);
         if (!value) {
-            const auto& input = token.value;
-            const bool numeric = !input.isEmpty() && (input[0].isDigit() || input[0] == '.' ||
-                ((input[0] == '+' || input[0] == '-') && input.size() > 1 && (input[1].isDigit() || input[1] == '.')));
+            const auto& tokenText = token.value;
+            const bool numeric = !tokenText.isEmpty() && (tokenText[0].isDigit() || tokenText[0] == '.' ||
+                ((tokenText[0] == '+' || tokenText[0] == '-') && tokenText.size() > 1 && (tokenText[1].isDigit() || tokenText[1] == '.')));
             if (numeric || token.kind == Token::Number || (!token.operation.isEmpty() && token.kind != Token::Exact))
                 return Failure{StoreError::InvalidInput, "Invalid quantity. Use a nonnegative finite value, such as 500m CPU or 64Mi memory/storage."};
             continue;
