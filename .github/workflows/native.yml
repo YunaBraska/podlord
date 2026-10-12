@@ -109,6 +109,49 @@ jobs:
           $env:QT_QUICK_CONTROLS_STYLE = 'Basic'
           ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --parallel 4 --output-on-failure -R '^native\.(metrics\.|window\.(active|close_isolation)_Basic$|ui\.empty_brand_Basic$|sessions\.empty_profile$|sources\.success$)'
           if ($LASTEXITCODE -ne 0) { throw 'Native Windows public smoke tests failed.' }
+      - name: Deploy and start isolated native Windows package
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
+          $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
+          $package = Join-Path $env:RUNNER_TEMP 'podlord-windows-package'
+          New-Item -ItemType Directory -Path $package | Out-Null
+          Copy-Item "$build\Release\podlord-native.exe" "$package\podlord-native.exe"
+          & "$qt\bin\windeployqt.exe" --release --qmldir "$env:GITHUB_WORKSPACE\native\ui" --dir $package "$package\podlord-native.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not deploy the native Windows Qt runtime.' }
+          if (!(Test-Path "$package\platforms\qwindows.dll") -or !(Test-Path "$package\Qt6Core.dll")) {
+            throw 'The native Windows package is missing its platform plugin or Qt runtime.'
+          }
+          if (!(Test-Path "$package\platforms\qoffscreen.dll")) {
+            Copy-Item "$qt\plugins\platforms\qoffscreen.dll" "$package\platforms\qoffscreen.dll"
+          }
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
+          Remove-Item Env:QT_PLUGIN_PATH, Env:QML_IMPORT_PATH -ErrorAction SilentlyContinue
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QUICK_BACKEND = 'software'
+          $env:QT_QUICK_CONTROLS_STYLE = 'Basic'
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'podlord-windows-package-profile'
+          $env:APPDATA = Join-Path $env:USERPROFILE 'roaming'
+          $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'local'
+          $env:KUBECONFIG = Join-Path $env:USERPROFILE 'absent-kubeconfig'
+          New-Item -ItemType Directory -Path $env:USERPROFILE | Out-Null
+          $help = & "$package\podlord-native.exe" --help
+          if ($LASTEXITCODE -ne 0 -or $help -notmatch '--kubeconfig') { throw 'Packaged Windows command-line startup failed.' }
+          $errors = Join-Path $env:RUNNER_TEMP 'podlord-windows-package-stderr.log'
+          $process = Start-Process -FilePath "$package\podlord-native.exe" -WorkingDirectory $package -PassThru -RedirectStandardError $errors
+          try {
+            Start-Sleep -Seconds 3
+            $process.Refresh()
+            if ($process.HasExited) { throw "Packaged Windows UI exited during startup: $(Get-Content $errors -Raw)" }
+            $log = Get-Content $errors -Raw
+            if ($log -match 'QQmlApplicationEngine failed to load component|module .* is not installed|could not find or load the Qt platform plugin') {
+              throw "Packaged Windows UI failed to load: $log"
+            }
+          } finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+          Compress-Archive -Path "$package\*" -DestinationPath "$env:RUNNER_TEMP\podlord-windows-x64.zip"
+          Write-Output "Native Windows package startup passed; ZIP bytes=$((Get-Item "$env:RUNNER_TEMP\podlord-windows-x64.zip").Length)"
       - name: Retain Windows smoke evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -116,7 +159,10 @@ jobs:
           name: native-windows-x64-${{ github.sha }}
           retention-days: 7
           if-no-files-found: ignore
-          path: ${{ runner.temp }}/podlord-windows-build/Testing/Temporary/LastTest.log
+          path: |
+            ${{ runner.temp }}/podlord-windows-build/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/podlord-windows-package-stderr.log
+            ${{ runner.temp }}/podlord-windows-x64.zip
   macos:
     name: Native ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
