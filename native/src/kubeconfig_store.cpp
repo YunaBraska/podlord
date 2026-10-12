@@ -29,6 +29,7 @@ bool generatedSource(const QString& path) {
     const QString prefix = "podlord-generated://k3d/";
     return path.startsWith(prefix) && k3dName(path.mid(prefix.size()));
 }
+#ifndef Q_OS_IOS
 Result<QByteArray> k3dOutput(const QString& executable, const QStringList& arguments) {
     QProcess process;
     process.setStandardErrorFile(QProcess::nullDevice());
@@ -53,6 +54,7 @@ Result<QByteArray> k3dOutput(const QString& executable, const QStringList& argum
         return Failure{StoreError::ReadFailed, "k3d command failed. Check k3d and the local Docker/Colima connection."};
     return output;
 }
+#endif
 QString hash(const QByteArray& bytes) {
     return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
@@ -259,6 +261,10 @@ Result<QString> sourceDirectory(const QString& profile, bool create) {
 KubeconfigStore::KubeconfigStore(QString profile) : profile_(std::move(profile)) {}
 Result<SourceImportReport> KubeconfigStore::importK3d(const QString& executable) const {
     if (const auto failure = profileFailure(profile_)) return *failure;
+#ifdef Q_OS_IOS
+    Q_UNUSED(executable);
+    return Failure{StoreError::UnsupportedVersion, "Local k3d import is unavailable on iOS. Import a kubeconfig file instead."};
+#else
     const QFileInfo tool(executable);
     if (!QDir::isAbsolutePath(executable) || !tool.isFile() || !tool.isExecutable())
         return Failure{StoreError::ReadFailed, "k3d is not available. Install k3d and Docker/Colima to import local clusters."};
@@ -305,6 +311,7 @@ Result<SourceImportReport> KubeconfigStore::importK3d(const QString& executable)
         else report.sources.append(std::get<SourceSnapshot>(imported));
     }
     return report;
+#endif
 }
 Result<SourceSnapshot> KubeconfigStore::importFile(QString path) const {
     const auto normalized = sourcePath(std::move(path));
@@ -637,6 +644,9 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         spec.insert("cluster", info);
                     }
                     command.info = {{"apiVersion", command.apiVersion}, {"kind", "ExecCredential"}, {"spec", spec}};
+#ifdef Q_OS_IOS
+                    return Failure{StoreError::UnsupportedVersion, "This kubeconfig needs an external credential command, which iOS cannot run. Use a token or client certificate."};
+#endif
                     result.exec = std::move(command); result.credentialReady = false;
                 }
                 return result;

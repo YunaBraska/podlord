@@ -18,6 +18,8 @@ Authentication process completion is not proof of recovery: the affected API fai
 
 The process owner rejects stdout above 1 MiB, drains and discards stderr, and never puts either payload into error messages. There is no automatic login deadline. User cancellation kills and reaps the owned credential process; application shutdown also does so. A browser or detached descendant opened independently by a provider is not claimed to be owned or closed. The implementation uses [Qt process APIs](https://doc.qt.io/qt-6/qprocess.html), not a second auth framework.
 
+On iOS, Qt does not support `QProcess`. Import and listing still retain exec-backed contexts, but connection resolution rejects them with an explicit unsupported-platform error before any Kubernetes request. The app does not attempt a shell, silently drop authentication, or treat an imported kubeconfig as proof of mobile login. Token and client-certificate contexts remain separate supported paths; their operation on a physical device still requires device evidence.
+
 ## Verification And Rollback
 
 The existing test map owns actual QML confirmation, a real external credential process, actual stores/HTTP/queue/cache behavior, expiry, failed reauthentication, shared tabs, shutdown and real local Kubernetes TLS/client-certificate evidence. The identity provider is the explicit external simulated boundary; no owned authentication implementation is replaced. Terminal interaction, cluster configuration extensions, legacy providers, unrelated-credential isolation, provider descendants, real browser OAuth, certificate rotation races and broader failure/validation/platform checks remain open evidence, not removed requirements.

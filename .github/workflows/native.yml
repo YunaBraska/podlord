@@ -141,6 +141,38 @@ jobs:
             node scripts/test-native-tls.cjs "$PODLORD_NATIVE_BUILD_DIR/tls-connection-test" "$RUNNER_TEMP/native-toolchain/openssl/bin/openssl" "$scenario" "$RUNNER_TEMP/native-package/podlord-native.app"
           done > "$RUNNER_TEMP/native-package-tls.log" 2>&1
           cat "$RUNNER_TEMP/native-package-tls.log"
+      - name: Cross-build unsigned iPhone and iPad application
+        if: ${{ matrix.runner == 'macos-15' && !cancelled() }}
+        run: |
+          set -eu
+          log="$RUNNER_TEMP/native-ios.log"
+          qt="$RUNNER_TEMP/native-toolchain/qt"
+          yaml="$RUNNER_TEMP/native-yaml-ios"
+          build="$RUNNER_TEMP/native-ios-build"
+          "$RUNNER_TEMP/native-toolchain/installer/bin/aqt" install-qt mac ios 6.11.2 ios -m qtmultimedia qtwebsockets -O "$qt" > "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          cmake -S "$RUNNER_TEMP/native-toolchain/yaml-cpp-source" -B "$yaml" -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/native-yaml-ios-install" -DYAML_BUILD_SHARED_LIBS=OFF \
+            -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          cmake --build "$yaml" --config Release --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          cmake --install "$yaml" --config Release >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          "$qt/6.11.2/ios/bin/qt-cmake" -S native -B "$build" -G Xcode \
+            -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO -DQT_HOST_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk" \
+            -Dyaml-cpp_DIR="$RUNNER_TEMP/native-yaml-ios-install/lib/cmake/yaml-cpp" -DBUILD_TESTING=OFF \
+            -DQT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY=ON >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          cmake --build "$build" --config Release --target podlord-native --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          app="$build/Release-iphoneos/podlord-native.app"
+          plist="$app/Info.plist"
+          [ -x "$app/podlord-native" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist")" = '17.0' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$plist")" = '1' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:1' "$plist")" = '2' ]
+          for library in libavcodec libavformat libavutil libswresample libswscale; do
+            [ -f "$app/Frameworks/$library.framework/$library" ]
+          done
+          printf 'iPhoneOS arm64 compile and iPhone/iPad bundle checks passed. Device runtime was not tested.\n' | tee -a "$log"
       - name: Retain native preflight evidence, not release binaries
         if: always()
         uses: actions/upload-artifact@v7
@@ -158,6 +190,7 @@ jobs:
             ${{ runner.temp }}/native-package-startup.log
             ${{ runner.temp }}/native-package-boundaries.log
             ${{ runner.temp }}/native-package-tls.log
+            ${{ runner.temp }}/native-ios.log
             ${{ runner.temp }}/podlord-native-build/coverage/report.txt
             ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
             ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json
