@@ -2163,9 +2163,21 @@ bool execute(const QString& scenario) {
                 return workspace.alerts()->rules().size()==3 && server.requests.size()==calls;
             }
             if (scenario=="radar_water_interaction") {
-                radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Right); QTest::qWait(30);
-                const auto paused=capture(QRectF(8,8,100,80)); QTest::qWait(120);
-                if (paused!=capture(QRectF(8,8,100,80))) { std::fprintf(stderr,"Radar water moved during interaction pause.\n"); return false; }
+                QImage paused;
+                bool sampledPause=false;
+                for (int attempt=0;attempt<4 && !sampledPause;++attempt) {
+                    radar->forceActiveFocus();
+                    QElapsedTimer interaction; interaction.start();
+                    QTest::keyClick(window,Qt::Key_Right); QTest::qWait(15);
+                    const auto first=capture(QRectF(8,8,100,80));
+                    QTest::qWait(35);
+                    const auto second=capture(QRectF(8,8,100,80));
+                    if (interaction.elapsed()>=190) continue;
+                    if (first!=second) { std::fprintf(stderr,"Radar water moved during interaction pause.\n"); return false; }
+                    paused=second;
+                    sampledPause=true;
+                }
+                if (!sampledPause) { std::fprintf(stderr,"Could not sample the 200 ms radar water pause under load.\n"); return false; }
                 const bool resumed=waitFor([&] { return paused!=capture(QRectF(8,8,100,80)); },1000);
                 if (!resumed) std::fprintf(stderr,"Radar water did not resume within one second: playing=%d speed=%d visible=%d\n",
                     water->property("playing").toBool(),water->property("speedPercent").toInt(),water->isVisible());
