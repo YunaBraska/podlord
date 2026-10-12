@@ -25,9 +25,13 @@ if [ ! -x "$ndk_bin/clang" ] || ! command -v curl >/dev/null 2>&1 || ! command -
     exit 2
 fi
 mkdir -p "$output_root"
+output_root=$(cd "$output_root" && pwd -P)
 archive="$output_root/openssl-3.5.9.tar.gz"
 if [ ! -s "$archive" ]; then
-    curl -fL --retry 2 --max-time 180 -o "$archive" 'https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz'
+    if ! curl -fL --retry 2 --max-time 180 -o "$archive" 'https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz'; then
+        rm -f "$archive"
+        exit 1
+    fi
 fi
 case "$(uname -s)" in
     Darwin) digest=$(shasum -a 256 "$archive" | awk '{print $1}') ;;
