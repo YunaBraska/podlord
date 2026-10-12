@@ -76,14 +76,23 @@ int provider(const QStringList& args) {
     QJsonObject status{{"token", "exec-test-token"}};
     if (scenario == "no_credentials") status = {};
     if (scenario == "bad_token") status["token"] = "token\r\nInjected: secret";
+    if (scenario == "token_type") status["token"] = 7;
+    if (scenario == "certificate_type") status["clientCertificateData"] = 7;
+    if (scenario == "key_type") status["clientKeyData"] = 7;
+    if (scenario == "expiration_type") status["expirationTimestamp"] = 7;
+    if (scenario == "bad_certificate") status["clientCertificateData"] = "not-a-certificate";
+    if (scenario == "bad_key") status["clientKeyData"] = "not-a-key";
     if (scenario == "expired") status["expirationTimestamp"] = "2000-01-01T00:00:00Z";
     if (scenario == "bad_date") status["expirationTimestamp"] = "2099-01-01T00:00:00";
     if (scenario == "expiry") status["expirationTimestamp"] = QDateTime::currentDateTimeUtc().addMSecs(3000).toString(Qt::ISODateWithMs);
     QJsonObject credential{{"kind", "ExecCredential"}, {"apiVersion", info["apiVersion"]}, {"status", status}};
     if (scenario == "wrong_version") credential["apiVersion"] = "client.authentication.k8s.io/v0";
+    if (scenario == "wrong_kind") credential["kind"] = "Other";
+    if (scenario == "wrong_status") credential["status"] = 7;
     if (scenario == "missing_status") credential.remove("status");
     output = QJsonDocument(credential).toJson(QJsonDocument::Compact);
     if (scenario == "invalid_json") output = "{secret-invalid-json";
+    if (scenario == "array_json") output = "[]";
     if (scenario == "large_output") output = QByteArray(2 * 1024 * 1024, 'x');
     return std::fwrite(output.constData(), 1, static_cast<size_t>(output.size()), stdout) == static_cast<size_t>(output.size()) ? 0 : 8;
 }
@@ -208,7 +217,9 @@ bool execute(const QString& scenario) {
         if (!click(window, "cancelAuthentication")) return false;
         return waitFor([&] { return !workspace->authenticationRunning() && workspace->error().contains("cancelled"); }) && server.calls == 0 && read(counter) == "call\n";
     }
-    const bool invalid = scenario == "invalid_json" || scenario == "wrong_version" || scenario == "missing_status" || scenario == "no_credentials" || scenario == "bad_token"
+    const bool invalid = scenario == "invalid_json" || scenario == "array_json" || scenario == "wrong_kind" || scenario == "wrong_status"
+        || scenario == "token_type" || scenario == "certificate_type" || scenario == "key_type" || scenario == "expiration_type"
+        || scenario == "bad_certificate" || scenario == "bad_key" || scenario == "wrong_version" || scenario == "missing_status" || scenario == "no_credentials" || scenario == "bad_token"
         || scenario == "expired" || scenario == "bad_date" || scenario == "failed_exit" || scenario == "failed_start" || scenario == "large_output";
     if (invalid) {
         if (!waitFor([&] { return !workspace->busy() && !workspace->authenticationRunning() && !workspace->error().isEmpty(); })) return false;
