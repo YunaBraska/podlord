@@ -116,9 +116,9 @@ Result<SessionCatalog> readCatalog(const QString& profile) {
         const QString position = session.sequenceId.toString() + ":" + QString::number(session.ordinal);
         if (ordinals.contains(position) || titles.contains(session.displayName())
             || (bases.contains(session.sequenceId) && bases[session.sequenceId] != session.name)) return invalidData();
-        for (const auto value : row["usageAt"].toArray()) {
-            if (!value.isString()) return invalidData();
-            const QDateTime time = QDateTime::fromString(value.toString(), Qt::ISODateWithMs);
+        for (const auto usageValue : row["usageAt"].toArray()) {
+            if (!usageValue.isString()) return invalidData();
+            const QDateTime time = QDateTime::fromString(usageValue.toString(), Qt::ISODateWithMs);
             if (!time.isValid()) return invalidData();
             session.usageAt.append(time.toUTC());
         }
