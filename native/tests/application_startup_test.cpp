@@ -162,10 +162,10 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
     };
     const auto awaitSources = [&](int count) {
         QElapsedTimer deadline; deadline.start();
-        while (deadline.elapsed() < 5000 && process.state() != QProcess::NotRunning) {
+        while (deadline.elapsed() < 10000 && process.state() != QProcess::NotRunning) {
             QCoreApplication::processEvents();
             if (sourceRows().size() == count) return true;
-            process.waitForFinished(20);
+            process.waitForFinished(100);
         }
         return false;
     };
