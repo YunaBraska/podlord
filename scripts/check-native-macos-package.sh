@@ -26,6 +26,10 @@ find_tool() {
     fi
 }
 CMAKE=$(find_tool cmake)
+OPENSSL_PREFIX=${OPENSSL_ROOT_DIR:-}
+if [ -z "$OPENSSL_PREFIX" ] && command -v brew >/dev/null 2>&1; then
+    OPENSSL_PREFIX=$(brew --prefix openssl@3 2>/dev/null || true)
+fi
 PARENT=$(dirname -- "$OUTPUT")
 mkdir -p "$PARENT"
 WORK=$(mktemp -d "$PARENT/.podlord-package.XXXXXX")
@@ -36,6 +40,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 "$CMAKE" -S "$ROOT/native" -B "$WORK/build" \
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:-/opt/homebrew}" \
+    -DOPENSSL_ROOT_DIR="$OPENSSL_PREFIX" \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DPODLORD_COVERAGE=OFF
 QT_CORE_DIR=$(sed -n 's/^Qt6Core_DIR:PATH=//p' "$WORK/build/CMakeCache.txt")
 if [ -z "$QT_CORE_DIR" ] || [ ! -d "$QT_CORE_DIR" ]; then
