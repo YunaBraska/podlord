@@ -52,6 +52,70 @@ jobs:
           if docker image inspect "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1; then
             docker image rm "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
+  windows:
+    name: Native Windows x64 build and smoke
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install official Qt and verified yaml-cpp
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install aqtinstall==3.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the Qt installer.' }
+          aqt install-qt windows desktop 6.11.2 win64_msvc2022_64 -m qtmultimedia qtwebsockets -O "$env:RUNNER_TEMP\qt"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Qt 6.11.2 for MSVC 2022.' }
+          $archive = Join-Path $env:RUNNER_TEMP 'yaml-cpp-0.9.0.tar.gz'
+          Invoke-WebRequest 'https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a') {
+            throw 'yaml-cpp archive checksum mismatch.'
+          }
+          $source = Join-Path $env:RUNNER_TEMP 'yaml-cpp-source'
+          New-Item -ItemType Directory -Path $source | Out-Null
+          tar -xzf $archive --strip-components=1 -C $source
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract yaml-cpp.' }
+          $install = Join-Path $env:RUNNER_TEMP 'yaml-cpp-install'
+          cmake -S $source -B "$env:RUNNER_TEMP\yaml-cpp-build" -G 'Visual Studio 17 2022' -A x64 -DCMAKE_INSTALL_PREFIX="$install" -DYAML_BUILD_SHARED_LIBS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure yaml-cpp.' }
+          cmake --build "$env:RUNNER_TEMP\yaml-cpp-build" --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build yaml-cpp.' }
+          cmake --install "$env:RUNNER_TEMP\yaml-cpp-build" --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install yaml-cpp.' }
+      - name: Build native Windows application and tests
+        run: |
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
+          $yaml = Join-Path $env:RUNNER_TEMP 'yaml-cpp-install'
+          $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
+          cmake -S native -B $build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH="$qt;$yaml" -DBUILD_TESTING=ON -DPODLORD_COVERAGE=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure the native Windows app.' }
+          cmake --build $build --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the native Windows app and tests.' }
+          if (!(Test-Path "$build\Release\podlord-native.exe")) { throw 'The native Windows app is missing.' }
+      - name: Exercise public Windows smoke paths
+        run: |
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
+          $env:PATH = "$qt\bin;$env:PATH"
+          $env:QT_PLUGIN_PATH = "$qt\plugins"
+          $env:QML_IMPORT_PATH = "$qt\qml"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QUICK_BACKEND = 'software'
+          $env:QT_QUICK_CONTROLS_STYLE = 'Basic'
+          ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --parallel 4 --output-on-failure -R '^native\.(metrics\.|window\.(active|close_isolation)_Basic$|ui\.empty_brand_Basic$|sessions\.empty_profile$|sources\.success$)'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows public smoke tests failed.' }
+      - name: Retain Windows smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-windows-x64-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/podlord-windows-build/Testing/Temporary/LastTest.log
   macos:
     name: Native ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
