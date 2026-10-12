@@ -55,5 +55,6 @@ QVariantMap uiText(const QString& setting, const QLocale& system) {
     const auto code = resolvedUiLanguage(setting, system);
     for (const auto& language : catalog()) if (language.code == code) return language.text;
     qFatal("Shipped UI language catalog has no English fallback.");
+    Q_UNREACHABLE();
 }
 } // namespace podlord
