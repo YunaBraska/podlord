@@ -69,6 +69,8 @@ bool run(const QString& scenario) {
     if (scenario == "invalid_current_version") QCoreApplication::setApplicationVersion("unversioned");
     const auto profile = temporary.filePath("profile");
     const auto cache = profile + "/release-check.json";
+    const bool corruptCache = scenario.startsWith("cache_bad_") || scenario == "cache_oversized";
+    QByteArray corruptCacheBytes;
     auto metadata = release();
     if (scenario == "legacy_asset") {
         auto asset = metadata["assets"].toArray().first().toObject();
@@ -101,11 +103,28 @@ bool run(const QString& scenario) {
     if (scenario == "redirect") { server.status = 302; server.extraHeaders = "Location: " + server.endpoint().toEncoded() + "\r\n"; }
     if (scenario == "disabled") qputenv("PODLORD_DISABLE_UPDATE_CHECK", "1");
     else qunsetenv("PODLORD_DISABLE_UPDATE_CHECK");
-    if (scenario == "invalid_cache" || scenario == "cache_symlink" || scenario == "lock_directory") {
+    if (scenario == "invalid_cache" || scenario == "cache_symlink" || scenario == "lock_directory" || corruptCache) {
         if (!QDir().mkpath(profile)) return false;
         if (scenario == "invalid_cache" && !write(cache, "{\"version\":99,\"data\":\"retained\"}")) return false;
         if (scenario == "cache_symlink" && (!write(temporary.filePath("target"), "retained") || !QFile::link(temporary.filePath("target"), cache))) return false;
         if (scenario == "lock_directory" && !QDir().mkpath(cache + ".lock")) return false;
+        if (corruptCache) {
+            const auto valid = release();
+            QJsonObject stored{{"version", 1}, {"checkedAt", now.toString(Qt::ISODateWithMs)},
+                {"currentVersion", "0.1.0"}, {"latestVersion", "v0.2.0"},
+                {"releaseUrl", valid["html_url"]},
+                {"downloadUrl", valid["assets"].toArray().first().toObject()["browser_download_url"]}, {"error", ""}};
+            if (scenario == "cache_bad_checked_at") stored["checkedAt"] = "not-a-date";
+            else if (scenario == "cache_bad_current_version") stored["currentVersion"] = "v01.0.0";
+            else if (scenario == "cache_bad_latest_version") stored["latestVersion"] = "v0.2.0/../x";
+            else if (scenario == "cache_bad_release_url") stored["releaseUrl"] = "https://example.org/other";
+            else if (scenario == "cache_bad_download_url") stored["downloadUrl"] = "https://example.org/package.zip";
+            else if (scenario == "cache_bad_error") stored["error"] = "bad\nmessage";
+            else if (scenario == "cache_bad_type") stored["releaseUrl"] = 42;
+            else if (scenario == "cache_bad_empty_latest_url") stored["latestVersion"] = "";
+            corruptCacheBytes = scenario == "cache_oversized" ? QByteArray(65537, 'x') : QJsonDocument(stored).toJson(QJsonDocument::Compact);
+            if (!write(cache, corruptCacheBytes)) return false;
+        }
     }
     if (scenario.startsWith("ui_")) {
         BrowserBoundary browser;
@@ -145,10 +164,11 @@ bool run(const QString& scenario) {
         && !state()["available"].toBool() && state()["error"].toString().isEmpty();
     if (scenario == "disabled") return !updates.startAutomaticChecks() && !updates.checkNow()
         && server.requests.isEmpty() && !QFileInfo::exists(profile) && !state()["enabled"].toBool();
-    if (scenario == "invalid_cache" || scenario == "cache_symlink" || scenario == "lock_directory" || scenario == "bad_endpoint"
+    if (scenario == "invalid_cache" || scenario == "cache_symlink" || scenario == "lock_directory" || corruptCache || scenario == "bad_endpoint"
         || scenario == "empty_clock" || scenario == "invalid_clock" || scenario == "invalid_current_version")
         return !updates.checkNow() && server.requests.isEmpty() && !state()["error"].toString().isEmpty()
             && (scenario != "invalid_cache" || read(cache) == "{\"version\":99,\"data\":\"retained\"}")
+            && (!corruptCache || read(cache) == corruptCacheBytes)
             && (scenario != "cache_symlink" || read(temporary.filePath("target")) == "retained");
     if (scenario == "timeout") server.hold = true;
     if (scenario == "coalesce" || scenario == "owners" || scenario == "process_owners" || scenario == "handoff_busy") server.hold = true;
