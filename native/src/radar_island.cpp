@@ -102,7 +102,7 @@ bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
         QList<Entry> added;
         do { added.append(next.value()); ++next; }
         while (next!=incoming.cend() && (position==entries_.cend() || next.key()<position->path));
-        beginInsertRows({},index,index+added.size()-1);
+        beginInsertRows({},index,index+static_cast<int>(added.size())-1);
         for (const auto& entry:added) entries_.insert(index++,entry);
         endInsertRows();
     }

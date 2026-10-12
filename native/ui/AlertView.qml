@@ -173,7 +173,7 @@ Pane {
             objectName: "alertRulesTable"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            Layout.preferredHeight: view.width < 600 ? Math.min(112, Math.max(56, view.height * 0.2)) : Math.min(160, Math.max(112, view.height * 0.24))
+            Layout.preferredHeight: view.width < 600 ? Math.min(132, Math.max(112, view.height * 0.35)) : Math.min(220, Math.max(160, view.height * 0.4))
             Layout.minimumHeight: view.width < 600 ? 0 : implicitHeight
             Layout.maximumHeight: view.width < 600 ? Layout.preferredHeight : Number.POSITIVE_INFINITY
             prefix: "alert"

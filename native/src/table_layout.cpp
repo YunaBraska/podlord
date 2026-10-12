@@ -48,7 +48,7 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
             const QStringList order{"status","kind","name","namespace","cluster","cpu","memory","storage","createdAt","ready","restarts","node","image","owner","issue","uid"};
             const QMap<QString,int> widths{{"status",140},{"kind",150},{"name",280},{"namespace",150},{"cluster",180},{"cpu",90},{"memory",95},{"storage",95},{"createdAt",90},{"ready",90},{"restarts",95},{"node",190},{"image",230},{"owner",220},{"issue",240},{"uid",280}};
             std::stable_sort(layout.begin(),layout.end(),[&](const auto& a,const auto& b) {
-                const auto rank=[&](const QString& id) { const int index=order.indexOf(id); return index<0 ? int(order.size()) : index; };
+                const auto rank=[&](const QString& id) { const auto index=order.indexOf(id); return index<0 ? order.size() : index; };
                 return rank(a.id)<rank(b.id);
             });
             for (auto& column:layout) { column.width=widths.value(column.id,170); column.visible=column.id!="issue" && column.id!="uid"; }

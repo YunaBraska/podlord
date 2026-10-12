@@ -63,7 +63,8 @@ void ResourceClient::forgetDeletedResource(const Task& task) {
     auto& state = states_[task.id];
     for (auto& collection : state.collections) {
         if (collection.received > task.received) continue;
-        for (int i = collection.rows.size() - 1; i >= 0; --i) {
+        for (qsizetype i = collection.rows.size(); i > 0;) {
+            --i;
             const auto row = collection.rows[i].toObject();
             if (row["path"] == task.path) collection.rows.removeAt(i);
         }

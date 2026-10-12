@@ -6,6 +6,7 @@
 
 namespace podlord {
 namespace {
+#ifndef Q_OS_IOS
 Result<ClusterConnection> credentials(ClusterConnection connection, const QByteArray& bytes) {
     const auto rejected = [] { return Failure{StoreError::InvalidData, "Credential command returned an invalid or expired ExecCredential; no request was sent."}; };
     QJsonParseError error;
@@ -36,10 +37,13 @@ Result<ClusterConnection> credentials(ClusterConnection connection, const QByteA
     connection.credentialReady = true;
     return connection;
 }
+#endif
 } // namespace
 CredentialProcess::CredentialProcess(QObject* parent) : QObject(parent) {}
 CredentialProcess::~CredentialProcess() {
+#ifndef Q_OS_IOS
     for (const auto& job : jobs_) { disconnect(job.process, nullptr, this, nullptr); job.process->kill(); job.process->waitForFinished(1000); }
+#endif
 }
 bool CredentialProcess::running(const QString& credential) const { return jobs_.contains(credential); }
 std::optional<ClusterConnection> CredentialProcess::cached(const QString& credential) const {
@@ -55,14 +59,24 @@ Result<ClusterConnection> CredentialProcess::result(const QString& credential) c
 }
 bool CredentialProcess::invalidate(const QString& credential) { return results_.remove(credential) > 0; }
 bool CredentialProcess::cancel(const QString& credential) {
+#ifdef Q_OS_IOS
+    Q_UNUSED(credential);
+    return false;
+#else
     auto job = jobs_.find(credential);
     if (job == jobs_.end()) return false;
     job->failure = "Authentication cancelled. Confirm another attempt to retry.";
     job->process->kill(); return true;
+#endif
 }
 bool CredentialProcess::start(ClusterConnection connection, const QString& session) {
     if (!connection.exec) return false;
     const auto id = connection.credentialId;
+#ifdef Q_OS_IOS
+    results_.insert(id, Failure{StoreError::UnsupportedVersion, "External credential commands are unavailable on iOS."});
+    emit changed(); emit completed(id, session);
+    return false;
+#else
     if (jobs_.contains(id)) return true;
     results_.remove(id);
     auto* process = new QProcess(this);
@@ -87,7 +101,9 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, connection, session, process] { finish(connection, session, process); });
     process->start(connection.exec->program, connection.exec->arguments);
     emit changed(); return true;
+#endif
 }
+#ifndef Q_OS_IOS
 void CredentialProcess::finish(const ClusterConnection& connection, const QString& session, QProcess* process) {
     auto job = jobs_.find(connection.credentialId);
     if (job == jobs_.end() || job->process != process) return;
@@ -101,4 +117,5 @@ void CredentialProcess::finish(const ClusterConnection& connection, const QStrin
     jobs_.erase(job); process->deleteLater();
     emit changed(); emit completed(connection.credentialId, session);
 }
+#endif
 } // namespace podlord

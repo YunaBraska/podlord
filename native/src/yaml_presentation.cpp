@@ -13,14 +13,15 @@ public:
 protected:
     void highlightBlock(const QString& text) override {
         const auto scalar = QColor("#d6c39a");
+        const int length = static_cast<int>(text.size());
         int first = 0;
         while (first < text.size() && text[first].isSpace()) ++first;
         const int blockIndent = previousBlockState();
         setCurrentBlockState(-1);
         if (blockIndent >= 0 && (first == text.size() || first >= blockIndent)) {
-            setCurrentBlockState(blockIndent); setFormat(0, text.size(), scalar); return;
+            setCurrentBlockState(blockIndent); setFormat(0, length, scalar); return;
         }
-        int end = text.size(), colon = -1;
+        int end = length, colon = -1;
         QChar quote;
         for (int index = first; index < text.size(); ++index) {
             const auto character = text[index];
@@ -32,7 +33,7 @@ protected:
             if (character == '#' && (index == 0 || text[index-1].isSpace())) { end = index; break; }
             if (colon < 0 && character == ':' && (index+1 == text.size() || text[index+1].isSpace())) colon = index;
         }
-        if (end < text.size()) setFormat(end, text.size()-end, QColor("#6f7f8f"));
+        if (end < length) setFormat(end, length-end, QColor("#6f7f8f"));
         if (first >= end) return;
         if (text[first] == '-' && (first+1 == end || text[first+1].isSpace())) {
             setFormat(first, 1, QColor("#d9a13b")); ++first;

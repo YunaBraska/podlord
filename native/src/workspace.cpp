@@ -210,7 +210,7 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
         QList<QJsonObject> added;
         do { added.append(next.value()); ++next; }
         while (next != incoming.cend() && (position == rows_.cend() || next.key() < (*position)[identityField_].toString()));
-        beginInsertRows({}, index, index+added.size()-1);
+        beginInsertRows({}, index, index+static_cast<int>(added.size())-1);
         for (const auto& value : added) rows_.insert(index++,value);
         endInsertRows();
     }
