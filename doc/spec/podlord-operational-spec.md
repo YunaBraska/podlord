@@ -1401,6 +1401,12 @@ Preserve the C# cached-token capability: when no explicit token or token-file va
 
 This is not a legacy provider refresh implementation. Without a cached token, report that the user must refresh externally and explicitly reimport. A 401 suspends automatic requests and does not launch a browser or executable. Reimported inline provider credentials create a new snapshot; old sessions remain bound to the old one. Referenced token files remain externally owned rather than becoming frozen copies. Mixed exec/provider configurations and unsupported impersonation, including `as-uid`, fail explicitly rather than silently changing identity.
 
+### What must native mobile OIDC authentication prove before release?
+
+Android and iOS releases require an explicitly confirmed native system-browser OpenID Connect login for supported OIDC contexts; cached provider tokens alone do not satisfy mobile authentication parity. Use Authorization Code with PKCE S256, unique state and nonce, a platform-registered redirect owned by the application, HTTPS issuer discovery and token exchange, and validation of the ID token's signature, issuer, audience, nonce and lifetime before sending it to Kubernetes. Reject unsupported issuers, algorithms, client types, redirects and malformed responses explicitly. Do not embed a client secret in the application or use an embedded browser. A 401 or expired credential suspends automatic work and requires the user to confirm another login; no browser opens from startup, refresh, paint or retry. Secrets and codes are not logged or written to ordinary profile files.
+
+The existing desktop `exec` confirmation remains separate. Mobile must not silently reinterpret arbitrary `exec` plugins as OIDC. Public-boundary tests need a local external OIDC/Kubernetes service for success, invalid discovery, state/nonce mismatch, invalid signature or claims, callback replay, cancellation, expired token, 401, concurrent tabs, network failure and cleanup; an installed iOS and Android application must also complete the browser-return flow on devices before those platforms can be claimed as released.
+
 ### May an appearance update reset unrelated settings inputs?
 
 No. A successful or rejected theme update must preserve unsaved synchronization and YAML-limit inputs without saving them implicitly. Appearance notifications synchronize only the theme/variant controls. Opening a settings surface or explicitly changing its section may still initialize that section from saved values; this rule does not introduce settings-draft persistence.

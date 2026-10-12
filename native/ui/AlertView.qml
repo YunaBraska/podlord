@@ -208,12 +208,12 @@ Pane {
         ScrollView {
             id: editor
             objectName: "alertEditor"
-            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; visible: view.draft !== null; clip: true; contentWidth: availableWidth
+            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; visible: view.draft !== null; clip: true; contentWidth: availableWidth; padding: 10
             Layout.minimumHeight: 80
             Layout.maximumWidth: view.availableWidth
             ColumnLayout {
                 id: form
-                width: editor.availableWidth; spacing: 8
+                width: editor.availableWidth; spacing: 10
                 property bool editable: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn
                 FormRow { label: workspace.uiText["alert.name"]; TextField { id: name; objectName: "alertName"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert name" } }
                 FormRow { label: workspace.uiText["alert.description"]; TextField { id: description; objectName: "alertDescription"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert description" } }
