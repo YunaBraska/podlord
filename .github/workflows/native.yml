@@ -136,7 +136,7 @@ jobs:
           $env:KUBECONFIG = Join-Path $env:USERPROFILE 'absent-kubeconfig'
           New-Item -ItemType Directory -Path $env:USERPROFILE | Out-Null
           $help = & "$package\podlord-native.exe" --help
-          if ($LASTEXITCODE -ne 0 -or $help -notmatch '--kubeconfig') { throw 'Packaged Windows command-line startup failed.' }
+          if ($LASTEXITCODE -ne 0 -or ($help -join "`n") -notmatch '--kubeconfig') { throw 'Packaged Windows command-line startup failed.' }
           $errors = Join-Path $env:RUNNER_TEMP 'podlord-windows-package-stderr.log'
           $process = Start-Process -FilePath "$package\podlord-native.exe" -WorkingDirectory $package -PassThru -RedirectStandardError $errors
           try {
