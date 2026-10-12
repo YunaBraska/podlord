@@ -67,7 +67,8 @@ jobs:
       - name: Install official Qt and verified yaml-cpp
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install aqtinstall==3.3.0
+          # aqtinstall 3.3.0 assumes the pre-6.11 Qt archive layout.
+          python -m pip install git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
           if ($LASTEXITCODE -ne 0) { throw 'Could not install the Qt installer.' }
           aqt install-qt windows desktop 6.11.2 win64_msvc2022_64 -m qtmultimedia qtwebsockets -O "$env:RUNNER_TEMP\qt"
           if ($LASTEXITCODE -ne 0) { throw 'Could not install Qt 6.11.2 for MSVC 2022.' }
