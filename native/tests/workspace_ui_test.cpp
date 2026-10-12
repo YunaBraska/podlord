@@ -537,7 +537,7 @@ bool execute(const QString& scenario) {
     if (scenario == "invalid_ca") credentials = "token: local-test-token";
     const auto yaml = "apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:" + QByteArray::number(server.serverPort())
         + (scenario == "invalid_ca" ? "\n    certificate-authority-data: bm90LWNlcnRpZmljYXRl" : "")
-        + (scenario == "table_cluster_switch" ? "\n- name: other\n  cluster:\n    server: http://127.0.0.1:"+QByteArray::number(server.serverPort()) : "")
+        + (scenario == "table_cluster_switch" ? "\n- name: other\n  cluster:\n    server: http://127.0.0.1:"+QByteArray::number(server.serverPort()) : QByteArray{})
         + "\nusers:\n- name: local\n  user:\n    " + credentials
         + (twoContexts ? "\n- name: inactive\n  user: {token: inactive-token}" : "")
         + "\ncontexts:\n- name: local\n  context: {cluster: local, user: local}\n"
