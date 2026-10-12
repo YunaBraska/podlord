@@ -16,7 +16,7 @@
         android:name="org.qtproject.qt.android.bindings.QtApplication"
         android:hardwareAccelerated="true"
         android:label="-- %%INSERT_APP_NAME%% --"
-        android:icon="-- %%INSERT_APP_ICON%% --"
+        android:icon="@drawable/podlord_icon"
         android:enableOnBackInvokedCallback="false"
         android:allowBackup="false">
         <activity
