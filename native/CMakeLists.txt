@@ -202,6 +202,9 @@ add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_proce
 target_link_libraries(podlord_sources PUBLIC podlord_sessions Qt6::Network PRIVATE yaml-cpp::yaml-cpp)
 if(APPLE AND NOT IOS)
     find_package(OpenSSL 3.0 REQUIRED COMPONENTS SSL Crypto)
+    if(OPENSSL_VERSION VERSION_GREATER_EQUAL 4)
+        message(FATAL_ERROR "The macOS Qt TLS bundle requires OpenSSL 3; set OPENSSL_ROOT_DIR to an OpenSSL 3 installation.")
+    endif()
     target_link_libraries(podlord_sources PUBLIC OpenSSL::SSL)
     # Qt's runtime OpenSSL plugin needs the bundled libraries loaded before TLS selection.
     target_link_options(podlord_sources INTERFACE "LINKER:-needed_library,$<TARGET_FILE:OpenSSL::SSL>")
