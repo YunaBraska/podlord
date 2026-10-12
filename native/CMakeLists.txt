@@ -325,6 +325,7 @@ if(ANDROID)
     set_target_properties(podlord-native PROPERTIES
         QT_ANDROID_PACKAGE_NAME "dev.podlord.app"
         QT_ANDROID_APP_NAME "Podlord"
+        QT_ANDROID_APP_ICON "@drawable/podlord_icon"
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
 endif()
