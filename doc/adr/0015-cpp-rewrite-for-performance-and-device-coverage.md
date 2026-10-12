@@ -33,6 +33,8 @@ The specification wins when the old application has a known bug. A baseline that
 
 All 14 interview blocks are confirmed. Existing accepted behavior remains authoritative. Qt Quick, thin QML presentation, the tightened performance/package-size contract, and the comparison/retirement gates are confirmed; actual conformance and distribution obligations still require evidence. The working C# application establishes a retained test reference, not a requirement to ship the previous runtime in the replacement.
 
+Android uses Qt's OpenSSL TLS backend, but the official Qt Android kit does not include the OpenSSL runtime libraries. Android packages therefore bundle verified OpenSSL 3 libraries for each shipped ABI; configuration fails if they are missing. The pinned source build and `_3` library names are owned by `scripts/build-native-android-openssl.sh`. The existing OpenSSL notice covers this dependency. Package inspection proves inclusion, not an installed-device HTTPS connection.
+
 ## What Licensing Evidence Is Required Before Platform Releases?
 
 Verify the licenses of the exact shipped Qt modules, source and relinking obligations, signing, and distribution terms before each desktop or mobile release. No commercial Qt purchase, project-license change, or App Store compatibility is assumed. The native development toolchain currently uses Qt Core and Qt Quick components, without WebEngine. Installation of development tools is not evidence that the shipped application meets platform distribution requirements. References: [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt open-source obligations](https://www.qt.io/development/open-source-lgpl-obligations).
