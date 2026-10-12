@@ -308,7 +308,7 @@ set(alert_audio_files
 file(GLOB interface_audio_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/Assets/Audio/interface/*.ogg")
 list(APPEND alert_audio_files ${interface_audio_files})
 qt_add_resources(podlord_workspace "alert_audio" PREFIX "/podlord/audio" BASE ../src/Podlord.App/Assets/Audio FILES ${alert_audio_files})
-add_executable(podlord-native MACOSX_BUNDLE src/app_main.cpp)
+qt_add_executable(podlord-native MACOSX_BUNDLE src/app_main.cpp)
 if(BUILD_TESTING)
     add_executable(window-host-test tests/window_host_test.cpp)
     target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test)
@@ -321,6 +321,13 @@ if(BUILD_TESTING)
 endif()
 set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER "dev.podlord.native.reference" MACOSX_BUNDLE_BUNDLE_NAME "Podlord Native")
 set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}" MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
+if(ANDROID)
+    set_target_properties(podlord-native PROPERTIES
+        QT_ANDROID_PACKAGE_NAME "dev.podlord.app"
+        QT_ANDROID_APP_NAME "Podlord"
+        QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+endif()
 if(APPLE AND NOT IOS)
     set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in")
 endif()
