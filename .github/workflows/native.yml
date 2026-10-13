@@ -187,6 +187,7 @@ jobs:
           /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
           printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           printf 'CMAKE_PREFIX_PATH=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_ENV"
+          printf 'OPENSSL_ROOT_DIR=%s/native-toolchain/openssl\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           printf '%s/qt-sdk/bin\n' "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_PATH"
           cmake --version
           xcrun clang --version
