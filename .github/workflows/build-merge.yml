@@ -14,12 +14,12 @@ concurrency:
 
 jobs:
   build:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_common.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_common.yml@d2ea500ddc9695fefa2b78e5f7b41fd759a47575
     with:
       ref: ${{ github.sha }}
       dry_run: true
   native:
     needs: build
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_native.yml@a6f230e7a31ec0f44951200e29dab1639f7309c5
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_native.yml@d2ea500ddc9695fefa2b78e5f7b41fd759a47575
     with:
       version: ${{ needs.build.outputs.version }}
