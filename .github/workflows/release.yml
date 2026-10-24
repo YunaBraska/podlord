@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@f74836618ecd83210f0c02f639223193fcef4245
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@d2ea500ddc9695fefa2b78e5f7b41fd759a47575
     with:
       force: ${{ inputs.force }}
       notarize_macos: true
