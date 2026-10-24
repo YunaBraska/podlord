@@ -124,7 +124,12 @@ if [ "$CODESIGN_IDENTITY" != "skip" ]; then
   fi
 
   SIGN_LOG="$ICON_TMP/codesign.log"
-  if ! codesign --force --deep --sign "$CODESIGN_IDENTITY" "$BUNDLE_DIR" >"$SIGN_LOG" 2>&1; then
+  if [ "$CODESIGN_IDENTITY" = '-' ]; then
+    if ! codesign --force --deep --sign - "$BUNDLE_DIR" >"$SIGN_LOG" 2>&1; then
+      cat "$SIGN_LOG" >&2
+      exit 1
+    fi
+  elif ! codesign --force --deep --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$BUNDLE_DIR" >"$SIGN_LOG" 2>&1; then
     cat "$SIGN_LOG" >&2
     exit 1
   fi
