@@ -1,4 +1,8 @@
-title: Podlord
+title: PodLord
+product: PodLord
 description: Desktop Kubernetes control center.
-logo: https://raw.githubusercontent.com/YunaBraska/podlord/main/src/Podlord.App/Assets/Brand/Icons/podlord-icon-512.png
-theme: jekyll-theme-minimal
+repository: https://github.com/YunaBraska/podlord
+support: https://github.com/YunaBraska/podlord/issues
+accent: "#f2b84b"
+accent_soft: "#332816"
+color_scheme: dark
