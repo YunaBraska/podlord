@@ -1,22 +1,20 @@
 ---
 layout: default
 title: Documentation
-description: PodLord product, architecture and test documentation for Kubernetes operations.
+description: Help for importing clusters, exploring resources and acting safely.
 ---
 
 <header class="page-heading">
   <p class="eyebrow">Documentation</p>
   <h1>Know what PodLord does with a cluster.</h1>
-  <p>The documentation makes the app's resource boundary, operational behavior and testing approach explicit before you use it with a real environment.</p>
+  <p>Import a cluster, find a resource quickly and inspect it before taking an action.</p>
 </header>
 
 <section class="section">
   <ul class="doc-list">
-    <li><a href="{{ '/reference/doc/spec/product-brief.html' | relative_url }}">Product brief</a><p>Learn the intended workflow, user outcomes and product boundaries.</p></li>
-    <li><a href="{{ '/reference/doc/spec/feature-inventory.html' | relative_url }}">Feature inventory</a><p>See the current capability set in one structured reference.</p></li>
-    <li><a href="{{ '/reference/doc/spec/k3d-test-map.html' | relative_url }}">Cluster test map</a><p>Understand what the local Kubernetes integration tests prove.</p></li>
-    <li><a href="{{ '/reference/doc/design/README.html' | relative_url }}">Design notes</a><p>Read the interaction and visual design material behind the desktop interface.</p></li>
-    <li><a href="{{ '/reference/doc/adr/0004-content-addressed-kubeconfig-snapshots.html' | relative_url }}">Kubeconfig snapshots</a><p>See why imported kubeconfigs remain explicit, content-addressed snapshots.</p></li>
-    <li><a href="{{ '/reference/doc/ROADMAP.html' | relative_url }}">Roadmap</a><p>Check planned work and the parts that are not yet offered.</p></li>
+    <li><a href="{{ '/help/index.html' | relative_url }}">Use PodLord</a><p>Import a kubeconfig and establish a focused cluster workspace.</p></li>
+    <li><a href="{{ '/help/index.html#explore' | relative_url }}">Explore resources</a><p>Search across namespaces and narrow the view with filters.</p></li>
+    <li><a href="{{ '/help/index.html#inspect-and-act' | relative_url }}">Inspect and act</a><p>Read details before opening logs, forwarding ports or changing a resource.</p></li>
+    <li><a href="{{ '/install.html' | relative_url }}">Install PodLord</a><p>Choose the native package for macOS, Linux or Windows.</p></li>
   </ul>
 </section>
