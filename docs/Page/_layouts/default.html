@@ -20,7 +20,13 @@
       </div>
     </header>
     <main id="content" class="container">
+      {% if page.documentation %}
+      <article class="reference-document">
+        {{ content }}
+      </article>
+      {% else %}
       {{ content }}
+      {% endif %}
     </main>
     <footer class="site-footer">
       <div class="container footer-content">
