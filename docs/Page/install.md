@@ -17,6 +17,7 @@ title: Install
 
 ```sh
 brew tap yunabraska/tap
+brew trust yunabraska/tap
 brew install --cask podlord
 ```
 
