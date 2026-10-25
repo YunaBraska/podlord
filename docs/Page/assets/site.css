@@ -59,6 +59,19 @@ main { padding: 54px 0 76px; }
 .install-step p { max-width: 720px; color: #516174; }
 pre { overflow-x: auto; margin: 16px 0 0; padding: 16px 18px; background: #172033; color: #e6edf7; line-height: 1.6; }
 pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9rem; }
+.reference-document { max-width: 900px; }
+.reference-document > :first-child { margin-top: 0; }
+.reference-document h1 { margin: 0 0 22px; font-size: clamp(2.2rem, 5vw, 3.5rem); letter-spacing: -0.05em; }
+.reference-document h2 { margin: 46px 0 14px; padding-top: 24px; border-top: 1px solid #dfe6ef; font-size: clamp(1.55rem, 3vw, 2.1rem); letter-spacing: -0.035em; }
+.reference-document h3 { margin: 30px 0 10px; font-size: 1.2rem; }
+.reference-document p, .reference-document li { line-height: 1.7; }
+.reference-document ul, .reference-document ol { padding-left: 1.35rem; }
+.reference-document a { font-weight: 700; }
+.reference-document img { display: block; max-width: 100%; height: auto; margin: 24px 0; border: 1px solid #dfe6ef; }
+.reference-document table { display: block; width: 100%; overflow-x: auto; margin: 24px 0; border-collapse: collapse; }
+.reference-document th, .reference-document td { padding: 11px 13px; border: 1px solid #dfe6ef; text-align: left; vertical-align: top; }
+.reference-document th { background: var(--accent-soft); }
+.reference-document :not(pre) > code { padding: 2px 5px; background: var(--accent-soft); color: #203046; font-size: 0.9em; }
 .site-footer { padding: 28px 0; border-top: 1px solid #dfe6ef; color: #64748b; font-size: 0.88rem; }
 .footer-content span:last-child { display: flex; gap: 16px; }
 .site-footer a { color: inherit; }
@@ -72,6 +85,8 @@ pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
 .theme-dark .button.secondary { border-color: #686759; color: #eee8d8; }
 .theme-dark .install-option code { color: #f2dfb5; background: #332816; }
 .theme-dark .callout { color: #f1e6c9; background: #332816; }
+.theme-dark .reference-document h2, .theme-dark .reference-document img, .theme-dark .reference-document th, .theme-dark .reference-document td { border-color: #34382f; }
+.theme-dark .reference-document th, .theme-dark .reference-document :not(pre) > code { color: #f2dfb5; background: #332816; }
 @media (max-width: 760px) {
   .container { width: min(100% - 32px, 1120px); }
   .header-content { min-height: auto; padding: 18px 0; align-items: flex-start; flex-direction: column; gap: 12px; }
