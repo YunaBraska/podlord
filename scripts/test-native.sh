@@ -62,11 +62,37 @@ while IFS= read -r binary; do
     [ -x "$binary" ] || { printf 'Configured coverage executable is missing: %s\n' "$binary" >&2; exit 1; }
     set -- "$@" -object "$binary"
 done < "$BUILD/coverage/objects-Release.txt"
+APPLE_TLS=0
+if [ "$(uname -s)" = Darwin ]; then
+    APPLE_TLS=1
+    set -- "$@" "$ROOT/native/src/platform_tls_apple.mm"
+fi
 "$COV" report "$@" \
     -instr-profile="$BUILD/coverage/native.profdata" "$ROOT"/native/src/*.cpp "$ROOT"/native/src/*.h > "$BUILD/coverage/report.txt"
 cat "$BUILD/coverage/report.txt"
-if ! awk '/^TOTAL/ { seen=1; line=$10+0; branch=$13+0; if (line<95 || branch<90) exit 1 }
-          END { if (!seen) exit 1 }' "$BUILD/coverage/report.txt"; then
-    printf 'Native coverage is reported for review and does not fail functional verification.\n' >&2
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/resource_client.cpp" "$ROOT/native/src/workspace.cpp" \
+    | awk '/credentialRevision|detailRevision|forgetCredentials|yamlDraftCredentialsCurrent/' \
+    > "$BUILD/coverage/authority-functions.txt"
+cat "$BUILD/coverage/authority-functions.txt"
+if ! awk '/credentialRevision/ { credential=1 }
+          /detailRevision/ { detail=1 }
+          /forgetCredentials/ { revoke=1 }
+          /yamlDraftCredentialsCurrent/ { draft=1 }
+          { if ($NF+0<90) fail=1 }
+          END { if (!credential || !detail || !revoke || !draft || fail) exit 1 }' "$BUILD/coverage/authority-functions.txt"; then
+    printf 'Native authority coverage gate failed: require 90%% branches in credential/detail revision, revocation and draft authority checks.\n' >&2
+    exit 1
+fi
+if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($13+0<90) fail=1 }
+          $1=="platform_tls_apple.mm" { apple=1; if ($13+0<90) fail=1 }
+          $1=="native_eks.cpp" { eks=1; if ($13+0<90) fail=1 }
+          $1=="native_gke.cpp" { gke=1; if ($13+0<90) fail=1 }
+          $1=="native_oidc.cpp" { oidc=1; if ($13+0<90) fail=1 }
+          $1=="native_oci.cpp" { oci=1; if ($13+0<90) fail=1 }
+          /^TOTAL/ { seen=1; if ($10+0<95 || $13+0<85) fail=1 }
+          END { if (!seen || !http || !eks || !gke || !oidc || !oci || (requireApple && !apple) || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
+    printf 'Native coverage gate failed: require 95%% lines, 85%% branches overall, and 90%% branches in background HTTP, native EKS/GKE/OIDC/OCI and macOS-tested Apple trust logic.\n' >&2
+    exit 1
 fi
 [ "$TEST_STATUS" -eq 0 ] || exit "$TEST_STATUS"

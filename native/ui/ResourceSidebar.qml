@@ -51,6 +51,7 @@ Pane {
                     Rectangle { required property var modelData; width: parent.width; height: workspace.healthSummary.total > 0 ? parent.height * modelData.count / workspace.healthSummary.total : 0; color: modelData.color }
                 }
             }
+            Accessible.role: Accessible.StaticText
             Accessible.name: (workspace.syncLoading ? "Loading session. " : "Session health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
             ToolTip.visible: healthHover.hovered
             ToolTip.text: workspace.authenticationRunning
@@ -60,8 +61,18 @@ Pane {
                     : Accessible.name
             HoverHandler { id: healthHover }
         }
+        ScrollView {
+            id: sidebarViewport
+            Layout.fillWidth: true; Layout.fillHeight: true
+            contentWidth: availableWidth; contentHeight: sidebarColumn.height
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ColumnLayout {
-            Layout.fillWidth: true; Layout.fillHeight: true; spacing: 4
+            id: sidebarColumn
+            width: sidebarViewport.availableWidth
+            height: sidebar.collapsibleFilters && sidebar.filtersExpanded
+                ? Math.max(implicitHeight, sidebarViewport.availableHeight) : sidebarViewport.availableHeight
+            spacing: 4
             ResourceRadar {
                 id: radar; compact: true; Layout.fillWidth: true
                 Layout.fillHeight: sidebar.collapsibleFilters && !sidebar.filtersExpanded
@@ -80,9 +91,17 @@ Pane {
                 id: sidebarScroll
                 objectName: "sidebarFilterScroll"
                 visible: !sidebar.collapsibleFilters || sidebar.filtersExpanded
-                Layout.fillWidth: true; Layout.fillHeight: true
+                Layout.fillWidth: true
+                Layout.fillHeight: !sidebar.collapsibleFilters || !sidebar.filtersExpanded
+                Layout.preferredHeight: sidebar.collapsibleFilters && sidebar.filtersExpanded ? sidebarControls.implicitHeight : -1
                 contentWidth: availableWidth; contentHeight: sidebarControls.implicitHeight
                 clip: true
+                wheelEnabled: !sidebar.collapsibleFilters || !sidebar.filtersExpanded
+                Binding {
+                    target: sidebarScroll.contentItem
+                    property: "interactive"
+                    value: !sidebar.collapsibleFilters || !sidebar.filtersExpanded
+                }
                 Connections {
                     target: sidebarScroll.contentItem
                     function onContentYChanged() { sidebar.filtersScrolled() }
@@ -209,6 +228,7 @@ Pane {
             }
         }
     }
+        }
     Dialog { id: renamePreset; property string original; title: "Rename filter"; modal: true; anchors.centerIn: Overlay.overlay; width: sidebar.Window.window ? Math.min(360, sidebar.Window.window.width - 24) : 360; standardButtons: Dialog.Ok | Dialog.Cancel
         TextField { id: renameText; objectName: "renameFilterPresetName"; width: parent.width; maximumLength: 128; Accessible.name: "New saved filter name" }
         onAccepted: { if (workspace.renameFilterPreset(original, renameText.text)) presetName.text = renameText.text.trim() }

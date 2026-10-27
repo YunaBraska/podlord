@@ -1,12 +1,14 @@
 #include "credential_process.h"
+#include "native_oci.h"
 #include <QJsonDocument>
+#include <QPointer>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <algorithm>
 
 namespace podlord {
 namespace {
-#ifndef Q_OS_IOS
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
 Result<ClusterConnection> credentials(ClusterConnection connection, const QByteArray& bytes) {
     const auto rejected = [] { return Failure{StoreError::InvalidData, "Credential command returned an invalid or expired ExecCredential; no request was sent."}; };
     QJsonParseError error;
@@ -41,11 +43,15 @@ Result<ClusterConnection> credentials(ClusterConnection connection, const QByteA
 } // namespace
 CredentialProcess::CredentialProcess(QObject* parent) : QObject(parent) {}
 CredentialProcess::~CredentialProcess() {
-#ifndef Q_OS_IOS
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
     for (const auto& job : jobs_) { disconnect(job.process, nullptr, this, nullptr); job.process->kill(); job.process->waitForFinished(1000); }
 #endif
 }
-bool CredentialProcess::running(const QString& credential) const { return jobs_.contains(credential); }
+bool CredentialProcess::running(const QString& credential) const { return jobs_.contains(credential) || nativeJobs_.contains(credential) || gkeJobs_.contains(credential); }
+QString CredentialProcess::instruction(const QString& credential) const {
+    const auto* job = nativeJobs_.value(credential, nullptr);
+    return job ? job->instruction() : QString{};
+}
 std::optional<ClusterConnection> CredentialProcess::cached(const QString& credential) const {
     const auto found = results_.constFind(credential);
     if (found == results_.cend()) return {};
@@ -58,8 +64,36 @@ Result<ClusterConnection> CredentialProcess::result(const QString& credential) c
     return found == results_.cend() ? Result<ClusterConnection>{Failure{StoreError::NotFound, "No confirmed credential result."}} : found.value();
 }
 bool CredentialProcess::invalidate(const QString& credential) { return results_.remove(credential) > 0; }
+bool CredentialProcess::revoke(const QString& credential) {
+    bool removed = results_.remove(credential) > 0;
+    const auto discard = [this, &removed](auto* login) {
+        if (!login) return;
+        removed = true;
+        disconnect(login, nullptr, this, nullptr);
+        login->cancel();
+        login->deleteLater();
+    };
+    discard(nativeJobs_.take(credential));
+    discard(gkeJobs_.take(credential));
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+    auto job = jobs_.find(credential);
+    if (job != jobs_.end()) {
+        auto* process = job->process;
+        jobs_.erase(job); removed = true;
+        disconnect(process, nullptr, this, nullptr);
+        connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), process, &QObject::deleteLater);
+        connect(process, &QProcess::errorOccurred, process, &QObject::deleteLater);
+        process->kill();
+    }
+#endif
+    emit revoked(credential);
+    if (removed) emit changed();
+    return removed;
+}
 bool CredentialProcess::cancel(const QString& credential) {
-#ifdef Q_OS_IOS
+    if (auto* native = nativeJobs_.value(credential, nullptr)) { native->cancel(); return true; }
+    if (auto* gke = gkeJobs_.value(credential, nullptr)) { gke->cancel(); return true; }
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
     Q_UNUSED(credential);
     return false;
 #else
@@ -72,8 +106,50 @@ bool CredentialProcess::cancel(const QString& credential) {
 bool CredentialProcess::start(ClusterConnection connection, const QString& session) {
     if (!connection.exec) return false;
     const auto id = connection.credentialId;
-#ifdef Q_OS_IOS
-    results_.insert(id, Failure{StoreError::UnsupportedVersion, "External credential commands are unavailable on iOS."});
+    if (connection.exec->gke) {
+        if (gkeJobs_.contains(id)) return true;
+        results_.remove(id);
+        auto* login = new NativeGkeLogin(std::move(connection), this);
+        gkeJobs_.insert(id, login);
+        connect(login, &NativeGkeLogin::completed, this, [this, id, session, guard = QPointer<NativeGkeLogin>(login)](Result<ClusterConnection> result) {
+            auto* login = guard.data();
+            if (!login || gkeJobs_.value(id) != login) return;
+            gkeJobs_.remove(id); results_.insert(id, std::move(result)); login->deleteLater();
+            emit changed(); emit completed(id, session);
+        });
+        login->start(); emit changed(); return true;
+    }
+    if (connection.exec->eks) {
+        results_.insert(id, nativeEksToken(std::move(connection)));
+        emit changed(); emit completed(id, session);
+        return true;
+    }
+    if (connection.exec->oci) {
+        results_.insert(id, nativeOciToken(std::move(connection)));
+        emit changed(); emit completed(id, session);
+        return true;
+    }
+    if (connection.exec->oidc) {
+        if (nativeJobs_.contains(id)) return true;
+        results_.remove(id);
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        const auto flow = connection.exec->oidc->deviceCodeGrant ? NativeOidcLogin::Flow::Device : NativeOidcLogin::Flow::Browser;
+        auto* login = new NativeOidcLogin(std::move(connection), flow, this);
+#else
+        auto* login = new NativeOidcLogin(std::move(connection), NativeOidcLogin::Flow::Device, this);
+#endif
+        nativeJobs_.insert(id, login);
+        connect(login, &NativeOidcLogin::instructionChanged, this, &CredentialProcess::changed);
+        connect(login, &NativeOidcLogin::completed, this, [this, id, session, guard = QPointer<NativeOidcLogin>(login)](Result<ClusterConnection> result) {
+            auto* login = guard.data();
+            if (!login || nativeJobs_.value(id) != login) return;
+            nativeJobs_.remove(id); results_.insert(id, std::move(result)); login->deleteLater();
+            emit changed(); emit completed(id, session);
+        });
+        login->start(); emit changed(); return true;
+    }
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    results_.insert(id, Failure{StoreError::UnsupportedVersion, "External credential commands are unavailable on mobile devices."});
     emit changed(); emit completed(id, session);
     return false;
 #else
@@ -103,7 +179,7 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
     emit changed(); return true;
 #endif
 }
-#ifndef Q_OS_IOS
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
 void CredentialProcess::finish(const ClusterConnection& connection, const QString& session, QProcess* process) {
     auto job = jobs_.find(connection.credentialId);
     if (job == jobs_.end() || job->process != process) return;

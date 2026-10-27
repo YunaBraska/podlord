@@ -4,9 +4,51 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: about
+    objectName: "aboutContent"
     Layout.minimumWidth: 0
     spacing: 10
     property string linkError: ""
+    property int quoteIndex: -1
+    readonly property var quotes: [
+        "kubectl shouts. etcd whispers. Podlord listens.\nBuilt with heart, not equity.\nStar the repo if it survived your Monday. Fuel me if it survived your week.",
+        "Pods come and go. Your sanity should not.\nOne human built this between deploys and despair.\nStar it. Donate when it spares you another describe.",
+        "YAML stands for Yet Another Misindented Line.\nPodlord stands for whatever you needed it to.\nHit the star if we agree. Coffee link is right there.",
+        "There are 10 kinds of people. The other 2 wrote this.\nNo VC, no roadmap, just stubborn craftsmanship.\nUse it, star it. Love it, fuel it.",
+        "Kubernetes has no developer experience.\nSo I built one. Open source, single maintainer, dangerously caffeinated.\nA star costs nothing. A coffee buys a feature.",
+        "Sidecars exist because containers can't keep their lanes.\nThis UI exists because dashboards can't keep yours.\nIf it helped, leave a star. If it shipped, leave a tip.",
+        "RBAC: Role Based Annoyance Constructs.\nPodlord: small joy in a heavy stack.\nStar it after use. Donate if it earned its rent on your dock.",
+        "Helm chart. Helm fault. Same energy.\nMade late at night because the alternative was rage.\nStar it, fund it, file an issue. Whichever feels right.",
+        "Liveness probes were named by an optimist.\nPodlord was named after stubbornness.\nIf this UI is in your week, drop a star. If it's in your day, drop a coffee.",
+        "The cloud is somebody else's panic.\nThis console is mine, shared with you.\nA star lowers it by one bar. A donation by two.",
+        "ConfigMap: a love letter from past you to future you, half redacted.\nPodlord just reads it back without the suffering.\nStar if useful, fuel if essential.",
+        "There is no SRE. Only severely resigned engineers.\nThis was built by one of them, for the rest of you.\nStar the repo. Buy the coffee. Keep the lights on.",
+        "Crashloop: a feature of consistency.\nPodlord: a feature of restraint.\nStar if you noticed the difference. Donate if you appreciate it.",
+        "Operators wake up at 3 AM so you don't have to.\nThis UI wakes up at the speed of your click.\nLeave a star before the next page.",
+        "The control plane is fine. It said so itself.\nPodlord checks anyway, then shows you the truth.\nIf the truth helped, send back a coffee.",
+        "Service mesh: yet another layer of indirection.\nPodlord: one less layer between you and the pod.\nStar earned. Coffee earned. Trust earned.",
+        "Day 1: hello world.\nDay 712: namespace not found.\nPodlord was built between those two days. A star says thanks.",
+        "Init containers run first, finish first, are forgotten first.\nThis maintainer kind of relates.\nA star or a coffee fixes it both.",
+        "Eventually consistent means eventually correct, possibly never.\nPodlord aims for now consistent, now visible.\nIf you saw the difference, leave a tip.",
+        "Resource limits are a suggestion. So is sleep.\nThis app was built ignoring both.\nReturn the favor with a star or a small donation.",
+        "Logs: 90% noise, 9% noise, 1% truth.\nPodlord finds the 1% faster.\nStar the repo. Buy the coffee. Skip the next outage.",
+        "Pod disruption budget: your patience.\nMaintainer disruption budget: the donation jar.\nKeep both topped up.",
+        "Stateful sets are stateful. Maintainers are tired.\nPodlord makes both more bearable.\nStar if you used it twice today.",
+        "Annotations are post it notes nobody reads.\nPodlord reads them so you don't have to.\nA coffee says thanks.",
+        "There is no cloud. Only computers you cry over.\nThis console makes the crying shorter.\nStar the repo, fuel the maintainer.",
+        "Probes lie. Metrics lie. Pods occasionally tell the truth.\nPodlord lets you watch the truth happen.\nIf that mattered today, leave a star.",
+        "kubectl get pods solves nothing.\nkubectl get pods on repeat solves less.\nPodlord solves the repeat. Coffee link below.",
+        "Distributed systems: you knew the risks.\nDistributed sanity: nobody warned you.\nA donation keeps the second one online.",
+        "Reconcile: a verb done by the system, a noun done by the maintainer.\nPodlord does the first. Your star does the second.",
+        "Latency is a feeling.\nThis UI tries to feel quick.\nIf it did today, drop a star or a coffee on the way out.",
+        "OOMKilled: out of memory, killed.\nMaintainer of Podlord: out of money, still alive.\nA donation keeps the second statement true.",
+        "If Kubernetes were easy, you would not be reading this.\nThis console makes hard things visible.\nStar it. Fuel it. Send it to a friend."
+    ]
+    function rotateQuote() {
+        let next = Math.floor(Math.random() * quotes.length)
+        if (next === quoteIndex) next = (next + 1) % quotes.length
+        quoteIndex = next
+    }
+    onVisibleChanged: if (visible) rotateQuote()
     readonly property var soundCredits: {
         const groups = {}
         for (const sound of workspace.alerts.sounds) {
@@ -37,6 +79,27 @@ ColumnLayout {
             Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "PODLORD"; font.pixelSize: 24; font.bold: true; color: workspace.appearanceColors.accent; elide: Text.ElideRight }
             Label { objectName: "aboutTagline"; Layout.fillWidth: true; text: workspace.uiText["about.tagline"]; font.italic: true; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
             Label { objectName: "settingsVersion"; Layout.fillWidth: true; text: workspace.uiText["about.version"].replace("{0}", Qt.application.version); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+        }
+    }
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        implicitHeight: aboutQuote.implicitHeight + 24
+        color: workspace.appearanceColors.inset
+        border.color: workspace.appearanceColors.border
+        border.width: 1
+        radius: 2
+        Label {
+            id: aboutQuote
+            objectName: "aboutQuote"
+            x: 12
+            y: 12
+            width: parent.width - 24
+            text: about.quoteIndex < 0 ? "" : about.quotes[about.quoteIndex]
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            font.italic: true
+            Accessible.name: text
         }
     }
     Label { objectName: "aboutUpdateStatus"; Layout.fillWidth: true; text: workspace.releaseUpdates.state.status; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.releaseUpdates.state.error ? workspace.appearanceColors.danger : workspace.appearanceColors.muted; Accessible.name: text }

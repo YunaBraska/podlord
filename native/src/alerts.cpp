@@ -412,7 +412,7 @@ bool Alerts::persist(AlertCatalog desired) {
     connect(watcher, &QFutureWatcher<Result<AlertCatalog>>::finished, this, [this, watcher] {
         const auto result=watcher->result(); watcher->deleteLater(); busy_=false;
         if (const auto* failure=std::get_if<Failure>(&result)) error_=failure->message;
-        else { catalog_=std::get<AlertCatalog>(result); error_.clear(); if (catalog_.muted && player_) player_->stop(); for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); emit catalogSaved(); }
+        else { catalog_=std::get<AlertCatalog>(result); error_.clear(); if (catalog_.muted && player_) { player_->stop(); player_.reset(); output_.reset(); } for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); emit catalogSaved(); }
         emit rulesChanged();
     });
     const auto profile=profile_; const auto expected=catalog_;
@@ -471,7 +471,7 @@ bool Alerts::setSessionOwnership(std::function<bool(const QString&)> owns) {
 bool Alerts::synchronizeCatalog(const Alerts& source) {
     if (&source == this || source.profile_ != profile_ || !source.ready_) return false;
     catalog_ = source.catalog_; ready_ = true; error_.clear();
-    if (catalog_.muted && player_) player_->stop();
+    if (catalog_.muted && player_) { player_->stop(); player_.reset(); output_.reset(); }
     for (auto it = states_.cbegin(); it != states_.cend(); ++it) queue(it.key());
     emit rulesChanged(); return true;
 }
@@ -578,7 +578,14 @@ bool Alerts::play(const QString& id) {
     for (const auto& value : sounds()) { const auto sound=value.toMap(); if (sound["id"].toString()!=id) continue;
         if (id=="none") return true;
         if (!player_) { output_=std::make_unique<QAudioOutput>(); player_=std::make_unique<QMediaPlayer>(); player_->setAudioOutput(output_.get());
-            connect(player_.get(), &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) { error_="Local alert sound could not be played. Visual alarms remain active."; emit rulesChanged(); }); }
+            connect(player_.get(), &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) { error_="Local alert sound could not be played. Visual alarms remain active."; emit rulesChanged(); });
+            connect(player_.get(), &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
+                if (state != QMediaPlayer::StoppedState) return;
+                QTimer::singleShot(0, this, [this] {
+                    if (!player_ || player_->playbackState() != QMediaPlayer::StoppedState) return;
+                    player_.reset(); output_.reset();
+                });
+            }); }
         player_->stop(); player_->setSource(QUrl(sound["asset"].toString())); player_->play(); return true;
     } return false;
 }

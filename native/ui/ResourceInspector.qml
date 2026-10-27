@@ -5,6 +5,7 @@ import Podlord.Graphics 1.0
 
 Pane {
     padding: 6
+    clip: true
     component InspectorTab: TabButton {
         id: tab
         width: visible ? implicitWidth : 0
@@ -27,8 +28,16 @@ Pane {
         border.width: 1
         border.color: workspace.appearanceColors.glow
     }
-    contentItem: ColumnLayout {
+    contentItem: ScrollView {
+    id: inspectorScroll
+    clip: true
+    contentWidth: availableWidth
+    contentHeight: inspector.height
+    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+    ColumnLayout {
     id: inspector
+    width: inspectorScroll.availableWidth
+    height: workspace.yamlVisible ? Math.max(implicitHeight, inspectorScroll.availableHeight) : inspectorScroll.availableHeight
     property real yamlPosition: 0
     property real overviewPosition: 0
     property real valuesPosition: 0
@@ -84,8 +93,8 @@ Pane {
     Flow {
         Layout.fillWidth: true
         spacing: 6
-        visible: workspace.yamlVisible || workspace.inspectorPage === "terminal" || workspace.canReadBackDeletion
-        IconButton { objectName: "copyYaml"; glyph: "ConfigMap"; text: "Copy visible YAML"; visible: workspace.yamlVisible; enabled: !workspace.yamlEditing && workspace.yamlText !== ""; onClicked: workspace.copyYaml() }
+        visible: (workspace.yamlVisible && !workspace.yamlEditing) || workspace.inspectorPage === "terminal" || workspace.canReadBackDeletion
+        IconButton { objectName: "copyYaml"; glyph: "ConfigMap"; text: "Copy visible YAML"; visible: workspace.yamlVisible && !workspace.yamlEditing; enabled: !workspace.yamlEditing && workspace.yamlText !== ""; onClicked: workspace.copyYaml() }
         IconButton { objectName: "expandTerminal"; glyph: "Sidebar"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: terminalDialog.open() }
         IconButton { objectName: "readBackResourceDelete"; glyph: "Reset"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
     }
@@ -114,7 +123,7 @@ Pane {
             }
             Loader {
                 Layout.fillWidth: true
-                Layout.preferredHeight: active ? Math.min(220, inspector.height * 0.35) : 0
+                Layout.preferredHeight: active ? Math.min(220, inspectorScroll.availableHeight * 0.35) : 0
                 Layout.minimumHeight: 0
                 active: guidanceToggle.checked && workspace.inspectorPage === "overview"
                 visible: active
@@ -272,7 +281,8 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 0
+            Layout.minimumHeight: 44
+            Layout.preferredHeight: 44
             spacing: 0
             visible: workspace.yamlVisible
             YamlPresentation {
@@ -283,6 +293,7 @@ Pane {
                 editor: yamlEditor
                 document: workspace.yamlVisible ? yamlEditor.textDocument : null
                 font: yamlEditor.font
+                light: workspace.themeVariant === "light"
                 color: workspace.appearanceColors.muted
                 scrollOffset: yamlScroll.contentItem ? yamlScroll.contentItem.contentY : 0
                 Accessible.role: Accessible.StaticText
@@ -310,18 +321,21 @@ Pane {
                 }
             }
         }
-    RowLayout {
+    GridLayout {
         Layout.fillWidth: true
         visible: workspace.yamlVisible
-        Button { objectName: "editYaml"; text: "Edit YAML"; visible: !workspace.yamlEditing; enabled: workspace.canEditYaml && !workspace.busy && !workspace.authenticationRequired && !workspace.authenticationRunning && !workspace.deletionPending && !workspace.deletionRunning; onClicked: workspace.beginYamlEdit() }
-        Button { objectName: "leaveYamlEdit"; text: workspace.yamlDirty ? "Discard draft" : "Leave editing"; visible: workspace.yamlEditing; onClicked: workspace.leaveYamlEdit() }
-        Button { objectName: "checkYaml"; text: workspace.yamlChecking ? "Checking..." : "Check YAML"; visible: workspace.yamlEditing; enabled: !workspace.busy && !workspace.discardPending && !workspace.yamlApplyLocked && !workspace.yamlChecking; Accessible.name: "Check local YAML syntax and resource identity"; onClicked: workspace.checkYamlDraft() }
-        Label { objectName: "yamlDraftStatus"; Layout.fillWidth: true; text: workspace.yamlDraftStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        columns: inspector.width < 600 ? 1 : 2
+        RowLayout {
+            Button { objectName: "editYaml"; text: "Edit YAML"; visible: !workspace.yamlEditing; enabled: workspace.canEditYaml && !workspace.busy && !workspace.authenticationRequired && !workspace.authenticationRunning && !workspace.deletionPending && !workspace.deletionRunning; onClicked: workspace.beginYamlEdit() }
+            Button { objectName: "leaveYamlEdit"; text: workspace.yamlDirty ? "Discard draft" : "Leave editing"; visible: workspace.yamlEditing; onClicked: workspace.leaveYamlEdit() }
+            Button { objectName: "checkYaml"; text: workspace.yamlChecking ? "Checking..." : "Check YAML"; visible: workspace.yamlEditing; enabled: !workspace.busy && !workspace.discardPending && !workspace.yamlApplyLocked && !workspace.yamlChecking; Accessible.name: "Check local YAML syntax and resource identity"; onClicked: workspace.checkYamlDraft() }
+        }
+        Label { objectName: "yamlDraftStatus"; Layout.fillWidth: true; visible: text !== ""; text: workspace.yamlDraftStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     }
     Label { objectName: "yamlCheckStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlCheckStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     RowLayout {
         visible: workspace.yamlVisible && workspace.yamlEditing
-        Button { objectName: "previewYaml"; text: "Preview apply"; enabled: !workspace.busy && !workspace.yamlApplyLocked && !workspace.yamlChecking && !workspace.discardPending && !workspace.authenticationRequired; onClicked: workspace.previewYamlApply() }
+        Button { objectName: "previewYaml"; text: "Preview apply"; enabled: workspace.yamlDraftCredentialsCurrent && !workspace.busy && !workspace.yamlApplyLocked && !workspace.yamlChecking && !workspace.discardPending && !workspace.authenticationRequired && !workspace.authenticationRunning; onClicked: workspace.previewYamlApply() }
         Button { objectName: "readBackYaml"; text: "Read back"; visible: workspace.canReadBackYaml; enabled: !workspace.discardPending && !workspace.authenticationRequired; onClicked: workspace.readBackYaml() }
         Button { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
     }
@@ -360,6 +374,7 @@ Pane {
             source: "ContainerTerminalView.qml"
             onLoaded: if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
         }
+    }
     }
     }
 }

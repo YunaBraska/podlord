@@ -22,12 +22,27 @@ Production packages are exercised using Cocoa through the existing isolated
 application startup test. Offscreen remains the component-test default.
 Native coverage includes the read-overlap and reference-radar executable paths,
 is reported even after a CTest failure, and never replaces that failure with
-success. The 95% line and 90% branch release thresholds remain unchanged. Under
+success. Under
 the confirmed 2026-10-09 CI policy, coverage and performance target misses are
 reported diagnostically rather than replacing functional check results. Green
 CI is necessary evidence, not proof that every release requirement is satisfied.
 Owned raw profiles are removed on exit; retained reports identify target misses
 and functional failures separately.
+
+On 2026-10-15 the native release coverage decision changed to 95% line and 85%
+branch coverage overall, plus at least 90% branch coverage for new logic.
+The full native runner enforces the new-logic floor on the newly introduced
+AWS EKS, GKE, OCI and OIDC provider source files, the background HTTP transport
+and native Apple trust evaluation. The credential/detail revision, credential
+revocation and YAML-draft authority functions also have individual 90% branch
+gates. Their public HTTP regressions cover expired credentials, detail expiry
+and backward clock movement while preserving readable cached documents.
+New production logic added elsewhere
+must receive its own explicit 90% gate before its release claim; a passing
+overall percentage alone does not establish this. The reason is that the
+broader UI/runtime code has many independently verified public behaviors but
+does not yet meet the former 90% aggregate branch threshold. This decision
+does not waive missing behavior, package, device, image, or performance evidence.
 
 CI uploads evidence only, not unsigned or legally unreviewed native release
 binaries. macOS Developer ID/notarization, license notices, clean-device
@@ -47,6 +62,20 @@ No unsigned native release is published by CI under this decision.
 Desktop comparisons reject quarantined input bundles before starting their local
 cluster. The runner does not remove macOS quarantine or treat a locally valid
 code signature as user approval; use an already-approved local reference build.
+
+## What Changes For A Private Android Build?
+
+On 2026-10-27 the user approved distributing the private Android release as
+`podlord-native-android-arm64.apk.zip`. The archive contains the complete signed
+APK. Extracting it before installation is required. No runtime library, feature
+or installation prerequisite is moved to a separate download.
+
+PER-012 measures this actual ZIP download against the unchanged 50,000,000-byte
+limit. PER-013 still measures the installed application against 100,000,000 bytes.
+Archive size does not establish installed size, Android runtime behavior or
+store-distribution readiness. Retain the APK signature, checksum and extraction
+round-trip result with the package evidence. Existing raw-APK size failures
+remain historical failures, not retroactive passes.
 
 ## Verification And Rollback
 
@@ -125,3 +154,46 @@ optimized code. It does not remove legacy regression cases or change their
 thresholds. Target misses are reported without failing CI; functional regressions
 still fail it. Source/binary parity, hosted execution and runtime budgets remain
 separate checks.
+
+## Does the Apple product require Rosetta?
+
+No. The native macOS Apple Silicon package and iOS device build target ARM64.
+The older Qt 6.11.2 prebuilt iOS simulator libraries target x86_64. Their Rosetta
+dependency is superseded by the verified stock-source ARM64 simulator toolchain
+described below. Rosetta is not shipped in the application. Simulator results
+must record the actual SDK architecture.
+
+Apple identifies macOS 27 as the final general-purpose Rosetta release. Later
+support is limited to selected older games and is not an application-toolchain
+compatibility promise. Before using macOS 28 or later for this test lane, replace
+the x86_64 simulator SDK with an ARM64 simulator build of Qt and its FFmpeg
+dependencies. The local source-built alternative now passes the real Kubernetes
+theme matrix on Apple Silicon without Rosetta. This does not certify a future
+macOS release or require separate mobile UI and authentication implementations.
+
+Sources: [Apple's Rosetta support notice](https://developer.apple.com/news/?id=w5ngl9k2)
+and [Qt's simulator architecture requirements](https://doc.qt.io/qt-6/ios.html).
+
+### 2026-10-26: iOS TLS and native simulator toolchain
+
+The real iOS Kubernetes import reached the API but could not negotiate mutual TLS with an EC client certificate. Qt 6.11.2 SecureTransport reported `SecPKCS12Import failed: -26275`. Qt's shared PKCS#12 encoder handles RSA and DSA keys, not EC keys, while its SecureTransport backend always uses that encoder for client identities. The application parsed the same EC key successfully through Qt's public key API. Changing the kubeconfig parser or weakening certificate verification would not address this failure.
+
+The approved solution is to build stock Qt 6.11.2 for iOS with directly linked OpenSSL 3.5.9 and SecureTransport disabled. This uses the existing OpenSSL dependency rather than maintaining a private Qt cryptography patch. OpenSSL is embedded in the application. Users install neither OpenSSL nor kubectl. A source check established that Qt's shared Apple CA loader enumerates system certificates only on macOS and returns an empty list on iOS. The approved native Apple trust integration closes that gap without shipping a separate CA bundle.
+
+Apple Security evaluates the actual peer chain and hostname against system and installed-user trust. Explicit kubeconfig authorities remain exclusive anchors. Only missing-issuer errors may be reconsidered. Hostname, expiry, revocation and other TLS errors are never bypassed. Native evaluation uses `SecTrustEvaluateAsyncWithError` on its owning dispatch queue.
+
+The approved iOS HTTP adapter owns a background thread and Qt network manager. Qt's synchronous HTTP TLS-error callback waits there, not on the GUI thread. Caller-side replies expose cached metadata and bounded response chunks through the existing asynchronous request flow. Cancellation wakes the worker, rejects late results and tears down owned replies and threads. WebSockets use Qt's pause/resume API with background native evaluation. Other platforms retain their existing Qt HTTP transport. No Qt fork, global trust-store mutation or external service is introduced.
+
+The Android product does not compile the unused iOS HTTP adapter or its HTTP trust hook. The configured NDK 27.2 standard library does not expose the adapter's `std::stop_token` type. Android continues using its existing Qt network manager and TLS verification. This build boundary avoids an unnecessary toolchain dependency without changing Android request or authentication behavior. The ordinary desktop adapter tests remain enabled.
+
+The native test runner includes the Objective-C++ trust source in macOS coverage. It enforces the existing 90% new-logic branch target for both `background_http.cpp` and `platform_tls_apple.mm`, alongside the existing overall and provider gates. Test-only fault injection substitutes individual external CoreFoundation/Security failures in the isolated CLI process, after startup and only for calls from that test executable. It does not replace the owned trust policy or enter any product bundle. Normal native framework evaluation and the real iOS transport tests remain independent evidence.
+
+`scripts/test-native-ios-trust.cjs APP_BUNDLE OPENSSL NEW_EVIDENCE_DIRECTORY` verifies actual HTTPS and WSS using isolated local certificates and a disposable ARM64 simulator. It proves rejection before root installation, acceptance after installation, explicit wrong-CA rejection, a slow intermediate-certificate fetch while GUI heartbeats continue, and cancellation without a later application request. Test roots are installed only in the disposable simulator, never the Mac keychain. All owned servers, private keys and the simulator are removed. The complete populated iOS Kubernetes theme matrix then verifies EC-client-certificate mutual TLS and shared UI behavior through this transport.
+
+`scripts/build-native-ios-toolchain.sh iphoneos HOST_QT NEW_OUTPUT_DIRECTORY` builds the ARM64 device SDK. Replace `iphoneos` with `iphonesimulator` for a simulator SDK matching the host architecture. On Apple Silicon that is ARM64 and does not require Rosetta. The host Qt must be version 6.11.2 with `qtshadertools`. Each output directory is new and separate from the existing official SDK. Downloads are SHA256-pinned. FFmpeg 7.1.5 remains embedded as frameworks and yaml-cpp 0.9.0 remains static. Failed builds retain their own logs for diagnosis and never overwrite an existing toolchain.
+
+The required regression boundary is the running iOS application importing a real local Kubernetes kubeconfig, negotiating EC-certificate mutual TLS and loading the resource cache. A successful toolchain build alone does not satisfy that gate. The populated theme matrix must then run against the same local API. Qt still warns that the installed Xcode SDK 27.1 is newer than its tested SDK 26. This warning is not suppressed and does not constitute a supported-platform certification.
+
+Sources: [Qt SecureTransport client identity import](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/tls/securetransport/qtls_st.cpp), [Qt PKCS#12 key encoder](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/tls/shared/qsslsocket_qt.cpp#L126), [Qt OpenSSL linkage and Apple CA integration](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/tls/openssl/CMakeLists.txt), [Qt iOS source builds](https://doc.qt.io/qt-6.11/ios-building-from-source.html).
+
+Google account and registration work is paused at the user's request. No account creation is a prerequisite for continuing implementation or local release checks. This does not claim that an unregistered personal Google login has passed a live-provider gate.

@@ -11,7 +11,7 @@ void emitYaml(YAML::Emitter& emitter, const QJsonValue& value) {
         emitter << YAML::BeginMap;
         const auto object = value.toObject();
         for (auto entry = object.constBegin(); entry != object.constEnd(); ++entry) {
-            emitter << YAML::Key << YAML::DoubleQuoted << entry.key().toStdString() << YAML::Value;
+            emitter << YAML::Key << entry.key().toStdString() << YAML::Value;
             emitYaml(emitter, entry.value());
         }
         emitter << YAML::EndMap;

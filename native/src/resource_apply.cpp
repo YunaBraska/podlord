@@ -4,13 +4,14 @@
 
 namespace podlord {
 bool ResourceClient::applyYaml(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline,
-                               const QJsonObject& desired, const QJsonArray& patch) {
+                               const QJsonObject& desired, const QJsonArray& patch, quint64 revision) {
     const auto connection = this->connection(id);
+    const auto authority = credentialRevision(id);
     const auto identity = baseline["metadata"].toObject();
     const auto row = resource(id, path);
     const QJsonObject uidGuard{{"op", "test"}, {"path", "/metadata/uid"}, {"value", identity["uid"]}};
     const QJsonObject versionGuard{{"op", "test"}, {"path", "/metadata/resourceVersion"}, {"value", identity["resourceVersion"]}};
-    if (!connection || token.isEmpty() || patch.size() < 3 || !isVisible(id) || !wanted(id) || states_[id].suspended
+    if (!connection || !authority || *authority != revision || token.isEmpty() || patch.size() < 3 || !isVisible(id) || !wanted(id) || states_[id].suspended
         || row["uid"] != identity["uid"] || row["name"] != identity["name"]
         || row["apiVersion"] != baseline["apiVersion"] || row["kind"] != baseline["kind"] || row["namespace"].toString() != identity["namespace"].toString()
         || patch[0] != uidGuard || patch[1] != versionGuard

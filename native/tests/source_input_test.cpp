@@ -113,7 +113,15 @@ bool ui(const QString& profile, const QString& directory, bool partial, int widt
         auto* dialog = window->findChild<QObject*>("sourceImportDetails");
         require(dialog && dialog->property("visible").toBool(), "Partial import dialog did not open");
         require(!dialog->property("title").toString().isEmpty(), "Import errors have no accessible title");
+        QTest::keyClick(window, Qt::Key_Escape);
+        require(QTest::qWaitFor([&] { return !dialog->property("visible").toBool(); }), "Partial import dialog did not close");
     }
+    require(click(window, window->findChild<QQuickItem*>("settingsWorkspaceButton")), "Cannot open Settings after source import");
+    require(podlord::test::selectSettingsSection(window, "sources"), "Cannot open Sources after source import");
+    require(QTest::qWaitFor([&] {
+        auto* list = window->findChild<QQuickItem*>("settingsSourceList");
+        return list && list->property("count").toInt() == 1;
+    }), "Imported context is missing from Settings Sources");
     return true;
 }
 bool management(const QString& scenario, const QString& root, const QString& profile) {
@@ -193,6 +201,17 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         }
     };
     const auto settle = [&] { require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Management operation did not settle"); };
+    if (mode == "refresh_quick_controls_changed") {
+        write(origin, yaml + "- name: third\n  context:\n    cluster: local\n    user: local\n");
+        require(click(window, item("reloadSources")), "Cannot activate public Reload sources button");
+        settle();
+        require(sourceCount() == 2, "Reload sources did not import changed original content");
+        bool updatedContextVisible = false;
+        for (const auto& value : workspace.contexts())
+            updatedContextVisible = updatedContextVisible || value.toMap().value("name").toString() == "third";
+        require(updatedContextVisible, "Reload sources did not expose the new context");
+        return true;
+    }
     press("settingsWorkspaceButton");
     press(session ? "settingsWorkspaceSection" : "settingsSourcesSection");
     if (alias) {
@@ -473,6 +492,18 @@ int main(int argc, char* argv[]) {
         if (scenario.startsWith("source_manage_") || scenario.startsWith("session_manage_") || scenario.startsWith("source_alias_"))
             return management(scenario, root, profile) ? 0 : 1;
         const QString first = directory + "/config";
+        if (scenario == "content_uri_missing" || scenario == "content_uri_quick" || scenario == "content_uri_invalid") {
+            const bool invalid = scenario == "content_uri_invalid";
+            const QString uri = invalid ? "content://" : "content://podlord.test.missing/document/1";
+            const auto result = run(executable, profile, {scenario == "content_uri_quick" ? "import" : "import-path", uri}, home);
+            const auto error = result.json["error"].toObject();
+            require(result.code == (invalid ? 2 : 1)
+                && error["code"] == (invalid ? "InvalidInput" : "ReadFailed")
+                && error["message"] == (invalid ? "A valid content URI with a provider and document path is required."
+                    : "Cannot read kubeconfig source."), "Document URI was treated as a local path or accepted without a provider");
+            require(!QFileInfo(profile).exists(), "Rejected document URI created a profile");
+            return 0;
+        }
         if (scenario.startsWith("url_")) {
             const QString mode = scenario.mid(4);
             require(QStringList{"file_url", "pretty_url", "plain_path", "literal_percent", "unicode", "upper_scheme", "repeat", "folder_url", "folder_plain", "empty_folder", "partial_folder", "private_folder", "query", "fragment", "credentials", "port", "malformed_percent", "encoded_null", "empty_url", "ui_file", "ui_folder", "ui_partial"}.contains(mode), "Unknown file URL scenario");

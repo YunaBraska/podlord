@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "appearance.h"
 #include "ui_input.h"
 #include <QGuiApplication>
 #include <QDir>
@@ -86,6 +87,16 @@ bool exercise(const QStringList& arguments) {
     require(workspace.property("themeName").toString() == "Sirocco Command"
         && workspace.property("themeVariant").toString() == "dark"
        , "Legacy appearance defaults were not retained");
+    if (scenario.startsWith("value_")) {
+        const auto appearance = podlord::makeAppearance(workspace.themeName(), workspace.themeVariant());
+        const auto* current = std::get_if<podlord::Appearance>(&appearance);
+        require(current, "Cannot read the shipped appearance");
+        if (scenario == "value_identity_empty") return require(podlord::appearanceIdentity(*current, " ").alpha() == 0, "Blank identity acquired a color");
+        if (scenario == "value_identity_dash") return require(podlord::appearanceIdentity(*current, "-").alpha() == 0, "Absent identity acquired a color");
+        if (scenario == "value_status_empty") return require(podlord::appearanceStatus(*current, "").alpha() == 0, "Blank status acquired a color");
+        if (scenario == "value_status_dash") return require(podlord::appearanceStatus(*current, "-").alpha() == 0, "Absent status acquired a color");
+        return false;
+    }
     require(click(window, "settingsWorkspaceButton") && click(window, "settingsAppearanceSection"), "Appearance settings are missing from the public UI");
     if (scenario == "removed_intensity")
         return require(!window->findChild<QObject*>("inlineAppearanceIntensity"), "Removed intensity selector is still present");

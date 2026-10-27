@@ -67,13 +67,22 @@ bool run(const QString& scenario) {
     if (scenario == "branding" || scenario == "branding_narrow") {
         if (window->title() != "Podlord") return false;
         if (scenario.endsWith("_narrow")) window->resize(360, 600);
+        auto* content = item(window->contentItem(), "aboutContent");
         auto* logo = item(window->contentItem(), "aboutLogo");
         auto* tagline = item(window->contentItem(), "aboutTagline");
-        if (!logo || !tagline || !waitFor([&] { return logo->property("status").toInt() == 1; })) return false;
-        for (auto* control : {logo, tagline}) {
+        auto* quote = item(window->contentItem(), "aboutQuote");
+        if (!content || !logo || !tagline || !quote || !waitFor([&] { return logo->property("status").toInt() == 1 && content->width() > 0 && content->width() <= 640 && !quote->property("text").toString().isEmpty(); })) return false;
+        const auto contentBounds = content->mapRectToScene({0, 0, content->width(), content->height()});
+        if (contentBounds.left() < 0 || contentBounds.right() > window->width()) return false;
+        for (auto* control : {logo, tagline, quote}) {
             if (!podlord::test::scrollIntoView(window, control)) return false;
             const auto bounds = control->mapRectToScene({0, 0, control->width(), control->height()});
             if (bounds.left() < 0 || bounds.right() > window->width() || bounds.top() < 0 || bounds.bottom() > window->height()) return false;
+        }
+        if (scenario == "branding") {
+            const auto firstQuote = quote->property("text").toString();
+            if (!click(window, "settingsAppearanceSection") || !click(window, "settingsAboutSection")
+                || !waitFor([&] { return quote->property("text").toString() != firstQuote; })) return false;
         }
         return tagline->property("text").toString() == workspace.uiText()["about.tagline"].toString()
             && click(window, "aboutLiberapay") && browser.urls == QList<QUrl>{QUrl("https://liberapay.com/YunaBraska")}

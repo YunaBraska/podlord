@@ -1,4 +1,5 @@
 #include "resource_client.h"
+#include <QSslKey>
 #include "container_terminal.h"
 #include "resource_metrics.h"
 #include "port_forward_transport.h"
@@ -307,7 +308,7 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
     states_[id].open = true;
     if (views_.size() == 1 && views_.contains({}) && views_.value({}).session.isEmpty()) views_[{}].session = id;
     if (!states_[id].connection.credentialReady)
-        suspend(states_[id].connection.credentialId, "Authentication required. Confirm the credential command before it can run.");
+        suspend(states_[id].connection.credentialId, "Authentication required. Confirm sign-in before a request is sent.");
     expire();
     emit changed(id);
     scheduleSync();
@@ -562,6 +563,23 @@ QJsonObject ResourceClient::document(const QString& id, const QString& path) con
     if (state == states_.cend() || detail(id, path).isEmpty()) return {};
     return state->details.value(path).document;
 }
+std::optional<quint64> ResourceClient::credentialRevision(const QString& id) const {
+    const auto state = states_.constFind(id);
+    const auto now = now_();
+    if (state == states_.cend() || !state->open || state->suspended || !state->connection.credentialReady
+        || (state->connection.expiresAt.isValid() && state->connection.expiresAt <= now)) return {};
+    return state->revision;
+}
+std::optional<quint64> ResourceClient::detailRevision(const QString& id, const QString& path) const {
+    const auto authority = credentialRevision(id);
+    if (!authority) return {};
+    const auto state = states_.constFind(id);
+    const auto entry = state->details.constFind(path);
+    if (entry == state->details.cend() || entry->revision != *authority || entry->document.isEmpty()
+        || detail(id, path).isEmpty()) return {};
+    const auto age = entry->at.msecsTo(now_());
+    return age >= 0 && age <= 300000 ? std::optional<quint64>{entry->revision} : std::nullopt;
+}
 QString ResourceClient::detailStatus(const QString& id, const QString& path) const {
     const auto state = states_.constFind(id);
     if (state == states_.cend() || path.isEmpty()) return "No resource selected";
@@ -794,6 +812,24 @@ bool ResourceClient::authenticate(const ClusterConnection& connection, const QSt
     resetConnections_ = true; expire();
     return refresh(session, true);
 }
+bool ResourceClient::forgetCredentials(const QString& credential) {
+    bool found = false;
+    for (auto& state : states_) if (state.connection.credentialId == credential) {
+        ++state.revision;
+        state.connection.authorization.clear();
+        state.connection.exec.reset();
+        state.connection.tls.setPrivateKey(QSslKey{});
+        state.connection.tls.setLocalCertificateChain({});
+        state.connection.credentialReady = false;
+        state.connection.expiresAt = {};
+        found = true;
+    }
+    if (found) {
+        resetConnections_ = true;
+        suspend(credential, "Imported credentials were revoked. Confirm sign-in with the current credentials.");
+    }
+    return found;
+}
 void ResourceClient::suspend(const QString& credential, const QString& message) {
     for (auto it = states_.begin(); it != states_.end(); ++it)
         if (it->connection.credentialId == credential) { it->suspended = true; it->failures.insert("/authentication", message); emit changed(it.key()); }
@@ -849,7 +885,8 @@ bool ResourceClient::enqueue(Task task) {
         || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id)) || (!task.foreground && state.blocked.contains(task.path))) return false;
     if (running_ && running_->read == task.read && running_->id == task.id && running_->path == task.path && running_->continuation == task.continuation && running_->logKey == task.logKey && running_->forwardToken == task.forwardToken && running_->streamToken == task.streamToken && running_->terminalToken == task.terminalToken)
         return task.read != Read::Apply && task.read != Read::Delete && (!task.change || (running_->change && running_->change->token == task.change->token));
-    for (auto& active : reads_) if (active.read == task.read && active.id == task.id && active.path == task.path && active.continuation == task.continuation) {
+    for (auto& active : reads_) if (active.read == task.read && active.id == task.id && active.path == task.path && active.continuation == task.continuation
+        && (task.read != Read::Detail || active.revision == state.revision)) {
         active.foreground = active.foreground || task.foreground; return true;
     }
     for (auto& waiting : queue_) {
@@ -859,6 +896,7 @@ bool ResourceClient::enqueue(Task task) {
             return true;
         }
     }
+    if (task.change && task.started < 0) task.revision = state.revision;
     ++state.pending;
     if (task.read == Read::Log) ++state.logs[task.logKey].pending;
     else ++state.resourcePending;
@@ -870,6 +908,9 @@ bool ResourceClient::enqueue(Task task) {
 }
 void ResourceClient::dispatch() {
     expire();
+    dropQueued([&](const auto& task) {
+        return task.read == Read::Apply && credentialRevision(task.id) != std::optional<quint64>{task.revision};
+    });
     if (!enabled_ || running_ || reads_.size() >= 4 || queue_.isEmpty()) { if (queue_.isEmpty()) gate_.stop(); return; }
     const qint64 spacing = settings_.requestHardLimitPerMinute > 0 ? std::max<qint64>(400, (60000 + settings_.requestHardLimitPerMinute - 1) / settings_.requestHardLimitPerMinute) : 400;
     const auto wait = std::max(backoffUntil_, lastStart_ < 0 ? qint64{0} : lastStart_ + spacing) - clock_.elapsed();
@@ -880,7 +921,8 @@ void ResourceClient::dispatch() {
     if (!parallelRead(*chosen) && !reads_.isEmpty()) return;
     running_ = *chosen;
     queue_.erase(chosen);
-    running_->revision = states_[running_->id].revision;
+    // Change requests retain the revision of their captured connection, including finite read-back.
+    if (!running_->change) running_->revision = states_[running_->id].revision;
     if (!running_->received) running_->received = clock_.nsecsElapsed();
     running_->started=clock_.elapsed();
     if (resetConnections_ && reads_.isEmpty()) { network_.clearConnectionCache(); resetConnections_ = false; }
@@ -1036,12 +1078,14 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
     expire();
     if (!task.forwardToken.isEmpty() && state.failures.contains(task.path)) failForward(task.forwardToken, state.failures.value(task.path));
     if (!task.terminalToken.isEmpty() && state.failures.contains(task.path) && terminals_.contains(task.terminalToken)) terminals_.value(task.terminalToken).screen->reject(state.failures.value(task.path));
-    if (task.read == Read::Detail) emit detailFinished(task.id, task.path, !state.failures.contains(task.path) && !document(task.id, task.path).isEmpty());
+    if (task.read == Read::Detail) emit detailFinished(task.id, task.path,
+        task.revision == state.revision && !state.failures.contains(task.path) && detailRevision(task.id, task.path).has_value());
     if (task.read == Read::Apply) finishApply(task, http, bytes, transportError);
     if (task.read == Read::Delete) finishDeletion(task, http, bytes, transportError);
     if (task.read == Read::VerifyDelete) finishDeletionRead(task, http, bytes, transportError);
     if (task.read == Read::Verify) {
-        emit detailFinished(task.id, task.path, !state.failures.contains(task.path) && !document(task.id, task.path).isEmpty());
+        emit detailFinished(task.id, task.path,
+            task.revision == state.revision && !state.failures.contains(task.path) && detailRevision(task.id, task.path).has_value());
         finishVerify(task);
     }
     if (task.read == Read::Log && logsShown(task.id, task.logKey)) emit logsChanged(task.id, state.logs[task.logKey].path);
@@ -1105,7 +1149,8 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
             const auto ns = metadata["namespace"].toString();
             const auto suppliedKind = object.value("kind");
             const auto suppliedVersion = object.value("apiVersion");
-            if (!resourceName(name) || (task.namespaced && !segment(ns))
+            if (!resourceName(name) || (task.namespaced && (!segment(ns)
+                || (!state.namespaces.isEmpty() && ns != task.collection.section('/', -2, -2))))
                 || (!suppliedVersion.isUndefined() && (!suppliedVersion.isString() || suppliedVersion.toString() != apiVersion(task.path)))
                 || (!suppliedKind.isUndefined() && (!suppliedKind.isString() || suppliedKind.toString() != task.kind))) {
                 fail(task, "Invalid resource list entry; previous snapshot retained."); return;
@@ -1161,7 +1206,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
         const bool different = previous != row;
         row.insert("fetchedAt", now_().toString(Qt::ISODateWithMs));
         if (entry != state.resources.end() && entry->received > task.received) { fail(task, "A newer resource read is already cached. Refresh the inspector to edit it."); return; }
-        state.details.insert(task.path, {row, now_(), document});
+        state.details.insert(task.path, {row, now_(), document, task.revision});
         state.unresolvedDeletes.remove(task.path);
         if (entry != state.resources.end()) {
             *entry = {row, task.received};

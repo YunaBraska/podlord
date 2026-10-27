@@ -12,6 +12,12 @@ avoids rebuilding it for status/version changes, filters or sorting. Native path
 identity seeds the hash; this preserves deterministic topology, not a promise of
 pixel-identical placement to C#'s differently encoded resource IDs.
 
+All discovered listable kinds participate in the same layout. When native
+discovery includes kinds absent from C#'s fixed catalog, common resource tiles
+may move as the island is redistributed. A frozen reference-only skeleton or
+separate layout for additional kinds would contradict the confirmed product
+behavior; parity comparisons must use the same resource set.
+
 The existing per-session Workspace navigation owns the camera. Replace the old
 one-dimensional GridView offset and discrete tile-size APIs, rather than keeping
 both implementations. Camera state remains in memory as before; no new profile

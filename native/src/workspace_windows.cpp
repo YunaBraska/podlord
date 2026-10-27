@@ -11,6 +11,7 @@ WorkspaceRuntime::WorkspaceRuntime(QString selectedProfile, std::function<QDateT
     : profile(std::move(selectedProfile)), now(std::move(clock)), client(nullptr, now),
       releases(profile, nullptr, now, std::move(releaseEndpoint)) {
     QObject::connect(&client, &ResourceClient::authenticationRejected, &credentials, &CredentialProcess::invalidate);
+    QObject::connect(&credentials, &CredentialProcess::revoked, &client, &ResourceClient::forgetCredentials);
     QObject::connect(&credentials, &CredentialProcess::completed, &client, [this](const QString& credential, const QString& session) {
         const auto result = credentials.result(credential);
         if (const auto* connection = std::get_if<ClusterConnection>(&result)) {

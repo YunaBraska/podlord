@@ -56,6 +56,13 @@ fi
 "$CMAKE" --build "$WORK/build" --target podlord-native --parallel "${PODLORD_BUILD_JOBS:-4}"
 APP="$WORK/build/podlord-native.app"
 "$DEPLOY" "$APP" -qmldir="$ROOT/native/ui" -no-codesign -verbose=2
+for key in CFBundleName CFBundleDisplayName; do
+    actual=$(/usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" 2>/dev/null) || actual=
+    if [ "$actual" != Podlord ]; then
+        printf 'Expected Podlord in %s; got %s.\n' "$key" "${actual:-missing}" >&2
+        exit 1
+    fi
+done
 # Preserve the notices and matching supplier metadata with the deployed binaries.
 NOTICES="$APP/Contents/Resources/licenses"
 mkdir -p "$NOTICES/qt-spdx"
@@ -63,14 +70,14 @@ cp "$ROOT/LICENSE" "$NOTICES/Podlord-LICENSE.txt"
 cp "$ROOT/native/licenses/"*.txt "$NOTICES/"
 for module in qtbase qtdeclarative qtmultimedia qtsvg qtwebsockets; do
     found=false
-    for metadata in "$QT_INSTALL/sbom/$module-"*.spdx.json; do
+    for metadata in "$QT_INSTALL/sbom/$module-"*.spdx.json "$QT_INSTALL/share/qt/sbom/$module-"*.spdx; do
         if [ -f "$metadata" ]; then
             cp "$metadata" "$NOTICES/qt-spdx/"
             found=true
         fi
     done
     if [ "$found" != true ]; then
-        printf 'Required Qt supplier license metadata is missing: %s/sbom/%s\n' "$QT_INSTALL" "$module" >&2
+        printf 'Required Qt supplier license metadata is missing for %s under %s\n' "$module" "$QT_INSTALL" >&2
         exit 1
     fi
 done
@@ -115,7 +122,7 @@ case "$ARCHITECTURES" in
         done < "$WORK/runtime-files"
         ;;
 esac
-find "$APP/Contents/Frameworks" -type f -name '*.dylib' \
+find "$APP" -type f -name '*.dylib' \
     -exec /usr/bin/codesign --force --sign - '{}' +
 find "$APP/Contents/Frameworks" -type d -name '*.framework' -prune -print |
     while IFS= read -r framework; do /usr/bin/codesign --force --sign - "$framework"; done

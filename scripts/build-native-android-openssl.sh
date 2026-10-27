@@ -51,6 +51,8 @@ make -s -j "${PODLORD_BUILD_JOBS:-4}" SHLIB_VERSION_NUMBER= build_libs
 mkdir -p "$output_root/$abi"
 cp libcrypto.so "$output_root/$abi/libcrypto_3.so"
 cp libssl.so "$output_root/$abi/libssl_3.so"
+mkdir -p "$output_root/$abi/include"
+cp -R include/openssl "$output_root/$abi/include/"
 patchelf --set-soname libcrypto_3.so "$output_root/$abi/libcrypto_3.so"
 patchelf --set-soname libssl_3.so "$output_root/$abi/libssl_3.so"
 patchelf --replace-needed libcrypto.so libcrypto_3.so "$output_root/$abi/libssl_3.so"

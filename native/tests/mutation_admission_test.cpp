@@ -29,7 +29,7 @@ struct Kubernetes final {
     QJsonObject document = baseline;
     QPointer<QTcpSocket> held;
     int writes = 0;
-    bool hold = false, rejectAuthentication = false;
+    bool hold = false, rejectAuthentication = false, allowDelete = true;
 
     Kubernetes() {
         require(server.listen(QHostAddress::LocalHost), "Cannot bind local Kubernetes boundary");
@@ -75,7 +75,7 @@ struct Kubernetes final {
                     else if (route == "/apis") reply(socket, 200, {{"groups", QJsonArray{}}});
                     else if (route == "/api/v1") reply(socket, 200, {{"groupVersion", "v1"}, {"resources", QJsonArray{
                         QJsonObject{{"name", "configmaps"}, {"kind", "ConfigMap"}, {"namespaced", true},
-                            {"verbs", QJsonArray{"list", "get", "patch", "delete"}}}}}});
+                            {"verbs", allowDelete ? QJsonArray{"list", "get", "patch", "delete"} : QJsonArray{"list", "get", "patch"}}}}}});
                     else if (route == "/api/v1/configmaps") reply(socket, 200,
                         {{"apiVersion", "v1"}, {"kind", "ConfigMapList"}, {"metadata", QJsonObject{{"resourceVersion", "1"}}}, {"items", QJsonArray{document}}});
                     else if (route == path) reply(socket, 200, document);
@@ -103,21 +103,82 @@ bool run(const QString& scenario) {
     const QStringList cases{"unknown_session", "empty_token", "empty_patch", "short_patch", "wrong_uid",
         "wrong_name", "wrong_kind", "wrong_api_version", "wrong_namespace", "wrong_uid_guard", "wrong_version_guard",
         "reversed_guards", "oversize_patch", "closed", "inactive", "disabled", "authentication",
+        "stale_revision", "expired_detail_authority", "backward_detail_authority", "credential_expired",
         "queued_duplicate", "running_duplicate", "cancel_queued", "cancel_running", "cancel_wrong_token",
         "cancel_empty_queue", "cancel_read_queue", "readback_rejected", "readback_uncertain",
         "readback_unknown_session", "readback_empty_token", "readback_closed", "readback_inactive"};
-    require(cases.contains(scenario), "Unknown mutation admission scenario");
+    const QStringList deleteCases{"delete_unknown_session", "delete_empty_session", "delete_empty_token",
+        "delete_missing_resource", "delete_empty_path", "delete_unsupported", "delete_missing_uid",
+        "delete_wrong_uid", "delete_wrong_kind", "delete_wrong_api_version", "delete_wrong_name",
+        "delete_wrong_namespace", "delete_closed", "delete_inactive", "delete_authentication",
+        "delete_readback_unknown_session", "delete_readback_empty_token", "delete_readback_missing_uid",
+        "delete_readback_closed", "delete_readback_inactive", "delete_cancel_empty_queue"};
+    require(cases.contains(scenario) || deleteCases.contains(scenario), "Unknown mutation admission scenario");
     Kubernetes kubernetes;
-    podlord::ResourceClient client;
-    require(client.open("one", kubernetes.connection(), {}) && client.showSession("one"), "Cannot open real request client");
+    kubernetes.allowDelete = scenario != "delete_unsupported";
+    auto now = QDateTime::currentDateTimeUtc();
+    bool controlledClock = false;
+    podlord::ResourceClient client(nullptr, [&] { return controlledClock ? now : QDateTime::currentDateTimeUtc(); });
+    auto connection = kubernetes.connection();
+    if (scenario == "credential_expired") connection.expiresAt = now.addSecs(600);
+    require(client.open("one", connection, {}) && client.showSession("one"), "Cannot open real request client");
     require(QTest::qWaitFor([&] { return client.initialSyncComplete("one") && client.containsResource("one", path); }, 10000), "Discovery did not publish target");
     require(client.inspect("one", path) && QTest::qWaitFor([&] { return client.document("one", path) == baseline; }, 10000), "Cannot acquire fresh target through real GET");
+    if (deleteCases.contains(scenario)) {
+        auto target = client.resource("one", path);
+        require(target["deletable"].toBool() == kubernetes.allowDelete, "Discovery did not preserve delete support");
+        QString session = "one", targetPath = path, token = "confirmed-delete";
+        if (scenario.endsWith("unknown_session")) session = "missing";
+        else if (scenario.endsWith("empty_session")) session.clear();
+        else if (scenario.endsWith("empty_token")) token.clear();
+        else if (scenario == "delete_missing_resource") targetPath += "-missing";
+        else if (scenario == "delete_empty_path") targetPath.clear();
+        else if (scenario.endsWith("missing_uid")) target.remove("uid");
+        else if (scenario == "delete_wrong_uid") target["uid"] = "replacement-uid";
+        else if (scenario == "delete_wrong_kind") target["kind"] = "Secret";
+        else if (scenario == "delete_wrong_api_version") target["apiVersion"] = "example.invalid/v1";
+        else if (scenario == "delete_wrong_name") target["name"] = "other";
+        else if (scenario == "delete_wrong_namespace") target["namespace"] = "elsewhere";
+        else if (scenario.endsWith("closed")) require(client.close("one"), "Cannot close deletion session");
+        else if (scenario.endsWith("inactive"))
+            require(client.showSession("two") && client.open("two", kubernetes.connection(), {}), "Cannot hide deletion session");
+        else if (scenario == "delete_authentication") {
+            kubernetes.rejectAuthentication = true;
+            require(client.refresh("one") && QTest::qWaitFor([&] { return client.authenticationRequired("one"); }, 10000), "Cannot observe authentication failure");
+        }
+        const bool admitted = scenario == "delete_cancel_empty_queue" ? client.cancelDeletion(token)
+            : scenario.startsWith("delete_readback_") ? client.readBackDeletion(session, targetPath, token, target)
+            : client.deleteResource(session, targetPath, token, target);
+        require(!admitted && kubernetes.writes == 0 && kubernetes.document == baseline,
+            "Invalid deletion was admitted or changed the external resource");
+        return true;
+    }
     auto desired = baseline;
     desired["data"] = QJsonObject{{"setting", "after"}};
     const auto preparation = podlord::prepareYaml(podlord::resourceYaml(desired), baseline, 3 * 1048576);
     require(std::holds_alternative<podlord::PreparedYaml>(preparation), "Cannot prepare real guarded patch");
     auto patch = std::get<podlord::PreparedYaml>(preparation).patch;
     auto original = baseline;
+    const auto revision = client.detailRevision("one", path);
+    require(revision.has_value(), "Fresh detail did not grant current-connection authority");
+    if (scenario == "expired_detail_authority" || scenario == "backward_detail_authority") {
+        const auto cached = client.detail("one", path);
+        require(!cached.isEmpty(), "Fresh detail was not published");
+        now = QDateTime::currentDateTimeUtc().addSecs(scenario == "expired_detail_authority" ? 301 : -1);
+        controlledClock = true;
+        require(!client.detailRevision("one", path).has_value(), "Stale detail granted new edit authority");
+        require(client.credentialRevision("one") == revision, "Detail expiry revoked usable credentials");
+        require(client.detail("one", path) == cached && client.document("one", path) == baseline,
+            "Read-only cached detail disappeared when edit authority expired");
+        require(kubernetes.writes == 0 && kubernetes.document == baseline, "Freshness check changed the external resource");
+        return true;
+    }
+    if (scenario == "credential_expired") {
+        now = now.addSecs(601);
+        controlledClock = true;
+        require(!client.credentialRevision("one").has_value(), "Expired credentials granted mutation authority");
+    }
+    const auto authority = *revision + (scenario == "stale_revision" ? 1 : 0);
     QString session = "one", token = "confirmed-edit";
     QSignalSpy outcomes(&client, &podlord::ResourceClient::yamlApplyFinished);
     require(outcomes.isValid(), "Mutation outcome signal is unavailable");
@@ -159,18 +220,18 @@ bool run(const QString& scenario) {
     } else if (scenario.startsWith("queued_") || scenario.startsWith("running_")
                || scenario == "cancel_queued" || scenario == "cancel_running" || scenario == "cancel_wrong_token") {
         kubernetes.hold = true;
-        require(client.applyYaml(session, path, token, original, desired, patch), "Valid confirmed patch was not admitted");
+        require(client.applyYaml(session, path, token, original, desired, patch, authority), "Valid confirmed patch was not admitted");
         const bool sent = scenario == "running_duplicate" || scenario == "cancel_running";
         if (sent) require(QTest::qWaitFor([&] { return kubernetes.writes == 1; }, 10000), "Confirmed patch was not dispatched");
         if (scenario == "queued_duplicate" || scenario == "running_duplicate")
-            require(!client.applyYaml(session, path, "second-edit", original, desired, patch), "Duplicate target write was admitted");
+            require(!client.applyYaml(session, path, "second-edit", original, desired, patch, authority), "Duplicate target write was admitted");
         else if (scenario == "cancel_wrong_token") require(!client.cancelYamlApply("different-edit"), "Unrelated token cancelled target write");
         else require(client.cancelYamlApply(token) == !sent, "Cancellation did not distinguish queued from dispatched writes");
         if (scenario != "cancel_queued") {
             require(QTest::qWaitFor([&] { return kubernetes.held != nullptr; }, 10000) && kubernetes.release(), "Cannot finish dispatched response");
             require(QTest::qWaitFor([&] { return outcomes.count() == 1; }, 10000) && outcomes.first()[3] == "applied", "Dispatched write/read-back did not finish once");
         }
-    } else require(!client.applyYaml(session, path, token, original, desired, patch), "Invalid or unavailable write was admitted");
+    } else require(!client.applyYaml(session, path, token, original, desired, patch, authority), "Invalid or unavailable write was admitted");
 
     QTest::qWait(1500);
     const bool wrote = QStringList{"queued_duplicate", "running_duplicate", "cancel_running", "cancel_wrong_token"}.contains(scenario);

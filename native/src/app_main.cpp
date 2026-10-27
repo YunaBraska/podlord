@@ -14,6 +14,10 @@ int main(int argc, char** argv) {
 #ifdef Q_OS_ANDROID
     qputenv("ANDROID_OPENSSL_SUFFIX", "_3");
 #endif
+#ifdef Q_OS_MACOS
+    // Bundled QML is AOT-compiled; runtime cache writes delay first launch from a fresh path.
+    if (!qEnvironmentVariableIsSet("QML_DISK_CACHE")) qputenv("QML_DISK_CACHE", "aot");
+#endif
     if (!podlord::configureGraphics()) { std::fputs("Cannot configure native graphics.\n", stderr); return 1; }
     QGuiApplication app(argc, argv);
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE")) QQuickStyle::setStyle("Fusion");

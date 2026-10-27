@@ -12,7 +12,7 @@
 namespace podlord {
 
 enum class StoreError { InvalidInput, NotFound, Busy, ReadFailed, InvalidData,
-                        UnsupportedVersion, WriteFailed, Conflict };
+                        UnsupportedVersion, WriteFailed, Conflict, CleanupFailed };
 struct Failure final {
     StoreError code;
     QString message;

@@ -46,7 +46,7 @@ bool run(const QString& scenario) {
         text = resourceYaml(desired);
         if (scenario == "secret_new_placeholder") { text += "stringData:\n  new: '[hidden]'\n"; rejected = true; }
         if (scenario == "secret_changed") text.replace("\"[hidden]\"", "\"bmV3LXNlY3JldA==\"", Qt::CaseSensitive); // restore annotation separately below
-        if (scenario == "secret_changed") text.replace("\"kubectl.kubernetes.io/last-applied-configuration\": \"bmV3LXNlY3JldA==\"", "\"kubectl.kubernetes.io/last-applied-configuration\": \"[hidden]\"");
+        if (scenario == "secret_changed") text.replace("kubectl.kubernetes.io/last-applied-configuration: \"bmV3LXNlY3JldA==\"", "kubectl.kubernetes.io/last-applied-configuration: \"[hidden]\"");
     } else if (scenario == "no_changes") { desired = original; rejected = true; }
     else if (scenario == "zero_limit") { limit = 0; rejected = true; }
     else if (scenario == "text_limit") { limit = 10; rejected = true; }

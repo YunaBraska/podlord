@@ -442,6 +442,7 @@ QString errorName(StoreError error) {
     case StoreError::UnsupportedVersion: return "UnsupportedVersion";
     case StoreError::WriteFailed: return "WriteFailed";
     case StoreError::Conflict: return "Conflict";
+    case StoreError::CleanupFailed: return "CleanupFailed";
     }
     return "InvalidData";
 }

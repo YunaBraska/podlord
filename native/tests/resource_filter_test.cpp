@@ -8,7 +8,69 @@
 #include <cstdio>
 
 namespace {
+bool tableScenario(const QString& scenario) {
+    using podlord::ResourceTable;
+    if (scenario == "table_empty_bounds") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"});
+        return rows.rowCount() == 0 && rows.columnCount() == 1 && rows.row(0).isEmpty()
+            && !rows.data(rows.index(0, 0)).isValid()
+            && rows.headerData(0, Qt::Horizontal, Qt::DisplayRole) == "Name"
+            && rows.headerData(0, Qt::Horizontal, Qt::UserRole) == "name"
+            && !rows.headerData(0, Qt::Vertical, Qt::DisplayRole).isValid()
+            && !rows.headerData(2, Qt::Horizontal, Qt::DisplayRole).isValid();
+    }
+    if (scenario == "table_cluster_refresh") {
+        ResourceTable rows(nullptr, {"cluster"}, {"Cluster"});
+        const QJsonObject explicitCluster{{"path", "a"}, {"cluster", "fixed"}};
+        const QJsonObject inheritedCluster{{"path", "b"}};
+        rows.publish({explicitCluster, inheritedCluster}, "old");
+        if (rows.data(rows.index(0, 0)) != "fixed" || rows.data(rows.index(1, 0)) != "old") return false;
+        rows.publish({explicitCluster, inheritedCluster}, "new");
+        return rows.rowCount() == 2 && rows.data(rows.index(0, 0), Qt::UserRole + 6) == "fixed"
+            && rows.data(rows.index(1, 0), Qt::UserRole + 6) == "new";
+    }
+    if (scenario == "table_incremental_snapshot") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"});
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "alpha"}}, QJsonObject{{"path", "b"}, {"name", "bravo"}},
+            QJsonObject{{"path", "c"}, {"name", "charlie"}}});
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "updated"}}, QJsonObject{{"path", "c"}, {"name", "charlie"}},
+            QJsonObject{{"path", "d"}, {"name", "delta"}}});
+        return rows.rowCount() == 3 && rows.data(rows.index(0, 0)) == "updated"
+            && rows.data(rows.index(1, 0), Qt::UserRole) == "c"
+            && rows.data(rows.index(2, 0), Qt::UserRole) == "d";
+    }
+    if (scenario == "table_ordered_snapshot") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"}, "path", true);
+        rows.publish({QJsonObject{{"path", "c"}, {"name", "charlie"}}, QJsonObject{{"path", "a"}, {"name", "alpha"}}});
+        if (rows.data(rows.index(0, 0), Qt::UserRole) != "c") return false;
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "alpha"}}, QJsonObject{{"path", "c"}, {"name", "charlie"}}});
+        return rows.rowCount() == 2 && rows.data(rows.index(0, 0), Qt::UserRole) == "a";
+    }
+    if (scenario == "table_metric_and_age") {
+        ResourceTable rows(nullptr, {"cpu", "memory", "storage", "createdAt", "ready", "owner"},
+            {"CPU", "Memory", "Storage", "Age", "Ready", "Owner"});
+        rows.publish({QJsonObject{{"path", "a"}, {"cpu", 0.25}, {"memory", 1024},
+            {"metricComplete", QJsonObject{{"cpu", false}, {"memory", true}}}, {"metricStale", true},
+            {"createdAt", QDateTime::currentDateTimeUtc().addDays(1).toString(Qt::ISODateWithMs)},
+            {"ready", "1/2"}, {"readyCount", 1}, {"containerCount", 2}}});
+        return rows.data(rows.index(0, 0)).toString().contains("incomplete")
+            && rows.data(rows.index(0, 0)).toString().contains("stale")
+            && !rows.data(rows.index(0, 1)).toString().contains("incomplete")
+            && rows.data(rows.index(0, 2)) == "-" && rows.data(rows.index(0, 3)) == "-"
+            && !rows.data(rows.index(0, 3), Qt::UserRole + 6).isValid()
+            && rows.data(rows.index(0, 4), Qt::UserRole + 6).toDouble() == 0.5
+            && rows.data(rows.index(0, 5)) == "-";
+    }
+    if (scenario == "table_safe_tooltip") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"});
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "<b>one\nnext</b>"}}});
+        return rows.data(rows.index(0, 0)) == "<b>one\nnext</b>"
+            && rows.data(rows.index(0, 0), Qt::ToolTipRole) == "<span>&lt;b&gt;one<br>next&lt;/b&gt;</span>";
+    }
+    return false;
+}
 bool run(const QString& scenario) {
+    if (scenario.startsWith("table_")) return tableScenario(scenario);
     if (scenario == "benchmark" || scenario == "metadata_benchmark") {
         podlord::ResourceTable rows;
         QJsonArray snapshot;

@@ -299,13 +299,25 @@ bool scenario(const QString& name) {
             auto expected = layout;
             for (int width = 300; width < 330; ++width) {
                 auto value = expected; value[0].width = width;
-                if (!std::holds_alternative<TableLayouts>(store.save("resource", input(value), expected))) return false;
+                const auto saved = store.save("resource", input(value), expected);
+                if (const auto* error = std::get_if<Failure>(&saved)) {
+                    std::fprintf(stderr, "Concurrent layout save failed: %s: %s\n", qPrintable(errorName(error->code)), qPrintable(error->message));
+                    return false;
+                }
                 expected = value;
             }
             return true;
         });
         bool valid = true;
-        do { valid = valid && std::holds_alternative<TableLayouts>(store.load()); }
+        do {
+            if (valid) {
+                const auto loaded = store.load();
+                if (const auto* error = std::get_if<Failure>(&loaded)) {
+                    std::fprintf(stderr, "Concurrent layout read failed: %s: %s\n", qPrintable(errorName(error->code)), qPrintable(error->message));
+                    valid = false;
+                }
+            }
+        }
         while (writer.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready);
         return writer.get() && valid;
     }

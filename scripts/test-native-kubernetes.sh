@@ -31,6 +31,7 @@ fi
 [ -x "$BUILD/workspace_ui_test" ] || { printf 'Build the native UI tests first.\n' >&2; exit 1; }
 [ -x "$BUILD/authentication_ui_test" ] || { printf 'Build the native authentication UI tests first.\n' >&2; exit 1; }
 [ -x "$BUILD/pod_logs_ui_test" ] || { printf 'Build the native Pod log UI tests first.\n' >&2; exit 1; }
+[ -x "$BUILD/container-terminal-ui-test" ] || { printf 'Build the native terminal UI tests first.\n' >&2; exit 1; }
 [ -x "$BUILD/yaml-draft-check-test" ] || { printf 'Build the native YAML draft UI tests first.\n' >&2; exit 1; }
 [ -x "$BUILD/resource-delete-ui-test" ] || { printf 'Build the native deletion UI tests first.\n' >&2; exit 1; }
 mkdir -p "$BUILD/e2e"
@@ -153,6 +154,33 @@ kubectl --kubeconfig "$RUN/kubeconfig" get secret podlord-native-secret-e2e -o=j
 cmp -s "$RUN/secret-data-before-apply.json" "$RUN/secret-data-after-apply.json" || { printf 'Native unrelated Secret edit changed original data bytes.\n' >&2; exit 1; }
 printf 'Native Qt Quick / confirmed real JSON Patch + concurrent-change reconciliation + entered Secret write/read-back/remasking + original Secret bytes passed.\n'
 kubectl --kubeconfig "$RUN/kubeconfig" create namespace visual-a
+kubectl --kubeconfig "$RUN/kubeconfig" apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: visual-multi-container
+  namespace: visual-a
+spec:
+  automountServiceAccountToken: false
+  containers:
+  - name: alpha
+    image: rancher/k3s:v1.35.5-k3s1
+    imagePullPolicy: Never
+    command: ["/bin/sh", "-c", "sleep 3600"]
+  - name: beta
+    image: rancher/k3s:v1.35.5-k3s1
+    imagePullPolicy: Never
+    command: ["/bin/sh", "-c", "sleep 3600"]
+EOF
+kubectl --kubeconfig "$RUN/kubeconfig" wait --for=condition=Ready pod/visual-multi-container -n visual-a --timeout=90s
+for style in Basic Fusion; do
+    for scenario in real_vi real_control_vi real_touch_interrupt real_interrupt; do
+        QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE="$style" \
+            PODLORD_TERMINAL_FRAME="$BUILD/e2e/native-terminal-$scenario-$style.png" \
+            "$BUILD/container-terminal-ui-test" "$scenario" "$RUN/kubeconfig"
+    done
+done
+printf 'Native Qt Quick / real Kubernetes PTY, vi, ANSI, resize and interrupts passed in Basic and Fusion.\n'
 for style in Basic Fusion; do
     for scenario in real real_race; do
         case "$scenario" in

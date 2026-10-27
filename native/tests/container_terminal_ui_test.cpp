@@ -3,6 +3,8 @@
 #include <QFile>
 #include <QClipboard>
 #include <QJsonDocument>
+#include <QInputMethodEvent>
+#include <QInputMethod>
 #include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -10,6 +12,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrlQuery>
+#include <QWheelEvent>
 #include <QWebSocketServer>
 #include <QtTest/QTest>
 #include <cstdio>
@@ -29,7 +32,7 @@ bool run(const QString& scenario, const QString& configPath) {
     QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", name}, {"namespace", ns}, {"uid", "original-pod"}, {"resourceVersion", "1"}}},
         {"status", QJsonObject{{"phase", scenario == "completed" ? "Succeeded" : "Running"}}},
         {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}, {"image", "external-kubernetes-boundary"}}, QJsonObject{{"name", "beta"}, {"image", "external-kubernetes-boundary"}}}}}}};
-    QPointer<QWebSocket> peer; QUrl upgradeUrl; QByteArray input; QList<QJsonObject> sizes;
+    QPointer<QWebSocket> peer; QPointer<QTcpSocket> heldTarget; QUrl upgradeUrl; QByteArray input; QList<QJsonObject> sizes;
     int upgrades = 0, freshReads = 0, inputFrames = 0; bool armed = false, authorized = true;
     QObject::connect(&api, &QTcpServer::newConnection, &api, [&] {
         while (auto* socket = api.nextPendingConnection()) {
@@ -54,6 +57,7 @@ bool run(const QString& scenario, const QString& configPath) {
                     body = pod;
                     if (armed) {
                         ++freshReads;
+                        if (scenario == "close_pending_target") { heldTarget = socket; return; }
                         if (scenario == "recreated") { auto metadata = body["metadata"].toObject(); metadata["uid"] = "replacement"; body["metadata"] = metadata; }
                         if (scenario == "container_removed") body["spec"] = QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "beta"}}}}};
                         if (scenario == "target_auth") status = 401;
@@ -107,6 +111,20 @@ bool run(const QString& scenario, const QString& configPath) {
         REQUIRE(!workspace.startContainerTerminal(scenario == "invalid_container" ? "missing" : "alpha", scenario == "empty_shell" ? "" : scenario == "relative_shell" ? "sh" : scenario == "invalid_shell" ? "/bin/sh;id" : "/bin/sh")); REQUIRE(upgrades == 0); return true;
     }
     armed = true; REQUIRE(click("terminalConnect"));
+    if (scenario == "close_pending_target") {
+        REQUIRE(waitFor([&] { return freshReads == 1 && heldTarget; }));
+        REQUIRE(click(qPrintable("closeSession_" + workspace.currentSession())));
+        REQUIRE(waitFor([&] { return workspace.currentSession().isEmpty(); }));
+        REQUIRE(heldTarget && heldTarget->state() == QAbstractSocket::ConnectedState);
+        const auto payload = QJsonDocument(pod).toJson(QJsonDocument::Compact);
+        const auto response = QByteArray("HTTP/1.1 200 Result\r\nContent-Type: application/json\r\nContent-Length: ")
+            + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload;
+        REQUIRE(heldTarget->write(response) == response.size()); heldTarget->disconnectFromHost();
+        REQUIRE(waitFor([&] { return !workspace.busy(); }));
+        QTest::qWait(1300);
+        REQUIRE(upgrades == 0 && !workspace.containerTerminal() && workspace.currentSession().isEmpty());
+        return true;
+    }
     REQUIRE(waitFor([&] { return workspace.containerTerminal() && (workspace.containerTerminal()->connected() || !workspace.containerTerminal()->active()); }, real ? 60000 : 15000));
     auto* terminal = workspace.containerTerminal(); REQUIRE(terminal);
     if (scenario == "recreated" || scenario == "container_removed" || scenario.startsWith("target_") || scenario.startsWith("upgrade_") || scenario == "protocol") {
@@ -215,6 +233,50 @@ bool run(const QString& scenario, const QString& configPath) {
         REQUIRE(input == expected && inputFrames == 1 && upgrades == 1 && freshReads == 1 && terminal->connected());
     }
     else if (scenario == "input") { type("echo native"); REQUIRE(waitFor([&] { return input == "echo native\r"; })); }
+    else if (scenario.startsWith("ime_")) {
+        if (scenario == "ime_query") {
+            REQUIRE(QInputMethod::queryFocusObject(Qt::ImEnabled, {}).toBool());
+            REQUIRE(QInputMethod::queryFocusObject(Qt::ImCursorRectangle, {}).toRectF().isValid());
+            REQUIRE(QInputMethod::queryFocusObject(Qt::ImHints, {}).toInt() & Qt::ImhNoPredictiveText);
+        } else {
+            REQUIRE(scenario == "ime_commit" || scenario == "ime_empty");
+            QInputMethodEvent event;
+            if (scenario == "ime_commit") event.setCommitString(QString::fromUtf8("日本"));
+            QCoreApplication::sendEvent(surface, &event);
+            if (scenario == "ime_commit") REQUIRE(waitFor([&] { return input == QString::fromUtf8("日本").toUtf8(); }));
+            else { QTest::qWait(30); REQUIRE(input.isEmpty()); }
+        }
+        REQUIRE(terminal->connected() && freshReads == 1 && upgrades == 1);
+    }
+    else if (scenario.startsWith("wheel_")) {
+        QByteArray lines;
+        for (int index = 0; index < 200; ++index) lines += "line-" + QByteArray::number(index) + "\r\n";
+        output(lines);
+        REQUIRE(waitFor([&] { return terminal->historyLines() > 0 && surface->visibleText().contains("line-199"); }));
+        const bool tracking = scenario == "wheel_shift_tracking" || scenario == "wheel_tracking_up" || scenario == "wheel_tracking_down";
+        if (tracking) { output("\033[?1000h\033[?1006h"); REQUIRE(waitFor([&] { return terminal->mouseTracking(); })); }
+        const auto scroll = [&](QPoint pixels, QPoint angle, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+            QWheelEvent event({surface->width() / 2, surface->height() / 2}, {}, pixels, angle,
+                Qt::NoButton, modifiers, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(surface, &event);
+        };
+        if (scenario == "wheel_tracking_up" || scenario == "wheel_tracking_down") {
+            scroll({}, {0, scenario == "wheel_tracking_up" ? 120 : -120});
+            REQUIRE(waitFor([&] { return input.contains(scenario == "wheel_tracking_up" ? "\033[<64;" : "\033[<65;"); }));
+            REQUIRE(surface->visibleText().contains("line-199") && inputFrames > 0);
+        } else {
+            REQUIRE(scenario == "wheel_history" || scenario == "wheel_pixel" || scenario == "wheel_shift_tracking" || scenario == "wheel_follow");
+            scroll(scenario == "wheel_pixel" ? QPoint(0, 12) : QPoint{}, scenario == "wheel_pixel" ? QPoint{} : QPoint(0, 120),
+                scenario == "wheel_shift_tracking" ? Qt::ShiftModifier : Qt::NoModifier);
+            REQUIRE(waitFor([&] { return !surface->visibleText().contains("line-199"); }));
+            if (scenario == "wheel_follow") {
+                scroll({}, {0, -1200});
+                REQUIRE(waitFor([&] { return surface->visibleText().contains("line-199"); }));
+            }
+            REQUIRE(input.isEmpty() && inputFrames == 0);
+        }
+        REQUIRE(terminal->connected() && freshReads == 1 && upgrades == 1);
+    }
     else if (scenario == "shortcut_input") {
 #ifdef Q_OS_MACOS
         QTest::keyClick(window, Qt::Key_K, Qt::MetaModifier);
@@ -289,6 +351,11 @@ bool run(const QString& scenario, const QString& configPath) {
         QTest::mouseRelease(window, Qt::LeftButton, modifier, last);
         REQUIRE(click("terminalCopy"));
         REQUIRE(QGuiApplication::clipboard()->text() == "ABCDE" && input.isEmpty() && inputFrames == 0 && terminal->connected());
+        if (scenario == "copy_tracking_selection") {
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, first);
+            REQUIRE(waitFor([&] { return input.contains("\033[<0;1;1M") && input.contains("\033[<0;1;1m"); }));
+            REQUIRE(QGuiApplication::clipboard()->text() == "ABCDE" && terminal->connected() && upgrades == 1);
+        }
     }
     else if (scenario == "clipboard_isolation") { QGuiApplication::clipboard()->setText("local value"); output("\033]52;c;cmVtb3Rl\007"); QTest::qWait(50); REQUIRE(QGuiApplication::clipboard()->text() == "local value"); }
     else if (scenario == "gui_modifier") {

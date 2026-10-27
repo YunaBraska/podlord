@@ -15,11 +15,11 @@ const root = path.resolve(__dirname, '..');
 const build = process.env.PODLORD_NATIVE_BUILD_DIR;
 if (!build) throw new Error('PODLORD_NATIVE_BUILD_DIR must identify the real native test build.');
 
-async function exercise(scenario) {
+async function exercise(scenario, mode = 'native-e2e') {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-cleanup-'));
     const socket = path.join(directory, 'docker.sock');
     const trace = [];
-    let name = '', exists = false, owned = false, boundaryFailure;
+    let name = '', exists = false, owned = false, boundaryFailure, applicationLog = '';
     const server = http.createServer(async (request, response) => {
         try {
         const url = new URL(request.url, 'http://localhost');
@@ -44,17 +44,22 @@ async function exercise(scenario) {
             json(201, { Id: 'a'.repeat(64), Warnings: [] }); return;
         }
         if (route === '/images/get') {
-            if (scenario === 'coverage') {
+            if (scenario === 'coverage' || scenario === 'application_log') {
                 const entries = await fs.readdir(path.join(build, 'e2e'));
                 const run = entries.find(entry => 'podlord-' + entry.toLowerCase().replaceAll('.', '-') === name);
                 assert.ok(run, 'The real runner must have created its private run directory.');
                 const file = path.join(build, 'e2e', run, 'help.profraw');
                 const native = process.env.PODLORD_NATIVE_APP || path.join(build, 'podlord-native.app/Contents/MacOS/podlord-native');
                 await new Promise((resolve, reject) => {
-                    const child = spawn(native, ['--help'], { env: { ...process.env, QT_QPA_PLATFORM: 'offscreen', LLVM_PROFILE_FILE: file }, stdio: 'ignore' });
+                    const child = spawn(native, ['--help'], { env: { ...process.env, QT_QPA_PLATFORM: 'offscreen', LLVM_PROFILE_FILE: file }, stdio: ['ignore', 'pipe', 'ignore'] });
+                    child.stdout.on('data', bytes => { applicationLog += bytes; });
                     child.once('error', reject); child.once('close', code => code === 0 ? resolve() : reject(new Error('Real application help failed.')));
                 });
                 assert.ok((await fs.stat(file)).size > 0, 'Real application execution must produce coverage evidence.');
+                if (scenario === 'application_log') {
+                    assert.ok(applicationLog.length > 0, 'Real application help must produce its own log content.');
+                    await fs.writeFile(path.join(build, 'e2e', run, 'native.log'), applicationLog);
+                }
             }
             json(500, { message: 'Explicit test failure after successful creation.' }); return;
         }
@@ -83,8 +88,8 @@ async function exercise(scenario) {
     try {
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
         const result = await new Promise((resolve, reject) => {
-            const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), 'native-e2e'], {
-                cwd: root, env: { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${socket}`, PODLORD_NATIVE_BUILD_DIR: build, PODLORD_VISUAL_EVIDENCE_DIR: path.join(directory, 'evidence') },
+            const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), mode], {
+                cwd: root, env: { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${socket}`, PODLORD_NATIVE_BUILD_DIR: build, PODLORD_VISUAL_EVIDENCE_DIR: path.join(directory, 'evidence'), ...(mode === 'mobile' ? { PODLORD_NATIVE_APP: '/missing/native-app', PODLORD_LEGACY_APP: '/missing/reference-app' } : {}) },
                 stdio: ['ignore', 'pipe', 'pipe']
             });
             let output = '';
@@ -112,6 +117,10 @@ async function exercise(scenario) {
             const retained = path.join(directory, 'evidence', name + '-profiles', 'help.profraw');
             assert.ok((await fs.stat(retained)).size > 0, 'Cleanup must retain real execution evidence, not its credentials or profile.');
         }
+        if (scenario === 'application_log') {
+            const retained = path.join(directory, 'evidence', name + '-native.log');
+            assert.equal(await fs.readFile(retained, 'utf8'), applicationLog, 'Cleanup must retain the real application log before removing its private run.');
+        }
     } finally {
         server.closeAllConnections();
         await new Promise(resolve => server.close(resolve));
@@ -119,15 +128,33 @@ async function exercise(scenario) {
     }
 }
 
-for (const scenario of ['preexisting', 'collision', 'lost_reply', 'after_create', 'inspect_error', 'remove_failure', 'coverage']) {
+for (const scenario of ['preexisting', 'collision', 'lost_reply', 'after_create', 'inspect_error', 'remove_failure', 'coverage', 'application_log']) {
     test(`visual runner cleanup: ${scenario}`, { timeout: 20000 }, () => exercise(scenario));
 }
+
+test('mobile review setup and owned cleanup need no desktop applications', { timeout: 20000 }, () => exercise('after_create', 'mobile'));
+
+test('iOS theme review rejects a missing simulator app before Docker access', { timeout: 5000, skip: process.platform !== 'darwin' }, async () => {
+    const result = await new Promise((resolve, reject) => {
+        const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), 'ios-themes'], {
+            env: { ...process.env, PODLORD_NATIVE_BUILD_DIR: build, PODLORD_IOS_BUILD_DIR: '/missing/podlord-ios-build',
+                DOCKER_CONTEXT: '', DOCKER_HOST: 'tcp://127.0.0.1:1' }, stdio: ['ignore', 'pipe', 'pipe']
+        });
+        let output = '';
+        child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { output += bytes; });
+        child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal, output }));
+    });
+    assert.equal(result.code, 1); assert.equal(result.signal, null);
+    assert.match(result.output, /Required iOS simulator UI test application is missing/);
+    assert.doesNotMatch(result.output, /Only a local Docker daemon/);
+});
 
 for (const missing of ['metric-filter-ui-test', 'workspace_ui_test']) {
 test(`visual runner rejects missing ${missing} before Docker access`, { timeout: 5000 }, async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-incomplete-build-'));
     try {
         await fs.symlink(path.join(build, 'CMakeCache.txt'), path.join(directory, 'CMakeCache.txt'));
+        await fs.symlink(path.join(build, 'window-host-test'), path.join(directory, 'window-host-test'));
         await fs.symlink(path.join(build, 'alert_ui_test'), path.join(directory, 'alert_ui_test'));
         await fs.symlink(path.join(build, 'container-terminal-ui-test'), path.join(directory, 'container-terminal-ui-test'));
         if (missing === 'workspace_ui_test') await fs.symlink(path.join(build, 'metric-filter-ui-test'), path.join(directory, 'metric-filter-ui-test'));

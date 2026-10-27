@@ -10,9 +10,10 @@ namespace {
 class YamlHighlighter final : public QSyntaxHighlighter {
 public:
     explicit YamlHighlighter(QObject* parent) : QSyntaxHighlighter(parent) {}
+    bool light = false;
 protected:
     void highlightBlock(const QString& text) override {
-        const auto scalar = QColor("#d6c39a");
+        const auto scalar = QColor(light ? "#4c3619" : "#d6c39a");
         const int length = static_cast<int>(text.size());
         int first = 0;
         while (first < text.size() && text[first].isSpace()) ++first;
@@ -33,15 +34,15 @@ protected:
             if (character == '#' && (index == 0 || text[index-1].isSpace())) { end = index; break; }
             if (colon < 0 && character == ':' && (index+1 == text.size() || text[index+1].isSpace())) colon = index;
         }
-        if (end < length) setFormat(end, length-end, QColor("#6f7f8f"));
+        if (end < length) setFormat(end, length-end, QColor(light ? "#35414c" : "#6f7f8f"));
         if (first >= end) return;
         if (text[first] == '-' && (first+1 == end || text[first+1].isSpace())) {
-            setFormat(first, 1, QColor("#d9a13b")); ++first;
+            setFormat(first, 1, QColor(light ? "#5c3b07" : "#d9a13b")); ++first;
             while (first < end && text[first].isSpace()) ++first;
         }
         QString key;
         if (colon > first && colon < end) {
-            setFormat(first, colon-first, QColor("#6ec6ff"));
+            setFormat(first, colon-first, QColor(light ? "#063d60" : "#6ec6ff"));
             key = text.mid(first, colon-first).trimmed();
             if (key.size() >= 2 && (key.front() == '"' || key.front() == '\'') && key.back() == key.front()) key = key.mid(1,key.size()-2);
             first = colon+1;
@@ -61,7 +62,7 @@ protected:
             || value.compare("null",Qt::CaseInsensitive)==0 || value == "~";
         const bool reference = key.compare("name",Qt::CaseInsensitive)==0 || key.compare("kind",Qt::CaseInsensitive)==0 || key.compare("namespace",Qt::CaseInsensitive)==0;
         QTextCharFormat format;
-        format.setForeground(keyword ? QColor("#f0c44f") : number ? QColor("#7ddc8d") : reference ? QColor("#7ad8ff") : scalar);
+        format.setForeground(keyword ? QColor(light ? "#5c4004" : "#f0c44f") : number ? QColor(light ? "#124b27" : "#7ddc8d") : reference ? QColor(light ? "#06404d" : "#7ad8ff") : scalar);
         format.setFontUnderline(reference);
         setFormat(first,end-first,format);
     }
@@ -96,6 +97,12 @@ void YamlPresentation::setFont(const QFont& font) {
 void YamlPresentation::setColor(const QColor& color) {
     if (color_ == color) return;
     color_ = color; emit colorChanged(); update();
+}
+bool YamlPresentation::light() const { return static_cast<const YamlHighlighter*>(highlighter_)->light; }
+void YamlPresentation::setLight(bool light) {
+    auto* highlighter = static_cast<YamlHighlighter*>(highlighter_);
+    if (highlighter->light == light) return;
+    highlighter->light = light; emit lightChanged(); highlighter->rehighlight();
 }
 void YamlPresentation::setScrollOffset(qreal offset) {
     if (offset_ == offset) return;

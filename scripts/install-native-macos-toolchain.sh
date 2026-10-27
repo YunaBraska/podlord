@@ -34,7 +34,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 python3 -m venv "$TARGET/installer"
 "$TARGET/installer/bin/pip" install --disable-pip-version-check aqtinstall==3.3.0
-"$TARGET/installer/bin/aqt" install-qt mac desktop "$QT_VERSION" clang_64 -m qtmultimedia qtwebsockets -O "$TARGET/qt"
+"$TARGET/installer/bin/aqt" install-qt mac desktop "$QT_VERSION" clang_64 -m qtmultimedia qtwebsockets qtshadertools -O "$TARGET/qt"
 ln -s "qt/$QT_VERSION/macos" "$TARGET/qt-sdk"
 curl --fail --location --silent --show-error "https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-$YAML_VERSION.tar.gz" -o "$TARGET/yaml-cpp-source.tar.gz"
 printf '%s  %s\n' "$YAML_SHA" "$TARGET/yaml-cpp-source.tar.gz" | shasum -a 256 -c -
@@ -58,7 +58,7 @@ tar -xzf "$TARGET/openssl-source.tar.gz" --strip-components=1 -C "$TARGET/openss
     make install_sw
 )
 {
-    printf 'Qt: %s (official macOS desktop archives, qtmultimedia and qtwebsockets)\n' "$QT_VERSION"
+    printf 'Qt: %s (official macOS desktop archives, qtmultimedia, qtwebsockets and qtshadertools)\n' "$QT_VERSION"
     printf 'Installer: aqtinstall 3.3.0\nyaml-cpp: %s\nyaml-cpp source SHA256: %s\n' "$YAML_VERSION" "$YAML_SHA"
     printf 'OpenSSL: %s LTS\nOpenSSL source SHA256: %s\n' "$SSL_VERSION" "$SSL_SHA"
     printf 'Build architecture: %s\nCandidate deployment floor: macOS 13.0\n' "$(uname -m)"

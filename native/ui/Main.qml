@@ -20,12 +20,14 @@ ApplicationWindow {
     readonly property bool compactLandscape: width >= 600 && height < 600 && width > height
     readonly property bool touchLayout: !wideLayout || compactLandscape
     readonly property bool sidebarDocked: wideLayout || compactLandscape
+    readonly property bool compactInspector: (compactLandscape || width < 600) && workspace.inspectorPath !== ""
     visible: true
     property bool sourcesExpanded: false
-    readonly property var quickOpenEntries: [{name: "Saved sessions", header: true}]
+    property string ociImportConfigPath: ""
+    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: "Saved sessions", header: true}]
         .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
             [{name: "Imported contexts", header: true}],
-            workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true})))
+            workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
     FieldFiltersDialog { id: fieldFiltersDialog; controller: workspace }
     Action { id: resourcesCommand; text: "Open Resources"; onTriggered: workspace.setWorkspacePage("resources") }
     Action { id: eventsCommand; text: "Open Events"; onTriggered: workspace.setWorkspacePage("events") }
@@ -190,6 +192,63 @@ ApplicationWindow {
         id: chooser
         title: "Import kubeconfig"
         onAccepted: { sourcePath.text = selectedFile.toString(); workspace.importFile(sourcePath.text) }
+    }
+    Dialog {
+        id: ociImportDialog
+        objectName: "ociImportDialog"
+        title: "Import OCI API key"
+        width: Math.min(480, window.width - 24)
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Cancel
+        contentItem: ColumnLayout {
+            Label { Layout.fillWidth: true; text: "Choose an OKE context, then its OCI config and unencrypted RSA PEM key. The config's key_file path is not used."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            ComboBox { id: ociImportContext; objectName: "ociImportContext"; Layout.fillWidth: true; model: workspace.contexts; textRole: "name"; valueRole: "id"; Accessible.name: "OKE context for API key" }
+            Button { objectName: "chooseOciConfig"; text: "Choose OCI config and key"; enabled: ociImportContext.currentIndex >= 0 && !workspace.busy; onClicked: ociConfigChooser.open() }
+            Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: ociImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+        }
+        onClosed: window.ociImportConfigPath = ""
+        Connections { target: workspace; function onSourceImportFinished(success) { if (success && ociImportDialog.visible) ociImportDialog.close() } }
+    }
+    FileDialog {
+        id: ociConfigChooser
+        title: "Select OCI config"
+        onAccepted: { window.ociImportConfigPath = selectedFile.toString(); ociKeyChooser.open() }
+        onRejected: window.ociImportConfigPath = ""
+    }
+    FileDialog {
+        id: ociKeyChooser
+        title: "Select OCI RSA private key (PEM)"
+        onAccepted: {
+            workspace.importOciCredentials(ociImportContext.currentValue, window.ociImportConfigPath, selectedFile.toString())
+            window.ociImportConfigPath = ""
+        }
+        onRejected: window.ociImportConfigPath = ""
+    }
+    Dialog {
+        id: gkeImportDialog
+        objectName: "gkeImportDialog"
+        property bool importing: false
+        title: "Import GKE service-account key"
+        width: Math.min(480, window.width - 24)
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Cancel
+        contentItem: ColumnLayout {
+            Label { Layout.fillWidth: true; text: "Choose a GKE context and a Google service-account JSON key. A validated copy is kept in private app storage; the original file remains where you selected it."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            ComboBox { id: gkeImportContext; objectName: "gkeImportContext"; Layout.fillWidth: true; model: workspace.contexts; textRole: "name"; valueRole: "id"; Accessible.name: "GKE context for service-account key" }
+            Button { objectName: "chooseGkeKey"; text: workspace.busy ? "Importing..." : "Choose service-account JSON key"; enabled: gkeImportContext.currentIndex >= 0 && !workspace.busy; onClicked: gkeKeyChooser.open() }
+            Label { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+        }
+        onClosed: importing = false
+        Connections { target: workspace; function onSourceImportFinished(success) { if (gkeImportDialog.importing) { gkeImportDialog.importing = false; if (success) gkeImportDialog.close() } } }
+    }
+    FileDialog {
+        id: gkeKeyChooser
+        title: "Select Google service-account JSON key"
+        onAccepted: gkeImportDialog.importing = workspace.importGkeServiceAccount(gkeImportContext.currentValue, selectedFile.toString())
     }
     FileDialog {
         id: quickChooser
@@ -362,11 +421,9 @@ ApplicationWindow {
         }
     }
     component NavButton: IconButton {
-        showText: window.width >= 600 && !window.compactLandscape
-        font.bold: true
-        font.pixelSize: 13
         checkable: true
-        leftPadding: showText ? 10 : 6; rightPadding: leftPadding
+        showText: !window.touchLayout
+        font.bold: true
     }
     function toggleSidebar() {
         if (sidebarDocked) sidebarOpen = !sidebarOpen
@@ -376,8 +433,8 @@ ApplicationWindow {
     header: ToolBar {
         objectName: "workspaceToolbar"
         padding: 0
-        leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-        implicitHeight: headerLayout.implicitHeight + 12
+        leftPadding: 0; rightPadding: 0; topPadding: SafeArea.margins.top; bottomPadding: 0
+        implicitHeight: headerLayout.implicitHeight + 12 + topPadding
         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
         GridLayout {
             id: headerLayout
@@ -429,22 +486,28 @@ ApplicationWindow {
     }
     Menu {
         id: workspaceActions
-        MenuItem { objectName: "commandPaletteButton"; text: "Commands"; Accessible.name: "Open command palette"; onTriggered: commands.open() }
+        readonly property bool compactMenu: window.touchLayout || Qt.platform.os === "android" || Qt.platform.os === "ios"
+        width: compactMenu ? Math.min(240, window.width - 24) : implicitWidth
+        height: compactMenu ? Math.min(implicitHeight, window.height - 48) : implicitHeight
+        Binding { target: workspaceActions; property: "popupType"; value: Popup.Item; when: workspaceActions.compactMenu }
+        MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; Accessible.name: "Open command palette"; onTriggered: commands.open() }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
             text: workspace.uiText["nav.search"]
+            implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0
             visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
             Accessible.name: "Find within the current cached table"
-            onTriggered: (workspace.workspacePage === "events" ? eventGrid : resourceGrid).openFind()
+            onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openFind()
         }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventColumnsButton" : "resourceColumnsButton"
             text: "Columns"
+            implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0
             visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
             Accessible.name: "Columns for the current table"
-            onTriggered: (workspace.workspacePage === "events" ? eventGrid : resourceGrid).openColumns()
+            onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openColumns()
         }
-        MenuItem { objectName: "refreshButton"; text: "Refresh"; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
+        MenuItem { objectName: "refreshButton"; text: "Refresh"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
     }
     Menu {
         id: quickOpenMenu
@@ -531,11 +594,11 @@ ApplicationWindow {
             id: sourcePanel
             objectName: "sourceManagementPanel"
             Layout.fillWidth: true
-            visible: !settingsLoader.visible && (window.sourcesExpanded || workspace.currentSession === "")
+            visible: !settingsLoader.visible && (window.sourcesExpanded || (workspace.currentSession === "" && (!window.compactLandscape || workspace.sessions.length === 0)))
             contentItem: ColumnLayout {
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: width < 600 ? 4 : 5
+                    columns: window.width < 480 ? 4 : 5
                     columnSpacing: 6
                     rowSpacing: 6
                     TextField {
@@ -556,7 +619,7 @@ ApplicationWindow {
                 }
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: width < 600 ? 2 : 3
+                    columns: window.width < 480 ? 2 : 3
                     columnSpacing: 6
                     rowSpacing: 6
                     ComboBox {
@@ -573,9 +636,11 @@ ApplicationWindow {
                         Accessible.name: "Imported context"
                     }
                     Button { objectName: "openContext"; text: "Open context"; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { if (workspace.openContext(contexts.currentValue)) window.sourcesExpanded = false } }
+                    Button { objectName: "importOciKey"; text: "OCI key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { ociImportContext.currentIndex = contexts.currentIndex; ociImportDialog.open() } }
+                    Button { objectName: "importGkeKey"; text: "GKE key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; visible: Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { gkeImportContext.currentIndex = contexts.currentIndex; gkeImportDialog.open() } }
                     RowLayout {
                         Layout.fillWidth: parent.columns === 2
-                        Button { objectName: "reloadSources"; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.reload() }
+                        Button { objectName: "reloadSources"; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.refreshSources() }
                         IconButton { objectName: "closeSourceControls"; glyph: "Close"; text: "Close source controls"; visible: workspace.currentSession !== ""; onClicked: window.sourcesExpanded = false }
                     }
                 }
@@ -586,6 +651,7 @@ ApplicationWindow {
             Layout.minimumWidth: 0
             Layout.preferredHeight: openTabs.implicitHeight
             spacing: 2
+            visible: !window.compactInspector && (workspace.tabs.length > 0 || workspace.sessions.length > 0)
             IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; enabled: !workspace.busy; onClicked: quickChooser.open() }
             IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
             ScrollView {
@@ -632,11 +698,11 @@ ApplicationWindow {
         }
         RowLayout {
             id: queryRow
-            readonly property var activeGrid: workspace.workspacePage === "events" ? eventGrid : resourceGrid
+            readonly property var activeGrid: workspace.workspacePage === "events" ? eventGridLoader.item : resourceGrid
             readonly property bool navigating: window.searchOpen && ["resources", "events"].indexOf(workspace.workspacePage) >= 0
             readonly property bool hasQuery: (workspace.workspacePage === "events" ? workspace.eventFilterText : workspace.filterText).trim() !== ""
             Layout.fillWidth: true
-            visible: (window.searchOpen && ["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0) || workspace.authenticationRequired || workspace.authenticationRunning
+            visible: !window.compactInspector && ((window.searchOpen && ["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0) || workspace.authenticationRequired || workspace.authenticationRunning) || (window.compactInspector && (workspace.authenticationRequired || workspace.authenticationRunning))
             TextField {
                 id: resourceFilterInput
                 objectName: "resourceFilter"
@@ -663,20 +729,21 @@ ApplicationWindow {
                 Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32
                 visible: window.searchOpen && workspace.workspacePage === "events"
                 text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"
-                onTextEdited: if (workspace.filterEvents(text)) Qt.callLater(eventGrid.navigateRows, 0)
+                onTextEdited: if (workspace.filterEvents(text)) Qt.callLater(eventGridLoader.item.navigateRows, 0)
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
-                        eventGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
+                        eventGridLoader.item.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
                     }
                 }
                 Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
             }
-            IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
-            IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
-            Label { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
+            IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
+            IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
+            Label { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery && queryRow.activeGrid ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
             Button { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             Button { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
+        Label { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         Label { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
         RowLayout {
             Layout.fillWidth: true
@@ -722,7 +789,8 @@ ApplicationWindow {
                 }
                 Item {
                     objectName: "workspaceContent"
-                    SplitView.fillHeight: true; SplitView.minimumHeight: Math.min(120, workspaceSplit.height * 0.25)
+                    visible: !window.compactInspector
+                    SplitView.fillHeight: visible; SplitView.minimumHeight: visible ? Math.min(120, workspaceSplit.height * 0.25) : 0
                 ResourceGrid {
                     id: resourceGrid
                     anchors.fill: parent
@@ -736,18 +804,23 @@ ApplicationWindow {
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
                 }
-                ResourceGrid {
-                    id: eventGrid
+                Loader {
+                    id: eventGridLoader
                     anchors.fill: parent
                     visible: workspace.workspacePage === "events"
-                    inlineTools: false
-                    prefix: "event"; tableModel: workspace.eventTable
-                    sortColumn: workspace.eventSortColumnIndex; sortDirection: workspace.eventSortDirection
-                    emptyText: workspace.loading ? "Loading Events. Cached Events appear immediately." : "No matching Events in this cache."
-                    onSortRequested: function(column) { workspace.sortEventColumn(column) }
-                    onInspectRequested: function(path) { workspace.inspectEventPath(path) }
-                    onCopyRequested: function(row, column) { workspace.copyEventCell(row, column) }
-                    onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, true) }
+                    property bool opened: false
+                    active: opened
+                    onVisibleChanged: if (visible) opened = true
+                    sourceComponent: ResourceGrid {
+                        inlineTools: false
+                        prefix: "event"; tableModel: workspace.eventTable
+                        sortColumn: workspace.eventSortColumnIndex; sortDirection: workspace.eventSortDirection
+                        emptyText: workspace.loading ? "Loading Events. Cached Events appear immediately." : "No matching Events in this cache."
+                        onSortRequested: function(column) { workspace.sortEventColumn(column) }
+                        onInspectRequested: function(path) { workspace.inspectEventPath(path) }
+                        onCopyRequested: function(row, column) { workspace.copyEventCell(row, column) }
+                        onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, true) }
+                    }
                 }
                 Loader {
                     anchors.fill: parent
@@ -781,6 +854,8 @@ ApplicationWindow {
                         onSourcesRequested: window.sourcesExpanded = true
                         onFileRequested: chooser.open()
                         onFolderRequested: folderChooser.open()
+                        onOciImportRequested: ociImportDialog.open()
+                        onGkeImportRequested: gkeImportDialog.open()
                         onSourceFailuresRequested: sourceImportDetails.open()
                     }
                 }
@@ -788,8 +863,9 @@ ApplicationWindow {
                 ResourceInspector {
                     id: dockedInspector
                     objectName: "workspaceInspector"
-                    SplitView.preferredHeight: Math.min(420, workspaceSplit.height * 0.60)
-                    SplitView.minimumHeight: Math.min(300, workspaceSplit.height * 0.70)
+                    SplitView.fillHeight: window.compactInspector
+                    SplitView.preferredHeight: window.compactInspector ? inspectorSplit.height : Math.min(420, workspaceSplit.height * 0.60)
+                    SplitView.minimumHeight: window.compactInspector ? 0 : Math.min(300, workspaceSplit.height * 0.70)
                     visible: workspace.inspectorPath !== ""
                 }
             }

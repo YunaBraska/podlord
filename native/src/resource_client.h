@@ -4,7 +4,7 @@
 #include "pod_logs.h"
 #include <QElapsedTimer>
 #include <QJsonArray>
-#include <QNetworkAccessManager>
+#include "background_http.h"
 #include <QSet>
 #include <QTimer>
 #include <functional>
@@ -36,6 +36,10 @@ public:
     QJsonObject detail(const QString& id, const QString& path) const;
     /** Full accepted GET document with the detail lease and current UID; never persisted. */
     QJsonObject document(const QString& id, const QString& path) const;
+    /** Current usable credential authority, independent of the resource-cache TTL. */
+    std::optional<quint64> credentialRevision(const QString& id) const;
+    /** Fresh detail authority under the current connection revision; cached documents remain readable without it. */
+    std::optional<quint64> detailRevision(const QString& id, const QString& path) const;
     QString detailStatus(const QString& id, const QString& path) const;
     QString status(const QString& id) const;
     QString failureStatus(const QString& id) const;
@@ -47,6 +51,8 @@ public:
     bool authenticationRequired(const QString& id) const;
     std::optional<ClusterConnection> connection(const QString& id) const;
     bool authenticate(const ClusterConnection& connection, const QString& session);
+    /** Drops retained connection credentials, not resource caches or already dispatched requests. */
+    bool forgetCredentials(const QString& credential);
     bool configure(ReadSettings settings);
     bool enableRequests(bool enabled);
     /** Bind a session to one view. Empty IDs hide it; another view's binding is not stolen. */
@@ -68,7 +74,7 @@ public:
     bool stopTerminal(const QString& id);
     /** Confirmed, target-bound JSON Patch. One send only; no automatic retry. */
     bool applyYaml(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline,
-                   const QJsonObject& desired, const QJsonArray& patch);
+                   const QJsonObject& desired, const QJsonArray& patch, quint64 revision);
     /** Cancels only a queued write. Already dispatched writes and their read-back finish. */
     bool cancelYamlApply(const QString& token);
     bool readBackYaml(const QString& id, const QString& path, const QString& token,
@@ -132,7 +138,7 @@ private:
     void consumeForward(const Task& task, const QJsonObject& document);
     void forwardHandshakeFinished(const QString& token, const QString& stream, bool accepted, bool authenticationRequired);
     struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; };
-    struct Detail final { QJsonObject value; QDateTime at; QJsonObject document; };
+    struct Detail final { QJsonObject value; QDateTime at; QJsonObject document; quint64 revision = 0; };
     struct CachedResource final { QJsonObject value; qint64 received = 0; };
     struct State final {
         ClusterConnection connection;
@@ -178,7 +184,7 @@ private:
         std::optional<Change> change;
         QJsonArray patch;
     };
-    QNetworkAccessManager network_;
+    PlatformNetworkAccessManager network_;
     QMap<QString, State> states_;
     QList<Task> queue_;
     QVariantList completedRequests_;

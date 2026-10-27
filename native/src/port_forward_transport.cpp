@@ -1,4 +1,5 @@
 #include "port_forward_transport.h"
+#include "platform_tls.h"
 #include <QNetworkProxy>
 #include <QTcpSocket>
 #include <QWebSocket>
@@ -14,7 +15,7 @@ struct PortForwardTransport::Stream final : QObject {
     std::array<bool, 2> headers{false, false};
     int port = 0;
     bool requested = false, admitted = false, reported = false;
-    explicit Stream(QTcpSocket* socket, QObject* parent) : QObject(parent), local(socket) { local->setParent(this); }
+    explicit Stream(QTcpSocket* socket, QObject* parent) : QObject(parent), local(socket) { local->setParent(this); configurePlatformTrust(remote); }
 };
 PortForwardTransport::PortForwardTransport(QObject* parent) : QObject(parent) {
     connect(&listener_, &QTcpServer::newConnection, this, [this] {

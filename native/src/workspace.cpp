@@ -24,9 +24,25 @@
 #include <tuple>
 #include <QRegularExpression>
 #include <cmath>
+#ifdef Q_OS_ANDROID
+#include <QJniObject>
+#endif
 
 namespace podlord {
 namespace {
+#ifdef Q_OS_ANDROID
+bool retainDocumentReadAccess(const QString& path) {
+    if (!path.startsWith("content://")) return true;
+    const auto context = QNativeInterface::QAndroidApplication::context();
+    const auto source = QJniObject::fromString(path);
+    return QJniObject::callStaticMethod<jboolean>(
+        "berlin/yuna/podlord/DocumentAccess", "retainRead",
+        "(Landroid/content/Context;Ljava/lang/String;)Z",
+        context.object<jobject>(), source.object<jstring>());
+}
+#else
+bool retainDocumentReadAccess(const QString&) { return true; }
+#endif
 void cycleSort(int requested, int& column, Qt::SortOrder& order) {
     if (column != requested) { column = requested; order = Qt::AscendingOrder; }
     else if (order == Qt::AscendingOrder) order = Qt::DescendingOrder;
@@ -146,7 +162,7 @@ bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole, Qt::UserRole + 5});
     return true;
 }
-bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
+bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool replace) {
     sortValues_.clear(); sortValueColumn_ = -1;
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
@@ -161,6 +177,10 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     }
     QMap<QString, QJsonObject> incoming;
     for (const auto& value : rows) { const auto row = value.toObject(); incoming.insert(row[identityField_].toString(), row); }
+    if (replace) {
+        beginResetModel(); rows_ = incoming.values(); endResetModel();
+        return true;
+    }
     for (int last = static_cast<int>(rows_.size()) - 1; last >= 0;) {
         if (incoming.contains(rows_[last][identityField_].toString())) { --last; continue; }
         int first = last;
@@ -305,7 +325,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     dashboardRows_.setFilterRegularExpression("^true$");
     reloadTableLayouts();
     reloadFilterPresets();
-    connect(&client_, &ResourceClient::changed, this, [this](const QString& id) { if (id == active_) { publishInspector(); emit changed(); } });
+    connect(&client_, &ResourceClient::changed, this, [this](const QString& id) { if (id == active_) { publishInspector(); emit yamlEditChanged(); emit changed(); } });
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) { if (id == active_) publish(); });
     sourceTable_.setSourceModel(&sourceRows_);
     sourceTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
@@ -318,7 +338,13 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     connect(&client_, &ResourceClient::detailFinished, this, [this](const QString& id, const QString& path, bool accepted) {
         if (id != active_ || path != inspectorPath()) return;
-        publishInspector(); yamlFresh_ = accepted; emit yamlEditChanged();
+        publishInspector();
+        const auto revision = client_.detailRevision(id, path);
+        const bool freshRead = accepted && revision.has_value();
+        yamlFresh_ = revision.has_value() && (freshRead || yamlFresh_);
+        if (freshRead && yamlDraft_ && yamlDraft_->document["metadata"].toObject()["uid"] == inspectorDocument_["metadata"].toObject()["uid"])
+            yamlDraft_->revision = *revision;
+        emit yamlEditChanged();
     });
     connect(&client_, &ResourceClient::logsChanged, this, [this](const QString& id, const QString& path) {
         if (id == active_ && path == navigation_.value(active_).inspected) { publishLogs(); emit changed(); }
@@ -354,7 +380,16 @@ QString Workspace::authenticationPrompt() const {
     const auto connection = client_.connection(active_);
     if (!connection) return {};
     return "Session: " + title() + "\nCluster: " + connection->server.toString()
-        + (connection->exec ? "\nCommand: " + connection->exec->program + "\nThis runs the imported configuration's command and arguments with your permissions. Only trust configurations you know. Login may open a browser." : "\nConfirm a new authentication attempt.");
+        + (connection->exec && connection->exec->oidc ? "\nOpenID Connect will open the system browser. No imported command runs."
+            : connection->exec && connection->exec->eks ? "\nAmazon EKS will sign a short-lived token locally using the imported AWS credentials. No imported command runs. Only trust configurations you know."
+            : connection->exec && connection->exec->oci ? "\nOracle OKE will sign a short-lived token locally using the imported OCI API key. No imported command runs. Only trust configurations you know."
+            : connection->exec && connection->exec->gke ? "\nGoogle GKE will use native Google authorization or the service-account key explicitly imported for this context. No imported command runs. Personal sign-in may open the system browser or a Google account dialog."
+            : connection->exec ? "\nCommand: " + connection->exec->program + "\nThis runs the imported configuration's command and arguments with your permissions. Only trust configurations you know. Login may open a browser."
+            : "\nConfirm a new authentication attempt.");
+}
+QString Workspace::authenticationInstruction() const {
+    const auto connection = client_.connection(active_);
+    return connection ? credentials_.instruction(connection->credentialId) : QString{};
 }
 QString Workspace::error() const {
     if (!settingsError_.isEmpty()) return settingsError_;
@@ -384,14 +419,20 @@ QString Workspace::inspectorStatus() const { return client_.detailStatus(active_
 QString Workspace::yamlText() const { return yamlDraft_ ? yamlDraft_->text : yaml_; }
 bool Workspace::canEditYaml() const {
     const auto metadata = inspectorDocument_.value("metadata").toObject();
-    return !yamlDraft_ && yamlFresh_ && windowVisible_ && !authenticationRequired() && !authenticationRunning()
+    return !yamlDraft_ && yamlFresh_ && client_.detailRevision(active_, inspectorPath()).has_value()
+        && windowVisible_ && !authenticationRequired() && !authenticationRunning()
         && !metadata.value("uid").toString().isEmpty() && !metadata.value("resourceVersion").toString().isEmpty();
 }
 bool Workspace::yamlEditing() const { return yamlDraft_.has_value(); }
+bool Workspace::yamlDraftCredentialsCurrent() const {
+    return yamlDraft_ && client_.credentialRevision(yamlDraft_->session) == std::optional<quint64>{yamlDraft_->revision};
+}
 bool Workspace::yamlDirty() const { return yamlDraft_ && yamlDraft_->text != yamlDraft_->baseline; }
 QString Workspace::yamlDraftStatus() const {
     if (!yamlDraft_) return canEditYaml() ? "Fresh YAML ready. Start editing explicitly." : "Read-only. A successful fresh detail read with resource identity and version is required.";
     if (inspectorDocument_.isEmpty()) return "Current server detail is unavailable. Your local draft is preserved.";
+    if (!yamlDraftCredentialsCurrent())
+        return "Local draft preserved. Confirm sign-in and read fresh YAML under current credentials before Apply.";
     const auto baseline = yamlDraft_->document.value("metadata").toObject(), current = inspectorDocument_.value("metadata").toObject();
     if (baseline.value("uid") != current.value("uid") || baseline.value("resourceVersion") != current.value("resourceVersion"))
         return "Server resource version changed. Your local draft is preserved.";
@@ -406,7 +447,9 @@ QString Workspace::discardPrompt() const {
 bool Workspace::beginYamlEdit() {
     if (yamlApplyLocked() || deletionPending() || deletionRunning()) return false;
     if (busy_ || !canEditYaml() || pendingLeave_) return false;
-    yamlDraft_ = YamlDraft{active_, inspectorPath(), inspectorDocument_, yaml_, yaml_};
+    const auto revision = client_.detailRevision(active_, inspectorPath());
+    if (!revision) return false;
+    yamlDraft_ = YamlDraft{active_, inspectorPath(), inspectorDocument_, yaml_, yaml_, {}, *revision};
     emit yamlEditChanged(); emit yamlTextChanged(); return true;
 }
 bool Workspace::setYamlDraft(const QString& text) {
@@ -495,6 +538,10 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     const auto scope = path.isEmpty() ? QString{} : active_ + '\n' + path + '\n' + summary["uid"].toString();
     const bool scopeChanged = scope != inspectorScope_;
     const bool documentChanged = document != inspectorDocument_;
+    if (!client_.detailRevision(active_, path)) {
+        yamlFresh_ = false;
+        if (!revealedValues_.isEmpty()) { revealedValues_.clear(); revealChanged = true; }
+    }
     if (!path.isEmpty() && summary.isEmpty()) summary = {{"path", path}, {"name", QUrl::fromPercentEncoding(path.section('/', -1).toLatin1())}};
     if (!summary.isEmpty()) summary["cluster"] = activeCluster();
     if (!revealChanged && scope == inspectorScope_ && summary == inspectorSummary_ && document == inspectorDocument_) {
@@ -629,6 +676,7 @@ bool Workspace::copyYaml() {
 }
 bool Workspace::revealValue(const QString& id, bool revealed) {
     if (inspectorDocument_["kind"] != "Secret" || !containsValue(inspectorDocument_, id)) return false;
+    if (revealed && !client_.detailRevision(active_, inspectorPath())) return false;
     if (revealed) revealedValues_.insert(id); else revealedValues_.remove(id);
     return publishInspector(true);
 }
@@ -774,7 +822,7 @@ QString Workspace::activeCluster() const {
             if (context.id == connection->contextId) return context.cluster;
     return {};
 }
-bool Workspace::publish() {
+bool Workspace::publish(bool sessionSwitch) {
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
@@ -782,7 +830,7 @@ bool Workspace::publish() {
     // Do not sort incoming rows using the outgoing session's discarded order.
     visibleTable_.setLimit(nav.limit);
     if (table_.sortColumn() != nav.column || table_.sortOrder() != nav.order) table_.sort(-1);
-    rows_.publish(snapshot, cluster);
+    rows_.publish(snapshot, cluster, sessionSwitch);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;
     for (const auto& value : snapshot) {
@@ -885,9 +933,43 @@ bool Workspace::select(const SessionCatalog& catalog, bool local) {
     return true;
 }
 bool Workspace::importFile(const QString& path) {
+    if (!retainDocumentReadAccess(path)) {
+        sourceImportError_ = error_ = "Android cannot retain access to this document. Select it again from the system file picker.";
+        emit changed();
+        return false;
+    }
     return importSource([path](const KubeconfigStore& store) { return store.importPath(path); });
 }
+bool Workspace::importOciCredentials(const QString& contextId, const QString& configPath, const QString& keyPath) {
+    if (!retainDocumentReadAccess(configPath) || !retainDocumentReadAccess(keyPath)) {
+        sourceImportError_ = error_ = "Android cannot retain access to the selected OCI files. Select them again from the system file picker.";
+        emit changed();
+        return false;
+    }
+    return importSource([contextId, configPath, keyPath](const KubeconfigStore& store) -> Result<SourceImportReport> {
+        const auto imported = store.importOciCredentials(contextId, configPath, keyPath);
+        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+        return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
+    }, "OCI API key imported for the selected context. The private key is not shown in Sources.", false, contextId);
+}
+bool Workspace::importGkeServiceAccount(const QString& contextId, const QString& keyPath) {
+    if (!retainDocumentReadAccess(keyPath)) {
+        sourceImportError_ = error_ = "Android cannot read the selected Google service-account key. Select it again from the system file picker.";
+        emit changed();
+        return false;
+    }
+    return importSource([contextId, keyPath](const KubeconfigStore& store) -> Result<SourceImportReport> {
+        const auto imported = store.importGkeServiceAccount(contextId, keyPath);
+        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+        return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
+    }, "Google service-account key imported into private app storage. The original selected file is unchanged; key contents are not shown in Sources.", false, contextId);
+}
 bool Workspace::quickImportFile(const QString& path) {
+    if (!retainDocumentReadAccess(path)) {
+        sourceImportError_ = error_ = "Android cannot retain access to this document. Select it again from the system file picker.";
+        emit changed();
+        return false;
+    }
     return importSource([path](const KubeconfigStore& store) -> Result<SourceImportReport> {
         const auto imported = store.importFile(path);
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
@@ -976,13 +1058,19 @@ bool Workspace::confirmSourceRemoval() {
     auto* watcher = new QFutureWatcher<Result<SessionCatalog>>(this);
     connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, contextId, ids] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
-        if (const auto* failure = std::get_if<Failure>(&result)) {
-            sourceImportError_ = failure->message; emit changed();
-            if (failure->code == StoreError::Conflict) reload();
-            return;
+        const auto* failure = std::get_if<Failure>(&result);
+        if (!failure || failure->code == StoreError::CleanupFailed) {
+            credentials_.revoke(importedCredentialId(contextId));
+            for (const auto& id : ids) {
+                client_.close(id); alerts_.closeSession(id); navigation_.remove(id);
+            }
         }
-        for (const auto& id : ids) {
-            client_.close(id); alerts_.closeSession(id); navigation_.remove(id);
+        if (failure) {
+            sourceImportError_ = failure->message; emit changed();
+            if (failure->code == StoreError::CleanupFailed) {
+                sourceRemoval_.clear(); emit sourceRemovalChanged(); reload();
+            } else if (failure->code == StoreError::Conflict) reload();
+            return;
         }
         for (auto& source : sources_.sources)
             source.contexts.erase(std::remove_if(source.contexts.begin(), source.contexts.end(),
@@ -997,6 +1085,7 @@ bool Workspace::confirmSourceRemoval() {
         refreshSessionSelection();
         sourceRemoval_.clear();
         sourceImportNotice_ = QString("Removed the imported context and %1 saved session(s). Original kubeconfig files are unchanged.").arg(ids.size());
+        sourceImportError_.clear();
         emit sourceRemovalChanged(); emit changed();
     });
     const auto profile = profile_;
@@ -1004,12 +1093,12 @@ bool Workspace::confirmSourceRemoval() {
     watcher->setFuture(sessionMutationFuture_);
     return true;
 }
-bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice, bool ignoreInvalid) {
+bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice, bool ignoreInvalid, const QString& credentialContext) {
     if (busy_) return false;
     if (!ignoreInvalid) { sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear(); }
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<SourceImportReport>>(this);
-    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, notice, ignoreInvalid] {
+    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, notice, ignoreInvalid, credentialContext] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) {
             if (!ignoreInvalid || !failure->sourceInput) {
@@ -1024,6 +1113,7 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
                 .arg(report.sources.size()).arg(report.errors.size())
                 : notice;
             for (const auto& issue : report.errors) sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
+            if (!credentialContext.isEmpty()) credentials_.revoke(importedCredentialId(credentialContext));
             reload();
             emit sourceImportFinished(!report.sources.isEmpty() && report.errors.isEmpty());
         }
@@ -1165,7 +1255,8 @@ bool Workspace::activate(const QString& id) {
     if (id == active_ && found->open && catalog_.activeSession == QUuid(id)) return true;
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
     if (!client_.showSession(id, viewId_)) return false;
-    emit logViewChanging(); active_ = id; publish();
+    const bool sessionSwitch = active_ != id;
+    emit logViewChanging(); active_ = id; publish(sessionSwitch);
     if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected, viewId_);
     else publishLogs();
     return mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });

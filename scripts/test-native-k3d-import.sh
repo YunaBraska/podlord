@@ -62,6 +62,43 @@ k3d cluster create "$NAME" --image rancher/k3s:v1.35.5-k3s1 --servers 1 --agents
     --k3s-arg '--disable=traefik@server:*' --k3s-arg '--disable=servicelb@server:*' --k3s-arg '--disable=metrics-server@server:*' \
     --runtime-label "podlord.test.owner=$TOKEN" --wait --timeout 120s > "$RUN/create.log" 2>&1 \
     || { tail -n 30 "$RUN/create.log" >&2; exit 1; }
+docker exec -i "k3d-$NAME-server-0" kubectl apply -f - > "$RUN/probe-crd.log" <<'YAML'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: podlordprobes.tests.podlord.local
+spec:
+  group: tests.podlord.local
+  scope: Namespaced
+  names:
+    plural: podlordprobes
+    singular: podlordprobe
+    kind: PodlordProbe
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                message:
+                  type: string
+YAML
+docker exec "k3d-$NAME-server-0" kubectl wait --for=condition=Established --timeout=60s \
+    crd/podlordprobes.tests.podlord.local > "$RUN/probe-ready.log"
+docker exec -i "k3d-$NAME-server-0" kubectl apply -f - > "$RUN/probe-resource.log" <<'YAML'
+apiVersion: tests.podlord.local/v1
+kind: PodlordProbe
+metadata:
+  name: inventory-probe
+  namespace: default
+spec:
+  message: discovery and inspector
+YAML
 if [ "$(uname -s)" = Darwin ]; then
     ssl=$(sed -n 's/^OPENSSL_SSL_LIBRARY:FILEPATH=//p' "$BUILD/CMakeCache.txt")
     [ -f "$ssl" ] || { printf 'The configured test OpenSSL library is missing.\n' >&2; exit 1; }

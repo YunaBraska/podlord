@@ -64,6 +64,19 @@ int main(int argc, char** argv) {
             return true;
         };
         require(QTest::qWaitFor(fits, 3000), "HUD metrics are clipped, overlapping or unreachable.");
+        QList<QRectF> navigationBounds;
+        for (const auto* name : {"resourcesWorkspaceButton", "eventsWorkspaceButton", "portForwardTasksButton", "settingsWorkspaceButton"}) {
+            auto* button = findItem(window->contentItem(), name);
+            require(button && button->isVisible() && button->property("showText").toBool() == (width == 1440),
+                "Navigation labels do not match the desktop or compact layout.");
+            if (width != 1440) continue;
+            const auto rectangle = button->mapRectToScene(button->boundingRect());
+            require(rectangle.width() > 32 && rectangle.left() >= 0 && rectangle.right() <= window->width() + 0.5,
+                "Desktop navigation label is clipped.");
+            for (const auto& previous : navigationBounds)
+                require(!previous.intersects(rectangle), "Desktop navigation labels overlap.");
+            navigationBounds.append(rectangle);
+        }
         if (width == 390) {
             workspace.setWorkspacePage("resources");
             window->resize(844, 390);
@@ -72,8 +85,17 @@ int main(int argc, char** argv) {
                 return radar && radar->isVisible();
             }, 3000), "Landscape radar is unavailable.");
             auto* emptyRadar = findItem(window->contentItem(), "emptyRadar");
-            require(emptyRadar && QTest::qWaitFor([&] { return !emptyRadar->isVisible(); }, 3000),
-                "Landscape radar empty-state text overlaps its controls.");
+            require(emptyRadar && QTest::qWaitFor([&] {
+                if (!emptyRadar->isVisible()) return true;
+                const auto bounds = emptyRadar->mapRectToScene(emptyRadar->boundingRect());
+                const auto container = emptyRadar->parentItem()->mapRectToScene(emptyRadar->parentItem()->boundingRect());
+                if (!container.adjusted(-0.5, -0.5, 0.5, 0.5).contains(bounds)) return false;
+                for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom", "resetRadar"}) {
+                    auto* control = findItem(window->contentItem(), name);
+                    if (!control || !control->isVisible() || bounds.intersects(control->mapRectToScene(control->boundingRect()))) return false;
+                }
+                return true;
+            }, 3000), "Landscape radar empty-state text overlaps its controls or is clipped.");
             window->resize(width, 720);
             require(QTest::qWaitFor(fits, 3000), "HUD metrics did not recover after landscape resize.");
         }
@@ -81,6 +103,16 @@ int main(int argc, char** argv) {
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
             cpu->mapToScene(QPointF(cpu->width() / 2, cpu->height() / 2)).toPoint());
         require(QTest::qWaitFor([&] { return workspace.workspacePage() == "dashboard"; }, 3000), "HUD no longer opens the real dashboard.");
+        const auto navigate = [&](const char* buttonName, const char* page) {
+            auto* button = findItem(window->contentItem(), buttonName);
+            if (!button) return false;
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint());
+            return QTest::qWaitFor([&] { return workspace.workspacePage() == page; }, 3000);
+        };
+        require(navigate("resourcesWorkspaceButton", "resources") && navigate("eventsWorkspaceButton", "events")
+            && navigate("portForwardTasksButton", "ports") && navigate("settingsWorkspaceButton", "settings"),
+            "Visible navigation did not open its workspace.");
         const auto evidence = qEnvironmentVariable("PODLORD_UI_EVIDENCE_DIR");
         if (!evidence.isEmpty()) {
             workspace.setWorkspacePage("settings");

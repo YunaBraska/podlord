@@ -1,4 +1,5 @@
 #include "container_terminal.h"
+#include "platform_tls.h"
 #include <QAuthenticator>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -54,6 +55,7 @@ ContainerTerminal::ContainerTerminal(QString target, QObject* parent) : QObject(
     vterm_screen_set_damage_merge(screen_, VTERM_DAMAGE_SCREEN);
     vterm_screen_reset(screen_, 1);
     socket_.setProxy(QNetworkProxy::NoProxy);
+    configurePlatformTrust(socket_);
     socket_.setReadBufferSize(streamLimit + 64);
     socket_.setMaxAllowedIncomingFrameSize(streamLimit + 1);
     socket_.setMaxAllowedIncomingMessageSize(streamLimit + 1);

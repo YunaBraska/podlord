@@ -30,7 +30,7 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    bool publish(const QJsonArray& rows, const QString& cluster = {});
+    bool publish(const QJsonArray& rows, const QString& cluster = {}, bool replace = false);
     QJsonObject row(int index) const;
     bool setAppearance(const Appearance& appearance);
 private:
@@ -112,6 +112,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool authenticationRequired READ authenticationRequired NOTIFY changed)
     Q_PROPERTY(bool authenticationRunning READ authenticationRunning NOTIFY changed)
     Q_PROPERTY(QString authenticationPrompt READ authenticationPrompt NOTIFY changed)
+    Q_PROPERTY(QString authenticationInstruction READ authenticationInstruction NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(bool viewStateFailed READ viewStateFailed NOTIFY changed)
     Q_PROPERTY(bool viewCloseNeedsDecision READ viewCloseNeedsDecision NOTIFY changed)
@@ -194,6 +195,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString yamlText READ yamlText NOTIFY yamlTextChanged)
     Q_PROPERTY(bool canEditYaml READ canEditYaml NOTIFY yamlEditChanged)
     Q_PROPERTY(bool yamlEditing READ yamlEditing NOTIFY yamlEditChanged)
+    Q_PROPERTY(bool yamlDraftCredentialsCurrent READ yamlDraftCredentialsCurrent NOTIFY yamlEditChanged)
     Q_PROPERTY(bool yamlDirty READ yamlDirty NOTIFY yamlEditChanged)
     Q_PROPERTY(QString yamlDraftStatus READ yamlDraftStatus NOTIFY yamlEditChanged)
     Q_PROPERTY(QString yamlCheckStatus READ yamlCheckStatus NOTIFY yamlCheckChanged)
@@ -324,6 +326,7 @@ public:
     bool authenticationRequired() const;
     bool authenticationRunning() const;
     QString authenticationPrompt() const;
+    QString authenticationInstruction() const;
     QString error() const;
     QString status() const;
     QString syncSummary() const { return client_.syncSummary(active_); }
@@ -427,6 +430,7 @@ public:
     QString yamlText() const;
     bool canEditYaml() const;
     bool yamlEditing() const;
+    bool yamlDraftCredentialsCurrent() const;
     bool yamlDirty() const;
     QString yamlDraftStatus() const;
     bool discardPending() const;
@@ -559,6 +563,8 @@ public:
     Q_INVOKABLE bool saveUiLanguage(const QString& language);
     Q_INVOKABLE bool reload();
     Q_INVOKABLE bool importFile(const QString& path);
+    Q_INVOKABLE bool importOciCredentials(const QString& contextId, const QString& configPath, const QString& keyPath);
+    Q_INVOKABLE bool importGkeServiceAccount(const QString& contextId, const QString& keyPath);
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importK3d();
@@ -624,13 +630,14 @@ private:
     std::optional<Deletion> deletion_;
     bool bindDeletion();
     bool cancelPendingDeletion();
-    struct YamlDraft final { QString session, path; QJsonObject document; QString baseline, text; QJsonObject hiddenDraft = {}; };
+    struct YamlDraft final { QString session, path; QJsonObject document; QString baseline, text; QJsonObject hiddenDraft = {}; quint64 revision = 0; };
     struct YamlApply final {
         QString token, session, path, target, text, phase, status, comparison;
         PreparedYaml prepared;
         QJsonObject baseline, current;
         QStringList conflicts;
         QMap<QString, bool> choices;
+        quint64 revision = 0;
     };
     std::optional<YamlApply> yamlApply_;
     bool yamlChecking_ = false;
@@ -681,7 +688,7 @@ private:
     QString sourceImportError_, sessionManagementError_, sessionManagementNotice_;
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
-    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice = {}, bool ignoreInvalid = false);
+    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice = {}, bool ignoreInvalid = false, const QString& credentialContext = {});
     bool contextUsable(const QString& id) const;
     QVariantList sourceImportIssues_;
     SessionCatalog catalog_;
@@ -734,7 +741,7 @@ private:
     bool select(const SessionCatalog& catalog, bool local = true);
     bool resolve(const QString& id, bool retry = false);
     bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, const QString& renamedSession = {}, const QString& managementNotice = {}, bool inWindow = false);
-    bool publish();
+    bool publish(bool sessionSwitch = false);
     QString activeCluster() const;
     bool publishLogs();
     bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);

@@ -14,6 +14,12 @@ ColumnLayout {
     required property string emptyText
     property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
     property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
+    readonly property var displayedColumns: prefix === "resource" && grid.Window.window && grid.Window.window.width < 600
+        && JSON.stringify(columns) === JSON.stringify(workspace.defaultTableColumns("resource"))
+        ? columns.filter(column => column.id === "name").concat(columns.filter(column => column.id !== "name")) : columns
+    readonly property string layoutSignature: JSON.stringify(displayedColumns.map(function(column) {
+        return [column.column, column.width, column.visible, column.pinned]
+    }))
     property var visualOrder: []
     property bool inspectable: true
     property int sortableColumns: -1
@@ -31,7 +37,7 @@ ColumnLayout {
     function navigateRows(offset) {
         if (count === 0) return
         const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
-        const column = columns.find(column => column.visible).column
+        const column = displayedColumns.find(column => column.visible).column
         selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
         if (visible) table.positionViewAtRow(row, TableView.Contain)
     }
@@ -94,7 +100,7 @@ ColumnLayout {
     }
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => column.visible).column
+            const column = selection.currentIndex.valid ? selection.currentIndex.column : displayedColumns.find(column => column.visible).column
             event.accepted = handleCellKey(event, 0, column, grid)
         } else if (selection.currentIndex.valid) {
             event.accepted = handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, grid.Window.window.activeFocusItem)
@@ -114,6 +120,7 @@ ColumnLayout {
     function updateFindCount(reset) {
         findCount = findValid && findInput.text.trim() !== "" ? findMatches.rowCount() : 0
         findIndex = findCount === 0 ? -1 : reset ? 0 : Math.max(0, Math.min(findIndex, findCount - 1))
+        if (!reset && findCount > 0 && !findMatches.mapFromSource(selection.currentIndex).valid) selectFindMatch(0)
     }
     function selectFindMatch(offset) {
         if (findCount === 0) return
@@ -140,7 +147,7 @@ ColumnLayout {
     }
     function synchronizeColumns() {
         if (!visible || table.columns !== columns.length) return
-        const wanted = columns.filter(function(column) { return column.visible && column.pinned }).concat(columns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
+        const wanted = displayedColumns.filter(function(column) { return column.visible && column.pinned }).concat(displayedColumns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
         if (table.rows > 0 && wanted.every(function(column, position) { return table.columnAtIndex(tableModel.index(0, column)) === position })) {
             visualOrder = wanted
             table.forceLayout()
@@ -160,7 +167,7 @@ ColumnLayout {
         table.forceLayout()
         pinnedTable.forceLayout()
     }
-    onColumnsChanged: Qt.callLater(synchronizeColumns)
+    onLayoutSignatureChanged: Qt.callLater(synchronizeColumns)
     onVisibleChanged: {
         if (visible) Qt.callLater(synchronizeColumns)
         else { cellMenu.close(); valueTip.target = null }
@@ -335,7 +342,7 @@ ColumnLayout {
                 event.accepted = grid.handleCellKey(event, row, column, cell)
             }
             readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : model.display
-            readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > model.display.length)
+            readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > String(model.display || "").length)
             onWantsTipChanged: if (wantsTip) valueTip.target=cell
             Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
             TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup(cell, 0, cell.height) } }
@@ -348,6 +355,7 @@ ColumnLayout {
         RowLayout {
             anchors.fill: parent
             spacing: 0
+            visible: grid.prefix !== "resource" || workspace.currentSession !== ""
             ColumnLayout {
                 visible: grid.pinnedWidth > 0
                 Layout.preferredWidth: Math.min(grid.pinnedWidth, Math.max(0, grid.width - (grid.hasScrollingColumns ? 120 : 0)))
@@ -401,14 +409,16 @@ ColumnLayout {
                 }
             }
         }
-        ColumnLayout {
+        GridLayout {
             anchors.centerIn: parent; width: Math.min(420, parent.width - 24)
-            visible: table.rows === 0; spacing: 10
+            visible: table.rows === 0; columns: grid.Window.window && grid.Window.window.compactLandscape ? 2 : 1
+            columnSpacing: 10; rowSpacing: columns === 2 ? 4 : 10
             Image {
                 objectName: grid.prefix + "EmptyLogo"
                 visible: grid.prefix === "resource"
-                Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: Math.min(220, parent.width)
-                Layout.preferredHeight: Math.min(210, Math.max(0, grid.height - emptyTitle.implicitHeight - emptyMessage.implicitHeight - 110))
+                Layout.rowSpan: parent.columns === 2 ? 2 : 1
+                Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: parent.columns === 2 ? 52 : Math.min(220, parent.width)
+                Layout.preferredHeight: parent.columns === 2 ? 52 : Math.min(210, Math.max(0, grid.height - emptyTitle.implicitHeight - emptyMessage.implicitHeight - 110))
                 source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit
                 sourceSize.width: 440; sourceSize.height: 420; asynchronous: true
                 Accessible.ignored: true
@@ -417,7 +427,7 @@ ColumnLayout {
                 id: emptyTitle; visible: grid.prefix === "resource"
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: workspace.uiText[workspace.totalResourceCount > 0 ? "resource.noMatchingTitle" : workspace.loading ? "resource.loadingTitle" : "resource.emptyTitle"]
-                textFormat: Text.PlainText; font.pixelSize: 24; font.bold: true
+                textFormat: Text.PlainText; font.pixelSize: parent.columns === 2 ? 18 : 24; font.bold: true
                 color: workspace.appearanceColors.accent; wrapMode: Text.Wrap
             }
             Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: workspace.appearanceColors.muted }

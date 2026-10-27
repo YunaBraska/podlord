@@ -44,6 +44,11 @@ bool run(const QString& scenario) {
         }
         require(available, "Sources action did not become available.");
         require(test::clickVisible(window,name), "Sources action unavailable.");
+        if (name == "sourceColumnsButton") {
+            auto* dialog = window->findChild<QObject*>("sourceColumnsDialog");
+            require(dialog && QTest::qWaitFor([&] { return dialog->property("opened").toBool(); }),
+                "Sources columns dialog did not finish opening.");
+        }
         QCoreApplication::processEvents();
     };
     const auto fill = [&](const QString& name, const QString& value) {
@@ -97,8 +102,16 @@ bool run(const QString& scenario) {
             click("sourceFindPrevious"); require(control("sourceFindCount")->property("text") == "2/2", "Previous source match missing.");
         }
     } else if (scenario == "columns" || scenario == "columns_restart") {
-        click("sourceColumnsButton"); click("sourceColumnVisible_auth"); click("sourceColumnPinned_cluster"); click("sourceSaveColumns");
-        require(QTest::qWaitFor([&] { return !workspace.property("tableLayoutSaving").toBool(); }), "Source layout save pending.");
+        click("sourceColumnsButton"); click("sourceColumnVisible_auth");
+        const auto shown = control("sourceColumnVisible_auth")->property("checked").toBool();
+        click("sourceColumnPinned_cluster");
+        const auto pinned = control("sourceColumnPinned_cluster")->property("checked").toBool();
+        if (shown || !pinned) {
+            qWarning() << "Sources column draft after input: auth shown=" << shown << "cluster pinned=" << pinned;
+            const auto capture = qEnvironmentVariable("PODLORD_SOURCES_SCREENSHOT");
+            if (!capture.isEmpty()) window->grabWindow().save(capture);
+        }
+        click("sourceSaveColumns");
         const auto accepted = [](const QVariantList& columns) {
             bool hidden = false, pinned = false;
             for (const auto& value : columns) { const auto column = value.toMap();
@@ -107,7 +120,8 @@ bool run(const QString& scenario) {
             }
             return hidden && pinned;
         };
-        require(accepted(workspace.property("sourceColumns").toList()), "Source layout not applied.");
+        require(QTest::qWaitFor([&] { return !workspace.property("tableLayoutSaving").toBool()
+            && accepted(workspace.property("sourceColumns").toList()); }), "Source layout not applied.");
         if (scenario == "columns_restart") {
             Workspace restored(profile);
             require(QTest::qWaitFor([&] { return !restored.busy(); }) && accepted(restored.property("sourceColumns").toList()), "Source layout not restored.");

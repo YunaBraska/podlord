@@ -7,9 +7,16 @@ umask 077
 BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
 NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
 MODE=${1:-desktop}
-[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
-case "$MODE" in desktop|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, mobile, ios-themes, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
+case "$MODE" in desktop|mobile|ios-themes|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+if [ "$MODE" = ios-themes ]; then
+    [ "$(uname -s)" = Darwin ] || { printf 'iOS simulator evidence requires macOS.\n' >&2; exit 1; }
+    IOS_APP="${PODLORD_IOS_BUILD_DIR:-}/Release-iphonesimulator/workspace_ui_test.app"
+    [ -x "$IOS_APP/workspace_ui_test" ] || { printf 'Required iOS simulator UI test application is missing; set PODLORD_IOS_BUILD_DIR.\n' >&2; exit 1; }
+    [ "$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$IOS_APP/Info.plist")" = berlin.yuna.podlord.tests ] || { printf 'The simulator driver has an unexpected application identity.\n' >&2; exit 1; }
+fi
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
+    unset GOROOT
     command -v go >/dev/null 2>&1 || { printf 'Missing tool: go\n' >&2; exit 1; }
     if [ "$MODE" != native-forward-e2e ]; then
         [ -x "$BUILD/window-host-test" ] || { printf 'Required native multiwindow test executable is missing.\n' >&2; exit 1; }
@@ -19,7 +26,7 @@ DESKTOP_TIMEOUT=${PODLORD_DESKTOP_TIMEOUT_SECONDS:-3600}
 case "$DESKTOP_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
 [ "${#DESKTOP_TIMEOUT}" -le 5 ] && [ "$DESKTOP_TIMEOUT" -ge 60 ] && [ "$DESKTOP_TIMEOUT" -le 21600 ] || { printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
 LEGACY=${PODLORD_LEGACY_APP:-}
-if [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
+if [ "$MODE" != mobile ] && [ "$MODE" != ios-themes ] && [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
     printf 'Required native field filter UI test executable is missing.\n' >&2
     exit 1
 fi
@@ -71,7 +78,7 @@ fi
 for tool in docker kubectl node rg; do
     command -v "$tool" >/dev/null 2>&1 || { printf 'Missing tool: %s\n' "$tool" >&2; exit 1; }
 done
-if [ "$(uname -s)" = Darwin ]; then
+if [ "$(uname -s)" = Darwin ] && [ "$MODE" != mobile ] && [ "$MODE" != ios-themes ]; then
     # Standalone drivers need the configured SSL runtime after the shell has started.
     ssl=$(awk '/^OPENSSL_SSL_LIBRARY:FILEPATH=/ {sub(/^[^=]*=/, ""); print; exit}' "$BUILD/CMakeCache.txt")
     [ -n "$ssl" ] && [ -f "$ssl" ] || { printf 'The built native OpenSSL runtime is unavailable.\n' >&2; exit 1; }
@@ -98,12 +105,29 @@ mkdir -p "$EVIDENCE"
 CREATED=0
 NATIVE_PID=
 LEGACY_PID=
+IOS_DEVICE=
+IOS_DATA=
 cleanup() {
     status=$?
     trap - 0
     for pid in "$NATIVE_PID" "$LEGACY_PID"; do
         if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || :; wait "$pid" 2>/dev/null || :; fi
     done
+    if [ -n "$IOS_DATA" ]; then
+        if [ -d "$IOS_DATA/Documents/theme-matrix" ] && [ ! -L "$IOS_DATA/Documents/theme-matrix" ]; then
+            mkdir -p "$EVIDENCE/$NAME-ios-themes" && cp -R "$IOS_DATA/Documents/theme-matrix/." "$EVIDENCE/$NAME-ios-themes/" || status=1
+        fi
+        if [ -f "$IOS_DATA/Documents/failure.png" ] && [ ! -L "$IOS_DATA/Documents/failure.png" ]; then
+            cp "$IOS_DATA/Documents/failure.png" "$EVIDENCE/$NAME-ios-failure.png" || status=1
+        fi
+    fi
+    if [ -n "$IOS_DEVICE" ]; then
+        xcrun simctl shutdown "$IOS_DEVICE" >/dev/null 2>&1 || :
+        if ! xcrun simctl delete "$IOS_DEVICE"; then
+            printf 'Owned iOS simulator could not be removed: %s\n' "$IOS_DEVICE" >&2
+            status=1
+        fi
+    fi
     if [ "$CREATED" = 1 ]; then
         owner=$(docker inspect --type container "$NAME" --format '{{index .Config.Labels "podlord.native.e2e"}}' 2>/dev/null) || owner=
         if [ "$owner" != "$NAME" ]; then
@@ -125,6 +149,14 @@ cleanup() {
             done
         fi
     fi
+    for application in native legacy ios ios-boot; do
+        log="$RUN/$application.log"
+        [ -f "$log" ] && [ ! -L "$log" ] || continue
+        if ! cp "$log" "$EVIDENCE/$NAME-$application.log"; then
+            printf 'Failed to preserve owned application log before cleanup.\n' >&2
+            status=1
+        fi
+    done
     for profile in "$RUN"/*.profraw; do
         [ -f "$profile" ] && [ ! -L "$profile" ] || continue
         if ! mkdir -p "$EVIDENCE/$NAME-profiles" || ! cp "$profile" "$EVIDENCE/$NAME-profiles/"; then
@@ -149,6 +181,32 @@ run_native_test() {
     wait "$NATIVE_PID" || result=$?
     NATIVE_PID=
     return "$result"
+}
+wait_for_native_process() {
+    elapsed=0
+    while kill -0 "$NATIVE_PID" 2>/dev/null; do
+        [ "$elapsed" -lt "$1" ] || { printf 'Owned simulator operation exceeded %s seconds.\n' "$1" >&2; return 1; }
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+    result=0
+    wait "$NATIVE_PID" || result=$?
+    NATIVE_PID=
+    return "$result"
+}
+wait_for_review() {
+    attempt=0
+    while [ ! -f "$RUN/complete" ]; do
+        for pid in "$NATIVE_PID" "$LEGACY_PID"; do
+            if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                printf 'A comparison application exited; refusing to relaunch outside its isolated profile.\n' >&2
+                return 1
+            fi
+        done
+        attempt=$((attempt + 1))
+        [ "$attempt" -lt "$((DESKTOP_TIMEOUT / 2))" ] || { printf 'Visual review exceeded %s seconds; cleaning up.\n' "$DESKTOP_TIMEOUT" >&2; return 1; }
+        sleep 2
+    done
 }
 run_cached_field_test() {
     printf 'Native Kubernetes UI scenario: real cached field filters\n'
@@ -286,6 +344,46 @@ fi
 kubectl --kubeconfig "$RUN/kubeconfig" rollout status -n visual-a deployment/visual-worker-1 --timeout=120s
 kubectl --kubeconfig "$RUN/kubeconfig" get configmap,secret,deployment,statefulset,daemonset,cronjob,pvc,service,serviceaccount,job,pod -A -l "podlord.visual.owner=$NAME" -o json | node -e '
 let input="";process.stdin.on("data",b=>input+=b);process.stdin.on("end",()=>{const items=JSON.parse(input).items,counts={};for(const item of items)counts[item.kind]=(counts[item.kind]||0)+1;if(counts.ConfigMap!==512||counts.Secret!==256||counts.Deployment!==64)throw Error("Resource count mismatch");console.log(JSON.stringify({boundary:"real local Kubernetes API",total:items.length,counts},null,2));});'
+if [ "$MODE" = ios-themes ]; then
+    IOS_DEVICE=$(xcrun simctl create 'Podlord Kubernetes Theme Test' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-26-4)
+    printf 'Owned iOS simulator: %s\n' "$IOS_DEVICE"
+    xcrun simctl boot "$IOS_DEVICE" --arch="$(uname -m)"
+    xcrun simctl bootstatus "$IOS_DEVICE" -b > "$RUN/ios-boot.log" 2>&1 &
+    NATIVE_PID=$!
+    wait_for_native_process 120
+    xcrun simctl install "$IOS_DEVICE" "$IOS_APP"
+    IOS_DATA=$(xcrun simctl get_app_container "$IOS_DEVICE" berlin.yuna.podlord.tests data)
+    cp "$RUN/kubeconfig" "$IOS_DATA/Documents/kubeconfig"
+    chmod 600 "$IOS_DATA/Documents/kubeconfig"
+    SIMCTL_CHILD_PODLORD_THEME_EVIDENCE_DIR="$IOS_DATA/Documents/theme-matrix" \
+        SIMCTL_CHILD_PODLORD_UI_FAILURE_FRAME="$IOS_DATA/Documents/failure.png" \
+        SIMCTL_CHILD_QT_QUICK_CONTROLS_STYLE=Basic SIMCTL_CHILD_QT_QPA_PLATFORM=ios \
+        xcrun simctl launch --console "$IOS_DEVICE" berlin.yuna.podlord.tests real_themes "$IOS_DATA/Documents/kubeconfig" > "$RUN/ios.log" 2>&1 &
+    NATIVE_PID=$!
+    wait_for_native_process "$DESKTOP_TIMEOUT"
+    if [ ! -f "$IOS_DATA/Documents/theme-matrix/matrix.json" ]; then
+        cat "$RUN/ios.log" >&2
+        printf 'iOS view matrix did not complete. Its application log and partial captures are retained.\n' >&2
+        exit 1
+    fi
+    node - "$IOS_DATA/Documents/theme-matrix/matrix.json" <<'JS'
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const matrix=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+assert.equal(matrix.platform,'ios');
+assert.equal(matrix.captures.length,684);
+assert.equal(new Set(matrix.captures.map(frame=>frame.theme)).size,19);
+console.log('iOS real Kubernetes theme matrix passed: 19 themes, two variants, 18 views.');
+JS
+    printf 'iOS review completed; cleaning up owned simulator, cluster and profiles.\n'
+    exit 0
+fi
+if [ "$MODE" = mobile ]; then
+    printf 'VISUAL_RUN=%s\nKUBECONFIG_FILE=%s\nCLUSTER=%s\n' "$RUN" "$RUN/kubeconfig" "$NAME"
+    printf 'Complete public mobile checks, then create %s/complete.\n' "$RUN"
+    wait_for_review
+    printf 'Mobile comparison completed; cleaning up owned cluster and profiles.\n'
+    exit 0
+fi
 if [ "$MODE" = radar-parity ]; then
     mkdir -p "$RUN/reference-config"
     PODLORD_CONFIG_HOME="$RUN/reference-config" PODLORD_DISABLE_AUDIO=1 PODLORD_DISABLE_UPDATE_CHECK=1 \
@@ -453,14 +551,5 @@ printf 'VISUAL_RUN=%s\nKUBECONFIG_FILE=%s\nCLUSTER=%s\nNATIVE_PID=%s\nLEGACY_PID
 printf 'REFERENCE_APP=%s\n' "${LEGACY%/Contents/MacOS/*}"
 printf 'NATIVE_APP=%s\n' "${NATIVE%/Contents/MacOS/*}"
 printf 'Capture and assert public desktop behavior, then create %s/complete.\n' "$RUN"
-attempt=0
-while [ ! -f "$RUN/complete" ]; do
-    if ! kill -0 "$NATIVE_PID" 2>/dev/null || ! kill -0 "$LEGACY_PID" 2>/dev/null; then
-        printf 'A comparison application exited; refusing to relaunch outside its isolated profile.\n' >&2
-        exit 1
-    fi
-    attempt=$((attempt + 1))
-    [ "$attempt" -lt "$((DESKTOP_TIMEOUT / 2))" ] || { printf 'Desktop review exceeded %s seconds; cleaning up.\n' "$DESKTOP_TIMEOUT" >&2; exit 1; }
-    sleep 2
-done
+wait_for_review
 printf 'Desktop comparison completed; cleaning up owned apps, cluster and profiles.\n'

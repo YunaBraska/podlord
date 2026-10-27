@@ -16,6 +16,14 @@ with the existing inspector underneath it; the right sidebar retains its sole
 owner. The user adjusts height with the native handle. Closing the inspector
 returns height to the current workspace without replacing its cached model.
 
+On 2026-10-27 the user approved temporarily using the primary workspace area
+for the inspector when space is insufficient. Reuse the existing compact
+landscape layout for windows narrower than the inspector's existing 600-pixel
+compact breakpoint as well. This only hides the table and session/query chrome.
+It does not replace their models or create another inspector. Closing restores
+them, and existing dirty-draft confirmation still governs that close. Returning
+to a large window restores the split without discarding the resource or draft.
+
 Existing inspector actions use a wrapping Flow rather than separate rows of
 buttons. Actions keep their original request, authentication, target-identity,
 Secret masking and confirmation owners. The layout change grants no new write

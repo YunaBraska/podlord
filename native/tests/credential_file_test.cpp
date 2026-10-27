@@ -37,6 +37,21 @@ int main(int argc, char** argv) {
                 QFile expectedToken(args[5]);
                 require(expectedToken.open(QIODevice::ReadOnly), "Cannot read expected token.");
                 require(std::get<podlord::ClusterConnection>(result).authorization == "Bearer " + expectedToken.readAll(), "Token was changed.");
+            } else if (args[4] == "rotate") {
+                require(std::holds_alternative<podlord::ClusterConnection>(result), "Initial token file was rejected.");
+                require(std::get<podlord::ClusterConnection>(result).authorization == "Bearer private-test-token", "Initial token was changed.");
+                write(args[5], "rotated-test-token\n");
+                const auto rotated = store.connection(source.contexts.first().id);
+                require(std::holds_alternative<podlord::ClusterConnection>(rotated), "Rotated token file was rejected.");
+                require(std::get<podlord::ClusterConnection>(rotated).authorization == "Bearer rotated-test-token", "Rotated token was not reloaded.");
+                require(QFile::remove(args[5]), "Cannot remove rotated token file.");
+                const auto missing = store.connection(source.contexts.first().id);
+                const auto* failure = std::get_if<podlord::Failure>(&missing);
+                require(failure != nullptr && failure->code == podlord::StoreError::ReadFailed, "Missing rotated token reused stale credentials.");
+                write(args[5], "recovered-test-token");
+                const auto recovered = store.connection(source.contexts.first().id);
+                require(std::holds_alternative<podlord::ClusterConnection>(recovered), "Restored token file was rejected.");
+                require(std::get<podlord::ClusterConnection>(recovered).authorization == "Bearer recovered-test-token", "Restored token was not reloaded.");
             } else {
                 const auto* failure = std::get_if<podlord::Failure>(&result);
                 require(failure != nullptr, "Invalid credential file was accepted.");
@@ -50,7 +65,7 @@ int main(int argc, char** argv) {
         const auto field = args[1];
         const auto scenario = args[2];
         require(QStringList{"tokenFile", "certificate-authority", "client-certificate", "client-key"}.contains(field), "Unknown field.");
-        require(QStringList{"missing", "directory", "empty", "oversized", "fifo", "broken_link", "relative", "absolute", "symlink", "limit", "invalid_utf8", "whitespace"}.contains(scenario), "Unknown scenario.");
+        require(QStringList{"missing", "directory", "empty", "oversized", "fifo", "broken_link", "relative", "absolute", "symlink", "limit", "invalid_utf8", "whitespace", "rotate"}.contains(scenario), "Unknown scenario.");
         QTemporaryDir directory;
         require(directory.isValid(), "Cannot create private test directory.");
         const auto materialPath = directory.filePath("credential");
@@ -80,7 +95,7 @@ int main(int argc, char** argv) {
                 if (scenario == "invalid_utf8") token = QByteArray(1, static_cast<char>(0xff));
                 if (scenario == "whitespace") token = " \n\t";
                 write(materialPath, token);
-                expected = scenario == "invalid_utf8" || scenario == "whitespace" ? "InvalidData" : "success";
+                expected = scenario == "rotate" ? "rotate" : scenario == "invalid_utf8" || scenario == "whitespace" ? "InvalidData" : "success";
                 // The child reads the expected token from a file, never a command line.
                 if (expected == "success") detail = QString::fromUtf8(token);
                 if (scenario == "absolute") path = materialPath;
@@ -101,7 +116,7 @@ int main(int argc, char** argv) {
         const auto expectedPath = directory.filePath("expected-token");
         if (expected == "success") write(expectedPath, detail.toUtf8());
         QProcess child;
-        child.start(application.applicationFilePath(), {"--child", directory.filePath("profile"), configPath, expected, expected == "success" ? expectedPath : detail});
+        child.start(application.applicationFilePath(), {"--child", directory.filePath("profile"), configPath, expected, expected == "success" ? expectedPath : expected == "rotate" ? materialPath : detail});
         require(child.waitForStarted(3000), "Credential test child did not start.");
         if (!child.waitForFinished(5000)) {
             child.kill();

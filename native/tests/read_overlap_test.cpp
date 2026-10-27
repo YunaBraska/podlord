@@ -21,8 +21,16 @@ class Kubernetes final : public QTcpServer {
 public:
     int active = 0, maximum = 0, requests = 0, podLists = 0, version = 1;
     int allDelay = 0, listDelay = 0, detailDelay = 0, listStatus = 200;
+    bool paginatePods = false;
     QByteArray expectedAuthorization;
+    std::optional<QJsonObject> discovery;
+    QJsonObject podStatus{{"phase", "Running"}};
+    QString podNamespace = "default";
     QMap<QString, int> logs;
+    QMap<QString, QJsonObject> responseBodies;
+    QMap<QString, QByteArray> responseBytes;
+    QMap<QString, int> responseStatuses;
+    QByteArray retryAfter = "2";
     bool authorizationMismatch = false;
     Kubernetes() {
         connect(this, &QTcpServer::newConnection, this, [this] {
@@ -39,8 +47,8 @@ public:
                     }
                     const auto url = QUrl::fromEncoded(input->split(' ')[1]);
                     const auto path = url.path();
-                    const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}},
-                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", QJsonObject{{"phase", "Running"}}}};
+                    const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", podNamespace}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}},
+                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", podStatus}};
                     QJsonObject body; int delay = allDelay, status = 200;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", QJsonArray{}}};
@@ -48,19 +56,33 @@ public:
                         QJsonArray resources{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}};
                         for (const auto& name : {"configmaps", "secrets", "services", "endpoints", "serviceaccounts", "persistentvolumeclaims"})
                             resources.append(QJsonObject{{"name", name}, {"kind", QString(name)}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}});
-                        body = {{"resources", resources}};
-                    } else if (path == "/api/v1/pods") { ++podLists; delay = std::max(delay, listDelay); status = listStatus; body = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}}; }
+                        body = discovery.value_or(QJsonObject{{"resources", resources}});
+                    } else if (path == "/api/v1/pods" || path == "/api/v1/namespaces/default/pods") {
+                        ++podLists; delay = std::max(delay, listDelay); status = listStatus;
+                        auto pagePod = pod;
+                        const bool nextPage = paginatePods && QUrlQuery(url).queryItemValue("continue") == "next";
+                        if (nextPage) {
+                            auto metadata = pagePod["metadata"].toObject();
+                            metadata["name"] = "beta"; metadata["uid"] = "uid-beta";
+                            pagePod["metadata"] = metadata;
+                        }
+                        body = {{"metadata", paginatePods && !nextPage ? QJsonObject{{"continue", "next"}} : QJsonObject{}},
+                                {"items", QJsonArray{pagePod}}};
+                    }
                     else if (path == "/api/v1/namespaces/default/pods/alpha") { delay = std::max(delay, detailDelay); body = pod; }
                     else body = {{"metadata", QJsonObject{}}, {"items", QJsonArray{}}};
+                    if (responseBodies.contains(path)) body = responseBodies.value(path);
+                    status = responseStatuses.value(path, status);
                     auto bytes = QJsonDocument(body).toJson(QJsonDocument::Compact);
                     if (path.endsWith("/log")) {
                         const auto container = QUrlQuery(url).queryItemValue("container");
                         bytes = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toUtf8() + " " + container.toUtf8()
                             + " entry " + QByteArray::number(++logs[container]) + '\n';
                     }
+                    if (responseBytes.contains(path)) bytes = responseBytes.value(path);
                     QTimer::singleShot(delay, socket, [this, socket, bytes, status] {
                         --active;
-                        socket->write("HTTP/1.1 " + QByteArray::number(status) + " OK\r\nContent-Type: application/json\r\nRetry-After: 2\r\nConnection: close\r\nContent-Length: " + QByteArray::number(bytes.size()) + "\r\n\r\n" + bytes);
+                        socket->write("HTTP/1.1 " + QByteArray::number(status) + " OK\r\nContent-Type: application/json\r\nRetry-After: " + retryAfter + "\r\nConnection: close\r\nContent-Length: " + QByteArray::number(bytes.size()) + "\r\n\r\n" + bytes);
                         socket->disconnectFromHost();
                     });
                 });
@@ -240,13 +262,134 @@ bool run(const QString& scenario) {
     connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); connection.credentialId = "local";
     podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
     settings.requestHardLimitPerMinute = scenario == "limit" ? 60 : 0;
+    if (scenario == "discovery_invalid_body") server.discovery = QJsonObject{{"resources", "not-an-array"}};
+    if (scenario == "discovery_invalid_entry") server.discovery = QJsonObject{{"resources", QJsonArray{
+        QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
+        QJsonObject{{"name", "invalid"}, {"kind", ""}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+    if (scenario == "core_invalid_body") server.responseBodies.insert("/api", QJsonObject{{"versions", "v1"}});
+    if (scenario == "core_invalid_version") server.responseBodies.insert("/api", QJsonObject{{"versions", QJsonArray{"bad/version"}}});
+    if (scenario == "groups_invalid_body") server.responseBodies.insert("/apis", QJsonObject{{"groups", "bad"}});
+    if (scenario == "groups_invalid_version") server.responseBodies.insert("/apis", QJsonObject{{"groups", QJsonArray{
+        QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "v1"}}}}}}});
+    if (scenario == "list_invalid_body") server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{}}, {"items", "bad"}});
+    if (scenario == "list_invalid_entry") server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{
+        QJsonObject{{"metadata", QJsonObject{{"name", ".."}, {"namespace", "default"}}}}}}});
+    if (scenario == "list_invalid_version" || scenario == "list_invalid_version_type" || scenario == "list_invalid_kind"
+        || scenario == "list_invalid_kind_type" || scenario == "list_missing_namespace" || scenario == "list_control_name") {
+        QJsonObject metadata{{"name", "alpha"}, {"namespace", "default"}};
+        QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}};
+        if (scenario == "list_invalid_version") pod["apiVersion"] = "v2";
+        if (scenario == "list_invalid_version_type") pod["apiVersion"] = 7;
+        if (scenario == "list_invalid_kind") pod["kind"] = "Secret";
+        if (scenario == "list_invalid_kind_type") pod["kind"] = 7;
+        if (scenario == "list_missing_namespace") metadata.remove("namespace");
+        if (scenario == "list_control_name") metadata["name"] = "alpha\nerror";
+        pod["metadata"] = metadata;
+        server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}});
+    }
+    if (scenario == "list_invalid_continuation") server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", 7}}}, {"items", QJsonArray{}}});
+    if (scenario == "list_page_success") server.paginatePods = true;
+    if (scenario == "list_malformed_json") server.responseBytes.insert("/api/v1/pods", "{");
+    if (scenario == "list_forbidden") server.responseStatuses.insert("/api/v1/pods", 403);
+    if (scenario == "list_redirect") server.responseStatuses.insert("/api/v1/pods", 302);
+    if (scenario == "list_rate_limited_invalid_retry_after") {
+        server.responseStatuses.insert("/api/v1/pods", 429);
+        server.retryAfter = "invalid";
+    }
+    if (scenario == "namespace_scoped_mismatch" || scenario == "namespace_all_valid") server.podNamespace = "other";
+    if (scenario == "pod_problem_projection") server.podStatus = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{
+        QJsonObject{{"ready", false}, {"restartCount", 3}, {"state", QJsonObject{{"waiting", QJsonObject{{"reason", "CrashLoopBackOff"}}}}}},
+        QJsonObject{{"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
     if (!client.configure(settings)) return false;
     QList<qint64> starts;
     QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
     if (scenario == "parallel" || scenario == "limit" || scenario == "coalesce") server.allDelay = 2000;
-    if (!client.open("session", connection, {})) return false;
+    if (!client.open("session", connection, scenario.startsWith("namespace_scoped_") ? QStringList{"default"} : QStringList{})) return false;
+    const QMap<QString, QString> invalidReadMessages{
+        {"core_invalid_body", "Invalid core discovery response"},
+        {"core_invalid_version", "Invalid core API version"},
+        {"groups_invalid_body", "Invalid group discovery response"},
+        {"groups_invalid_version", "Invalid preferred API version"},
+        {"list_invalid_body", "Invalid resource list response"},
+        {"list_invalid_entry", "Invalid resource list entry"},
+        {"list_invalid_version", "Invalid resource list entry"},
+        {"list_invalid_version_type", "Invalid resource list entry"},
+        {"list_invalid_kind", "Invalid resource list entry"},
+        {"list_invalid_kind_type", "Invalid resource list entry"},
+        {"list_missing_namespace", "Invalid resource list entry"},
+        {"list_control_name", "Invalid resource list entry"},
+        {"list_invalid_continuation", "Invalid list continuation"},
+        {"list_malformed_json", "Malformed API response"},
+        {"list_forbidden", "Authorization denied"},
+        {"list_redirect", "Redirect refused"},
+        {"list_rate_limited_invalid_retry_after", "Rate limited"}
+    };
+    if (invalidReadMessages.contains(scenario))
+        return waitFor([&] { return !client.loading("session") && !server.active; })
+            && client.rows("session").size() == (scenario.startsWith("groups_") ? 1 : 0)
+            && client.failureStatus("session").contains(invalidReadMessages.value(scenario));
+    if (scenario == "list_page_success")
+        return waitFor([&] { return !client.loading("session") && !server.active; })
+            && server.podLists == 2 && client.rows("session").size() == 2
+            && client.resource("session", "/api/v1/namespaces/default/pods/alpha")["name"] == "alpha"
+            && client.resource("session", "/api/v1/namespaces/default/pods/beta")["name"] == "beta";
+    if (scenario.startsWith("namespace_scoped_")) {
+        if (!waitFor([&] { return !client.loading("session") && !server.active; })) return false;
+        if (scenario == "namespace_scoped_valid")
+            return client.rows("session").size() == 1 && client.rows("session").first().toObject()["namespace"] == "default";
+        if (scenario == "namespace_scoped_retain") {
+            const auto previous = client.rows("session");
+            if (previous.size() != 1) return false;
+            server.podNamespace = "other";
+            if (!client.refresh("session") || !waitFor([&] { return !client.loading("session") && !server.active; })) return false;
+            return client.rows("session") == previous && client.failureStatus("session").contains("Invalid resource list entry");
+        }
+        return client.rows("session").isEmpty() && client.failureStatus("session").contains("Invalid resource list entry");
+    }
+    if (scenario == "namespace_all_valid")
+        return waitFor([&] { return !client.loading("session") && !server.active; })
+            && client.rows("session").size() == 1
+            && client.rows("session").first().toObject()["path"] == "/api/v1/namespaces/other/pods/alpha";
     if (scenario == "coalesce") for (int repeat = 0; repeat < 10; ++repeat) if (!client.refresh("session")) return false;
+    if (scenario == "discovery_invalid_body")
+        return waitFor([&] { return !client.loading("session") && !server.active; })
+            && client.rows("session").isEmpty() && client.failureStatus("session").contains("Invalid discovery response");
     if (!waitFor([&] { return !client.loading("session") && client.rows("session").size() == 1; })) return false;
+    if (scenario == "list_repeated_continuation") {
+        const auto previous = client.rows("session");
+        server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", "repeat"}}}, {"items", QJsonArray{}}});
+        if (!client.refresh("session") || !waitFor([&] { return !client.loading("session") && !server.active; })) return false;
+        return server.podLists == 3 && client.rows("session") == previous
+            && client.failureStatus("session").contains("Repeated list continuation");
+    }
+    if (scenario == "discovery_invalid_entry")
+        return client.failureStatus("session").contains("Invalid resource discovery entry") && server.podLists == 1;
+    if (scenario == "pod_problem_projection") {
+        const auto row = client.rows("session").first().toObject();
+        return row["status"] == "CrashLoopBackOff"
+            && row["issue"] == "CrashLoopBackOff, Ready 1/2, Container restarts"
+            && row["problems"] == true && row["restarts"] == 3 && row["ready"] == "1/2";
+    }
+    if (scenario == "request_audit") {
+        const auto path = QString("/api/v1/namespaces/default/pods/alpha");
+        server.detailDelay = 1200;
+        const auto before = server.requests;
+        if (!client.inspect("session", path) || !waitFor([&] { return server.requests > before; })) return false;
+        bool running = false;
+        for (const auto& value : client.requestAudit("session")) {
+            const auto record = value.toMap();
+            if (record.value("path") == path && record.value("status") == "Running"
+                && record.value("method") == "GET" && record.value("priority") == "Foreground") running = true;
+        }
+        if (!running || !client.requestAudit("other").isEmpty()
+            || !waitFor([&] { return !client.document("session", path).isEmpty(); })) return false;
+        for (const auto& value : client.requestAudit("session")) {
+            const auto record = value.toMap();
+            if (record.value("path") == path && record.value("status") == "Success"
+                && record.value("outcome") == "HTTP 200" && !record.contains("authorization")) return true;
+        }
+        return false;
+    }
     if (scenario == "snapshot_fields") {
         const auto snapshot = client.rows("session");
         const auto row = snapshot.first().toObject();
@@ -288,6 +431,18 @@ bool run(const QString& scenario) {
         return server.maximum >= 2 && server.maximum <= 4 && (scenario != "parallel" || server.maximum == 4)
             && server.requests == 10 && client.loadingProgress("session") == 1;
     const auto path = QString("/api/v1/namespaces/default/pods/alpha");
+    if (scenario.startsWith("detail_invalid_")) {
+        QJsonObject detail{{"apiVersion", "v1"}, {"kind", "Pod"},
+            {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "uid-alpha"}, {"resourceVersion", "1"}}}};
+        if (scenario == "detail_invalid_version") detail["apiVersion"] = "v2";
+        if (scenario == "detail_invalid_kind") detail["kind"] = "Secret";
+        if (scenario == "detail_invalid_name") detail["metadata"] = QJsonObject{{"name", "other"}, {"namespace", "default"}};
+        if (scenario == "detail_invalid_namespace") detail["metadata"] = QJsonObject{{"name", "alpha"}, {"namespace", "other"}};
+        server.responseBodies.insert(path, detail);
+        return client.inspect("session", path)
+            && waitFor([&] { return client.detailStatus("session", path).contains("Invalid detail response"); })
+            && client.document("session", path).isEmpty() && client.rows("session").size() == 1;
+    }
     if (scenario == "late_list") {
         server.listDelay = 1800; const auto lists = server.podLists;
         if (!client.refresh("session") || !waitFor([&] { return server.podLists > lists; })) return false;

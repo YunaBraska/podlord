@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "port_forward_transport.h"
 #include "ui_input.h"
 #include <QClipboard>
 #include <QDesktopServices>
@@ -14,6 +15,7 @@
 #include <QQuickWindow>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QUrlQuery>
@@ -26,6 +28,7 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <vector>
 #include <algorithm>
 
 class BrowserBoundary final : public QObject {
@@ -49,7 +52,79 @@ bool waitFor(const std::function<bool()>& predicate, int limit = 15000) {
     while (!predicate() && timer.elapsed() < limit) { QCoreApplication::processEvents(); QTest::qWait(10); }
     return predicate();
 }
+bool transportScenario(const QString& scenario) {
+    podlord::PortForwardTransport transport;
+    if (scenario == "transport_invalid_ports") {
+        for (const int port : {-1, 0, 65536}) {
+            const auto result = transport.listen(port);
+            if (!std::holds_alternative<podlord::Failure>(result)
+                || std::get<podlord::Failure>(result).code != podlord::StoreError::InvalidInput) return false;
+        }
+        return !transport.targetReady() && !transport.rejectStream("missing");
+    }
+    QTcpServer reservation;
+    if (!reservation.listen(QHostAddress::LocalHost)) return false;
+    int port = reservation.serverPort();
+    if (scenario == "transport_occupied_port") {
+        const auto occupied = transport.listen(port);
+        if (!std::holds_alternative<podlord::Failure>(occupied)
+            || std::get<podlord::Failure>(occupied).code != podlord::StoreError::Busy) return false;
+        reservation.close();
+        return std::holds_alternative<int>(transport.listen(port))
+            && std::holds_alternative<podlord::Failure>(transport.listen(port)) && transport.stop();
+    }
+    reservation.close();
+    bool listening = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto result = transport.listen(port);
+        if (std::holds_alternative<int>(result)) { listening = true; break; }
+        if (std::get<podlord::Failure>(result).code != podlord::StoreError::Busy
+            || !reservation.listen(QHostAddress::LocalHost)) return false;
+        port = reservation.serverPort();
+        reservation.close();
+    }
+    if (!listening) return false;
+    QSignalSpy requested(&transport, &podlord::PortForwardTransport::connectionRequested);
+    QSignalSpy closed(&transport, &podlord::PortForwardTransport::connectionClosed);
+    QSignalSpy failed(&transport, &podlord::PortForwardTransport::streamFailed);
+    QSignalSpy handshake(&transport, &podlord::PortForwardTransport::handshakeFinished);
+    if (scenario == "transport_capacity") {
+        if (!transport.targetReady()) return false;
+        std::vector<std::unique_ptr<QTcpSocket>> clients;
+        clients.reserve(65);
+        for (int index = 0; index < 65; ++index) {
+            auto client = std::make_unique<QTcpSocket>();
+            client->connectToHost(QHostAddress::LocalHost, port);
+            clients.push_back(std::move(client));
+            if (!waitFor([&] { return index < 64 ? requested.size() == index + 1 : failed.size() == 1; })) return false;
+        }
+        const bool bounded = requested.size() == 64 && failed.first().first().toString().contains("64") && handshake.isEmpty();
+        transport.stop();
+        return bounded;
+    }
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, port);
+    if (!waitFor([&] { return client.state() == QAbstractSocket::ConnectedState; })) return false;
+    if (scenario == "transport_pending_reject") {
+        if (!requested.isEmpty() || !transport.targetReady()
+            || !waitFor([&] { return requested.size() == 1; })) return false;
+        const auto token = requested.first().first().toString();
+        return transport.rejectStream(token) && waitFor([&] { return closed.size() == 1; })
+            && handshake.isEmpty() && !transport.rejectStream(token) && transport.stop();
+    }
+    if (scenario == "transport_admission_bounds") {
+        if (!transport.targetReady() || !waitFor([&] { return requested.size() == 1; })) return false;
+        const auto token = requested.first().first().toString();
+        const QNetworkRequest request(QUrl("http://127.0.0.1:1/portforward"));
+        return !transport.connectStream(token, request, 0)
+            && !transport.connectStream(token, request, 65536)
+            && !transport.connectStream("missing", request, 8080)
+            && transport.rejectStream(token) && handshake.isEmpty();
+    }
+    return false;
+}
 bool run(const QString& scenario, const QString& configPath) {
+    if (scenario.startsWith("transport_")) return transportScenario(scenario);
     const bool real = scenario.startsWith("real_");
     const bool service = scenario.contains("service") || scenario == "selector" || scenario == "no_pod" || scenario == "udp"
         || scenario == "auth" || scenario == "forbidden" || scenario == "rate" || scenario == "redirect" || scenario == "malformed" || scenario == "recreated";
@@ -288,15 +363,17 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "switch") {
         if (!workspace.openContext(source->contexts.last().id) || !waitFor([&] { return !workspace.busy(); }) || !workspace.property("portForwards").toList().isEmpty()) return false;
     }
+    QTcpSocket client;
     const auto failed = [&](const char* stage) {
-        std::fprintf(stderr,"Forward stage failed: %s; scenario=%s busy=%d loading=%d forwards=%lld error=%s transport=%s\n",
+        std::fprintf(stderr,"Forward stage failed: %s; scenario=%s busy=%d loading=%d forwards=%lld error=%s transport=%s socket=%s details=%s\n",
             stage,qPrintable(scenario),workspace.busy(),workspace.loading(),static_cast<long long>(workspace.portForwards().size()),
-            qPrintable(workspace.error()),qPrintable(workspace.portForwardError()));
+            qPrintable(workspace.error()),qPrintable(workspace.portForwardError()),qPrintable(client.errorString()),
+            qPrintable(QString::fromUtf8(QJsonDocument::fromVariant(workspace.portForwards()).toJson(QJsonDocument::Compact))));
         const auto evidence=qEnvironmentVariable("PODLORD_FORWARD_FRAME");
         if (!evidence.isEmpty()) window->grabWindow().save(evidence+".failure.png","PNG");
         return false;
     };
-    QTcpSocket client; client.connectToHost(QHostAddress::LocalHost, localPort);
+    client.connectToHost(QHostAddress::LocalHost, localPort);
     if (!waitFor([&] { return client.state() == QAbstractSocket::ConnectedState; })) return failed("local connection");
     const QByteArray message = real ? QByteArray("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         : scenario == "bulk" ? QByteArray(2 * 1024 * 1024, 'b')
@@ -494,8 +571,11 @@ bool run(const QString& scenario, const QString& configPath) {
             }, 1000) && requests == calls;
             if (scenario == "ports_table_narrow") {
                 window->setWidth(360);
-                if (!waitFor([&] { auto* grid = named("portTable"); return grid && grid->width() > 0 && grid->mapToScene({grid->width(),0}).x() <= window->width(); })) return false;
-                return click("portColumnsButton") && waitFor([&] { return named("portColumnVisible_endpoint") && named("portColumnVisible_endpoint")->isVisible(); }) && requests == calls;
+                if (!waitFor([&] { auto* content=named("workspaceContent"); return content && !content->isVisible(); })
+                    || !click("closeInspector")) return failed("close compact inspector before using Ports table");
+                if (!waitFor([&] { auto* grid = named("portTable"); return grid && grid->isVisible() && grid->width() > 0 && grid->mapToScene({grid->width(),0}).x() <= window->width(); })) return false;
+                return click("portColumnsButton") && waitFor([&] { return named("portColumnVisible_endpoint") && named("portColumnVisible_endpoint")->isVisible(); })
+                    && workspace.inspectorPath().isEmpty() && workspace.portForwards().size()==1 && requests == calls;
             }
             const auto beforeResource = workspace.resourceColumns();
             if (!click("portColumnsButton") || !waitFor([&] { return named("portColumnVisible_kind") && named("portColumnVisible_kind")->isVisible(); })) return false;

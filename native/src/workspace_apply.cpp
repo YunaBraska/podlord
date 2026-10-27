@@ -12,7 +12,8 @@ QString Workspace::yamlApplyDiff() const { return yamlApply_ ? yamlApply_->prepa
 QString Workspace::yamlComparison() const { return yamlApply_ ? yamlApply_->comparison : QString{}; }
 QString Workspace::yamlApplyStatus() const { return yamlApply_ ? yamlApply_->status : QString{}; }
 bool Workspace::canReconcileYaml() const {
-    return yamlApply_ && yamlDraft_ && !yamlApplyLocked() && !yamlApply_->current.isEmpty()
+    return yamlApply_ && yamlDraftCredentialsCurrent() && !yamlApplyLocked() && !yamlApply_->current.isEmpty()
+        && yamlApply_->revision == yamlDraft_->revision
         && yamlDraft_->text == yamlApply_->text
         && yamlApply_->current["metadata"].toObject()["uid"] == yamlApply_->baseline["metadata"].toObject()["uid"];
 }
@@ -33,13 +34,14 @@ QString Workspace::yamlConflictChoice(int index) const {
     return yamlApply_->choices.contains(path) ? yamlApply_->choices[path] ? "mine" : "server" : "unresolved";
 }
 bool Workspace::previewYamlApply() {
-    if (!yamlDraft_ || pendingLeave_ || busy_ || yamlChecking_ || authenticationRequired() || authenticationRunning() || yamlApplyLocked()) return false;
+    if (!yamlDraftCredentialsCurrent() || pendingLeave_ || busy_ || yamlChecking_ || authenticationRequired() || authenticationRunning() || yamlApplyLocked()) return false;
     const auto connection = client_.connection(yamlDraft_->session);
     if (!connection || yamlDraft_->session != active_ || yamlDraft_->path != inspectorPath()) return false;
     const auto metadata = yamlDraft_->document["metadata"].toObject();
     YamlApply intent;
     intent.token = QUuid::createUuid().toString(QUuid::WithoutBraces);
     intent.session = active_; intent.path = yamlDraft_->path; intent.text = yamlDraft_->text;
+    intent.revision = yamlDraft_->revision;
     intent.target = "Cluster: " + connection->server.toDisplayString() + "\nSession: " + title()
         + "\nNamespace: " + (metadata["namespace"].toString().isEmpty() ? "(cluster scoped)" : metadata["namespace"].toString())
         + "\nResource: " + yamlDraft_->document["kind"].toString() + '/' + metadata["name"].toString()
@@ -55,6 +57,10 @@ bool Workspace::previewYamlApply() {
         const auto result = watcher->result(); watcher->deleteLater();
         if (!yamlApply_ || yamlApply_->token != token || !yamlDraft_) return;
         if (pendingLeave_) { yamlApply_->phase = "canceled"; yamlApply_->status = "Preview canceled during pending navigation. Draft retained; nothing sent."; }
+        else if (yamlApply_->revision != yamlDraft_->revision
+            || !yamlDraftCredentialsCurrent()) {
+            yamlApply_->phase = "rejected"; yamlApply_->status = "Credentials or fresh detail authority changed. Draft retained; prepare a new preview after a fresh detail read. Nothing sent.";
+        }
         else if (const auto* failure = std::get_if<Failure>(&result)) {
             yamlApply_->phase = "invalid"; yamlApply_->status = failure->message; yamlCheckStatus_ = failure->message; emit yamlCheckChanged();
         } else {
@@ -69,16 +75,27 @@ bool Workspace::previewYamlApply() {
 bool Workspace::confirmYamlApply(bool confirmed) {
     if (!yamlApplyPreview()) return false;
     if (!confirmed) { yamlApply_->phase = "canceled"; yamlApply_->status = "Preview canceled. Draft retained; nothing sent."; emit yamlApplyChanged(); return true; }
+    if (!yamlDraftCredentialsCurrent() || yamlApply_->revision != yamlDraft_->revision) {
+        yamlApply_->phase = "rejected"; yamlApply_->status = "Credentials or fresh detail authority changed. Draft retained; prepare a new preview after a fresh detail read. Nothing sent.";
+        emit yamlApplyChanged(); return false;
+    }
     if (!yamlDraft_ || pendingLeave_ || yamlApply_->session != active_ || yamlApply_->path != inspectorPath() || yamlApply_->text != yamlDraft_->text) return false;
     yamlApply_->phase = "sending"; yamlApply_->status = "Confirmed write queued or running. No automatic retry.";
     yamlFresh_ = false; emit yamlApplyChanged(); emit yamlEditChanged();
     const auto intent = *yamlApply_;
-    if (client_.applyYaml(intent.session, intent.path, intent.token, intent.baseline, intent.prepared.document, intent.prepared.patch)) return true;
+    if (client_.applyYaml(intent.session, intent.path, intent.token, intent.baseline, intent.prepared.document, intent.prepared.patch, intent.revision)) return true;
     yamlApply_->phase = "rejected"; yamlApply_->status = "Nothing sent: target, credentials or request policy changed. Draft retained. Read back before retrying.";
     emit yamlApplyChanged(); return false;
 }
 bool Workspace::readBackYaml() {
     if (!canReadBackYaml() || pendingLeave_) return false;
+    const auto revision = client_.credentialRevision(yamlApply_->session);
+    if (revision && *revision != yamlApply_->revision) {
+        // A new observational operation cannot accept a late result from the old credentials.
+        yamlApply_->token = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        yamlApply_->revision = *revision;
+        yamlApply_->current = {};
+    }
     const auto intent = *yamlApply_;
     yamlApply_->phase = "reading"; yamlApply_->status = "Reading the original resource only. No write will be retried."; emit yamlApplyChanged();
     if (client_.readBackYaml(intent.session, intent.path, intent.token, intent.baseline, intent.prepared.document, intent.phase)) return true;
@@ -102,7 +119,7 @@ bool Workspace::chooseYamlConflict(int index, bool mine) {
 bool Workspace::finishYamlReconcile(bool confirmed) {
     if (!yamlReconcilePending()) return false;
     if (!confirmed) { yamlApply_->phase = "conflict"; emit yamlConflictsChanged(); emit yamlApplyChanged(); return true; }
-    if (!yamlReconcileReady() || !yamlDraft_) return false;
+    if (!yamlReconcileReady() || !yamlEditing()) return false;
     const auto result = mergeYaml(yamlApply_->baseline, yamlApply_->prepared.document, yamlApply_->current, yamlApply_->choices);
     if (!result.conflicts.isEmpty()) return false;
     yamlDraft_->document = yamlApply_->current; yamlDraft_->baseline = resourceYaml(yamlApply_->current);

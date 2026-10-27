@@ -1,6 +1,6 @@
 #pragma once
 #include "session_store.h"
-#include <QNetworkAccessManager>
+#include "background_http.h"
 #include <QNetworkReply>
 #include <QPointer>
 #include <QLockFile>
@@ -39,7 +39,7 @@ private:
     const QString profile_, currentVersion_;
     const std::function<QDateTime()> now_;
     const QUrl endpoint_;
-    QNetworkAccessManager network_;
+    PlatformNetworkAccessManager network_;
     QPointer<QNetworkReply> reply_;
     QTimer weekly_, deadline_;
     std::unique_ptr<QLockFile> lock_;

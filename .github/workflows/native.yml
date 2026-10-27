@@ -119,6 +119,15 @@ jobs:
           Copy-Item "$build\Release\podlord-native.exe" "$package\podlord-native.exe"
           & "$qt\bin\windeployqt.exe" --release --qmldir "$env:GITHUB_WORKSPACE\native\ui" --dir $package "$package\podlord-native.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Could not deploy the native Windows Qt runtime.' }
+          $opensslInclude = Select-String -Path "$build\CMakeCache.txt" -Pattern '^OPENSSL_INCLUDE_DIR:[^=]+=(.+)$'
+          if (!$opensslInclude) { throw 'The resolved OpenSSL include directory is missing from the build cache.' }
+          $opensslRoot = Split-Path -Parent $opensslInclude.Matches[0].Groups[1].Value
+          foreach ($library in @('libcrypto-3*.dll', 'libssl-3*.dll')) {
+            $runtime = @(Get-ChildItem -Path (Join-Path $opensslRoot 'bin') -Filter $library -File)
+            if ($runtime.Count -ne 1) { throw "Expected one $library in the resolved OpenSSL runtime directory." }
+            Copy-Item $runtime[0].FullName -Destination $package
+          }
+          Copy-Item "$env:GITHUB_WORKSPACE\native\licenses" -Destination "$package\licenses" -Recurse
           if (!(Test-Path "$package\platforms\qwindows.dll") -or !(Test-Path "$package\Qt6Core.dll")) {
             throw 'The native Windows package is missing its platform plugin or Qt runtime.'
           }
@@ -258,21 +267,15 @@ jobs:
         run: |
           set -eu
           log="$RUNNER_TEMP/native-ios.log"
-          qt="$RUNNER_TEMP/native-toolchain/qt"
-          yaml="$RUNNER_TEMP/native-yaml-ios"
+          sdk="$RUNNER_TEMP/native-ios-toolchain"
           build="$RUNNER_TEMP/native-ios-build"
-          "$RUNNER_TEMP/native-toolchain/installer/bin/aqt" install-qt mac ios 6.11.2 ios -m qtmultimedia qtwebsockets -O "$qt" > "$log" 2>&1 || { tail -40 "$log"; exit 1; }
-          cmake -S "$RUNNER_TEMP/native-toolchain/yaml-cpp-source" -B "$yaml" -G Xcode \
-            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/native-yaml-ios-install" -DYAML_BUILD_SHARED_LIBS=OFF \
-            -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
-          cmake --build "$yaml" --config Release --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
-          cmake --install "$yaml" --config Release >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
-          "$qt/6.11.2/ios/bin/qt-cmake" -S native -B "$build" -G Xcode \
+          CMAKE_BUILD_PARALLEL_LEVEL=4 sh scripts/build-native-ios-toolchain.sh iphoneos \
+            "$RUNNER_TEMP/native-toolchain/qt-sdk" "$sdk" > "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          "$sdk/qt/bin/qt-cmake" -S native -B "$build" -G Xcode \
             -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO -DQT_HOST_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk" \
-            -Dyaml-cpp_DIR="$RUNNER_TEMP/native-yaml-ios-install/lib/cmake/yaml-cpp" -DBUILD_TESTING=OFF \
+            -DOPENSSL_ROOT_DIR="$sdk/ssl" -DFFMPEG_DIR="$sdk/media" \
+            -Dyaml-cpp_DIR="$sdk/yaml/lib/cmake/yaml-cpp" -DBUILD_TESTING=OFF \
             -DQT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY=ON >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
           cmake --build "$build" --config Release --target podlord-native --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
           app="$build/Release-iphoneos/podlord-native.app"
@@ -303,6 +306,7 @@ jobs:
             ${{ runner.temp }}/native-package-boundaries.log
             ${{ runner.temp }}/native-package-tls.log
             ${{ runner.temp }}/native-ios.log
+            ${{ runner.temp }}/native-ios-toolchain/build-inputs.txt
             ${{ runner.temp }}/podlord-native-build/coverage/report.txt
             ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
             ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json

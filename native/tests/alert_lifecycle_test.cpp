@@ -17,6 +17,8 @@ public:
     int requests = 0;
     int version = 1;
     int restarts = 0;
+    int extraPods = 0;
+    int peerRestarts = 0;
     QString name = "worker";
     QString phase = "Running";
     QDateTime created;
@@ -44,6 +46,23 @@ public:
                             {"status", QJsonObject{{"phase", phase}, {"containerStatuses", QJsonArray{
                                 QJsonObject{{"name", "worker"}, {"ready", false}, {"restartCount", restarts}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}}}}}}};
                     else result = {{"kind", "Status"}, {"status", "Failure"}, {"reason", "NotFound"}, {"code", 404}};
+                    if (extraPods && (path == "/api/v1/pods" || path == "/api/v1/namespaces/default/pods")) {
+                        auto items = result["items"].toArray();
+                        for (int index = 0; index < extraPods; ++index) {
+                            auto peer = items.first().toObject();
+                            auto metadata = peer["metadata"].toObject();
+                            metadata["name"] = QString("peer-%1").arg(index);
+                            metadata["uid"] = QString("peer-uid-%1").arg(index);
+                            peer["metadata"] = metadata;
+                            auto status = peer["status"].toObject();
+                            auto container = status["containerStatuses"].toArray().first().toObject();
+                            container["restartCount"] = peerRestarts;
+                            status["containerStatuses"] = QJsonArray{container};
+                            peer["status"] = status;
+                            items.append(peer);
+                        }
+                        result["items"] = items;
+                    }
                     const auto body = QJsonDocument(result).toJson(QJsonDocument::Compact);
                     const auto status = result["code"] == 404 ? QByteArray("404 Not Found") : QByteArray("200 OK");
                     socket->write("HTTP/1.1 " + status + "\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
@@ -61,11 +80,34 @@ template<class Predicate> bool waitFor(Predicate predicate) {
 }
 bool run(const QString& scenario) {
     using namespace podlord;
+    struct CriterionCase final { QString field, expression; int count; };
+    const QMap<QString, CriterionCase> criteria{
+        {"criterion_text_prefix", {"name", "~wor", 1}},
+        {"criterion_text_suffix", {"name", "ker~", 1}},
+        {"criterion_text_alternative", {"name", "absent worker", 1}},
+        {"criterion_text_miss", {"name", "absent", 0}},
+        {"criterion_regex_miss", {"name", "/^absent$/", 0}},
+        {"criterion_image", {"image", "local:test", 1}},
+        {"criterion_problem_true", {"problems", "true", 1}},
+        {"criterion_problem_false", {"problems", "false", 0}},
+        {"criterion_numeric_gt_miss", {"restarts", ">0", 0}},
+        {"criterion_numeric_gte", {"restarts", ">=0", 1}},
+        {"criterion_numeric_lte", {"restarts", "<=0", 1}},
+        {"criterion_numeric_exact", {"restarts", "=0", 1}},
+        {"criterion_multi_exact", {"restarts", "=0 =4", 2}},
+        {"criterion_age_minutes", {"age", ">=1m", 1}},
+        {"criterion_age_missing", {"age", ">0", 0}},
+        {"criterion_p95", {"restarts", "p95", 1}},
+        {"criterion_outlier", {"restarts", "outlier", 1}}
+    };
     QTemporaryDir profile;
     if (!profile.isValid()) return false;
     auto now = QDateTime::currentDateTimeUtc();
     Kubernetes server(now);
     server.phase = scenario == "duration_survives_unmatch" ? "Running" : "Failed";
+    if (scenario == "criterion_p95" || scenario == "criterion_multi_exact") { server.extraPods = 1; server.peerRestarts = 4; }
+    if (scenario == "criterion_outlier") { server.restarts = 4; server.extraPods = 5; }
+    if (scenario == "criterion_age_missing") server.created = {};
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     ResourceClient client(nullptr, [&] { return now; });
     Alerts alerts(profile.path(), &client, nullptr, [&] { return now; });
@@ -84,6 +126,20 @@ bool run(const QString& scenario) {
         {"expression", view ? (scenario == "view_false" ? "false" : "true") : "worker"}}})}.toVariantList();
     if (scenario == "duration_survives_unmatch") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
         QJsonObject{{"field", "status"}, {"expression", "Running"}}})}.toVariantList();
+    if (scenario == "criterion_search_regex") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "search"}, {"expression", "/worker/"}}})}.toVariantList();
+    if (scenario == "criterion_namespace_exact") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "namespace"}, {"expression", "\"default\""}}})}.toVariantList();
+    if (scenario == "criterion_or_fallback") rule["groups"] = QJsonArray{
+        QJsonValue(QJsonArray{QJsonObject{{"field", "status"}, {"expression", "\"Succeeded\""}}}),
+        QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "/worker/"}}})}.toVariantList();
+    if (scenario == "criterion_restart_limit") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "restarts"}, {"expression", "<1"}}})}.toVariantList();
+    if (scenario == "recent_change_baseline") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "recentlyChanged"}, {"expression", "true"}}})}.toVariantList();
+    if (const auto it = criteria.constFind(scenario); it != criteria.cend())
+        rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+            QJsonObject{{"field", it->field}, {"expression", it->expression}}})}.toVariantList();
     rule["colorMode"] = view ? "new-in-view" : scenario.startsWith("once_") ? "once" : "duration";
     rule["animationMode"] = rule["colorMode"];
     rule["colorSeconds"] = 2; rule["animationSeconds"] = 2;
@@ -106,6 +162,24 @@ bool run(const QString& scenario) {
     };
     const auto effect = [&] { return alerts.effect(path); };
     const int requests = server.requests;
+    if (const auto it = criteria.constFind(scenario); it != criteria.cend())
+        return waitFor([&] { return countForRule() == it->count; }) && server.requests == requests;
+    if (scenario == "recent_change_baseline") {
+        if (countForRule() != 0 || effect()["color"] == "#123456") return false;
+        ++server.version; ++server.restarts;
+        now = now.addMSecs(1000);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
+        return waitFor([&] { return countForRule() == 1 && effect()["color"] == "#123456"; });
+    }
+    if (scenario == "criterion_search_regex" || scenario == "criterion_namespace_exact" || scenario == "criterion_or_fallback")
+        return countForRule() == 1 && server.requests == requests;
+    if (scenario == "criterion_restart_limit") {
+        if (countForRule() != 1) return false;
+        ++server.version; ++server.restarts;
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
+        return waitFor([&] { return countForRule() == 0; });
+    }
     if (scenario == "view_invalid") return !alerts.setVisibleResources("missing", {path}) && server.requests == requests;
     if (scenario == "session_close") return alerts.closeSession("session") && !alerts.setVisibleResources("session", {path}) && effect().isEmpty();
     if (view) {
@@ -133,6 +207,18 @@ bool run(const QString& scenario) {
     now = now.addMSecs(1000);
     if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
     if (!waitFor([&] { return effect()["animation"] == "pulse"; })) return false;
+    if (scenario == "transfer_hold") {
+        Alerts target(profile.path(), &client, nullptr, [&] { return now; });
+        QSignalSpy targetFocuses(&target, &Alerts::focusRequested);
+        if (!waitFor([&] { return !target.busy(); }) || !target.error().isEmpty()
+            || !target.showSession("session") || !alerts.transferSession("session", target)) return false;
+        if (!waitFor([&] { return target.effect(path)["color"] == "#123456"
+                && target.effect(path)["animation"] == "pulse"; })
+            || !alerts.effect(path).isEmpty() || !targetFocuses.isEmpty()) return false;
+        now = now.addSecs(3); QTest::qWait(2100);
+        return waitFor([&] { return target.effect(path)["color"] != "#123456"
+            && target.effect(path)["animation"] != "pulse"; }) && targetFocuses.isEmpty();
+    }
     if (scenario == "duration_survives_unmatch") {
         server.phase = "Succeeded"; ++server.version;
         if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session"); })) return false;

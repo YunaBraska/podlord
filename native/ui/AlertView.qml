@@ -53,7 +53,7 @@ Pane {
         criteria.clear()
         for (let g = 0; g < rule.groups.length; ++g)
             for (const c of rule.groups[g]) criteria.append({group: g, field: c.field, expression: c.expression})
-        name.text = rule.name; description.text = rule.description; ruleEnabled.checked = rule.enabled
+        name.text = rule.name; description.text = rule.description; description.cursorPosition = 0; ruleEnabled.checked = rule.enabled
         alertColorInput.text = rule.color; colorMode.currentIndex = holdOptions.findIndex(option => option.id === rule.colorMode); colorSeconds.value = rule.colorSeconds
         animation.currentIndex = animationOptions.findIndex(option => option.id === rule.animation); animationMode.currentIndex = holdOptions.findIndex(option => option.id === rule.animationMode); animationSeconds.value = rule.animationSeconds
         zoom.value = rule.zoom; selectedSoundId = rule.sound; soundSearch.text = ""; soundMinimum.value = rule.soundMinimumMatches
@@ -148,9 +148,9 @@ Pane {
     component FormRow: GridLayout {
         required property string label
         default property alias controls: values.data
-        Layout.fillWidth: true; columns: width < 600 ? 1 : 2; columnSpacing: 8; rowSpacing: 4
-        data: [Label { text: parent.label; Layout.preferredWidth: parent.columns === 1 ? -1 : 130; color: workspace.appearanceColors.muted },
-            RowLayout { id: values; Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6 }]
+        Layout.fillWidth: true; columns: view.width < 600 ? 1 : 2; columnSpacing: 8; rowSpacing: 4
+        data: [Label { text: parent.label; Layout.fillWidth: parent.columns === 1; Layout.preferredWidth: parent.columns === 1 ? -1 : 130; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted },
+            GridLayout { id: values; Layout.fillWidth: true; Layout.minimumWidth: 0; columns: view.width < 600 ? 1 : 3; columnSpacing: 6; rowSpacing: 6 }]
     }
     component HoldMode: ComboBox {
         Layout.fillWidth: true
@@ -164,7 +164,13 @@ Pane {
         options: Dialogs.ColorDialog.DontUseNativeDialog
         onAccepted: alertColorInput.text = selectedColor.toString()
     }
-    contentItem: ColumnLayout {
+    contentItem: ScrollView {
+        id: pageScroll
+        contentWidth: availableWidth
+        clip: true
+        ColumnLayout {
+        width: pageScroll.availableWidth
+        height: Math.max(pageScroll.availableHeight, implicitHeight)
         spacing: 8
         Label { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
         Label { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
@@ -173,9 +179,10 @@ Pane {
             objectName: "alertRulesTable"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
+            Layout.maximumWidth: pageScroll.availableWidth
             Layout.preferredHeight: view.width < 600 ? Math.min(132, Math.max(112, view.height * 0.35)) : Math.min(220, Math.max(160, view.height * 0.4))
-            Layout.minimumHeight: view.width < 600 ? 0 : implicitHeight
-            Layout.maximumHeight: view.width < 600 ? Layout.preferredHeight : Number.POSITIVE_INFINITY
+            Layout.minimumHeight: view.width < 600 ? Layout.preferredHeight : implicitHeight
+            Layout.maximumHeight: Layout.preferredHeight
             prefix: "alert"
             emptyText: "No alarm rules."
             tableModel: workspace.alerts.tableModel
@@ -195,7 +202,7 @@ Pane {
             onCopyPathRequested: (identity, column) => workspace.alerts.copyIdentity(identity, column)
         }
         Flow {
-            Layout.fillWidth: true; spacing: 6
+            Layout.fillWidth: true; Layout.maximumWidth: pageScroll.availableWidth; Layout.preferredHeight: childrenRect.height; spacing: 6
             ActionButton { objectName: "addAlert"; text: workspace.uiText["action.add"]; enabled: !workspace.alerts.busy; onClicked: view.add() }
             ActionButton { objectName: "duplicateAlert"; text: workspace.uiText["action.duplicate"]; enabled: !workspace.alerts.busy && view.draft !== null && view.draft.id !== ""; onClicked: view.changeSelection("duplicate") }
             ActionButton { objectName: "deleteAlert"; text: workspace.uiText["action.delete"]; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
@@ -208,7 +215,10 @@ Pane {
         ScrollView {
             id: editor
             objectName: "alertEditor"
-            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; visible: view.draft !== null; clip: true; contentWidth: availableWidth; padding: 10
+            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: view.width >= 600; visible: view.draft !== null; clip: true; contentWidth: availableWidth; padding: 10
+            wheelEnabled: view.width >= 600
+            Binding { target: editor.contentItem; property: "interactive"; value: view.width >= 600 }
+            Layout.preferredHeight: view.width < 600 ? form.implicitHeight + 20 : 80
             Layout.minimumHeight: 80
             Layout.maximumWidth: view.availableWidth
             ColumnLayout {
@@ -253,7 +263,7 @@ Pane {
                     }
                 }
                 Flow {
-                    Layout.fillWidth: true; spacing: 6; enabled: form.editable
+                    Layout.fillWidth: true; Layout.preferredHeight: childrenRect.height; spacing: 6; enabled: form.editable
                     ActionButton { objectName: "addAlertAnd"; text: "AND +"; Accessible.name: "Add AND criterion"; onClicked: view.addCriterion(criteria.get(criteria.count - 1).group) }
                     ActionButton { objectName: "addAlertOr"; glyph: "ZoomIn"; showText: false; text: "Add OR group"; onClicked: criteria.append({group: criteria.get(criteria.count - 1).group + 1, field: "name", expression: ""}) }
                 }
@@ -309,7 +319,7 @@ Pane {
                 FormRow { label: "Find sound"; TextField { id: soundSearch; objectName: "alertSoundSearch"; Layout.fillWidth: true; enabled: form.editable; placeholderText: "Name, purpose, author, license or music"; Accessible.name: "Find alert sound" } }
                 FormRow { label: "Sound"; ComboBox { id: sound; objectName: "alertSound"; Layout.fillWidth: true; Layout.minimumWidth: 0; enabled: form.editable; model: view.soundOptions; currentIndex: view.soundOptions.findIndex(s => s.id === view.selectedSoundId); textRole: "name"; valueRole: "id"; Accessible.name: "Alert sound"; onActivated: view.selectedSoundId = currentValue } ActionButton { objectName: "previewAlertSound"; text: "Preview"; enabled: !workspace.alerts.busy && !workspace.alerts.muted && view.selectedSoundId !== "none"; onClicked: workspace.alerts.previewSound(view.selectedSoundId) } ActionButton { objectName: "openAlertSoundSource"; text: "Source"; enabled: view.selectedSound !== undefined; Accessible.name: "Open selected sound source in the external browser"; onClicked: view.sourceError = Qt.openUrlExternally(view.selectedSound.source) ? "" : "The browser could not open this link. Please try again explicitly." } }
                 Label { objectName: "alertSoundNoResults"; Layout.fillWidth: true; visible: view.soundOptions.length === 0; text: "No sounds match. The selected sound is unchanged."; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-                Label { objectName: "alertSoundAttribution"; Layout.fillWidth: true; text: view.selectedSound ? view.selectedSound.name + "\n" + view.selectedSound.purpose + "\n" + view.selectedSound.author + " / " + view.selectedSound.license + "\n" + view.selectedSound.source : ""; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; Accessible.name: text }
+                Label { objectName: "alertSoundAttribution"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: view.selectedSound ? view.selectedSound.name + "\n" + view.selectedSound.purpose + "\n" + view.selectedSound.author + " / " + view.selectedSound.license + "\n" + view.selectedSound.source : ""; wrapMode: Text.WrapAnywhere; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; Accessible.name: text }
                 Label { objectName: "alertSoundSourceError"; Layout.fillWidth: true; visible: text !== ""; text: view.sourceError; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; Accessible.name: text }
                 FormRow { label: "Minimum matches"; enabled: form.editable; SpinBox { id: soundMinimum; objectName: "alertSoundMinimum"; from: 1; to: 2147483647; editable: true; Accessible.name: "Minimum matches before sound" } }
             }
@@ -317,8 +327,9 @@ Pane {
         }
         Label { objectName: "alertEmptyState"; text: workspace.currentSession === "" ? "Open a session to evaluate cached resources." : "No matching alerts in this session."; visible: workspace.alerts.matches.length === 0; color: workspace.appearanceColors.muted }
         Flow {
-            Layout.fillWidth: true; spacing: 6
+            Layout.fillWidth: true; Layout.maximumWidth: pageScroll.availableWidth; Layout.preferredHeight: childrenRect.height; spacing: 6
             Repeater { model: workspace.alerts.matches; Button { required property var modelData; required property int index; objectName: "alertMatch_" + index; text: modelData.name + ": " + modelData.count; Accessible.name: text; onClicked: workspace.inspectPath(modelData.path) } }
+        }
         }
     }
 }

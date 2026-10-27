@@ -13,6 +13,7 @@ class YamlPresentation : public QQuickPaintedItem {
     Q_PROPERTY(QQuickItem* editor READ editor WRITE setEditor NOTIFY editorChanged)
     Q_PROPERTY(QFont font READ font WRITE setFont NOTIFY fontChanged)
     Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+    Q_PROPERTY(bool light READ light WRITE setLight NOTIFY lightChanged)
     Q_PROPERTY(qreal scrollOffset READ scrollOffset WRITE setScrollOffset NOTIFY scrollOffsetChanged)
     Q_PROPERTY(int firstVisibleLine READ firstVisibleLine NOTIFY linesChanged)
 public:
@@ -21,12 +22,14 @@ public:
     QQuickItem* editor() const { return editor_; }
     QFont font() const { return font_; }
     QColor color() const { return color_; }
+    bool light() const;
     qreal scrollOffset() const { return offset_; }
     int firstVisibleLine() const { return firstLine_; }
     void setDocument(QQuickTextDocument* document);
     void setEditor(QQuickItem* editor);
     void setFont(const QFont& font);
     void setColor(const QColor& color);
+    void setLight(bool light);
     void setScrollOffset(qreal offset);
     void paint(QPainter* painter) override;
 signals:
@@ -34,6 +37,7 @@ signals:
     void editorChanged();
     void fontChanged();
     void colorChanged();
+    void lightChanged();
     void scrollOffsetChanged();
     void linesChanged();
 private:

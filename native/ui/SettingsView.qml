@@ -87,6 +87,8 @@ Pane {
     signal sourcesRequested()
     signal fileRequested()
     signal folderRequested()
+    signal ociImportRequested()
+    signal gkeImportRequested()
     signal sourceFailuresRequested()
     property string section: "alerts"
     readonly property var sections: ["alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
@@ -148,7 +150,7 @@ Pane {
         spacing: 12
         Label { text: workspace.uiText["settings.title"]; font.pixelSize: 16; font.bold: true; color: workspace.appearanceColors.accent }
         Flow {
-            Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 4
+            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: childrenRect.height; spacing: 4
             visible: settings.width >= 650
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
@@ -178,8 +180,9 @@ Pane {
             id: scroll
             objectName: "settingsContent"
             Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; visible: settings.section !== "alerts"
-            contentWidth: availableWidth; clip: true
+            contentWidth: availableWidth; contentHeight: settingsFields.implicitHeight; clip: true
             ColumnLayout {
+                id: settingsFields
                 width: scroll.availableWidth; spacing: 10
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
@@ -244,6 +247,8 @@ Pane {
                             IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: "Paste kubeconfig"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
                             IconButton { objectName: "importHomeButton"; glyph: ""; showText: true; text: "Import ~/.kube/config"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
                             IconButton { objectName: "refreshSourceFilesButton"; glyph: ""; showText: true; text: "Reimport changed source files"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
+                            IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: "Import OCI API key"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
+                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: "Import GKE service-account key"; Layout.fillWidth: true; visible: Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
                             IconButton { glyph: ""; showText: true; text: "Reload imported metadata"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.reload() } }
                         }
                     }
@@ -321,7 +326,15 @@ Pane {
                         onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("audit",identity,column)
                     }
                 }
-                AboutView { Layout.fillWidth: true; visible: settings.section === "about" }
+                AboutView {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 640
+                    Layout.alignment: Qt.AlignLeft
+                    Layout.leftMargin: 14
+                    Layout.rightMargin: 14
+                    Layout.topMargin: 14
+                    visible: settings.section === "about"
+                }
                 Label { objectName: "inlineSettingsError"; Layout.fillWidth: true; visible: workspace.error !== ""; text: workspace.error; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap }
             }
         }

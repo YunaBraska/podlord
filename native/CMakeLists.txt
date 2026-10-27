@@ -6,7 +6,21 @@ project(PodlordNative VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif()
 find_package(Qt6 6.8 REQUIRED COMPONENTS Core Network Concurrent Gui Qml Quick QuickControls2 Multimedia WebSockets)
+if(IOS)
+    get_target_property(ios_core_features Qt6::Core QT_ENABLED_PUBLIC_FEATURES)
+    get_target_property(ios_network_features Qt6::Network QT_ENABLED_PUBLIC_FEATURES)
+    if(NOT "openssl_linked" IN_LIST ios_core_features OR NOT "opensslv30" IN_LIST ios_core_features
+        OR NOT "ssl" IN_LIST ios_network_features OR "securetransport" IN_LIST ios_network_features)
+        message(FATAL_ERROR "iOS requires Qt with directly linked OpenSSL 3 and SecureTransport disabled. Build it with scripts/build-native-ios-toolchain.sh.")
+    endif()
+endif()
 set(CMAKE_AUTOMOC ON)
 find_package(yaml-cpp REQUIRED)
 include(FetchContent)
@@ -25,6 +39,9 @@ if(BUILD_TESTING)
     foreach(style Basic Fusion)
         add_test(NAME native.settings_layout.sidebar_${style} COMMAND settings-layout-ui-test)
         set_tests_properties(native.settings_layout.sidebar_${style} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+        add_test(NAME native.settings_layout.compact_scroll_${style} COMMAND settings-layout-ui-test compact_scroll)
+        set_tests_properties(native.settings_layout.compact_scroll_${style} PROPERTIES TIMEOUT 30
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
     endforeach()
     add_executable(settings-notice-ui-test tests/settings_notice_ui_test.cpp tests/ui_input.h)
@@ -196,10 +213,53 @@ option(PODLORD_COVERAGE "Instrument the native session runtime with LLVM coverag
 add_library(podlord_sessions STATIC src/session_store.cpp)
 target_include_directories(podlord_sessions PUBLIC src)
 target_link_libraries(podlord_sessions PUBLIC Qt6::Core)
-add_executable(podlord-session src/session_main.cpp)
-target_link_libraries(podlord-session PRIVATE podlord_sessions)
-add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_process.cpp)
-target_link_libraries(podlord_sources PUBLIC podlord_sessions Qt6::Network PRIVATE yaml-cpp::yaml-cpp)
+if(NOT IOS)
+    add_executable(podlord-session src/session_main.cpp)
+    target_link_libraries(podlord-session PRIVATE podlord_sessions)
+endif()
+add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_process.cpp src/native_oidc.cpp src/native_eks.cpp src/native_oci.cpp src/native_gke.cpp)
+if(NOT ANDROID)
+    target_sources(podlord_sources PRIVATE src/platform_tls.cpp src/background_http.cpp)
+endif()
+if(APPLE)
+    target_sources(podlord_sources PRIVATE src/platform_tls_apple.mm)
+endif()
+target_link_libraries(podlord_sources PUBLIC podlord_sessions Qt6::Network Qt6::Gui PRIVATE yaml-cpp::yaml-cpp)
+if(IOS)
+    set(PODLORD_GKE_IOS_CLIENT_ID "" CACHE STRING "Registered Google iOS OAuth client for berlin.yuna.podlord")
+    option(PODLORD_BUILD_MOBILE_UI_TEST "Build the existing public UI driver for the iOS simulator" OFF)
+    set(PODLORD_GKE_IOS_PLIST "")
+    set(PODLORD_GKE_IOS_URL_TYPE "")
+    if(NOT PODLORD_GKE_IOS_CLIENT_ID STREQUAL "")
+        string(LENGTH "${PODLORD_GKE_IOS_CLIENT_ID}" gke_client_length)
+        if(gke_client_length GREATER 255 OR NOT PODLORD_GKE_IOS_CLIENT_ID MATCHES "^[0-9]+(-[a-z0-9]+)?[.]apps[.]googleusercontent[.]com$")
+            message(FATAL_ERROR "PODLORD_GKE_IOS_CLIENT_ID must be a registered Google iOS OAuth client ID.")
+        endif()
+        string(REGEX REPLACE "[.]apps[.]googleusercontent[.]com$" "" gke_client_prefix "${PODLORD_GKE_IOS_CLIENT_ID}")
+        set(PODLORD_GKE_IOS_PLIST "<key>GIDClientID</key><string>${PODLORD_GKE_IOS_CLIENT_ID}</string>")
+        set(PODLORD_GKE_IOS_URL_TYPE "<dict><key>CFBundleURLName</key><string>Google sign-in</string><key>CFBundleURLSchemes</key><array><string>com.googleusercontent.apps.${gke_client_prefix}</string></array></dict>")
+    endif()
+    target_compile_definitions(podlord_sources PRIVATE PODLORD_GKE_IOS_CLIENT_ID="${PODLORD_GKE_IOS_CLIENT_ID}")
+endif()
+if(ANDROID)
+    set(PODLORD_ANDROID_OPENSSL_ROOT "" CACHE PATH "Directory containing per-ABI Android OpenSSL 3 libraries")
+    set(android_openssl_dir "${PODLORD_ANDROID_OPENSSL_ROOT}/${ANDROID_ABI}")
+    if(NOT EXISTS "${android_openssl_dir}/libcrypto_3.so" OR NOT EXISTS "${android_openssl_dir}/libssl_3.so"
+        OR NOT EXISTS "${android_openssl_dir}/include/openssl/evp.h")
+        message(FATAL_ERROR "Android HTTPS and OIDC require bundled OpenSSL 3 libraries and headers; run scripts/build-native-android-openssl.sh for ${ANDROID_ABI}.")
+    endif()
+    add_library(podlord_android_crypto SHARED IMPORTED)
+    set_target_properties(podlord_android_crypto PROPERTIES IMPORTED_LOCATION "${android_openssl_dir}/libcrypto_3.so")
+    target_include_directories(podlord_sources PRIVATE "${android_openssl_dir}/include")
+    target_link_libraries(podlord_sources PUBLIC podlord_android_crypto)
+endif()
+if(NOT APPLE AND NOT ANDROID)
+    find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+    target_link_libraries(podlord_sources PUBLIC OpenSSL::Crypto)
+endif()
+if(APPLE)
+    target_link_libraries(podlord_sources PUBLIC "-framework Security")
+endif()
 if(APPLE AND NOT IOS)
     find_package(OpenSSL 3.0 REQUIRED COMPONENTS SSL Crypto)
     if(OPENSSL_VERSION VERSION_GREATER_EQUAL 4)
@@ -209,8 +269,10 @@ if(APPLE AND NOT IOS)
     # Qt's runtime OpenSSL plugin needs the bundled libraries loaded before TLS selection.
     target_link_options(podlord_sources INTERFACE "LINKER:-needed_library,$<TARGET_FILE:OpenSSL::SSL>")
 endif()
-add_executable(podlord-source src/source_main.cpp)
-target_link_libraries(podlord-source PRIVATE podlord_sources)
+if(NOT IOS)
+    add_executable(podlord-source src/source_main.cpp)
+    target_link_libraries(podlord-source PRIVATE podlord_sources)
+endif()
 add_library(podlord_workspace STATIC src/read_settings.cpp src/table_layout.cpp src/workspace_table_layout.cpp src/view_state.cpp src/workspace_view_state.cpp src/workspace_field_filters.cpp src/appearance.cpp src/workspace_appearance.cpp src/pod_logs.cpp src/resource_client.cpp src/resource_port_forward.cpp src/port_forward_transport.cpp src/workspace_port_forward.cpp src/workspace.cpp src/resource_filter.cpp src/kind_glyph.cpp src/radar_island.cpp src/alerts.cpp src/resource_metrics.cpp)
 target_link_libraries(podlord_workspace PUBLIC podlord_sources Qt6::Concurrent Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Multimedia Qt6::WebSockets PRIVATE yaml-cpp::yaml-cpp)
 # LLVM can decline unrolling in inlined Qt loops; retain that advisory without weakening correctness warnings.
@@ -218,6 +280,7 @@ set_source_files_properties(src/alerts.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_C
 target_sources(podlord_workspace PRIVATE src/resource_guidance.cpp src/workspace_about.cpp src/container_terminal.cpp src/resource_terminal.cpp src/workspace_terminal.cpp src/workspace_inspector_tables.cpp src/workspace_sources.cpp)
 target_sources(podlord_workspace PRIVATE src/ui_language.cpp src/workspace_language.cpp)
 target_sources(podlord_workspace PRIVATE src/yaml_presentation.cpp)
+target_sources(podlord_workspace PRIVATE src/platform_websocket_tls.cpp)
 target_sources(podlord_workspace PRIVATE src/runtime_diagnostics.cpp src/workspace_diagnostics.cpp)
 target_sources(podlord_workspace PRIVATE src/resource_cache_diagnostics.cpp src/release_updates.cpp src/workspace_windows.cpp src/window_host.cpp)
 if(WIN32)
@@ -322,16 +385,11 @@ if(BUILD_TESTING)
         endforeach()
     endforeach()
 endif()
-set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER "dev.podlord.native.reference" MACOSX_BUNDLE_BUNDLE_NAME "Podlord Native")
+set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord" MACOSX_BUNDLE_BUNDLE_NAME "Podlord Native")
 set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}" MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
 if(ANDROID)
-    set(PODLORD_ANDROID_OPENSSL_ROOT "" CACHE PATH "Directory containing per-ABI Android OpenSSL 3 libraries")
-    set(android_openssl_dir "${PODLORD_ANDROID_OPENSSL_ROOT}/${ANDROID_ABI}")
-    if(NOT EXISTS "${android_openssl_dir}/libcrypto_3.so" OR NOT EXISTS "${android_openssl_dir}/libssl_3.so")
-        message(FATAL_ERROR "Android HTTPS requires bundled OpenSSL 3 libraries; run scripts/build-native-android-openssl.sh for ${ANDROID_ABI} and set PODLORD_ANDROID_OPENSSL_ROOT.")
-    endif()
     set_target_properties(podlord-native PROPERTIES
-        QT_ANDROID_PACKAGE_NAME "dev.podlord.app"
+        QT_ANDROID_PACKAGE_NAME "berlin.yuna.podlord"
         QT_ANDROID_APP_NAME "Podlord"
         QT_ANDROID_APP_ICON "@drawable/podlord_icon"
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
@@ -347,13 +405,34 @@ endif()
 target_compile_definitions(podlord-native PRIVATE PODLORD_APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(podlord-native PRIVATE podlord_workspace)
 if(IOS)
+    set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in")
     set_target_properties(podlord-native PROPERTIES XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
     set_target_properties(podlord-native PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME AppIcon)
     target_sources(podlord-native PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ios/Assets.xcassets")
     set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/ios/Assets.xcassets" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     qt_add_ios_ffmpeg_libraries(podlord-native)
 endif()
-foreach(target podlord_sessions podlord-session podlord_sources podlord-source podlord_workspace podlord-native)
+if(BUILD_TESTING OR (IOS AND PODLORD_BUILD_MOBILE_UI_TEST))
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
+    qt_add_executable(workspace_ui_test tests/workspace_ui_test.cpp)
+    target_link_libraries(workspace_ui_test PRIVATE podlord_workspace Qt6::Test)
+    if(IOS)
+        target_sources(workspace_ui_test PRIVATE tests/ios_orientation.mm)
+        target_link_libraries(workspace_ui_test PRIVATE "-framework UIKit")
+        set_target_properties(workspace_ui_test PROPERTIES MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+        qt_add_ios_ffmpeg_libraries(workspace_ui_test)
+    else()
+        set_target_properties(workspace_ui_test PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+endif()
+set(podlord_targets podlord_sessions podlord_sources podlord_workspace podlord-native)
+if(NOT IOS)
+    list(APPEND podlord_targets podlord-session podlord-source)
+endif()
+foreach(target IN LISTS podlord_targets)
     if(MSVC)
         # Qt 6.11.2 emits optimizer C4702 in qmetatype.h despite external-header warning levels.
         target_compile_options(${target} PRIVATE /W4 /WX /external:anglebrackets /external:W0 /wd4702)
@@ -373,12 +452,12 @@ if(BUILD_TESTING)
     add_executable(port-forward-ui-test tests/port_forward_ui_test.cpp)
     add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
     target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario connect input shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
+    foreach(scenario connect input ime_query ime_commit ime_empty wheel_history wheel_pixel wheel_shift_tracking wheel_tracking_up wheel_tracking_down wheel_follow shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
         status_success status_empty status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
         status_invalid_exit_reason status_invalid_exit_text status_invalid_exit_zero status_invalid_exit_large status_invalid_exit_fraction status_invalid_exit_missing
         frame_empty close_bad_size close_bad_channel stderr_frame
         key_enter key_backspace key_backtab key_insert key_delete key_home key_end key_pageup key_pagedown key_f1 key_alt
-        bad_channel text_frame oversized disconnect repeat session_close session_switch reconnect narrow hidden
+        bad_channel text_frame oversized disconnect repeat session_close close_pending_target session_switch reconnect narrow hidden
         invalid_container invalid_shell empty_shell relative_shell completed recreated container_removed target_auth target_forbidden target_rate target_redirect upgrade_auth upgrade_forbidden upgrade_rate upgrade_redirect protocol)
         foreach(style Basic Fusion)
             add_test(NAME native.terminal.${scenario}_${style} COMMAND container-terminal-ui-test ${scenario})
@@ -414,9 +493,14 @@ if(BUILD_TESTING)
             set_tests_properties(native.forward.${scenario}_${style} PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
     endforeach()
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
     add_executable(read-overlap-test tests/read_overlap_test.cpp)
     target_link_libraries(read-overlap-test PRIVATE podlord_workspace Qt6::Test)
+    add_test(NAME native.read_boundary.request_audit COMMAND read-overlap-test request_audit)
+    set_tests_properties(native.read_boundary.request_audit PROPERTIES TIMEOUT 45)
+    foreach(scenario IN ITEMS discovery_invalid_body discovery_invalid_entry pod_problem_projection namespace_scoped_valid namespace_scoped_mismatch namespace_scoped_retain namespace_all_valid)
+        add_test(NAME native.read_boundary.${scenario} COMMAND read-overlap-test ${scenario})
+        set_tests_properties(native.read_boundary.${scenario} PROPERTIES TIMEOUT 45)
+    endforeach()
     foreach(scenario inspect logs pause hide close move conflict move_occupied move_missing auth focus limit forward_move forward_close)
         add_test(NAME native.read_views.${scenario} COMMAND read-overlap-test view_${scenario})
         set_tests_properties(native.read_views.${scenario} PROPERTIES TIMEOUT 60 LABELS behavior)
@@ -467,7 +551,9 @@ if(BUILD_TESTING)
     add_executable(alerts_store_test tests/alerts_store_test.cpp)
     add_executable(alert-lifecycle-test tests/alert_lifecycle_test.cpp)
     target_link_libraries(alert-lifecycle-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid session_close)
+    foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline
+        criterion_text_prefix criterion_text_suffix criterion_text_alternative criterion_text_miss criterion_regex_miss criterion_image criterion_problem_true criterion_problem_false
+        criterion_numeric_gt_miss criterion_numeric_gte criterion_numeric_lte criterion_numeric_exact criterion_multi_exact criterion_age_minutes criterion_age_missing criterion_p95 criterion_outlier)
         add_test(NAME native.alert_lifecycle.${scenario} COMMAND alert-lifecycle-test ${scenario})
         set_tests_properties(native.alert_lifecycle.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
@@ -540,13 +626,13 @@ if(BUILD_TESTING)
             set_tests_properties(native.management.source_alias_${scenario}_${style} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
     endforeach()
-    foreach(scenario source_manage_paste source_manage_paste_empty source_manage_paste_cancel source_manage_paste_escape source_manage_paste_invalid source_manage_paste_origin_invalid source_manage_paste_busy source_manage_paste_repeat source_manage_paste_changed source_manage_paste_limit source_manage_file_limit source_manage_home source_manage_refresh source_manage_refresh_changed source_manage_refresh_missing source_manage_refresh_repeat session_manage_narrow session_manage_cancel session_manage_escape session_manage_namespaces session_manage_unchanged session_manage_invalid_namespace session_manage_busy session_manage_context session_manage_repeat session_manage_duplicate session_manage_duplicate_unnamed session_manage_missing session_manage_invalid_context session_manage_restart)
+    foreach(scenario source_manage_paste source_manage_paste_empty source_manage_paste_cancel source_manage_paste_escape source_manage_paste_invalid source_manage_paste_origin_invalid source_manage_paste_busy source_manage_paste_repeat source_manage_paste_changed source_manage_paste_limit source_manage_file_limit source_manage_home source_manage_refresh source_manage_refresh_changed source_manage_refresh_missing source_manage_refresh_repeat source_manage_refresh_quick_controls_changed session_manage_narrow session_manage_cancel session_manage_escape session_manage_namespaces session_manage_unchanged session_manage_invalid_namespace session_manage_busy session_manage_context session_manage_repeat session_manage_duplicate session_manage_duplicate_unnamed session_manage_missing session_manage_invalid_context session_manage_restart)
         foreach(style Basic Fusion)
             add_test(NAME native.management.${scenario}_${style} COMMAND source_input_test $<TARGET_FILE:podlord-source> ${scenario})
             set_tests_properties(native.management.${scenario}_${style} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
     endforeach()
-    set(source_input_cases empty missing blank arguments file nested partial all_invalid repeat changed home unsupported_home inside_profile profile_root deleted busy ui ui_partial)
+    set(source_input_cases empty missing blank arguments file nested partial all_invalid repeat changed home unsupported_home inside_profile profile_root deleted busy ui ui_partial content_uri_missing content_uri_quick content_uri_invalid)
     if(UNIX)
         list(APPEND source_input_cases symlink denied)
     endif()
@@ -589,13 +675,41 @@ if(BUILD_TESTING)
     add_executable(tls-connection-test tests/tls_connection_test.cpp)
     target_link_libraries(tls-connection-test PRIVATE podlord_workspace)
     find_program(PODLORD_NODE node REQUIRED)
+    add_executable(background-http-test tests/background_http_test.cpp)
+    target_link_libraries(background-http-test PRIVATE podlord_sources Qt6::Test)
+    foreach(scenario body post patch bounded paused_reader parallel repeat cancel_before cancel_active cancel_unread cancel_metadata destroy not_found redirect disconnect)
+        add_test(NAME native.http.background_${scenario} COMMAND "${PODLORD_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-background-http.cjs" $<TARGET_FILE:background-http-test> ${scenario})
+        set_tests_properties(native.http.background_${scenario} PROPERTIES TIMEOUT 20)
+    endforeach()
     if(UNIX)
+        add_test(NAME native.toolchain.ios_input COMMAND "${PODLORD_NODE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-ios-toolchain.cjs")
+        set_tests_properties(native.toolchain.ios_input PROPERTIES TIMEOUT 15)
+        if(APPLE)
+            add_test(NAME native.toolchain.macos_input COMMAND "${PODLORD_NODE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-macos-toolchain.cjs")
+            set_tests_properties(native.toolchain.macos_input PROPERTIES TIMEOUT 60)
+        endif()
         foreach(scenario extra empty)
             add_test(NAME native.runner.argument_${scenario} COMMAND "${PODLORD_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-runner.cjs" ${scenario})
             set_tests_properties(native.runner.argument_${scenario} PROPERTIES TIMEOUT 10)
         endforeach()
     endif()
     find_program(PODLORD_OPENSSL openssl HINTS "${OPENSSL_INCLUDE_DIR}/../bin" REQUIRED)
+    if(APPLE)
+        add_executable(platform-tls-test tests/platform_tls_test.cpp)
+        target_link_libraries(platform-tls-test PRIVATE podlord_sources)
+        if(NOT IOS)
+            add_library(platform-tls-faults SHARED tests/platform_tls_faults.cpp)
+            target_link_libraries(platform-tls-faults PRIVATE "-framework Security" "-framework CoreFoundation")
+            foreach(scenario fault_data fault_certificates fault_anchors fault_name fault_policy fault_trust fault_null_trust fault_set_anchors fault_exclusive_anchors)
+                add_test(NAME native.tls.platform_${scenario} COMMAND "${PODLORD_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-platform-tls.cjs" $<TARGET_FILE:platform-tls-test> "${PODLORD_OPENSSL}" ${scenario} $<TARGET_FILE:platform-tls-faults>)
+                set_tests_properties(native.tls.platform_${scenario} PROPERTIES TIMEOUT 45)
+            endforeach()
+        endif()
+        foreach(scenario trusted unknown_issuers system_untrusted wrong_ca wrong_host expired invalid_peer invalid_ca missing_peer empty_host null_host no_errors mixed_errors revoked canceled delayed cancel_pending)
+            add_test(NAME native.tls.platform_${scenario} COMMAND "${PODLORD_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-platform-tls.cjs" $<TARGET_FILE:platform-tls-test> "${PODLORD_OPENSSL}" ${scenario})
+            set_tests_properties(native.tls.platform_${scenario} PROPERTIES TIMEOUT 45)
+        endforeach()
+    endif()
     foreach(scenario trusted untrusted_ca untrusted_client)
         add_test(NAME native.tls.${scenario} COMMAND "${PODLORD_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-native-tls.cjs" $<TARGET_FILE:tls-connection-test> "${PODLORD_OPENSSL}" ${scenario})
         set_tests_properties(native.tls.${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
@@ -637,7 +751,7 @@ if(BUILD_TESTING)
             set_tests_properties(native.credentials.file.${field}.${scenario} PROPERTIES TIMEOUT 15)
         endforeach()
     endforeach()
-    set(credential_token_cases relative absolute limit invalid_utf8 whitespace)
+    set(credential_token_cases relative absolute limit invalid_utf8 whitespace rotate)
     if(UNIX)
         list(APPEND credential_token_cases symlink)
     endif()
@@ -646,18 +760,147 @@ if(BUILD_TESTING)
         set_tests_properties(native.credentials.token.${scenario} PROPERTIES TIMEOUT 15)
     endforeach()
     target_link_libraries(authentication_ui_test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario success cancel_confirmation cancel_running invalid_json array_json wrong_kind wrong_status token_type certificate_type key_type expiration_type bad_certificate bad_key wrong_version missing_status no_credentials bad_token expired bad_date failed_exit failed_start large_output v1beta1 relative_command invalid_mode requires_stdin invalid_args invalid_env mixed_credentials retry_401 expiry cache_reopen restore shared_running shared_401 shutdown_running)
+    add_executable(native-oidc-test tests/native_oidc_test.cpp)
+    target_link_libraries(native-oidc-test PRIVATE podlord_sources Qt6::Test)
+    add_executable(native-eks-test tests/native_eks_test.cpp)
+    target_link_libraries(native-eks-test PRIVATE podlord_sources)
+    add_executable(native-oci-test tests/native_oci_test.cpp)
+    target_link_libraries(native-oci-test PRIVATE podlord_sources)
+    add_executable(native-gke-test tests/native_gke_test.cpp)
+    target_link_libraries(native-gke-test PRIVATE podlord_sources Qt6::Test)
+    if(UNIX AND NOT APPLE AND NOT ANDROID)
+        foreach(target native-oci-test native-gke-test)
+            target_sources(${target} PRIVATE tests/openssl_faults.cpp)
+            target_compile_definitions(${target} PRIVATE PODLORD_OPENSSL_FAULT_TESTS)
+            target_link_options(${target} PRIVATE "LINKER:--wrap=BIO_new_mem_buf")
+        endforeach()
+        add_test(NAME native.authentication.oci_sign_bio_failure COMMAND native-oci-test sign_bio_failure)
+        add_test(NAME native.authentication.gke_service_bio_failure COMMAND native-gke-test service_bio_failure)
+        set_tests_properties(native.authentication.oci_sign_bio_failure native.authentication.gke_service_bio_failure
+            PROPERTIES TIMEOUT 15)
+    endif()
+    add_executable(credential-process-test tests/credential_process_test.cpp)
+    target_link_libraries(credential-process-test PRIVATE podlord_sources Qt6::Test)
+    foreach(scenario before_start missing_exec valid future near_expiry stderr invalid_json invalid_utf8 array wrong_kind
+        wrong_version missing_status token_number empty_status token_space token_control bad_certificate expired
+        bad_expiry invalid_date nonzero oversized missing_program cancel repeat gke_unavailable gke_service_missing
+        eks oci_bad_key oidc_invalid oidc_cancel revoke_ready revoke_running revoke_oidc)
+        add_test(NAME native.authentication.exec_${scenario} COMMAND credential-process-test ${scenario})
+        set_tests_properties(native.authentication.exec_${scenario} PROPERTIES TIMEOUT 15)
+    endforeach()
+    foreach(scenario value_identity_empty value_identity_dash value_status_empty value_status_dash)
+        add_test(NAME native.appearance.${scenario} COMMAND theme_ui_test ${scenario} "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/AppThemeCatalog.cs")
+        set_tests_properties(native.appearance.${scenario} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    endforeach()
+    add_executable(gke-import-ui-test tests/gke_import_ui_test.cpp)
+    target_link_libraries(gke-import-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario success invalid wrong_context removal removal_failure)
+        add_test(NAME native.source_import.gke_${scenario} COMMAND gke-import-ui-test ${scenario})
+        set_tests_properties(native.source_import.gke_${scenario} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    endforeach()
+    add_executable(oci-import-ui-test tests/oci_import_ui_test.cpp tests/ui_input.h)
+    target_link_libraries(oci-import-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario success bad_key cache_removal removal_failure identity
+        freshness_reauth freshness_draft freshness_preview freshness_late freshness_recovery freshness_after_b)
+        foreach(style Basic Fusion)
+            add_test(NAME native.source_import.oci_${scenario}_${style} COMMAND oci-import-ui-test ${scenario})
+            set_tests_properties(native.source_import.oci_${scenario}_${style} PROPERTIES TIMEOUT 30
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+        endforeach()
+    endforeach()
+    add_test(NAME native.authentication.revoke_closed_connection COMMAND oci-import-ui-test closed_credentials)
+    set_tests_properties(native.authentication.revoke_closed_connection PROPERTIES TIMEOUT 30
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    add_executable(resource-columns-ui-test tests/resource_columns_ui_test.cpp)
+    target_link_libraries(resource-columns-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario default custom)
+        foreach(style Basic Fusion)
+            add_test(NAME native.ui.resource_columns_${scenario}_${style} COMMAND resource-columns-ui-test ${scenario})
+            set_tests_properties(native.ui.resource_columns_${scenario}_${style} PROPERTIES TIMEOUT 30
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+        endforeach()
+    endforeach()
+    set(oci_scenarios parse_standard parse_equals parse_other_program parse_other_action parse_unknown_option parse_missing_value
+        parse_duplicate parse_bad_output parse_bad_cluster parse_bad_region parse_bad_user parse_bad_tenancy
+        parse_bad_fingerprint parse_missing_key parse_bad_key parse_weak_key parse_profile parse_key_file parse_other_auth
+        parse_partial_environment parse_oci_exe parse_short_args parse_missing_cluster parse_region_option
+        parse_output_separate parse_empty_value parse_option_as_value parse_nul_value parse_api_key_auth
+        parse_config_file parse_passphrase parse_empty_key parse_oversized_key parse_long_cluster
+        parse_cluster_control parse_local_environment parse_missing_region parse_missing_tenancy
+        parse_missing_fingerprint sign_reference sign_missing sign_missing_oci sign_invalid_time sign_invalid_key
+        sign_weak_key parse_ec_key sign_ec_key sign_utc_offset import_valid import_profile import_repeat import_remove import_remove_failure import_corrupt
+        import_bad_config import_bad_key import_non_oci import_wrong_context import_missing_file
+        import_invalid_id import_missing_key_file import_missing_exec import_missing_args import_scalar_args
+        import_mapping_arg import_scalar_env import_bad_action import_bad_cluster import_unknown_option
+        import_target_directory import_bad_profile import_locked import_has_invalid_id import_has_missing import_has_bad_profile
+        import_profile_separate import_profile_duplicate import_profile_missing import_profile_invalid import_passphrase import_other_auth)
+    if(UNIX)
+        list(APPEND oci_scenarios import_symlink import_has_symlink)
+    endif()
+    foreach(scenario IN LISTS oci_scenarios)
+        add_test(NAME native.authentication.oci_${scenario} COMMAND native-oci-test ${scenario})
+        set_tests_properties(native.authentication.oci_${scenario} PROPERTIES TIMEOUT 15)
+    endforeach()
+    foreach(scenario parse_standard parse_equals parse_cluster_id parse_no_action parse_bad_output parse_missing_value
+        parse_option_as_value parse_nul_value parse_duplicate parse_bad_cluster parse_bad_region parse_missing_access
+        parse_missing_secret parse_control_access parse_long_access parse_control_secret parse_long_secret
+        parse_control_session parse_long_session parse_local_environment parse_unknown_option parse_conflicting_cluster
+        parse_other_program sign_reference sign_session sign_missing sign_missing_eks sign_invalid_time sign_china_region)
+        add_test(NAME native.authentication.eks_${scenario} COMMAND native-eks-test ${scenario})
+        set_tests_properties(native.authentication.eks_${scenario} PROPERTIES TIMEOUT 15)
+    endforeach()
+    foreach(scenario parse_personal parse_adc parse_bad_option parse_environment parse_service_account parse_bad_service_account
+        parse_other_program parse_windows_program parse_bad_json parse_array parse_missing_type parse_missing_email
+        parse_missing_key_id parse_missing_key parse_missing_uri parse_wrong_type parse_wrong_uri parse_bad_email
+        parse_bad_key_id parse_oversized_key parse_ec_key start_missing_exec start_missing_gke service_missing_key service_bad_key service_weak_key service_ec_key
+        service_only_success service_http_failure service_bad_json service_array service_wrong_type service_short_expiry
+        service_long_expiry service_empty_token service_space_token service_oversized service_cancel_pending
+        success failure cancel cancelled no_play_services no_play_services_fallback reuse personal_expiry expired_token empty_token long_token space_token
+        delete_token cancel_after_done cancel_before_start start_after_done
+        browser_config browser_config_numeric browser_config_missing browser_config_invalid browser_config_oversized)
+        add_test(NAME native.authentication.gke_${scenario} COMMAND native-gke-test ${scenario})
+        set_tests_properties(native.authentication.gke_${scenario} PROPERTIES TIMEOUT 15)
+    endforeach()
+    set(oidc_scenarios parse aks_device aks_browser aks_missing_client aks_bad_tenant aks_cli_mode aks_unknown_flag aks_sovereign aks_duplicate aks_other_program
+        aks_missing_tenant aks_missing_server aks_bad_client aks_empty_value aks_option_as_value aks_equals aks_short_login
+        start_missing_exec start_missing_oidc start_invalid_issuer start_repeat start_cancel_pending
+        success pinned_device cancel wrong_issuer malformed denied pending slow_down unsigned_id_token device_with_secret
+        discovery_bad_token_url discovery_missing_device discovery_wrong_status discovery_server_error discovery_bad_json discovery_oversized
+        device_no_code device_no_user device_bad_uri device_bad_complete device_zero_lifetime device_long_lifetime
+        device_negative_interval device_long_interval device_wrong_status device_expired token_missing token_space token_short_lifetime
+        token_long_lifetime token_wrong_status token_server_error token_bad_json)
+    if(APPLE AND NOT IOS)
+        target_link_libraries(native-oidc-test PRIVATE OpenSSL::Crypto)
+    endif()
+    list(APPEND oidc_scenarios discovery_bad_jwks signed_valid signed_bad_signature signed_wrong_issuer signed_expired
+            signed_malformed_token signed_empty_part signed_bad_base64 signed_bad_claims_base64 signed_bad_signature_base64
+            signed_bad_kid_type signed_no_kid_multiple
+            signed_empty_header signed_empty_signature signed_json_array_header signed_json_array_claims
+            signed_short_signature signed_jwks_non_object signed_jwks_empty signed_jwks_long_modulus
+            signed_jwks_long_exponent signed_jwks_zero_exponent signed_jwks_bad_exponent signed_jwks_empty_exponent
+            signed_jwks_leading_zero)
+        list(APPEND oidc_scenarios browser_valid browser_bad_state browser_bad_nonce browser_denied browser_replay
+            browser_access_token browser_cancel browser_missing_auth browser_jwks_server_error browser_jwks_bad_json
+            browser_missing_id_token browser_missing_access_token browser_short_lifetime browser_long_lifetime
+            browser_with_secret browser_wrong_path browser_fragment browser_empty_code browser_control_code browser_duplicate_error
+            browser_google_redirect browser_google_wrong_callback browser_google_replay browser_google_cancel
+            browser_redirect_http browser_redirect_host browser_redirect_query browser_redirect_fragment browser_redirect_path browser_redirect_relative)
+    foreach(scenario IN LISTS oidc_scenarios)
+        add_test(NAME native.authentication.oidc_${scenario} COMMAND native-oidc-test ${scenario})
+        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 25 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+    foreach(scenario success cancel_confirmation cancel_running invalid_json array_json wrong_kind wrong_status token_type certificate_type key_type expiration_type bad_certificate bad_key wrong_version missing_status no_credentials bad_token expired bad_date failed_exit failed_start large_output v1beta1 relative_command invalid_mode requires_stdin invalid_args invalid_env mixed_credentials compact_inspector_401 retry_401 expiry cache_reopen restore shared_running shared_401 shutdown_running)
         add_test(NAME native.authentication.${scenario} COMMAND authentication_ui_test ${scenario})
         set_tests_properties(native.authentication.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
-    add_executable(workspace_ui_test tests/workspace_ui_test.cpp)
-    foreach(scenario dock_wide dock_narrow dock_resize dock_keyboard dock_page accessibility_empty accessibility_populated accessibility_settings accessibility_dialog)
+    foreach(scenario dock_wide dock_narrow dock_compact dock_resize dock_keyboard dock_page accessibility_empty accessibility_populated accessibility_settings accessibility_dialog gke_prompt)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
     endforeach()
-    target_link_libraries(workspace_ui_test PRIVATE podlord_workspace Qt6::Test)
     add_executable(radar_reference_test tests/radar_reference_test.cpp)
     target_link_libraries(radar_reference_test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario reference reordered filtered namespaces pose render-check cached_scope_replay cached_scope_hit cached_uid_recreation metric_update selection_sort selection_filter selection_remove)
@@ -706,7 +949,7 @@ if(BUILD_TESTING)
         add_test(NAME native.ui.${scenario} COMMAND workspace_ui_test ${scenario})
         set_tests_properties(native.ui.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
-    foreach(scenario inspector_related_chrome inspector_related_chrome_narrow inspector_related_filter inspector_related_filter_keyboard inspector_yaml_presentation inspector_yaml_presentation_scroll inspector_yaml_presentation_draft radar_water_background radar_water_background_light)
+    foreach(scenario inspector_related_chrome inspector_related_chrome_narrow inspector_related_filter inspector_related_filter_keyboard inspector_yaml_presentation inspector_yaml_presentation_scroll inspector_yaml_presentation_draft inspector_yaml_presentation_contrast radar_water_background radar_water_background_light)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -1070,10 +1313,20 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(mutation-admission-test tests/mutation_admission_test.cpp)
+    foreach(scenario IN ITEMS delete_unknown_session delete_empty_session delete_empty_token
+            delete_missing_resource delete_empty_path delete_unsupported delete_missing_uid
+            delete_wrong_uid delete_wrong_kind delete_wrong_api_version delete_wrong_name
+            delete_wrong_namespace delete_closed delete_inactive delete_authentication
+            delete_readback_unknown_session delete_readback_empty_token delete_readback_missing_uid
+            delete_readback_closed delete_readback_inactive delete_cancel_empty_queue)
+        add_test(NAME native.delete_admission.${scenario} COMMAND mutation-admission-test ${scenario})
+        set_tests_properties(native.delete_admission.${scenario} PROPERTIES TIMEOUT 45)
+    endforeach()
     target_link_libraries(mutation-admission-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario unknown_session empty_token empty_patch short_patch wrong_uid
             wrong_name wrong_kind wrong_api_version wrong_namespace wrong_uid_guard wrong_version_guard
             reversed_guards oversize_patch closed inactive disabled authentication
+            stale_revision expired_detail_authority backward_detail_authority credential_expired
             queued_duplicate running_duplicate cancel_queued cancel_running cancel_wrong_token
             cancel_empty_queue cancel_read_queue readback_rejected readback_uncertain
             readback_unknown_session readback_empty_token readback_closed readback_inactive)
@@ -1282,7 +1535,7 @@ if(PODLORD_COVERAGE)
 endif()
 
 if(BUILD_TESTING)
-    foreach(scenario quick_file_extensionless quick_file_url quick_file_invalid quick_file_missing quick_file_profile shell_quick_sessions shell_quick_narrow shell_quick_reopen shell_quick_context shell_quick_invalid_existing shell_health_refresh shell_footer_empty shell_footer_reference shell_footer_reopen shell_landscape shell_landscape_filters shell_landscape_rotate)
+    foreach(scenario quick_file_extensionless quick_file_url quick_file_invalid quick_file_missing quick_file_profile shell_quick_sessions shell_quick_narrow shell_quick_reopen shell_quick_context shell_quick_invalid_existing shell_health_refresh shell_footer_empty shell_compact_empty shell_compact_portrait shell_compact_alerts shell_footer_reference shell_footer_reopen shell_landscape shell_landscape_filters shell_landscape_rotate)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 30 LABELS behavior
@@ -1339,5 +1592,63 @@ if(BUILD_TESTING)
                 set_tests_properties(${test_name} PROPERTIES LABELS "behavior")
             endif()
         endif()
+    endforeach()
+endif()
+
+if(TARGET settings-layout-ui-test)
+    foreach(style IN ITEMS Basic Fusion)
+        add_test(NAME native.settings_layout.mobile_alert_controls_${style}
+            COMMAND $<TARGET_FILE:settings-layout-ui-test> mobile_alert_controls)
+        set_tests_properties(native.settings_layout.mobile_alert_controls_${style} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}"
+            LABELS "behavior" TIMEOUT 30)
+    endforeach()
+endif()
+if(TARGET read-overlap-test)
+    foreach(scenario IN ITEMS
+        core_invalid_body core_invalid_version groups_invalid_body groups_invalid_version
+        list_invalid_body list_invalid_entry list_invalid_version list_invalid_version_type
+        list_invalid_kind list_invalid_kind_type list_missing_namespace list_control_name
+        list_invalid_continuation list_page_success list_repeated_continuation list_malformed_json
+        list_forbidden list_redirect list_rate_limited_invalid_retry_after
+        detail_invalid_version detail_invalid_kind detail_invalid_name detail_invalid_namespace)
+        add_test(NAME native.read_boundary.${scenario} COMMAND read-overlap-test ${scenario})
+        set_tests_properties(native.read_boundary.${scenario} PROPERTIES LABELS behavior TIMEOUT 30)
+    endforeach()
+endif()
+
+if(TARGET resource_filter_test)
+    foreach(case empty_bounds cluster_refresh incremental_snapshot ordered_snapshot metric_and_age safe_tooltip)
+        add_test(NAME native.resource_table.${case} COMMAND $<TARGET_FILE:resource_filter_test> table_${case})
+    endforeach()
+endif()
+if(TARGET native-oidc-test)
+    foreach(case signed_wrong_algorithm signed_critical_header signed_unknown_kid signed_single_key_no_kid
+        signed_missing_subject signed_unicode_subject signed_wrong_audience signed_audience_array
+        signed_audience_without_azp signed_future_issue signed_future_not_before signed_near_expiry
+        signed_jwks_wrong_use signed_jwks_wrong_ops signed_jwks_bad_modulus signed_jwks_missing_kid
+        signed_jwks_wrong_kty signed_jwks_wrong_alg signed_jwks_duplicate signed_long_subject
+        signed_empty_audience signed_nonstring_audience signed_array_without_client signed_wrong_azp
+        signed_missing_issue signed_negative_not_before
+        browser_duplicate_state browser_missing_code browser_space_code browser_long_code
+        browser_duplicate_code browser_code_and_error)
+        add_test(NAME native.oidc.${case} COMMAND $<TARGET_FILE:native-oidc-test> ${case})
+        set_tests_properties(native.oidc.${case} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+endif()
+
+if(TARGET port-forward-ui-test)
+    foreach(case invalid_ports occupied_port pending_reject admission_bounds capacity)
+        add_test(NAME native.forward_transport.${case} COMMAND $<TARGET_FILE:port-forward-ui-test> transport_${case})
+        set_tests_properties(native.forward_transport.${case} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+endif()
+
+if(BUILD_TESTING)
+    add_executable(health-projection-test tests/health_projection_test.cpp)
+    target_link_libraries(health-projection-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario IN ITEMS cronjob_suspended restart_outlier pending_grace pending_grace_expired warning_recent warning_expired)
+        add_test(NAME native.health_projection.${scenario} COMMAND health-projection-test ${scenario})
+        set_tests_properties(native.health_projection.${scenario} PROPERTIES LABELS "behavior")
     endforeach()
 endif()

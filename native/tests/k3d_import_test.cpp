@@ -208,6 +208,17 @@ int main(int argc, char** argv) {
             require(QTest::qWaitFor([&] { return !workspace.loading(); }, 180000), "Real local discovery did not finish within the integration-test budget");
             const auto evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
             if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/k3d-generated-source-resources.png"), "Cannot save actual local Kubernetes frame");
+            const QString probePath = "/apis/tests.podlord.local/v1/namespaces/default/podlordprobes/inventory-probe";
+            int probeRows = 0;
+            for (int row = 0; row < workspace.table()->rowCount(); ++row)
+                if (workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole).toString() == probePath) ++probeRows;
+            require(probeRows == 1, "Discovered custom resource is missing or duplicated in the public table");
+            require(workspace.filter("inventory-probe") && workspace.table()->rowCount() == 1
+                && workspace.inspectRow(0) && workspace.inspectorPath() == probePath,
+                "Discovered custom resource cannot be filtered and opened through the public inspector");
+            require(QTest::qWaitFor([&] { return workspace.canEditYaml(); }, 10000),
+                "Discovered custom resource did not receive fresh inspector data");
+            if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/k3d-discovered-probe-inspector.png"), "Cannot save discovered resource inspector frame");
         }
         std::printf("K3D public import scenario passed: %s\n", mode.toUtf8().constData());
         return 0;

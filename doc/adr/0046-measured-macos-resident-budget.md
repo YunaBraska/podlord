@@ -46,8 +46,9 @@ future optimization is possible. A larger arbitrary ceiling is unnecessary.
 Validate the amended ceiling in a fresh uninstrumented foreground run, retain
 the raw protocol/environment evidence, and review the budget again if the
 measured workload, display, renderer or supported target changes. Revert the
-ceiling when repeatable evidence meets 250 MB. The 95% line and 90% branch
-coverage gates and all functional/image release gates remain authoritative.
+ceiling when repeatable evidence meets 250 MB. The current coverage gates in
+[ADR 0035](0035-native-preflight-gates-before-release.md) and all functional/image
+release gates remain authoritative.
 
 ## What Did The Fresh Gate Run Establish?
 

@@ -2,7 +2,8 @@ Podlord native dependency notices
 
 Podlord's own code is distributed under the MIT license. The libraries below
 retain their own licenses and copyright notices; they are not relicensed by
-Podlord. They are linked dynamically in the portable macOS package.
+Podlord. Portable packages embed their runtime libraries. Linkage depends on
+the platform; yaml-cpp and libvterm are linked statically.
 
 Qt
 Copyright The Qt Company Ltd. and other contributors.
@@ -29,6 +30,21 @@ MIT license. The original yaml-cpp-LICENSE.txt is included.
 Project and source: https://github.com/jbeder/yaml-cpp
 
 Audio credits are listed separately in About alongside their original sources.
+
+AndroidX core 1.17.0 (Android only)
+Apache License 2.0. The license text is included in OpenSSL-LICENSE.txt.
+Project and source: https://developer.android.com/jetpack/androidx
+Dependency license metadata:
+https://dl.google.com/dl/android/maven2/androidx/core/core/1.17.0/core-1.17.0.pom
+
+Google Play services authentication 21.6.0 (Android only)
+Google's dependency metadata identifies the Android Software Development Kit
+License, not Apache License 2.0. This dependency supports personal GKE login on
+devices with Google Play services. Imported service-account access does not
+require Google Play services.
+Terms: https://developer.android.com/studio/terms.html
+Dependency license metadata:
+https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-auth/21.6.0/play-services-auth-21.6.0.pom
 
 License texts alone do not constitute complete LGPL distribution compliance.
 Corresponding sources, exact build configuration, all upstream component

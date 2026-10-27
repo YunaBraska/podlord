@@ -34,11 +34,40 @@ struct SourceImportReport final {
     QList<SourceSnapshot> sources;
     QList<SourceImportIssue> errors;
 };
+struct OidcLogin final {
+    QUrl issuer;
+    QUrl deviceEndpoint;
+    QUrl redirectUri{"berlin.yuna.podlord:/oauth2redirect"};
+    QString clientId, clientSecret;
+    QStringList scopes;
+    bool useAccessToken = false;
+    bool deviceCodeGrant = false;
+};
+struct EksLogin final {
+    QString cluster, region;
+    QByteArray accessKey, secretKey, sessionToken;
+};
+struct OciLogin final {
+    QString cluster, region, user, tenancy, fingerprint;
+    QByteArray privateKey;
+};
+struct GkeServiceAccount final {
+    QString clientEmail, privateKeyId;
+    QByteArray privateKey;
+};
+struct GkeLogin final {
+    std::optional<GkeServiceAccount> serviceAccount;
+    bool serviceAccountOnly = false;
+};
 struct ExecCommand final {
     QString program, workingDirectory, apiVersion;
     QStringList arguments;
     QMap<QString, QString> environment;
     QJsonObject info;
+    std::optional<OidcLogin> oidc;
+    std::optional<EksLogin> eks;
+    std::optional<OciLogin> oci;
+    std::optional<GkeLogin> gke;
 };
 /** Effective connection. Resolving an exec command does not authorize its execution. */
 struct ClusterConnection final {
@@ -53,6 +82,8 @@ struct ClusterConnection final {
     bool credentialReady = true;
     QDateTime expiresAt;
 };
+/** Memory-only identity for credential material explicitly imported for one context. */
+QString importedCredentialId(const QString& contextId);
 /** Validates and installs a complete PEM client certificate/key pair. */
 Result<QSslConfiguration> clientCertificate(QSslConfiguration tls, const QByteArray& certificate, const QByteArray& key);
 /** Owns immutable kubeconfig content keyed by absolute source path and content hash.
@@ -67,6 +98,16 @@ public:
      */
     Result<SourceSnapshot> importFile(QString sourcePath) const;
     Result<SourceSnapshot> importText(QString originPath, const QString& yaml) const;
+    /** Imports an OCI CLI config profile and its separately selected unencrypted PEM key
+     * for one owned OKE context. The key stays in the protected profile, not source metadata.
+     */
+    Result<SourceSnapshot> importOciCredentials(const QString& contextId, QString configPath, QString keyPath) const;
+    /** Imports one Google service-account JSON key into protected profile storage for a GKE context. */
+    Result<SourceSnapshot> importGkeServiceAccount(const QString& contextId, QString keyPath) const;
+    /** Reports whether a protected OCI key still exists after context removal. */
+    Result<bool> hasOciCredential(const QString& contextId) const;
+    /** Reports whether a protected Google service-account key exists after context removal. */
+    Result<bool> hasGkeServiceAccount(const QString& contextId) const;
     /** Renames only the display label of an existing immutable context snapshot.
      * Empty input restores the canonical name. Identity, YAML, credentials and sessions
      * are unchanged; lock contention and invalid input fail without a partial write.
@@ -77,6 +118,7 @@ public:
      * exact affected session identifiers; stale confirmation returns Conflict.
      * Original files and immutable content used by other contexts are unchanged.
      * Does not stop live transports; the workspace closes successful removals.
+     * CleanupFailed means the catalog removal committed but private credential deletion failed.
      */
     Result<SessionCatalog> removeContext(const QString& contextId, QStringList expectedSessions) const;
     /** Explicitly reads generated configs from a selected absolute k3d executable.

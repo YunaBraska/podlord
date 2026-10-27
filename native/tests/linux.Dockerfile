@@ -1,7 +1,7 @@
 FROM ubuntu:26.04@sha256:3595d7fc4286a33fad0fd853a4063e654287a9c3787437d7937c94ca3f7a804e
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates build-essential clang llvm libclang-rt-dev cmake ninja-build nodejs openssl \
+    ca-certificates build-essential clang llvm libclang-rt-dev cmake ninja-build nodejs openssl libssl-dev \
     libyaml-cpp-dev qt6-base-dev qt6-declarative-dev qt6-multimedia-dev qt6-websockets-dev \
     qml6-module-qtqml qml6-module-qtqml-models qml6-module-qtqml-workerscript \
     qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-dialogs \

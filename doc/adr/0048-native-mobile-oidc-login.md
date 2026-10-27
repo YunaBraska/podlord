@@ -13,3 +13,7 @@ The project remains MIT-licensed. Do not add Qt Network Authorization to the dis
 ## Consequences And Verification
 
 The mobile flow is a release blocker until discovery, redirect registration, token validation, cancellation, 401 behavior and secret handling pass public-boundary tests, and the installed iOS and Android applications complete a real browser return on devices. A simulator build or a cached-token read does not close this gate. Follow the [native-app OAuth guidance](https://www.rfc-editor.org/info/rfc8252/), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0-18.html), [Kubernetes authentication](https://kubernetes.io/docs/reference/access-authn-authz/authentication/) and [Qt module licensing](https://doc.qt.io/qt-6/qtnetworkauth-index.html).
+
+## Confirmed redirect URI (2026-10-14)
+
+Mobile browser authentication returns to `berlin.yuna.podlord:/oauth2redirect`. Android and iOS register its scheme; the login handler must verify the complete URI, a one-time state and nonce, and the token signature and claims before using a credential. Each identity-provider client registration must allow this exact redirect URI. Registration alone does not enable login.

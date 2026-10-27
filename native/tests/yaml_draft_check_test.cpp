@@ -1,6 +1,7 @@
 #include "yaml_draft_check.h"
 #include "workspace.h"
 #include "kubeconfig_store.h"
+#include "ui_input.h"
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QFile>
@@ -207,10 +208,7 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
     const auto click = [&](const char* name) {
         auto* item = itemNamed(name);
         if (!item || !item->isVisible() || !item->isEnabled()) return false;
-        QList<QQuickItem*> ancestors;
-        for (auto* parent = item; parent; parent = parent->parentItem()) ancestors.prepend(parent);
-        for (auto* parent : ancestors) parent->ensurePolished();
-        QCoreApplication::processEvents();
+        if (!podlord::test::scrollIntoView(window,item)) return false;
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
         QCoreApplication::processEvents();
         if (QLatin1String(name) == "checkYaml") return await([&] { return !workspace.yamlChecking(); });
@@ -223,7 +221,9 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
     if (!click("editYaml") || !workspace.yamlEditing()) return false;
     const auto before = methods.size();
     const auto replace = [&](const QString& text) {
-        if (!click("inspectorYaml")) return false;
+        auto* editor=itemNamed("inspectorYaml");
+        if (!editor || !editor->isVisible() || editor->property("readOnly").toBool()) return false;
+        editor->forceActiveFocus();
         QTest::keySequence(window, QKeySequence(QKeySequence::SelectAll));
         QGuiApplication::clipboard()->setText(text);
         QTest::keySequence(window, QKeySequence(QKeySequence::Paste));
@@ -261,9 +261,14 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
         const QString entered = "local-entered-secret-e2e";
         const auto encoded = entered.toUtf8().toBase64();
         if (!click("editYaml") || !replace(workspace.yamlText() + "\nstringData:\n  local-input: \"" + entered + "\"\n")
-            || !workspace.yamlText().contains(entered) || !click("previewYaml") || !await([&] { return workspace.yamlApplyPreview(); })
-            || workspace.yamlApplyDiff().contains(entered) || workspace.yamlApplyDiff().contains(QString::fromLatin1(encoded))
-            || !click("confirmYamlApply") || !await([&] { return !workspace.yamlEditing() && workspace.yamlApplyStatus().contains("acknowledged"); }, 60000)
+            || !workspace.yamlText().contains(entered)) {
+            std::fputs("Real Secret input did not reach the local draft.\n",stderr); return false;
+        }
+        if (!click("previewYaml") || !await([&] { return workspace.yamlApplyPreview(); })
+            || workspace.yamlApplyDiff().contains(entered) || workspace.yamlApplyDiff().contains(QString::fromLatin1(encoded))) {
+            std::fputs("Real Secret preview failed or exposed a value.\n",stderr); return false;
+        }
+        if (!click("confirmYamlApply") || !await([&] { return !workspace.yamlEditing() && workspace.yamlApplyStatus().contains("acknowledged"); }, 60000)
             || workspace.yamlText().contains(entered) || workspace.yamlText().contains(QString::fromLatin1(encoded))) {
             std::fputs("Real user-entered Secret write or masking failed.\n", stderr); return false;
         }
@@ -279,10 +284,27 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
         QTest::qWait(50);
         if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot + ".secret-entered.png")) return false;
         if (!click("editYaml")) return false;
-        auto cleanup = workspace.yamlText();
-        cleanup.replace("  \"local-input\": \"[hidden]\"\n", QString{});
-        if (cleanup == workspace.yamlText() || !apply(cleanup)) {
-            std::fputs("Real Secret test value cleanup failed.\n", stderr); return false;
+        auto lines = workspace.yamlText().split('\n', Qt::KeepEmptyParts);
+        bool inSecretData = false;
+        bool removed = false;
+        for (qsizetype i = 0; i < lines.size();) {
+            const auto& line = lines.at(i);
+            const auto field = line.trimmed();
+            if (!line.isEmpty() && !line.front().isSpace())
+                inSecretData = field == "data:" || field == "stringData:";
+            if (inSecretData && (field.startsWith("\"local-input\":") || field.startsWith("local-input:"))
+                && field.contains("[hidden]")) {
+                lines.removeAt(i);
+                removed = true;
+            } else {
+                ++i;
+            }
+        }
+        if (!removed) {
+            std::fputs("Real Secret redacted key was absent during cleanup.\n", stderr); return false;
+        }
+        if (!apply(lines.join('\n'))) {
+            std::fputs("Real Secret test value cleanup apply failed.\n", stderr); return false;
         }
         secretEditor->forceActiveFocus(); QTest::keySequence(window, QKeySequence(QKeySequence::MoveToStartOfDocument));
         QTest::qWait(50);

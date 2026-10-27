@@ -36,15 +36,7 @@ QQuickItem* find(QQuickItem* root, const QString& name) {
 }
 QQuickItem* item(QQuickWindow* window, const QString& name) { return find(window->contentItem(), name); }
 bool click(QQuickWindow* window, const QString& name) {
-    if (!podlord::test::revealWorkspaceAction(window, name)) return false;
-    auto* target = item(window, name);
-    if (!target || !target->isVisible() || !target->isEnabled()) return false;
-    QList<QQuickItem*> ancestors;
-    for (auto* parent = target; parent; parent = parent->parentItem()) ancestors.prepend(parent);
-    for (auto* parent : ancestors) parent->ensurePolished();
-    QCoreApplication::processEvents();
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
-    return true;
+    return podlord::test::revealWorkspaceAction(window, name) && podlord::test::clickVisible(window, name);
 }
 QString text(QQuickWindow* window, const QString& name) { const auto* target = item(window, name); return target ? target->property("text").toString() : QString{}; }
 QString quote(const QString& value) {
@@ -245,13 +237,33 @@ bool execute(const QString& scenario) {
         QTest::qWait(100);
         return workspace->table()->rowCount() == 1 && server.calls == calls && read(counter) == "call\n" && item(window, "authenticationButton")->isVisible();
     }
+    if (scenario == "compact_inspector_401") {
+        window->resize(640, 320);
+        server.reject = true;
+        if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("compact rejection");
+        if (!click(window, "cell_0_0") || !waitFor([&] { return window->property("compactInspector").toBool(); })) {
+            const auto* cell = item(window, "cell_0_0");
+            qWarning() << "Compact auth inspector:" << window->size() << "landscape" << window->property("compactLandscape")
+                       << "inspector" << workspace->inspectorPath() << "cell" << (cell ? cell->mapToScene(QPointF{}) : QPointF{})
+                       << "size" << (cell ? cell->size() : QSizeF{});
+            const auto capture = qEnvironmentVariable("PODLORD_AUTH_FAILURE_FRAME");
+            if (!capture.isEmpty()) window->grabWindow().save(capture);
+            return failed("compact inspector");
+        }
+        auto* action = item(window, "authenticationButton");
+        if (!action || !action->isVisible() || !action->isEnabled()) return failed("compact authentication action");
+        return click(window, "authenticationButton") && waitFor([&] {
+            auto* confirm = item(window, "authenticationAccept");
+            return confirm && confirm->isVisible();
+        });
+    }
     if (scenario == "retry_401") {
         server.reject = true;
-        if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return false;
+        if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("retry after 401");
         const auto calls = server.calls; QTest::qWait(100);
-        if (server.calls != calls || read(counter) != "call\n" || workspace->table()->rowCount() != 1) return false;
-        if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return false;
-        if (!waitFor([&] { return read(counter) == "call\ncall\n" && !workspace->authenticationRunning() && workspace->authenticationRequired() && !workspace->busy(); })) return false;
+        if (server.calls != calls || read(counter) != "call\n" || workspace->table()->rowCount() != 1) return failed("no automatic auth retry");
+        if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return failed("retry confirmation");
+        if (!waitFor([&] { return read(counter) == "call\ncall\n" && !workspace->authenticationRunning() && workspace->authenticationRequired() && !workspace->busy(); })) return failed("confirmed auth retry");
         QTest::qWait(100); return read(counter) == "call\ncall\n" && workspace->table()->rowCount() == 1;
     }
     if (scenario == "cache_reopen") {
