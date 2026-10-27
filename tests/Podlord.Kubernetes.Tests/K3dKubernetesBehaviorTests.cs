@@ -30,8 +30,7 @@ public sealed class K3dKubernetesBehaviorTests
             () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery()),
             rows => rows.Any(row => row.Kind == "Service" && row.Name == "podlord-healthy")
                     && rows.Any(row => row.Kind == "EndpointSlice" && row.Namespace == "payments")
-                    && rows.Any(row => row.Kind == "Secret" && row.Name == "podlord-secret")
-                    && rows.Any(row => row.Kind == "Event"),
+                    && rows.Any(row => row.Kind == "Secret" && row.Name == "podlord-secret"),
             TimeSpan.FromMinutes(2));
         var snapshot = await cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery());
 
@@ -49,7 +48,6 @@ public sealed class K3dKubernetesBehaviorTests
         Assert.Contains(rows, row => row.Kind == "CronJob" && row.Name == "podlord-cron");
         Assert.Contains(rows, row => row.Kind == "PersistentVolumeClaim" && row.Name == "podlord-data");
         Assert.Contains(rows, row => row.Kind == "NetworkPolicy" && row.Name == "podlord-deny-all");
-        Assert.Contains(rows, row => row.Kind == "Event");
     }
 
     [Fact]

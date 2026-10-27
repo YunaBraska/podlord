@@ -11,7 +11,7 @@ Podlord is a desktop console for understanding a Kubernetes cluster without livi
 
 ## Import a cluster
 
-Start by importing a kubeconfig from the usual location, a file, a directory, pasted YAML or a generated k3d configuration. Podlord keeps an app-owned snapshot and makes the selected cluster visible before it requests data.
+Start by importing a kubeconfig from the usual location, a file, a directory, or pasted YAML. Podlord keeps an app-owned snapshot and makes the selected cluster visible before it requests data.
 
 Treat imported kubeconfigs as sensitive. The app does not send them to a hosted service.
 

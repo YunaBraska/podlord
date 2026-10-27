@@ -21,7 +21,7 @@ Captures are produced from a real Avalonia render via `PODLORD_CAPTURE_SCREENSHO
 ## Highlights
 
 - Flat resource explorer across namespaces by default
-- Multi-source kubeconfig import from home config, custom file, directory scan, pasted YAML, or generated k3d config
+- Multi-source kubeconfig import from home config, custom file, directory scan, or pasted YAML
 - Cache-first Kubernetes reads with request queueing, backoff, API audit log, and configurable hard request cap
 - Sortable, resizable, reorderable, and hideable resource/event tables
 - Searchable multi-select filters with exact, contains, starts-with, ends-with, regex, numeric, and duration expressions
