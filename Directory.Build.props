@@ -6,6 +6,7 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <DefineConstants Condition="'$(PodlordAppStore)' == 'true'">$(DefineConstants);PODLORD_APP_STORE</DefineConstants>
 
     <Version>1.0.0</Version>
     <Authors>Yuna Morgenstern</Authors>

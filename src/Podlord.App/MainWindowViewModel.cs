@@ -2055,6 +2055,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void LoadStartupKubeconfigs(IReadOnlyList<string> paths)
     {
+#if PODLORD_APP_STORE
+        ReloadSessions();
+        return;
+#else
         try
         {
             state.ImportHomeKubeconfig();
@@ -2106,6 +2110,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             ScheduleRefresh();
         }
+#endif
     }
 
     public void ReloadSessions()
@@ -2124,6 +2129,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void ImportHome()
     {
+#if PODLORD_APP_STORE
+        StatusLine = T("status.storeHomeImport");
+#else
         try
         {
             var summary = state.ImportHomeKubeconfig();
@@ -2134,10 +2142,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             StatusLine = ex.Message;
         }
+#endif
     }
 
     public void ImportPathNow()
     {
+#if PODLORD_APP_STORE
+        StatusLine = T("status.storePathImport");
+        return;
+#else
         if (string.IsNullOrWhiteSpace(ImportPath))
         {
             StatusLine = "Choose a kubeconfig file or enter a path, directory, or YAML.";
@@ -2179,6 +2192,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             StatusLine = ex.Message;
         }
+#endif
     }
 
     /// <summary>
@@ -2202,6 +2216,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             var resolved = ExpandUserPath(raw.Trim());
             try
             {
+#if PODLORD_APP_STORE
+                if (Directory.Exists(resolved))
+                {
+                    failures += 1;
+                    errors.Add(T("status.storeFolderImport"));
+                    continue;
+                }
+#endif
                 if (Directory.Exists(resolved))
                 {
                     var (dirFiles, dirContexts, dirFailures) = ImportKubeconfigDirectory(resolved, maxDepth: 32);
@@ -2270,6 +2292,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void RefreshSourcesNow()
     {
+#if PODLORD_APP_STORE
+        StatusLine = T("status.storeRefresh");
+        return;
+#else
         try
         {
             var summaries = state.RefreshImportedKubeconfigs();
@@ -2280,6 +2306,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             StatusLine = ex.Message;
         }
+#endif
     }
 
     public void SaveSelectedSource()
@@ -5898,6 +5925,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void RebuildSourceWatchers()
     {
         DisposeSourceWatchers();
+#if PODLORD_APP_STORE
+        return;
+#else
         var paths = state.Snapshot()
             .ImportedContexts
             .Select(context => context.SourcePath)
@@ -5933,6 +5963,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             {
             }
         }
+#endif
     }
 
     private void DisposeSourceWatchers()
@@ -5953,14 +5984,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ScheduleSourceRefresh();
     }
 
-    private static string SourceStatus(string sourcePath)
+    private string SourceStatus(string sourcePath)
     {
+#if PODLORD_APP_STORE
+        return T("status.storeStoredCopy");
+#else
         if (sourcePath.StartsWith("podlord-paste://", StringComparison.Ordinal))
         {
             return "pasted";
         }
 
         return File.Exists(sourcePath) ? "file ok" : "file missing";
+#endif
     }
 
     private static bool IsVirtualSource(string sourcePath)

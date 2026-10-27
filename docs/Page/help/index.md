@@ -15,6 +15,10 @@ Start by importing a kubeconfig from the usual location, a file, a directory, or
 
 Treat imported kubeconfigs as sensitive. The app does not send them to a hosted service.
 
+### Mac App Store edition
+
+The Mac App Store edition imports a kubeconfig only through the file picker or pasted YAML, then keeps an app-owned copy. Use embedded token or certificate data. Configs that need a separate credential file or run an `exec` login command are supported by the direct download, not by the sandboxed Store edition.
+
 ## Explore resources
 
 <a id="explore"></a>

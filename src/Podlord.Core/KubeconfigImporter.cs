@@ -45,6 +45,10 @@ public sealed class KubeconfigImporter
             throw PodlordException.EmptyKubeconfig(sourcePath);
         }
 
+#if PODLORD_APP_STORE
+        ValidateStoreKubeconfig(sourcePath, raw);
+#endif
+
         KubeconfigDocument document;
         try
         {
@@ -133,6 +137,10 @@ public sealed class KubeconfigImporter
             throw PodlordException.KubeconfigParse(sourcePath, "document was empty");
         }
 
+#if PODLORD_APP_STORE
+        ValidateStoreKubeconfig(document, sourcePath);
+        return serializer.Serialize(document);
+#else
         var sourceDirectory = Path.GetDirectoryName(Path.GetFullPath(sourcePath));
         if (string.IsNullOrWhiteSpace(sourceDirectory))
         {
@@ -141,6 +149,7 @@ public sealed class KubeconfigImporter
 
         NormalizeRelativePathEntries(document, sourceDirectory);
         return serializer.Serialize(document);
+#endif
     }
 
     public static string ContextId(string sourcePath, string contextName)
@@ -243,6 +252,63 @@ public sealed class KubeconfigImporter
     {
         return key is "certificate-authority" or "client-certificate" or "client-key" or "tokenFile";
     }
+
+#if PODLORD_APP_STORE
+    private void ValidateStoreKubeconfig(string sourcePath, string raw)
+    {
+        Dictionary<object, object?>? document;
+        try
+        {
+            document = deserializer.Deserialize<Dictionary<object, object?>>(raw);
+        }
+        catch (YamlDotNet.Core.YamlException ex)
+        {
+            throw PodlordException.KubeconfigParse(sourcePath, ex.Message, ex);
+        }
+
+        if (document is null)
+        {
+            throw PodlordException.KubeconfigParse(sourcePath, "document was empty");
+        }
+
+        ValidateStoreKubeconfig(document, sourcePath);
+    }
+
+    private static void ValidateStoreKubeconfig(IDictionary<object, object?> node, string sourcePath)
+    {
+        foreach (var key in node.Keys.ToList())
+        {
+            var name = key.ToString() ?? string.Empty;
+            if (name == "exec")
+            {
+                throw PodlordException.InvalidInput(
+                    $"Mac App Store kubeconfig {sourcePath} uses an external credential command.",
+                    "Use a kubeconfig with an embedded token, certificate data, or basic authentication.");
+            }
+
+            if (IsRelativePathKey(name))
+            {
+                throw PodlordException.InvalidInput(
+                    $"Mac App Store kubeconfig {sourcePath} references an external credential file ({name}).",
+                    "Embed the token and certificate data in the kubeconfig before importing it.");
+            }
+
+            switch (node[key])
+            {
+                case IDictionary<object, object?> child:
+                    ValidateStoreKubeconfig(child, sourcePath);
+                    break;
+                case IList<object?> list:
+                    foreach (var item in list.OfType<IDictionary<object, object?>>())
+                    {
+                        ValidateStoreKubeconfig(item, sourcePath);
+                    }
+
+                    break;
+            }
+        }
+    }
+#endif
 
     private sealed class KubeconfigDocument
     {

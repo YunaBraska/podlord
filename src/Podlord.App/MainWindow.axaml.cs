@@ -83,7 +83,9 @@ public partial class MainWindow : Window
         UpdateInspectorLayout();
         UpdateYamlEditorHeight();
         viewModel.LoadStartupKubeconfigs(startupArgs);
+#if !PODLORD_APP_STORE
         _ = viewModel.CheckForUpdatesIfDueAsync();
+#endif
         Dispatcher.UIThread.Post(() =>
         {
             InitializeTableLayouts();

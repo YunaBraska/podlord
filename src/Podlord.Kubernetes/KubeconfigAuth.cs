@@ -1,9 +1,12 @@
 using System.Text;
+#if !PODLORD_APP_STORE
 using System.Diagnostics;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+#endif
 using System.Security.Cryptography.X509Certificates;
+using Podlord.Core;
 using YamlDotNet.Serialization;
 
 namespace Podlord.Kubernetes;
@@ -20,8 +23,10 @@ internal sealed record KubeconfigAuth(
 
 internal static class KubeconfigAuthLoader
 {
+#if !PODLORD_APP_STORE
     private static readonly object ExecCacheLock = new();
     private static readonly Dictionary<string, ExecTokenCacheEntry> ExecTokenCache = [];
+#endif
 
     public static KubeconfigAuth Load(string kubeconfigPath, string contextName)
     {
@@ -46,6 +51,9 @@ internal static class KubeconfigAuthLoader
         var user = string.IsNullOrWhiteSpace(userName)
             ? null
             : NamedEntry(document, "users", userName)?["user"] as IDictionary<object, object?>;
+#if PODLORD_APP_STORE
+        EnsureStoreCompatible(contextName, user, cluster);
+#endif
         var token = user is null ? null : Value(user, "token") ?? TokenFile(user, kubeconfigPath) ?? AuthProviderToken(user) ?? ExecToken(user, kubeconfigPath, userName ?? contextName);
         var username = Value(user, "username");
         var password = Value(user, "password");
@@ -104,6 +112,16 @@ internal static class KubeconfigAuthLoader
 
     private static string? ExecToken(IDictionary<object, object?> user, string kubeconfigPath, string cacheName)
     {
+#if PODLORD_APP_STORE
+        if (!user.ContainsKey("exec"))
+        {
+            return null;
+        }
+
+        throw PodlordException.KubernetesConfig(
+            cacheName,
+            "the Mac App Store edition cannot run external credential commands");
+#else
         if (!user.TryGetValue("exec", out var rawExec) || rawExec is not IDictionary<object, object?> exec)
         {
             return null;
@@ -136,8 +154,41 @@ internal static class KubeconfigAuthLoader
         }
 
         return token.Token;
+#endif
     }
 
+#if PODLORD_APP_STORE
+    private static void EnsureStoreCompatible(
+        string contextName,
+        IDictionary<object, object?>? user,
+        IDictionary<object, object?>? cluster)
+    {
+        if (user?.ContainsKey("exec") == true)
+        {
+            throw PodlordException.KubernetesConfig(
+                contextName,
+                "the Mac App Store edition cannot run external credential commands");
+        }
+
+        if (HasExternalFileReference(user) || HasExternalFileReference(cluster))
+        {
+            throw PodlordException.KubernetesConfig(
+                contextName,
+                "the Mac App Store edition requires embedded token and certificate data");
+        }
+    }
+
+    private static bool HasExternalFileReference(IDictionary<object, object?>? section)
+    {
+        return section is not null
+               && (section.ContainsKey("tokenFile")
+                   || section.ContainsKey("client-certificate")
+                   || section.ContainsKey("client-key")
+                   || section.ContainsKey("certificate-authority"));
+    }
+#endif
+
+#if !PODLORD_APP_STORE
     private static ExecTokenCacheEntry? RunExecCredential(IDictionary<object, object?> exec, string command)
     {
         using var process = new Process();
@@ -311,6 +362,7 @@ internal static class KubeconfigAuthLoader
             .Select(item => (item.Name!, item.Value!))
             .ToList();
     }
+#endif
 
     private static string? Value(IDictionary<object, object?>? node, string key)
     {
@@ -375,4 +427,6 @@ internal static class KubeconfigAuthLoader
     }
 }
 
+#if !PODLORD_APP_STORE
 internal sealed record ExecTokenCacheEntry(string Token, DateTimeOffset ValidUntil);
+#endif

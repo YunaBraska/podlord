@@ -68,6 +68,7 @@ rm -rf "$PUBLISH_DIR" "$BUNDLE_DIR"
   -p:IncludeNativeLibrariesForSelfExtract=false \
   -p:DebugType=none \
   -p:DebugSymbols=false \
+  -p:PodlordAppStore="${PODLORD_APP_STORE:-false}" \
   -p:Version="$VERSION" \
   -o "$PUBLISH_DIR"
 
