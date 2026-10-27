@@ -10,21 +10,21 @@ namespace podlord {
 namespace {
 struct NativeTrustEvaluation {
     SecTrustRef trust;
+    const std::shared_ptr<TrustCancellation> stop;
     dispatch_queue_t queue = dispatch_queue_create("berlin.yuna.podlord.trust", DISPATCH_QUEUE_SERIAL);
-    std::mutex mutex;
-    std::condition_variable ready;
     bool done = false, trusted = false;
-    explicit NativeTrustEvaluation(SecTrustRef value) : trust(value) { CFRetain(trust); }
+    NativeTrustEvaluation(SecTrustRef value, std::shared_ptr<TrustCancellation> cancellation)
+        : trust(value), stop(std::move(cancellation)) { CFRetain(trust); }
     ~NativeTrustEvaluation() { if (queue) dispatch_release(queue); CFRelease(trust); }
     void complete(bool accepted) {
-        { std::lock_guard lock(mutex); trusted = accepted; done = true; }
-        ready.notify_all();
+        { std::lock_guard lock(stop->mutex); trusted = accepted; done = true; }
+        stop->ready.notify_all();
     }
 };
 }
 bool platformTrustsPeer(const QList<QSslCertificate>& chain, const QString& peerName,
-    const QList<QSslCertificate>& authorities, const QList<QSslError>& errors, std::stop_token stop) {
-    if (stop.stop_requested() || chain.isEmpty() || peerName.isEmpty() || peerName.contains(QChar::Null) || errors.isEmpty()) return false;
+    const QList<QSslCertificate>& authorities, const QList<QSslError>& errors, std::shared_ptr<TrustCancellation> stop) {
+    if (stop->isCanceled() || chain.isEmpty() || peerName.isEmpty() || peerName.contains(QChar::Null) || errors.isEmpty()) return false;
     for (const auto& error : errors) {
         switch (error.error()) {
         case QSslError::UnableToGetIssuerCertificate:
@@ -74,19 +74,15 @@ bool platformTrustsPeer(const QList<QSslCertificate>& chain, const QString& peer
             || SecTrustSetAnchorCertificatesOnly(trust, true) != errSecSuccess) return false;
     }
     // With no explicit anchors, Apple's system and installed-user trust policies remain authoritative.
-    const auto evaluation = std::make_shared<NativeTrustEvaluation>(trust);
+    const auto evaluation = std::make_shared<NativeTrustEvaluation>(trust, stop);
     if (!evaluation->queue) return false;
     dispatch_async(evaluation->queue, ^{
         const auto status = SecTrustEvaluateAsyncWithError(evaluation->trust, evaluation->queue,
             ^(SecTrustRef, bool accepted, CFErrorRef) { evaluation->complete(accepted); });
         if (status != errSecSuccess) evaluation->complete(false);
     });
-    std::stop_callback wake(stop, [evaluation] {
-        std::lock_guard lock(evaluation->mutex);
-        evaluation->ready.notify_all();
-    });
-    std::unique_lock lock(evaluation->mutex);
-    evaluation->ready.wait(lock, [&] { return evaluation->done || stop.stop_requested(); });
-    return !stop.stop_requested() && evaluation->trusted;
+    std::unique_lock lock(stop->mutex);
+    stop->ready.wait(lock, [&] { return evaluation->done || stop->canceled; });
+    return !stop->canceled && evaluation->trusted;
 }
 }

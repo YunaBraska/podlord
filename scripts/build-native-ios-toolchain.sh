@@ -116,7 +116,7 @@ for component in avcodec avformat avutil swresample swscale; do
 <key>CFBundleSupportedPlatforms</key><array><string>$PLATFORM</string></array>
 </dict></plist>
 EOF
-    lipo -verify_arch "$ARCH" "$framework/$name"
+    lipo "$framework/$name" -verify_arch "$ARCH"
     xcodebuild -create-xcframework -framework "$framework" -output "$ROOT/media/lib/$name.xcframework" >> "$ROOT/ffmpeg.log" 2>&1
 done
 

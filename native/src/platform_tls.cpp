@@ -2,7 +2,7 @@
 #include <QNetworkReply>
 
 namespace podlord {
-QMetaObject::Connection configurePlatformTrust(QNetworkReply& reply, std::stop_token stop) {
+QMetaObject::Connection configurePlatformTrust(QNetworkReply& reply, std::shared_ptr<TrustCancellation> stop) {
 #ifdef Q_OS_IOS
     return QObject::connect(&reply, &QNetworkReply::sslErrors, &reply,
         [&reply, stop](const QList<QSslError>& errors) {

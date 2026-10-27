@@ -501,7 +501,7 @@ bool browserFlow(const QString& scenario) {
         return std::holds_alternative<podlord::Failure>(*result) && identity.tokenRequests == 1 && identity.jwksRequests == 0;
     const auto* ready = std::get_if<podlord::ClusterConnection>(&*result);
     return ready && ready->credentialReady && ready->expiresAt > QDateTime::currentDateTimeUtc().addSecs(30)
-        && ready->authorization == (google || scenario == "browser_access_token" ? "Bearer private-access-token" : ready->authorization)
+        && ready->authorization == (google || scenario == "browser_access_token" ? QByteArray{"Bearer private-access-token"} : ready->authorization)
         && (google || scenario == "browser_access_token" || ready->authorization.startsWith("Bearer ey"))
         && identity.tokenRequests == 1 && identity.jwksRequests == 1;
 }

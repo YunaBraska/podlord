@@ -5,9 +5,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <cstdio>
 #include <chrono>
-#include <optional>
 #include <thread>
 
 #ifdef Q_OS_MACOS
@@ -36,15 +36,16 @@ int main(int argc, char** argv) {
     const auto chain = certificates(document["peer"].toString());
     const auto authorities = certificates(document["authorities"].toString());
     QElapsedTimer elapsed; elapsed.start();
-    std::stop_source stop;
-    if (document["canceled"].toBool()) stop.request_stop();
+    const auto stop = std::make_shared<podlord::TrustCancellation>();
+    if (document["canceled"].toBool()) stop->cancel();
     const auto cancelAfter = document["cancelAfterMs"].toInt();
-    std::optional<std::jthread> cancellation;
-    if (cancelAfter > 0) cancellation.emplace([&] { std::this_thread::sleep_for(std::chrono::milliseconds(cancelAfter)); stop.request_stop(); });
+    std::thread cancellation;
+    const auto join = qScopeGuard([&] { if (cancellation.joinable()) cancellation.join(); });
+    if (cancelAfter > 0) cancellation = std::thread([&] { std::this_thread::sleep_for(std::chrono::milliseconds(cancelAfter)); stop->cancel(); });
 #ifdef Q_OS_MACOS
     if (const auto arm = reinterpret_cast<void(*)()>(dlsym(RTLD_DEFAULT, "podlord_test_arm_platform_fault"))) arm();
 #endif
-    const bool actual = podlord::platformTrustsPeer(chain, document["name"].toString(), authorities, errors, stop.get_token());
+    const bool actual = podlord::platformTrustsPeer(chain, document["name"].toString(), authorities, errors, stop);
     const auto completedMs = elapsed.elapsed();
     std::printf("Native peer trust: expected=%d actual=%d elapsed_us=%lld\n", document["expected"].toBool(), actual,
         static_cast<long long>(elapsed.nsecsElapsed() / 1000));

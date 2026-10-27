@@ -13,19 +13,19 @@ QMetaObject::Connection configurePlatformTrust(QWebSocket& socket) {
         const auto configuredName = socket.request().peerVerifyName();
         const auto name = configuredName.isEmpty() ? socket.requestUrl().host() : configuredName;
         auto* watcher = new QFutureWatcher<bool>(&socket);
-        const auto stop = std::make_shared<std::stop_source>();
+        const auto stop = std::make_shared<TrustCancellation>();
         QObject::connect(&socket, &QWebSocket::stateChanged, watcher, [stop](QAbstractSocket::SocketState state) {
-            if (state == QAbstractSocket::UnconnectedState || state == QAbstractSocket::ClosingState) stop->request_stop();
+            if (state == QAbstractSocket::UnconnectedState || state == QAbstractSocket::ClosingState) stop->cancel();
         });
-        QObject::connect(&socket, &QObject::destroyed, watcher, [stop] { stop->request_stop(); });
+        QObject::connect(&socket, &QObject::destroyed, watcher, [stop] { stop->cancel(); });
         QObject::connect(watcher, &QFutureWatcher<bool>::finished, &socket, [&socket, watcher, stop, errors] {
-            if (!stop->stop_requested() && (socket.state() == QAbstractSocket::ConnectingState || socket.state() == QAbstractSocket::ConnectedState)) {
+            if (!stop->isCanceled() && (socket.state() == QAbstractSocket::ConnectingState || socket.state() == QAbstractSocket::ConnectedState)) {
                 if (watcher->result()) socket.ignoreSslErrors(errors);
                 socket.resume();
             }
             watcher->deleteLater();
         });
-        watcher->setFuture(QtConcurrent::run([tls, name, errors, token = stop->get_token()] {
+        watcher->setFuture(QtConcurrent::run([tls, name, errors, token = stop] {
             return platformTrustsPeer(tls.peerCertificateChain(), name, tls.caCertificates(), errors, token);
         }));
     });

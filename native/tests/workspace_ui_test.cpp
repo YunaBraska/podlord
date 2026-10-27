@@ -587,7 +587,7 @@ bool execute(const QString& scenario) {
     QList<qint64> dispatched;
     if (scenario == "limit") QObject::connect(&workspace, &podlord::Workspace::requestStarted, &workspace,
         [&](const QString&, const QString&, qint64 at) { dispatched.append(at); });
-    if (scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_")) QAccessible::setActive(true);
+    if (scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_") || scenario == "shell_touch_search_tooltip") QAccessible::setActive(true);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
@@ -1142,6 +1142,64 @@ bool execute(const QString& scenario) {
                 if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "/landscape-" + QString::number(size.width()) + "x" + QString::number(size.height()) + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png")) return false;
             }
             return true;
+        }
+        if (scenario == "shell_touch_search_tooltip") {
+            window->resize(640, 320);
+            auto* resources = item(window, "resourcesWorkspaceButton");
+            auto* search = item(window, "workspaceSearchButton");
+            auto* input = item(window, "resourceFilter");
+            const auto tooltipVisible = [&](const QString& label) {
+                QList<QAccessibleInterface*> pending{QAccessible::queryAccessibleInterface(window)};
+                for (qsizetype index = 0; index < pending.size() && index < 10000; ++index) {
+                    auto* entry = pending[index];
+                    if (!entry || !entry->isValid() || entry->state().invisible) continue;
+                    if (entry->role() == QAccessible::ToolTip && entry->text(QAccessible::Name) == label && !entry->rect().isEmpty()) return true;
+                    for (int child = 0; child < entry->childCount(); ++child) pending.append(entry->child(child));
+                }
+                return false;
+            };
+            const auto failed = [&](const char* stage) {
+                qWarning() << "Touch search tooltip failure:" << stage
+                    << "focus" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{})
+                    << "search checked" << search->property("checked")
+                    << "Resources tooltip" << tooltipVisible(resources->property("text").toString());
+                const auto evidence = qEnvironmentVariable("PODLORD_UI_EVIDENCE_DIR");
+                if (!evidence.isEmpty()) window->grabWindow().save(evidence + "/shell-touch-search-tooltip-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png");
+                return false;
+            };
+            if (!resources || !search || !input || !waitFor([&] {
+                return item(window, "landscapeNavigation")->isVisible()
+                    && displayedWithin(window->contentItem(), resources) && displayedWithin(window->contentItem(), search);
+            })) return false;
+#ifdef Q_OS_MACOS
+            // Qt's macOS buttons are Tab-only. Exercise the Android/Linux touch-focus policy.
+            resources->setFocusPolicy(Qt::StrongFocus);
+#endif
+            QTest::mouseMove(window, QPoint(window->width() - 2, window->height() - 2));
+            search->forceActiveFocus(Qt::TabFocusReason);
+            if (!search->hasActiveFocus() || !waitFor([&] { return tooltipVisible(search->property("text").toString()); }))
+                return failed("keyboard-focused Search tooltip unavailable");
+            std::fputs("Keyboard-focused Search exposes its visible tooltip.\n", stdout);
+            std::unique_ptr<QPointingDevice> touch(QTest::createTouchDevice());
+            const auto tap = [&](QQuickItem* control) {
+                const auto center = control->mapToScene(QPointF(control->width() / 2, control->height() / 2)).toPoint();
+                QTest::touchEvent(window, touch.get()).press(0, center, window).commit();
+                QTest::touchEvent(window, touch.get()).release(0, center, window).commit();
+            };
+            tap(resources);
+            if (!waitFor([&] { return resources->hasActiveFocus() && workspace.workspacePage() == "resources"; }))
+                return failed("Resources touch did not select and focus Resources");
+            QQmlExpression delay(qmlContext(resources), resources, QStringLiteral("ToolTip.delay"));
+            const int tooltipDelay = delay.evaluate().toInt();
+            if (delay.hasError()) return failed("tooltip delay unavailable");
+            QTest::qWait(qMax(0, tooltipDelay) + 1);
+            QSignalSpy frame(window, &QQuickWindow::frameSwapped);
+            window->update();
+            if (!frame.wait(1000)) return failed("Resources touch frame unavailable");
+            tap(search);
+            if (!waitFor([&] { return input->isVisible() && input->hasActiveFocus() && search->property("checked").toBool(); }))
+                return failed("Search touch after Resources did not open and focus the filter");
+            return server.requests.size() == calls;
         }
         if (scenario == "shell_search_demand" || scenario == "shell_search_events") {
             auto* input = item(window, "resourceFilter");
@@ -3814,8 +3872,11 @@ bool realCluster(const QString& source) {
     }
     if (!click(window, item(window, "discardStay")) || text(window, "inspectorYaml") != draft || !click(window, item(window, "leaveYamlEdit")) || !waitFor([&] { return item(window, "discardAccept")->isVisible(); }) || !click(window, item(window, "discardAccept"))) return draftFailure("stay/discard");
     if (!editor->property("readOnly").toBool() || text(window, "inspectorYaml").contains("# local unapplied draft") || !item(window, "editYaml")->isEnabled() || !click(window, item(window, "valuesButton"))) return draftFailure("return to server snapshot");
+    if (!item(window, "workspaceContent")->isVisible()
+        && (!click(window, item(window, "closeInspector")) || !waitFor([&] { return item(window, "workspaceContent")->isVisible(); }))) return failed("close full-pane inspector before Secret filter");
     if (!type(window, item(window, "resourceFilter"), "podlord-native-secret-e2e") || !waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); }, 60000)) return failed("filter Secret");
-    if (!click(window, item(window, "cell_0_0")) || !waitFor([&] { return text(window, "value_data/alpha") == "[hidden]" && text(window, "value_data/beta") == "[hidden]"; })) return failed("Secret values");
+    if (!click(window, item(window, "cell_0_0")) || !click(window, item(window, "valuesButton"))
+        || !waitFor([&] { return text(window, "value_data/alpha") == "[hidden]" && text(window, "value_data/beta") == "[hidden]"; })) return failed("Secret values");
     const auto encoded = QString::fromLatin1(QByteArray("podlord-alpha-real-secret").toBase64());
     if (text(window, "inspectorYaml").contains(encoded) || text(window, "inspectorYaml").contains("podlord-alpha-real-secret")) return failed("Secret YAML masking");
     std::unique_ptr<QPointingDevice> valueTouch;

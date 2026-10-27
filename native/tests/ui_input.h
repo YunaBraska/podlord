@@ -55,7 +55,7 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target, bool pointe
             const auto viewport = parent->mapRectToScene(QRectF(QPointF{}, parent->size()));
             const auto required = pointerBounds(bounds, viewport);
             // Clicks tolerate native tab-strip subpixels; layout assertions keep their stricter bound.
-            const qreal border = pointerAction ? 2 : 1;
+            const qreal border = pointerAction ? 2 : 0;
             const auto visible = viewport.adjusted(-border,-border,border,border);
             if (!visible.contains(required.topLeft()) || !visible.contains(required.bottomRight())) return parent;
         }

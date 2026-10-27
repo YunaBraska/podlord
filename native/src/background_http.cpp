@@ -6,7 +6,6 @@
 #include <QThread>
 #include <algorithm>
 #include <cstring>
-#include <stop_token>
 
 namespace podlord {
 struct HttpMetadata {
@@ -26,12 +25,12 @@ class HttpTransfer final : public QObject {
     Q_OBJECT
 public:
     HttpTransfer(QNetworkAccessManager& network, QNetworkAccessManager::Operation operation,
-        QNetworkRequest request, QByteArray method, QByteArray body, QNetworkProxy proxy, std::stop_token stop)
+        QNetworkRequest request, QByteArray method, QByteArray body, QNetworkProxy proxy, std::shared_ptr<TrustCancellation> stop)
         : network_(network), operation_(operation), request_(std::move(request)), method_(std::move(method)),
           body_(std::move(body)), proxy_(std::move(proxy)), stop_(std::move(stop)) {}
     void start(qint64 capacity) {
         if (done_) return;
-        if (stop_.stop_requested()) { cancel(); return; }
+        if (stop_->isCanceled()) { cancel(); return; }
         credit_ = capacity;
         setParent(&network_);
         network_.setProxy(proxy_);
@@ -99,7 +98,7 @@ private:
     const QNetworkRequest request_;
     const QByteArray method_, body_;
     const QNetworkProxy proxy_;
-    const std::stop_token stop_;
+    const std::shared_ptr<TrustCancellation> stop_;
     QPointer<QNetworkReply> reply_;
     qint64 credit_ = 0;
     bool done_ = false;
@@ -113,15 +112,15 @@ public:
         setOperation(operation); setRequest(request); setUrl(request.url());
         open(QIODevice::ReadOnly | QIODevice::Unbuffered);
     }
-    ~BufferedHttpReply() override { stop_.request_stop(); emit cancelRequested(); }
-    std::stop_token stopToken() const { return stop_.get_token(); }
+    ~BufferedHttpReply() override { stop_->cancel(); emit cancelRequested(); }
+    std::shared_ptr<TrustCancellation> stopToken() const { return stop_; }
     void dispatch() { emit dispatchRequested(readBufferSize() > 0 ? std::min(readBufferSize(), chunkLimit) : chunkLimit); }
     bool isSequential() const override { return true; }
     qint64 bytesAvailable() const override { return buffer_.size() - offset_ + QNetworkReply::bytesAvailable(); }
     void setReadBufferSize(qint64 size) override { QNetworkReply::setReadBufferSize(size); grant(); }
     void abort() override {
         if (isFinished()) return;
-        stop_.request_stop();
+        stop_->cancel();
         setError(OperationCanceledError, "HTTP request canceled."); setFinished(true);
         emit cancelRequested();
         QMetaObject::invokeMethod(this, [this] { emit errorOccurred(error()); emit readChannelFinished(); emit finished(); }, Qt::QueuedConnection);
@@ -168,7 +167,7 @@ private:
         const auto capacity = readBufferSize() > 0 ? std::max(qint64(0), readBufferSize() - (buffer_.size() - offset_)) : chunkLimit;
         if (capacity > 0) { awaitingCredit_ = false; emit capacityAvailable(std::min(capacity, chunkLimit)); }
     }
-    std::stop_source stop_;
+    const std::shared_ptr<TrustCancellation> stop_ = std::make_shared<TrustCancellation>();
     QSslConfiguration tls_;
     QByteArray buffer_;
     qint64 offset_ = 0;
