@@ -67,6 +67,11 @@ bool run(const QString& scenario) {
     if (scenario == "branding" || scenario == "branding_narrow") {
         if (window->title() != "Podlord") return false;
         if (scenario.endsWith("_narrow")) window->resize(360, 600);
+        if (!waitFor([&] { return window->contentItem()->width() == window->width()
+                && window->contentItem()->height() == window->height()
+                && item(window->contentItem(), "aboutContent") && item(window->contentItem(), "aboutLogo")
+                && item(window->contentItem(), "aboutTagline") && item(window->contentItem(), "aboutQuote"); })) return false;
+        window->grabWindow();
         auto* content = item(window->contentItem(), "aboutContent");
         auto* logo = item(window->contentItem(), "aboutLogo");
         auto* tagline = item(window->contentItem(), "aboutTagline");

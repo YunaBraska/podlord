@@ -1068,6 +1068,23 @@ bool execute(const QString& scenario) {
             if (!workspace.filter("alpha") || !click(window, item(window, "workspaceSearchButton"))) {
                 std::fputs("Landscape search control unavailable.\n", stderr); return false;
             }
+            if (!waitFor([&] {
+                auto* bar = item(window, "pulse_cpu_bar");
+                if (!bar || !bar->isVisible() || bar->property("value").toDouble() != 0) return false;
+                const auto frame = window->grabWindow();
+                if (frame.isNull()) return false;
+                const auto capture = qEnvironmentVariable("PODLORD_E2E_SCREENSHOT");
+                if (!capture.isEmpty() && !frame.save(capture)) return false;
+                const auto center = bar->mapToScene({bar->width() / 2, bar->height() / 2});
+                const QPoint pixel(qRound(center.x() * frame.width() / window->width()), qRound(center.y() * frame.height() / window->height()));
+                return frame.rect().contains(pixel) && frame.pixelColor(pixel) == QColor(workspace.appearanceColors().value("border").toString());
+            })) { std::fputs("Empty metric track does not use the active theme.\n", stderr); return false; }
+            for (const auto* name : {"pulse_pods_usage", "pulse_nodes_usage"}) {
+                auto* usage = item(window, name);
+                if (!usage || !usage->isVisible() || usage->property("truncated").toBool()) {
+                    std::fputs("Landscape resource count is truncated.\n", stderr); return false;
+                }
+            }
             const auto session = workspace.currentSession();
             workspace.openContext("ctx:" + QString(64, '0'));
             if (!waitFor([&] { return !workspace.busy() && !text(window, "errorMessage").isEmpty(); })
@@ -2934,7 +2951,7 @@ bool execute(const QString& scenario) {
             }
             if (scenario == "inspector_related_alias_legacy_time"
                 && (!showEventColumn(window, workspace, "eventTime") || !revealTableCell(window, "eventTable", 0, 0)
-                    || text(window, "eventCell_0_0") != "2026-10-03T10:03:00Z")) return false;
+                    || !waitFor([&] { return text(window, "eventCell_0_0") == "2026-10-03T10:03:00Z"; }))) return false;
             if (!revealTableCell(window, "eventTable", 0, 2) || !click(window, item(window, "eventCell_0_2")) || !waitFor([&] { return workspace.inspectorName() == "alpha"; })) return false;
             return click(window, item(window, "inspectorEventsButton"))
                 && waitFor([&] { return workspace.inspectorEvents().size() == expectedEvents; });

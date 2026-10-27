@@ -3,7 +3,6 @@
 #include <QElapsedTimer>
 #include <QNetworkReply>
 #include <QPointer>
-#include <QTimer>
 #include <QTest>
 #include <QUrlQuery>
 #include <cstdio>
@@ -49,7 +48,6 @@ int main(int argc, char** argv) {
     QByteArray received;
     int finished = 0;
     qint64 largestBuffer = 0;
-    QTimer reader;
     QObject::connect(reply, &QNetworkReply::finished, &app, [&] { ++finished; });
     if (streaming) {
         reply->setReadBufferSize(4096);
@@ -65,10 +63,10 @@ int main(int argc, char** argv) {
         if (!waitFor([&] { return reply->bytesAvailable() == 4096; })) return 1;
         QTest::qWait(100);
         if (reply->bytesAvailable() != 4096 || reply->isFinished()) return 1;
-        // Exercise partial reads without turning platform timer granularity into a speed gate.
-        reader.setInterval(0);
-        QObject::connect(&reader, &QTimer::timeout, &app, [&] { received += reply->read(512); });
-        reader.start();
+        // QTest polling must not determine the consumer's transfer rate.
+        const auto drain = [&] { while (reply->bytesAvailable() > 0) received += reply->read(512); };
+        QObject::connect(reply, &QNetworkReply::readyRead, &app, drain);
+        drain();
     }
     if (scenario == "cancel_metadata") QObject::connect(reply, &QNetworkReply::metaDataChanged, &app, [reply] { reply->abort(); });
     if (scenario == "cancel_before") reply->abort();
@@ -92,7 +90,6 @@ int main(int argc, char** argv) {
         && reply->error() == QNetworkReply::ContentNotFoundError && reply->readAll() == "missing" ? 0 : 1;
     if (scenario == "redirect") return reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 302
         && reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl() == QUrl("/body") ? 0 : 1;
-    reader.stop();
     received += reply->readAll();
     const auto tls = reply->sslConfiguration();
     const auto expected = scenario == "post" || scenario == "patch" ? input : payload(streaming ? 196619 : 262175);
