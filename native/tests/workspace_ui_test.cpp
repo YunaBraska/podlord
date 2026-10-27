@@ -2077,7 +2077,10 @@ bool execute(const QString& scenario) {
             item(window,"resourceColumnVisible_issue")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
             item(window,"resourceColumnVisible_uid")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
             if (!click(window,item(window,"resourceSaveColumns")) || !waitFor([&] { return !workspace.tableLayoutSaving(); })) return false;
-            for (const auto& field : fields) if (!show(column(field)) || text(window, "cell_0_" + QString::number(column(field))) != value(0, field)) return false;
+            auto* display = qobject_cast<QAbstractItemModel*>(view->property("model").value<QObject*>());
+            if (!display) return false;
+            for (const auto& field : fields)
+                if (!show(column(field)) || text(window, "cell_0_" + QString::number(column(field))) != display->data(display->index(0, column(field))).toString()) return false;
             return server.requests.size() == requests;
         }
         if (scenario.startsWith("table_sort_")) {
