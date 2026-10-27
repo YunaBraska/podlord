@@ -243,15 +243,15 @@ users:
     }
 
     [Fact]
-    public void App_state_imports_generated_k3d_source_without_trying_to_file_refresh_it()
+    public void App_state_keeps_pasted_kubeconfig_without_trying_to_file_refresh_it()
     {
         var directory = TempDirectory();
         var state = AppState.InMemoryWithConfigDirectory(directory, Clock);
 
-        var summary = state.ImportGeneratedKubeconfigText("k3d/podlord-test", SampleKubeconfig("https://127.0.0.1:6443"));
+        var summary = state.ImportKubeconfigText("pasted", SampleKubeconfig("https://127.0.0.1:6443"));
         var refreshed = state.RefreshImportedKubeconfigs();
         var contexts = state.Snapshot().ImportedContexts
-            .Where(item => item.SourcePath.StartsWith("podlord-generated://", StringComparison.Ordinal))
+            .Where(item => item.SourcePath.StartsWith("podlord-paste://", StringComparison.Ordinal))
             .ToList();
 
         Assert.NotEmpty(summary.Contexts);
@@ -259,6 +259,54 @@ users:
         Assert.NotEmpty(contexts);
         Assert.Contains(contexts, context => context.Server == "https://127.0.0.1:6443");
         Assert.All(contexts, context => Assert.True(File.Exists(context.OwnedKubeconfigPath)));
+    }
+
+    [Fact]
+    public void App_state_migrates_legacy_generated_kubeconfig_sources_to_pasted_sources()
+    {
+        var directory = TempDirectory();
+        var seed = AppState.InMemoryWithConfigDirectory(directory, Clock);
+        seed.ImportKubeconfigText("pasted", SampleKubeconfig("https://127.0.0.1:6443"));
+        var snapshot = seed.Snapshot();
+        var legacyContexts = snapshot.ImportedContexts
+            .Select(context =>
+            {
+                var sourcePath = context.SourcePath.Replace("podlord-paste://", "podlord-generated://", StringComparison.Ordinal);
+                return context with
+                {
+                    ContextId = KubeconfigImporter.ContextSnapshotId(sourcePath, context.SourceContentHash, context.Name),
+                    SourcePath = sourcePath
+                };
+            })
+            .ToList();
+        var legacyContextIds = snapshot.ImportedContexts
+            .Zip(legacyContexts)
+            .ToDictionary(pair => pair.First.ContextId, pair => pair.Second.ContextId, StringComparer.Ordinal);
+        var legacy = snapshot with
+        {
+            ImportedContexts = legacyContexts,
+            Sessions = snapshot.Sessions
+                .Select(session => session with { ContextId = legacyContextIds[session.ContextId] })
+                .ToList()
+        };
+        File.WriteAllText(
+            Path.Combine(directory, "store.json"),
+            JsonSerializer.Serialize(legacy, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var previous = Environment.GetEnvironmentVariable("PODLORD_CONFIG_HOME");
+        Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", directory);
+
+        try
+        {
+            var loaded = AppState.LoadDefault(Clock);
+
+            Assert.All(loaded.Snapshot().ImportedContexts, context => Assert.StartsWith("podlord-paste://", context.SourcePath));
+            Assert.All(loaded.Snapshot().Sessions, session => Assert.Contains(loaded.Snapshot().ImportedContexts, context => context.ContextId == session.ContextId));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PODLORD_CONFIG_HOME", previous);
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]

@@ -207,11 +207,6 @@ public partial class MainWindow : Window
         if (sender is Button { Tag: SourceStatusRow row }) viewModel.RemoveSource(row);
     }
 
-    private async void ImportK3dClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        await viewModel.ImportK3dNowAsync().ConfigureAwait(true);
-    }
-
     private async void DeleteSelectedResourceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         await viewModel.DeleteSelectedResourceAsync().ConfigureAwait(true);

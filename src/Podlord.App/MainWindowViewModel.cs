@@ -6,7 +6,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using System.Text.Json;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Podlord.Core;
@@ -2132,34 +2131,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ReloadSessions();
         }
         catch (PodlordException ex)
-        {
-            StatusLine = ex.Message;
-        }
-    }
-
-    public async Task ImportK3dNowAsync()
-    {
-        try
-        {
-            var clusters = await ListK3dClustersAsync(lifetime.Token).ConfigureAwait(true);
-            if (clusters.Count == 0)
-            {
-                StatusLine = "No k3d clusters found.";
-                return;
-            }
-
-            var contexts = 0;
-            foreach (var cluster in clusters)
-            {
-                var kubeconfig = await ReadK3dKubeconfigAsync(cluster, lifetime.Token).ConfigureAwait(true);
-                var summary = state.ImportGeneratedKubeconfigText($"k3d/{cluster}", NormalizeLocalK3dEndpoint(kubeconfig));
-                contexts += summary.Contexts.Count;
-            }
-
-            StatusLine = $"Imported {contexts} context(s) from {clusters.Count} k3d cluster(s).";
-            ReloadSessions();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or PodlordException or JsonException)
         {
             StatusLine = ex.Message;
         }
@@ -5989,18 +5960,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             return "pasted";
         }
 
-        if (sourcePath.StartsWith("podlord-generated://", StringComparison.Ordinal))
-        {
-            return "generated";
-        }
-
         return File.Exists(sourcePath) ? "file ok" : "file missing";
     }
 
     private static bool IsVirtualSource(string sourcePath)
     {
-        return sourcePath.StartsWith("podlord-paste://", StringComparison.Ordinal)
-               || sourcePath.StartsWith("podlord-generated://", StringComparison.Ordinal);
+        return sourcePath.StartsWith("podlord-paste://", StringComparison.Ordinal);
     }
 
     private static string SourceName(string sourcePath)
@@ -6010,124 +5975,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             return sourcePath["podlord-paste://".Length..];
         }
 
-        if (sourcePath.StartsWith("podlord-generated://", StringComparison.Ordinal))
-        {
-            return sourcePath["podlord-generated://".Length..];
-        }
-
         var fileName = Path.GetFileName(sourcePath);
         return string.IsNullOrWhiteSpace(fileName) ? sourcePath : fileName;
-    }
-
-    private static async Task<IReadOnlyList<string>> ListK3dClustersAsync(CancellationToken cancellationToken)
-    {
-        var k3d = ResolveTool("k3d", ["/opt/homebrew/bin/k3d", "/usr/local/bin/k3d"]);
-        var result = await CaptureProcessAsync(k3d, ["cluster", "list", "-o", "json"], cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode == 0)
-        {
-            var clusters = ParseK3dClusterJson(result.Output);
-            if (clusters.Count > 0)
-            {
-                return clusters;
-            }
-        }
-
-        result = await CaptureProcessAsync(k3d, ["cluster", "list", "--no-headers"], cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode != 0)
-        {
-            throw new InvalidOperationException(result.Error.Trim().Length == 0
-                ? "Could not list k3d clusters."
-                : result.Error.Trim());
-        }
-
-        return result.Output
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty)
-            .Where(name => name.Length > 0)
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .ToList();
-    }
-
-    private static async Task<string> ReadK3dKubeconfigAsync(string cluster, CancellationToken cancellationToken)
-    {
-        var k3d = ResolveTool("k3d", ["/opt/homebrew/bin/k3d", "/usr/local/bin/k3d"]);
-        var result = await CaptureProcessAsync(k3d, ["kubeconfig", "get", cluster], cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode != 0)
-        {
-            throw new InvalidOperationException(result.Error.Trim().Length == 0
-                ? $"Could not read kubeconfig for k3d cluster {cluster}."
-                : result.Error.Trim());
-        }
-
-        return result.Output;
-    }
-
-    private static IReadOnlyList<string> ParseK3dClusterJson(string raw)
-    {
-        using var document = JsonDocument.Parse(raw);
-        if (document.RootElement.ValueKind != JsonValueKind.Array)
-        {
-            return Array.Empty<string>();
-        }
-
-        return document.RootElement
-            .EnumerateArray()
-            .Select(ClusterNameFromJson)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name!)
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .ToList();
-    }
-
-    private static string? ClusterNameFromJson(JsonElement element)
-    {
-        foreach (var property in new[] { "name", "Name", "clusterName", "ClusterName" })
-        {
-            if (element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String)
-            {
-                return value.GetString();
-            }
-        }
-
-        return null;
-    }
-
-    private static string NormalizeLocalK3dEndpoint(string kubeconfig)
-    {
-        return kubeconfig
-            .Replace("https://0.0.0.0:", "https://127.0.0.1:", StringComparison.Ordinal)
-            .Replace("server: https://localhost:", "server: https://127.0.0.1:", StringComparison.Ordinal);
-    }
-
-    private static async Task<ProcessResult> CaptureProcessAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
-    {
-        var process = new Process
-        {
-            StartInfo =
-            {
-                FileName = fileName,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-        foreach (var argument in arguments)
-        {
-            process.StartInfo.ArgumentList.Add(argument);
-        }
-
-        if (!process.Start())
-        {
-            throw new InvalidOperationException($"Could not start {Path.GetFileName(fileName)}.");
-        }
-
-        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        return new ProcessResult(process.ExitCode, await outputTask.ConfigureAwait(false), await errorTask.ConfigureAwait(false));
     }
 
     private void ScheduleSourceRefresh()
@@ -6895,10 +6744,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             ProblemsOnly = !ProblemsOnly;
         }
-        else if (normalized.Contains("k3d", StringComparison.Ordinal))
-        {
-            _ = ImportK3dNowAsync();
-        }
         else
         {
             StatusLine = $"Unknown command: {command}";
@@ -6918,8 +6763,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             "Open Sources Settings",
             "Open Port Forwards",
             "Open Settings",
-            "Toggle Problems",
-            "Import K3D"
+            "Toggle Problems"
         };
         var query = CommandText.Trim();
         CommandSuggestions.Clear();
@@ -9489,31 +9333,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             return false;
         }
     }
-
-    private static string ResolveTool(string executable, IReadOnlyList<string> fallbacks)
-    {
-        var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        foreach (var directory in path.Split(Path.PathSeparator).Where(value => value.Length > 0))
-        {
-            var candidate = Path.Combine(directory, executable);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        foreach (var fallback in fallbacks)
-        {
-            if (File.Exists(fallback))
-            {
-                return fallback;
-            }
-        }
-
-        throw new InvalidOperationException($"{executable} was not found.");
-    }
-
-    private sealed record ProcessResult(int ExitCode, string Output, string Error);
 
     private int ParseLimit()
     {

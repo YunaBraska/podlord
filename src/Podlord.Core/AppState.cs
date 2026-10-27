@@ -56,7 +56,12 @@ public sealed class AppState
         var store = File.Exists(storePath)
             ? LoadStore(storePath)
             : AppStore.Empty;
-        var state = new AppState(storePath, configDirectory, NormalizeStore(store, configDirectory), new KubeconfigImporter(clock));
+        var state = new AppState(
+            storePath,
+            configDirectory,
+            NormalizeStore(MigrateGeneratedKubeconfigSources(store), configDirectory),
+            new KubeconfigImporter(clock)
+        );
         state.Persist();
         return state;
     }
@@ -141,15 +146,6 @@ public sealed class AppState
         var sourcePath = string.IsNullOrWhiteSpace(displayName)
             ? $"podlord-paste://{PodlordText.StableHash(raw)}"
             : $"podlord-paste://{PodlordText.StableHash(displayName)}-{PodlordText.StableHash(raw)}";
-        return ImportVirtualKubeconfigText(sourcePath, raw);
-    }
-
-    public KubeconfigImportSummary ImportGeneratedKubeconfigText(string sourceName, string raw)
-    {
-        var normalized = string.Join("-", sourceName
-            .Trim()
-            .Split(Path.GetInvalidFileNameChars().Concat(['/', '\\', ':']).ToArray(), StringSplitOptions.RemoveEmptyEntries));
-        var sourcePath = $"podlord-generated://{(normalized.Length == 0 ? PodlordText.StableHash(raw) : normalized)}";
         return ImportVirtualKubeconfigText(sourcePath, raw);
     }
 
@@ -539,6 +535,42 @@ public sealed class AppState
         }
     }
 
+    private static AppStore MigrateGeneratedKubeconfigSources(AppStore current)
+    {
+        const string legacyPrefix = "podlord-generated://";
+        var contextIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        var contexts = current.ImportedContexts
+            .Select(context =>
+            {
+                if (!context.SourcePath.StartsWith(legacyPrefix, StringComparison.Ordinal))
+                {
+                    return context;
+                }
+
+                var sourcePath = $"podlord-paste://{context.SourcePath[legacyPrefix.Length..]}";
+                var contextId = KubeconfigImporter.ContextSnapshotId(sourcePath, context.SourceContentHash, context.Name);
+                contextIds[context.ContextId] = contextId;
+                return context with
+                {
+                    ContextId = contextId,
+                    SourcePath = sourcePath,
+                    SourceName = SourceName(sourcePath)
+                };
+            })
+            .ToList();
+        if (contextIds.Count == 0)
+        {
+            return current;
+        }
+
+        var sessions = current.Sessions
+            .Select(session => contextIds.TryGetValue(session.ContextId, out var contextId)
+                ? session with { ContextId = contextId }
+                : session)
+            .ToList();
+        return current with { ImportedContexts = contexts, Sessions = sessions };
+    }
+
     private static AppStore NormalizeStore(AppStore current, string? configDirectory)
     {
         var contexts = DeduplicateImportedContexts(current.ImportedContexts);
@@ -770,8 +802,7 @@ public sealed class AppState
 
     private static bool IsVirtualSource(string path)
     {
-        return path.StartsWith("podlord-paste://", StringComparison.Ordinal)
-               || path.StartsWith("podlord-generated://", StringComparison.Ordinal);
+        return path.StartsWith("podlord-paste://", StringComparison.Ordinal);
     }
 
     private static string SourceName(string sourcePath)
@@ -779,11 +810,6 @@ public sealed class AppState
         if (sourcePath.StartsWith("podlord-paste://", StringComparison.Ordinal))
         {
             return sourcePath["podlord-paste://".Length..];
-        }
-
-        if (sourcePath.StartsWith("podlord-generated://", StringComparison.Ordinal))
-        {
-            return sourcePath["podlord-generated://".Length..];
         }
 
         var fileName = Path.GetFileName(sourcePath);

@@ -6,7 +6,7 @@ Podlord is a resource-first Kubernetes desktop console. The UI favors global sca
 
 | Area | Behavior |
 |---|---|
-| Kubeconfig sources | Import home config, custom file, directory scan, pasted YAML, and generated k3d config. |
+| Kubeconfig sources | Import home config, custom file, directory scan, or pasted YAML. |
 | Source snapshots | Store app-owned kubeconfig copies by source path and content hash. |
 | Resource explorer | Flat resource table with sorting, resizing, reordering, column visibility, filters, saved filters, and quick search. |
 | Radar | Deterministic resource island, zoom, pan, selection, hover details, activity markers, and optional water animation. |

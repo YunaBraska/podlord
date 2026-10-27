@@ -1,4 +1,4 @@
-# 0003: K3d Generated Kubeconfig Sources
+# 0003: Keep k3d as Test Infrastructure
 
 ## Status
 
@@ -6,17 +6,14 @@ Accepted
 
 ## Context
 
-Podlord supports multiple kubeconfig sources: real files, pasted text, and generated sources. K3d clusters expose kubeconfigs through `k3d kubeconfig get <cluster>`, not through a stable user-owned source file that Podlord should watch or mutate.
+Podlord used to discover local k3d clusters and run `k3d kubeconfig get` in the desktop process. A k3d kubeconfig is an ordinary Kubernetes kubeconfig, so the product had a special integration without gaining a distinct Kubernetes capability.
 
 ## Decision
 
-K3d imports are stored as generated virtual sources using the `podlord-generated://` scheme. Podlord imports the kubeconfig text, normalizes local `0.0.0.0` endpoints to `127.0.0.1`, stores an app-owned copy, and creates sessions from that copy.
-
-Generated sources are not file-watched and are not refreshed by `RefreshImportedKubeconfigs`. Re-importing k3d is an explicit user action.
+Podlord imports all user-provided kubeconfigs through the same file, directory, home-config, or pasted-text paths. It does not discover, invoke, or otherwise special-case k3d. k3d remains test infrastructure for the real Kubernetes integration suite.
 
 ## Consequences
 
-- K3d support does not touch `$HOME/.kube/config`.
-- Generated k3d sessions behave like other app-owned kubeconfig sessions.
-- Source refresh stays predictable: real files are watched, virtual/generated sources are not.
-- Later k3d lifecycle controls can update the generated source model without changing file source behavior.
+- Production code does not run user-installed Kubernetes tools.
+- A kubeconfig exported from k3d works like every other kubeconfig.
+- The disposable k3d test suite remains the public-boundary proof for Kubernetes behavior.
