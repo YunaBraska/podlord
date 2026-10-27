@@ -268,6 +268,41 @@ bool execute(const QString& scenario) {
         return false;
     })) return false;
     const auto calls = server.requests;
+    if (scenario == "cpu_milli" || scenario == "stale" || scenario == "incomplete") {
+        auto* model = workspace.table();
+        int row = -1;
+        for (int index = 0; index < model->rowCount(); ++index)
+            if (model->data(model->index(index, 0)) == "half") row = index;
+        auto* view = item(window, "resourceTable");
+        if (row < 0 || !view) return false;
+        const QString qualifier = scenario == "stale" ? " (stale)" : scenario == "incomplete" ? " (incomplete)" : "";
+        for (const auto& metric : QList<QPair<QString, QString>>{{"500m", "500 mCPU"}, {"64Mi", "64 MiB"}}) {
+            const int column = metric.first == "500m" ? 7 : 8;
+            QQmlExpression position(qmlContext(view), view,
+                QString("positionViewAtIndex(model.index(%1, %2), TableView.Contain)").arg(row).arg(column));
+            position.evaluate();
+            const auto name = QString("cell_%1_%2").arg(row).arg(column);
+            if (position.hasError() || !waitFor([&] { return text(window, name) == metric.first + qualifier; })) {
+                std::fprintf(stderr, "Compact metric cell mismatch: column=%d actual=%s expected=%s\n", column,
+                    qPrintable(text(window, name)), qPrintable(metric.first + qualifier));
+                return false;
+            }
+            auto* cell = item(window, name);
+            cell->forceActiveFocus(Qt::TabFocusReason);
+            QGuiApplication::clipboard()->clear();
+            QTest::keySequence(window, QKeySequence::Copy);
+            if (!waitFor([&] { return QGuiApplication::clipboard()->text() == metric.second + qualifier; })) {
+                std::fprintf(stderr, "Keyboard copy lost full metric value: %s\n", qPrintable(QGuiApplication::clipboard()->text()));
+                return false;
+            }
+            QGuiApplication::clipboard()->clear();
+            if (!click(window, cell, Qt::RightButton) || !click(window, item(window, "menuCopy"))
+                || !waitFor([&] { return QGuiApplication::clipboard()->text() == metric.second + qualifier; })) {
+                std::fprintf(stderr, "Context copy lost full metric value: %s\n", qPrintable(QGuiApplication::clipboard()->text()));
+                return false;
+            }
+        }
+    }
     if (scenario == "narrow_center") { window->resize(QSize(680, 480)); QTest::qWait(10); }
     auto* fieldsButton = item(window, "resourceFieldFilters");
     if (!click(window, fieldsButton)) return false;

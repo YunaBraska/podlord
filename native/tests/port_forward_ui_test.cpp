@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "port_forward_transport.h"
+#include "container_terminal.h"
 #include "ui_input.h"
 #include <QClipboard>
 #include <QDesktopServices>
@@ -131,7 +132,7 @@ bool run(const QString& scenario, const QString& configPath) {
     QTemporaryDir profile;
     QTcpServer api;
     QWebSocketServer streaming("External Kubernetes boundary", QWebSocketServer::NonSecureMode);
-    streaming.setSupportedSubprotocols({scenario == "protocol" ? "unsupported" : "v4.channel.k8s.io"});
+    streaming.setSupportedSubprotocols({scenario == "protocol" ? "unsupported" : "v4.channel.k8s.io", "v5.channel.k8s.io"});
     if (!profile.isValid() || (!real && !api.listen(QHostAddress::LocalHost))) return false;
     const QString ns = real ? "visual-a" : "default";
     const QString podName = real ? "podlord-forward-echo" : "echo";
@@ -148,6 +149,8 @@ bool run(const QString& scenario, const QString& configPath) {
     int targetLists = 0;
     bool changed = false, safe = true;
     QPointer<QTcpSocket> heldUpgrade;
+    QPointer<QTcpSocket> heldDetail;
+    bool holdDetail = false;
     QStringList dispatchOrder;
     QObject::connect(&api, &QTcpServer::newConnection, &api, [&] {
         while (auto* socket = api.nextPendingConnection()) {
@@ -240,6 +243,7 @@ bool run(const QString& scenario, const QString& configPath) {
                     }
                 } else { http = 404; result = {{"kind", "Status"}, {"code", 404}}; }
                 const auto body = QJsonDocument(result).toJson(QJsonDocument::Compact);
+                if (holdDetail && path == podPath) { holdDetail = false; heldDetail = socket; return; }
                 socket->write(QByteArray("HTTP/1.1 ") + QByteArray::number(http) + " Test\r\nContent-Type: application/json\r\nRetry-After: 1\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
                 socket->disconnectFromHost();
             });
@@ -248,6 +252,15 @@ bool run(const QString& scenario, const QString& configPath) {
     });
     QObject::connect(&streaming, &QWebSocketServer::newConnection, &streaming, [&] {
         while (auto* socket = streaming.nextPendingConnection()) {
+            if (socket->subprotocol() == "v5.channel.k8s.io") {
+                safe = safe && socket->requestUrl().path() == podPath + "/exec";
+                socket->sendBinaryMessage(QByteArray(1, char(1)) + "$ ");
+                QObject::connect(socket, &QWebSocket::binaryMessageReceived, socket, [socket](const QByteArray& message) {
+                    if (!message.isEmpty() && message[0] == char(0)) socket->sendBinaryMessage(QByteArray(1, char(1)) + message.sliced(1));
+                });
+                QObject::connect(socket, &QWebSocket::disconnected, socket, &QObject::deleteLater);
+                continue;
+            }
             const int port = QUrlQuery(socket->requestUrl()).queryItemValue("ports").toInt();
             safe = safe && port == (scenario == "service_port_default" ? 80 : 8080) && socket->requestUrl().path() == podPath + "/portforward";
             const int headerPort = scenario == "wrong_port" ? 8081 : port;
@@ -275,6 +288,54 @@ bool run(const QString& scenario, const QString& configPath) {
             QObject::connect(socket, &QWebSocket::disconnected, socket, &QObject::deleteLater);
         }
     });
+    if (scenario == "revoked_streams") {
+        const auto failed = [](const char* stage) { std::fprintf(stderr, "Credential stream revocation failed: %s\n", stage); return false; };
+        podlord::ResourceClient client;
+        podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0; settings.requestHardLimitPerMinute = 0;
+        podlord::ClusterConnection first;
+        first.server = QUrl(QString("http://127.0.0.1:%1").arg(api.serverPort()));
+        first.authorization = "Bearer local-forward-token";
+        first.credentialId = podlord::importedCredentialId("ctx:" + QString(64, 'a'));
+        auto second = first; second.credentialId = podlord::importedCredentialId("ctx:" + QString(64, 'b'));
+        if (!client.configure(settings) || !client.open("first", first, {})
+            || !client.showSession("second", "secondary") || !client.open("second", second, {})
+            || !waitFor([&] { return !client.loading("first") && !client.loading("second"); })) return failed("load both contexts");
+        const auto terminalFirst = client.startTerminal("first", podPath, "echo", "/bin/sh");
+        if (!std::holds_alternative<QString>(terminalFirst)
+            || !waitFor([&] { return client.terminal("first") && client.terminal("first")->connected(); })) return failed("first terminal");
+        const auto terminalSecond = client.startTerminal("second", podPath, "echo", "/bin/sh");
+        if (!std::holds_alternative<QString>(terminalSecond)
+            || !waitFor([&] { return client.terminal("second") && client.terminal("second")->connected(); })) return failed("second terminal");
+        const auto availablePort = [] { QTcpServer reserve; return reserve.listen(QHostAddress::LocalHost, 0) ? int(reserve.serverPort()) : 0; };
+        const int firstPort = availablePort();
+        if (!std::holds_alternative<QString>(client.startPortForward("first", podPath, firstPort, 8080))) return failed("first forward");
+        const int secondPort = availablePort();
+        if (!std::holds_alternative<QString>(client.startPortForward("second", podPath, secondPort, 8080))) return failed("second forward");
+        QTcpSocket firstSocket, secondSocket;
+        firstSocket.connectToHost(QHostAddress::LocalHost, firstPort);
+        secondSocket.connectToHost(QHostAddress::LocalHost, secondPort);
+        if (!waitFor([&] { return firstSocket.state() == QAbstractSocket::ConnectedState && secondSocket.state() == QAbstractSocket::ConnectedState; })) return failed("forward listeners");
+        firstSocket.write("first-before"); secondSocket.write("second-before");
+        if (!waitFor([&] { return firstSocket.bytesAvailable() == 12 && secondSocket.bytesAvailable() == 13; })
+            || firstSocket.readAll() != "first-before" || secondSocket.readAll() != "second-before") return failed("established forward streams");
+        holdDetail = true;
+        if (!client.inspect("first", podPath) || !waitFor([&] { return !heldDetail.isNull(); })) return failed("dispatched finite request");
+        if (!client.forgetCredentials(first.credentialId)) return failed("revoke context");
+        if (!waitFor([&] {
+            return !client.terminal("first") && client.portForwards("first").isEmpty()
+                && firstSocket.state() == QAbstractSocket::UnconnectedState;
+        })) return failed("revoked streams still open");
+        if (!heldDetail || heldDetail->state() != QAbstractSocket::ConnectedState) return failed("finite request was aborted");
+        const auto body = QJsonDocument(pod).toJson(QJsonDocument::Compact);
+        heldDetail->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        heldDetail->disconnectFromHost();
+        if (!waitFor([&] { return !client.loading("first"); }) || !client.authenticationRequired("first")
+            || !client.terminal("second") || !client.terminal("second")->connected()
+            || client.portForwards("second").size() != 1 || secondSocket.state() != QAbstractSocket::ConnectedState) return failed("other context changed");
+        secondSocket.write("second-after");
+        if (!waitFor([&] { return secondSocket.bytesAvailable() == 12; }) || secondSocket.readAll() != "second-after" || !safe) return failed("other context echo");
+        return client.close("second") && client.close("first");
+    }
     const auto path = profile.path() + "/source.yaml";
     if (!real) {
         QFile config(path); if (!config.open(QIODevice::WriteOnly)) return false;

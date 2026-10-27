@@ -8,6 +8,12 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QSignalSpy>
+#include <QSemaphore>
+#include <QThreadPool>
+#include <QScopeGuard>
+#include <QtConcurrent/QtConcurrentRun>
+#include <algorithm>
+#include <ctime>
 #include <cstdio>
 
 namespace {
@@ -107,6 +113,8 @@ bool run(const QString& scenario) {
     server.phase = scenario == "duration_survives_unmatch" ? "Running" : "Failed";
     if (scenario == "criterion_p95" || scenario == "criterion_multi_exact") { server.extraPods = 1; server.peerRestarts = 4; }
     if (scenario == "criterion_outlier") { server.restarts = 4; server.extraPods = 5; }
+    if (scenario == "view_snapshot_cpu") server.extraPods = 14999;
+    if (scenario == "view_snapshot_pending") server.extraPods = 1;
     if (scenario == "criterion_age_missing") server.created = {};
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     ResourceClient client(nullptr, [&] { return now; });
@@ -137,6 +145,8 @@ bool run(const QString& scenario) {
         QJsonObject{{"field", "restarts"}, {"expression", "<1"}}})}.toVariantList();
     if (scenario == "recent_change_baseline") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
         QJsonObject{{"field", "recentlyChanged"}, {"expression", "true"}}})}.toVariantList();
+    if (scenario == "view_snapshot_pending") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "restarts"}, {"expression", "=2"}}})}.toVariantList();
     if (const auto it = criteria.constFind(scenario); it != criteria.cend())
         rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
             QJsonObject{{"field", it->field}, {"expression", it->expression}}})}.toVariantList();
@@ -162,6 +172,55 @@ bool run(const QString& scenario) {
     };
     const auto effect = [&] { return alerts.effect(path); };
     const int requests = server.requests;
+    if (scenario == "view_snapshot_cpu") {
+#ifdef CLOCK_THREAD_CPUTIME_ID
+        if (!waitFor([&] { return countForRule() == 15000; }) || effect()["color"] == "#123456") return false;
+        if (!alerts.setVisibleResources("session", {}) || !alerts.setVisibleResources("session", {path})
+            || !waitFor([&] { return effect()["color"] == "#123456"; })) return false;
+        QList<double> samples;
+        for (int index = 0; index < 35; ++index) {
+            const bool visible = index % 2 != 0;
+            timespec before{}, after{};
+            if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &before) != 0) return false;
+            const bool accepted = alerts.setVisibleResources("session", visible ? QStringList{path} : QStringList{});
+            if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &after) != 0 || !accepted) return false;
+            if (index >= 5) samples.append((double(after.tv_sec - before.tv_sec) * 1000000000.0 + after.tv_nsec - before.tv_nsec) / 1000000.0);
+            if (!waitFor([&] { return (effect()["color"] == "#123456") == visible; }) || countForRule() != 15000) return false;
+        }
+        std::sort(samples.begin(), samples.end());
+        std::printf("Visibility-only alert action: 15000 real cached Pods, 5 warmups, 30 GUI thread CPU samples, p95=%.3f ms max=%.3f ms; unchanged frame CPU ceiling=8 ms. This is not foreground frame evidence.\n", samples[28], samples.last());
+        return samples[28] <= 8 && server.requests == requests;
+#else
+        std::fprintf(stderr, "GUI thread CPU clock is unavailable on this platform.\n");
+        return false;
+#endif
+    }
+    if (scenario == "view_snapshot_pending") {
+        if (countForRule() != 0 || effect()["color"] == "#123456") return false;
+        auto* pool = QThreadPool::globalInstance();
+        pool->waitForDone();
+        const int maximum = pool->maxThreadCount();
+        pool->setMaxThreadCount(1);
+        QSemaphore entered, release;
+        auto held = QtConcurrent::run([&] { entered.release(); release.acquire(); });
+        const auto restore = qScopeGuard([&] { release.release(); held.waitForFinished(); pool->setMaxThreadCount(maximum); });
+        if (!entered.tryAcquire(1, 1000) || !alerts.setVisibleResources("session", {})) return false;
+        for (int version = 2; version <= 3; ++version) {
+            server.version = version; server.restarts = version - 1; now = now.addMSecs(1000);
+            if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                    && client.resource("session", path)["restarts"].toInt() == version - 1; })
+                || !alerts.setVisibleResources("session", {path})) return false;
+        }
+        const QString peer = "/api/v1/namespaces/default/pods/peer-0";
+        if (!alerts.setVisibleResources("session", {peer})) return false;
+        release.release(); held.waitForFinished();
+        if (!waitFor([&] { return countForRule() == 1; }) || effect()["color"] == "#123456"
+            || !alerts.setVisibleResources("session", {path}) || !waitFor([&] { return effect()["color"] == "#123456"; })) return false;
+        ++server.version; ++server.restarts; now = now.addMSecs(1000);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.resource("session", path)["restarts"].toInt() == 3; })) return false;
+        return waitFor([&] { return countForRule() == 0 && effect()["color"] != "#123456"; });
+    }
     if (const auto it = criteria.constFind(scenario); it != criteria.cend())
         return waitFor([&] { return countForRule() == it->count; }) && server.requests == requests;
     if (scenario == "recent_change_baseline") {

@@ -434,11 +434,11 @@ ApplicationWindow {
         objectName: "workspaceToolbar"
         padding: 0
         leftPadding: 0; rightPadding: 0; topPadding: SafeArea.margins.top; bottomPadding: 0
-        implicitHeight: headerLayout.implicitHeight + 12 + topPadding
+        implicitHeight: headerLayout.implicitHeight + (window.compactLandscape ? 4 : 12) + topPadding
         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
         GridLayout {
             id: headerLayout
-            anchors.fill: parent; anchors.margins: 6
+            anchors.fill: parent; anchors.margins: window.compactLandscape ? 2 : 6
             columns: window.width >= 1000 && !window.compactLandscape ? 2 : 1
             columnSpacing: 12; rowSpacing: 4
             Item {
@@ -604,6 +604,7 @@ ApplicationWindow {
                     TextField {
                         id: sourcePath
                         objectName: "sourcePath"
+                        inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                         Layout.fillWidth: true
                         Layout.minimumWidth: 160
                         Layout.columnSpan: parent.columns === 4 ? 4 : 1
@@ -706,6 +707,7 @@ ApplicationWindow {
             TextField {
                 id: resourceFilterInput
                 objectName: "resourceFilter"
+                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 enabled: workspace.currentSession !== "" && !workspace.busy
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
@@ -726,6 +728,7 @@ ApplicationWindow {
             }
             TextField {
                 id: eventFilterInput; objectName: "eventFilter"
+                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32
                 visible: window.searchOpen && workspace.workspacePage === "events"
                 text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"

@@ -1056,9 +1056,35 @@ bool execute(const QString& scenario) {
         return reported;
     }
     if (scenario.startsWith("shell_")) {
-        if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" ? 5 : 3) && !workspace.loading(); },10000)) return false;
+        if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" ? 5 : 3) && !workspace.loading(); },10000)) {
+            std::fprintf(stderr, "Shell cache failed: resources=%d loading=%d busy=%d error=%s\n", workspace.totalResourceCount(), workspace.loading(), workspace.busy(), qPrintable(text(window, "errorMessage")));
+            return false;
+        }
         const auto calls=server.requests.size();
         auto* radar=item(window,"resourceRadar");
+        if (scenario == "shell_landscape_search_error") {
+            window->setMinimumHeight(0);
+            window->resize(640, 272);
+            if (!workspace.filter("alpha") || !click(window, item(window, "workspaceSearchButton"))) {
+                std::fputs("Landscape search control unavailable.\n", stderr); return false;
+            }
+            const auto session = workspace.currentSession();
+            workspace.openContext("ctx:" + QString(64, '0'));
+            if (!waitFor([&] { return !workspace.busy() && !text(window, "errorMessage").isEmpty(); })
+                || workspace.currentSession() != session || workspace.filterText() != "alpha") {
+                std::fprintf(stderr, "Landscape validation error unavailable: same-session=%d filter=%s error=%s\n", workspace.currentSession() == session,
+                    qPrintable(workspace.filterText()), qPrintable(text(window, "errorMessage"))); return false;
+            }
+            if (!waitFor([&] {
+                auto* cell = item(window, "cell_0_0");
+                return cell && cell->height() > 0 && displayedWithin(window->contentItem(), cell);
+            })) {
+                std::fprintf(stderr, "Landscape search and error leave no complete resource row.\n");
+                return false;
+            }
+            if (server.requests.size() != calls || !click(window, item(window, "cell_0_0"))) return false;
+            return waitFor([&] { return workspace.inspectorName() == "alpha"; });
+        }
         if (scenario == "shell_footer_reference") {
             if (text(window, "resourceMatchCount") != "visible: 3/3"
                 || text(window, "syncStatus") != QString("API: %1/min  Synced: 0s ago").arg(calls)) return false;
@@ -2907,7 +2933,8 @@ bool execute(const QString& scenario) {
                 && (!showEventColumn(window, workspace, "eventTime") || !revealTableCell(window, "eventTable", 0, 0)
                     || text(window, "eventCell_0_0") != "2026-10-03T10:03:00Z")) return false;
             if (!revealTableCell(window, "eventTable", 0, 2) || !click(window, item(window, "eventCell_0_2")) || !waitFor([&] { return workspace.inspectorName() == "alpha"; })) return false;
-            return waitFor([&] { return workspace.inspectorEvents().size() == expectedEvents; });
+            return click(window, item(window, "inspectorEventsButton"))
+                && waitFor([&] { return workspace.inspectorEvents().size() == expectedEvents; });
         }
         if (scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_")) {
             const auto calls = server.requests.size();
@@ -2948,6 +2975,7 @@ bool execute(const QString& scenario) {
         for (int row = 0; row < workspace.table()->rowCount(); ++row)
             if (workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole + 1).toString() == "alpha") alphaRow = row;
         const auto alphaCell = QString("cell_%1_0").arg(alphaRow).toUtf8();
+        QSignalSpy relatedChanges(&workspace, &podlord::Workspace::inspectorRelatedChanged);
         if (alphaRow < 0 || !click(window, item(window, alphaCell.constData()))) {
             std::fprintf(stderr, "Related inspector Pod row unavailable: row=%d page=%s\n",
                 alphaRow, qPrintable(workspace.workspacePage()));
@@ -3083,7 +3111,10 @@ bool execute(const QString& scenario) {
         if (scenario == "inspector_related_overview") {
             if (text(window, "overview_name") != "alpha" || text(window, "overview_kind") != "Pod" || text(window, "overview_namespace") != "default") return false;
             item(window,"overviewScroll")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
-            return waitFor([&] { return text(window,"overview_uid") == "uid-alpha"; }) && server.requests.size() == calls;
+            if (!waitFor([&] { return text(window,"overview_uid") == "uid-alpha"; }) || relatedChanges.count() != 0) return false;
+            if (!click(window, item(window, "inspectorEventsButton"))
+                || !waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled"; })) return false;
+            return relatedChanges.count() == 1 && server.requests.size() == calls;
         }
         if (scenario == "inspector_related_events" || scenario == "inspector_related_wrong_uid") {
             if (!click(window, item(window, "inspectorEventsButton"))) return false;
@@ -4133,13 +4164,23 @@ bool realSearchCluster(const QString& source, bool themeMatrix = false) {
                     if (!capture("inspector-" + view.first, themeIndex, variant)) return false;
                 }
                 if (!click(window, item(window, "closeInspector"))) return failure("theme inspector close");
-                auto* reset = item(window, "resetResourceFilters");
-                const bool revealSidebar = reset && !reset->isVisible();
+                auto* sidebarHost = item(window, "workspaceSidebarHost");
                 auto* drawer = window->findChild<QObject*>("sidebarDrawer");
-                if (revealSidebar && (!drawer || !click(window, item(window, "toggleSidebar"))
-                    || !waitFor([&] { return drawer->property("opened").toBool(); }))) return failure("theme filter sidebar open");
+                const bool revealSidebar = !(sidebarHost && sidebarHost->isVisible())
+                    && !(drawer && drawer->property("visible").toBool());
+                if (revealSidebar && (!click(window, item(window, "toggleSidebar")) || !waitFor([&] {
+                    return (sidebarHost && sidebarHost->isVisible()) || (drawer && drawer->property("opened").toBool());
+                }))) return failure("theme filter sidebar open");
+                auto* filterToggle = item(window, "toggleLandscapeFilters");
+                const bool expandFilters = filterToggle && filterToggle->isVisible() && !filterToggle->property("checked").toBool();
+                if (expandFilters && (!click(window, filterToggle)
+                    || !waitFor([&] { return item(window, "sidebarFilterScroll")->isVisible(); }))) return failure("theme filter panel open");
                 if (!click(window, item(window, "resetResourceFilters"))) return failure("theme filter reset");
-                if (revealSidebar && !dismissSidebar()) return failure("theme filter sidebar close");
+                if (expandFilters && (!click(window, item(window, "toggleLandscapeFilters"))
+                    || !waitFor([&] { return !item(window, "sidebarFilterScroll")->isVisible(); }))) return failure("theme filter panel close");
+                if (revealSidebar && (sidebarHost && sidebarHost->isVisible()
+                    ? !click(window, item(window, "toggleSidebar")) || !waitFor([&] { return !sidebarHost->isVisible(); })
+                    : !dismissSidebar())) return failure("theme filter sidebar close");
                 if (!waitFor([&] { return workspace.resourceCount() == workspace.totalResourceCount(); })) return failure("theme filter reset results");
                 std::printf("Theme views captured: %s / %s\n", qPrintable(names[themeIndex]), qPrintable(variant));
                 std::fflush(stdout);

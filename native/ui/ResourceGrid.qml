@@ -14,10 +14,7 @@ ColumnLayout {
     required property string emptyText
     property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
     property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
-    readonly property var displayedColumns: prefix === "resource" && grid.Window.window && grid.Window.window.width < 600
-        && JSON.stringify(columns) === JSON.stringify(workspace.defaultTableColumns("resource"))
-        ? columns.filter(column => column.id === "name").concat(columns.filter(column => column.id !== "name")) : columns
-    readonly property string layoutSignature: JSON.stringify(displayedColumns.map(function(column) {
+    readonly property string layoutSignature: JSON.stringify(columns.map(function(column) {
         return [column.column, column.width, column.visible, column.pinned]
     }))
     property var visualOrder: []
@@ -37,7 +34,7 @@ ColumnLayout {
     function navigateRows(offset) {
         if (count === 0) return
         const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
-        const column = displayedColumns.find(column => column.visible).column
+        const column = columns.find(column => column.visible).column
         selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
         if (visible) table.positionViewAtRow(row, TableView.Contain)
     }
@@ -100,7 +97,7 @@ ColumnLayout {
     }
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            const column = selection.currentIndex.valid ? selection.currentIndex.column : displayedColumns.find(column => column.visible).column
+            const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => column.visible).column
             event.accepted = handleCellKey(event, 0, column, grid)
         } else if (selection.currentIndex.valid) {
             event.accepted = handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, grid.Window.window.activeFocusItem)
@@ -147,7 +144,7 @@ ColumnLayout {
     }
     function synchronizeColumns() {
         if (!visible || table.columns !== columns.length) return
-        const wanted = displayedColumns.filter(function(column) { return column.visible && column.pinned }).concat(displayedColumns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
+        const wanted = columns.filter(function(column) { return column.visible && column.pinned }).concat(columns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
         if (table.rows > 0 && wanted.every(function(column, position) { return table.columnAtIndex(tableModel.index(0, column)) === position })) {
             visualOrder = wanted
             table.forceLayout()

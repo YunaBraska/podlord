@@ -814,7 +814,10 @@ bool ResourceClient::authenticate(const ClusterConnection& connection, const QSt
 }
 bool ResourceClient::forgetCredentials(const QString& credential) {
     bool found = false;
-    for (auto& state : states_) if (state.connection.credentialId == credential) {
+    for (const auto& id : states_.keys()) {
+        const auto current = states_.find(id);
+        if (current == states_.end() || current->connection.credentialId != credential) continue;
+        auto& state = *current;
         ++state.revision;
         state.connection.authorization.clear();
         state.connection.exec.reset();
@@ -823,6 +826,8 @@ bool ResourceClient::forgetCredentials(const QString& credential) {
         state.connection.credentialReady = false;
         state.connection.expiresAt = {};
         found = true;
+        stopTerminal(id);
+        stopSessionForwards(id);
     }
     if (found) {
         resetConnections_ = true;

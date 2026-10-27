@@ -3,6 +3,7 @@
 #include <QAuthenticator>
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QInputMethod>
 #include <QInputMethodEvent>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -257,10 +258,12 @@ bool TerminalSurface::setTerminal(ContainerTerminal* terminal) {
         connect(terminal_, &ContainerTerminal::screenChanged, this, [this](int scrolledLines) {
             scroll_ = std::clamp(scroll_ ? scroll_ + scrolledLines : 0, 0, terminal_->historyLines());
             update(); emit visibleTextChanged();
+            updateInputMethod(Qt::ImCursorRectangle);
         });
-        connect(terminal_, &QObject::destroyed, this, [this] { update(); emit terminalChanged(); emit visibleTextChanged(); });
+        connect(terminal_, &ContainerTerminal::changed, this, &TerminalSurface::refreshInputMethod);
+        connect(terminal_, &QObject::destroyed, this, [this] { refreshInputMethod(); update(); emit terminalChanged(); emit visibleTextChanged(); });
     }
-    sizeScreen(); update(); emit terminalChanged(); emit visibleTextChanged(); return true;
+    sizeScreen(); refreshInputMethod(); update(); emit terminalChanged(); emit visibleTextChanged(); return true;
 }
 bool TerminalSurface::setForeground(QColor color) { foreground_ = color; update(); emit colorsChanged(); return true; }
 bool TerminalSurface::setBackground(QColor color) { background_ = color; update(); emit colorsChanged(); return true; }
@@ -318,8 +321,18 @@ void TerminalSurface::inputMethodEvent(QInputMethodEvent* event) { if (terminal_
 QVariant TerminalSurface::inputMethodQuery(Qt::InputMethodQuery query) const {
     if (query == Qt::ImEnabled) return terminal_ && terminal_->connected();
     if (query == Qt::ImCursorRectangle && terminal_) { const auto pos = terminal_->cursor(); return QRectF(pos.col * cellWidth_, pos.row * cellHeight_, cellWidth_, cellHeight_); }
-    if (query == Qt::ImHints) return static_cast<int>(Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase);
+    if (query == Qt::ImHints) return static_cast<int>(inputMethodHints());
+    // PTY input is a stream, not a local editable document or terminal-history export.
+    if (query == Qt::ImSurroundingText || query == Qt::ImCurrentSelection || query == Qt::ImTextBeforeCursor || query == Qt::ImTextAfterCursor) return QStringLiteral("");
+    if (query == Qt::ImCursorPosition || query == Qt::ImAnchorPosition || query == Qt::ImAbsolutePosition) return 0;
+    if (query == Qt::ImEnterKeyType) return static_cast<int>(Qt::EnterKeyReturn);
     return QQuickPaintedItem::inputMethodQuery(query);
+}
+void TerminalSurface::refreshInputMethod() {
+    if (!hasActiveFocus() || !isVisible()) return;
+    updateInputMethod(Qt::ImQueryAll);
+    if (terminal_ && terminal_->connected()) QGuiApplication::inputMethod()->show();
+    else QGuiApplication::inputMethod()->hide();
 }
 int TerminalSurface::position(const QPointF& point) const {
     if (!terminal_) return -1;
@@ -327,6 +340,7 @@ int TerminalSurface::position(const QPointF& point) const {
 }
 void TerminalSurface::mousePressEvent(QMouseEvent* event) {
     forceActiveFocus(); if (!terminal_) return;
+    refreshInputMethod();
     const auto index = position(event->position());
     if (terminal_->mouseTracking() && !(event->modifiers() & Qt::ShiftModifier)) terminal_->mouse(index / terminal_->columns(), index % terminal_->columns(), event->button() == Qt::LeftButton ? 1 : 2, true, event->modifiers());
     else if (event->button() == Qt::LeftButton) { selecting_ = true; selectionStart_ = selectionEnd_ = index; update(); }
@@ -354,7 +368,7 @@ void TerminalSurface::wheelEvent(QWheelEvent* event) {
     } else { scroll_ = std::clamp(scroll_ + delta, 0, terminal_->historyLines()); selectionStart_ = selectionEnd_ = -1; update(); emit visibleTextChanged(); }
     event->accept();
 }
-void TerminalSurface::focusInEvent(QFocusEvent* event) { QQuickPaintedItem::focusInEvent(event); update(); }
+void TerminalSurface::focusInEvent(QFocusEvent* event) { QQuickPaintedItem::focusInEvent(event); refreshInputMethod(); update(); }
 bool TerminalSurface::followOutput() { scroll_ = 0; selectionStart_ = selectionEnd_ = -1; update(); emit visibleTextChanged(); return true; }
 bool TerminalSurface::copySelection() {
     if (!terminal_ || selectionStart_ < 0 || !QGuiApplication::clipboard()) return false;

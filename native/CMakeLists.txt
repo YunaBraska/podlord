@@ -482,7 +482,7 @@ if(BUILD_TESTING)
             set_tests_properties(native.forward.${scenario}_${style} PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
     endforeach()
-    foreach(scenario ports_search ports_copy ports_invalid_copy ports_inspect ports_stop pod pod_get_forbidden service service_numeric service_list_items service_wrong_list service_wrong_item selector no_pod udp terminal invalid invalid_empty invalid_zero invalid_negative invalid_fraction invalid_text invalid_remote busy recreated auth forbidden rate redirect malformed protocol wrong_port channel text remote_error oversized bulk large_frame priority switch close context_removal cancel selection_changed concurrent close_other queued_close repeat reuse
+    foreach(scenario revoked_streams ports_search ports_copy ports_invalid_copy ports_inspect ports_stop pod pod_get_forbidden service service_numeric service_list_items service_wrong_list service_wrong_item selector no_pod udp terminal invalid invalid_empty invalid_zero invalid_negative invalid_fraction invalid_text invalid_remote busy recreated auth forbidden rate redirect malformed protocol wrong_port channel text remote_error oversized bulk large_frame priority switch close context_removal cancel selection_changed concurrent close_other queued_close repeat reuse
         service_reject_selector_key service_reject_selector_value service_reject_selector_type service_reject_deleted service_reject_uid service_reject_namespace
         service_reject_pod_namespace service_reject_pod_name service_reject_pod_uid service_reject_pod_deleted service_reject_pod_labels service_reject_pod_phase service_reject_pod_version
         service_reject_list_metadata service_reject_list_items service_reject_continue_type service_reject_continue_repeat service_pagination
@@ -551,12 +551,16 @@ if(BUILD_TESTING)
     add_executable(alerts_store_test tests/alerts_store_test.cpp)
     add_executable(alert-lifecycle-test tests/alert_lifecycle_test.cpp)
     target_link_libraries(alert-lifecycle-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline
+    foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid view_snapshot_pending session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline
         criterion_text_prefix criterion_text_suffix criterion_text_alternative criterion_text_miss criterion_regex_miss criterion_image criterion_problem_true criterion_problem_false
         criterion_numeric_gt_miss criterion_numeric_gte criterion_numeric_lte criterion_numeric_exact criterion_multi_exact criterion_age_minutes criterion_age_missing criterion_p95 criterion_outlier)
         add_test(NAME native.alert_lifecycle.${scenario} COMMAND alert-lifecycle-test ${scenario})
         set_tests_properties(native.alert_lifecycle.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
+    if(UNIX)
+        add_test(NAME native.alert_lifecycle.view_snapshot_cpu COMMAND alert-lifecycle-test view_snapshot_cpu)
+        set_tests_properties(native.alert_lifecycle.view_snapshot_cpu PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
     target_link_libraries(alerts_store_test PRIVATE podlord_workspace)
     add_test(NAME native.alert_store.once COMMAND alerts_store_test once)
     set_tests_properties(native.alert_store.once PROPERTIES TIMEOUT 30)
@@ -642,7 +646,7 @@ if(BUILD_TESTING)
     endforeach()
     add_executable(pod_logs_ui_test tests/pod_logs_ui_test.cpp)
     target_link_libraries(pod_logs_ui_test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario preview_ascii preview_unicode entry_keyboard entry_copy entry_unicode_copy entry_bom_copy entry_empty_copy entry_crlf_copy)
+    foreach(scenario compact_scroll preview_ascii preview_unicode entry_keyboard entry_copy entry_unicode_copy entry_bom_copy entry_empty_copy entry_crlf_copy)
         foreach(style Basic Fusion)
             add_test(NAME native.logs.${scenario}_${style} COMMAND pod_logs_ui_test ${scenario})
             set_tests_properties(native.logs.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -652,6 +656,7 @@ if(BUILD_TESTING)
         add_test(NAME native.logs.${scenario} COMMAND pod_logs_ui_test ${scenario})
         set_tests_properties(native.logs.${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
+    set_tests_properties(native.logs.compact_scroll_Basic native.logs.compact_scroll_Fusion PROPERTIES FAIL_REGULAR_EXPRESSION "Binding loop detected")
     add_executable(read_settings_test tests/read_settings_test.cpp)
     target_link_libraries(read_settings_test PRIVATE podlord_workspace)
     set(read_settings_cases water_save water_maximum water_invalid_low water_invalid_high water_upgrade water_flag_invalid water_speed_fraction water_speed_string water_speed_low water_speed_high water_missing missing empty_profile relative_profile profile_file parent_file
@@ -1535,7 +1540,7 @@ if(PODLORD_COVERAGE)
 endif()
 
 if(BUILD_TESTING)
-    foreach(scenario quick_file_extensionless quick_file_url quick_file_invalid quick_file_missing quick_file_profile shell_quick_sessions shell_quick_narrow shell_quick_reopen shell_quick_context shell_quick_invalid_existing shell_health_refresh shell_footer_empty shell_compact_empty shell_compact_portrait shell_compact_alerts shell_footer_reference shell_footer_reopen shell_landscape shell_landscape_filters shell_landscape_rotate)
+    foreach(scenario quick_file_extensionless quick_file_url quick_file_invalid quick_file_missing quick_file_profile shell_quick_sessions shell_quick_narrow shell_quick_reopen shell_quick_context shell_quick_invalid_existing shell_health_refresh shell_footer_empty shell_compact_empty shell_compact_portrait shell_compact_alerts shell_footer_reference shell_footer_reopen shell_landscape shell_landscape_filters shell_landscape_search_error shell_landscape_rotate)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 30 LABELS behavior

@@ -53,13 +53,29 @@ bool tableScenario(const QString& scenario) {
             {"metricComplete", QJsonObject{{"cpu", false}, {"memory", true}}}, {"metricStale", true},
             {"createdAt", QDateTime::currentDateTimeUtc().addDays(1).toString(Qt::ISODateWithMs)},
             {"ready", "1/2"}, {"readyCount", 1}, {"containerCount", 2}}});
-        return rows.data(rows.index(0, 0)).toString().contains("incomplete")
+        const bool unchanged = rows.data(rows.index(0, 0)).toString().contains("incomplete")
             && rows.data(rows.index(0, 0)).toString().contains("stale")
             && !rows.data(rows.index(0, 1)).toString().contains("incomplete")
             && rows.data(rows.index(0, 2)) == "-" && rows.data(rows.index(0, 3)) == "-"
             && !rows.data(rows.index(0, 3), Qt::UserRole + 6).isValid()
             && rows.data(rows.index(0, 4), Qt::UserRole + 6).toDouble() == 0.5
             && rows.data(rows.index(0, 5)) == "-";
+        podlord::ResourceDisplayModel display(&rows);
+        if (!unchanged || display.data(display.index(0, 0)) != "0.25m (incomplete) (stale)"
+            || display.data(display.index(0, 1)) != "1Ki (stale)" || display.data(display.index(0, 2)) != "-"
+            || display.data(display.index(0, 0), Qt::ToolTipRole) != "<span>0.25 mCPU (incomplete) (stale)</span>"
+            || display.data(display.index(0, 0), Qt::UserRole + 6).toDouble() != 0.25) return false;
+        rows.publish({QJsonObject{{"path", "a"}, {"cpu", 1234.56789}, {"memory", 1073741824.0}, {"storage", 123456789.0},
+            {"metricComplete", QJsonObject{{"cpu", true}, {"memory", true}, {"storage", true}}}},
+            QJsonObject{{"path", "b"}, {"cpu", 0}, {"memory", 0}, {"storage", 0},
+                {"metricComplete", QJsonObject{{"cpu", true}, {"memory", true}, {"storage", true}}}}});
+        return display.data(display.index(0, 0)) == "1.23c" && display.data(display.index(0, 1)) == "1Gi"
+            && display.data(display.index(0, 2)) == "118Mi"
+            && display.data(display.index(0, 0), Qt::UserRole + 6).toDouble() == 1234.56789
+            && display.data(display.index(0, 2), Qt::UserRole + 6).toDouble() == 123456789.0
+            && display.data(display.index(0, 0), Qt::ToolTipRole) == "<span>1234.5679 mCPU</span>"
+            && display.data(display.index(1, 0)) == "0m" && display.data(display.index(1, 1)) == "0B"
+            && display.data(display.index(1, 2)) == "0B";
     }
     if (scenario == "table_safe_tooltip") {
         ResourceTable rows(nullptr, {"name"}, {"Name"});

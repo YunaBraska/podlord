@@ -70,6 +70,7 @@ ColumnLayout {
         objectName: "podLogEntries"
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumHeight: 120
         clip: true
         reuseItems: true
         model: workspace.logRows

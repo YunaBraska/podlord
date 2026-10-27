@@ -262,8 +262,45 @@ jobs:
             node scripts/test-native-tls.cjs "$PODLORD_NATIVE_BUILD_DIR/tls-connection-test" "$RUNNER_TEMP/native-toolchain/openssl/bin/openssl" "$scenario" "$RUNNER_TEMP/native-package/podlord-native.app"
           done > "$RUNNER_TEMP/native-package-tls.log" 2>&1
           cat "$RUNNER_TEMP/native-package-tls.log"
+      - name: Retain native preflight evidence, not release binaries
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-preflight-${{ matrix.runner }}-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-tests.log
+            ${{ runner.temp }}/native-failure-reproduction.log
+            ${{ runner.temp }}/native-radar-failures
+            ${{ runner.temp }}/native-toolchain.log
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-package.log
+            ${{ runner.temp }}/native-package-startup.log
+            ${{ runner.temp }}/native-package-boundaries.log
+            ${{ runner.temp }}/native-package-tls.log
+            ${{ runner.temp }}/podlord-native-build/coverage/report.txt
+            ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
+            ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json
+            ${{ runner.temp }}/podlord-native-build/coverage/source-benchmark.json
+            ${{ runner.temp }}/native-package/package-evidence.txt
+            ${{ runner.temp }}/native-package/runtime-dependencies.txt
+            ${{ runner.temp }}/native-package/libraries.txt
+
+  ios:
+    name: Native iOS ARM64 build and bundle checks
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install native host build dependencies
+        run: |
+          brew install cmake ninja python
+          /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
       - name: Cross-build unsigned iPhone and iPad application
-        if: ${{ matrix.runner == 'macos-15' && !cancelled() }}
         run: |
           set -eu
           log="$RUNNER_TEMP/native-ios.log"
@@ -288,29 +325,15 @@ jobs:
             [ -f "$app/Frameworks/$library.framework/$library" ]
           done
           printf 'iPhoneOS arm64 compile and iPhone/iPad bundle checks passed. Device runtime was not tested.\n' | tee -a "$log"
-      - name: Retain native preflight evidence, not release binaries
+      - name: Retain native iOS preflight evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-preflight-${{ matrix.runner }}-${{ github.sha }}
+          name: native-ios-arm64-${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/native-tests.log
-            ${{ runner.temp }}/native-failure-reproduction.log
-            ${{ runner.temp }}/native-radar-failures
             ${{ runner.temp }}/native-toolchain.log
             ${{ runner.temp }}/native-toolchain/build-inputs.txt
-            ${{ runner.temp }}/native-package.log
-            ${{ runner.temp }}/native-package-startup.log
-            ${{ runner.temp }}/native-package-boundaries.log
-            ${{ runner.temp }}/native-package-tls.log
             ${{ runner.temp }}/native-ios.log
             ${{ runner.temp }}/native-ios-toolchain/build-inputs.txt
-            ${{ runner.temp }}/podlord-native-build/coverage/report.txt
-            ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
-            ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json
-            ${{ runner.temp }}/podlord-native-build/coverage/source-benchmark.json
-            ${{ runner.temp }}/native-package/package-evidence.txt
-            ${{ runner.temp }}/native-package/runtime-dependencies.txt
-            ${{ runner.temp }}/native-package/libraries.txt

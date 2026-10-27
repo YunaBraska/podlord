@@ -607,6 +607,7 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     return true;
 }
 bool Workspace::publishRelated() {
+    if (!inspectorPath().isEmpty() && inspectorPage() != "events" && inspectorPage() != "links") return true;
     QVariantList events, links;
     const auto selected = client_.resource(active_, inspectorPath());
     const auto uid = selected["uid"].toString();
@@ -655,7 +656,7 @@ bool Workspace::setInspectorPage(const QString& page) {
     if (page == "values" && !valuesAvailable()) return false;
     if (navigation_.value(active_).page == page) return true;
     client_.hideLogs(viewId_); navigation_[active_].page = page;
-    publishLogs(); emit changed();
+    publishRelated(); publishLogs(); emit changed();
     if (page == "yaml" && !yamlDraft_ && inspectorDocument_.isEmpty()) refreshInspector();
     return true;
 }

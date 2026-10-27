@@ -65,7 +65,8 @@ int main(int argc, char** argv) {
         if (!waitFor([&] { return reply->bytesAvailable() == 4096; })) return 1;
         QTest::qWait(100);
         if (reply->bytesAvailable() != 4096 || reply->isFinished()) return 1;
-        reader.setInterval(2);
+        // Exercise partial reads without turning platform timer granularity into a speed gate.
+        reader.setInterval(0);
         QObject::connect(&reader, &QTimer::timeout, &app, [&] { received += reply->read(512); });
         reader.start();
     }
@@ -81,7 +82,7 @@ int main(int argc, char** argv) {
         if (!waitFor([&] { return probe->isFinished(); })) return 1;
         return probe->error() == QNetworkReply::NoError && probe->readAll() == "0" ? 0 : 1;
     }
-    if (!waitFor([&] { return finished == 1; })) { std::fprintf(stderr, "HTTP scenario timed out: %s\n", argv[2]); return 1; }
+    if (!waitFor([&] { return finished == 1; })) { std::fprintf(stderr, "HTTP scenario timed out: %s; received=%lld buffered=%lld finished=%d\n", argv[2], static_cast<long long>(received.size()), static_cast<long long>(reply->bytesAvailable()), finished); return 1; }
     if (scenario == "cancel_before" || scenario == "cancel_active" || scenario == "cancel_unread" || scenario == "cancel_metadata") {
         QTest::qWait(30);
         return reply->error() == QNetworkReply::OperationCanceledError && finished == 1 ? 0 : 1;

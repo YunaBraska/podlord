@@ -235,9 +235,21 @@ bool run(const QString& scenario, const QString& configPath) {
     else if (scenario == "input") { type("echo native"); REQUIRE(waitFor([&] { return input == "echo native\r"; })); }
     else if (scenario.startsWith("ime_")) {
         if (scenario == "ime_query") {
+            const auto hints = surface->property("inputMethodHints");
+            REQUIRE(hints.isValid());
+            REQUIRE(hints.value<Qt::InputMethodHints>() == (Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase));
             REQUIRE(QInputMethod::queryFocusObject(Qt::ImEnabled, {}).toBool());
             REQUIRE(QInputMethod::queryFocusObject(Qt::ImCursorRectangle, {}).toRectF().isValid());
             REQUIRE(QInputMethod::queryFocusObject(Qt::ImHints, {}).toInt() & Qt::ImhNoPredictiveText);
+            for (const auto query : {Qt::ImSurroundingText, Qt::ImCurrentSelection, Qt::ImTextBeforeCursor, Qt::ImTextAfterCursor}) {
+                const auto value = QInputMethod::queryFocusObject(query, {});
+                REQUIRE(value.isValid() && value.toString().isEmpty());
+            }
+            for (const auto query : {Qt::ImCursorPosition, Qt::ImAnchorPosition, Qt::ImAbsolutePosition}) {
+                const auto value = QInputMethod::queryFocusObject(query, {});
+                REQUIRE(value.isValid() && value.toInt() == 0);
+            }
+            REQUIRE(QInputMethod::queryFocusObject(Qt::ImEnterKeyType, {}).toInt() == Qt::EnterKeyReturn);
         } else {
             REQUIRE(scenario == "ime_commit" || scenario == "ime_empty");
             QInputMethodEvent event;

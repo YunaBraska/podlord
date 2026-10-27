@@ -382,7 +382,6 @@ Result<std::optional<QMap<QString, QString>>> importedOciEnvironment(const QStri
     }
     return std::optional<QMap<QString, QString>>{environment};
 }
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
 Result<std::optional<GkeServiceAccount>> importedGkeAccount(const QString& profile, const QString& contextId) {
     const auto directory = sourceDirectory(profile, false);
     if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
@@ -405,7 +404,6 @@ Result<std::optional<GkeServiceAccount>> importedGkeAccount(const QString& profi
     if (const auto* failure = std::get_if<Failure>(&parsed)) return *failure;
     return std::optional<GkeServiceAccount>{std::get<GkeServiceAccount>(parsed)};
 }
-#endif
 } // namespace
 
 KubeconfigStore::KubeconfigStore(QString profile) : profile_(std::move(profile)) {}
@@ -968,18 +966,26 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         if (const auto* failure = std::get_if<Failure>(&aks)) return *failure;
                         command.oidc = std::get<std::optional<OidcLogin>>(aks);
                     }
-                    if (!command.oidc) {
+#endif
+                    const auto importedGke = importedGkeAccount(profile_, contextId);
+                    if (const auto* failure = std::get_if<Failure>(&importedGke)) return *failure;
+                    const auto& account = std::get<std::optional<GkeServiceAccount>>(importedGke);
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+                    const bool useNativeGke = true;
+#else
+                    const bool useNativeGke = account.has_value();
+#endif
+                    if (!command.oidc && useNativeGke) {
                         const auto gke = nativeGkeConfig(command);
                         if (const auto* failure = std::get_if<Failure>(&gke)) return *failure;
                         command.gke = std::get<std::optional<GkeLogin>>(gke);
                         if (command.gke) {
-                            const auto account = importedGkeAccount(profile_, contextId);
-                            if (const auto* failure = std::get_if<Failure>(&account)) return *failure;
-                            command.gke->serviceAccount = std::get<std::optional<GkeServiceAccount>>(account);
+                            command.gke->serviceAccount = account;
                             if (command.gke->serviceAccountOnly && !command.gke->serviceAccount)
                                 return Failure{StoreError::UnsupportedVersion, "This GKE context requires an explicitly imported Google service-account key on mobile."};
                         }
                     }
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
                     if (!command.oidc && !command.gke) {
                         const auto eks = nativeEksConfig(command);
                         if (const auto* failure = std::get_if<Failure>(&eks)) return *failure;
@@ -1004,9 +1010,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     if (!command.oidc && !command.gke && !command.eks && !command.oci)
                         return Failure{StoreError::UnsupportedVersion, "This kubeconfig uses an environment-bound or external credential command. On mobile, sign in with a supported browser identity or import a personal token or certificate; VM and CI identities cannot be moved to this device."};
 #endif
-                    const auto importedGke = hasGkeServiceAccount(contextId);
-                    if (const auto* failure = std::get_if<Failure>(&importedGke)) return *failure;
-                    if (hasImportedOci || std::get<bool>(importedGke)) result.credentialId = importedCredentialId(contextId);
+                    if (hasImportedOci || account.has_value()) result.credentialId = importedCredentialId(contextId);
                     result.exec = std::move(command); result.credentialReady = false;
                 }
                 return result;

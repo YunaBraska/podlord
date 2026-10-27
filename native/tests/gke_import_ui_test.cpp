@@ -39,6 +39,11 @@ bool run(const QString& scenario) {
         "      command: gke-gcloud-auth-plugin\ncontexts:\n- name: google\n  context:\n    cluster: google\n    user: google\n");
     if (!std::holds_alternative<SourceSnapshot>(source)) return false;
     const auto contextId = std::get<SourceSnapshot>(source).contexts.first().id;
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+    const auto original = store.connection(contextId);
+    const auto* originalConnection = std::get_if<ClusterConnection>(&original);
+    if (!originalConnection || !originalConnection->exec || originalConnection->exec->gke) return false;
+#endif
     const auto key = privateKey();
     if (key.isEmpty()) return false;
     const auto keyPath = root.filePath("selected-key.json");
@@ -66,6 +71,13 @@ bool run(const QString& scenario) {
         || privateCopy.permissions() & (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther | QFileDevice::WriteOther)
         || !workspace.sourceImportError().isEmpty() || !workspace.sourceImportNotice().contains("private app storage")
         || workspace.sourceImportNotice().contains(keyPath) || QString::fromUtf8(json).contains(workspace.sourceImportNotice())) return false;
+    const auto resolved = store.connection(contextId);
+    const auto* connection = std::get_if<ClusterConnection>(&resolved);
+    if (!connection || !connection->exec || !connection->exec->gke || !connection->exec->gke->serviceAccount
+        || connection->credentialId != importedCredentialId(contextId) || connection->credentialReady) {
+        std::fputs("Imported GKE key did not select context-isolated native authentication.\n", stderr);
+        return false;
+    }
     if (scenario == "success") return true;
     if (scenario == "removal_failure") {
         if (!QFile::remove(privateCopy.filePath()) || !QDir().mkdir(privateCopy.filePath())) return false;

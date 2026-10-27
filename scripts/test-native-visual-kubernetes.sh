@@ -248,7 +248,7 @@ existing=$(docker container ls -a --filter "name=^/$NAME$" --format '{{.ID}}')
 CREATED=1
 docker create --name "$NAME" --label "podlord.native.e2e=$NAME" --privileged \
     --tmpfs /run --tmpfs /var/run -p 127.0.0.1::6443 rancher/k3s:v1.35.5-k3s1 \
-    server --disable=traefik --disable=servicelb --write-kubeconfig-mode=600 \
+    server --disable=traefik --disable=servicelb --write-kubeconfig-mode=600 --tls-san=10.0.2.2 \
     --kubelet-arg='eviction-hard=memory.available<100Mi,nodefs.available<512Mi,imagefs.available<512Mi,nodefs.inodesFree<5%,imagefs.inodesFree<5%'
 mkdir -p "$RUN/k3s-data/agent/images"
 docker image save rancher/k3s:v1.35.5-k3s1 > "$RUN/k3s-data/agent/images/pod-image.tar"

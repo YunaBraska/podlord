@@ -460,7 +460,9 @@ bool Alerts::setVisibleResources(const QString& session, const QStringList& path
         for (auto it = state.triggered.cbegin(); it != state.triggered.cend(); ++it)
             if (visible.contains(it.key().section('\n', 1, 1))) state.visibleMatches.insert(it.key());
     }
-    if (state.initialized) queue(session);
+    if (state.initialized && owns_(session)) {
+        ++state.generation; pending_.insert(session); dispatch();
+    }
     return true;
 }
 bool Alerts::closeSession(const QString& session) { closed_.insert(session); pending_.remove(session); states_.remove(session); if (session == shown_) ++zoomPreviewGeneration_; return true; }
@@ -489,7 +491,22 @@ bool Alerts::transferSession(const QString& session, Alerts& target) {
 QVariantMap Alerts::effect(const QString& path) const { const auto state=states_.constFind(shown_); return state==states_.cend() ? QVariantMap{} : state->effects.value(path); }
 bool Alerts::queue(const QString& session) {
     if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return false;
-    ++states_[session].generation; pending_.insert(session); return dispatch();
+    auto& state = states_[session];
+    // Publish resource changes before a busy worker can defer them. Visibility changes reuse this snapshot.
+    if (client_->initialSyncComplete(session)) {
+        const auto snapshot = client_->rows(session); const auto now = now_(); QMap<QString, QJsonObject> current;
+        for (const auto& value : snapshot) {
+            const auto row = value.toObject(); const auto path = row["path"].toString(); current.insert(path, row);
+            const auto previous = state.previous.constFind(path);
+            if (state.initialized && (previous == state.previous.cend() || previous.value()["uid"] != row["uid"]
+                || previous.value()["resourceVersion"] != row["resourceVersion"])) state.changedAt[path] = now;
+        }
+        for (auto it = state.changedAt.begin(); it != state.changedAt.end();) {
+            if (!current.contains(it.key())) it = state.changedAt.erase(it); else ++it;
+        }
+        state.previous = std::move(current);
+    }
+    ++state.generation; pending_.insert(session); return dispatch();
 }
 bool Alerts::dispatch() {
     if (evaluating_ || !ready_ || pending_.isEmpty()) return false;
@@ -501,12 +518,8 @@ bool Alerts::dispatch() {
         return dispatch();
     }
     const bool baseline = !state.initialized;
-    const auto snapshot=client_->rows(session); const auto now=now_(); QMap<QString,QJsonObject> current;
-    for (const auto& value : snapshot) { const auto row=value.toObject(); const auto path=row["path"].toString(); current[path]=row;
-        if (!baseline && (!state.previous.contains(path) || state.previous[path]["uid"]!=row["uid"] || state.previous[path]["resourceVersion"]!=row["resourceVersion"])) state.changedAt[path]=now;
-    }
-    for (auto it=state.changedAt.begin(); it!=state.changedAt.end();) { if (!current.contains(it.key())) it=state.changedAt.erase(it); else ++it; }
-    state.previous=current; const auto changes=state.changedAt; const auto catalog=catalog_; const auto generation=state.generation;
+    const auto previous=state.previous; const auto now=now_();
+    const auto changes=state.changedAt; const auto catalog=catalog_; const auto generation=state.generation;
     evaluating_=true; auto* watcher=new QFutureWatcher<Evaluated>(this);
     connect(watcher, &QFutureWatcher<Evaluated>::finished, this, [this, watcher, session, generation, catalog, baseline] {
         const auto result=watcher->result(); watcher->deleteLater(); evaluating_=false;
@@ -572,7 +585,11 @@ bool Alerts::dispatch() {
         if (next.isValid()) { const auto remaining=std::clamp<qint64>(now.msecsTo(next), 1, std::numeric_limits<int>::max()); if (!expiry_.isActive() || expiry_.remainingTime()>remaining) expiry_.start(static_cast<int>(remaining)); }
         dispatch();
     });
-    watcher->setFuture(QtConcurrent::run([snapshot, catalog, changes, now] { return evaluate(snapshot, catalog, changes, now); })); return true;
+    watcher->setFuture(QtConcurrent::run([previous, catalog, changes, now] {
+        QJsonArray snapshot;
+        for (const auto& row : previous) snapshot.append(row);
+        return evaluate(snapshot, catalog, changes, now);
+    })); return true;
 }
 bool Alerts::play(const QString& id) {
     for (const auto& value : sounds()) { const auto sound=value.toMap(); if (sound["id"].toString()!=id) continue;

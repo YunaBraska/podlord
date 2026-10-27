@@ -59,7 +59,7 @@ bool run(bool customized) {
     if (!window) return false;
     for (const auto width : {320, 599, 600, 1440, 320}) {
         window->resize(width, 800);
-        const auto expected = customized ? "Kind" : width < 600 ? "Name" : "Status";
+        const auto expected = customized ? "Kind" : "Status";
         if (!QTest::qWaitFor([&] { return firstHeader(window) == expected; }, 3000)) {
             qWarning() << "First visible resource header at" << width << "was" << firstHeader(window) << "instead of" << expected;
             return false;

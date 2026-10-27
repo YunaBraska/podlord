@@ -72,6 +72,7 @@ class TerminalSurface : public QQuickPaintedItem {
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY colorsChanged)
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY colorsChanged)
     Q_PROPERTY(QString visibleText READ visibleText NOTIFY visibleTextChanged)
+    Q_PROPERTY(Qt::InputMethodHints inputMethodHints READ inputMethodHints CONSTANT)
 public:
     explicit TerminalSurface(QQuickItem* parent = nullptr);
     ContainerTerminal* terminal() const { return terminal_; }
@@ -83,6 +84,7 @@ public:
     bool setBackground(QColor color);
     bool setFontFamily(const QString& family);
     QString visibleText() const { return terminal_ ? terminal_->text(scroll_) : QString{}; }
+    Qt::InputMethodHints inputMethodHints() const { return Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase; }
     Q_INVOKABLE bool copySelection();
     Q_INVOKABLE QVariantMap clipboardForPaste() const;
     Q_INVOKABLE bool followOutput();
@@ -112,6 +114,7 @@ private:
     int scroll_ = 0, selectionStart_ = -1, selectionEnd_ = -1;
     bool selecting_ = false;
     bool sizeScreen();
+    void refreshInputMethod();
     int position(const QPointF& point) const;
 };
 }

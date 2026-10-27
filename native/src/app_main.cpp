@@ -13,6 +13,7 @@
 int main(int argc, char** argv) {
 #ifdef Q_OS_ANDROID
     qputenv("ANDROID_OPENSSL_SUFFIX", "_3");
+    qputenv("QT_ANDROID_NO_FULLSCREEN_KEYBOARD", "1");
 #endif
 #ifdef Q_OS_MACOS
     // Bundled QML is AOT-compiled; runtime cache writes delay first launch from a fresh path.

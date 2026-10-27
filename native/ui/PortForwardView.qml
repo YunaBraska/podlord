@@ -33,7 +33,7 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             visible: view.searchOpen
-            TextField { id: search; objectName: "portFilter"; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: view.Window.window && view.Window.window.width < 900 ? 44 : 32; text: workspace.portFilterText; placeholderText: "Search session port forwards"; Accessible.name: "Search session port forwards"; onTextEdited: workspace.filterPorts(text); Keys.onEscapePressed: view.searchClosed() }
+            TextField { id: search; objectName: "portFilter"; inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText; Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: view.Window.window && view.Window.window.width < 900 ? 44 : 32; text: workspace.portFilterText; placeholderText: "Search session port forwards"; Accessible.name: "Search session port forwards"; onTextEdited: workspace.filterPorts(text); Keys.onEscapePressed: view.searchClosed() }
         }
         Flow {
             Layout.fillWidth: true; spacing: 6

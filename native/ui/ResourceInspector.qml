@@ -5,6 +5,7 @@ import Podlord.Graphics 1.0
 
 Pane {
     padding: 6
+    implicitHeight: inspector.Layout.minimumHeight + topPadding + bottomPadding
     clip: true
     component InspectorTab: TabButton {
         id: tab
@@ -37,7 +38,7 @@ Pane {
     ColumnLayout {
     id: inspector
     width: inspectorScroll.availableWidth
-    height: workspace.yamlVisible ? Math.max(implicitHeight, inspectorScroll.availableHeight) : inspectorScroll.availableHeight
+    height: Math.max(Layout.minimumHeight, inspectorScroll.availableHeight)
     property real yamlPosition: 0
     property real overviewPosition: 0
     property real valuesPosition: 0

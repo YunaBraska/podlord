@@ -30,7 +30,7 @@ QQuickItem* item(QQuickItem* root, const QString& name) {
 bool click(QQuickWindow* window, const QString& name) {
     auto* control = item(window->contentItem(), name);
     if (!control || !control->isVisible() || !control->isEnabled()) return false;
-    if (!podlord::test::scrollIntoView(window, control)) return false;
+    if (!podlord::test::scrollIntoView(window, control, true)) return false;
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, control->mapToScene({control->width() / 2, control->height() / 2}).toPoint());
     return true;
 }

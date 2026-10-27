@@ -211,6 +211,30 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (!click(window, "logsButton")) return false;
     auto* model = workspace.property("logRows").value<QAbstractItemModel*>();
     if (!model) return false;
+    if (scenario == "compact_scroll") {
+        if (!waitFor([&] { return model->rowCount() >= 2; })) {
+            qWarning() << "Compact logs did not arrive:" << model->rowCount() << workspace.property("logStatus");
+            return false;
+        }
+        if (!click(window, "pauseLogs")) { qWarning() << "Compact logs pause control unavailable"; return false; }
+        window->resize(640, 272);
+        if (!waitFor([&] { return item(window, "landscapeNavigation")->isVisible(); })) {
+            qWarning() << "Compact logs landscape navigation unavailable:" << window->size();
+            return false;
+        }
+        auto* list = item(window, "podLogEntries");
+        if (!list) return false;
+        const bool revealed = podlord::test::scrollIntoView(window, list);
+        const auto visible = podlord::test::visibleBounds(window, list);
+        if (!revealed || list->height() < 60 || visible.height() < 60) {
+            qWarning() << "Compact logs cannot show two complete lines:" << list->size() << visible;
+            return false;
+        }
+        QString output;
+        for (int row = 0; row < model->rowCount(); ++row) output += model->data(model->index(row, 0)).toString() + '\n';
+        return item(window, "logContainers")->property("displayText").toString() == "all"
+            && output.contains("[alpha]") && output.contains("[beta]");
+    }
     if (scenario == "priority") {
         const bool ready = waitFor([&] { return server.logs.size() == 2 && model->rowCount() == 2; }, 2200) && server.workloadReads < 64;
         if (!ready) std::fprintf(stderr, "Priority logs: requests=%lld rows=%d detailReads=%d selection=%s status=%s inspector=%s loading=%d error=%s\n", static_cast<long long>(server.logs.size()), model->rowCount(), server.detailReads, qPrintable(workspace.property("logSelection").toString()), qPrintable(workspace.property("logStatus").toString()), qPrintable(workspace.inspectorPath()), workspace.loading(), qPrintable(workspace.error()));
