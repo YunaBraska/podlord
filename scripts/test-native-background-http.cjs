@@ -5,7 +5,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execute = promisify(execFile);
 const [driver, scenario] = process.argv.slice(2);
-assert.ok(driver && ['body', 'post', 'patch', 'bounded', 'paused_reader', 'parallel', 'repeat', 'cancel_before', 'cancel_active', 'cancel_unread', 'cancel_metadata', 'destroy', 'not_found', 'redirect', 'disconnect'].includes(scenario));
+assert.ok(driver && ['body', 'post', 'patch', 'bounded', 'paused_reader', 'parallel', 'repeat', 'cancel_before', 'cancel_queued', 'cancel_active', 'cancel_unread', 'cancel_metadata', 'destroy', 'not_found', 'redirect', 'disconnect'].includes(scenario));
 const payload = size => Buffer.from(Array.from({ length: size }, (_, i) => i % 251));
 async function run() {
     const methods = [];
@@ -42,6 +42,7 @@ async function run() {
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
         const result = await execute(driver, [`http://127.0.0.1:${server.address().port}`, scenario], { timeout: 15000, env: process.env });
         if (scenario === 'cancel_before') assert.equal(methods.length, 0, 'A canceled queued request reached the server.');
+        else if (scenario === 'cancel_queued') assert.deepEqual(methods, ['GET'], 'Only the first request may reach the server.');
         else if (scenario === 'parallel') assert.equal(methods.length, 8);
         else if (scenario === 'repeat') assert.equal(methods.length, 3);
         else if (scenario === 'destroy') assert.deepEqual(methods, ['GET', 'GET']);

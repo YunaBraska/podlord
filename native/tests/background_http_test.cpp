@@ -2,11 +2,15 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QNetworkReply>
+#include <QNetworkProxyFactory>
 #include <QPointer>
+#include <QScopeGuard>
+#include <QSemaphore>
 #include <QTest>
 #include <QUrlQuery>
 #include <cstdio>
 #include <functional>
+#include <utility>
 
 namespace {
 QByteArray payload(int size) { QByteArray result(size, Qt::Uninitialized); for (int i = 0; i < size; ++i) result[i] = char(i % 251); return result; }
@@ -22,6 +26,44 @@ int main(int argc, char** argv) {
     auto client = std::make_unique<podlord::BackgroundHttpClient>();
     client->setProxy(QNetworkProxy::NoProxy);
     const auto requestFor = [&](const QString& route) { return QNetworkRequest(base.resolved(QUrl(route))); };
+    if (scenario == "cancel_queued") {
+        QSemaphore entered, proceed;
+        class ProxyGate final : public QNetworkProxyFactory {
+        public:
+            ProxyGate(QSemaphore& entered, QSemaphore& proceed, QNetworkProxy proxy)
+                : entered_(entered), proceed_(proceed), proxy_(std::move(proxy)) {}
+            QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery&) override {
+                entered_.release();
+                proceed_.tryAcquire(1, 10000);
+                return {proxy_};
+            }
+        private:
+            QSemaphore &entered_, &proceed_;
+            const QNetworkProxy proxy_;
+        };
+        QNetworkProxyFactory::setApplicationProxyFactory(new ProxyGate(entered, proceed,
+            QNetworkProxy(QNetworkProxy::HttpProxy, base.host(), quint16(base.port()))));
+        const auto cleanup = qScopeGuard([&] {
+            proceed.release();
+            client.reset();
+            QNetworkProxyFactory::setApplicationProxyFactory(nullptr);
+        });
+        client->setProxy(QNetworkProxy::DefaultProxy);
+        // Qt bypasses proxy lookup for loopback targets; the proxy itself stays local.
+        auto* first = client->get(QNetworkRequest(QUrl("http://podlord.invalid/body")));
+        if (!waitFor([&] { return entered.tryAcquire(); })) return 1;
+        auto* queued = client->get(QNetworkRequest(QUrl("http://podlord.invalid/canceled")));
+        int finished = 0;
+        QObject::connect(queued, &QNetworkReply::finished, &app, [&] { ++finished; });
+        // The first proxy lookup holds dispatch while the second request is queued.
+        QCoreApplication::processEvents();
+        queued->abort();
+        proceed.release();
+        if (!waitFor([&] { return first->isFinished() && finished == 1; })) return 1;
+        QTest::qWait(30);
+        return first->error() == QNetworkReply::NoError && first->readAll() == payload(262175)
+            && queued->error() == QNetworkReply::OperationCanceledError && finished == 1 ? 0 : 1;
+    }
     if (scenario == "parallel") {
         QList<QNetworkReply*> replies;
         for (int i = 0; i < 8; ++i) replies.append(client->get(requestFor("/body")));

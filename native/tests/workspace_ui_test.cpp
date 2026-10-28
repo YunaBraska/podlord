@@ -3381,6 +3381,12 @@ bool execute(const QString& scenario) {
                 item(window, "contexts")->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End); QTest::keyClick(window, Qt::Key_Return);
                 if (!click(window, item(window, "openContext"))) return false;
             } else if (!click(window, item(window, "closeInspector"))) return false;
+            auto* discardDialog = window->findChild<QObject*>("discardYamlDialog");
+            QSignalSpy discarded(discardDialog, SIGNAL(accepted()));
+            QSignalSpy stayed(discardDialog, SIGNAL(rejected()));
+            QSignalSpy closed(discardDialog, SIGNAL(closed()));
+            QString keyFocusBefore, keyFocusPressed;
+            bool keyDown = false;
             if (!waitFor([&] { auto* dialog = window->findChild<QObject*>("discardYamlDialog");
                     return dialog && dialog->property("opened").toBool() && item(window, "discardStay") && item(window, "discardStay")->isVisible(); })
                 || text(window, "inspectorYaml") != draft || workspace.currentSession() != originalSession || workspace.inspectorPath().isEmpty() || !window->isVisible()) return false;
@@ -3388,11 +3394,18 @@ bool execute(const QString& scenario) {
             if (scenario == "inspector_edit_resource_bound") workspace.filter("bravo");
             if (scenario == "inspector_edit_close_escape") QTest::keyClick(window, Qt::Key_Escape);
             else if (scenario == "inspector_edit_close_keyboard" || scenario == "inspector_edit_close_keypad" || scenario == "inspector_edit_close_space") {
-                if (!waitFor([&] { return item(window, "discardStay")->hasActiveFocus() && item(window, "discardStay")->property("visualFocus").toBool(); })) {
-                    std::fprintf(stderr, "Discard keyboard focus: active=%d visual=%d current=%s\n", item(window,"discardStay")->hasActiveFocus(), item(window,"discardStay")->property("visualFocus").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
+                window->requestActivate();
+                if (!waitFor([&] { return window->isActive() && QGuiApplication::focusObject() == item(window, "discardStay")
+                        && item(window, "discardStay")->hasActiveFocus() && item(window, "discardStay")->property("visualFocus").toBool(); })) {
+                    std::fprintf(stderr, "Discard keyboard focus: window=%d active=%d visual=%d current=%s\n", window->isActive(), item(window,"discardStay")->hasActiveFocus(), item(window,"discardStay")->property("visualFocus").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
                     return false;
                 }
-                QTest::keyClick(window, scenario.endsWith("_keypad") ? Qt::Key_Enter : scenario.endsWith("_space") ? Qt::Key_Space : Qt::Key_Return);
+                const auto key = scenario.endsWith("_keypad") ? Qt::Key_Enter : scenario.endsWith("_space") ? Qt::Key_Space : Qt::Key_Return;
+                keyFocusBefore = window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{};
+                QTest::keyPress(window, key);
+                keyFocusPressed = window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{};
+                keyDown = item(window, "discardStay")->property("down").toBool();
+                QTest::keyRelease(window, key);
             }
             else if (!click(window, item(window, accept ? "discardAccept" : "discardStay"))) return false;
             if (!waitFor([&] { return !item(window, "discardStay")->isVisible(); })) {
@@ -3400,6 +3413,8 @@ bool execute(const QString& scenario) {
                 std::fprintf(stderr, "Discard activation did not close: scenario=%s opened=%d focus=%s down=%d\n", qPrintable(scenario),
                     dialog && dialog->property("opened").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none",
                     item(window, "discardStay")->property("down").toBool());
+                qWarning() << "Discard key focus:" << keyFocusBefore << keyFocusPressed << "pressed" << keyDown
+                    << "accepted/rejected/closed" << discarded.size() << stayed.size() << closed.size();
                 return false;
             }
             if (!accept) {
