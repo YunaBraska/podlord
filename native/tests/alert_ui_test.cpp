@@ -365,9 +365,16 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             return waitFor([&] { return !restored.alerts()->busy(); }) && restored.alerts()->rules() == rules() && server.requests == 0;
         }
         if (scenario.startsWith("reference_zoom_preview_")) {
+            const auto setupFailed = [&](const char* stage) {
+                if (scenario == "reference_zoom_preview_many")
+                    std::fprintf(stderr, "Zoom preview setup failed at %s: cached=%d loading=%d busy=%d alerts-busy=%d preview-busy=%d preview-error=%s\n",
+                        stage, workspace.totalResourceCount(), workspace.loading(), workspace.busy(), workspace.alerts()->busy(),
+                        workspace.alerts()->zoomPreviewBusy(), qPrintable(workspace.alerts()->zoomPreviewError()));
+                return false;
+            };
             const bool noSession = scenario.endsWith("_no_session");
-            if (!noSession && !loadSession()) return false;
-            if (!click(window, "alertsWorkspaceButton")) return false;
+            if (!noSession && !loadSession()) return setupFailed("session load");
+            if (!click(window, "alertsWorkspaceButton")) return setupFailed("alerts navigation");
             const bool invalid = scenario.endsWith("_invalid"), empty = scenario.endsWith("_empty");
             const bool custom = scenario.endsWith("_unsaved") || scenario.endsWith("_disabled") || scenario.endsWith("_fallback") || scenario.endsWith("_percent") || invalid;
             if (custom && (!click(window, "addAlert") || !type(window, "alertName", "Unsaved preview")
@@ -414,7 +421,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 auto* button = item(window, "previewAlertZoom");
                 if (!button || !podlord::test::scrollIntoView(window, button)) return false;
                 button->forceActiveFocus(Qt::TabFocusReason); QTest::keyClick(button->window(), Qt::Key_Space);
-            } else if (!click(window, "previewAlertZoom")) return false;
+            } else if (!click(window, "previewAlertZoom")) return setupFailed("first preview click");
             if (invalid || empty || noSession) {
                 return waitFor([&] { auto* error = item(window, "alertZoomPreviewError"); return error && error->isVisible() && !error->property("text").toString().isEmpty(); })
                     && previews.isEmpty() && rules() == baseline && server.requests == requests && !QFile::exists(profile + "/alert-rules.json");
@@ -435,14 +442,31 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (scenario.endsWith("_repeat") && (!click(window, "previewAlertZoom") || !waitFor([&] { return previews.count() == 2; }))) return false;
             if (scenario.endsWith("_many")) {
                 QList<double> times;
-                auto* button = item(window, "previewAlertZoom");
-                if (!button || !podlord::test::scrollIntoView(button->window(), button)) return false;
                 for (int sample = 0; sample < 20; ++sample) {
-                    const auto count = previews.count(); QElapsedTimer timer; timer.start();
-                    QTest::mouseClick(button->window(), Qt::LeftButton, Qt::NoModifier, button->mapToScene(QPointF(button->width()/2, button->height()/2)).toPoint());
-                    if (!waitFor([&] { return previews.count() == count + 1; })) return false;
+                    const auto count = previews.count();
+                    const QPointer<QQuickItem> button(item(window, "previewAlertZoom"));
+                    const auto failed = [&](const char* stage, qsizetype clicks = -1, qsizetype frames = -1, double elapsed = -1) {
+                        const auto bounds = button ? podlord::test::visibleBounds(window, button) : QRectF{};
+                        std::fprintf(stderr, "Zoom preview sample %d/20 failed at %s: previews=%lld expected=%lld clicks=%lld frames=%lld elapsed=%.3f ms busy=%d error=%s button=%d visible=%d enabled=%d same-window=%d bounds=(%g,%g %gx%g) window=%dx%d exposed=%d active=%d cached=%d\n",
+                            sample + 1, stage, static_cast<long long>(previews.count()), static_cast<long long>(count + 1), static_cast<long long>(clicks), static_cast<long long>(frames), elapsed,
+                            workspace.alerts()->zoomPreviewBusy(), qPrintable(workspace.alerts()->zoomPreviewError()), !button.isNull(), button && button->isVisible(), button && button->isEnabled(), button && button->window() == window,
+                            bounds.x(), bounds.y(), bounds.width(), bounds.height(), window->width(), window->height(), window->isExposed(), window->isActive(), workspace.totalResourceCount());
+                        return false;
+                    };
+                    // Prepare each live target before timing only the public click-to-frame path.
+                    if (!button || !button->isVisible() || !button->isEnabled() || button->window() != window
+                        || !podlord::test::scrollIntoView(window, button, true)
+                        || !button || !button->isVisible() || !button->isEnabled() || button->window() != window)
+                        return failed("target preparation");
+                    const auto bounds = podlord::test::visibleBounds(window, button);
+                    if (bounds.isEmpty()) return failed("target bounds");
+                    QSignalSpy clicks(button.data(), SIGNAL(clicked()));
+                    QElapsedTimer timer; timer.start();
+                    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, bounds.center().toPoint());
+                    if (!waitFor([&] { return previews.count() == count + 1; }))
+                        return failed("preview completion", clicks.count(), -1, timer.nsecsElapsed() / 1000000.0);
                     QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
-                    if (!frames.wait(1000)) return false;
+                    if (!frames.wait(1000)) return failed("frame completion", clicks.count(), frames.count(), timer.nsecsElapsed() / 1000000.0);
                     times.append(timer.nsecsElapsed() / 1000000.0);
                 }
                 std::sort(times.begin(), times.end());

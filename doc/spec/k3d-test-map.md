@@ -6154,7 +6154,7 @@ Evidence below is under `/Users/yuna/.local/share/podlord-comparison/release-evi
 | Full local regression | `2026-10-28-shoreline-macos-full`; `2026-10-28-shoreline-linux-full` | Both complete current-product runs exit zero: macOS passes 4,997 executions with 97.84% lines/85.37% branches, and nonroot Linux passes 4,856 with 97.81%/85.35%. Root incorrectly bypassed thirteen permission scenarios in the earlier Linux invocation. Counts include style variants, not that many distinct behaviors. |
 | Explicit new Map logic gate | Current full-suite `map-functions.txt`; `2026-10-28-cluster-shoreline/coverage-gate-check.json`; `scripts/test-native.sh` | Both platforms cover 145/156 branches, 92.95%, across the complete modified synchronization/layout/painting/color/view-selection function family and its local functions. The existing 90% new-logic threshold is now enforced automatically for these owners. Eight actual-script checks pass: current reports are accepted, and missing-owner, completely uncovered and empty reports are rejected on each platform. The guard was checked against the complete current profiles after the full runs, without rerunning unchanged product scenarios. |
 | Coverage warning diagnosis | `2026-10-28-shoreline-macos-full/mismatch-diagnostic.txt` | All 43 repeated LLVM warnings concern only `TrustCancellation::isCanceled` mappings with hash zero. The profile separately contains the executed definition with hash 0x18 and 52 calls. No Map function is in the mismatch list. The warning itself remains, rather than being hidden or treated as evidence of a product cancellation failure. |
-| Hosted candidate | GitHub Actions run `40668697747`, product revision `ad07dc8973d6d204dfe3a4f75d0b2bd1a3e7fb48` | The real K3d job passes. Six native platform jobs are still running at this checkpoint, including the first iOS cache fill and the new Intel watchdog. The later coverage-guard/documentation-only checkpoint uses `[skip ci]` to avoid canceling that expensive first fill. Its new guard has local macOS/Linux evidence, not a claimed hosted result. |
+| Hosted candidate | GitHub Actions run `40668697747`, product revision `ad07dc8973d6d204dfe3a4f75d0b2bd1a3e7fb48`; `2026-10-28-intel-ad07-failure` | Six of seven jobs pass, including real K3d and the first iOS toolchain cache fill. Intel passes 4,993/4,995 regular cases but fails `native.ui.table_refresh` and `native.alert_ui.reference_zoom_preview_many_Basic`. Both pass the separate serial reproduction. Intel coverage is 97.84% lines/85.37% branches. The approved CPU watchdog permits the 15,000-resource test to finish in 33.73 seconds without changing its 8 ms CPU assertion. A hosted iOS cache hit and a green replacement candidate are not yet established. |
 | Cleanup | `2026-10-28-intermediate-package-cleanup.json`; current Android/iOS `cleanup.json`; `final-map-fixture.log` in the local cache | Test apps and private mobile devices close. The owned Kubernetes fixture is stopped after the visual journeys. Twenty-seven unreferenced intermediate APK/archive/signature files from this task are removed, reclaiming 1,226,953,333 bytes. Diagnostic screenshots, XML, logs, hashes, current packages, pre-existing baselines and signing material remain intact. |
 
 The user confirmed the existing 24-hour RAM cache for the context overview, with
@@ -6181,6 +6181,28 @@ is visible and exposed but not active. The driver already raises the window and
 requests activation. This does not establish a locked desktop, a performance
 regression or passing timing evidence. The owned app and local API process close
 through the existing runner cleanup. No timing threshold was changed.
+
+The final `minimal-*` input-driver logs in `2026-10-28-menu-input-final` cover
+350 related macOS UI/style executions and ten consecutive runs of twelve
+table/zoom-preview/Inspector scenarios. Nonroot Linux passes five consecutive
+runs of sixteen affected scenarios in `2026-10-28-menu-input-linux-final`.
+Repetitions and style variants are not new distinct behaviors, and these are not
+fresh complete-suite runs. The shared input helper remains unchanged.
+
+Menu actions now confirm their actual activation. Table cells retain the existing
+public `itemAtIndex` lookup because Qt can retain pooled delegates with duplicate
+object names. Applying name-only lookup to every control produced four false
+Inspector failures and was corrected before publication. Zoom-preview samples
+reacquire and reveal the live button before timing their single click-to-frame
+action. Failure diagnostics distinguish preparation, activation and completion.
+No product behavior, action retry, assertion or timing threshold changes here.
+The original hosted Intel cause remains unproven until the replacement run.
+
+The second foreground attempt, `2026-10-28-context-footer-foreground-activation`,
+also fails the visibility/activation protocol. Native desktop control returns
+`AXError.cannotComplete` for the exact bundle path. The brief construction sample
+is not an installed-startup or frame gate result. The owned app and loopback API
+process are closed by the runner. No valid final foreground measurement is added.
 
 Release remains not approved. Current Map/keyboard journeys do not close the
 complete paired view/theme matrix, final hosted checks or uncontended foreground

@@ -501,6 +501,9 @@ bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt
         return !drawer || !drawer->property("visible").toBool() || drawer->property("opened").toBool();
     };
     if (!waitFor(drawerSettled, 2000)) return false;
+    // Menu actions need activation confirmation, while table cells keep their view-owned lookup.
+    if (!name.isEmpty() && target->metaObject()->indexOfSignal("triggered()") >= 0)
+        return podlord::test::clickVisible(window,name,button) && waitFor(drawerSettled,2000);
     QList<QQuickItem*> ancestors;
     for (auto* parent = target; parent; parent = parent->parentItem()) ancestors.prepend(parent);
     for (auto* parent : ancestors) parent->ensurePolished();
@@ -2232,7 +2235,16 @@ bool execute(const QString& scenario) {
             QTest::qWait(50);
             const auto x = view->property("contentX").toDouble(), y = view->property("contentY").toDouble();
             const int previous = server.refresh;
-            if (!click(window,item(window,"refreshButton")) || !waitFor([&] { return !workspace.loading() && server.refresh > previous; })) return false;
+            if (!click(window,item(window,"refreshButton"))) {
+                std::fprintf(stderr,"Table refresh input failed: busy=%d auth=%d session=%s status=%s\n",
+                    workspace.busy(),workspace.authenticationRequired(),qPrintable(workspace.currentSession()),qPrintable(workspace.status()));
+                return false;
+            }
+            if (!waitFor([&] { return !workspace.loading() && server.refresh > previous; })) {
+                std::fprintf(stderr,"Table refresh did not complete: requests=%d->%d loading=%d status=%s\n",
+                    previous,server.refresh,workspace.loading(),qPrintable(workspace.status()));
+                return false;
+            }
             const bool retained = workspace.inspectorName() == "bravo" && qAbs(view->property("contentX").toDouble()-x) < 1 && qAbs(view->property("contentY").toDouble()-y) < 1;
             if (!retained) std::fprintf(stderr,"Table refresh moved: %s x=%g->%g y=%g->%g\n",qPrintable(workspace.inspectorName()),x,view->property("contentX").toDouble(),y,view->property("contentY").toDouble());
             return retained;
