@@ -905,7 +905,7 @@ ApplicationWindow {
             visible: !window.inputPriority
             Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: text + ", " + workspace.resourceCount + " matching resources" }
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "resources" && workspace.resourceMap ? "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached" : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: text + ", " + workspace.resourceCount + " matching resources" }
             Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }

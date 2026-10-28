@@ -51,10 +51,14 @@ labels appear when zooming in, and resource glyphs/details retain their existing
 zoom and interaction rules. Labels use the current theme, viewport buckets, cached
 text bounds and collision decluttering instead of a delegate per cached label.
 
-A context overview is separate from the single-session Map. It must not open or
-synchronize contexts just to draw their cached islands. Whether its cache survives
-an application restart remains an explicit product decision. No additional
-per-cluster age or connection-status panels are introduced by this increment.
+A context overview is separate from the single-session Map. On 2026-10-28 the
+user confirmed reuse of the existing 24-hour in-memory collection cache, without
+persisting resource snapshots across restarts. Opening the overview must not open
+sessions, synchronize contexts or authenticate. No additional per-cluster age or
+connection-status panels are introduced. When multiple session caches belong to
+one context, choosing the newest cache versus merging them remains an explicit
+product decision. No dependent context-map implementation is made before that
+decision.
 
 ## Why use a sparse native surface with visible resource delegates?
 

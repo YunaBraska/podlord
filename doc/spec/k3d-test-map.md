@@ -6157,13 +6157,30 @@ Evidence below is under `/Users/yuna/.local/share/podlord-comparison/release-evi
 | Hosted candidate | GitHub Actions run `40668697747`, product revision `ad07dc8973d6d204dfe3a4f75d0b2bd1a3e7fb48` | The real K3d job passes. Six native platform jobs are still running at this checkpoint, including the first iOS cache fill and the new Intel watchdog. The later coverage-guard/documentation-only checkpoint uses `[skip ci]` to avoid canceling that expensive first fill. Its new guard has local macOS/Linux evidence, not a claimed hosted result. |
 | Cleanup | `2026-10-28-intermediate-package-cleanup.json`; current Android/iOS `cleanup.json`; `final-map-fixture.log` in the local cache | Test apps and private mobile devices close. The owned Kubernetes fixture is stopped after the visual journeys. Twenty-seven unreferenced intermediate APK/archive/signature files from this task are removed, reclaiming 1,226,953,333 bytes. Diagnostic screenshots, XML, logs, hashes, current packages, pre-existing baselines and signing material remain intact. |
 
-A context overview remains dependent on the cache-storage decision. Existing
-collection snapshots already have a 24-hour RAM lifetime. No new persistence,
-background context opening, authentication, TTL or per-cluster age/status panel
-has been added for the proposed overview.
-The Map footer still reports the existing limited table-row count. Whether it
-should instead label and count all cached filter matches is a separate pending
-presentation decision. The table's current footer is unchanged.
+The user confirmed the existing 24-hour RAM cache for the context overview, with
+initially empty resource data after restart and no new persistence. Context cards
+are not implemented yet. Selection versus merging remains open when several
+session caches belong to the same context, particularly with different namespace
+scopes. No background context opening, authentication, TTL or per-cluster
+age/status panel has been introduced for the proposed overview.
+
+The separately confirmed Map footer is implemented. In
+`2026-10-28-context-map-footer`, all sixteen affected shell/footer style executions
+pass. The two new Basic/Fusion cases set the table limit to one while retaining
+three cached matches. Map shows `matches: 3/3 cached`, then one and zero filter
+matches, while Table and Events retain their prior limited-row footer. Returning
+to Table keeps the same session and limit, and the HTTP request count is unchanged.
+SHL-013 owns this behavior.
+These are targeted checks after the footer-only change, not another complete
+4,997-execution product run. The new context-overview scope is RAD-CTX-01/02;
+planned context-card scenarios are not claimed as executed evidence.
+
+The current-source foreground attempt in
+`2026-10-28-context-footer-foreground` fails before timing: the Cocoa/Metal window
+is visible and exposed but not active. The driver already raises the window and
+requests activation. This does not establish a locked desktop, a performance
+regression or passing timing evidence. The owned app and local API process close
+through the existing runner cleanup. No timing threshold was changed.
 
 Release remains not approved. Current Map/keyboard journeys do not close the
 complete paired view/theme matrix, final hosted checks or uncontended foreground

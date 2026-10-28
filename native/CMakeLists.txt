@@ -1548,7 +1548,7 @@ if(PODLORD_COVERAGE)
 endif()
 
 if(BUILD_TESTING)
-    foreach(scenario quick_file_extensionless quick_file_url quick_file_invalid quick_file_missing quick_file_profile shell_quick_sessions shell_quick_narrow shell_quick_reopen shell_quick_context shell_quick_invalid_existing shell_health_refresh shell_footer_empty shell_compact_empty shell_compact_portrait shell_compact_alerts shell_footer_reference shell_footer_reopen shell_landscape shell_landscape_filters shell_landscape_search_error shell_landscape_rotate shell_map shell_map_session shell_map_inspector)
+    foreach(scenario quick_file_extensionless quick_file_url quick_file_invalid quick_file_missing quick_file_profile shell_quick_sessions shell_quick_narrow shell_quick_reopen shell_quick_context shell_quick_invalid_existing shell_health_refresh shell_footer_empty shell_compact_empty shell_compact_portrait shell_compact_alerts shell_footer_reference shell_footer_reopen shell_landscape shell_landscape_filters shell_landscape_search_error shell_landscape_rotate shell_map shell_map_session shell_map_inspector shell_map_footer)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 30 LABELS behavior

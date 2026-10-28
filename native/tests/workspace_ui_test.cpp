@@ -1086,6 +1086,25 @@ bool execute(const QString& scenario) {
                     && waitFor([&] { auto* option = item(window, name); return option && option->isVisible(); })
                     && click(window, item(window, name));
             };
+            if (scenario == "shell_map_footer") {
+                if (!workspace.setResourceLimit("1")
+                    || !waitFor([&] { return text(window,"resourceMatchCount")=="visible: 1/3"; })
+                    || !selectView("resourceMapView")
+                    || !waitFor([&] { return text(window,"resourceMatchCount")=="matches: 3/3 cached"; })) return false;
+                for (const auto& query:{QString("alpha"),QString("no-matching-resource"),QString{}}) {
+                    const int matches=query.isEmpty() ? 3 : query=="alpha" ? 1 : 0;
+                    if (!workspace.filter(query) || !waitFor([&] {
+                        return text(window,"resourceMatchCount")==QString("matches: %1/3 cached").arg(matches);
+                    })) return false;
+                }
+                if (!workspace.setWorkspacePage("events")
+                    || !waitFor([&] { return text(window,"resourceMatchCount")=="visible: 1/3"; })
+                    || !workspace.setWorkspacePage("resources")
+                    || !waitFor([&] { return text(window,"resourceMatchCount")=="matches: 3/3 cached"; })
+                    || !selectView("resourceTableView")) return false;
+                return waitFor([&] { return text(window,"resourceMatchCount")=="visible: 1/3"; })
+                    && workspace.currentSession()==session && workspace.resourceLimit()==1 && server.requests.size()==calls;
+            }
             if (!workspace.filter("alpha") || !selectView("resourceMapView")) return false;
             if (!waitFor([&] { return workspace.property("resourceMap").toBool()
                 && item(window, "resourceRadar") == radar && radar->isVisible() && radar->width() > miniWidth + 100; })) return false;

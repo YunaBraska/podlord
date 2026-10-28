@@ -368,10 +368,12 @@ cache, filters, selection, inspector and camera. See
 [ADR 0032](adr/0032-native-deterministic-radar-island.md) and the current
 [test-map evidence](spec/k3d-test-map.md#what-do-the-2026-10-28-hierarchical-map-and-keyboard-checks-prove).
 This intentionally replaces exact C# world-coordinate parity, not its interaction
-or color semantics. A cache-only context overview still awaits the storage
-decision: retain the existing 24-hour RAM cache or persist snapshots across restarts.
-No context synchronization, authentication, new storage or per-cluster status
-panels have been introduced for that pending overview.
+or color semantics. The user confirmed the existing 24-hour RAM cache for the
+context overview, with no resource persistence across restarts. Context-map
+implementation still awaits the selection rule when multiple session caches
+belong to one context. No context synchronization, authentication, new storage or
+per-cluster status panels have been introduced for that pending overview. The
+session Map footer now counts all filter matches independently of the table limit.
 
 These are review recommendations, not newly accepted release requirements.
 Missing shipped capabilities remain owned by the capability inventory; optional
