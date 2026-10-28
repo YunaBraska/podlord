@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlExpression>
@@ -123,18 +124,14 @@ QQuickItem* item(QObject* root, const QString& name) {
 QString text(QObject* root, const QString& name) {
     auto* value = item(root, name); return value ? value->property("text").toString() : QString{};
 }
-bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt::LeftButton) {
+bool click(QQuickWindow* window, QPointer<QQuickItem> target, Qt::MouseButton button = Qt::LeftButton) {
     if (target && !target->isVisible() && (target->objectName()=="radarWorkspaceButton" || target->objectName()=="resourceFieldFilters")) {
         const auto* expander=item(window,"toggleLandscapeFilters");
         const auto action=target->objectName()=="resourceFieldFilters" && expander && expander->isVisible()
             ? "toggleLandscapeFilters" : "toggleSidebar";
-        if (!click(window,item(window,action)) || !waitFor([&] { return target->isVisible(); })) return false;
+        if (!click(window,item(window,action)) || !waitFor([&] { return target && target->isVisible(); })) return false;
     }
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
-    QList<QQuickItem*> ancestors;
-    for (auto* parent = target; parent; parent = parent->parentItem()) ancestors.prepend(parent);
-    for (auto* parent : ancestors) parent->ensurePolished();
-    QCoreApplication::processEvents();
     if (!podlord::test::scrollIntoView(window,target)) return false;
     const auto position = target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint();
     QTest::mouseClick(window, button, Qt::NoModifier, position); return true;

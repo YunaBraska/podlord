@@ -470,15 +470,19 @@ bool revealTableCell(QQuickWindow* window, const QString& tableName, int row, in
     auto* view = item(window, tableName);
     if (!view || !view->isVisible()) return false;
     QQmlExpression reveal(qmlContext(view), view,
-        QString("positionViewAtIndex(model.index(%1, %2), TableView.Contain); forceLayout()").arg(row).arg(column));
+        QString("forceLayout(); positionViewAtCell(cellAtIndex(model.index(%1, %2)), TableView.Contain)").arg(row).arg(column));
     reveal.evaluate();
     if (reveal.hasError()) {
         std::fprintf(stderr, "Table cell reveal failed: %s\n", qPrintable(reveal.error().toString()));
         return false;
     }
-    view->setProperty("contentX", column == 2 ? 0.0 : qMax(0.0, view->property("contentWidth").toDouble() - view->width()));
-    QCoreApplication::processEvents();
-    return true;
+    QQmlExpression lookup(qmlContext(view), view,
+        QString("itemAtIndex(model.index(%1, %2))").arg(row).arg(column));
+    return waitFor([&] {
+        auto* cell = lookup.evaluate().value<QQuickItem*>();
+        return cell && cell->isVisible() && cell->width() > 0 && cell->height() > 0
+            && !podlord::test::visibleBounds(window, cell).isEmpty();
+    });
 }
 bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt::LeftButton) {
     const auto name = target ? target->objectName() : QString{};
@@ -501,7 +505,10 @@ bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt
     QCoreApplication::processEvents();
     QSignalSpy frame(window, &QQuickWindow::frameSwapped);
     window->update();
-    if (!frame.wait(1000)) return false;
+    if (frame.isEmpty() && !frame.wait(1000)) {
+        qWarning() << "Pointer target frame unavailable:" << name << "exposed/active" << window->isExposed() << window->isActive();
+        return false;
+    }
     if (!name.isEmpty()) target = item(window, name);
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
     if (!podlord::test::scrollIntoView(window, target, true)) return false;
@@ -2971,7 +2978,9 @@ bool execute(const QString& scenario) {
             stage = "legacy timestamp";
             if (scenario == "inspector_related_alias_legacy_time"
                 && (!showEventColumn(window, workspace, "eventTime") || !revealTableCell(window, "eventTable", 0, 0)
-                    || !waitFor([&] { return text(window, "eventCell_0_0") == "2026-10-03T10:03:00Z"; }))) return false;
+                    || !waitFor([&] { auto* cell = item(window, "eventCell_0_0");
+                        return cell && !podlord::test::visibleBounds(window, cell).isEmpty()
+                            && text(window, "eventCell_0_0") == "2026-10-03T10:03:00Z"; }))) return false;
             stage = "event inspector";
             if (!revealTableCell(window, "eventTable", 0, 2) || !click(window, item(window, "eventCell_0_2")) || !waitFor([&] { return workspace.inspectorName() == "alpha"; })) return false;
             stage = "related events";
