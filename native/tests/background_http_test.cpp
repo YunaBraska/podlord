@@ -60,9 +60,13 @@ int main(int argc, char** argv) {
         });
     }
     if (scenario == "paused_reader") {
+        char byte{};
+        if (reply->read(&byte, 1) != 0 || reply->isFinished()) return 1;
         if (!waitFor([&] { return reply->bytesAvailable() == 4096; })) return 1;
         QTest::qWait(100);
         if (reply->bytesAvailable() != 4096 || reply->isFinished()) return 1;
+        received += reply->read(512);
+        if (received.size() != 512 || !waitFor([&] { return reply->bytesAvailable() == 4096; }) || reply->isFinished()) return 1;
         // QTest polling must not determine the consumer's transfer rate.
         const auto drain = [&] { while (reply->bytesAvailable() > 0) received += reply->read(512); };
         QObject::connect(reply, &QNetworkReply::readyRead, &app, drain);
@@ -81,6 +85,7 @@ int main(int argc, char** argv) {
         return probe->error() == QNetworkReply::NoError && probe->readAll() == "0" ? 0 : 1;
     }
     if (!waitFor([&] { return finished == 1; })) { std::fprintf(stderr, "HTTP scenario timed out: %s; received=%lld buffered=%lld finished=%d\n", argv[2], static_cast<long long>(received.size()), static_cast<long long>(reply->bytesAvailable()), finished); return 1; }
+    if (scenario == "paused_reader" && (!reply->read(1).isEmpty() || !reply->atEnd())) return 1;
     if (scenario == "cancel_before" || scenario == "cancel_active" || scenario == "cancel_unread" || scenario == "cancel_metadata") {
         QTest::qWait(30);
         return reply->error() == QNetworkReply::OperationCanceledError && finished == 1 ? 0 : 1;

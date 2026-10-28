@@ -224,14 +224,22 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         }
         auto* list = item(window, "podLogEntries");
         if (!list) return false;
-        const bool revealed = podlord::test::scrollIntoView(window, list);
-        const auto visible = podlord::test::visibleBounds(window, list);
-        if (!revealed || list->height() < 60 || visible.height() < 60) {
-            qWarning() << "Compact logs cannot show two complete lines:" << list->size() << visible;
+        if (!waitFor([&] { return item(window, "logEntry_1") != nullptr; })
+            || !podlord::test::scrollIntoView(window, item(window, "logEntry_1"))) return false;
+        if (!waitFor([&] {
+            for (int row = 0; row < 2; ++row) {
+                auto* line = item(window, "logEntry_" + QString::number(row));
+                if (!line || !line->isVisible() || line->height() <= 0
+                    || podlord::test::visibleBounds(window, line).height() < line->height()) return false;
+            }
+            return true;
+        })) {
+            qWarning() << "Compact logs cannot show two complete lines:" << list->size()
+                << podlord::test::visibleBounds(window, list);
             return false;
         }
         QString output;
-        for (int row = 0; row < model->rowCount(); ++row) output += model->data(model->index(row, 0)).toString() + '\n';
+        for (int row = 0; row < 2; ++row) output += item(window, "logEntry_" + QString::number(row))->property("text").toString() + '\n';
         return item(window, "logContainers")->property("displayText").toString() == "all"
             && output.contains("[alpha]") && output.contains("[beta]");
     }

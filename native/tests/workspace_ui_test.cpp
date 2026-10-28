@@ -538,11 +538,18 @@ bool type(QQuickWindow* window, QQuickItem* target, const QString& value) {
 }
 bool showEventColumn(QQuickWindow* window, podlord::Workspace& workspace, const QString& column) {
     if (!click(window, item(window, "eventColumnsButton"))) return false;
+    auto* dialog = window->findChild<QObject*>("eventColumnsDialog");
+    if (!dialog || !waitFor([&] { return dialog->property("opened").toBool(); })) {
+        qWarning() << "Event columns dialog did not open:" << column;
+        return false;
+    }
     auto* visible = item(window, "eventColumnVisible_" + column);
     if (!visible || !visible->isVisible()) return false;
-    if (!visible->property("checked").toBool() && !click(window, visible)) return false;
+    if (!visible->property("checked").toBool()
+        && (!click(window, visible) || !waitFor([&] { return visible->property("checked").toBool(); }))) return false;
     return click(window, item(window, "eventSaveColumns"))
-        && waitFor([&] { return !workspace.tableLayoutSaving(); }) && workspace.tableLayoutError().isEmpty();
+        && waitFor([&] { return !workspace.tableLayoutSaving() && !dialog->property("visible").toBool(); })
+        && workspace.tableLayoutError().isEmpty();
 }
 bool execute(const QString& scenario) {
     const bool twoContexts = scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_");
@@ -2926,12 +2933,24 @@ bool execute(const QString& scenario) {
     }
     if (scenario.startsWith("inspector_related_")) {
         if (scenario.startsWith("inspector_related_alias_")) {
+            const char* stage = "session counts";
+            bool completed = false;
+            const auto diagnostics = qScopeGuard([&] {
+                if (!completed) qWarning() << "Related Event alias stage:" << stage << "scenario" << scenario
+                    << "events" << workspace.totalEventCount() << "rows" << workspace.eventTable()->rowCount()
+                    << "time" << text(window, "eventCell_0_0") << "inspector" << workspace.inspectorName()
+                    << "layout error" << workspace.tableLayoutError();
+            });
             const int expectedEvents = scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 2 : 1;
             if (workspace.totalEventCount() != expectedEvents || workspace.totalResourceCount() != expectedRows) return false;
+            stage = "radar";
             if (!click(window, item(window, "radarWorkspaceButton")) || !waitFor([&] { return item(window, "resourceRadar")->property("count").toInt() == expectedRows; })) return false;
+            stage = "event columns";
             if (!click(window, item(window, "eventsWorkspaceButton")) || !waitFor([&] { return item(window, "eventTable")->property("rows").toInt() == expectedEvents; })
                 || !showEventColumn(window, workspace, "eventCount")) return false;
+            stage = "event search";
             if (!type(window, item(window, "eventFilter"), "\"Modern event message\"") || !waitFor([&] { return workspace.eventTable()->rowCount() == 1; })) return false;
+            stage = "event count";
             if (!revealTableCell(window, "eventTable", 0, 5) || !waitFor([&] { return text(window, "eventCell_0_5") == "7"; })) {
                 auto* view = item(window, "eventTable");
                 std::fprintf(stderr, "Modern Event count was not presented: %s; model=%s; filter=%s; cell=%d; width=%.0f; contentX=%.0f; contentWidth=%.0f; columns=%d\n",
@@ -2949,12 +2968,16 @@ bool execute(const QString& scenario) {
                 }
                 if (server.requests.size() != requests) return false;
             }
+            stage = "legacy timestamp";
             if (scenario == "inspector_related_alias_legacy_time"
                 && (!showEventColumn(window, workspace, "eventTime") || !revealTableCell(window, "eventTable", 0, 0)
                     || !waitFor([&] { return text(window, "eventCell_0_0") == "2026-10-03T10:03:00Z"; }))) return false;
+            stage = "event inspector";
             if (!revealTableCell(window, "eventTable", 0, 2) || !click(window, item(window, "eventCell_0_2")) || !waitFor([&] { return workspace.inspectorName() == "alpha"; })) return false;
-            return click(window, item(window, "inspectorEventsButton"))
+            stage = "related events";
+            completed = click(window, item(window, "inspectorEventsButton"))
                 && waitFor([&] { return workspace.inspectorEvents().size() == expectedEvents; });
+            return completed;
         }
         if (scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_")) {
             const auto calls = server.requests.size();
@@ -3358,7 +3381,9 @@ bool execute(const QString& scenario) {
                 item(window, "contexts")->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End); QTest::keyClick(window, Qt::Key_Return);
                 if (!click(window, item(window, "openContext"))) return false;
             } else if (!click(window, item(window, "closeInspector"))) return false;
-            if (!waitFor([&] { return item(window, "discardStay") && item(window, "discardStay")->isVisible(); }) || text(window, "inspectorYaml") != draft || workspace.currentSession() != originalSession || workspace.inspectorPath().isEmpty() || !window->isVisible()) return false;
+            if (!waitFor([&] { auto* dialog = window->findChild<QObject*>("discardYamlDialog");
+                    return dialog && dialog->property("opened").toBool() && item(window, "discardStay") && item(window, "discardStay")->isVisible(); })
+                || text(window, "inspectorYaml") != draft || workspace.currentSession() != originalSession || workspace.inspectorPath().isEmpty() || !window->isVisible()) return false;
             const bool accept = scenario.endsWith("_accept") || scenario == "inspector_edit_resource_bound";
             if (scenario == "inspector_edit_resource_bound") workspace.filter("bravo");
             if (scenario == "inspector_edit_close_escape") QTest::keyClick(window, Qt::Key_Escape);
@@ -3370,7 +3395,13 @@ bool execute(const QString& scenario) {
                 QTest::keyClick(window, scenario.endsWith("_keypad") ? Qt::Key_Enter : scenario.endsWith("_space") ? Qt::Key_Space : Qt::Key_Return);
             }
             else if (!click(window, item(window, accept ? "discardAccept" : "discardStay"))) return false;
-            if (!waitFor([&] { return !item(window, "discardStay")->isVisible(); })) return false;
+            if (!waitFor([&] { return !item(window, "discardStay")->isVisible(); })) {
+                auto* dialog = window->findChild<QObject*>("discardYamlDialog");
+                std::fprintf(stderr, "Discard activation did not close: scenario=%s opened=%d focus=%s down=%d\n", qPrintable(scenario),
+                    dialog && dialog->property("opened").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none",
+                    item(window, "discardStay")->property("down").toBool());
+                return false;
+            }
             if (!accept) {
                 const bool retained = text(window, "inspectorYaml") == draft && !yamlView->property("readOnly").toBool() && workspace.currentSession() == originalSession && !workspace.inspectorPath().isEmpty() && window->isVisible() && noWrites();
                 if (!retained) std::fprintf(stderr, "Stay: draft=%d readOnly=%d session=%d inspector=%s visible=%d writes=%d\n", text(window,"inspectorYaml")==draft, yamlView->property("readOnly").toBool(), workspace.currentSession()==originalSession, qPrintable(workspace.inspectorPath()), window->isVisible(), !noWrites());
