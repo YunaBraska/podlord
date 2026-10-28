@@ -84,6 +84,26 @@ if ! awk '/credentialRevision/ { credential=1 }
     printf 'Native authority coverage gate failed: require 90%% branches in credential/detail revision, revocation and draft authority checks.\n' >&2
     exit 1
 fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/radar_island.cpp" "$ROOT/native/src/workspace.cpp" \
+    | awk '/RadarIsland(11synchronize|6layout|5paint|12setTextColor)|Workspace14setResourceMap/ { print }' \
+    > "$BUILD/coverage/radar-map-functions.txt"
+cat "$BUILD/coverage/radar-map-functions.txt"
+if ! awk '
+/_ZN7podlord11RadarIsland11synchronizeEv/ { sync=1 }
+/_ZN7podlord11RadarIsland6layout/ { layout=1 }
+/_ZN7podlord11RadarIsland5paint/ { paint=1 }
+/_ZN7podlord11RadarIsland12setTextColor/ { color=1 }
+/_ZN7podlord9Workspace14setResourceMap/ { view=1 }
+{ total+=$(NF-2); missed+=$(NF-1) }
+END {
+    if (!sync || !layout || !paint || !color || !view || total<=0) exit 1
+    printf "Radar/Map function-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
+    if (100*(total-missed)/total<90) exit 1
+}' "$BUILD/coverage/radar-map-functions.txt"; then
+    printf 'Native Radar/Map coverage gate failed: require all five owning functions and 90%% branches across them and their local functions.\n' >&2
+    exit 1
+fi
 if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($13+0<90) fail=1 }
           $1=="platform_tls_apple.mm" { apple=1; if ($13+0<90) fail=1 }
           $1=="native_eks.cpp" { eks=1; if ($13+0<90) fail=1 }

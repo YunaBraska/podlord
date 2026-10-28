@@ -11,6 +11,11 @@ districts inside each island, replacing the earlier exact-reference topology.
 RadarIsland packs nonoverlapping cluster bounds and rounded namespace districts.
 Cached district shorelines and connecting land form one landmass per cluster,
 with water between clusters. Painting does not rebuild the shoreline or move tiles.
+The existing 90-percent new-logic coverage requirement is enforced over the entire
+modified synchronization/layout/painting/color/view-selection function family,
+including local functions. This is broader than counting added lines and avoids
+mixing unrelated existing water/input handlers into the new Map increment. Missing
+owners fail the gate rather than silently reducing its scope.
 Cluster-scoped resources occupy a separate district rather than an invented
 namespace. Actual Namespace resources remain selectable at their district anchor.
 The seven-unit lattice, kind-dependent terrain colors and identity-seeded placement
