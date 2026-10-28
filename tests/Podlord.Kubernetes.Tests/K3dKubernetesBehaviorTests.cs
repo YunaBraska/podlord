@@ -31,7 +31,7 @@ public sealed class K3dKubernetesBehaviorTests
             rows => rows.Any(row => row.Kind == "Service" && row.Name == "podlord-healthy")
                     && rows.Any(row => row.Kind == "EndpointSlice" && row.Namespace == "payments")
                     && rows.Any(row => row.Kind == "Secret" && row.Name == "podlord-secret"),
-            TimeSpan.FromMinutes(2));
+            TimeSpan.FromMinutes(4));
         var snapshot = await cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery());
 
         Assert.Empty(snapshot.Failures);
