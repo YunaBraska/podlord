@@ -65,6 +65,35 @@ users:
         Assert.Contains(Path.Combine(directory, "key.pem"), snapshot);
     }
 
+#if PODLORD_APP_STORE
+    [Fact]
+    public void Kubeconfig_store_import_rejects_external_credentials()
+    {
+        var importer = new KubeconfigImporter(Clock);
+
+        var error = Assert.Throws<PodlordException>(() => importer.ImportText("store.yaml", """
+apiVersion: v1
+clusters:
+- name: dev
+  cluster:
+    server: https://cluster.example
+contexts:
+- name: dev
+  context:
+    cluster: dev
+    user: dev
+users:
+- name: dev
+  user:
+    exec:
+      command: kubectl
+"""));
+
+        Assert.Equal(PodlordErrorKind.InvalidInput, error.Kind);
+        Assert.Contains("external credential command", error.Message);
+    }
+#endif
+
     [Fact]
     public void App_state_imports_kubeconfig_creates_session_and_keeps_original_file_external()
     {
