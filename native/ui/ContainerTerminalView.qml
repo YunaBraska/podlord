@@ -5,11 +5,13 @@ import Podlord.Graphics 1.0
 
 ColumnLayout {
     id: root
-    spacing: 6
+    property bool inputPriority: false
+    spacing: inputPriority ? 2 : 6
     property var terminal: workspace.containerTerminal
     property alias inputSurface: surface
     ScrollView {
         id: toolbarScroll
+        visible: !root.inputPriority
         Layout.fillWidth: true
         Layout.preferredHeight: Math.min(controls.implicitHeight, root.height * 0.4)
         Layout.minimumHeight: 0
@@ -89,7 +91,8 @@ ColumnLayout {
         Layout.fillWidth: true
         text: root.terminal ? root.terminal.target + " / " + root.terminal.status : "Choose a container and connect. Session close disconnects the stream; remote processes may continue. No automatic reconnect."
         textFormat: Text.PlainText
-        wrapMode: Text.Wrap
+        wrapMode: root.inputPriority ? Text.NoWrap : Text.Wrap
+        elide: root.inputPriority ? Text.ElideMiddle : Text.ElideNone
         Accessible.name: text
     }
     TerminalSurface {
@@ -107,14 +110,17 @@ ColumnLayout {
         Accessible.description: visibleText
         onPasteRequested: pasteReview.open()
         onControlsFocusRequested: {
-            const target = root.terminal ? copyButton : container
-            const pane = toolbarScroll.contentItem
-            pane.contentY = Math.min(target.y, Math.max(0, pane.contentHeight - pane.height))
-            target.forceActiveFocus(Qt.ShortcutFocusReason)
+            Qt.inputMethod.hide()
+            Qt.callLater(function() {
+                const target = root.terminal ? copyButton : container
+                const pane = toolbarScroll.contentItem
+                pane.contentY = Math.min(target.y, Math.max(0, pane.contentHeight - pane.height))
+                target.forceActiveFocus(Qt.ShortcutFocusReason)
+            })
         }
         Rectangle { anchors.fill: parent; color: "transparent"; border.width: surface.activeFocus ? 2 : 1; border.color: surface.activeFocus ? workspace.appearanceColors.glow : workspace.appearanceColors.border }
     }
-    Label { Layout.fillWidth: true; text: "Control-C interrupts; Escape reaches vi. Shift+Esc focuses controls. Shift + Page Up/Down scrolls history. Shift + drag selects when an application tracks the mouse."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+    Label { Layout.fillWidth: true; visible: !root.inputPriority; text: "Control-C interrupts; Escape reaches vi. Shift+Esc focuses controls. Shift + Page Up/Down scrolls history. Shift + drag selects when an application tracks the mouse."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
     Dialog {
         id: pasteReview
         objectName: "terminalPasteReview"

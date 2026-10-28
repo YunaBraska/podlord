@@ -244,6 +244,12 @@ Delivery shape:
 
 ## Native Session Runtime Progress
 
+The runtime, read-workspace, authentication, synchronization and Apply paragraphs
+below record the initial migration increments. Their stage-specific test counts,
+then-applicable gates and next steps are historical, not current release status.
+The operational specification owns current behavior and gates. The latest dated
+test-map section owns executed evidence and outstanding acceptance work.
+
 The first independent C++ runtime slice implements persistent session lifecycle and configuration copies through a real CLI, not the replacement GUI. [ADR 0016](adr/0016-native-session-persistence-boundary.md) records its boundary; [the native test map](spec/k3d-test-map.md#native-session-runtime-verification-2026-10-02) owns executed checks, coverage, benchmark results, and remaining gaps. Next: kubeconfig/context ownership and the read-only Kubernetes data flow, followed by Qt Quick integration. The migration as a whole remains in progress; no legacy code is retired on the strength of this component result.
 
 Session-core correction: the first native catalog diverged from SES-005-019 despite green component tests. Six failing contract regressions led to schema 2 with per-sequence suffixes and actual usage timestamps, a separate 30-day-ranked selection entrypoint, and unchanged catalog/tab order. The current 135-test result and remaining product-boundary gaps are recorded in the test map. This is not Qt Quick parity or migration completion.
@@ -354,6 +360,18 @@ changes. Test counts, palette equality and headless frames must never substitute
 for whole-view or real-device evidence.
 
 ## Which RTS Experience Improvements Are Proposed After The Parity Audit?
+
+The 2026-10-28 Radar increment now implements the approved separated cluster
+islands, connected namespace districts, cluster-scoped resource area, semantic
+zoom labels and session-local Table/Map view. Both views reuse the same renderer,
+cache, filters, selection, inspector and camera. See
+[ADR 0032](adr/0032-native-deterministic-radar-island.md) and the current
+[test-map evidence](spec/k3d-test-map.md#what-do-the-2026-10-28-hierarchical-map-and-keyboard-checks-prove).
+This intentionally replaces exact C# world-coordinate parity, not its interaction
+or color semantics. A cache-only context overview still awaits the storage
+decision: retain the existing 24-hour RAM cache or persist snapshots across restarts.
+No context synchronization, authentication, new storage or per-cluster status
+panels have been introduced for that pending overview.
 
 These are review recommendations, not newly accepted release requirements.
 Missing shipped capabilities remain owned by the capability inventory; optional

@@ -9,6 +9,8 @@
 #include <QTextLayout>
 #include <cmath>
 #include <QInputMethodEvent>
+#include <QInputMethod>
+#include "container_terminal.h"
 #include "ui_input.h"
 #include <QClipboard>
 #include <QAccessible>
@@ -559,7 +561,7 @@ bool showEventColumn(QQuickWindow* window, podlord::Workspace& workspace, const 
         && workspace.tableLayoutError().isEmpty();
 }
 bool execute(const QString& scenario) {
-    const bool twoContexts = scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_");
+    const bool twoContexts = scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
     KubernetesBoundary server(scenario == "shell_search_events" ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
@@ -1076,6 +1078,49 @@ bool execute(const QString& scenario) {
         }
         const auto calls=server.requests.size();
         auto* radar=item(window,"resourceRadar");
+        if (scenario.startsWith("shell_map")) {
+            const auto session = workspace.currentSession();
+            const auto miniWidth = radar->width();
+            const auto selectView = [&](const char* name) {
+                return click(window, item(window, "workspaceActionsButton"))
+                    && waitFor([&] { auto* option = item(window, name); return option && option->isVisible(); })
+                    && click(window, item(window, name));
+            };
+            if (!workspace.filter("alpha") || !selectView("resourceMapView")) return false;
+            if (!waitFor([&] { return workspace.property("resourceMap").toBool()
+                && item(window, "resourceRadar") == radar && radar->isVisible() && radar->width() > miniWidth + 100; })) return false;
+            if (!selectView("resourceMapView")) return false;
+            radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Right);
+            const auto pose = workspace.radarView();
+            if (scenario == "shell_map_inspector") {
+                window->setMinimumHeight(0); window->resize(640,320);
+                QTest::keyClick(window,Qt::Key_Return);
+                if (!waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml()
+                    && radar->isVisible() && displayedWithin(item(window,"workspaceSidebarHost"),radar); })) return false;
+                if (!click(window,item(window,"closeInspector"))) return false;
+                return waitFor([&] { return workspace.inspectorPath().isEmpty() && workspace.resourceMap()
+                    && radar->isVisible() && !displayedWithin(item(window,"workspaceSidebarHost"),radar)
+                    && workspace.radarView()==pose && workspace.filterText()=="alpha"; });
+            }
+            if (scenario == "shell_map_session") {
+                if (!workspace.openContext(workspace.contexts().last().toMap().value("id").toString())
+                    || !waitFor([&] { return !workspace.loading() && !workspace.busy() && workspace.currentSession() != session; })
+                    || workspace.property("resourceMap").toBool()
+                    || !workspace.activate(session)
+                    || !waitFor([&] { return !workspace.busy() && workspace.currentSession() == session && workspace.property("resourceMap").toBool(); })) return false;
+                return waitFor([&] { return radar->isVisible() && workspace.radarView() == pose && workspace.filterText() == "alpha"; });
+            }
+            for (const auto size : {QSize(640,320), QSize(390,780), QSize(1440,920)}) {
+                window->setMinimumHeight(0); window->resize(size);
+                if (!waitFor([&] { return radar->isVisible() && radar->width() > 200 && radar->height() > 60; })
+                    || workspace.radarView() != pose || workspace.filterText() != "alpha") return false;
+            }
+            const auto capture = qEnvironmentVariable("PODLORD_E2E_SCREENSHOT");
+            if (!capture.isEmpty() && !window->grabWindow().save(capture)) return false;
+            if (!selectView("resourceTableView") || !waitFor([&] { return !workspace.property("resourceMap").toBool() && radar->width() <= miniWidth + 1; })) return false;
+            return workspace.currentSession() == session && workspace.radarView() == pose
+                && workspace.filterText() == "alpha" && server.requests.size() == calls;
+        }
         if (scenario == "shell_landscape_search_error") {
             window->setMinimumHeight(0);
             window->resize(640, 272);
@@ -2724,6 +2769,9 @@ bool execute(const QString& scenario) {
             if (!moving) { QTest::qWait(250); frames.clear(); QTest::qWait(250); if (frames.size() > 1) return false; }
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
             if (!waitFor([&] { return displayedWithin(radar, item(window, "radarTile_1000")); })) return false;
+            const int panSteps=int(std::ceil(radar->width()/24))+2;
+            for (int step=0;step<panSteps;++step) QTest::keyClick(window, Qt::Key_Right);
+            if (!waitFor([&] { return !displayedWithin(radar,item(window,"radarTile_0")); })) return false;
             QTest::qWait(250); frames.clear(); QTest::qWait(250);
             if (frames.size() > 1) { std::fprintf(stderr, "Offscreen-only alarm caused %lld frames after settling.\n", static_cast<long long>(frames.size())); return false; }
             QTest::keyClick(window, Qt::Key_Home);
@@ -4096,7 +4144,9 @@ bool systemWebsocket(const QString& address, bool expected, bool cancel = false)
     if (cancel) return !received && completedMs >= 900 && completedMs < 3000;
     return (expected ? actual : !actual && error == QAbstractSocket::SslHandshakeFailedError) && (start == 0 || ticks >= 2);
 }
-bool realSearchCluster(const QString& source, bool themeMatrix = false) {
+enum class ClusterJourney { Search, Themes, Map, Input };
+bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJourney::Search) {
+    const bool themeMatrix=journey==ClusterJourney::Themes;
     QTemporaryDir temporary; if (!temporary.isValid()) return false;
     podlord::Workspace workspace(temporary.filePath("profile"));
     QQmlApplicationEngine engine;
@@ -4145,6 +4195,70 @@ bool realSearchCluster(const QString& source, bool themeMatrix = false) {
         return !workspace.loading() && (workspace.totalResourceCount()>=1051 || !workspace.error().isEmpty());
     },120000) || workspace.totalResourceCount()<1051) {
         std::fprintf(stderr,"Real search load: total=%d; %s; %s\n",workspace.totalResourceCount(),qPrintable(workspace.error()),qPrintable(workspace.status())); return failure("initial resource reads");
+    }
+    if (journey==ClusterJourney::Input) {
+        const auto directory=qEnvironmentVariable("PODLORD_INPUT_EVIDENCE_DIR");
+        auto* input=QGuiApplication::inputMethod();
+        if (directory.isEmpty() || !QDir().mkpath(directory) || !input) return failure("input output");
+        const auto aboveKeyboard=[&](const char* name,int minimumHeight) {
+            auto* target=item(window,name); const auto keyboard=input->keyboardRectangle();
+            if (!input->isVisible() || keyboard.height()<=0 || !target || !target->isVisible() || target->height()<minimumHeight) return false;
+            const auto top=target->mapToScene(QPointF{}).y();
+            return top>=window->safeAreaMargins().top()
+                && target->mapToScene({0,target->height()}).y()<=keyboard.top();
+        };
+        const auto capture=[&](const char* name) { return window->grabWindow().save(directory+"/"+name+".png"); };
+        if (!click(window,item(window,"workspaceSearchButton")) || !type(window,item(window,"resourceFilter"),"visual-multi-container")) return failure("input search");
+        input->show();
+        if (!waitFor([&] { return aboveKeyboard("resourceFilter",32); },10000) || !capture("search-keyboard")) return failure("search keyboard geometry");
+        input->hide();
+        if (!waitFor([&] { return !input->isVisible(); })
+            || !workspace.inspectPath("/api/v1/namespaces/visual-a/pods/visual-multi-container")
+            || !waitFor([&] { return workspace.canStartTerminal(); },30000)) return failure("input terminal readiness");
+        if (window->width()<600) {
+            if (!click(window,item(window,"overviewButton"))) return failure("portrait inspector tabs");
+            const int y=qRound(item(window,"overviewButton")->mapToScene({0,22}).y());
+            const QPoint start(window->width()-30,y),end(30,y);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);
+            for (int step=1;step<=8;++step) QTest::mouseMove(window,start+(end-start)*step/8,20);
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,end);
+        }
+        if (!click(window,item(window,"terminalButton")) || !click(window,item(window,"terminalConnect"))) return failure("input terminal start");
+        if (!waitFor([&] { return workspace.containerTerminal() && workspace.containerTerminal()->connected(); },30000)) return failure("input terminal connection");
+        const auto* connected=workspace.containerTerminal();
+        input->show();
+        if (!waitFor([&] { return aboveKeyboard("terminalStatus",16) && aboveKeyboard("terminalSurface",28); },10000)
+            || !capture("terminal-keyboard")) return failure("terminal keyboard geometry");
+        auto* surface=item(window,"terminalSurface");
+        QInputMethodEvent command; command.setCommitString("printf 'PODLORD_IOS_IME_OK\\n'"); QCoreApplication::sendEvent(surface,&command);
+        QTest::keyClick(window,Qt::Key_Return);
+        if (!waitFor([&] { return surface->property("visibleText").toString().split('\n').contains("PODLORD_IOS_IME_OK"); },15000)) return failure("input terminal echo");
+        input->hide();
+        if (!waitFor([&] { auto* disconnect=item(window,"terminalDisconnect"); return !input->isVisible()
+            && workspace.containerTerminal()==connected && connected->connected() && disconnect && disconnect->isVisible(); })
+            || !capture("terminal-restored")) return failure("input controls restored");
+        if (!click(window,surface)) return failure("terminal exit focus");
+        QInputMethodEvent exit; exit.setCommitString("exit"); QCoreApplication::sendEvent(surface,&exit); QTest::keyClick(window,Qt::Key_Return);
+        return waitFor([&] { return !connected->active(); },15000) || failure("terminal shell exit");
+    }
+    if (journey==ClusterJourney::Map) {
+        const auto directory=qEnvironmentVariable("PODLORD_MAP_EVIDENCE_DIR");
+        if (directory.isEmpty() || !QDir().mkpath(directory) || !workspace.setResourceMap(true)) return failure("map output");
+        const auto session=workspace.currentSession();
+        const auto count=workspace.totalResourceCount();
+        const auto theme=workspace.themeName();
+        for (const auto& variant : {QString("dark"),QString("light")}) {
+            if (!workspace.saveAppearance(theme,variant) || !waitFor([&] { return !workspace.busy(); })) return failure("map theme");
+            if (!click(window,item(window,"resetRadar"))) return failure("map reset");
+            for (int zoom=0;zoom<4;++zoom) if (!click(window,item(window,"radarZoomOut"))) return failure("map overview zoom");
+            for (const auto& view : {QString("overview"),QString("details")}) {
+                if (view=="details") for (int zoom=0;zoom<7;++zoom) if (!click(window,item(window,"radarZoom"))) return failure("map detail zoom");
+                QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
+                if (!waitFor([&] { return !frames.isEmpty(); })
+                    || !window->grabWindow().save(directory+"/map-"+variant+"-"+view+".png")) return failure("map framebuffer");
+            }
+        }
+        return workspace.currentSession()==session && workspace.totalResourceCount()==count && workspace.filterText().isEmpty();
     }
     const QMap<QString,QPair<QString,int>> expectedKinds{
         {"ConfigMap",{"visual-config-",512}}, {"Secret",{"visual-secret-",256}},
@@ -4324,7 +4438,8 @@ int main(int argc, char** argv) {
         const bool passed = argc == 3 ? (scenario.startsWith("app.") ? applicationBoundary(scenario, QString::fromLocal8Bit(argv[2]))
             : scenario == "system_https_trusted" || scenario == "system_https_untrusted" || scenario == "system_https_canceled" ? systemHttps(QString::fromLocal8Bit(argv[2]), scenario == "system_https_trusted", scenario == "system_https_canceled")
             : scenario == "system_wss_trusted" || scenario == "system_wss_untrusted" || scenario == "system_wss_canceled" ? systemWebsocket(QString::fromLocal8Bit(argv[2]), scenario == "system_wss_trusted", scenario == "system_wss_canceled")
-            : scenario == "real_search" || scenario == "real_themes" ? realSearchCluster(QString::fromLocal8Bit(argv[2]), scenario == "real_themes")
+            : scenario == "real_search" || scenario == "real_themes" || scenario == "real_map" || scenario == "real_input" ? realSearchCluster(QString::fromLocal8Bit(argv[2]),
+                scenario=="real_themes" ? ClusterJourney::Themes : scenario=="real_map" ? ClusterJourney::Map : scenario=="real_input" ? ClusterJourney::Input : ClusterJourney::Search)
             : scenario == "real" && realCluster(QString::fromLocal8Bit(argv[2]))) : execute(scenario);
         if (!passed) std::fprintf(stderr, "UI scenario failed: %s\n", argv[1]);
         else std::fprintf(stdout, "UI scenario passed: %s\n", argv[1]);

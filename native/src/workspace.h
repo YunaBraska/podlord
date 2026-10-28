@@ -138,6 +138,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QStringList filterPickerValues READ filterPickerValues NOTIFY filterPickerChanged)
     Q_PROPERTY(QString filterError READ filterError NOTIFY changed)
     Q_PROPERTY(QString workspacePage READ workspacePage NOTIFY changed)
+    Q_PROPERTY(bool resourceMap READ resourceMap NOTIFY changed)
     Q_PROPERTY(QString eventFilterText READ eventFilterText NOTIFY changed)
     Q_PROPERTY(int eventSortColumnIndex READ eventSortColumnIndex NOTIFY changed)
     Q_PROPERTY(QString eventSortDirection READ eventSortDirection NOTIFY changed)
@@ -386,7 +387,9 @@ public:
     QVariantList pulseMetrics() const { return pulseMetrics_; }
     QVariantMap healthSummary() const { return healthSummary_; }
     QVariantMap radarView() const { return navigation_.value(active_).radarView; }
+    bool resourceMap() const { return navigation_.value(active_).resourceMap; }
     Q_INVOKABLE bool setWorkspacePage(const QString& page);
+    Q_INVOKABLE bool setResourceMap(bool enabled);
     Q_INVOKABLE bool rememberRadarView(const QVariantMap& view);
     int sortColumnIndex() const;
     QString sortDirection() const;
@@ -652,6 +655,7 @@ private:
         int limit = 256;
         Qt::SortOrder order = Qt::AscendingOrder;
         QString inspected, page = "overview", workspace = "resources";
+        bool resourceMap = false;
         QVariantMap radarView{{"x",0},{"y",0},{"zoom",1}};
         QString eventFilter, portFilter;
         int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;

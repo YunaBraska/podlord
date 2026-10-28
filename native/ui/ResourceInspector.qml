@@ -4,6 +4,8 @@ import QtQuick.Layouts
 import Podlord.Graphics 1.0
 
 Pane {
+    id: inspectorRoot
+    readonly property var hostWindow: ApplicationWindow.window
     padding: 6
     implicitHeight: inspector.Layout.minimumHeight + topPadding + bottomPadding
     clip: true
@@ -354,26 +356,44 @@ Pane {
         active: workspace.inspectorPage === "terminal" && !terminalDialog.visible
         visible: active
         source: "ContainerTerminalView.qml"
-        onLoaded: if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
+        onLoaded: {
+            item.inputPriority = Qt.binding(function() { return inspectorRoot.hostWindow?.inputPriority ?? false })
+            if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
+        }
     }
     Dialog {
         id: terminalDialog
         objectName: "expandedTerminal"
         parent: Overlay.overlay
-        anchors.centerIn: parent
+        readonly property var hostWindow: inspectorRoot.hostWindow
+        readonly property bool inputPriority: hostWindow?.inputPriority ?? false
+        // Keyboard bounds are window-relative; Popup positions are overlay-relative.
+        readonly property rect usableArea: parent ? parent.mapFromItem(null, hostWindow?.inputArea ?? Qt.rect(0, 0, parent.width, parent.height)) : Qt.rect(0, 0, 0, 0)
+        readonly property real viewportTop: Math.max(8, usableArea.y)
+        readonly property real viewportBottom: Math.min(parent.height, usableArea.y + usableArea.height)
+        x: (parent.width - width) / 2
+        y: viewportTop
         width: Math.max(0, parent.width - 16)
-        height: Math.max(0, parent.height - 16)
-        title: "Container terminal"
+        height: Math.max(0, viewportBottom - viewportTop - 8)
+        title: inputPriority ? "" : "Container terminal"
         modal: true
         closePolicy: Popup.NoAutoClose
+        Binding { target: terminalDialog; property: "padding"; value: 2; when: terminalDialog.inputPriority }
+        Binding { target: terminalDialog; property: "topMargin"; value: terminalDialog.viewportTop; when: Qt.inputMethod.visible }
+        Binding { target: terminalDialog; property: "bottomMargin"; value: Math.max(0, terminalDialog.parent.height - terminalDialog.viewportBottom + 8); when: Qt.inputMethod.visible }
         footer: DialogButtonBox {
+            visible: !terminalDialog.inputPriority
+            height: visible ? implicitHeight : 0
             Button { objectName: "collapseTerminal"; text: "Back to inspector"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             onRejected: terminalDialog.reject()
         }
         contentItem: Loader {
             active: terminalDialog.visible && workspace.inspectorPage === "terminal"
             source: "ContainerTerminalView.qml"
-            onLoaded: if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
+            onLoaded: {
+                item.inputPriority = Qt.binding(function() { return inspectorRoot.hostWindow?.inputPriority ?? false })
+                if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
+            }
         }
     }
     }

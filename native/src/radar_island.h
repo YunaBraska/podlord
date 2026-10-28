@@ -8,6 +8,7 @@
 #include <QElapsedTimer>
 #include <QQueue>
 #include <QCache>
+#include <QPainterPath>
 
 namespace podlord {
 class RadarTiles final : public QAbstractListModel {
@@ -31,16 +32,19 @@ class RadarIsland : public QQuickPaintedItem {
     Q_PROPERTY(QAbstractItemModel* tiles READ tiles CONSTANT)
     Q_PROPERTY(QVariantMap viewPose READ viewPose WRITE setViewPose NOTIFY viewPoseChanged)
     Q_PROPERTY(int currentIndex READ currentIndex NOTIFY currentResourceChanged)
+    Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor NOTIFY textColorChanged)
 public:
     explicit RadarIsland(QQuickItem* parent = nullptr);
     QAbstractItemModel* source() const { return source_; }
     QString identityScope() const { return identityScope_; }
     QAbstractItemModel* tiles() { return &tiles_; }
     QVariantMap viewPose() const;
+    QColor textColor() const { return textColor_; }
     static bool validPose(const QVariantMap& pose);
     int currentIndex() const;
     void setSource(QAbstractItemModel* source);
     void setViewPose(const QVariantMap& pose);
+    void setTextColor(const QColor& color);
     Q_INVOKABLE bool pan(double dx, double dy);
     Q_INVOKABLE bool zoomAt(double factor, double x, double y);
     Q_INVOKABLE bool focusResource(int index, double zoom = 0);
@@ -51,17 +55,19 @@ signals:
     void sourceChanged();
     void viewPoseChanged();
     void currentResourceChanged();
+    void textColorChanged();
 private:
     struct Row final {
         QString path, kind, name, scope, cluster, owner, identity;
         bool operator==(const Row&) const = default;
     };
-    struct Marker final { QPointF world; QString kind, group; };
+    struct Marker final { QPointF world; QRectF labelBounds; QString kind, group, label; bool overview = false; QRectF area; QPainterPath land; };
     struct Terrain final {
         QList<Row> signature;
         QHash<QString, QPointF> positions;
         QHash<QPoint, QList<QString>> buckets;
         QList<Marker> markers;
+        QHash<QPoint, QList<int>> markerBuckets;
     };
     QCache<QString, Terrain> terrains_{3};
     RadarTiles tiles_{this};
@@ -73,7 +79,9 @@ private:
     QHash<QString, QPersistentModelIndex> filtered_;
     QSet<QString> groups_;
     QList<Marker> markers_;
+    QHash<QPoint, QList<int>> markerBuckets_;
     QPointF pan_;
+    QColor textColor_{QStringLiteral("#DDE7EC")};
     QString currentPath_;
     QString identityScope_;
     double zoom_ = 1;

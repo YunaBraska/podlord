@@ -21,6 +21,15 @@ ApplicationWindow {
     readonly property bool touchLayout: !wideLayout || compactLandscape
     readonly property bool sidebarDocked: wideLayout || compactLandscape
     readonly property bool compactInspector: (compactLandscape || width < 600) && workspace.inspectorPath !== ""
+    readonly property real keyboardTop: Qt.inputMethod.visible
+        && Qt.inputMethod.keyboardRectangle.width >= width * 0.75
+        && Qt.inputMethod.keyboardRectangle.height > 0
+        && Qt.inputMethod.keyboardRectangle.y + Qt.inputMethod.keyboardRectangle.height >= height - SafeArea.margins.bottom
+        ? Math.max(0, Math.min(height, Qt.inputMethod.keyboardRectangle.y)) : height
+    readonly property rect inputArea: Qt.rect(0, SafeArea.margins.top, width,
+        Math.max(0, Math.min(keyboardTop, height - SafeArea.margins.bottom) - SafeArea.margins.top))
+    readonly property bool inputPriority: Qt.inputMethod.visible && width > height && inputArea.height < 300
+    bottomPadding: Math.max(SafeArea.margins.bottom, height - keyboardTop)
     visible: true
     property bool sourcesExpanded: false
     property string ociImportConfigPath: ""
@@ -432,6 +441,7 @@ ApplicationWindow {
     }
     header: ToolBar {
         objectName: "workspaceToolbar"
+        visible: !window.inputPriority
         padding: 0
         leftPadding: 0; rightPadding: 0; topPadding: SafeArea.margins.top; bottomPadding: 0
         implicitHeight: headerLayout.implicitHeight + (window.compactLandscape ? 4 : 12) + topPadding
@@ -491,6 +501,8 @@ ApplicationWindow {
         height: compactMenu ? Math.min(implicitHeight, window.height - 48) : implicitHeight
         Binding { target: workspaceActions; property: "popupType"; value: Popup.Item; when: workspaceActions.compactMenu }
         MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; Accessible.name: "Open command palette"; onTriggered: commands.open() }
+        MenuItem { objectName: "resourceTableView"; text: "View: Table"; checkable: true; checked: !workspace.resourceMap; visible: workspace.workspacePage === "resources"; implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0; onTriggered: workspace.setResourceMap(false) }
+        MenuItem { objectName: "resourceMapView"; text: "View: Map"; checkable: true; checked: workspace.resourceMap; visible: workspace.workspacePage === "resources"; implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0; onTriggered: workspace.setResourceMap(true) }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
             text: workspace.uiText["nav.search"]
@@ -578,7 +590,7 @@ ApplicationWindow {
     ScrollView {
         id: navigationRail
         objectName: "landscapeNavigation"
-        visible: window.compactLandscape
+        visible: window.compactLandscape && !window.inputPriority
         anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
         anchors.margins: 6
         width: 44
@@ -588,7 +600,7 @@ ApplicationWindow {
     }
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6
-        anchors.leftMargin: window.compactLandscape ? 56 : 6
+        anchors.leftMargin: window.compactLandscape && !window.inputPriority ? 56 : 6
         spacing: 4
         Frame {
             id: sourcePanel
@@ -652,7 +664,7 @@ ApplicationWindow {
             Layout.minimumWidth: 0
             Layout.preferredHeight: openTabs.implicitHeight
             spacing: 2
-            visible: !window.compactInspector && (workspace.tabs.length > 0 || workspace.sessions.length > 0)
+            visible: !window.inputPriority && !window.compactInspector && (workspace.tabs.length > 0 || workspace.sessions.length > 0)
             IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; enabled: !workspace.busy; onClicked: quickChooser.open() }
             IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
             ScrollView {
@@ -797,7 +809,7 @@ ApplicationWindow {
                 ResourceGrid {
                     id: resourceGrid
                     anchors.fill: parent
-                    visible: workspace.workspacePage === "resources"
+                    visible: workspace.workspacePage === "resources" && !workspace.resourceMap
                     inlineTools: false
                     tableModel: workspace.visibleResourceTable
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
@@ -806,6 +818,12 @@ ApplicationWindow {
                     onInspectRequested: function(path) { workspace.inspectPath(path) }
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
+                }
+                Item {
+                    id: resourceMapHost
+                    objectName: "resourceMapHost"
+                    anchors.fill: parent
+                    visible: workspace.workspacePage === "resources" && workspace.resourceMap
                 }
                 Loader {
                     id: eventGridLoader
@@ -875,7 +893,7 @@ ApplicationWindow {
             Item {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
-                visible: window.sidebarDocked && window.sidebarOpen
+                visible: window.sidebarDocked && window.sidebarOpen && !window.inputPriority
                 SplitView.preferredWidth: window.compactLandscape ? 240 : 392
                 SplitView.minimumWidth: window.compactLandscape ? 228 : 300
                 SplitView.maximumWidth: window.compactLandscape ? 320 : 720
@@ -884,6 +902,7 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             objectName: "workspaceFooter"
+            visible: !window.inputPriority
             Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
             Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: text + ", " + workspace.resourceCount + " matching resources" }
@@ -893,6 +912,7 @@ ApplicationWindow {
     ResourceSidebar {
         id: sidebar
         parent: window.sidebarDocked ? sidebarHost : sidebarDrawer.contentItem
+        expandedRadarHost: workspace.workspacePage === "resources" && workspace.resourceMap && !window.compactInspector ? resourceMapHost : null
         collapsibleFilters: window.compactLandscape
         anchors.fill: parent
         visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible

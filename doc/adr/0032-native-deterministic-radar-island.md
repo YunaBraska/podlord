@@ -6,11 +6,18 @@ Status: accepted for the user-confirmed RTS-style island and focused navigation.
 
 The full ResourceTable cache supplies cluster, namespace, owner, kind and identity.
 The existing filtered proxy supplies resource membership and inspector indices.
-RadarIsland derives deterministic geometry using the retained C# cluster centers,
-namespace arms, dependency ranks, hash and collision rules. A topology signature
-avoids rebuilding it for status/version changes, filters or sorting. Native path
-identity seeds the hash; this preserves deterministic topology, not a promise of
-pixel-identical placement to C#'s differently encoded resource IDs.
+On 2026-10-28 the user approved clearly separated cluster islands with namespace
+districts inside each island, replacing the earlier exact-reference topology.
+RadarIsland packs nonoverlapping cluster bounds and rounded namespace districts.
+Cached district shorelines and connecting land form one landmass per cluster,
+with water between clusters. Painting does not rebuild the shoreline or move tiles.
+Cluster-scoped resources occupy a separate district rather than an invented
+namespace. Actual Namespace resources remain selectable at their district anchor.
+The seven-unit lattice, kind-dependent terrain colors and identity-seeded placement
+remain deterministic. A topology signature avoids rebuilding geometry for
+status/version changes, filters or sorting. The same resource set published in a
+different order produces the same positions. Kubernetes UID remains an identity
+input, including when an object is replaced at the same API path.
 
 All discovered listable kinds participate in the same layout. When native
 discovery includes kinds absent from C#'s fixed catalog, common resource tiles
@@ -22,6 +29,27 @@ The existing per-session Workspace navigation owns the camera. Replace the old
 one-dimensional GridView offset and discrete tile-size APIs, rather than keeping
 both implementations. Camera state remains in memory as before; no new profile
 schema or persisted resource cache is introduced.
+
+## How do Table and Map share the existing workspace?
+
+Table and Map are views of the same session, not separate session tabs or a new
+resource store. Their selection lives in the existing in-memory session navigation.
+The existing Radar component moves between its sidebar slot and the main workspace.
+There is one renderer, filtered source, camera, selection, tooltip and alarm owner.
+Switching views, resizing or changing sessions does not start a request, authenticate
+or reset filters, drafts or camera position. Table remains the default.
+
+The existing workspace menu offers Table and Map. The expanded Radar header also
+returns to Table; the small Radar's existing focus action is unchanged. Cluster
+names appear at overview scale, namespace district
+labels appear when zooming in, and resource glyphs/details retain their existing
+zoom and interaction rules. Labels use the current theme, viewport buckets, cached
+text bounds and collision decluttering instead of a delegate per cached label.
+
+A context overview is separate from the single-session Map. It must not open or
+synchronize contexts just to draw their cached islands. Whether its cache survives
+an application restart remains an explicit product decision. No additional
+per-cluster age or connection-status panels are introduced by this increment.
 
 ## Why use a sparse native surface with visible resource delegates?
 

@@ -1,7 +1,11 @@
 #include "workspace.h"
 #include "radar_island.h"
 #include <QFile>
+#include <QBitArray>
 #include <QGuiApplication>
+#include <QFont>
+#include <QPainter>
+#include <QScopeGuard>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -9,7 +13,9 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
+#include <cmath>
 #include <cstdio>
+#include <iterator>
 
 namespace {
 bool setupFailure(const char* message) {
@@ -22,7 +28,126 @@ QHash<QByteArray, int> roles(QAbstractItemModel* model) {
     for (auto it = names.cbegin(); it != names.cend(); ++it) result.insert(it.value(), it.key());
     return result;
 }
+QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
+    QMap<QString,QPointF> result;
+    const auto names=roles(tiles);
+    for (int row=0;row<tiles->rowCount();++row) {
+        const auto index=tiles->index(row,0);
+        result.insert(index.data(names["resourcePath"]).toString(),{index.data(names["worldX"]).toDouble(),index.data(names["worldY"]).toDouble()});
+    }
+    return result;
+}
+bool hierarchy(const QString& check = {}) {
+    QJsonArray rows;
+    QMap<QString,QPair<QString,QString>> grouping;
+    int podCount=0;
+    const QStringList clusters{"alpha","beta","gamma"};
+    const QList<int> counts{720,240,80};
+    const auto add=[&](const QString& cluster,const QString& name,const QString& kind,const QString& nameSpace) {
+        const auto path="/clusters/"+cluster+"/"+kind.toLower()+"/"+name;
+        QJsonObject row{{"path",path},{"name",name},{"kind",kind},{"cluster",cluster},{"uid",path+"-uid"},{"status","Ready"}};
+        if (!nameSpace.isEmpty()) row["namespace"]=nameSpace;
+        rows.append(row); grouping.insert(path,{cluster,kind=="Namespace" ? name : nameSpace.isEmpty() ? QStringLiteral("Cluster resources") : nameSpace});
+        if (kind=="Pod") ++podCount;
+    };
+    for (int clusterIndex=0;clusterIndex<clusters.size();++clusterIndex) {
+        const auto& cluster=clusters[clusterIndex];
+        for (int node=0;node<6;++node) add(cluster,"node-"+QString::number(node),"Node",{});
+        for (int scope=0;scope<3;++scope) {
+            const auto nameSpace="namespace-"+QString::number(scope);
+            add(cluster,nameSpace,"Namespace",{});
+            const int count=counts[clusterIndex]/3+(scope<counts[clusterIndex]%3 ? 1 : 0);
+            for (int pod=0;pod<count;++pod) add(cluster,"pod-"+QString::number(scope)+"-"+QString::number(pod),"Pod",nameSpace);
+        }
+    }
+    podlord::ResourceTable table; podlord::ResourceFilter filter; filter.setSourceModel(&table);
+    if (!table.publish(rows,{})) return false;
+    podlord::RadarIsland geometry; geometry.setWidth(20000); geometry.setHeight(20000); geometry.setProperty("identityScope","hierarchy"); geometry.setSource(&filter);
+    if (!QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==rows.size(); },3000)) return false;
+    const auto before=coordinates(geometry.tiles());
+    if (check == "shoreline") {
+        geometry.setWidth(2000); geometry.setHeight(2000);
+        QImage image(2000,2000,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QPainter painter(&image); geometry.paint(&painter); painter.end();
+        for (const auto& cluster:clusters) {
+            QBitArray visited(image.width()*image.height());
+            QList<QPoint> pending;
+            for (auto point=before.cbegin();point!=before.cend();++point) if (grouping.value(point.key()).first==cluster) {
+                pending.append(point.value().toPoint()+QPoint(1000,1000)); break;
+            }
+            while (!pending.isEmpty()) {
+                const auto point=pending.takeLast();
+                if (!image.rect().contains(point)) continue;
+                const int index=point.y()*image.width()+point.x();
+                if (visited[index] || image.pixelColor(point).alpha()==0) continue;
+                visited.setBit(index);
+                for (const auto delta:{QPoint(1,0),QPoint(-1,0),QPoint(0,1),QPoint(0,-1)}) pending.append(point+delta);
+            }
+            for (auto point=before.cbegin();point!=before.cend();++point) {
+                const auto pixel=point.value().toPoint()+QPoint(1000,1000);
+                if (!image.rect().contains(pixel) || visited[pixel.y()*image.width()+pixel.x()]!=(grouping.value(point.key()).first==cluster)) return false;
+            }
+        }
+        return true;
+    }
+    if (check == "labels") {
+        geometry.setWidth(160); geometry.setHeight(100);
+        geometry.setViewPose({{"x",0},{"y",0},{"zoom",.55}}); geometry.setTextColor(Qt::white);
+        QImage image(160,100,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QPainter painter(&image); geometry.paint(&painter); painter.end();
+        int ink=0;
+        for (int y=0;y<35;++y) for (int x=0;x<image.width();++x) if (image.pixelColor(x,y)==QColor(Qt::white)) ++ink;
+        return ink>5;
+    }
+    if (check == "font") {
+        const auto previous=QGuiApplication::font();
+        const auto restore=qScopeGuard([&] { QGuiApplication::setFont(previous); });
+        auto stretched=previous; stretched.setStretch(200); QGuiApplication::setFont(stretched);
+        podlord::RadarIsland other; other.setWidth(20000); other.setHeight(20000);
+        other.setProperty("identityScope","hierarchy"); other.setSource(&filter);
+        return QTest::qWaitFor([&] { return other.tiles()->rowCount()==rows.size(); },3000)
+            && coordinates(other.tiles())==before;
+    }
+    QSet<QPoint> unique;
+    for (const auto& point:before) unique.insert(point.toPoint());
+    if (before.size()!=rows.size() || unique.size()!=before.size()) return false;
+    QMap<QString,QRectF> clusterBounds,districtBounds;
+    for (auto point=before.cbegin();point!=before.cend();++point) {
+        const auto group=grouping.value(point.key());
+        const auto include=[&](QMap<QString,QRectF>& bounds,const QString& key) {
+            const QRectF cell(point.value()-QPointF(1,1),QSizeF(2,2)); bounds[key]=bounds.contains(key) ? bounds.value(key).united(cell) : cell;
+        };
+        include(clusterBounds,group.first); include(districtBounds,group.first+"/"+group.second);
+    }
+    const auto separated=[](const QMap<QString,QRectF>& bounds) {
+        for (auto left=bounds.cbegin();left!=bounds.cend();++left) for (auto right=std::next(left);right!=bounds.cend();++right)
+            if (left.value().adjusted(-3,-3,3,3).intersects(right.value().adjusted(-3,-3,3,3))) return false;
+        return true;
+    };
+    if (clusterBounds.size()!=3 || districtBounds.size()!=12 || !separated(clusterBounds)) return false;
+    for (const auto& cluster:clusters) {
+        QMap<QString,QRectF> local;
+        for (auto district=districtBounds.cbegin();district!=districtBounds.cend();++district) if (district.key().startsWith(cluster+"/")) local.insert(district.key(),district.value());
+        if (local.size()!=4 || !separated(local)) return false;
+    }
+    QString namespacePath;
+    for (auto group=grouping.cbegin();group!=grouping.cend();++group) if (group.value().second=="namespace-1" && group.key().contains("/namespace/")) { namespacePath=group.key(); break; }
+    int namespaceIndex=-1;
+    for (int row=0;row<filter.rowCount();++row) if (filter.index(row,0).data(Qt::UserRole).toString()==namespacePath) { namespaceIndex=row; break; }
+    if (namespaceIndex<0 || !geometry.selectResource(namespaceIndex) || geometry.currentIndex()!=namespaceIndex) return false;
+    if (!filter.filter({},{{"kind","\"Pod\""}}) || !QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==podCount; },3000)) return false;
+    const auto filtered=coordinates(geometry.tiles());
+    for (auto point=filtered.cbegin();point!=filtered.cend();++point) if (before.value(point.key())!=point.value()) return false;
+    if (!filter.filter({}) || !QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==rows.size(); },3000) || coordinates(geometry.tiles())!=before) return false;
+    QJsonArray reversed; for (auto it=rows.end();it!=rows.begin();) reversed.append(*--it);
+    if (!table.publish(reversed,{}) || !QTest::qWaitFor([&] { return coordinates(geometry.tiles())==before; },3000)) return false;
+    return true;
+}
 bool exercise(const QStringList& args) {
+    if (args.size()==2 && args[1]=="hierarchy") return hierarchy();
+    if (args.size()==2 && args[1]=="hierarchy_font") return hierarchy("font");
+    if (args.size()==2 && args[1]=="hierarchy_labels") return hierarchy("labels");
+    if (args.size()==2 && args[1]=="hierarchy_shoreline") return hierarchy("shoreline");
     if (args.size() < 3 || args.size() > 4) return false;
     QFile file(args[2]); if (!file.open(QIODevice::ReadOnly)) return false;
     QJsonParseError error;
@@ -56,8 +181,8 @@ bool exercise(const QStringList& args) {
             const auto block = wanted[path];
             const auto x = index.data(names["worldX"]).toDouble(), y = index.data(names["worldY"]).toDouble();
             const auto color = index.data(names["terrainColor"]).value<QColor>();
-            if (x != block["x"].toDouble() || y != block["y"].toDouble() || color != QColor(block["color"].toString())) {
-                std::fprintf(stderr, "Radar mismatch %s: C++ (%g,%g,%s), C# (%g,%g,%s)\n", qPrintable(path), x, y, qPrintable(color.name()), block["x"].toDouble(), block["y"].toDouble(), qPrintable(block["color"].toString()));
+            if (!std::isfinite(x) || !std::isfinite(y) || color != QColor(block["color"].toString())) {
+                std::fprintf(stderr, "Radar mismatch %s: C++ (%g,%g,%s), expected color %s\n", qPrintable(path), x, y, qPrintable(color.name()), qPrintable(block["color"].toString()));
                 return false;
             }
             ++matched;
@@ -121,16 +246,6 @@ bool exercise(const QStringList& args) {
         return check(expected);
     }
     if (args[1] == "cached_uid_recreation") {
-        const auto coordinates = [](QAbstractItemModel* tiles) {
-            QMap<QString, QPointF> result;
-            const auto names = roles(tiles);
-            for (int row = 0; row < tiles->rowCount(); ++row) {
-                const auto index = tiles->index(row, 0);
-                result.insert(index.data(names["resourcePath"]).toString(),
-                    {index.data(names["worldX"]).toDouble(), index.data(names["worldY"]).toDouble()});
-            }
-            return result;
-        };
         const auto before = coordinates(geometry.tiles());
         const auto scope = document["sessionId"].toString();
         geometry.setProperty("identityScope", scope + "-other");
@@ -221,16 +336,22 @@ Window {
         return setupFailure("exact viewport dimensions");
     }
     window->update(); QTest::qWait(80);
+    const auto rendered=coordinates(grid->tiles());
+    const auto renderedRoles=roles(grid->tiles());
+    QMap<QString,QColor> renderedColors;
+    for (int row=0;row<grid->tiles()->rowCount();++row) {
+        const auto tile=grid->tiles()->index(row,0);
+        renderedColors.insert(tile.data(renderedRoles["resourcePath"]).toString(),tile.data(renderedRoles["terrainColor"]).value<QColor>());
+    }
     const auto frame = window->grabWindow();
     if (frame.isNull() || frame.devicePixelRatio() != 1) return setupFailure("original-pixel window frame");
     const auto origin = grid->mapToScene({}).toPoint();
     const auto image = frame.copy(QRect(origin, QSize(1200,1200)));
     window->close();
-    for (const auto value : document["blocks"].toArray()) {
-        const auto block = value.toObject();
-        const auto point = QPoint(qRound(600 + block["x"].toDouble()), qRound(600 + block["y"].toDouble()));
-        if (!image.rect().contains(point) || image.pixelColor(point) != QColor(block["color"].toString()))
-            return setupFailure("rendered terrain/decorations do not match reference centers");
+    for (auto resource=rendered.cbegin();resource!=rendered.cend();++resource) {
+        const auto point=QPoint(qRound(600+resource.value().x()),qRound(600+resource.value().y()));
+        if (!image.rect().contains(point) || image.pixelColor(point)!=renderedColors.value(resource.key()))
+            return setupFailure("rendered resources do not match cached geometry");
     }
     if (renderCheck) return true;
     return image.save(args[3]);

@@ -149,6 +149,16 @@ const deadline=Date.now()+120000;let count=0;
 do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):0;const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
 if(count<1000){capture('load-failure');throw Error('Real cluster cache did not fill');}steps.push({step:'Real TLS source import and cached resources',resources:count});run('shell','settings','put','system','user_rotation','0');state();capture('loaded-portrait');
 run('shell','settings','put','system','accelerometer_rotation','0');run('shell','settings','put','system','user_rotation','1');state();capture('loaded-landscape');
+terminalJourney();
+search('');steps.push({step:'Landscape search remains above the real soft keyboard and restores navigation after dismissal'});
+const miniRadar=target('resourceRadar').bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
+click('workspaceActionsButton');click('resourceMapView');
+waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]>miniRadar[2]-miniRadar[0]+50;});
+for(let i=0;i<4;i++)click('radarZoomOut');capture('map-cluster-overview');
+for(let i=0;i<7;i++)click('radarZoom');capture('map-namespace-details');
+click('resetRadar');click('radarWorkspaceButton');
+waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]<=miniRadar[2]-miniRadar[0]+1;});
+steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');state();capture('radar-and-filters');
 click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');const filtered=nodes.map(n=>n['content-desc']||'').join('\n').match(/(\d+) matching resources/);if(!filtered||Number(filtered[1])<=0||Number(filtered[1])>=count)throw Error('Problems filter did not reduce cached matches');click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');steps.push({step:'Problems filter enables, reduces cached matches and disables',matches:Number(filtered[1])});
 click('toggleLandscapeFilters');
@@ -159,10 +169,26 @@ function waitNode(id,predicate,timeout=30000){
  do{state();const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));if(n&&predicate(n))return n;}while(Date.now()<until);
  capture('waiting-'+id);throw Error('Public state did not arrive: '+id);
 }
+function inputAboveKeyboard(ids,name){
+ const deadline=Date.now()+10000;
+ let windows='';
+ do{
+  state();windows=run('shell','dumpsys','window');
+  const ime=windows.match(/(?:mType|type)=ime\b[^\n]*?(?:mFrame|frame)=\[(\d+),(\d+)\]\[(\d+),(\d+)\][^\n]*?(?:mVisible|visible)=true/);
+  const status=windows.match(/(?:mType|type)=statusBars\b[^\n]*?(?:mFrame|frame)=\[(\d+),(\d+)\]\[(\d+),(\d+)\][^\n]*?(?:mVisible|visible)=true/);
+  const top=status?Number(status[4]):0;
+  if(ime&&ids.every(id=>{
+   const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
+   const b=n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
+   return b&&b[0]>=0&&b[2]>b[0]&&b[1]>=top&&b[3]<=Number(ime[2])&&b[3]-b[1]>=(id==='terminalSurface'?28:16);
+  })){capture(name);return;}
+ }while(Date.now()<deadline);
+ fs.writeFileSync(path.join(out,name+'-windows.txt'),windows);capture(name+'-failure');
+ throw Error('Input or connection status is obscured by keyboard/system bars: '+ids.join(', '));
+}
 function search(value){
  state();if(!nodes.some(n=>n['resource-id']?.endsWith('.resourceFilter')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]'))click('workspaceSearchButton');
- capture('search-open');
- click('resourceFilter');run('shell','input','keyevent','123',...Array(64).fill('67'));
+ click('resourceFilter');inputAboveKeyboard(['resourceFilter'],'search-open');run('shell','input','keyevent','123',...Array(64).fill('67'));
  if(value)run('shell','input','text',value);
  run('shell','input','keyevent','4');state();click('workspaceSearchButton');
 }
@@ -195,16 +221,23 @@ if(!bothStreams){capture('missing-container-output');throw Error('Default All lo
 capture('multi-container-all-logs');
 if(/a container name must be specified|400 BadRequest/.test(nodes.map(n=>n.text+' '+n['content-desc']).join('\n')))throw Error('Multi-container logs were requested without container selection');
 steps.push({step:'Actual multi-container Pod logs load with the default All selector'});
+function terminalJourney(){
+search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));click('cell_0_0');
 click('terminalButton');click('terminalConnect');
-waitNode('terminalStatus',n=>/\bconnected\b/i.test(n.text+' '+n['content-desc']));capture('container-terminal-connected');
-waitNode('terminalSurface',n=>n.focused==='true');run('shell','input','text','echo%sPODLORD_ANDROID_E2E_OK');run('shell','input','keyevent','66');state();run('shell','input','keyevent','4');state();
+waitNode('terminalStatus',n=>/\bconnected\b/i.test(n.text+' '+n['content-desc']));
+waitNode('terminalSurface',n=>n.focused==='true');inputAboveKeyboard(['terminalStatus','terminalSurface'],'container-terminal-connected');
+run('shell','input','text','echo%sPODLORD_ANDROID_E2E_OK');run('shell','input','keyevent','66');state();inputAboveKeyboard(['terminalStatus','terminalSurface'],'container-terminal-typing');run('shell','input','keyevent','4');state();
+waitNode('terminalDisconnect',n=>n.enabled==='true'&&!/\[0,0\]\[0,0\]/.test(n.bounds));
+waitNode('terminalStatus',n=>/\bconnected\b/i.test(n.text+' '+n['content-desc']));
 const terminalDeadline=Date.now()+20000;let output=false;
-do{state();output=describe('terminalSurface').split(/\r?\n|\u2029/).some(line=>line.trim()==='PODLORD_ANDROID_E2E_OK');if(output)break;}while(Date.now()<terminalDeadline);
+do{state();output=/(?:^|, |\r?\n|\u2029)PODLORD_ANDROID_E2E_OK(?:\r?\n|\u2029|$)/.test(describe('terminalSurface'));if(output)break;}while(Date.now()<terminalDeadline);
 capture('container-terminal-echo');
 if(!output)throw Error('The real container shell output marker was not exposed by the terminal');
-run('shell','input','text','exit');run('shell','input','keyevent','66');state();
+click('terminalSurface');run('shell','input','text','exit');run('shell','input','keyevent','66');state();
 waitNode('terminalStatus',n=>/\b(closed|exited|disconnected)\b/i.test(n.text+' '+n['content-desc']));
 steps.push({step:'Native Kubernetes PTY connects, executes echo, returns output and exits without kubectl'});
+click('collapseTerminal');click('closeInspector');
+}
 
 fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));
 JOURNEY

@@ -1343,6 +1343,11 @@ bool Workspace::rememberRadarView(const QVariantMap& view) {
     if (active_.isEmpty() || !RadarIsland::validPose(view)) return false;
     navigation_[active_].radarView = view; return true;
 }
+bool Workspace::setResourceMap(bool enabled) {
+    if (navigation_.value(active_).resourceMap == enabled) return true;
+    navigation_[active_].resourceMap = enabled;
+    emit changed(); return true;
+}
 bool Workspace::inspectPath(const QString& path) {
     if (path.isEmpty()) return false;
     for (int index = 0; index < rows_.rowCount(); ++index)
