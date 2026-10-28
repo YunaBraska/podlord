@@ -1272,23 +1272,27 @@ UI-TBL-02: Status text follows reference semantics with the selected theme's hea
 ## How Are Cluster Islands And Resource Map Views Deterministic?
 
 - RAD-DET-01: Given the same immutable resource projection and session identity, native world coordinates and terrain colors MUST be deterministic. Topology inputs remain cluster, namespace scope, kind, name, owner and Kubernetes UID. As confirmed on 2026-10-28, separated cluster islands and rounded namespace districts replace exact C# world-coordinate equality. All discovered resource kinds participate in the same geometry.
-- RAD-DET-02: Cluster islands MUST have nonoverlapping bounds and visible water separation. Each cluster is one connected landmass, with recognizable, nonoverlapping namespace districts or peninsulas inside it. Cluster-scoped resources, including Nodes and PersistentVolumes, MUST occupy a separate cluster-resource district, not a synthetic Namespace. Placement retains the seven-unit lattice, kind terrain palette and stable identity seed. Unlisted kinds retain their existing grass-color fallback.
+- RAD-DET-02: Cluster islands MUST have nonoverlapping bounds and visible water separation, with recognizable, nonoverlapping namespace districts grouped within each cluster. As clarified on 2026-10-28, artificial connector strokes MUST NOT join districts or imply Kubernetes relationships. Cluster-scoped resources, including Nodes and PersistentVolumes, MUST occupy a separate cluster-resource district, not a synthetic Namespace. Placement retains the seven-unit lattice, kind terrain palette and stable identity seed. Unlisted kinds retain their existing grass-color fallback.
 - RAD-DET-03: Actual Namespace resources MUST remain selectable at their district anchor. Decorative cluster/district labels MUST NOT become synthetic Kubernetes resources or change resource counts.
 - RAD-DET-04: Input enumeration, table sorting, presentation filters and camera changes MUST NOT change world coordinates. Filtering retains noninteractive grey excluded terrain. Geometry, projection and painting read public cache models and MUST NOT initiate transport.
 - RAD-DET-05: Exact native geometry comparisons MUST use the same recorded cache projection, session identity and camera settings. C#/C++ comparisons retain behavior, colors and controls while recording the newly approved geometry difference. Comparing changing API snapshots or aggregate counts is insufficient. Isolated renderer captures MUST identify their boundary and MUST NOT be presented as full installed-window, water, animation, every-theme or release-parity evidence.
-- RAD-VIEW-01: Table and Map MUST be switchable views inside the same session, not additional session tabs. They MUST share the existing cache, filters, selection, inspector, camera and alarm behavior. Switching MUST NOT fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The view selection is session-local and in memory; Table is the default.
+- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Ports remain available. The small context Radar MUST be hidden only in Map and remain available on the other workspace tabs. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. Map MUST provide backward and forward navigation. This follow-up replaces the earlier menu-only, Table-default target; its new navigation is not implemented yet.
 - RAD-VIEW-02: Cluster names MUST be visible at overview scale; namespace labels appear when zooming in; existing resource glyphs and interactive details remain available at closer scales. Label work MUST be viewport-bounded, theme-aware and decluttered. Existing wheel/trackpad zoom, drag, focused arrow keys, selection and alert focus remain unchanged. This increment adds no per-cluster status/age panel. Guidance for selection hidden by filters is lower priority, not part of this increment.
 
 ## What Does The Approved Context Overview Read?
 
 The following scope is confirmed, not yet an implemented context-card view.
 
-- RAD-CTX-01: Context maps MUST reuse existing 24-hour RAM collection snapshots. They MUST NOT add resource persistence or change cache TTL. After restart, no resource snapshot is restored from disk; ordinary session loading may subsequently populate RAM.
-- RAD-CTX-02: Opening, scrolling or rendering the overview MUST NOT open sessions, schedule context synchronization or trigger authentication. Uncached contexts remain empty. Additional per-cluster age/connection panels are outside this increment.
+- RAD-CTX-01: The overview MUST retain a latest visual map preview across application restarts, based on the last visit or successful update. This supersedes the earlier RAM-only overview decision. It MUST NOT persist Kubernetes resource objects, YAML or Secret contents for this purpose. The existing runtime resource cache remains separate; this decision does not change its TTL or lifecycle.
+- RAD-CTX-02: Opening, scrolling or rendering the overview MUST NOT open sessions, schedule synchronization or trigger authentication. Only visible previews need to be loaded. Entries without a saved preview MUST show a question mark, not invented resource data. An explicit context selection uses the existing context-opening flow. Saved previews are not live health or alarm evidence. Additional per-cluster age/connection panels remain outside this increment.
+- RAD-CTX-03: When the corresponding catalog entry is removed, its saved preview MUST also be removed. Startup/catalog reload MAY reconcile orphaned previews after the authoritative catalog has loaded successfully; a transient read, import or authentication failure MUST NOT be treated as deletion.
 
-The selection rule when several session caches belong to one context remains a
-blocking product decision. In particular, different namespace scopes MUST NOT be
-silently merged or treated as complete cluster snapshots.
+Preview ownership remains a blocking clarification: one tile per context across
+all imported files versus one tile per kubeconfig file followed by context
+selection. Whether namespace names may be retained in preview pixels is also
+pending. No dependent preview persistence or navigation is implemented before
+these answers. Different namespace scopes MUST NOT be silently merged or treated
+as complete cluster snapshots.
 
 ## How Does The Native Alert Editor Match The Reference Layout?
 

@@ -362,18 +362,22 @@ for whole-view or real-device evidence.
 ## Which RTS Experience Improvements Are Proposed After The Parity Audit?
 
 The 2026-10-28 Radar increment now implements the approved separated cluster
-islands, connected namespace districts, cluster-scoped resource area, semantic
+islands, namespace districts without artificial connector strokes, cluster-scoped resource area, semantic
 zoom labels and session-local Table/Map view. Both views reuse the same renderer,
 cache, filters, selection, inspector and camera. See
 [ADR 0032](adr/0032-native-deterministic-radar-island.md) and the current
 [test-map evidence](spec/k3d-test-map.md#what-do-the-2026-10-28-hierarchical-map-and-keyboard-checks-prove).
 This intentionally replaces exact C# world-coordinate parity, not its interaction
-or color semantics. The user confirmed the existing 24-hour RAM cache for the
-context overview, with no resource persistence across restarts. Context-map
-implementation still awaits the selection rule when multiple session caches
-belong to one context. No context synchronization, authentication, new storage or
-per-cluster status panels have been introduced for that pending overview. The
-session Map footer now counts all filter matches independently of the table limit.
+or color semantics. The user follow-up supersedes the earlier RAM-only overview:
+retain a latest visual preview across restarts, without persisting resource
+objects or changing the runtime cache TTL. Map must become the first/default
+primary workspace tab with backward/forward navigation, while Resources, Events
+and Ports retain the small context Radar. Context selection reuses the existing
+opening flow. This new navigation and preview persistence are not implemented;
+tile ownership (context versus kubeconfig file) and retained namespace labels
+await clarification. No overview synchronization, authentication, new storage or
+per-cluster status panels have been introduced. The session Map footer counts all
+filter matches independently of the table limit.
 
 These are review recommendations, not newly accepted release requirements.
 Missing shipped capabilities remain owned by the capability inventory; optional

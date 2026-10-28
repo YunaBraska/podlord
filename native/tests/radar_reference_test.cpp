@@ -69,12 +69,12 @@ bool hierarchy(const QString& check = {}) {
         geometry.setWidth(2000); geometry.setHeight(2000);
         QImage image(2000,2000,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
         QPainter painter(&image); geometry.paint(&painter); painter.end();
-        for (const auto& cluster:clusters) {
+        QMap<QPair<QString,QString>,QPoint> districts;
+        for (auto point=before.cbegin();point!=before.cend();++point)
+            districts.insert(grouping.value(point.key()),point.value().toPoint()+QPoint(1000,1000));
+        for (auto district=districts.cbegin();district!=districts.cend();++district) {
             QBitArray visited(image.width()*image.height());
-            QList<QPoint> pending;
-            for (auto point=before.cbegin();point!=before.cend();++point) if (grouping.value(point.key()).first==cluster) {
-                pending.append(point.value().toPoint()+QPoint(1000,1000)); break;
-            }
+            QList<QPoint> pending{district.value()};
             while (!pending.isEmpty()) {
                 const auto point=pending.takeLast();
                 if (!image.rect().contains(point)) continue;
@@ -85,7 +85,10 @@ bool hierarchy(const QString& check = {}) {
             }
             for (auto point=before.cbegin();point!=before.cend();++point) {
                 const auto pixel=point.value().toPoint()+QPoint(1000,1000);
-                if (!image.rect().contains(pixel) || visited[pixel.y()*image.width()+pixel.x()]!=(grouping.value(point.key()).first==cluster)) return false;
+                if (!image.rect().contains(pixel) || visited[pixel.y()*image.width()+pixel.x()]!=(grouping.value(point.key())==district.key())) {
+                    std::fprintf(stderr,"Radar district shoreline mismatch: %s/%s near %s\n",qPrintable(district.key().first),qPrintable(district.key().second),qPrintable(point.key()));
+                    return false;
+                }
             }
         }
         return true;

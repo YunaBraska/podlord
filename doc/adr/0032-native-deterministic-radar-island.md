@@ -9,8 +9,10 @@ The existing filtered proxy supplies resource membership and inspector indices.
 On 2026-10-28 the user approved clearly separated cluster islands with namespace
 districts inside each island, replacing the earlier exact-reference topology.
 RadarIsland packs nonoverlapping cluster bounds and rounded namespace districts.
-Cached district shorelines and connecting land form one landmass per cluster,
-with water between clusters. Painting does not rebuild the shoreline or move tiles.
+Cached district shorelines group namespaces within each cluster, with water
+between clusters. The user rejected the artificial connecting land on 2026-10-28:
+these strokes do not represent Kubernetes relationships and are removed.
+Painting does not rebuild the shoreline or move tiles.
 The existing 90-percent new-logic coverage requirement is enforced over the entire
 modified synchronization/layout/painting/color/view-selection function family,
 including local functions. This is broader than counting added lines and avoids
@@ -37,28 +39,31 @@ schema or persisted resource cache is introduced.
 
 ## How do Table and Map share the existing workspace?
 
-Table and Map are views of the same session, not separate session tabs or a new
-resource store. Their selection lives in the existing in-memory session navigation.
-The existing Radar component moves between its sidebar slot and the main workspace.
-There is one renderer, filtered source, camera, selection, tooltip and alarm owner.
-Switching views, resizing or changing sessions does not start a request, authenticate
-or reset filters, drafts or camera position. Table remains the default.
-
-The existing workspace menu offers Table and Map. The expanded Radar header also
-returns to Table; the small Radar's existing focus action is unchanged. Cluster
+The existing menu-only Table/Map implementation is interim. The user follow-up
+requires Map as the first and default primary workspace tab, with backward and
+forward navigation. Resources, Events and Ports remain available and restore the
+small Radar for the active context; only Map hides it. Opening a context from the
+overview reuses the ordinary context-opening flow, with no parallel loader or
+authentication path. The context map shares the existing renderer, filtered
+source, camera, selection, tooltip and alarm owner. Tab switching itself does not
+start a request, authenticate or reset filters, drafts or camera position.
+The new navigation is approved but not yet implemented. Cluster
 names appear at overview scale, namespace district
 labels appear when zooming in, and resource glyphs/details retain their existing
 zoom and interaction rules. Labels use the current theme, viewport buckets, cached
 text bounds and collision decluttering instead of a delegate per cached label.
 
-A context overview is separate from the single-session Map. On 2026-10-28 the
-user confirmed reuse of the existing 24-hour in-memory collection cache, without
-persisting resource snapshots across restarts. Opening the overview must not open
-sessions, synchronize contexts or authenticate. No additional per-cluster age or
-connection-status panels are introduced. When multiple session caches belong to
-one context, choosing the newest cache versus merging them remains an explicit
-product decision. No dependent context-map implementation is made before that
-decision.
+A context overview is separate from an opened context map. The user follow-up on
+2026-10-28 supersedes the earlier RAM-only overview: retain the latest visual
+preview across restarts, not a persistent Kubernetes resource store. The ordinary
+runtime cache and its TTL have a different purpose and remain unchanged here.
+Opening the overview must not open sessions, synchronize contexts or authenticate.
+Only visible previews need loading; entries without a preview show a question
+mark. Previews are removed with their catalog entry, with startup reconciliation
+only after a successful authoritative catalog load. No additional per-cluster age
+or connection-status panels are introduced. Tile ownership (context versus file)
+and retained namespace labels await clarification before dependent persistence
+or navigation is implemented.
 
 ## Why use a sparse native surface with visible resource delegates?
 

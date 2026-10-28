@@ -6157,12 +6157,14 @@ Evidence below is under `/Users/yuna/.local/share/podlord-comparison/release-evi
 | Hosted candidate | GitHub Actions run `40668697747`, product revision `ad07dc8973d6d204dfe3a4f75d0b2bd1a3e7fb48`; `2026-10-28-intel-ad07-failure` | Six of seven jobs pass, including real K3d and the first iOS toolchain cache fill. Intel passes 4,993/4,995 regular cases but fails `native.ui.table_refresh` and `native.alert_ui.reference_zoom_preview_many_Basic`. Both pass the separate serial reproduction. Intel coverage is 97.84% lines/85.37% branches. The approved CPU watchdog permits the 15,000-resource test to finish in 33.73 seconds without changing its 8 ms CPU assertion. A hosted iOS cache hit and a green replacement candidate are not yet established. |
 | Cleanup | `2026-10-28-intermediate-package-cleanup.json`; current Android/iOS `cleanup.json`; `final-map-fixture.log` in the local cache | Test apps and private mobile devices close. The owned Kubernetes fixture is stopped after the visual journeys. Twenty-seven unreferenced intermediate APK/archive/signature files from this task are removed, reclaiming 1,226,953,333 bytes. Diagnostic screenshots, XML, logs, hashes, current packages, pre-existing baselines and signing material remain intact. |
 
-The user confirmed the existing 24-hour RAM cache for the context overview, with
-initially empty resource data after restart and no new persistence. Context cards
-are not implemented yet. Selection versus merging remains open when several
-session caches belong to the same context, particularly with different namespace
-scopes. No background context opening, authentication, TTL or per-cluster
-age/status panel has been introduced for the proposed overview.
+The user follow-up supersedes the earlier RAM-only context overview: retain a
+latest visual map preview across restarts, without persisting resource objects.
+Map becomes the first/default primary workspace tab, with back/forward navigation;
+Resources, Events and Ports retain the small context Radar. This navigation and
+preview persistence are approved but not implemented. Tile ownership (context
+versus kubeconfig file) and retained namespace names await clarification. No
+background context opening, authentication, TTL change or per-cluster age/status
+panel has been introduced for the proposed overview.
 
 The separately confirmed Map footer is implemented. In
 `2026-10-28-context-map-footer`, all sixteen affected shell/footer style executions
@@ -6203,6 +6205,23 @@ also fails the visibility/activation protocol. Native desktop control returns
 `AXError.cannotComplete` for the exact bundle path. The brief construction sample
 is not an installed-startup or frame gate result. The owned app and loopback API
 process are closed by the runner. No valid final foreground measurement is added.
+
+The connector-removal follow-up in `2026-10-28-radar-no-connectors` uses the public
+resource-table ingress and native painting surface. Its three-cluster/twelve-
+district shoreline regression fails before the fix because artificial strokes
+join unrelated districts. After removing only the stroke construction, all 74
+targeted Radar/Map executions pass on both macOS and nonroot Linux. Resource
+coordinate, filter/sort, selection, camera, color and Table/Map-return checks
+remain. `radar-component.png` is an offscreen capture of the existing Radar
+component with its recorded cache fixture and water animation disabled, not a
+full application, live-cluster or C#/C++ screenshot comparison. The circular
+district layout itself is unchanged by this connector-only fix.
+
+The preceding input-driver candidate `b91ac54` completes GitHub Actions run
+`40689304937` with all seven jobs green, including real K3d, Intel and iOS ARM64.
+The iOS job restores the exact primary toolchain cache successfully, as retained
+in `2026-10-28-menu-input-final/hosted-ios-cache.log`.
+This hosted result predates the connector-removal change and is not its CI proof.
 
 Release remains not approved. Current Map/keyboard journeys do not close the
 complete paired view/theme matrix, final hosted checks or uncontended foreground

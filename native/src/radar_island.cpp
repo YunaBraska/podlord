@@ -2,7 +2,6 @@
 #include "workspace.h"
 #include <QFontMetricsF>
 #include <QPainter>
-#include <QPainterPathStroker>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -231,8 +230,6 @@ void RadarIsland::layout(const QList<Row>& rows) {
     const auto resource=[&](const Row& row,const QPoint& point) {
         positions_.insert(row.path,world(point)); resourceBuckets_[bucket(point)].append(row.path);
     };
-    QPainterPathStroker shoreline;
-    shoreline.setWidth(step*4); shoreline.setCapStyle(Qt::RoundCap); shoreline.setJoinStyle(Qt::RoundJoin);
     for (const auto& cluster:clusters) {
         const QPoint origin=offset+QPoint(cluster.x,cluster.y);
         const auto clusterPoint=origin+QPoint(cluster.width/2,2);
@@ -240,14 +237,11 @@ void RadarIsland::layout(const QList<Row>& rows) {
         markers_.append({world(clusterPoint),cluster.labelBounds,"Cluster",cluster.name,cluster.label,true,
             QRectF(world(origin),QSizeF(cluster.width*step,cluster.height*step)),{}});
         QPainterPath land; land.setFillRule(Qt::WindingFill);
-        auto previous=world(clusterPoint);
         for (const auto& district:cluster.districts) {
             const auto anchor=origin+QPoint(district.x+district.width/2,district.y+1);
             const auto center=world(origin+QPoint(district.x+district.width/2,district.y+district.radius+4));
             land.addEllipse(center,(district.radius+2)*step,(district.radius+2)*step);
             land.addEllipse(world(anchor),step*2,step*2);
-            QPainterPath bridge; bridge.moveTo(previous); bridge.lineTo(world(anchor)); bridge.lineTo(center);
-            land.addPath(shoreline.createStroke(bridge)); previous=center;
             markers_.append({world(anchor),district.labelBounds,district.key.isEmpty() ? "Cluster" : "Namespace",district.group,district.label,false,
                 QRectF(world(origin+QPoint(district.x,district.y)),QSizeF(district.width*step,district.height*step)),{}});
             auto cells=district.cells;
