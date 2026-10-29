@@ -59,6 +59,7 @@ public static class PodlordLocalizer
         ["about.projectHeading"] = "Project",
         ["about.starRepo"] = "★ Star the repo",
         ["about.githubRepo"] = "GitHub repository",
+        ["about.privacyPolicy"] = "Privacy policy",
         ["about.createIssue"] = "Create issue",
         ["about.tagline"] = "A desktop console for the kubernetes-aware human.",
         ["about.version"] = "Version {0}",
