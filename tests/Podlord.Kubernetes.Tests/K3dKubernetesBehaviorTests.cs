@@ -27,7 +27,7 @@ public sealed class K3dKubernetesBehaviorTests
     public async Task Explorer_loads_real_cluster_resource_map()
     {
         var rows = await WaitForRowsWithCondition(
-            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery()),
+            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(ForceRefresh: true)),
             rows => rows.Any(row => row.Kind == "Service" && row.Name == "podlord-healthy")
                     && rows.Any(row => row.Kind == "EndpointSlice" && row.Namespace == "payments")
                     && rows.Any(row => row.Kind == "Secret" && row.Name == "podlord-secret"),
@@ -505,11 +505,13 @@ spec:
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
         Exception? last = null;
+        ResourceExplorerSnapshot? lastSnapshot = null;
         while (DateTimeOffset.UtcNow < deadline)
         {
             try
             {
                 var snapshot = await query().ConfigureAwait(false);
+                lastSnapshot = snapshot;
                 var rows = snapshot.Rows;
                 if (predicate(rows))
                 {
@@ -524,12 +526,15 @@ spec:
             await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
 
+        var failures = lastSnapshot is null || lastSnapshot.Failures.Count == 0
+            ? string.Empty
+            : $" Kubernetes API failures: {string.Join("; ", lastSnapshot.Failures.Select(failure => $"{failure.Kind}: {failure.Message}"))}";
         if (last is null)
         {
-            throw new TimeoutException("Timed out waiting for rows matching condition.");
+            throw new TimeoutException($"Timed out waiting for rows matching condition.{failures}");
         }
 
-        throw new TimeoutException("Timed out waiting for rows matching condition.", last);
+        throw new TimeoutException($"Timed out waiting for rows matching condition.{failures}", last);
     }
 
     private static int FreeTcpPort()
