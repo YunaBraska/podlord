@@ -12,10 +12,14 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QSignalSpy>
+#include <QAbstractItemModelTester>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <limits>
+#include <memory>
 
 namespace {
 bool setupFailure(const char* message) {
@@ -36,6 +40,84 @@ QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
         result.insert(index.data(names["resourcePath"]).toString(),{index.data(names["worldX"]).toDouble(),index.data(names["worldY"]).toDouble()});
     }
     return result;
+}
+bool camera(const QString& scenario) {
+    podlord::ResourceTable table;
+    if (!table.publish(QJsonArray{QJsonObject{{"path","/api/v1/namespaces/default/pods/camera"},
+        {"name","camera"},{"namespace","default"},{"kind","Pod"},{"uid","camera-uid"},{"status","Running"}}},"local")) return false;
+    podlord::RadarIsland radar;
+    radar.setWidth(240); radar.setHeight(200); radar.setSource(&table);
+    if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==1; },3000)) return false;
+    radar.setViewPose({{"x",12},{"y",-17},{"zoom",.75}});
+    const auto original=radar.viewPose();
+    const auto terrain=coordinates(radar.tiles());
+    const auto capture=[&] {
+        QImage image(240,200,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QPainter painter(&image); radar.paint(&painter);
+        return image;
+    };
+    const auto before=capture();
+    QSignalSpy changed(&radar,&podlord::RadarIsland::viewPoseChanged);
+    const double nan=std::numeric_limits<double>::quiet_NaN();
+    const QMap<QString,QPair<QString,QVariant>> invalidFields{
+        {"pose_x_text",{"x",QStringLiteral("invalid")}}, {"pose_y_text",{"y",QStringLiteral("invalid")}},
+        {"pose_zoom_text",{"zoom",QStringLiteral("invalid")}}, {"pose_x_nan",{"x",nan}},
+        {"pose_y_nan",{"y",nan}}, {"pose_zoom_nan",{"zoom",nan}},
+        {"pose_x_extent",{"x",1e12}}, {"pose_y_extent",{"y",-1e12}},
+        {"pose_zoom_low",{"zoom",.54}}, {"pose_zoom_high",{"zoom",3.41}}};
+    if (invalidFields.contains(scenario)) {
+        auto pose=original; const auto field=invalidFields.value(scenario); pose[field.first]=field.second;
+        radar.setViewPose(pose); radar.setViewPose(pose);
+    } else if (scenario=="pose_missing" || scenario=="pose_extra") {
+        auto pose=original;
+        if (scenario=="pose_missing") pose.remove("zoom"); else pose.insert("unknown",1);
+        radar.setViewPose(pose); radar.setViewPose(pose);
+    } else {
+        const auto attempt=[&] {
+            if (scenario=="pan_x_nan") return radar.pan(nan,1);
+            if (scenario=="pan_y_nan") return radar.pan(1,nan);
+            if (scenario=="zoom_factor_nan") return radar.zoomAt(nan,120,100);
+            if (scenario=="zoom_factor_zero") return radar.zoomAt(0,120,100);
+            if (scenario=="zoom_anchor_x_nan") return radar.zoomAt(1.18,nan,100);
+            if (scenario=="zoom_anchor_y_nan") return radar.zoomAt(1.18,120,nan);
+            return true;
+        };
+        if (attempt() || attempt()) return false;
+    }
+    if (radar.viewPose()!=original || !changed.isEmpty() || coordinates(radar.tiles())!=terrain || capture()!=before) {
+        std::fprintf(stderr,"Invalid camera input changed the visible map: %s\n",qPrintable(scenario));
+        return false;
+    }
+    // Invalid input must not poison later legitimate navigation or move island coordinates.
+    return radar.pan(14,7) && changed.size()==1 && radar.viewPose()!=original
+        && coordinates(radar.tiles())==terrain && capture()!=before;
+}
+bool sourceLifecycle(const QString& scenario) {
+    const auto rows=[](const QString& name) {
+        return QJsonArray{QJsonObject{{"path","/api/v1/namespaces/default/pods/"+name},
+            {"name",name},{"namespace","default"},{"kind","Pod"},{"uid",name+"-uid"},{"status","Running"}}};
+    };
+    podlord::ResourceTable first,second;
+    if (!first.publish(rows("first"),"local") || !second.publish(rows("second"),"local")) return false;
+    auto source=std::make_unique<podlord::ResourceFilter>(); source->setSourceModel(&first);
+    podlord::RadarIsland radar; radar.setWidth(2000); radar.setHeight(2000); radar.setSource(source.get());
+    if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==1; },3000)) return false;
+    if (scenario=="source_destroy") {
+        source.reset();
+        if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==0 && radar.currentIndex()==-1; },3000)) return false;
+    } else {
+        source->setSourceModel(&second);
+        if (!QTest::qWaitFor([&] { return coordinates(radar.tiles()).contains("/api/v1/namespaces/default/pods/second"); },3000)) return false;
+    }
+    QSignalSpy detachedUpdates(&radar,&podlord::RadarIsland::currentResourceChanged);
+    if (!first.publish(rows("detached"),"local")) return false;
+    QTest::qWait(30);
+    if (!detachedUpdates.isEmpty()) return false;
+    if (scenario=="source_destroy") return radar.tiles()->rowCount()==0;
+    if (!second.publish(rows("updated"),"local")) return false;
+    return QTest::qWaitFor([&] { const auto visible=coordinates(radar.tiles());
+        return visible.size()==1 && visible.contains("/api/v1/namespaces/default/pods/updated"); },3000)
+        && radar.selectResource(0) && radar.currentIndex()==0;
 }
 bool hierarchy(const QString& check = {}) {
     QJsonArray rows;
@@ -63,6 +145,7 @@ bool hierarchy(const QString& check = {}) {
     podlord::ResourceTable table; podlord::ResourceFilter filter; filter.setSourceModel(&table);
     if (!table.publish(rows,{})) return false;
     podlord::RadarIsland geometry; geometry.setWidth(20000); geometry.setHeight(20000); geometry.setProperty("identityScope","hierarchy"); geometry.setSource(&filter);
+    QAbstractItemModelTester projections(geometry.tiles(),QAbstractItemModelTester::FailureReportingMode::Fatal);
     if (!QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==rows.size(); },3000)) return false;
     const auto before=coordinates(geometry.tiles());
     if (check == "preview") {
@@ -131,6 +214,8 @@ bool hierarchy(const QString& check = {}) {
     return true;
 }
 bool exercise(const QStringList& args) {
+    if (args.size()==2 && (args[1]=="source_rebind" || args[1]=="source_destroy")) return sourceLifecycle(args[1]);
+    if (args.size()==2 && args[1].startsWith("camera_")) return camera(args[1].mid(7));
     if (args.size()==2 && args[1]=="hierarchy") return hierarchy();
     if (args.size()==2 && args[1]=="hierarchy_font") return hierarchy("font");
     if (args.size()==2 && args[1]=="hierarchy_labels") return hierarchy("labels");

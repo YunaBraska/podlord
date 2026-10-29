@@ -91,12 +91,34 @@ responsive card layout, not a separate mobile implementation.
 
 ## Why use a sparse native surface with visible resource delegates?
 
-One painted surface draws cluster/namespace context markers. Coarse
-spatial buckets select visible resources; a small list model publishes only those
-identities to the existing QML glyph, tooltip, accessibility and alarm delegates.
+One painted surface draws cluster/namespace context markers, resource bodies,
+selection borders and alarm effects. Coarse spatial buckets select visible
+resources. A small list model owns their paint snapshots and publishes the same
+identities and pulse scale to QML input, tooltip and accessibility items.
 Viewport changes do not enumerate the complete resource cache or regenerate its
 geometry. Hidden Radar releases delegates and defers geometry work.
+Source-cache changes and context identity invalidate the existing geometry.
+Filter and sort changes only refresh its projection, without rebuilding the
+full-cache row signature. No second geometry model or persistent revision is added.
 Painting is read-only. Alarm evaluation and expiry retain ADR 0025's single owner.
+
+The resource/alert drawing consolidation was confirmed on 2026-10-29. It reuses
+`KindGlyph::draw` rather than maintaining a second glyph catalog. QML still owns
+the existing focus chain, pointer/touch handlers, keyboard actions and lazy
+tooltips. It no longer creates rectangles, glyph render targets or animation
+objects per resource. Resource metadata and alert-description bindings are
+evaluated only for focused, hovered or shared-tooltip targets, not copied into
+every input item. One GUI-owned animation clock runs only for exposed, visible
+moving effects. It stops for hidden/offscreen content and reduced
+motion. Blink, pulse, outline and sweep retain their existing colors and periods.
+Color-only and outline effects do not run that clock.
+
+Style snapshots are prepared on the GUI thread from existing cache/model and
+alert snapshots. The render-thread painter reads them without I/O, signals,
+timers or QObject creation, following the
+[Qt painted-item threading contract](https://doc.qt.io/qt-6/qquickpainteditem.html#paint).
+The separate water surface and its clock are unchanged. Persisted previews
+remain static terrain-only images, independent of live effects and camera pose.
 
 A dense TableView would instantiate delegates for empty water cells, especially
 at the retained 55% zoom. A whole-cache Repeater would keep offscreen UI work

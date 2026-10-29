@@ -938,14 +938,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 return 0;
             };
             const auto red=QColor("#FF5C5C");
-            if (!waitFor([&] { return problemCount()==1 && item(window,"radarTile_0")->property("alertColor").value<QColor>()==red; }) || !focus.isEmpty()) return false;
+            if (!waitFor([&] { return problemCount()==1 && podlord::test::centerPixel(window,item(window,"radarTile_0"))==red; }) || !focus.isEmpty()) return false;
             server.holdPodResponses=true;
             server.phase="Running";
             if (!click(window,"refreshButton") || !waitFor([&] { return workspace.loading() && !server.heldPodResponses.isEmpty(); })) return false;
-            const bool preserved=problemCount()==1 && item(window,"radarTile_0")->property("alertColor").value<QColor>()==red && focus.isEmpty();
+            const bool preserved=problemCount()==1 && podlord::test::centerPixel(window,item(window,"radarTile_0"))==red && focus.isEmpty();
             if (!server.releasePodResponses()) return false;
             if (!preserved) { std::fputs("Background sync removed an alarm from the still-visible cached resource.\n",stderr); return false; }
-            return waitFor([&] { return !workspace.loading() && problemCount()==0 && item(window,"radarTile_0")->property("alertColor").value<QColor>()!=red; }) && focus.isEmpty();
+            return waitFor([&] { const auto color=podlord::test::centerPixel(window,item(window,"radarTile_0")); return !workspace.loading() && problemCount()==0 && color.isValid() && color!=red; }) && focus.isEmpty();
         }
         if (scenario.startsWith("radar_focus_")) {
             if (!focus.isEmpty()) return false;
@@ -967,7 +967,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!workspace.refresh() || !waitFor([&] { return server.requests > requests && !workspace.loading(); })) return false;
         }
         const QColor expected(scenario=="radar_health_warning" || scenario=="radar_health_restarts" ? "#FFE866" : scenario=="radar_health_critical" ? "#FF5C5C" : "#7DFFC3");
-        if (!waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && tile->property("alertColor").value<QColor>()==expected; })) return false;
+        if (!waitFor([&] { return podlord::test::centerPixel(window,item(window,"radarTile_0"))==expected; })) return false;
         const auto requests=server.requests;
         const auto capture=qEnvironmentVariable("PODLORD_RADAR_HIGHLIGHT_FRAME");
         if (!capture.isEmpty() && !window->grabWindow().save(capture)) return false;
@@ -1040,7 +1040,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             QTest::keyClick(window,Qt::Key_Home);
             if (!waitFor([&] { return workspace.resourceCount()==1 && item(window,"radarTile_0")!=nullptr; })) return failure("focus real Radar resource");
             const QColor expected(target=="visual-crash-loop" ? "#FF5C5C" : "#FFE866");
-            if (!waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && tile->property("alertColor").value<QColor>()==expected; },60000)) return failure("real Radar severity highlight");
+            if (!waitFor([&] { return podlord::test::centerPixel(window,item(window,"radarTile_0"))==expected; },60000)) return failure("real Radar severity highlight");
             if (!waitFor([&] { return frames.count()>0; },2000)) return failure("natural real Radar frame");
             if (QGuiApplication::platformName()=="cocoa" && (!window->isExposed() || !window->isActive())) return failure("foreground lost during real Radar frame");
             if (!radarFrames.isEmpty() && !window->grabWindow().save(radarFrames+'-'+target+".png")) return failure("real Radar screenshot");

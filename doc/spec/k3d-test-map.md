@@ -6305,3 +6305,44 @@ Evidence uses the same `2026-10-29-context-map` root as the preceding package.
 The earlier rejected renderer experiments remain rejected. Resource/alert drawing
 consolidation in the existing C++ renderer was approved separately and is not
 claimed as implemented or measured by this checkpoint.
+
+## What Does The 2026-10-29 Native Radar Package Prove?
+
+The confirmed renderer consolidation is now implemented. Terrain, resource
+glyphs, selection and alarm effects share the existing C++ painting surface and
+glyph catalog. Input items retain pointer, touch, keyboard and the bounded
+accessible reading target. One visible-effects clock replaces per-resource QML
+animation objects. Proxy-only filter/sort changes reuse geometry. Source changes
+and destruction reconnect or retire the actual model observers.
+
+The confirmed tooltip remains inside the drawing area below the toolbar, leaves
+its triggering point uncovered and scrolls long cached content vertically.
+Opening intent is independent of the reader's focus/hover lifetime. No new
+authentication, cache, navigation, dependency or performance threshold is added.
+
+Evidence root remains `2026-10-29-context-map` above. This checkpoint supersedes
+the earlier renderer subsets, not the independent open release gates.
+
+| Boundary | Current evidence | Result and limitation |
+| --- | --- | --- |
+| Complete native suite and coverage | `native-render-confirmed-complete.log`, `native-render-confirmed-coverage/` | Two preflights plus 5,121 main executions pass, totaling 5,123. Main elapsed time is 762.79 seconds with twelve jobs. Production lines are 97.77%, overall branches 85.68%, and the complete changed Radar/Map family is 739/806 branches (91.69%). All configured coverage gates pass. Counts include style variants, not 5,123 distinct test functions. The interrupted `native-render-lazy-complete.log` is not a complete run. |
+| Native drawing, invalid camera input and model lifetime | `native-render-lazy-targeted.log`, `native-render-confirmed-public-input.log` | The 241-case set and twelve unprofiled public-input/style checks pass. Added camera cases preserve the public pose and pixels after invalid input. Source rebinding/destruction tests prove that detached roots stop influencing the projection. Glyph checks compare actual pixels with the shared catalog. Existing bounded-accessibility checks remain, rather than exposing every point as a separate accessible control. |
+| Linux native UI | `native-render-final-linux.log`, `native-render-lazy-linux-focus.log`, `native-render-lazy-linux-complete.log` | The earlier 240/241 result exposes a Basic full-map tooltip focus loop. After separating opening intent from reader interaction, all eight focused cases and all 241 selected cases pass in the nonroot disposable container. The owned container is removed. |
+| Deterministic raster compatibility | `native-render-baseline/reference.png`, `native-render-after/reference.png` | The fixed reference capture remains byte-identical before/after consolidation, SHA-256 `80e2dd12dc4527eba0d335ab737fa458b5043ecced75e4589dd63325a58ba7f9`. This is a native renderer comparison, not a new C#/C++ screenshot pair. |
+| Real Kubernetes functions | `native-render-confirmed-real-kubernetes.log`, `native-render-confirmed-real-kubernetes/` | Shell, vi, control/interrupt/touch input, window transfer, Pod/Service forwarding, removal/draft handling, deletion races, Inspector history, cached filters, health and metrics pass. The owned fixture is removed. These are actual local Kubernetes journeys, not production-cluster access or live cloud-provider evidence. |
+| Populated theme and Map captures | `native-render-confirmed-real-theme-captures/{Basic,Fusion}/`, `native-render-confirmed-real-map-captures/{Basic,Fusion}/` | Each style passes 684 captures: 19 themes, two variants and eighteen views, totaling 1,368. Each style also passes six real-cache Map captures. One example of each of the eighteen views, three Map examples and Android portrait/Map/keyboard examples were visually inspected. Software rendering and the UI driver do not establish installed Cocoa/Metal or paired C# parity. The driver's blank About version is not installed-product metadata proof; the macOS candidate declares version 0.1.0. |
+| ARM64 iPhone UI and device compilation | `native-render-lazy-ios.log`, `ios-run.PKpf4a/cleanup.json`, `native-render-confirmed-ios-device-reconfigured-build.log`, `native-render-confirmed-ios-device.txt` | All sixty Basic/Fusion simulator executions pass, including glyphs, alarms, reduced motion, filtering, camera and both tooltip hosts. The owned simulator is deleted. Regenerating the stale local Xcode project restores missing Map source linkage. The production device target then builds as `berlin.yuna.podlord`, ARM64/iOS 17 minimum, with 71,007,995 regular-file bytes. No Rosetta, physical-device installation or signed iOS distribution is claimed. |
+| Installed signed Android product | `native-render-confirmed-android-journey-sdk/`, `native-render-confirmed-android-warm/`, `native-render-confirmed-android-cold/` | The complete twelve-step journey passes with 1,846 real cached resources, followed by a fresh journey with twenty warm Inspector cycles and five process-cold cycles. The maximum observed installed regular-file sum is 99,754,860 bytes. Every cleanup record reports exit zero and removes the owned emulator, ADB and private AVD. These passes do not establish a cause or fix for the historical native SIGSEGV. |
+| Private standalone packaging | `native-render-lazy-macos-package/`, `native-render-lazy-android-signature.txt`, `native-render-confirmed-android-zip-roundtrip.txt` | macOS dependency/platform/signature preflight passes at 33,740,161 ZIP bytes and 87,413,916 installed bytes. Signed Android is 98,335,908 APK bytes, 37,482,737 ZIP bytes, with matching extraction SHA-256. Local macOS ad-hoc verification is not public notarization. The Android download remains the approved APK.zip. |
+| Isolated headless runtime | `headless-confirmed-native-render/measurements.jsonl` | Action-to-frame p95 is 46.40 ms for filtering, 45.24 ms for sorting, 40.67 ms for cached tabs and 36.76 ms for cached Inspector opening. Peak RSS is 217,612,288 bytes, warm growth 540,672 bytes, and 60,002 ms nonsync idle uses 0.727% of one core. Existing headless gates pass. These measurements cannot clear Cocoa/Metal frame, foreground memory or installed startup gates. |
+
+The owned local Kubernetes containers, native test processes, disposable iPhone
+simulator and Android emulator/ADB profiles are closed. Existing shared images,
+toolchains, signing keys and unrelated user files remain untouched.
+
+Release remains not approved. Current-source foreground frame/startup/memory
+evidence and the complete paired C#/C++ menu/dialog/theme matrix are open. The
+desktop is unavailable for the rest of this evening. The historical Android
+SIGSEGV still has no established cause. Personal Google registration and its
+live-login proof remain paused, not silently waived. No background Metal test
+mode, scheduler, relaxed gate or new product behavior is introduced here.

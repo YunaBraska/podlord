@@ -30,21 +30,45 @@ Pane {
     PlainToolTip {
         id: radarTip
         objectName: "radarTooltip"
+        parent: grid
+        readonly property rect anchor: target ? Qt.rect(target.x, target.y, target.width, target.height) : Qt.rect(0, 0, 0, 0)
+        readonly property real roomAbove: Math.max(0, anchor.y - 16)
+        readonly property real roomBelow: Math.max(0, grid.height - anchor.y - anchor.height - 16)
+        readonly property bool opensBelow: roomBelow >= roomAbove
+        readonly property bool activeInteraction: tipHover.hovered || tipScroll.activeFocus
+        visible: !!target && target.visible && target.inViewport && (target.wantsTip || activeInteraction)
+        onClosed: if (target && !target.wantsTip) target = null
         width: Math.min(480, Math.max(1, grid.width - 24))
-        contentItem: ColumnLayout {
-            spacing: 10
-            Label {
-                objectName: "plainTipText"
-                Layout.fillWidth: true
-                text: radarTip.target ? radarTip.target.text : ""
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                color: radarTip.palette.toolTipText
-                Accessible.name: text
-            }
-            Repeater {
-                model: radarTip.visible && radarTip.target ? radarTip.target.resourceMetrics : []
-                MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData }
+        height: Math.min(implicitHeight, Math.max(1, opensBelow ? roomBelow : roomAbove))
+        x: Math.max(8, Math.min(Math.max(8, grid.width - width - 8), anchor.x + anchor.width / 2 - width / 2))
+        y: Math.max(8, Math.min(Math.max(8, grid.height - height - 8), opensBelow ? anchor.y + anchor.height + 8 : anchor.y - height - 8))
+        contentItem: ScrollView {
+            id: tipScroll
+            objectName: "radarTooltipScroll"
+            implicitHeight: tipContents.implicitHeight
+            contentWidth: availableWidth
+            contentHeight: tipContents.implicitHeight
+            activeFocusOnTab: true
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            HoverHandler { id: tipHover; margin: 16 }
+            ColumnLayout {
+                id: tipContents
+                width: tipScroll.availableWidth
+                spacing: 10
+                Label {
+                    objectName: "plainTipText"
+                    Layout.fillWidth: true
+                    text: radarTip.target ? radarTip.target.text : ""
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: radarTip.palette.toolTipText
+                    Accessible.name: text
+                }
+                Repeater {
+                    model: radarTip.visible && radarTip.target ? radarTip.target.resourceMetrics : []
+                    MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData }
+                }
             }
         }
     }
@@ -102,11 +126,20 @@ Pane {
             Layout.fillWidth: true
             Layout.fillHeight: true
             source: workspace.table
+            alerts: workspace.alerts
+            glyphFill: workspace.appearanceColors.inset
+            inspectedPath: workspace.inspectorPath
+            hoveredPath: radarTip.target && radarTip.target.hovered && radarTip.target.wantsTip ? radarTip.target.resourcePath : ""
+            focusedPath: {
+                const item = Window.window ? Window.window.activeFocusItem : null
+                return item && item.parent === grid && item.resourcePath !== undefined ? item.resourcePath : ""
+            }
             identityScope: workspace.currentSession
             textColor: Qt.tint("#DDE7EC", Qt.rgba(radarPane.palette.text.r, radarPane.palette.text.g, radarPane.palette.text.b, 0.2))
             readonly property int count: workspace.resourceCount
             readonly property real cellWidth: 7 * viewPose.zoom
             readonly property bool renderActive: visible && Window.window !== null && Window.window.visibility !== Window.Hidden && Window.window.visibility !== Window.Minimized
+            effectsEnabled: renderActive
             clip: true
             activeFocusOnTab: true
             Accessible.role: Accessible.Grouping
@@ -196,20 +229,10 @@ Pane {
                 required property real worldX
                 required property real worldY
                 required property string resourcePath
-                required property string resourceName
-                required property string resourceKind
-                required property string resourceNamespace
-                required property string resourceStatus
                 required property var model
-                readonly property var resourceMetrics: wantsTip ? model.resourceMetrics : []
-                required property color statusColor
-                required property int resourceHealth
-                required property color terrainColor
-                property var alertEffect: { workspace.alerts.revision; return workspace.alerts.effect(resourcePath) }
+                readonly property bool detailsNeeded: wantsTip || radarTip.target === tile
+                readonly property var resourceMetrics: detailsNeeded ? model.resourceMetrics : []
                 readonly property bool inViewport: grid.renderActive && x + width > 0 && x < grid.width && y + height > 0 && y < grid.height
-                property bool animate: inViewport && !workspace.alerts.reducedMotion && alertEffect.animation !== undefined
-                property color alertColor: alertEffect.color === "status" ? resourceHealth === 2 ? "#FF5C5C" : resourceHealth === 1 ? "#FFE866" : terrainColor : alertEffect.color === "fresh" ? "#7DFFC3" : alertEffect.color ? alertEffect.color : terrainColor
-                readonly property color announceColor: resourceHealth === 2 ? "#FF5C5C" : resourceHealth === 1 ? "#FFE866" : "#7DFFC3"
                 objectName: "radarTile_" + resourceIndex
                 width: 5.5 * grid.viewPose.zoom
                 height: width
@@ -217,76 +240,25 @@ Pane {
                 y: grid.height/2 + (worldY + grid.viewPose.y)*grid.viewPose.zoom - height/2
                 activeFocusOnTab: true
                 onActiveFocusChanged: if (activeFocus) grid.selectResource(resourceIndex)
-                opacity: animate && motion.item && alertEffect.animation === "blink" ? motion.item.opacityFactor : 1
-                scale: animate && motion.item && alertEffect.animation === "pulse" ? motion.item.scaleFactor : 1
+                scale: model.animationScale
                 readonly property bool hovered: hover.hovered
-                readonly property string text: resourceKind + " " + resourceName + ", " + (resourceNamespace || "Cluster-scoped") + ", " + resourceStatus
-                    + (resourceHealth === 2 ? ", Error" : resourceHealth === 1 ? ", Warning" : alertEffect.color === "fresh" ? ", Recently changed" : "")
+                readonly property string text: {
+                    if (!detailsNeeded) return ""
+                    workspace.alerts.revision
+                    const effect = workspace.alerts.effect(resourcePath)
+                    const health = model.resourceHealth
+                    return model.resourceKind + " " + model.resourceName + ", " + (model.resourceNamespace || "Cluster-scoped") + ", " + model.resourceStatus
+                        + (health === 2 ? ", Error" : health === 1 ? ", Warning" : effect.color === "fresh" ? ", Recently changed" : "")
+                }
                 Accessible.role: Accessible.Button
-                Accessible.ignored: !wantsTip
+                Accessible.ignored: !detailsNeeded
                 Accessible.name: text
                 Accessible.onPressAction: { grid.selectResource(resourceIndex); workspace.inspectRow(resourceIndex) }
-                Accessible.description: resourcePath === workspace.inspectorPath ? "Selected resource" : "Open resource in inspector"
-                Rectangle {
-                    anchors.fill: parent
-                    color: "transparent"
-                    anchors.margins: -1.5
-                    border.width: 2
-                    border.color: tile.alertColor
-                    opacity: 0.35
-                    visible: tile.inViewport && tile.alertEffect.color !== undefined
-                }
-                Rectangle {
-                    anchors.fill: parent
-                    color: tile.alertColor
-                    border.width: tile.hovered || tile.activeFocus || tile.resourcePath === workspace.inspectorPath || (grid.activeFocus && grid.currentIndex === tile.resourceIndex) ? 1.2 : 0
-                    border.color: "#7DFFC3"
-                }
-                Loader {
-                    anchors.fill: parent
-                    active: tile.width >= 9
-                    sourceComponent: KindGlyph {
-                        objectName: "radarGlyph_" + tile.resourceIndex
-                        kind: tile.resourceKind
-                        fill: workspace.appearanceColors.inset
-                        stroke: tile.alertColor
-                    }
-                }
+                Accessible.description: detailsNeeded ? (resourcePath === grid.inspectedPath ? "Selected resource" : "Open resource in inspector") : ""
                 HoverHandler { id: hover }
                 TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: { grid.selectResource(tile.resourceIndex); grid.forceActiveFocus(); workspace.inspectRow(tile.resourceIndex) } }
-                Loader {
-                    id: motion
-                    anchors.fill: parent
-                    active: tile.animate
-                    sourceComponent: Item {
-                        property real opacityFactor: 1
-                        property real scaleFactor: 1
-                        SequentialAnimation on opacityFactor {
-                            running: tile.alertEffect.animation === "blink"
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 0.35; duration: 350 }
-                            NumberAnimation { to: 1; duration: 350 }
-                        }
-                        SequentialAnimation on scaleFactor {
-                            running: tile.alertEffect.animation === "pulse"
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 0.8; duration: 400 }
-                            NumberAnimation { to: 1; duration: 400 }
-                        }
-                        Rectangle {
-                            anchors.fill: parent; anchors.margins: -1; color: "transparent"; border.color: tile.announceColor; border.width: 2
-                            visible: tile.alertEffect.animation === "outline"
-                        }
-                        Rectangle {
-                            id: sweep
-                            width: Math.max(1, parent.width*.12); height: parent.height; color: tile.announceColor
-                            visible: tile.alertEffect.animation === "sweep"
-                            NumberAnimation on x { running: sweep.visible; from: 0; to: Math.max(0, tile.width-sweep.width); duration: 800; loops: Animation.Infinite }
-                        }
-                    }
-                }
                 readonly property bool wantsTip: inViewport && (hovered || activeFocus || (grid.activeFocus && grid.currentIndex === resourceIndex))
-                readonly property string tipText: wantsTip ? text + (resourceMetrics.length ? "\n" + resourceMetrics.map(function(metric) { return metric.label + ": " + metric.usage + "\n" + metric.references + (metric.timestamp ? "\nMeasured " + metric.timestamp + " / " + metric.window : "") }).join("\n") : "") : ""
+                readonly property string tipText: detailsNeeded ? text + (resourceMetrics.length ? "\n" + resourceMetrics.map(function(metric) { return metric.label + ": " + metric.usage + "\n" + metric.references + (metric.timestamp ? "\nMeasured " + metric.timestamp + " / " + metric.window : "") }).join("\n") : "") : ""
                 onWantsTipChanged: if (wantsTip) radarTip.target=tile
                 Component.onDestruction: if (radarTip.target===tile) radarTip.target=null
                 }

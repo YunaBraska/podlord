@@ -1105,6 +1105,13 @@ request/limit/capacity markers when available, denominator labels, incomplete or
 stale annotations, and measurement source/time/window. Long usage labels wrap
 within the available width; the bar occupies its own flexible row instead of
 competing with labels. Tooltip gauges exist only while the tooltip is shown.
+As confirmed on 2026-10-29, the Radar tooltip stays inside the drawing viewport,
+below its toolbar. It MUST NOT cover the zoom, reset or workspace actions.
+The triggering resource remains uncovered and clickable. Its cached details stay
+available while the user hovers or focuses the scroll surface. Existing context,
+filtering and hidden-surface dismissal rules remain in force.
+When its full content exceeds that viewport, a native vertical scroll surface
+retains all cached details instead of truncating them or covering other controls.
 Hover, focus, scrolling and painting do not request measurements. An absent
 storage usage value remains unavailable. Configured references are not presented
 as recommendations; MET-010 and MET-011 still require a substantiated source for

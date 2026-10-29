@@ -46,6 +46,12 @@ qint64 monotonicNs() {
 bool waitFor(const std::function<bool()>& ready, int timeout = 15000) { return QTest::qWaitFor(ready, timeout); }
 bool report(const QJsonObject& value) {
     auto record = value;
+    if (record.value("type")=="failure") {
+        const auto* focus=QGuiApplication::focusWindow();
+        record["applicationState"]=int(QGuiApplication::applicationState());
+        record["ownedFocusWindowType"]=focus ? int(focus->type()) : -1;
+        record["ownedFocusWindowHasTransientParent"]=focus && focus->transientParent();
+    }
     record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
     record["renderingBoundary"] = QGuiApplication::platformName() == "offscreen" ? "headless-software" : "foreground-cocoa";
     const auto bytes = QJsonDocument(record).toJson(QJsonDocument::Compact);

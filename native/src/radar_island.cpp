@@ -1,7 +1,9 @@
 #include "radar_island.h"
 #include "workspace.h"
+#include "kind_glyph.h"
 #include <QFontMetricsF>
 #include <QPainter>
+#include <QQuickWindow>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -13,7 +15,12 @@ namespace podlord {
 namespace {
 constexpr int ResourceIndex = Qt::UserRole + 20, WorldX = ResourceIndex + 1, WorldY = ResourceIndex + 2;
 constexpr int TerrainColor = ResourceIndex + 3;
+constexpr int AnimationScale = ResourceIndex + 4;
 constexpr double step = 7;
+double oscillation(qint64 elapsed, qint64 halfPeriod, double low) {
+    const double phase = double(std::max<qint64>(0, elapsed) % (halfPeriod * 2)) / halfPeriod;
+    return 1 - (1 - low) * (phase <= 1 ? phase : 2 - phase);
+}
 quint32 hash(const QString& text) {
     quint32 result = 17;
     for (const auto ch : text) result = result * 31 + ch.unicode();
@@ -69,8 +76,8 @@ template<class F> void inBuckets(const QRectF& rect, F consume) {
 int RadarTiles::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : int(entries_.size()); }
 QHash<int,QByteArray> RadarTiles::roleNames() const {
     return {{Qt::UserRole,"resourcePath"},{Qt::UserRole+1,"resourceName"},{Qt::UserRole+2,"resourceKind"},
-        {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},{Qt::UserRole+5,"statusColor"},
-        {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"}};
+        {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},
+        {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"}};
 }
 QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row()<0 || index.row()>=entries_.size()) return {};
@@ -78,6 +85,7 @@ QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     if (role==ResourceIndex) return entry.source.row();
     if (role==WorldX) return entry.world.x();
     if (role==WorldY) return entry.world.y();
+    if (role==AnimationScale) return entry.animation==Animation::Pulse ? oscillation(frameTime_-entry.started,400,.8) : 1.;
     if (role==TerrainColor) return terrainColor(entry.source.data(Qt::UserRole+2).toString());
     return entry.source.data(role);
 }
@@ -92,8 +100,9 @@ bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
     }
     int firstChanged=-1,lastChanged=-1;
     for (int position=0;position<entries_.size();++position) {
-        const auto entry=incoming.take(entries_[position].path);
-        const bool changed=entries_[position].source!=entry.source || entries_[position].world!=entry.world;
+        auto entry=incoming.take(entries_[position].path);
+        if (entries_[position].animation==entry.animation) entry.started=entries_[position].started;
+        const bool changed=entries_[position].source!=entry.source || entries_[position].world!=entry.world || entries_[position].animation!=entry.animation;
         entries_[position]=entry;
         if (changed || refresh) { if (firstChanged<0) firstChanged=position; lastChanged=position; }
     }
@@ -110,27 +119,105 @@ bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
     }
     return true;
 }
+bool RadarTiles::advanceFrame(qint64 at) {
+    if (frameTime_==at) return false;
+    frameTime_=at;
+    int first=-1,last=-1;
+    for (int row=0;row<entries_.size();++row) if (entries_[row].animation==Animation::Pulse) {
+        if (first<0) first=row;
+        last=row;
+    }
+    if (first>=0) emit dataChanged(index(first,0),index(last,0),{AnimationScale});
+    return true;
+}
 RadarIsland::RadarIsland(QQuickItem* parent) : QQuickPaintedItem(parent) {
     setAntialiasing(false);
+    animationClock_.start();
+    animationTimer_.setInterval(16);
+    animationTimer_.setTimerType(Qt::PreciseTimer);
+    connect(&animationTimer_,&QTimer::timeout,this,[this] {
+        syncAnimationClock();
+        if (animationTimer_.isActive() && tiles_.advanceFrame(animationClock_.elapsed())) update();
+    });
+    connect(this,&QQuickItem::activeFocusChanged,this,[this] { update(); });
+    connect(this,&QQuickItem::windowChanged,this,[this](QQuickWindow* window) {
+        disconnect(frameConnection_);
+        if (window) frameConnection_=connect(window,&QQuickWindow::afterAnimating,this,&RadarIsland::syncAnimationClock);
+        syncAnimationClock();
+    });
     connect(this,&QQuickItem::widthChanged,this,[this] { project(); update(); });
     connect(this,&QQuickItem::heightChanged,this,[this] { project(); update(); });
-    connect(this,&QQuickItem::visibleChanged,this,[this] { if (isVisible()) schedule(); else tiles_.publish({},false); });
+    connect(this,&QQuickItem::visibleChanged,this,[this] {
+        if (isVisible()) schedule();
+        else { animationTimer_.stop(); tiles_.publish({},false); }
+    });
+}
+RadarIsland::~RadarIsland() {
+    animationTimer_.stop();
+    disconnect(frameConnection_);
+    for (const auto& connection:connections_) disconnect(connection);
+    for (const auto& connection:alertConnections_) disconnect(connection);
+    disconnect(this,nullptr,this,nullptr);
+}
+void RadarIsland::setAlerts(Alerts* alerts) {
+    if (alerts_==alerts) return;
+    for (const auto& connection:alertConnections_) disconnect(connection);
+    alertConnections_.clear(); alerts_=alerts;
+    const auto refresh=[this] { if (dirty_) schedule(); else { project(); update(); } };
+    if (alerts_) {
+        alertConnections_.append(connect(alerts_.data(),&Alerts::presentationChanged,this,refresh));
+        alertConnections_.append(connect(alerts_.data(),&Alerts::rulesChanged,this,refresh));
+        alertConnections_.append(connect(alerts_.data(),&QObject::destroyed,this,refresh));
+    }
+    refresh(); emit alertsChanged();
+}
+void RadarIsland::setEffectsEnabled(bool enabled) {
+    if (effectsEnabled_==enabled) return;
+    effectsEnabled_=enabled; project(); update(); emit effectsEnabledChanged();
+}
+void RadarIsland::setGlyphFill(const QColor& color) {
+    if (!color.isValid() || glyphFill_==color) return;
+    glyphFill_=color; update(); emit glyphFillChanged();
+}
+void RadarIsland::setInspectedPath(const QString& path) {
+    if (inspectedPath_==path) return;
+    inspectedPath_=path; update(); emit inspectedPathChanged();
+}
+void RadarIsland::setHoveredPath(const QString& path) {
+    if (hoveredPath_==path) return;
+    hoveredPath_=path; update(); emit hoveredPathChanged();
+}
+void RadarIsland::setFocusedPath(const QString& path) {
+    if (focusedPath_==path) return;
+    focusedPath_=path; update(); emit focusedPathChanged();
 }
 void RadarIsland::setSource(QAbstractItemModel* source) {
     if (source_==source) return;
+    source_=source;
+    observeSource(); emit sourceChanged();
+}
+void RadarIsland::observeSource() {
     for (const auto& connection:connections_) disconnect(connection);
-    connections_.clear(); source_=source;
-    const auto observe=[this](QAbstractItemModel* model) {
+    connections_.clear(); geometryDirty_=true;
+    const auto rebind=[this] { observeSource(); if (!source_) emit sourceChanged(); };
+    const auto observe=[this,rebind](QAbstractItemModel* model,bool geometry) {
         if (!model) return;
-        connections_.append(connect(model,&QAbstractItemModel::modelReset,this,&RadarIsland::schedule));
-        connections_.append(connect(model,&QAbstractItemModel::rowsInserted,this,&RadarIsland::schedule));
-        connections_.append(connect(model,&QAbstractItemModel::rowsRemoved,this,&RadarIsland::schedule));
-        connections_.append(connect(model,&QAbstractItemModel::dataChanged,this,&RadarIsland::schedule));
-        connections_.append(connect(model,&QAbstractItemModel::layoutChanged,this,&RadarIsland::schedule));
+        const auto invalidate=[this,geometry] { geometryDirty_=geometryDirty_ || geometry; schedule(); };
+        connections_.append(connect(model,&QAbstractItemModel::modelReset,this,invalidate));
+        connections_.append(connect(model,&QAbstractItemModel::rowsInserted,this,invalidate));
+        connections_.append(connect(model,&QAbstractItemModel::rowsRemoved,this,invalidate));
+        connections_.append(connect(model,&QAbstractItemModel::dataChanged,this,invalidate));
+        connections_.append(connect(model,&QAbstractItemModel::layoutChanged,this,invalidate));
+        connections_.append(connect(model,&QObject::destroyed,this,rebind));
     };
-    observe(source);
-    if (auto* proxy=qobject_cast<QSortFilterProxyModel*>(source)) observe(proxy->sourceModel());
-    schedule(); emit sourceChanged();
+    auto* source=source_.data();
+    auto* proxy=qobject_cast<QSortFilterProxyModel*>(source);
+    observe(source,!proxy);
+    if (proxy) {
+        observe(proxy->sourceModel(),true);
+        connections_.append(connect(proxy,&QAbstractProxyModel::sourceModelChanged,this,rebind));
+    }
+    schedule();
 }
 void RadarIsland::schedule() {
     dirty_=true;
@@ -141,39 +228,43 @@ void RadarIsland::schedule() {
 void RadarIsland::setIdentityScope(const QString& scope) {
     if (identityScope_ == scope) return;
     identityScope_ = scope;
+    geometryDirty_=true;
     schedule();
     emit sourceChanged();
 }
 void RadarIsland::synchronize() {
     dirty_=false;
     auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
-    auto* cache=qobject_cast<ResourceTable*>(proxy ? proxy->sourceModel() : source_.data());
-    QList<Row> rows;
-    if (cache) {
-        int clusterColumn=-1;
-        for (int column=0;column<cache->columnCount();++column) if (cache->headerData(column,Qt::Horizontal,Qt::UserRole)=="cluster") clusterColumn=column;
-        const auto cluster=clusterColumn<0 ? QString{} : cache->data(cache->index(0,clusterColumn),Qt::UserRole+6).toString();
-        rows.reserve(cache->rowCount());
-        for (int index=0;index<cache->rowCount();++index) {
-            const auto row=cache->row(index); const auto kind=row["kind"].toString(), name=row["name"].toString();
-            const auto scope=row["namespace"].toString();
-            const auto uid=row["uid"].toString();
-            const auto identity=identityScope_+":"+kind+":"+scope+":"+name+":"+(uid.isEmpty() ? "-" : uid);
-            rows.append({row["path"].toString(),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
+    if (geometryDirty_) {
+        geometryDirty_=false;
+        auto* cache=qobject_cast<ResourceTable*>(proxy ? proxy->sourceModel() : source_.data());
+        QList<Row> rows;
+        if (cache) {
+            int clusterColumn=-1;
+            for (int column=0;column<cache->columnCount();++column) if (cache->headerData(column,Qt::Horizontal,Qt::UserRole)=="cluster") clusterColumn=column;
+            const auto cluster=clusterColumn<0 ? QString{} : cache->data(cache->index(0,clusterColumn),Qt::UserRole+6).toString();
+            rows.reserve(cache->rowCount());
+            for (int index=0;index<cache->rowCount();++index) {
+                const auto row=cache->row(index); const auto kind=row["kind"].toString(), name=row["name"].toString();
+                const auto scope=row["namespace"].toString();
+                const auto uid=row["uid"].toString();
+                const auto identity=identityScope_+":"+kind+":"+scope+":"+name+":"+(uid.isEmpty() ? "-" : uid);
+                rows.append({row["path"].toString(),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
+            }
         }
-    }
-    if (rows!=signature_) {
-        signature_=rows;
-        if (const auto* terrain=terrains_.object(identityScope_); terrain && terrain->signature==rows) {
-            positions_=terrain->positions; resourceBuckets_=terrain->buckets; markers_=terrain->markers; markerBuckets_=terrain->markerBuckets;
-        } else {
-            std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
-                const int aRank = rank(a.kind), bRank = rank(b.kind);
-                return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
-                    < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
-            });
-            layout(rows);
-            terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_,markerBuckets_});
+        if (rows!=signature_) {
+            signature_=rows;
+            if (const auto* terrain=terrains_.object(identityScope_); terrain && terrain->signature==rows) {
+                positions_=terrain->positions; resourceBuckets_=terrain->buckets; markers_=terrain->markers; markerBuckets_=terrain->markerBuckets;
+            } else {
+                std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
+                    const int aRank = rank(a.kind), bRank = rank(b.kind);
+                    return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
+                        < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
+                });
+                layout(rows);
+                terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_,markerBuckets_});
+            }
         }
     }
     QHash<QString,QPersistentModelIndex> filtered;
@@ -326,7 +417,7 @@ int RadarIsland::currentIndex() const {
 bool RadarIsland::selectResource(int index) {
     if (index < -1 || (index>=0 && (!source_ || index>=source_->rowCount()))) return false;
     const auto path=index<0 ? QString{} : source_->index(index,0).data(Qt::UserRole).toString();
-    if (path!=currentPath_) { currentPath_=path; emit currentResourceChanged(); }
+    if (path!=currentPath_) { currentPath_=path; update(); emit currentResourceChanged(); }
     return true;
 }
 bool RadarIsland::resetView() { setViewPose({{"x",0},{"y",0},{"zoom",1}}); return true; }
@@ -348,10 +439,12 @@ QImage RadarIsland::previewImage() {
 }
 QRectF RadarIsland::worldViewport() const { return {QPointF(-width()/2/zoom_,-height()/2/zoom_)-pan_,QSizeF(width()/zoom_,height()/zoom_)}; }
 void RadarIsland::project(bool refresh) {
+    using Animation=RadarTiles::Animation;
     QList<RadarTiles::Entry> visible;
     const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
     if (isVisible() && width()>0 && height()>0) {
-        const auto viewport=worldViewport().adjusted(-step,-step,step,step);
+        const auto onScreen=worldViewport();
+        const auto viewport=onScreen.adjusted(-step,-step,step,step);
         inBuckets(viewport,[&](const QPoint& area) {
             const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
             for (const auto& path:*found) {
@@ -360,12 +453,44 @@ void RadarIsland::project(bool refresh) {
                 const auto index=proxy ? proxy->mapFromSource(*source) : QModelIndex(*source);
                 if (!index.isValid()) continue;
                 const auto point=positions_.value(path);
-                if (viewport.contains(point)) visible.append({path,index,point});
+                if (!viewport.contains(point)) continue;
+                RadarTiles::Entry tile;
+                tile.path=path; tile.source=index; tile.world=point;
+                tile.kind=index.data(Qt::UserRole+2).toString();
+                tile.color=terrainColor(tile.kind);
+                const int health=index.data(Qt::UserRole+9).toInt();
+                tile.announce=QColor(health==2 ? "#FF5C5C" : health==1 ? "#FFE866" : "#7DFFC3");
+                const auto effect=alerts_ ? alerts_->effect(path) : QVariantMap{};
+                const auto tone=effect.value(QStringLiteral("color")).toString();
+                tile.glow=effect.contains(QStringLiteral("color"));
+                if (tone=="status") { if (health==1 || health==2) tile.color=tile.announce; }
+                else if (tone=="fresh") tile.color=QColor("#7DFFC3");
+                else if (!tone.isEmpty()) { const QColor color(tone); if (color.isValid()) tile.color=color; }
+                if (effectsEnabled_ && alerts_ && !alerts_->reducedMotion() && onScreen.intersects(QRectF(point-QPointF(2.75,2.75),QSizeF(5.5,5.5)))) {
+                    const auto animation=effect.value(QStringLiteral("animation")).toString();
+                    if (animation=="blink") tile.animation=Animation::Blink;
+                    else if (animation=="pulse") tile.animation=Animation::Pulse;
+                    else if (animation=="outline") tile.animation=Animation::Outline;
+                    else if (animation=="sweep") tile.animation=Animation::Sweep;
+                }
+                tile.started=animationClock_.elapsed();
+                visible.append(std::move(tile));
             }
         });
         std::sort(visible.begin(),visible.end(),[](const auto& a,const auto& b) { return a.path<b.path; });
     }
     tiles_.publish(visible,refresh);
+    syncAnimationClock();
+}
+void RadarIsland::syncAnimationClock() {
+    const auto viewport=worldViewport();
+    const bool moving=effectsEnabled_ && isVisible() && window() && window()->isExposed()
+        && std::any_of(tiles_.entries().cbegin(),tiles_.entries().cend(),[&](const auto& tile) {
+            return tile.source.isValid() && (tile.animation==RadarTiles::Animation::Blink || tile.animation==RadarTiles::Animation::Pulse || tile.animation==RadarTiles::Animation::Sweep)
+                && viewport.intersects(QRectF(tile.world-QPointF(2.75,2.75),QSizeF(5.5,5.5)));
+        });
+    if (!moving) animationTimer_.stop();
+    else if (!animationTimer_.isActive()) animationTimer_.start();
 }
 void RadarIsland::paint(QPainter* painter) {
     const auto viewport=worldViewport();
@@ -406,6 +531,35 @@ void RadarIsland::paint(QPainter* painter) {
         QFont font; font.setPixelSize(clusterLabel ? 12 : 10); font.setBold(clusterLabel); painter->setFont(font);
         painter->setPen(active ? textColor_ : dimmed);
         painter->drawText(label,Qt::AlignCenter,QFontMetricsF(font).elidedText(marker.label,Qt::ElideRight,label.width())); labels.append(label);
+    }
+    const auto now=tiles_.frameTime();
+    for (const auto& entry:tiles_.entries()) {
+        if (!entry.source.isValid()) continue;
+        const auto elapsed=now-entry.started;
+        const double side=5.5*zoom_;
+        const double scale=entry.animation==RadarTiles::Animation::Pulse ? oscillation(elapsed,400,.8) : 1;
+        const double opacity=entry.animation==RadarTiles::Animation::Blink ? oscillation(elapsed,350,.35) : 1;
+        const QRectF box(-side/2,-side/2,side,side);
+        const auto outline=[&](const QRectF& bounds,const QColor& color,double width) {
+            painter->fillRect(QRectF(bounds.left(),bounds.top(),bounds.width(),width),color);
+            painter->fillRect(QRectF(bounds.left(),bounds.bottom()-width,bounds.width(),width),color);
+            painter->fillRect(QRectF(bounds.left(),bounds.top()+width,width,std::max(0.,bounds.height()-2*width)),color);
+            painter->fillRect(QRectF(bounds.right()-width,bounds.top()+width,width,std::max(0.,bounds.height()-2*width)),color);
+        };
+        painter->save();
+        painter->translate(screen(entry.world)); painter->scale(scale,scale);
+        if (entry.glow) { painter->setOpacity(opacity*.35); outline(box.adjusted(-1.5,-1.5,1.5,1.5),entry.color,2); }
+        painter->setOpacity(opacity); painter->fillRect(box,entry.color);
+        if (entry.path==hoveredPath_ || entry.path==focusedPath_ || entry.path==inspectedPath_ || (hasActiveFocus() && entry.path==currentPath_))
+            outline(box,QColor("#7DFFC3"),1.2);
+        if (side>=9) KindGlyph::draw(painter,box,entry.kind,glyphFill_,entry.color);
+        if (entry.animation==RadarTiles::Animation::Outline) outline(box.adjusted(-1,-1,1,1),entry.announce,2);
+        else if (entry.animation==RadarTiles::Animation::Sweep) {
+            const double width=std::max(1.,side*.12);
+            const double progress=double(std::max<qint64>(0,elapsed)%800)/800;
+            painter->fillRect(QRectF(box.left()+progress*std::max(0.,side-width),box.top(),width,side),entry.announce);
+        }
+        painter->restore();
     }
 }
 

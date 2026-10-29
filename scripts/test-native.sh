@@ -86,7 +86,7 @@ if ! awk '/credentialRevision/ { credential=1 }
 fi
 "$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
     "$ROOT/native/src/radar_island.cpp" "$ROOT/native/src/workspace.cpp" "$ROOT/native/src/workspace_map.cpp" "$ROOT/native/src/map_previews.cpp" "$ROOT/native/src/kubeconfig_store.cpp" \
-    | awk '/RadarIsland[0-9]+(synchronize|layout|paint|setTextColor|previewImage)|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|navigateMap|visitMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
+    | awk '/RadarIsland|RadarTiles|oscillation|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|navigateMap|visitMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
     > "$BUILD/coverage/radar-map-functions.txt"
 cat "$BUILD/coverage/radar-map-functions.txt"
 if ! awk '
@@ -99,13 +99,15 @@ if ! awk '
 /Workspace[0-9]+navigateMap/ { history=1 }
 /Workspace[0-9]+captureMapPreview/ { capture=1 }
 /KubeconfigStore4list/ { catalog=1 }
+/RadarTiles[0-9]+advanceFrame/ { clock=1 }
+/RadarIsland[0-9]+project/ { projection=1 }
 { total+=$(NF-2); missed+=$(NF-1) }
 END {
-    if (!sync || !layout || !paint || !color || !view || !preview || !history || !capture || !catalog || total<=0) exit 1
+    if (!sync || !layout || !paint || !color || !view || !preview || !history || !capture || !catalog || !clock || !projection || total<=0) exit 1
     printf "Radar/Map function-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
     if (100*(total-missed)/total<90) exit 1
 }' "$BUILD/coverage/radar-map-functions.txt"; then
-    printf 'Native Radar/Map coverage gate failed: require geometry, workspace selection, map navigation, preview storage and capture owners with 90%% branches across their complete function families.\n' >&2
+    printf 'Native Radar/Map coverage gate failed: require geometry, batched painting, projection, animation clock, workspace selection, map navigation, preview storage and capture owners with 90%% branches across their complete function families.\n' >&2
     exit 1
 fi
 if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($13+0<90) fail=1 }

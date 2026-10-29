@@ -1,6 +1,8 @@
 #pragma once
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QColor>
+#include <QImage>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QPointer>
@@ -19,6 +21,16 @@ inline QRectF visibleBounds(QQuickWindow* window, QQuickItem* control) {
     for (auto* parent = control->parentItem(); parent; parent = parent->parentItem())
         if (parent->clip()) bounds = bounds.intersected(parent->mapRectToScene(QRectF(QPointF{}, parent->size())));
     return bounds.intersected(QRectF(0, 0, window->width(), window->height()));
+}
+/** Sample the actual window, including native parent painting rather than only child graphics. */
+inline QColor centerPixel(QQuickWindow* window, QQuickItem* control) {
+    if (!window || !control || !window->isVisible() || !control->isVisible() || window->width()<=0 || control->width()<=0 || control->height()<=0) return {};
+    const auto center=control->mapToScene(QPointF(control->width()/2,control->height()/2));
+    if (!visibleBounds(window,control).contains(center)) return {};
+    const auto frame=window->grabWindow();
+    const double ratio=double(frame.width())/window->width();
+    const QPoint pixel(qRound(center.x()*ratio),qRound(center.y()*ratio));
+    return frame.rect().contains(pixel) ? frame.pixelColor(pixel) : QColor{};
 }
 /** Locate rendered delegates, whose QObject owner need not be the window. */
 inline QQuickItem* visibleItem(QQuickItem* root, const QString& name) {
