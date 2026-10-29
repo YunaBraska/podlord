@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   package:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@bf57ca291c79d73acbd846d22a555fe9805d0bcb
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@172316ba468bd7bbdf0d57ea28856d68b7aacb2e
     with:
       app_name: Podlord
       bundle_id: berlin.yuna.podlord
@@ -16,7 +16,7 @@ jobs:
 
   upload:
     needs: package
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@bf57ca291c79d73acbd846d22a555fe9805d0bcb
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@172316ba468bd7bbdf0d57ea28856d68b7aacb2e
     with:
       app_name: Podlord
     secrets: inherit
