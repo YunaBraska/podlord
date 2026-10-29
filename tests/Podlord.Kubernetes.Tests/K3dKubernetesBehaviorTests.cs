@@ -27,7 +27,7 @@ public sealed class K3dKubernetesBehaviorTests
     public async Task Explorer_loads_real_cluster_resource_map()
     {
         var rows = await WaitForRowsWithCondition(
-            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(ForceRefresh: true)),
+            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(Limit: 5_000, ForceRefresh: true)),
             rows => rows.Any(row => row.Kind == "Service" && row.Name == "podlord-healthy")
                     && rows.Any(row => row.Kind == "EndpointSlice" && row.Namespace == "payments")
                     && rows.Any(row => row.Kind == "Secret" && row.Name == "podlord-secret"),
