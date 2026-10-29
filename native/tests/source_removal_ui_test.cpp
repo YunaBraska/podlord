@@ -91,6 +91,8 @@ void run(const QString& scenario) {
     if (scenario == "active") require(std::holds_alternative<SessionCatalog>(sessions.activate(removed.first())), "Cannot select removed session.");
     Workspace workspace(profile);
     settle(workspace);
+    require(workspace.activate((scenario == "active" ? removed.first() : kept).toString(QUuid::WithoutBraces)), "Cannot explicitly open the saved source-removal session.");
+    settle(workspace);
     require(QTest::qWaitFor([&] { return requests > 0; }, 5000), "Real workspace did not reach external boundary.");
     QTest::qWait(100);
     const int requestsBefore = requests;

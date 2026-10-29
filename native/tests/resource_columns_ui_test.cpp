@@ -1,5 +1,6 @@
 #include "kubeconfig_store.h"
 #include "workspace.h"
+#include "ui_input.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -57,6 +58,7 @@ bool run(bool customized) {
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window) return false;
+    if (!podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return false;
     for (const auto width : {320, 599, 600, 1440, 320}) {
         window->resize(width, 800);
         const auto expected = customized ? "Kind" : "Status";

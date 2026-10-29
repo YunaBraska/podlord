@@ -363,21 +363,30 @@ for whole-view or real-device evidence.
 
 The 2026-10-28 Radar increment now implements the approved separated cluster
 islands, namespace districts without artificial connector strokes, cluster-scoped resource area, semantic
-zoom labels and session-local Table/Map view. Both views reuse the same renderer,
+zoom labels and a first/default Map workspace with context-card overview. Map and
+Resources reuse the same renderer,
 cache, filters, selection, inspector and camera. See
 [ADR 0032](adr/0032-native-deterministic-radar-island.md) and the current
 [test-map evidence](spec/k3d-test-map.md#what-do-the-2026-10-28-hierarchical-map-and-keyboard-checks-prove).
 This intentionally replaces exact C# world-coordinate parity, not its interaction
 or color semantics. The user follow-up supersedes the earlier RAM-only overview:
-retain a latest visual preview across restarts, without persisting resource
-objects or changing the runtime cache TTL. Map must become the first/default
-primary workspace tab with backward/forward navigation, while Resources, Events
-and Ports retain the small context Radar. Context selection reuses the existing
-opening flow. This new navigation and preview persistence are not implemented;
-tile ownership (context versus kubeconfig file) and retained namespace labels
-await clarification. No overview synchronization, authentication, new storage or
-per-cluster status panels have been introduced. The session Map footer counts all
-filter matches independently of the table limit.
+retain one latest private visual preview per context across restarts, without
+persisting resource objects. Captions use local aliases and cluster names outside
+the image. Unknown previews show a question mark. Resources, Events and Ports
+retain the small context Radar. Back/forward and context selection reuse normal
+session activation, loading and dirty-YAML protection. Restored tabs remain
+metadata-only until explicitly opened, so startup and overview browsing do not
+contact clusters. Sync settings now configure collection retention in whole
+hours, default 24, and capture estimated cached payload size. Other cache policies
+remain unchanged. No per-cluster age/status panels or second resource store have
+been introduced. The session Map footer and search use all filter matches,
+independently of the table limit. The test map records actual checks separately
+from outstanding cross-platform and final release evidence. Context cards now
+project only the current imported snapshot per source origin. Older snapshots
+remain available to saved sessions. Removing the current cohort does not revive
+old cards. As confirmed by the user, readable versions remain openable after a
+catalog error with an explicit older-version warning. Successful reload clears
+that warning. Compact landscape cards retain both preview and caption.
 
 These are review recommendations, not newly accepted release requirements.
 Missing shipped capabilities remain owned by the capability inventory; optional

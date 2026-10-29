@@ -1,7 +1,6 @@
 #include "workspace.h"
 #include "radar_island.h"
 #include <QFile>
-#include <QBitArray>
 #include <QGuiApplication>
 #include <QFont>
 #include <QPainter>
@@ -13,6 +12,7 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iterator>
@@ -65,33 +65,17 @@ bool hierarchy(const QString& check = {}) {
     podlord::RadarIsland geometry; geometry.setWidth(20000); geometry.setHeight(20000); geometry.setProperty("identityScope","hierarchy"); geometry.setSource(&filter);
     if (!QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==rows.size(); },3000)) return false;
     const auto before=coordinates(geometry.tiles());
-    if (check == "shoreline") {
+    if (check == "preview") {
         geometry.setWidth(2000); geometry.setHeight(2000);
-        QImage image(2000,2000,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
-        QPainter painter(&image); geometry.paint(&painter); painter.end();
-        QMap<QPair<QString,QString>,QPoint> districts;
-        for (auto point=before.cbegin();point!=before.cend();++point)
-            districts.insert(grouping.value(point.key()),point.value().toPoint()+QPoint(1000,1000));
-        for (auto district=districts.cbegin();district!=districts.cend();++district) {
-            QBitArray visited(image.width()*image.height());
-            QList<QPoint> pending{district.value()};
-            while (!pending.isEmpty()) {
-                const auto point=pending.takeLast();
-                if (!image.rect().contains(point)) continue;
-                const int index=point.y()*image.width()+point.x();
-                if (visited[index] || image.pixelColor(point).alpha()==0) continue;
-                visited.setBit(index);
-                for (const auto delta:{QPoint(1,0),QPoint(-1,0),QPoint(0,1),QPoint(0,-1)}) pending.append(point+delta);
-            }
-            for (auto point=before.cbegin();point!=before.cend();++point) {
-                const auto pixel=point.value().toPoint()+QPoint(1000,1000);
-                if (!image.rect().contains(pixel) || visited[pixel.y()*image.width()+pixel.x()]!=(grouping.value(point.key())==district.key())) {
-                    std::fprintf(stderr,"Radar district shoreline mismatch: %s/%s near %s\n",qPrintable(district.key().first),qPrintable(district.key().second),qPrintable(point.key()));
-                    return false;
-                }
-            }
-        }
-        return true;
+        const auto image=geometry.previewImage();
+        if (image.size()!=QSize(320,200) || !image.textKeys().isEmpty()) return false;
+        geometry.setViewPose({{"x",80},{"y",-40},{"zoom",.55}});
+        if (geometry.previewImage()!=image) return false;
+        if (!filter.filter({},{{"kind","\"Pod\""}})
+            || !QTest::qWaitFor([&] { return geometry.tiles()->rowCount()<=podCount; },3000)
+            || geometry.previewImage()!=image) return false;
+        geometry.setVisible(false);
+        return geometry.previewImage().isNull();
     }
     if (check == "labels") {
         geometry.setWidth(160); geometry.setHeight(100);
@@ -150,7 +134,7 @@ bool exercise(const QStringList& args) {
     if (args.size()==2 && args[1]=="hierarchy") return hierarchy();
     if (args.size()==2 && args[1]=="hierarchy_font") return hierarchy("font");
     if (args.size()==2 && args[1]=="hierarchy_labels") return hierarchy("labels");
-    if (args.size()==2 && args[1]=="hierarchy_shoreline") return hierarchy("shoreline");
+    if (args.size()==2 && args[1]=="hierarchy_preview") return hierarchy("preview");
     if (args.size() < 3 || args.size() > 4) return false;
     QFile file(args[2]); if (!file.open(QIODevice::ReadOnly)) return false;
     QJsonParseError error;
@@ -170,7 +154,7 @@ bool exercise(const QStringList& args) {
     auto* cache = &table;
     if (!cache->publish(rows, document["cluster"].toString())) return false;
     podlord::RadarIsland geometry;
-    geometry.setWidth(document["width"].toDouble()); geometry.setHeight(document["height"].toDouble());
+    geometry.setWidth(std::max(20000., document["width"].toDouble())); geometry.setHeight(std::max(20000., document["height"].toDouble()));
     geometry.setProperty("identityScope", document["sessionId"].toString());
     geometry.setSource(filter);
     if (!QTest::qWaitFor([&] { return geometry.tiles()->rowCount() >= expected.size(); }, 3000)) return false;
@@ -309,6 +293,11 @@ bool exercise(const QStringList& args) {
     }
     const bool renderCheck = args[1] == "render-check";
     if ((args[1] != "render" && !renderCheck) || args.size() != (renderCheck ? 3 : 4) || !check(expected)) return false;
+    QSize populationViewport(1208,1240);
+    for (const auto& point : coordinates(geometry.tiles())) {
+        populationViewport.setWidth(std::max(populationViewport.width(), int(std::ceil(std::abs(point.x())*2))+64));
+        populationViewport.setHeight(std::max(populationViewport.height(), int(std::ceil(std::abs(point.y())*2))+128));
+    }
     QTemporaryDir profile; if (!profile.isValid()) return false;
     podlord::Workspace workspace(profile.filePath("profile"));
     if (!QTest::qWaitFor([&] { return !workspace.property("busy").toBool(); }, 3000)) return setupFailure("profile initialization");
@@ -327,12 +316,15 @@ Window {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     auto* grid = window ? window->findChild<podlord::RadarIsland*>("resourceRadar") : nullptr;
     if (!grid) return setupFailure("radar control lookup");
+    window->resize(populationViewport);
     grid->setSource(filter);
     auto* emptyState = grid->findChild<QQuickItem*>("emptyRadar");
     if (!emptyState || !QQmlProperty(emptyState, "visible", &engine).write(false)) return setupFailure("renderer-only empty state");
     grid->setProperty("identityScope", document["sessionId"].toString());
     grid->setViewPose({{"x",0}, {"y",0}, {"zoom",1}});
     if (!QTest::qWaitFor([&] { return grid->tiles()->rowCount() >= expected.size() && window->isExposed(); }, 3000)) return setupFailure("rendered cache population");
+    window->resize(1208,1240);
+    if (!QTest::qWaitFor([&] { return grid->width()==1200 && grid->height()>0 && grid->height()<=1240; }, 3000)) return setupFailure("capture viewport restoration");
     window->setHeight(window->height() + qRound(1200 - grid->height()));
     if (!QTest::qWaitFor([&] { return grid->size() == QSizeF(1200,1200); }, 3000)) {
         std::fprintf(stderr, "Actual viewport: %g x %g\n", grid->width(), grid->height());
@@ -340,6 +332,9 @@ Window {
     }
     window->update(); QTest::qWait(80);
     const auto rendered=coordinates(grid->tiles());
+    if (rendered.isEmpty()) return setupFailure("restored viewport contains no rendered resources");
+    const auto cached=coordinates(geometry.tiles());
+    const auto safeViewport=QRectF(QPointF{},grid->size()).adjusted(4,4,-4,-4);
     const auto renderedRoles=roles(grid->tiles());
     QMap<QString,QColor> renderedColors;
     for (int row=0;row<grid->tiles()->rowCount();++row) {
@@ -351,11 +346,30 @@ Window {
     const auto origin = grid->mapToScene({}).toPoint();
     const auto image = frame.copy(QRect(origin, QSize(1200,1200)));
     window->close();
+    int checkedPixels=0;
     for (auto resource=rendered.cbegin();resource!=rendered.cend();++resource) {
-        const auto point=QPoint(qRound(600+resource.value().x()),qRound(600+resource.value().y()));
-        if (!image.rect().contains(point) || image.pixelColor(point)!=renderedColors.value(resource.key()))
+        const auto original=cached.constFind(resource.key());
+        if (original==cached.cend() || original.value()!=resource.value()) {
+            std::fprintf(stderr,"Rendered resource differs from cached geometry: %s (%g,%g)\n",qPrintable(resource.key()),resource.value().x(),resource.value().y());
+            return setupFailure("rendered resource is missing from or displaced within cached geometry");
+        }
+        const auto center=QPointF(600,600)+resource.value();
+        // Projection includes overscan tiles whose centers are outside the clipped image.
+        if (!safeViewport.contains(center)) continue;
+        const auto point=QPoint(qRound(center.x()),qRound(center.y()));
+        if (!image.rect().contains(point) || image.pixelColor(point)!=renderedColors.value(resource.key())) {
+            std::fprintf(stderr,"Rendered pixel mismatch: %s pixel=(%d,%d) actual=%s expected=%s\n",qPrintable(resource.key()),point.x(),point.y(),
+                qPrintable(image.rect().contains(point) ? image.pixelColor(point).name(QColor::HexArgb) : QStringLiteral("outside")),qPrintable(renderedColors.value(resource.key()).name(QColor::HexArgb)));
             return setupFailure("rendered resources do not match cached geometry");
+        }
+        ++checkedPixels;
     }
+    for (auto resource=cached.cbegin();resource!=cached.cend();++resource)
+        if (safeViewport.contains(QPointF(600,600)+resource.value()) && !rendered.contains(resource.key())) {
+            std::fprintf(stderr,"Visible cached resource missing from projection: %s (%g,%g)\n",qPrintable(resource.key()),resource.value().x(),resource.value().y());
+            return setupFailure("viewport projection omitted a safely visible cached resource");
+        }
+    if (checkedPixels==0) return setupFailure("viewport contained no safely visible resource pixels to verify");
     if (renderCheck) return true;
     return image.save(args[3]);
 }

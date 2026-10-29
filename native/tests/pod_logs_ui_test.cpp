@@ -194,7 +194,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         return false;
     }, realFile.isEmpty() ? 8000 : 70000);
     if (scenario == "detail_clock_backwards") utc = utc.addSecs(-30);
-    if (!resourceReady || !click(window, QString("cell_%1_0").arg(selectedRow))) {
+    if (!resourceReady || !click(window, "resourcesWorkspaceButton") || !click(window, QString("cell_%1_0").arg(selectedRow))) {
         if (!realFile.isEmpty()) std::fprintf(stderr, "Real Pod selection failed: rows=%d error=%s\n", workspace.table()->rowCount(), qPrintable(workspace.error()));
         return false;
     }

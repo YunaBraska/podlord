@@ -39,6 +39,7 @@ cleanup() {
   cleanupFailed=0
   trap - 0
   if [ -n "$emupid" ]; then
+    "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" logcat -b crash -d > "$out/crash-logcat.txt" 2>&1 || :
     "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" logcat -d --pid="$(cat "$out/product-pid.txt" 2>/dev/null)" > "$out/product-final-logcat.txt" 2>&1 || :
     "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" emu kill > "$out/emulator-stop.log" 2>&1 || :
     kill "$emupid" 2>/dev/null || :
@@ -92,6 +93,13 @@ adb shell chmod 600 "$private"
 node - "$out" "$sdk/platform-tools/adb" "$adbPort" "$serial" <<'JOURNEY'
 const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');
 const [out,adb,port,device]=process.argv.slice(2), serial=['-P',port,'-s',device];
+const inspectorCycles=Number(process.env.PODLORD_ANDROID_INSPECTOR_CYCLES||0);
+if(!Number.isInteger(inspectorCycles)||inspectorCycles<0||inspectorCycles>50)throw Error('Inspector diagnostic cycles must be an integer from 0 to 50');
+const coldInspectorCycles=Number(process.env.PODLORD_ANDROID_COLD_INSPECTOR_CYCLES||0);
+if(!Number.isInteger(coldInspectorCycles)||coldInspectorCycles<0||coldInspectorCycles>10)throw Error('Cold inspector diagnostic cycles must be an integer from 0 to 10');
+if(inspectorCycles&&coldInspectorCycles)throw Error('Choose warm or cold inspector diagnostics, not both');
+const inspectorOnly=process.env.PODLORD_ANDROID_INSPECTOR_ONLY||'0';
+if(!['0','1'].includes(inspectorOnly)||(inspectorOnly==='1'&&(inspectorCycles||coldInspectorCycles)))throw Error('Choose a single inspector diagnostic mode');
 const run=(...args)=>cp.execFileSync(adb,[...serial,...args],{encoding:'utf8',timeout:30000,maxBuffer:4000000});
 const decode=s=>s.replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&#10;','\n').replaceAll('&#13;','\r').replaceAll('&#9;','\t').replaceAll('&amp;','&');
 const parseNodes=xml=>[...xml.matchAll(/<node\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/g)].map(m=>Object.fromEntries([...m[0].matchAll(/([\w-]+)=(["'])([\s\S]*?)\2/g)].map(a=>[a[1],decode(a[3])])));
@@ -133,30 +141,71 @@ function target(id){
 function tap(n){const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);if(b[2]<=b[0]||b[3]<=b[1])throw Error('Target outside viewport');const point=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];run('shell','input','tap',...point.map(String));state();const after=nodes.find(x=>x['resource-id']===n['resource-id']);fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({id:n['resource-id'],bounds:n.bounds,point,beforeChecked:n.checked,afterBounds:after?.bounds,afterChecked:after?.checked,focused:nodes.filter(x=>x.focused==='true').map(x=>({id:x['resource-id'],text:x.text,description:x['content-desc']}))})+'\n');}
 function click(id){tap(target(id));}
 function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),cp.execFileSync(adb,[...serial,'exec-out','screencap','-p'],{timeout:30000,maxBuffer:4000000}));}
+function completeJourney(){fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));}
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,error:String(error)},null,2)+'\n');
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
  const pid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
- const diagnostics=[['system-logcat',['logcat','-b','all','-d']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
+ const diagnostics=[['crash-logcat',['logcat','-b','crash','-d']],['system-logcat',['logcat','-b','all','-d','-t','2000']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
  if(/^\d+$/.test(pid))diagnostics.push(['process',['shell','cat','/proc/'+pid+'/status']],['native-backtrace',['shell','debuggerd','-b',pid]]);
  for(const [name,args] of diagnostics){try{fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),run(...args))}catch(diagnosticError){fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),String(diagnosticError)+'\n'+(diagnosticError.stdout||'')+(diagnosticError.stderr||''))}}
  console.error(error);process.exitCode=1;
 });
 waitNode('sourcePath',n=>n.enabled==='true'&&!/\[0,0\]\[0,0\]/.test(n.bounds));click('sourcePath');run('shell','input','text','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');state();run('shell','input','keyevent','4');state();waitNode('sourcePath',n=>n.text==='/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');click('importButton');state();
-waitNode('openContext',n=>n.enabled==='true');click('openContext');
+waitNode('closeSourceControls',n=>n.enabled==='true');click('closeSourceControls');
+const cardDeadline=Date.now()+30000;let contextCard='';
+do{state();const card=nodes.find(n=>n['resource-id']?.split('.').at(-1).startsWith('contextMapCard_')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');if(card){contextCard=card['resource-id'].split('.').at(-1);break;}}while(Date.now()<cardDeadline);
+if(!contextCard){capture('missing-context-card');throw Error('Imported context card did not appear');}
+capture('contexts-before-opening');click(contextCard);click('resourcesWorkspaceButton');
 run('shell','settings','put','system','accelerometer_rotation','0');run('shell','settings','put','system','user_rotation','1');state();
 const deadline=Date.now()+120000;let count=0;
 do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):0;const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
 if(count<1000){capture('load-failure');throw Error('Real cluster cache did not fill');}steps.push({step:'Real TLS source import and cached resources',resources:count});run('shell','settings','put','system','user_rotation','0');state();capture('loaded-portrait');
 run('shell','settings','put','system','accelerometer_rotation','0');run('shell','settings','put','system','user_rotation','1');state();capture('loaded-landscape');
+if(inspectorOnly==='1'){
+ search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+ click('cell_0_0');waitNode('inspectorResourceName',n=>(n.text+' '+n['content-desc']).includes('Pod/visual-multi-container'));
+ target('terminalButton');capture('first-inspector');
+ steps.push({step:'First inspector and terminal action on a fresh installed profile'});completeJourney();process.exit(0);
+}
+if(coldInspectorCycles){
+ const activity=fs.readFileSync(path.join(out,'badging.txt'),'utf8').match(/^launchable-activity: name='([^']+)'/m)?.[1];
+ if(!activity)throw Error('Cold inspector diagnostics require the installed launch activity');
+ for(let cycle=1;cycle<=coldInspectorCycles;cycle++){
+  run('shell','am','force-stop','berlin.yuna.podlord');run('shell','am','start','-W','-n','berlin.yuna.podlord/'+activity);
+  const pid=run('shell','pidof','berlin.yuna.podlord').trim();
+  if(!/^\d+$/.test(pid))throw Error('Cold inspector diagnostic did not start the product');
+  fs.writeFileSync(path.join(out,'product-pid.txt'),pid+'\n');
+  waitNode(contextCard,n=>n.enabled==='true');click(contextCard);click('resourcesWorkspaceButton');
+  waitNode('resourceMatchCount',n=>Number((n.text+' '+n['content-desc']).match(/visible: \d+\/(\d+)/)?.[1])>=1000,120000);
+  search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+  click('cell_0_0');waitNode('inspectorResourceName',n=>(n.text+' '+n['content-desc']).includes('Pod/visual-multi-container'));
+  target('terminalButton');click('closeInspector');
+  if(run('shell','pidof','berlin.yuna.podlord').trim()!==pid)throw Error('Product restarted while opening the cold inspector');
+  fs.appendFileSync(path.join(out,'inspector-cold-starts.jsonl'),JSON.stringify({completedCycle:cycle,pid})+'\n');
+ }
+ capture('inspector-cold-starts-final');
+ steps.push({step:'First inspector opening after process restart and explicit context loading',cycles:coldInspectorCycles});
+ completeJourney();process.exit(0);
+}
 terminalJourney();
 search('');steps.push({step:'Landscape search remains above the real soft keyboard and restores navigation after dismissal'});
 const miniRadar=target('resourceRadar').bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
-click('workspaceActionsButton');click('resourceMapView');
+click('mapWorkspaceButton');
 waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]>miniRadar[2]-miniRadar[0]+50;});
 for(let i=0;i<4;i++)click('radarZoomOut');capture('map-cluster-overview');
 for(let i=0;i<7;i++)click('radarZoom');capture('map-namespace-details');
-click('resetRadar');click('radarWorkspaceButton');
+click('resetRadar');click('mapOverview');waitNode(contextCard,n=>n.enabled==='true');
+const cardViewport=target(contextCard).bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
+for(const prefix of ['contextMapName_','contextMapCluster_','renameMapContext_']){
+ const control=waitNode(prefix+contextCard.slice('contextMapCard_'.length),n=>{
+  const b=n.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
+  return b&&b[0]>=cardViewport[0]&&b[1]>=cardViewport[1]&&b[2]<=cardViewport[2]&&b[3]<=cardViewport[3]&&b[3]-b[1]>=16;
+ });
+ if(!control)throw Error('Context card caption/action clipped in landscape');
+}
+capture('contexts-after-loading');click(contextCard);
+waitNode('resourceRadar',n=>n.enabled==='true');click('radarWorkspaceButton');
 waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]<=miniRadar[2]-miniRadar[0]+1;});
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');state();capture('radar-and-filters');
@@ -221,6 +270,19 @@ if(!bothStreams){capture('missing-container-output');throw Error('Default All lo
 capture('multi-container-all-logs');
 if(/a container name must be specified|400 BadRequest/.test(nodes.map(n=>n.text+' '+n['content-desc']).join('\n')))throw Error('Multi-container logs were requested without container selection');
 steps.push({step:'Actual multi-container Pod logs load with the default All selector'});
+if(inspectorCycles){
+ click('closeInspector');
+ const expectedPid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
+ for(let cycle=1;cycle<=inspectorCycles;cycle++){
+  waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+  click('cell_0_0');waitNode('inspectorResourceName',n=>(n.text+' '+n['content-desc']).includes('Pod/visual-multi-container'));
+  click('closeInspector');
+  if(run('shell','pidof','berlin.yuna.podlord').trim()!==expectedPid)throw Error('Product restarted during inspector lifecycle diagnostics');
+  fs.appendFileSync(path.join(out,'inspector-lifecycle.jsonl'),JSON.stringify({completedCycle:cycle,pid:expectedPid})+'\n');
+ }
+ capture('inspector-lifecycle-final');
+ steps.push({step:'Repeated real accessibility/touch inspector opening and closing without process restart',cycles:inspectorCycles});
+}
 function terminalJourney(){
 search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));click('cell_0_0');
 click('terminalButton');click('terminalConnect');
@@ -239,7 +301,7 @@ steps.push({step:'Native Kubernetes PTY connects, executes echo, returns output 
 click('collapseTerminal');click('closeInspector');
 }
 
-fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));
+completeJourney();
 JOURNEY
 
 adb shell settings put system user_rotation 0

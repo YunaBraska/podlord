@@ -16,11 +16,12 @@ ApplicationWindow {
     font.weight: Font.Normal
     property bool sidebarOpen: true
     property bool searchOpen: false
+    readonly property var mapContexts: workspace.contexts.filter(entry => entry.current)
     readonly property bool wideLayout: width >= 900
     readonly property bool compactLandscape: width >= 600 && height < 600 && width > height
     readonly property bool touchLayout: !wideLayout || compactLandscape
     readonly property bool sidebarDocked: wideLayout || compactLandscape
-    readonly property bool compactInspector: (compactLandscape || width < 600) && workspace.inspectorPath !== ""
+    readonly property bool compactInspector: (compactLandscape || width < 600) && workspace.inspectorPath !== "" && !(workspace.workspacePage === "map" && workspace.mapOverview)
     readonly property real keyboardTop: Qt.inputMethod.visible
         && Qt.inputMethod.keyboardRectangle.width >= width * 0.75
         && Qt.inputMethod.keyboardRectangle.height > 0
@@ -38,6 +39,7 @@ ApplicationWindow {
             [{name: "Imported contexts", header: true}],
             workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
     FieldFiltersDialog { id: fieldFiltersDialog; controller: workspace }
+    Action { id: mapCommand; text: "Open Map"; onTriggered: workspace.setWorkspacePage("map") }
     Action { id: resourcesCommand; text: "Open Resources"; onTriggered: workspace.setWorkspacePage("resources") }
     Action { id: eventsCommand; text: "Open Events"; onTriggered: workspace.setWorkspacePage("events") }
     Action { id: sourcesCommand; text: "Open Sources Settings"; onTriggered: { if (workspace.setWorkspacePage("settings")) settingsLoader.item.section = "sources" } }
@@ -45,10 +47,11 @@ ApplicationWindow {
     Action { id: settingsCommand; text: "Open Settings"; onTriggered: workspace.setWorkspacePage("settings") }
     Action { id: problemsCommand; text: "Toggle Problems"; enabled: workspace.currentSession !== ""; onTriggered: workspace.setFilterMode(workspace.problemsOnly ? "" : "problems") }
     Action { id: k3dCommand; text: "Import K3D"; enabled: !workspace.busy; onTriggered: workspace.importK3d() }
-    CommandPalette { id: commands; actions: [resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand, k3dCommand] }
+    CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand, k3dCommand] }
     Shortcut { sequences: ["Ctrl+K", "Meta+K"]; onActivated: commands.open() }
-    Shortcut { sequences: [StandardKey.Back]; enabled: workspace.canInspectBack; onActivated: workspace.navigateInspector(-1) }
-    Shortcut { sequences: [StandardKey.Forward]; enabled: workspace.canInspectForward; onActivated: workspace.navigateInspector(1) }
+    Shortcut { sequences: [StandardKey.Find]; enabled: workspace.workspacePage === "map" && !workspace.mapOverview; onActivated: { window.searchOpen = true; Qt.callLater(resourceFilterInput.forceActiveFocus) } }
+    Shortcut { sequences: [StandardKey.Back]; enabled: workspace.workspacePage === "map" ? workspace.canMapBack : workspace.canInspectBack; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(-1) : workspace.navigateInspector(-1) }
+    Shortcut { sequences: [StandardKey.Forward]; enabled: workspace.workspacePage === "map" ? workspace.canMapForward : workspace.canInspectForward; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(1) : workspace.navigateInspector(1) }
     onVisibilityChanged: function(visibility) { workspace.setWindowVisible(visibility !== Window.Hidden && visibility !== Window.Minimized) }
     Component.onCompleted: workspace.attachWindow(window)
     onActiveChanged: workspace.setWindowFocused(active)
@@ -471,7 +474,7 @@ ApplicationWindow {
                         checkable: true; checked: window.searchOpen
                         activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
                             : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
-                        enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0
+                        enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview)
                         Accessible.name: "Show or hide current search"
                         Accessible.description: "Search the current cached view. Hiding search retains its filter."
                         onClicked: {
@@ -483,6 +486,7 @@ ApplicationWindow {
                             })
                         }
                     }
+                    NavButton { objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; checked: workspace.workspacePage === "map" }
                     NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
                     NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
                     NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
@@ -501,8 +505,6 @@ ApplicationWindow {
         height: compactMenu ? Math.min(implicitHeight, window.height - 48) : implicitHeight
         Binding { target: workspaceActions; property: "popupType"; value: Popup.Item; when: workspaceActions.compactMenu }
         MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; Accessible.name: "Open command palette"; onTriggered: commands.open() }
-        MenuItem { objectName: "resourceTableView"; text: "View: Table"; checkable: true; checked: !workspace.resourceMap; visible: workspace.workspacePage === "resources"; implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0; onTriggered: workspace.setResourceMap(false) }
-        MenuItem { objectName: "resourceMapView"; text: "View: Map"; checkable: true; checked: workspace.resourceMap; visible: workspace.workspacePage === "resources"; implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0; onTriggered: workspace.setResourceMap(true) }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
             text: workspace.uiText["nav.search"]
@@ -606,7 +608,7 @@ ApplicationWindow {
             id: sourcePanel
             objectName: "sourceManagementPanel"
             Layout.fillWidth: true
-            visible: !settingsLoader.visible && (window.sourcesExpanded || (workspace.currentSession === "" && (!window.compactLandscape || workspace.sessions.length === 0)))
+            visible: !settingsLoader.visible && (window.sourcesExpanded || (workspace.currentSession === "" && workspace.contexts.length === 0 && (!window.compactLandscape || workspace.sessions.length === 0)))
             contentItem: ColumnLayout {
                 GridLayout {
                     Layout.fillWidth: true
@@ -627,7 +629,7 @@ ApplicationWindow {
                     }
                     Button { text: "Browse"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: chooser.open() }
                     Button { objectName: "browseSourceFolder"; text: "Folder"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: folderChooser.open() }
-                    Button { objectName: "importButton"; text: "Import"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: sourcePath.text.trim() ? workspace.importFile(sourcePath.text) : chooser.open() }
+                    Button { objectName: "importButton"; text: "Import"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: { window.sourcesExpanded = true; sourcePath.text.trim() ? workspace.importFile(sourcePath.text) : chooser.open() } }
                     Button { objectName: "importK3dButton"; action: k3dCommand; text: "K3D"; Accessible.name: "Import generated K3D kubeconfigs"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4 }
                 }
                 GridLayout {
@@ -654,7 +656,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: parent.columns === 2
                         Button { objectName: "reloadSources"; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.refreshSources() }
-                        IconButton { objectName: "closeSourceControls"; glyph: "Close"; text: "Close source controls"; visible: workspace.currentSession !== ""; onClicked: window.sourcesExpanded = false }
+                        IconButton { objectName: "closeSourceControls"; glyph: "Close"; text: "Close source controls"; visible: workspace.currentSession !== "" || workspace.contexts.length > 0; onClicked: window.sourcesExpanded = false }
                     }
                 }
             }
@@ -711,11 +713,11 @@ ApplicationWindow {
         }
         RowLayout {
             id: queryRow
-            readonly property var activeGrid: workspace.workspacePage === "events" ? eventGridLoader.item : resourceGrid
-            readonly property bool navigating: window.searchOpen && ["resources", "events"].indexOf(workspace.workspacePage) >= 0
+            readonly property var activeGrid: workspace.workspacePage === "events" ? eventGridLoader.item : workspace.workspacePage === "map" ? sidebar : resourceGrid
+            readonly property bool navigating: window.searchOpen && (["resources", "events"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
             readonly property bool hasQuery: (workspace.workspacePage === "events" ? workspace.eventFilterText : workspace.filterText).trim() !== ""
             Layout.fillWidth: true
-            visible: !window.compactInspector && ((window.searchOpen && ["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0) || workspace.authenticationRequired || workspace.authenticationRunning) || (window.compactInspector && (workspace.authenticationRequired || workspace.authenticationRunning))
+            visible: !window.compactInspector && ((window.searchOpen && (["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))) || workspace.authenticationRequired || workspace.authenticationRunning) || (window.compactInspector && (workspace.authenticationRequired || workspace.authenticationRunning))
             TextField {
                 id: resourceFilterInput
                 objectName: "resourceFilter"
@@ -729,11 +731,11 @@ ApplicationWindow {
                 Accessible.name: "Filter cached resources"
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
                 ToolTip.visible: hovered; ToolTip.text: Accessible.description
-                visible: window.searchOpen && ["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0
-                onTextEdited: if (workspace.filter(text)) Qt.callLater(resourceGrid.navigateRows, 0)
+                visible: window.searchOpen && (["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
+                onTextEdited: if (workspace.filter(text)) Qt.callLater(workspace.workspacePage === "map" ? sidebar.navigateRows : resourceGrid.navigateRows, 0)
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
-                        resourceGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
+                        queryRow.activeGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true
                     }
                 }
                 Keys.onEscapePressed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
@@ -809,7 +811,7 @@ ApplicationWindow {
                 ResourceGrid {
                     id: resourceGrid
                     anchors.fill: parent
-                    visible: workspace.workspacePage === "resources" && !workspace.resourceMap
+                    visible: workspace.workspacePage === "resources"
                     inlineTools: false
                     tableModel: workspace.visibleResourceTable
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
@@ -819,11 +821,22 @@ ApplicationWindow {
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
                 }
-                Item {
-                    id: resourceMapHost
-                    objectName: "resourceMapHost"
+                ColumnLayout {
                     anchors.fill: parent
-                    visible: workspace.workspacePage === "resources" && workspace.resourceMap
+                    visible: workspace.workspacePage === "map"
+                    RowLayout {
+                        Layout.fillWidth: true
+                        IconButton { objectName: "mapBack"; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
+                        IconButton { objectName: "mapForward"; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }
+                        IconButton { objectName: "mapOverview"; glyph: "Cluster"; text: "All contexts"; enabled: !workspace.mapOverview && !workspace.busy; onClicked: workspace.showMapOverview() }
+                        Label { objectName: "mapTitle"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: workspace.mapOverview ? (workspace.mapCatalogWarning || "Contexts") : workspace.mapContextCaption; color: workspace.mapCatalogWarning ? workspace.appearanceColors.warning : window.palette.windowText; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; Accessible.description: workspace.mapCatalogWarning; ToolTip.visible: mapTitleHover.hovered && workspace.mapCatalogWarning !== ""; ToolTip.text: workspace.mapCatalogWarning; HoverHandler { id: mapTitleHover } }
+                        IconButton { objectName: "mapSources"; glyph: "ConfigMap"; text: "Open kubeconfig sources"; onClicked: window.sourcesExpanded = !window.sourcesExpanded }
+                    }
+                    Item {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        Loader { anchors.fill: parent; active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview; visible: active; sourceComponent: MapOverview { contexts: window.mapContexts; onSourcesRequested: chooser.open() } }
+                        Item { id: resourceMapHost; objectName: "resourceMapHost"; anchors.fill: parent; visible: !workspace.mapOverview }
+                    }
                 }
                 Loader {
                     id: eventGridLoader
@@ -887,13 +900,13 @@ ApplicationWindow {
                     SplitView.fillHeight: window.compactInspector
                     SplitView.preferredHeight: window.compactInspector ? inspectorSplit.height : Math.min(420, workspaceSplit.height * 0.60)
                     SplitView.minimumHeight: window.compactInspector ? 0 : Math.min(300, workspaceSplit.height * 0.70)
-                    visible: workspace.inspectorPath !== ""
+                    visible: workspace.inspectorPath !== "" && !(workspace.workspacePage === "map" && workspace.mapOverview)
                 }
             }
             Item {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
-                visible: window.sidebarDocked && window.sidebarOpen && !window.inputPriority
+                visible: window.sidebarDocked && window.sidebarOpen && !window.inputPriority && !(workspace.workspacePage === "map" && workspace.mapOverview)
                 SplitView.preferredWidth: window.compactLandscape ? 240 : 392
                 SplitView.minimumWidth: window.compactLandscape ? 228 : 300
                 SplitView.maximumWidth: window.compactLandscape ? 320 : 720
@@ -905,14 +918,15 @@ ApplicationWindow {
             visible: !window.inputPriority
             Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "resources" && workspace.resourceMap ? "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached" : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: text + ", " + workspace.resourceCount + " matching resources" }
-            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached") : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
+            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
     ResourceSidebar {
         id: sidebar
         parent: window.sidebarDocked ? sidebarHost : sidebarDrawer.contentItem
-        expandedRadarHost: workspace.workspacePage === "resources" && workspace.resourceMap && !window.compactInspector ? resourceMapHost : null
+        expandedRadarHost: workspace.workspacePage === "map" && !workspace.mapOverview && !window.compactInspector ? resourceMapHost : null
+        radarVisible: workspace.workspacePage !== "map" || !workspace.mapOverview
         collapsibleFilters: window.compactLandscape
         anchors.fill: parent
         visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible

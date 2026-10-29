@@ -10,6 +10,10 @@ Pane {
     property bool collapsibleFilters: false
     property bool filtersExpanded: false
     property Item expandedRadarHost: null
+    property bool radarVisible: true
+    readonly property int count: radar.count
+    readonly property int navigationIndex: radar.navigationIndex
+    function navigateRows(offset) { radar.navigateRows(offset) }
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
     SessionManager { id: sessionManager }
@@ -76,7 +80,7 @@ Pane {
             spacing: 4
             Item {
                 id: radarSlot
-                visible: sidebar.expandedRadarHost === null
+                visible: sidebar.radarVisible && sidebar.expandedRadarHost === null
                 Layout.fillWidth: true
                 Layout.fillHeight: sidebar.collapsibleFilters && !sidebar.filtersExpanded
                 Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45)
@@ -86,6 +90,7 @@ Pane {
                     anchors.fill: parent
                     compact: true
                     expanded: sidebar.expandedRadarHost !== null
+                    visible: sidebar.radarVisible
                 }
             }
             IconButton {

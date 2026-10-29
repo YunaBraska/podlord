@@ -23,6 +23,7 @@ struct SourceSnapshot final {
     QDateTime importedAt;
     QList<SourceContext> contexts;
     QStringList warnings;
+    bool current = true;
 };
 struct SourceIssue final { QString ownedPath; Failure failure; };
 struct SourceCatalog final {

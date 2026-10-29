@@ -1,4 +1,5 @@
 #pragma once
+#include <QImage>
 #include "resource_client.h"
 #include "container_terminal.h"
 #include "credential_process.h"
@@ -138,7 +139,14 @@ class Workspace final : public QObject {
     Q_PROPERTY(QStringList filterPickerValues READ filterPickerValues NOTIFY filterPickerChanged)
     Q_PROPERTY(QString filterError READ filterError NOTIFY changed)
     Q_PROPERTY(QString workspacePage READ workspacePage NOTIFY changed)
-    Q_PROPERTY(bool resourceMap READ resourceMap NOTIFY changed)
+    Q_PROPERTY(bool mapOverview READ mapOverview NOTIFY changed)
+    Q_PROPERTY(QString mapContextCaption READ mapContextCaption NOTIFY changed)
+    Q_PROPERTY(QString mapCatalogWarning READ mapCatalogWarning NOTIFY changed)
+    Q_PROPERTY(bool canMapBack READ canMapBack NOTIFY changed)
+    Q_PROPERTY(bool canMapForward READ canMapForward NOTIFY changed)
+    Q_PROPERTY(quint64 mapPreviewRevision READ mapPreviewRevision NOTIFY mapPreviewsChanged)
+    Q_PROPERTY(QString mapPreviewError READ mapPreviewError NOTIFY mapPreviewsChanged)
+    Q_PROPERTY(bool mapPreviewNeeded READ mapPreviewNeeded NOTIFY changed)
     Q_PROPERTY(QString eventFilterText READ eventFilterText NOTIFY changed)
     Q_PROPERTY(int eventSortColumnIndex READ eventSortColumnIndex NOTIFY changed)
     Q_PROPERTY(QString eventSortDirection READ eventSortDirection NOTIFY changed)
@@ -235,6 +243,8 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool tableLayoutSaving READ tableLayoutSaving NOTIFY tableLayoutStatusChanged)
     Q_PROPERTY(int requestLimit READ requestLimit NOTIFY changed)
     Q_PROPERTY(int inactiveSyncMinutes READ inactiveSyncMinutes NOTIFY changed)
+    Q_PROPERTY(int collectionCacheHours READ collectionCacheHours NOTIFY changed)
+    Q_PROPERTY(qint64 cachePayloadBytes READ cachePayloadBytes NOTIFY cacheUsageChanged)
     Q_PROPERTY(bool podInspected READ podInspected NOTIFY changed)
     Q_PROPERTY(bool logsVisible READ logsVisible NOTIFY changed)
     Q_PROPERTY(bool logsPaused READ logsPaused NOTIFY changed)
@@ -387,9 +397,19 @@ public:
     QVariantList pulseMetrics() const { return pulseMetrics_; }
     QVariantMap healthSummary() const { return healthSummary_; }
     QVariantMap radarView() const { return navigation_.value(active_).radarView; }
-    bool resourceMap() const { return navigation_.value(active_).resourceMap; }
+    bool mapOverview() const;
+    QString mapContextCaption() const;
+    QString mapCatalogWarning() const;
+    bool canMapBack() const;
+    bool canMapForward() const;
+    quint64 mapPreviewRevision() const;
+    QString mapPreviewError() const;
+    bool mapPreviewNeeded() const;
+    Q_INVOKABLE QString mapPreviewUrl(const QString& context) const;
+    Q_INVOKABLE bool captureMapPreview(const QString& session, const QImage& image);
+    Q_INVOKABLE bool showMapOverview();
+    Q_INVOKABLE bool navigateMap(int step);
     Q_INVOKABLE bool setWorkspacePage(const QString& page);
-    Q_INVOKABLE bool setResourceMap(bool enabled);
     Q_INVOKABLE bool rememberRadarView(const QVariantMap& view);
     int sortColumnIndex() const;
     QString sortDirection() const;
@@ -533,6 +553,9 @@ public:
     Q_INVOKABLE bool reloadTableLayouts();
     int requestLimit() const;
     int inactiveSyncMinutes() const;
+    int collectionCacheHours() const;
+    qint64 cachePayloadBytes() const { return cachePayloadBytes_; }
+    Q_INVOKABLE void refreshCacheUsage();
     bool podInspected() const;
     bool logsVisible() const;
     bool logsPaused() const;
@@ -554,7 +577,7 @@ public:
     Q_INVOKABLE bool reportLogEviction();
     Q_INVOKABLE QString logEntry(int index) const;
     Q_INVOKABLE bool copyLogEntry(int index);
-    Q_INVOKABLE bool saveReadSettings(int requestLimit, int inactiveMinutes, const QString& logLimit);
+    Q_INVOKABLE bool saveReadSettings(int requestLimit, int inactiveMinutes, const QString& logLimit, int collectionCacheHours);
     Q_PROPERTY(QString uiLanguage READ uiLanguage NOTIFY languageChanged)
     Q_PROPERTY(QVariantList uiLanguages READ uiLanguages CONSTANT)
     Q_PROPERTY(QVariantMap uiText READ uiText NOTIFY languageChanged)
@@ -581,6 +604,9 @@ public:
     Q_INVOKABLE bool inspectRow(int row);
     Q_INVOKABLE bool copyCell(int row, int column);
 signals:
+    void mapPreviewsChanged();
+    void mapPreviewRequested(const QString& session);
+    void cacheUsageChanged();
     void languageChanged();
     void deletionAvailabilityChanged();
     void sourceImportFinished(bool success);
@@ -646,7 +672,7 @@ private:
     bool yamlChecking_ = false;
     QString yamlCheckToken_;
     bool bindYamlApply();
-    enum class Leave { Resource, Session, Context, Tab, Inspector, Window, Draft, Reload, History, Detach };
+    enum class Leave { Resource, Session, Context, Tab, Inspector, Window, Draft, Reload, History, MapHistory, Detach };
     struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
     struct Navigation final {
         QString filter, mode;
@@ -654,8 +680,7 @@ private:
         int column = -1;
         int limit = 256;
         Qt::SortOrder order = Qt::AscendingOrder;
-        QString inspected, page = "overview", workspace = "resources";
-        bool resourceMap = false;
+        QString inspected, page = "overview", workspace = "map";
         QVariantMap radarView{{"x",0},{"y",0},{"zoom",1}};
         QString eventFilter, portFilter;
         int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
@@ -666,6 +691,14 @@ private:
     };
     struct LogPosition final { QString anchor; double offset = 0; bool follow = true, evicted = false; PodLogHistory::Removal removal = PodLogHistory::Removal::None; };
     const QString profile_;
+    QStringList mapHistory_{QString{}};
+    int mapHistoryIndex_ = 0;
+    bool mapNavigating_ = false;
+    QString pendingMapPreview_;
+    qint64 cachePayloadBytes_ = 0;
+    void rememberMapSession(bool visit = true);
+    void reconcileMapPreviews();
+    bool visitMapHistory(const QString& session, int index);
     QString filterPickerField_, filterPickerSession_;
     QStringList filterPickerValues_;
     bool applyResourceFilters();
@@ -685,6 +718,7 @@ private:
     TableSchemas layoutSchemas() const;
     QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
     SourceCatalog sources_;
+    bool sourceCatalogFailed_ = false;
     QVariantMap sourceRemoval_;
     Appearance appearance_;
     bool publishAppearance();

@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
         require(palette && QTest::qWaitFor([&] { return palette->property("opened").toBool(); }, 2000), "Palette did not finish opening.");
         auto* search = item("commandPaletteSearch");
         require(QTest::qWaitFor([&] { return search->hasActiveFocus(); }, 2000), "Palette search did not receive keyboard focus.");
-        require(item("commandPaletteList")->property("count").toInt() == 7, "Migrated command catalog is incomplete.");
+        require(item("commandPaletteList")->property("count").toInt() == 8, "Migrated command catalog is incomplete.");
         const auto evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/command-palette-" + scenario + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png"), "Cannot capture actual palette scene.");
         const auto query = [&](const QByteArray& text) {
@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
                 click("commandPaletteButton");
                 require(QTest::qWaitFor([&] { return palette->property("visible").toBool(); }, 2000)
                     && item("commandPaletteSearch")->property("text").toString().isEmpty()
-                    && item("commandPaletteList")->property("count").toInt() == 7, "Reopened palette retained an obsolete query.");
+                    && item("commandPaletteList")->property("count").toInt() == 8, "Reopened palette retained an obsolete query.");
             }
         } else if (scenario == "close") {
             click("commandPaletteClose");
@@ -164,9 +164,9 @@ int main(int argc, char** argv) {
         } else if (scenario == "keyboard_default") {
             QTest::keyClick(window, Qt::Key_Return);
             require(QTest::qWaitFor([&] { return !palette->property("visible").toBool(); }, 2000)
-                && workspace.workspacePage() == "resources", "Empty-query Enter did not execute the first command.");
+                && workspace.workspacePage() == "map", "Empty-query Enter did not execute the first command.");
         } else if (scenario == "keyboard_arrows") {
-            QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Up); QTest::keyClick(window, Qt::Key_Down);
+            QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Up); QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Down);
             QTest::keyClick(window, Qt::Key_Return);
             require(QTest::qWaitFor([&] { return !palette->property("visible").toBool(); }, 2000)
                 && workspace.workspacePage() == "events", "Arrow-key command selection did not execute Events.");

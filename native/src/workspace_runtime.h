@@ -2,6 +2,7 @@
 #include "resource_client.h"
 #include "credential_process.h"
 #include "release_updates.h"
+#include "map_previews.h"
 
 namespace podlord {
 class Workspace;
@@ -15,6 +16,7 @@ public:
     ResourceClient client;
     CredentialProcess credentials;
     ReleaseUpdates releases;
+    MapPreviews previews{profile};
     QList<Workspace*> windows;
     QMap<QString, Workspace*> owners;
     quint64 selectionRevision = 0;

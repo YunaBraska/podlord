@@ -6159,12 +6159,10 @@ Evidence below is under `/Users/yuna/.local/share/podlord-comparison/release-evi
 
 The user follow-up supersedes the earlier RAM-only context overview: retain a
 latest visual map preview across restarts, without persisting resource objects.
-Map becomes the first/default primary workspace tab, with back/forward navigation;
-Resources, Events and Ports retain the small context Radar. This navigation and
-preview persistence are approved but not implemented. Tile ownership (context
-versus kubeconfig file) and retained namespace names await clarification. No
-background context opening, authentication, TTL change or per-cluster age/status
-panel has been introduced for the proposed overview.
+At that checkpoint, first/default Map navigation and persistence were approved
+but pending tile-ownership clarification. The 2026-10-29 context-map section below
+records the subsequent decisions, implementation and executed checks. No earlier
+renderer-only or footer-only result proves the new persisted-card journey.
 
 The separately confirmed Map footer is implemented. In
 `2026-10-28-context-map-footer`, all sixteen affected shell/footer style executions
@@ -6229,3 +6227,55 @@ frame, startup and memory measurements. Three new Cocoa
 attempts lose foreground and are invalid, not passing timing evidence. Personal
 Google registration remains paused. Simulated providers and service-account
 fallback do not establish live personal Google login.
+
+## What Does The 2026-10-29 Context-Map Package Prove?
+
+The accepted model is one card per current context across all imported
+kubeconfigs, even when several contexts reference the same cluster. Only the
+latest imported cohort per source origin supplies cards. Historical snapshots
+remain available to saved sessions, not as duplicate cards. Existing
+local aliases and cluster names label cards outside the preview. The image has
+only geometry and colored points, not names, objects, YAML or Secret contents.
+Map is the first/default workspace, with normal context opening and protected
+session-history navigation. Resources, Events and Ports retain the small Radar.
+Startup restores tabs without connecting. Explicit opening resumes the normal
+loader, not a second authentication or synchronization implementation.
+
+Evidence root: `~/.local/share/podlord-comparison/release-evidence/2026-10-29-context-map/`.
+
+| Requirement and public boundary | Executed evidence | Result and limits |
+| --- | --- | --- |
+| RAD-CTX-01/02, existing alias action, desktop and 320-pixel QML | `native.ui.map_{empty,empty_phone,overview,alias,phone,preview,preview_restart}` in Basic/Fusion; `third-checks.log`, `fourth-checks.log`, `frames/` | Three contexts produce three cards, initial placeholders make no HTTP requests, local rename preserves original kubeconfig and context identity, accepted 320 x 200 PNG loads after restart. Restored tabs do not connect until the Resources action. Offscreen software-rendered native UI, not physical-device or paired C# proof. |
+| RAD-VIEW-01, shared existing session/cache/renderer | `native.ui.map_navigation`, existing `shell_map*`, `third-checks.log` | Map back/forward and Resources/Events/Ports transitions retain the session without additional HTTP. The small Radar returns outside Map. The obsolete menu-only view flag is removed. |
+| RAD-VIEW-01, dirty YAML during history traversal | `native.ui.inspector_edit_map_history_{stay,accept}` in Basic/Fusion; `fourth-checks.log` | Stay retains the draft, original session and history cursor. Discard activates the intended existing session at its original history index, retaining Forward. No write is sent. |
+| FLT-004/005, cache-only Map search | `native.ui.map_search` in Basic/Fusion; `fourth-checks.log` | Two matching resources remain navigable with a one-row table limit. Previous/Next loop through both without opening an inspector or issuing HTTP. |
+| RAD-CTX-03, private persistence and removal | All 23 `native.map_previews.*` cases and `native.ui.map_cleanup`; `third-checks.log` | Atomic replacement, restart, latest-only storage, pending-save shutdown/deletion, context isolation, failed/partial catalog safety, corrupt/oversized inputs, symlinks and unwritable storage are exercised through the store API. Cached accessors perform no storage reads. Confirmed context removal removes its thumbnail. |
+| RAD-CTX-01, failed reload after retention expiry | `native.ui.map_preview_expiry` in Basic/Fusion; `fourth-checks.log` | After 25 hours and failed collection requests, the runtime cache expires but the previous accepted PNG remains byte-for-byte unchanged. |
+| SYN-CACHE-01, settings persistence and existing transport/cache owner | 24 `native.settings.collection_cache_*`, 12 `native.cache_diagnostics.collection_ttl_*`, `native.ui.map_cache_settings`; `third-checks.log`, `fourth-checks.log` | Default 24 hours, migration from schemas 1-8, positive-hour validation, maximum integer safety, atomic conflict handling, shorter/longer retention and unchanged detail/auth lifetime pass. Sync shows captured cached payload MiB, not process RSS. Saving does not request resources. |
+| RAD-DET-01/02, original deterministic branch placement | Native reference, hierarchy/preview, filter, camera and navigation checks in `third-checks.log` | Original Radar arm/depth placement is reused within packed districts. Artificial connectors and circular placeholder land are gone. Preview geometry is independent of filter and camera, contains no text, and does not render while hidden. |
+
+### Which current checks supersede the initial targeted runs?
+
+| Boundary | Current evidence | Result and limitation |
+| --- | --- | --- |
+| Map public UI and preview-store lifecycle | `catalog-warning-after.log` | 85/85 executions, comprising 59 behavior cases and 26 additional style variants. Includes current-only cards, explicit reimport of older content, historical session retention, no resurrection after current-context removal, partial/fatal catalog warnings and recovery. Earlier 129- and 28-execution subsets overlap and are not additional unique behaviors. |
+| Large overview and delegate retirement | `map-lifecycle-current.log`, `preview-release.log` | Four additional Basic/Fusion executions cover 1,003 actual imported contexts, retained scroll position on a cache-only limit change, and twenty overview/back/resize cycles without HTTP or a crash. The combined focused set passes 89/89. The frozen complete suite predates these four registrations and must not be relabeled as a 5,124-execution run. |
+| Responsive rendered layout | `current-versions-before.log`, `map-current.log`, `map-current-frames/` | Six failing-first executions expose duplicate historical cards and a missing landscape image. The corrected 640 x 320 layout retains the preview, name, cluster and rename action. Layout assertions run after rendering and asynchronous image readiness, not before polish. The original landscape test's early pass was not valid visual evidence. |
+| Linux native component/UI boundary | `linux-final-catalog.log` | 133/133 selected executions pass in a nonroot disposable container, including Map, collection retention, settings migration and Radar hierarchy. The earlier 107/109 run predates the restored-metadata fix and remains a historical failure. |
+| ARM64 iPhone UIKit | `ios-final-catalog-journey.log`, `ios-run.6uIrpX/frames`, `ios-run.6uIrpX/cleanup.json` | 36/36 executions pass across Basic/Fusion. The current driver tests current-source selection, warnings, recovery, persistence, aliases and normal session opening. Fresh per-run logs avoid appended stale markers. The owned simulator is deleted. No Rosetta, physical device or complete paired C# matrix is claimed. |
+| macOS Release packaging | `macos-package-current/package-evidence.txt`, `runtime-dependencies.txt` | Dependency/signature preflight passes with pinned Qt, yaml-cpp and OpenSSL. ZIP is 33,736,971 bytes; installed regular-file sum is 87,412,316 bytes. The first attempt accidentally used Homebrew yaml-cpp and failed the macOS-13 floor. That failed artifact is not a candidate. Local ad-hoc signing is not Developer ID/notarization or clean-device startup evidence. |
+| Complete frozen native suite | `macos-final-complete.log`, `macos-final-coverage/` | Both preflight cases and all 5,118 main executions pass. Main-set elapsed time is 846.22 seconds with twelve isolated test jobs. Production line coverage is 97.82%, overall branches 85.53%, and the complete modified Radar/Map/source-selection function family is 433/474 branches (91.35%). All configured gates pass without changing their limits. This does not replace foreground performance or paired images. |
+| Current real Kubernetes cache/search/Map | `real-current-search.log`, `real-current-map.log`, `real-current-map/`, `real-current-binary.sha256` | Both current-source drivers pass against the owned large Kubernetes fixture. Actual API discovery/search, cached filtering, same-session card reopening, persisted thumbnails and six dark/light overview/detail captures pass. Captures use the offscreen software renderer, not installed Cocoa/Metal or a paired C# window. |
+| Current real Kubernetes functional journeys | `real-current-functional.log`, `real-current-functional/` | Interactive shell, vi, control/input, terminal touch, detached-window transfer, isolated Pod/Service forwarding, removal/draft handling, deletion races, inspector history, cache filters and health/metrics pass against the owned large fixture. The fixture container is removed. These are functional journeys, not a complete C#/C++ image matrix. |
+| Current Android installed product | `android-final-catalog-journey`, `android-crash-diagnostic`, `android-inspector-lifecycle`, `android-cold-inspector-fresh`, `android-fresh-inspector-{1,2,3}` | The first current run dies with native SIGSEGV during inspector opening after loading the actual local Kubernetes cache. No usable native stack or corrective product change establishes its cause. Subsequent controlled checks pass the complete journey, twenty warm inspector cycles, five process-cold inspector cycles and three fresh AVD/install/profile trials. Dedicated crash buffers are empty in these later trials. All owned apps/emulators/fixtures are closed. These successes do not erase the initial crash or establish that it is fixed. |
+| Foreground Cocoa/Metal performance | `foreground-performance/measurements.jsonl`, `foreground-preview-release-run/measurements.jsonl` | In the second controlled run, action-to-frame p95 is 31.59 ms for filtering, 28.63 ms for sorting, 48.20 ms for cached tabs and 25.74 ms for cached inspector opening, all within their interaction gates. Scroll frame CPU p95 is 1.86 ms. Sixty seconds of foreground nonsync idle pass at 1.46% of one core. Other action frame-CPU p95 values range from 14.24 to 33.21 ms against 8 ms, and retained RSS peaks at 335,659,008 bytes against 310,000,000. Explicitly releasing temporary QML image wrappers did not improve the peak relative to 334,872,576 bytes before the experiment. That production-code experiment was reverted. Gates remain unchanged and the result remains failing. Both benchmark applications exit and are cleaned up. |
+
+The frozen coverage run reports 43 mismatched-data warnings. The diagnostic
+dump (`coverage-mismatch-diagnostic.txt`, `coverage-mismatch-body.txt`) identifies
+repeated zero-hash records for one `TrustCancellation::isCanceled` symbol, not
+43 distinct Map functions. The warning's compiler cause is not established.
+
+Frame CPU time, resident memory, installed startup, complete paired visual
+evidence and the unexplained Android native crash remain independent release
+gaps. No release or complete visual-parity approval follows from the scoped
+passes above.

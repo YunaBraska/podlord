@@ -267,7 +267,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     if (scenario == "reference_zoom_preview_unsaved") server.radarScenario = "radar_focus_preview";
     if (scenario == "reference_zoom_preview_many") server.metricScenario = "metric_many";
     const auto profile = temporary.filePath("profile");
-    podlord::Workspace workspace(profile);
+    const auto previewClock=QDateTime::currentDateTimeUtc();
+    podlord::Workspace workspace(profile,nullptr,scenario=="reference_zoom_preview_many"
+        ? std::function<QDateTime()>{[previewClock] { return previewClock; }} : std::function<QDateTime()>{QDateTime::currentDateTimeUtc});
     QQmlApplicationEngine engine; engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml")); if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());

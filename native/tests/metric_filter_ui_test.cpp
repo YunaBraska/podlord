@@ -264,6 +264,7 @@ bool execute(const QString& scenario) {
             if (model->data(model->index(row, 0)).toString() == "half") return model->data(model->index(row, 7), Qt::UserRole + 6).isValid();
         return false;
     })) return false;
+    if (!workspace.setWorkspacePage("resources")) return false;
     const auto calls = server.requests;
     if (scenario == "cpu_milli" || scenario == "stale" || scenario == "incomplete") {
         auto* model = workspace.table();
@@ -393,6 +394,7 @@ bool realCluster(const QString& source) {
     };
     if (!waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() > 1000 &&
         !measuredIdentities("cpu").isEmpty() && !measuredIdentities("memory").isEmpty(); }, 120000)) return fail("real resource and metric cache");
+    if (!workspace.setWorkspacePage("resources")) return fail("resource tab");
     QStringList expectedConfigMaps;
     int ownedConfigMaps = 0;
     for (int row = 0; row < workspace.table()->rowCount(); ++row) {

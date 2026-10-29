@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "kubeconfig_store.h"
+#include "ui_input.h"
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QFile>
@@ -85,6 +86,7 @@ bool run(const QString& scenario, const QString& configPath) {
     if (!window || !waitFor([&] { return !workspace.busy(); }) || !workspace.openContext(source->contexts.first().id)
         || !waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })) return false;
     if (scenario == "narrow") window->resize(720, 620);
+    if (scenario == "keyboard" && !podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return false;
     if (!waitFor([&] { return workspace.table()->rowCount() > 1 && !workspace.loading(); }, real ? 120000 : 10000)) return false;
     const QString prefix = real ? "/api/v1/namespaces/visual-a/configmaps/visual-config-" : "/api/v1/namespaces/default/configmaps/entry-";
     const auto target = [&](int n) { return prefix + QString("%1").arg(real ? n + 1 : n, real ? 4 : 2, 10, QLatin1Char('0')); };

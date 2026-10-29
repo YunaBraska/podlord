@@ -420,7 +420,9 @@ if [ "$MODE" = native-search-e2e ]; then
     shasum -a 256 "$RUN/workspace_ui_test" > "$EVIDENCE/$NAME-search-binary.sha256"
     PODLORD_E2E_SCREENSHOT="$EVIDENCE/$NAME-search-radar.png" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
         run_native_test "$RUN/workspace_ui_test" real_search "$RUN/kubeconfig" > "$EVIDENCE/$NAME-real_search.log" 2>&1
-    printf 'Native Kubernetes discovery/search and Radar scenarios passed; cleaning up owned cluster and profiles.\n'
+    PODLORD_MAP_EVIDENCE_DIR="$EVIDENCE/$NAME-map" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
+        run_native_test "$RUN/workspace_ui_test" real_map "$RUN/kubeconfig" > "$EVIDENCE/$NAME-real_map.log" 2>&1
+    printf 'Native Kubernetes discovery/search, Radar and persisted context Map scenarios passed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
 if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then

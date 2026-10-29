@@ -28,6 +28,7 @@ public:
     bool inspect(const QString& id, const QString& path);
     bool dismissInspector(const QString& id);
     QJsonArray rows(const QString& id) const;
+    bool collectionSnapshotAvailable(const QString& id) const;
     /** Bounded in-memory request metadata. Reading this snapshot never schedules transport. */
     QVariantList requestAudit(const QString& id) const;
     /** Current collection/detail JSON and retained log text across sessions, including closed caches.
@@ -106,6 +107,7 @@ signals:
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
     void changed(const QString& id);
     void rowsChanged(const QString& id);
+    void collectionAccepted(const QString& id);
     /** A dispatched detail read completed; cached timestamps are not fresh-read authority. */
     void detailFinished(const QString& id, const QString& path, bool accepted);
     void authenticationRejected(const QString& credential);

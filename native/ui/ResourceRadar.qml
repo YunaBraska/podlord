@@ -8,8 +8,21 @@ Pane {
     id: radarPane
     property bool compact: false
     property bool expanded: false
+    readonly property int count: workspace.resourceCount
+    readonly property int navigationIndex: grid.currentIndex
+    function navigateRows(offset) {
+        if (count === 0) return
+        const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
+        grid.selectResource(row); grid.focusResource(row)
+    }
     padding: compact ? 4 : 12
     function focusRadar() { grid.forceActiveFocus() }
+    function capturePreview(session) {
+        if (!workspace.mapPreviewNeeded) return
+        Qt.callLater(function() { if (radarPane.visible && workspace.mapPreviewNeeded) workspace.captureMapPreview(session, grid.previewImage()) })
+    }
+    onVisibleChanged: if (visible) capturePreview(workspace.currentSession)
+    Connections { target: workspace; function onMapPreviewRequested(session) { radarPane.capturePreview(session) } }
     function focusPath(path, percent) {
         const index = workspace.alertResourceIndex(path)
         return index >= 0 && grid.focusResource(index, percent / 100)
@@ -40,7 +53,7 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
-            IconButton { objectName: "radarWorkspaceButton"; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); if (radarPane.expanded) workspace.setResourceMap(false); radarPane.focusRadar() } }
+            IconButton { objectName: "radarWorkspaceButton"; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
             Item { Layout.fillWidth: true }
             IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
             Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }

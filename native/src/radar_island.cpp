@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
+#include <numbers>
 #include <tuple>
 
 namespace podlord {
@@ -17,6 +19,7 @@ quint32 hash(const QString& text) {
     for (const auto ch : text) result = result * 31 + ch.unicode();
     return result & 0x7fffffffu;
 }
+double range(const QString& key, double low, double high) { return low + (hash(key) % 10000) / 9999. * (high-low); }
 QPoint cell(const QPointF& point) { return {int(std::nearbyint(point.x()/step)), int(std::nearbyint(point.y()/step))}; }
 QPoint bucket(const QPoint& point) { return {int(std::floor(point.x()/16.)), int(std::floor(point.y()/16.))}; }
 QPointF world(const QPoint& point) { return QPointF(point)*step; }
@@ -38,6 +41,25 @@ int ring(const QString& kind, int fallback = 4) {
 QColor terrainColor(const QString& kind) {
     static const QList<QColor> colors{{"#6B7378"},{"#6B7378"},{"#2E5941"},{"#4E6A43"},{"#665A3F"},{"#7D7048"},{"#286473"},{"#1B4357"}};
     return colors[ring(kind,3)];
+}
+QPoint place(const QPointF& target, QSet<QPoint>& occupied, const QString& key) {
+    const auto center=cell(target);
+    if (!occupied.contains(center)) { occupied.insert(center); return center; }
+    for (int radius=1;;++radius) {
+        std::optional<QPoint> best;
+        std::pair<int,quint32> score;
+        const auto consider=[&](const QPoint& candidate) {
+            if (occupied.contains(candidate)) return;
+            const auto delta=candidate-center;
+            const int distance=QPoint::dotProduct(delta,delta);
+            if (best && distance>score.first) return;
+            const auto candidateScore=std::pair{distance,hash(key+":"+QString::number(candidate.x())+":"+QString::number(candidate.y()))};
+            if (!best || candidateScore<score) { best=candidate; score=candidateScore; }
+        };
+        for (int dx=-radius;dx<=radius;++dx) { consider(center+QPoint(dx,-radius)); consider(center+QPoint(dx,radius)); }
+        for (int dy=-radius+1;dy<radius;++dy) { consider(center+QPoint(-radius,dy)); consider(center+QPoint(radius,dy)); }
+        if (best) { occupied.insert(*best); return *best; }
+    }
 }
 template<class F> void inBuckets(const QRectF& rect, F consume) {
     const auto first=bucket(cell(rect.topLeft()-QPointF(step,step))), last=bucket(cell(rect.bottomRight()+QPointF(step,step)));
@@ -170,7 +192,7 @@ void RadarIsland::synchronize() {
 }
 void RadarIsland::layout(const QList<Row>& rows) {
     positions_.clear(); resourceBuckets_.clear(); markers_.clear(); markerBuckets_.clear();
-    struct District final { QString key, label, group; QList<Row> rows; QList<QPoint> cells; QRectF labelBounds; int radius=0, width=0, height=0, x=0, y=0; };
+    struct District final { QString key, label, group; QList<Row> rows; QList<QPoint> cells; QPoint anchor; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     struct Cluster final { QString name, label; QList<District> districts; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     const auto caption=[](const QString& value) { return value.size()>48 ? value.left(45)+"..." : value; };
     const auto bounds=[](const QString& label,bool cluster) {
@@ -187,23 +209,30 @@ void RadarIsland::layout(const QList<Row>& rows) {
             District district;
             district.key=groupedDistrict.key(); district.label=caption(district.key.isEmpty() ? QStringLiteral("Cluster resources") : district.key);
             district.group=cluster.name+"/"+district.key; district.rows=groupedDistrict.value(); district.labelBounds=bounds(district.label,false);
-            int gridCount=int(district.rows.size());
-            if (std::any_of(district.rows.cbegin(),district.rows.cend(),[&](const Row& row) { return row.kind=="Namespace" && row.name==district.key; })) --gridCount;
-            district.radius=std::max(0,int(std::ceil(std::sqrt(gridCount / 3.141592653589793))));
-            while (gridCount>0) {
-                district.cells.clear();
-                for (int x=-district.radius;x<=district.radius;++x) for (int y=-district.radius;y<=district.radius;++y)
-                    if (x*x+y*y<=district.radius*district.radius) district.cells.append({x,y});
-                if (district.cells.size()>=gridCount) break;
-                ++district.radius;
+            QSet<QPoint> occupied; occupied.insert(QPoint{});
+            QHash<QString,QPoint> local;
+            QList<Row> resources;
+            for (const auto& row:district.rows)
+                if (row.kind=="Namespace" && row.name==district.key) local.insert(row.path,QPoint{});
+                else resources.append(row);
+            const double direction=-std::numbers::pi/2+cluster.districts.size()*2*std::numbers::pi/groupedCluster->size()+range(district.group+":namespace-angle",-.16,.16);
+            const int arms=resources.size()<=3 ? int(resources.size()) : std::clamp(int(std::ceil(std::sqrt(resources.size())/1.2)),3,10);
+            const double spread=std::clamp(arms*.09,.16,.78);
+            for (int index=0;index<resources.size();++index) {
+                const auto& row=resources[index]; const int arm=index%arms,depth=index/arms;
+                const double theta=direction+(arms==1 ? 0 : (arm/double(arms-1)-.5)*spread)+range(row.identity+":branch",-.04,.04);
+                const double distance=8+ring(row.kind)*6.2+depth*6.4+(row.kind=="Event" ? 8 : 0),drift=range(row.identity+":drift",-3.5,3.5);
+                local.insert(row.path,place(QPointF(std::cos(theta)*distance-std::sin(theta)*drift,std::sin(theta)*distance+std::cos(theta)*drift),occupied,row.identity));
             }
-            std::sort(district.cells.begin(),district.cells.end(),[](const QPoint& a,const QPoint& b) {
-                return std::tuple{QPoint::dotProduct(a,a),a.x(),a.y()} < std::tuple{QPoint::dotProduct(b,b),b.x(),b.y()};
-            });
-            district.cells.resize(gridCount);
-            // Font metrics affect labels, never cross-device world coordinates.
-            district.width=std::max(int(district.label.size())+4,district.radius*2+5);
-            district.height=district.radius*2+7;
+            int left=0,right=0,top=0,bottom=0;
+            for (const auto& point:occupied) {
+                left=std::min(left,point.x()); right=std::max(right,point.x());
+                top=std::min(top,point.y()); bottom=std::max(bottom,point.y());
+            }
+            district.anchor={2-left,4-top};
+            for (const auto& row:district.rows) district.cells.append(local.value(row.path)+district.anchor);
+            district.width=std::max(right-left+5,int(district.label.size())+4);
+            district.height=bottom-top+8;
             area+=district.width*district.height; maxWidth=std::max(maxWidth,district.width);
             cluster.districts.append(district);
         }
@@ -220,44 +249,32 @@ void RadarIsland::layout(const QList<Row>& rows) {
     int area=0,maxWidth=0;
     for (const auto& cluster:clusters) { area+=cluster.width*cluster.height; maxWidth=std::max(maxWidth,cluster.width); }
     const int target=std::max(maxWidth,int(std::ceil(std::sqrt(area*1.4))));
-    int x=0,y=0,rowHeight=0,totalWidth=0,totalHeight=0;
+    int x=0,y=0,rowHeight=0;
     for (auto& cluster:clusters) {
         if (x>0 && x+cluster.width>target) { x=0; y+=rowHeight+12; rowHeight=0; }
         cluster.x=x; cluster.y=y; x+=cluster.width+12; rowHeight=std::max(rowHeight,cluster.height);
-        totalWidth=std::max(totalWidth,cluster.x+cluster.width); totalHeight=std::max(totalHeight,cluster.y+cluster.height);
     }
-    const QPoint offset(-totalWidth/2,-totalHeight/2);
+    QPoint offset;
+    if (!clusters.isEmpty()) {
+        const auto& cluster=clusters.first(); const auto& district=cluster.districts.first();
+        // The starting district stays in view instead of centering empty water.
+        offset=-(QPoint(cluster.x+district.x,cluster.y+district.y)+district.anchor);
+    }
     const auto resource=[&](const Row& row,const QPoint& point) {
         positions_.insert(row.path,world(point)); resourceBuckets_[bucket(point)].append(row.path);
     };
     for (const auto& cluster:clusters) {
         const QPoint origin=offset+QPoint(cluster.x,cluster.y);
         const auto clusterPoint=origin+QPoint(cluster.width/2,2);
-        const int clusterMarker=int(markers_.size());
         markers_.append({world(clusterPoint),cluster.labelBounds,"Cluster",cluster.name,cluster.label,true,
-            QRectF(world(origin),QSizeF(cluster.width*step,cluster.height*step)),{}});
-        QPainterPath land; land.setFillRule(Qt::WindingFill);
+            QRectF(world(origin),QSizeF(cluster.width*step,cluster.height*step))});
         for (const auto& district:cluster.districts) {
-            const auto anchor=origin+QPoint(district.x+district.width/2,district.y+1);
-            const auto center=world(origin+QPoint(district.x+district.width/2,district.y+district.radius+4));
-            land.addEllipse(center,(district.radius+2)*step,(district.radius+2)*step);
-            land.addEllipse(world(anchor),step*2,step*2);
+            const auto districtOrigin=origin+QPoint(district.x,district.y);
+            const auto anchor=districtOrigin+district.anchor;
             markers_.append({world(anchor),district.labelBounds,district.key.isEmpty() ? "Cluster" : "Namespace",district.group,district.label,false,
-                QRectF(world(origin+QPoint(district.x,district.y)),QSizeF(district.width*step,district.height*step)),{}});
-            auto cells=district.cells;
-            int gridIndex=0; bool namespacePlaced=false;
-            for (const auto& row:district.rows) {
-                if (!namespacePlaced && row.kind=="Namespace" && row.name==district.key) {
-                    resource(row,anchor); namespacePlaced=true; continue;
-                }
-                // Keep identity-seeded placement inside the district's rounded shoreline.
-                const auto next=gridIndex+hash(row.identity)%std::min<qsizetype>(8,cells.size()-gridIndex);
-                std::swap(cells[gridIndex],cells[next]);
-                const auto point=origin+QPoint(district.x+district.width/2,district.y+district.radius+4)+cells[gridIndex];
-                resource(row,point); ++gridIndex;
-            }
+                QRectF(world(districtOrigin),QSizeF(district.width*step,district.height*step))});
+            for (int index=0;index<district.rows.size();++index) resource(district.rows[index],districtOrigin+district.cells[index]);
         }
-        markers_[clusterMarker].land=land;
     }
     for (int index=0;index<markers_.size();++index)
         inBuckets(markers_[index].area,[&](const QPoint& area) { markerBuckets_[area].append(index); });
@@ -313,6 +330,22 @@ bool RadarIsland::selectResource(int index) {
     return true;
 }
 bool RadarIsland::resetView() { setViewPose({{"x",0},{"y",0},{"zoom",1}}); return true; }
+QImage RadarIsland::previewImage() {
+    if (!isVisible()) return {};
+    if (dirty_) synchronize();
+    QImage image(320,200,QImage::Format_ARGB32_Premultiplied); image.fill(QColor("#071619"));
+    QRectF bounds;
+    for (const auto& marker:markers_) if (marker.overview) bounds=bounds.isEmpty() ? marker.area : bounds.united(marker.area);
+    if (bounds.isEmpty()) return image;
+    QPainter painter(&image);
+    const auto scale=std::min(304./bounds.width(),184./bounds.height());
+    painter.translate(160,100); painter.scale(scale,scale); painter.translate(-bounds.center());
+    for (const auto& row:signature_) {
+        const auto point=positions_.value(row.path);
+        painter.fillRect(QRectF(point-QPointF(2.75,2.75),QSizeF(5.5,5.5)),terrainColor(row.kind));
+    }
+    return image;
+}
 QRectF RadarIsland::worldViewport() const { return {QPointF(-width()/2/zoom_,-height()/2/zoom_)-pan_,QSizeF(width()/zoom_,height()/zoom_)}; }
 void RadarIsland::project(bool refresh) {
     QList<RadarTiles::Entry> visible;
@@ -347,14 +380,6 @@ void RadarIsland::paint(QPainter* painter) {
     inBuckets(viewport.adjusted(-labelMargin,-labelMargin,labelMargin,labelMargin),[&](const QPoint& area) { visibleMarkers.append(markerBuckets_.value(area)); });
     std::sort(visibleMarkers.begin(),visibleMarkers.end());
     visibleMarkers.erase(std::unique(visibleMarkers.begin(),visibleMarkers.end()),visibleMarkers.end());
-    painter->save();
-    painter->translate(width()/2+pan_.x()*zoom_,height()/2+pan_.y()*zoom_); painter->scale(zoom_,zoom_);
-    for (const int index:visibleMarkers) {
-        const auto& marker=markers_[index];
-        if (marker.overview && viewport.intersects(marker.area))
-            painter->fillPath(marker.land,(groups_.contains(marker.group) ? terrainColor("Pod") : dimmed).darker(175));
-    }
-    painter->restore();
     inBuckets(viewport.adjusted(-step,-step,step,step),[&](const QPoint& area) {
         const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
         for (const auto& path:*found) {

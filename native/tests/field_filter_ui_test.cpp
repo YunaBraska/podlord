@@ -212,6 +212,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
         if (!workspace.openContext(context) || !waitFor([&] { return !workspace.busy() && !workspace.loading()
             && (server.events ? workspace.totalResourceCount() >= 3 : workspace.totalResourceCount() == 3 + server.extraConfigurations); })) return false;
         session = workspace.currentSession();
+        if (!workspace.setWorkspacePage("resources")) return false;
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
@@ -294,6 +295,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (scenario == "limit_restart") {
                 if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
                 podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
+                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
                 return waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 301; })
                     && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
             }
@@ -347,6 +350,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
             const auto expectedPresets = workspace.filterPresets();
             if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
             podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
+                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
             return waitFor([&] { return !restored.busy() && !restored.loading() && !restored.filterPresetsBusy()
                 && restored.currentSession() == session && restored.resourceCount() == 1; })
                 && restored.selectedFilterPreset() == name && restored.resourceFieldFilters() == expectedFields
@@ -626,6 +631,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 : waitFor([&] { return workspace.inspectorPath() == (eventTable ? QStringLiteral("/api/v1/namespaces/team-a/pods/alpha") : path); });
         }
         if (scenario == "typography") {
+            if (!waitFor([&] { const auto* cell=item(window,"cell_0_0"); const auto* header=item(window,"header_0"); return cell && header && cell->isVisible() && header->isVisible(); })) return false;
             const auto* cell = item(window, "cell_0_0");
             const auto* header = item(window, "header_0");
             if (!cell || !header || !cell->isVisible() || !header->isVisible()) return false;
@@ -673,6 +679,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (scenario == "preset_restart") {
                 if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
                 podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
+                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
                 return waitFor([&] { return !restored.busy() && !restored.loading() && !restored.property("filterPresetsBusy").toBool()
                     && restored.totalResourceCount() == 3 && restored.resourceCount() == 1; })
                     && restored.property("selectedFilterPreset").toString() == "Broken pods" && restored.property("problemsOnly").toBool();
@@ -732,6 +740,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
             QTest::keyClick(window, Qt::Key_Escape);
             if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
             podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
+                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
             return waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 1; })
                 && restored.property("resourceFieldFilters").toMap().value(field) == values.value(scenario) && restored.filterError().isEmpty();
         } else if (fields.contains(scenario)) {
@@ -820,6 +830,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
         if (scenario != "restart") return true;
     }
     podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
+                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
     return waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 1; })
         && restored.property("resourceFieldFilters").toMap().value("namespace").toString() == "team-a" && restored.filterError().isEmpty();
 }

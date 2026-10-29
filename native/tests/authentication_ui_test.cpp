@@ -241,7 +241,7 @@ bool execute(const QString& scenario) {
         window->resize(640, 320);
         server.reject = true;
         if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("compact rejection");
-        if (!click(window, "cell_0_0") || !waitFor([&] { return window->property("compactInspector").toBool(); })) {
+        if (!click(window, "resourcesWorkspaceButton") || !click(window, "cell_0_0") || !waitFor([&] { return window->property("compactInspector").toBool(); })) {
             const auto* cell = item(window, "cell_0_0");
             qWarning() << "Compact auth inspector:" << window->size() << "landscape" << window->property("compactLandscape")
                        << "inspector" << workspace->inspectorPath() << "cell" << (cell ? cell->mapToScene(QPointF{}) : QPointF{})
@@ -272,9 +272,13 @@ bool execute(const QString& scenario) {
         return !workspace->authenticationRequired() && read(counter) == "call\n";
     }
     if (scenario == "restore") {
+        const auto calls = server.calls;
         engine.reset(); workspace.reset();
         podlord::Workspace restored(profile);
-        return waitFor([&] { return restored.authenticationRequired() && !restored.busy(); }) && read(counter) == "call\n";
+        if (!waitFor([&] { return !restored.busy(); }) || restored.authenticationRequired()
+            || restored.authenticationRunning() || restored.table()->rowCount() != 0 || server.calls != calls || read(counter) != "call\n") return false;
+        return restored.activate(session) && waitFor([&] { return restored.authenticationRequired() && !restored.busy(); })
+            && server.calls == calls && read(counter) == "call\n";
     }
     return !workspace->authenticationRequired() && workspace->error().isEmpty();
 }
@@ -327,7 +331,7 @@ bool realCluster(const QString& original) {
     if (!waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); }, 60000)) {
         std::fprintf(stderr, "Exec certificate Kubernetes read failed: %s %s\n", qPrintable(workspace.error()), qPrintable(workspace.status())); return false;
     }
-    return click(window, "cell_0_0") && waitFor([&] { return workspace.inspected().contains("fetchedAt"); })
+    return click(window, "resourcesWorkspaceButton") && click(window, "cell_0_0") && waitFor([&] { return workspace.inspected().contains("fetchedAt"); })
         && workspace.inspected().contains("ConfigMap") && read(counter) == "call\n";
 }
 } // namespace

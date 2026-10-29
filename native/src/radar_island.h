@@ -8,7 +8,6 @@
 #include <QElapsedTimer>
 #include <QQueue>
 #include <QCache>
-#include <QPainterPath>
 
 namespace podlord {
 class RadarTiles final : public QAbstractListModel {
@@ -50,6 +49,7 @@ public:
     Q_INVOKABLE bool focusResource(int index, double zoom = 0);
     Q_INVOKABLE bool selectResource(int index);
     Q_INVOKABLE bool resetView();
+    Q_INVOKABLE QImage previewImage();
     void paint(QPainter* painter) override;
 signals:
     void sourceChanged();
@@ -61,7 +61,7 @@ private:
         QString path, kind, name, scope, cluster, owner, identity;
         bool operator==(const Row&) const = default;
     };
-    struct Marker final { QPointF world; QRectF labelBounds; QString kind, group, label; bool overview = false; QRectF area; QPainterPath land; };
+    struct Marker final { QPointF world; QRectF labelBounds; QString kind, group, label; bool overview = false; QRectF area; };
     struct Terrain final {
         QList<Row> signature;
         QHash<QString, QPointF> positions;

@@ -764,6 +764,7 @@ Result<SourceCatalog> KubeconfigStore::list() const {
     if (const auto* failure = std::get_if<Failure>(&sessions)) return *failure;
     const auto& removed = std::get<SessionCatalog>(sessions).removedContexts;
     SourceCatalog catalog;
+    QList<SourceSnapshot> snapshots;
     const QDir owned(std::get<QString>(directory));
     if (owned.exists() && !readableDirectory(owned.absolutePath()))
         return Failure{StoreError::ReadFailed, "Cannot read owned kubeconfig directory."};
@@ -773,14 +774,19 @@ Result<SourceCatalog> KubeconfigStore::list() const {
             catalog.errors.append({path.absoluteFilePath(), std::get<Failure>(source)});
             continue;
         }
-        auto snapshot = std::get<SourceSnapshot>(source);
+        snapshots.append(std::get<SourceSnapshot>(source));
+    }
+    std::sort(snapshots.begin(), snapshots.end(), [](const auto& a, const auto& b) {
+        return a.importedAt != b.importedAt ? a.importedAt > b.importedAt : a.id < b.id;
+    });
+    QSet<QString> currentPaths;
+    for (auto& snapshot : snapshots) {
+        snapshot.current = !currentPaths.contains(snapshot.sourcePath);
+        currentPaths.insert(snapshot.sourcePath);
         snapshot.contexts.erase(std::remove_if(snapshot.contexts.begin(), snapshot.contexts.end(),
             [&](const auto& context) { return removed.contains(context.id); }), snapshot.contexts.end());
         if (!snapshot.contexts.isEmpty()) catalog.sources.append(std::move(snapshot));
     }
-    std::sort(catalog.sources.begin(), catalog.sources.end(), [](const auto& a, const auto& b) {
-        return a.importedAt != b.importedAt ? a.importedAt > b.importedAt : a.id < b.id;
-    });
     return catalog;
 }
 Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) const {

@@ -8,16 +8,17 @@ The full ResourceTable cache supplies cluster, namespace, owner, kind and identi
 The existing filtered proxy supplies resource membership and inspector indices.
 On 2026-10-28 the user approved clearly separated cluster islands with namespace
 districts inside each island, replacing the earlier exact-reference topology.
-RadarIsland packs nonoverlapping cluster bounds and rounded namespace districts.
-Cached district shorelines group namespaces within each cluster, with water
-between clusters. The user rejected the artificial connecting land on 2026-10-28:
-these strokes do not represent Kubernetes relationships and are removed.
-Painting does not rebuild the shoreline or move tiles.
+RadarIsland packs nonoverlapping cluster bounds and namespace districts using
+the original deterministic Radar arm/depth placement inside each district.
+There are no circular placeholder land fills or artificial district connectors.
+These would invent geography or relationships absent from Kubernetes. Water
+separates clusters. Painting does not rebuild geometry or move tiles.
 The existing 90-percent new-logic coverage requirement is enforced over the entire
 modified synchronization/layout/painting/color/view-selection function family,
-including local functions. This is broader than counting added lines and avoids
-mixing unrelated existing water/input handlers into the new Map increment. Missing
-owners fail the gate rather than silently reducing its scope.
+map navigation, visual preview storage and capture, including local functions.
+The obsolete menu-only setter is replaced by the actual workspace-tab owner.
+This is broader than counting added lines and avoids mixing unrelated existing
+water/input handlers into the new Map increment. Missing owners fail the gate.
 Cluster-scoped resources occupy a separate district rather than an invented
 namespace. Actual Namespace resources remain selectable at their district anchor.
 The seven-unit lattice, kind-dependent terrain colors and identity-seeded placement
@@ -46,8 +47,11 @@ small Radar for the active context; only Map hides it. Opening a context from th
 overview reuses the ordinary context-opening flow, with no parallel loader or
 authentication path. The context map shares the existing renderer, filtered
 source, camera, selection, tooltip and alarm owner. Tab switching itself does not
-start a request, authenticate or reset filters, drafts or camera position.
-The new navigation is approved but not yet implemented. Cluster
+start a request, authenticate or reset filters, drafts or camera position for an
+already loaded session. Restored tabs are metadata-only until the first explicit
+resource-facing action, using the same normal loader. Map history reuses existing
+session activation and dirty-YAML Stay/Discard, not a second session catalog.
+Cluster
 names appear at overview scale, namespace district
 labels appear when zooming in, and resource glyphs/details retain their existing
 zoom and interaction rules. Labels use the current theme, viewport buckets, cached
@@ -56,14 +60,34 @@ text bounds and collision decluttering instead of a delegate per cached label.
 A context overview is separate from an opened context map. The user follow-up on
 2026-10-28 supersedes the earlier RAM-only overview: retain the latest visual
 preview across restarts, not a persistent Kubernetes resource store. The ordinary
-runtime cache and its TTL have a different purpose and remain unchanged here.
+runtime cache retains resource collections for a configurable positive number of
+whole hours, default 24. Sync settings capture its estimated payload size. This
+does not claim to measure heap allocation or change other cache lifetimes.
 Opening the overview must not open sessions, synchronize contexts or authenticate.
 Only visible previews need loading; entries without a preview show a question
 mark. Previews are removed with their catalog entry, with startup reconciliation
 only after a successful authoritative catalog load. No additional per-cluster age
-or connection-status panels are introduced. Tile ownership (context versus file)
-and retained namespace labels await clarification before dependent persistence
-or navigation is implemented.
+or connection-status panels are introduced. Only the current imported snapshot
+per normalized source origin supplies cards. Current membership is derived from
+the existing import-recency ordering before removed contexts are filtered, so
+removing a current cohort cannot resurrect historical cards. Older snapshots
+remain available to saved sessions. No new persisted current-version index or
+source-record format is introduced. Explicit reimport can select an older snapshot
+again through ordinary import recency. Partial catalog failure permits readable
+versions with a visible older-version warning; whole-catalog failure preserves
+the last readable cards with that warning. A complete successful reload clears it.
+Each immutable context ID owns one latest private 320 x 200 PNG, at most 512 KiB.
+Its caption uses the
+existing local alias and referenced cluster name outside the image. Multiple
+contexts referencing one cluster remain separate. PNGs contain no text or
+resource documents. A profile-owned background writer coalesces pending images,
+uses atomic replacement and drains accepted work on shutdown. Failed updates and
+cache expiry do not create replacement previews. Context removal serializes
+preview deletion after pending saves. Rendering reads cached URLs only, and the
+virtualized grid decodes visible images without contacting clusters.
+Short landscape viewports put the same preview beside the caption and rename
+action rather than clipping the caption or removing the image. This uses one
+responsive card layout, not a separate mobile implementation.
 
 ## Why use a sparse native surface with visible resource delegates?
 

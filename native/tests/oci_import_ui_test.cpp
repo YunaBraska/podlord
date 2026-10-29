@@ -195,7 +195,7 @@ bool run(const QString& scenario) {
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == (scenario == "identity" ? 2 : 1); }, 5000)) return false;
-    if (!test::clickVisible(window, "importOciKey")) return false;
+    if (!test::clickVisible(window,"mapSources") || !test::clickVisible(window, "importOciKey")) return false;
     auto* dialog = window->findChild<QObject*>("ociImportDialog");
     auto* context = window->findChild<QQuickItem*>("ociImportContext");
     if (!dialog || !dialog->property("visible").toBool() || !context || context->property("currentValue").toString() != contextId)
@@ -224,7 +224,7 @@ bool run(const QString& scenario) {
     }
     if (!workspace.openContext(contextId)
         || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); }, 5000)
-        || requests != 0) return false;
+        || requests != 0) { qWarning("OCI open: busy=%d auth=%d requests=%d",workspace.busy(),workspace.authenticationRequired(),requests); return false; }
     if (scenario == "removal_failure") {
         const auto privateCopy = profile + "/kubeconfigs/oci-" + contextId.mid(4) + ".cred";
         if (!QFile::remove(privateCopy) || !QDir().mkdir(privateCopy)
@@ -234,11 +234,11 @@ bool run(const QString& scenario) {
             && QFileInfo(privateCopy).isDir() && QFileInfo::exists(keyPath) && requests == 0;
     }
     if (!workspace.refresh(true) || !QTest::qWaitFor([&] { return requests > 0 && !workspace.authenticationRunning(); }, 5000)
-        || workspace.authenticationRequired()) return false;
+        || workspace.authenticationRequired()) { qWarning("OCI login: required=%d running=%d requests=%d",workspace.authenticationRequired(),workspace.authenticationRunning(),requests); return false; }
     if (freshness) {
         if (!QTest::qWaitFor([&] { return workspace.table()->rowCount() == 1 && !workspace.loading(); }, 7000)
             || !workspace.inspectPath(detailPath) || !QTest::qWaitFor([&] { return workspace.canEditYaml(); }, 5000)
-            || !workspace.setInspectorPage("yaml")) return false;
+            || !workspace.setInspectorPage("yaml")) { qWarning("OCI detail: rows=%d loading=%d editable=%d",workspace.table()->rowCount(),workspace.loading(),workspace.canEditYaml()); return false; }
         const auto cachedYaml = workspace.yamlText();
         if (recovery) {
             const auto failed = [&](const char* stage) {

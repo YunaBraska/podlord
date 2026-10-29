@@ -1,12 +1,15 @@
 #include "workspace.h"
+#include "resource_client.h"
 #include <QFile>
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QPointer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <cstdio>
+#include <limits>
 
 namespace {
 QVariantMap cacheMetric(const podlord::Workspace& workspace) {
@@ -19,7 +22,8 @@ bool run(const QString& scenario) {
     QTemporaryDir temporary;
     QTcpServer api;
     if (!temporary.isValid() || !api.listen(QHostAddress::LocalHost)) return false;
-    const auto now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    auto reference = QDateTime::currentDateTimeUtc();
+    const auto now = reference.toString(Qt::ISODateWithMs);
     const auto object = [&](const QString& kind, const QString& name) {
         return QJsonObject{{"apiVersion", "v1"}, {"kind", kind},
             {"metadata", QJsonObject{{"name", name}, {"namespace", "default"}, {"uid", kind + '-' + name}, {"resourceVersion", "1"}, {"creationTimestamp", now}}}};
@@ -37,6 +41,8 @@ bool run(const QString& scenario) {
     const auto secretPath = QStringLiteral("/api/v1/namespaces/default/secrets/cached-secret");
     bool changed = false;
     int requests = 0;
+    QPointer<QTcpSocket> heldList;
+    QByteArray heldResponse;
     QObject::connect(&api, &QTcpServer::newConnection, &api, [&] {
         while (auto* socket = api.nextPendingConnection()) {
             QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
@@ -67,11 +73,90 @@ bool run(const QString& scenario) {
                 } else if (path == podPath + "/log") raw = now.toUtf8() + " hello from main\n";
                 else { status = 404; response = {{"kind", "Status"}, {"message", "not found"}}; }
                 const auto bytes = raw.isEmpty() ? QJsonDocument(response).toJson(QJsonDocument::Compact) : raw;
-                socket->write("HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Length: " + QByteArray::number(bytes.size()) + "\r\nConnection: close\r\n\r\n" + bytes);
+                const auto reply = "HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Length: " + QByteArray::number(bytes.size()) + "\r\nConnection: close\r\n\r\n" + bytes;
+                if (scenario == "collection_ttl_inflight" && path == "/api/v1/pods") {
+                    heldList = socket; heldResponse = reply; return;
+                }
+                socket->write(reply);
                 socket->disconnectFromHost();
             });
         }
     });
+    if (scenario.startsWith("collection_ttl_")) {
+        podlord::ReadSettings settings;
+        if (scenario == "collection_ttl_short" || scenario == "collection_ttl_closed") settings.collectionCacheHours = 1;
+        else if (scenario == "collection_ttl_long" || scenario == "collection_ttl_detail" || scenario == "collection_ttl_auth") settings.collectionCacheHours = 48;
+        else if (scenario == "collection_ttl_maximum") settings.collectionCacheHours = std::numeric_limits<int>::max();
+        else if (scenario != "collection_ttl_default" && scenario != "collection_ttl_shorten" && scenario != "collection_ttl_shorten_closed"
+            && scenario != "collection_ttl_lengthen" && scenario != "collection_ttl_invalid" && scenario != "collection_ttl_inflight") return false;
+        const auto fetchedAt = reference;
+        podlord::ClusterConnection connection;
+        connection.server = QUrl(QString("http://127.0.0.1:%1").arg(api.serverPort())); connection.credentialId = "cache-ttl";
+        if (scenario == "collection_ttl_auth") connection.expiresAt = reference.addSecs(600);
+        podlord::ResourceClient client(nullptr, [&] { return reference; });
+        if (!client.configure(settings) || !client.open("cached", connection, {})) return false;
+        if (scenario == "collection_ttl_inflight") {
+            if (!waitFor([&] { return !heldList.isNull(); })) return false;
+            settings.collectionCacheHours = 1;
+            if (!client.configure(settings) || !heldList || heldList->write(heldResponse) != heldResponse.size()) return false;
+            heldList->disconnectFromHost(); heldList.clear(); heldResponse.clear();
+        }
+        if (!waitFor([&] { return client.initialSyncComplete("cached") && !client.loading("cached") && client.rows("cached").size() == 3; })) return false;
+        const auto populated = client.cacheDiagnostics();
+        if (populated.value("collections").toLongLong() != 3 || populated.value("resources").toLongLong() != 3 || populated.value("payloadBytes").toLongLong() <= 0) return false;
+        if (scenario == "collection_ttl_detail"
+            && (!client.inspect("cached", podPath) || !waitFor([&] { return !client.loading("cached") && !client.document("cached", podPath).isEmpty(); }))) return false;
+        if (scenario == "collection_ttl_closed" || scenario == "collection_ttl_shorten_closed") {
+            if (!client.close("cached")) return false;
+        } else if (!client.showSession({})) return false;
+        const auto calls = requests;
+        if (scenario == "collection_ttl_invalid") {
+            auto invalid = settings; invalid.collectionCacheHours = 0;
+            if (client.configure(invalid)) return false;
+            invalid.collectionCacheHours = -1;
+            if (client.configure(invalid) || client.cacheDiagnostics() != populated) return false;
+        }
+        if (scenario == "collection_ttl_shorten" || scenario == "collection_ttl_shorten_closed") {
+            reference = fetchedAt.addSecs(2 * 60 * 60);
+            if (!client.synchronize() || client.rows("cached").size() != 3) return false;
+            settings.collectionCacheHours = 1;
+            if (!client.configure(settings)) return false;
+        } else {
+            if (scenario == "collection_ttl_lengthen") {
+                reference = fetchedAt.addSecs(23 * 60 * 60);
+                if (!client.synchronize() || client.rows("cached").size() != 3) return false;
+                settings.collectionCacheHours = 48;
+                if (!client.configure(settings)) return false;
+            }
+            if (scenario == "collection_ttl_detail") {
+                reference = fetchedAt.addSecs(300);
+                if (!client.synchronize() || client.document("cached", podPath).isEmpty()) return false;
+                reference = reference.addMSecs(1);
+                if (!client.synchronize() || !client.document("cached", podPath).isEmpty()
+                    || client.cacheDiagnostics().value("details").toLongLong() != 0 || client.rows("cached").size() != 3) return false;
+            }
+            if (scenario == "collection_ttl_auth") {
+                reference = fetchedAt.addSecs(600);
+                if (!client.synchronize() || !client.authenticationRequired("cached") || client.credentialRevision("cached") || client.rows("cached").size() != 3) return false;
+            }
+            if (settings.collectionCacheHours > 24) {
+                reference = fetchedAt.addSecs(24 * 60 * 60).addMSecs(1);
+                if (!client.synchronize() || client.rows("cached").size() != 3) return false;
+            }
+            reference = fetchedAt.addSecs(static_cast<qint64>(settings.collectionCacheHours) * 60 * 60);
+            if (!client.synchronize() || client.rows("cached").size() != 3) return false;
+            const auto retained = client.cacheDiagnostics();
+            const auto audit = client.requestAudit("cached");
+            reference = reference.addMSecs(1);
+            if (client.cacheDiagnostics() != retained || client.requestAudit("cached") != audit || requests != calls) return false;
+            if (!client.synchronize()) return false;
+        }
+        const auto expired = client.cacheDiagnostics();
+        return client.rows("cached").isEmpty() && !client.containsResource("cached", podPath)
+            && expired.value("collections").toLongLong() == 0 && expired.value("resources").toLongLong() == 0
+            && expired.value("payloadBytes").toLongLong() == 0 && requests == calls
+            && client.synchronize() && client.cacheDiagnostics() == expired && requests == calls;
+    }
     podlord::Workspace workspace(temporary.filePath("profile"));
     if (!waitFor([&] { return !workspace.busy(); })) return false;
     const auto empty = cacheMetric(workspace);

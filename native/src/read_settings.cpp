@@ -11,7 +11,7 @@
 #include <array>
 
 namespace podlord {
-bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
+bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && collectionCacheHours > 0 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
 ReadSettingsStore::ReadSettingsStore(QString profile) : profile_(std::move(profile)) {}
 Result<ReadSettings> ReadSettingsStore::load() const {
     if (const auto failure = profileFailure(profile_)) return *failure;
@@ -26,7 +26,7 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
     const int version = root["version"].toInt(-1);
-    constexpr std::array fieldCounts{3, 4, 5, 8, 10, 11, 12, 11};
+    constexpr std::array fieldCounts{3, 4, 5, 8, 10, 11, 12, 11, 12};
     if (error.error != QJsonParseError::NoError || !document.isObject() || version < 1 || version > static_cast<int>(fieldCounts.size()) || root.size() != fieldCounts[version - 1])
         return Failure{StoreError::InvalidData, "Invalid profile request settings; existing data was retained."};
     const auto integer = [](const QJsonValue& value, int maximum) {
@@ -60,11 +60,16 @@ Result<ReadSettings> ReadSettingsStore::load() const {
             return Failure{StoreError::InvalidData, "UI language must be a shipped language code or system; existing settings were retained."};
         settings.language = root["language"].toString();
     }
+    if (version >= 9) {
+        if (!integer(root["collectionCacheHours"], std::numeric_limits<int>::max()) || root["collectionCacheHours"].toInt() == 0)
+            return Failure{StoreError::InvalidData, "Collection cache lifetime must be a positive whole number of hours."};
+        settings.collectionCacheHours = root["collectionCacheHours"].toInt();
+    }
     if (!settings.valid()) return Failure{StoreError::InvalidData, "Invalid profile appearance settings; existing data was retained."};
     return settings;
 }
 Result<ReadSettings> ReadSettingsStore::save(ReadSettings value, ReadSettings expected) const {
-    if (!value.valid()) return Failure{StoreError::InvalidInput, "Choose valid request limits and canonical shipped appearance settings."};
+    if (!value.valid()) return Failure{StoreError::InvalidInput, "Choose valid request limits, a positive collection cache lifetime in whole hours, and canonical shipped appearance settings."};
     if (const auto failure = profileFailure(profile_)) return *failure;
     const bool created = !QFileInfo::exists(profile_);
     if (!QDir().mkpath(profile_) || (created && !QFile::setPermissions(profile_, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner)))
@@ -81,7 +86,7 @@ Result<ReadSettings> ReadSettingsStore::save(ReadSettings value, ReadSettings ex
     const auto current = load();
     if (const auto* failure = std::get_if<Failure>(&current)) return *failure;
     if (std::get<ReadSettings>(current) != expected) return Failure{StoreError::Conflict, "Request settings changed in another window. Reload before saving."};
-    const QJsonObject root{{"version", 8}, {"requestHardLimitPerMinute", value.requestHardLimitPerMinute}, {"inactiveSyncMinutes", value.inactiveSyncMinutes}, {"logLimitMb", value.logLimitMb}, {"yamlLimitMiB", value.yamlLimitMiB}, {"themeName", value.themeName}, {"themeVariant", value.themeVariant}, {"radarWaterEnabled", value.radarWaterEnabled}, {"radarWaterSpeedPercent", value.radarWaterSpeedPercent}, {"workspaceRestore", value.workspaceRestore}, {"language", value.language}};
+    const QJsonObject root{{"version", 9}, {"requestHardLimitPerMinute", value.requestHardLimitPerMinute}, {"inactiveSyncMinutes", value.inactiveSyncMinutes}, {"logLimitMb", value.logLimitMb}, {"yamlLimitMiB", value.yamlLimitMiB}, {"themeName", value.themeName}, {"themeVariant", value.themeVariant}, {"radarWaterEnabled", value.radarWaterEnabled}, {"radarWaterSpeedPercent", value.radarWaterSpeedPercent}, {"workspaceRestore", value.workspaceRestore}, {"language", value.language}, {"collectionCacheHours", value.collectionCacheHours}};
     QSaveFile file(path); file.setDirectWriteFallback(false);
     const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) || file.write(bytes) != bytes.size() || !file.commit())

@@ -42,6 +42,66 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile");
     const auto path = QDir(profile).filePath("read-settings.json");
     const ReadSettingsStore store(profile);
+    if (name == "collection_cache_default")
+        return require(ReadSettings{}.collectionCacheHours == 24, "Collection cache default is not 24 hours.")
+            && value(store.load(), {}) && !QFileInfo::exists(profile);
+    if (name == "collection_cache_save" || name == "collection_cache_maximum" || name == "collection_cache_zero"
+        || name == "collection_cache_negative" || name == "collection_cache_conflict") {
+        auto desired = ReadSettings{};
+        desired.collectionCacheHours = name == "collection_cache_maximum" ? std::numeric_limits<int>::max()
+            : name == "collection_cache_zero" ? 0 : name == "collection_cache_negative" ? -1 : 48;
+        if (name == "collection_cache_zero" || name == "collection_cache_negative")
+            return failure(store.save(desired, {}), StoreError::InvalidInput) && !QFileInfo::exists(profile);
+        if (!value(store.save(desired, {}), desired) || !value(store.load(), desired)) return false;
+        const auto bytes = read(path);
+        const auto saved = QJsonDocument::fromJson(bytes).object();
+        if (saved["version"] != 9 || saved["collectionCacheHours"].toInt() != desired.collectionCacheHours) return false;
+        if (name != "collection_cache_conflict") return value(store.save(desired, desired), desired) && value(store.load(), desired);
+        auto stale = ReadSettings{}; stale.logLimitMb = 7;
+        return failure(store.save(stale, {}), StoreError::Conflict) && read(path) == bytes && value(store.load(), desired);
+    }
+    if (name.startsWith("collection_cache_upgrade_v")) {
+        const int version = name.sliced(QString("collection_cache_upgrade_v").size()).toInt();
+        if (version < 1 || version > 8 || !QDir().mkpath(profile)) return false;
+        QJsonObject root{{"version", version}, {"requestHardLimitPerMinute", 120}, {"inactiveSyncMinutes", 2}};
+        ReadSettings expected{120, 2};
+        if (version >= 2) { root["logLimitMb"] = 7; expected.logLimitMb = 7; }
+        if (version >= 3) { root["yamlLimitMiB"] = 4; expected.yamlLimitMiB = 4; }
+        if (version >= 4) {
+            root["themeName"] = "Gunmetal Sector"; root["themeVariant"] = "light";
+            if (version <= 7) root["themeIntensity"] = "subtle";
+            expected.themeName = "Gunmetal Sector"; expected.themeVariant = "light";
+        }
+        if (version >= 5) {
+            root["radarWaterEnabled"] = false; root["radarWaterSpeedPercent"] = 25;
+            expected.radarWaterEnabled = false; expected.radarWaterSpeedPercent = 25;
+        }
+        if (version >= 6) { root["workspaceRestore"] = false; expected.workspaceRestore = false; }
+        if (version >= 7) { root["language"] = "de"; expected.language = "de"; }
+        const auto bytes = QJsonDocument(root).toJson();
+        if (!write(path, bytes) || !value(store.load(), expected) || read(path) != bytes) return false;
+        auto desired = expected; desired.collectionCacheHours = 48;
+        if (!value(store.save(desired, expected), desired) || !value(store.load(), desired)) return false;
+        const auto saved = QJsonDocument::fromJson(read(path)).object();
+        return saved["version"] == 9 && saved["collectionCacheHours"] == 48 && !saved.contains("themeIntensity");
+    }
+    if (name.startsWith("collection_cache_schema_")) {
+        if (!value(store.save({}, {}), {})) return false;
+        auto root = QJsonDocument::fromJson(read(path)).object();
+        if (name == "collection_cache_schema_zero") root["collectionCacheHours"] = 0;
+        else if (name == "collection_cache_schema_negative") root["collectionCacheHours"] = -1;
+        else if (name == "collection_cache_schema_fraction") root["collectionCacheHours"] = 1.5;
+        else if (name == "collection_cache_schema_string") root["collectionCacheHours"] = "24";
+        else if (name == "collection_cache_schema_overflow") root["collectionCacheHours"] = 2147483648.0;
+        else if (name == "collection_cache_schema_null") root["collectionCacheHours"] = QJsonValue::Null;
+        else if (name == "collection_cache_schema_boolean") root["collectionCacheHours"] = true;
+        else if (name == "collection_cache_schema_missing") root.remove("collectionCacheHours");
+        else if (name == "collection_cache_schema_extra") root["extra"] = 0;
+        else return require(false, "Unknown collection cache schema scenario.");
+        const auto bytes = QJsonDocument(root).toJson();
+        return write(path, bytes) && failure(store.load(), StoreError::InvalidData)
+            && failure(store.save({}, {}), StoreError::InvalidData) && read(path) == bytes;
+    }
     if (name.startsWith("appearance_upgrade_")) {
         const auto intensity = name.mid(QString("appearance_upgrade_").size());
         QJsonObject root{{"version",7},{"requestHardLimitPerMinute",120},{"inactiveSyncMinutes",2},{"logLimitMb",7},{"yamlLimitMiB",4},
@@ -54,7 +114,7 @@ bool scenario(const QString& name) {
         expected.radarWaterEnabled = false; expected.radarWaterSpeedPercent = 25; expected.workspaceRestore = false; expected.language = "de";
         if (!value(store.load(), expected) || read(path) != bytes || !value(store.save(expected, expected), expected)) return false;
         const auto saved = QJsonDocument::fromJson(read(path)).object();
-        return value(store.load(), expected) && saved["version"] == 8 && !saved.contains("themeIntensity");
+        return value(store.load(), expected) && saved["version"] == 9 && !saved.contains("themeIntensity");
     }
     if (name == "appearance_removed_field") {
         if (!value(store.save({}, {}), {})) return false;
@@ -119,7 +179,7 @@ bool scenario(const QString& name) {
     if (!QDir().mkpath(profile)) return false;
     if (name == "schema_v3_upgrade") {
         if (!write(path, "{\"version\":3,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6,\"yamlLimitMiB\":4}")) return false;
-        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 8;
+        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 9;
     }
     if (name == "version_two_yaml_upgrade") {
         if (!write(path, "{\"version\":2,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6}")) return false;
@@ -127,21 +187,26 @@ bool scenario(const QString& name) {
     }
     if (name == "version_one_upgrade") {
         if (!write(path, "{\"version\":1,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2}")) return false;
-        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 8;
+        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 9;
     }
     if (name == "conflict" || name == "repeat") {
         if (!value(store.save({120, 1}, {}), {120, 1})) return false;
         const auto bytes = read(path);
         return name == "conflict" ? failure(store.save({121, 2}, {}), StoreError::Conflict) && read(path) == bytes : value(store.save({120, 1}, {120, 1}), {120, 1}) && value(store.load(), {120, 1});
     }
-    if (name == "concurrent") {
+    if (name == "concurrent" || name == "collection_cache_concurrent") {
         std::latch ready(2), start(1);
         const auto save = [&](ReadSettings settings) {
             ready.count_down(); start.wait();
             return ReadSettingsStore(profile).save(settings, {});
         };
-        auto first = std::async(std::launch::async, save, ReadSettings{120, 1});
-        auto second = std::async(std::launch::async, save, ReadSettings{121, 2});
+        auto firstSettings = ReadSettings{120, 1}, secondSettings = ReadSettings{121, 2};
+        if (name == "collection_cache_concurrent") {
+            firstSettings = {}; secondSettings = {};
+            firstSettings.collectionCacheHours = 1; secondSettings.collectionCacheHours = 48;
+        }
+        auto first = std::async(std::launch::async, save, firstSettings);
+        auto second = std::async(std::launch::async, save, secondSettings);
         ready.wait(); start.count_down();
         const auto a = first.get(), b = second.get();
         const bool aWon = std::holds_alternative<ReadSettings>(a), bWon = std::holds_alternative<ReadSettings>(b);

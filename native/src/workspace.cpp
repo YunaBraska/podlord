@@ -325,8 +325,15 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     dashboardRows_.setFilterRegularExpression("^true$");
     reloadTableLayouts();
     reloadFilterPresets();
-    connect(&client_, &ResourceClient::changed, this, [this](const QString& id) { if (id == active_) { publishInspector(); emit yamlEditChanged(); emit changed(); } });
+    connect(&runtime_->previews, &MapPreviews::changed, this, &Workspace::mapPreviewsChanged);
+    connect(&client_, &ResourceClient::changed, this, [this](const QString& id) { if (id == active_) {
+        publishInspector(); emit yamlEditChanged(); emit changed();
+        if (mapPreviewNeeded()) emit mapPreviewRequested(id);
+    } });
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) { if (id == active_) publish(); });
+    connect(&client_, &ResourceClient::collectionAccepted, this, [this](const QString& id) {
+        if (id==active_) { pendingMapPreview_=id; if (mapPreviewNeeded()) emit mapPreviewRequested(id); }
+    });
     sourceTable_.setSourceModel(&sourceRows_);
     sourceTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
     connect(this, &Workspace::resourcePresentationChanged, this, [this] {
@@ -358,7 +365,7 @@ QVariantList Workspace::contexts() const {
         for (const auto& context : source.contexts)
             result.append(QVariantMap{{"id", context.id}, {"name", context.displayName}, {"context", context.name}, {"source", source.sourcePath},
                 {"auth", context.authType}, {"usable", context.brokenReferences.isEmpty()}, {"cluster",context.cluster}, {"user",context.user},
-                {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")}});
+                {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")}, {"current",source.current}});
     return result;
 }
 QVariantList Workspace::sessions() const { return sessionRows(selection_, false); }
@@ -490,6 +497,11 @@ bool Workspace::confirmDiscard(bool discard) {
     const auto pending = *pendingLeave_; pendingLeave_.reset();
     if (!discard) { emit changed(); return true; }
     if (pending.origin != active_) { error_ = "The originating session changed. Your draft is preserved; request the action again."; emit changed(); return false; }
+    if (pending.action==Leave::MapHistory && (pending.historyIndex<0 || pending.historyIndex>=mapHistory_.size()
+        || mapHistory_[pending.historyIndex]!=pending.target
+        || std::none_of(catalog_.sessions.cbegin(),catalog_.sessions.cend(),[&](const auto& session) { return session.id==QUuid(pending.target); }))) {
+        error_="The requested map target is no longer available. Your draft was retained."; emit changed(); return false;
+    }
     clearYamlDraft(); emit changed();
     switch (pending.action) {
     case Leave::Resource: return inspectResource(pending.target);
@@ -502,6 +514,7 @@ bool Workspace::confirmDiscard(bool discard) {
     case Leave::Draft: return true;
     case Leave::Reload: return reload();
     case Leave::History: return inspectHistory(pending.target, pending.historyIndex);
+    case Leave::MapHistory: return visitMapHistory(pending.target, pending.historyIndex);
     }
     return false;
 }
@@ -703,12 +716,16 @@ bool Workspace::copyValue(const QString& id, const QString& representation) {
 QAbstractItemModel* Workspace::table() { return &table_; }
 int Workspace::requestLimit() const { return settings_.requestHardLimitPerMinute; }
 int Workspace::inactiveSyncMinutes() const { return settings_.inactiveSyncMinutes; }
-bool Workspace::saveReadSettings(int requestLimit, int inactiveMinutes, const QString& value) {
+int Workspace::collectionCacheHours() const { return settings_.collectionCacheHours; }
+void Workspace::refreshCacheUsage() {
+    cachePayloadBytes_=client_.cacheDiagnostics().value("payloadBytes").toLongLong(); emit cacheUsageChanged();
+}
+bool Workspace::saveReadSettings(int requestLimit, int inactiveMinutes, const QString& value, int cacheHours) {
     static const QRegularExpression integer("^[1-9][0-9]*$");
     bool valid = false;
     const int limit = value.toInt(&valid);
     if (!valid || !integer.match(value).hasMatch()) { settingsError_ = "Log-size limit must be a positive whole number of MB."; emit changed(); return false; }
-    auto desired = settings_; desired.requestHardLimitPerMinute = requestLimit; desired.inactiveSyncMinutes = inactiveMinutes; desired.logLimitMb = limit;
+    auto desired = settings_; desired.requestHardLimitPerMinute = requestLimit; desired.inactiveSyncMinutes = inactiveMinutes; desired.logLimitMb = limit; desired.collectionCacheHours=cacheHours;
     return savePolicy(desired);
 }
 bool Workspace::savePolicy(ReadSettings desired) {
@@ -722,7 +739,7 @@ bool Workspace::savePolicy(ReadSettings desired) {
         if (const auto* failure = std::get_if<Failure>(&result)) settingsError_ = failure->message;
         else {
             settings_ = std::get<ReadSettings>(result); settingsError_.clear(); settingsReady_ = true;
-            publishAppearance(); client_.configure(settings_); client_.enableRequests(true);
+            publishAppearance(); client_.configure(settings_); client_.enableRequests(true); refreshCacheUsage();
             for (auto* other : runtime_->windows) {
                 if (other == this || other->windowClosed_) continue;
                 const auto language = other->settings_.language;
@@ -870,9 +887,11 @@ bool Workspace::reload() {
             publishAppearance(); client_.configure(settings_); client_.enableRequests(true);
             if (previousLanguage != settings_.language) emit languageChanged();
         }
+        sourceCatalogFailed_ = std::holds_alternative<Failure>(sources);
         if (const auto* failure = std::get_if<Failure>(&sources)) error_ = failure->message;
         else {
             sources_ = std::get<SourceCatalog>(sources);
+            reconcileMapPreviews();
             error_ = sources_.errors.isEmpty() ? QString{} : "Some owned source records could not be read; healthy sources remain available.";
         }
         if (const auto* failure = std::get_if<Failure>(&sessions)) error_ = failure->message;
@@ -892,7 +911,13 @@ bool Workspace::reload() {
                 if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; emit changed(); }
                 else {
                     if (restore) { restoreViewStates(views); viewsLoaded_ = true; }
-                    if (select(std::get<SessionCatalog>(result)) && !active_.isEmpty()) resolve(active_);
+                    mapNavigating_=restore;
+                    const bool selected=select(std::get<SessionCatalog>(result));
+                    mapNavigating_=false;
+                    if (restore) {
+                        navigation_[active_].workspace="map";
+                        emit changed();
+                    } else if (selected && !active_.isEmpty() && client_.connection(active_)) resolve(active_);
                 }
             });
             order->setFuture(QtConcurrent::run([profile, schemas, restore, closeOnStartup] {
@@ -925,7 +950,8 @@ bool Workspace::select(const SessionCatalog& catalog, bool local) {
     emit logViewChanging();
     catalog_ = catalog;
     active_ = next;
-    client_.showSession(active_, viewId_);
+    rememberMapSession(sessionChanged);
+    client_.showSession(workspacePage()=="map" && mapOverview() ? QString{} : active_, viewId_);
     emit catalogsChanged();
     if (sessionChanged || active_.isEmpty()) publish();
     else emit changed();
@@ -1078,6 +1104,7 @@ bool Workspace::confirmSourceRemoval() {
                 [&](const auto& context) { return context.id == contextId; }), source.contexts.end());
         sources_.sources.erase(std::remove_if(sources_.sources.begin(), sources_.sources.end(),
             [](const auto& source) { return source.contexts.isEmpty(); }), sources_.sources.end());
+        reconcileMapPreviews(); runtime_->previews.forget(contextId);
         const auto& catalog = std::get<SessionCatalog>(result);
         selection_.sessions.erase(std::remove_if(selection_.sessions.begin(), selection_.sessions.end(),
             [&](const auto& session) { return session.config.contextId == contextId; }), selection_.sessions.end());
@@ -1213,6 +1240,8 @@ bool Workspace::duplicateSession(const QString& id, const QString& name) {
 bool Workspace::openContext(const QString& context, bool inWindow) {
     if (busy_ || pendingLeave_) return false;
     if (!contextUsable(context)) { error_ = "Choose an available, usable imported context."; emit changed(); return false; }
+    for (const auto& session:catalog_.sessions)
+        if (session.config==SessionConfig{context,{}}) navigation_[sessionId(session.id)].workspace="map";
     if (inWindow && !windowActionsAvailable()) return false;
     if (inWindow) {
         for (const auto& session : catalog_.sessions) if (session.config == SessionConfig{context, {}}) return openSessionWindow(sessionId(session.id));
@@ -1220,13 +1249,19 @@ bool Workspace::openContext(const QString& context, bool inWindow) {
     }
     for (const auto& session : catalog_.sessions)
         if (session.config == SessionConfig{context, {}})
-            if (auto* owner = runtime_->owners.value(sessionId(session.id)); owner && owner != this)
-                return owner->activate(sessionId(session.id)) && runtime_->host && runtime_->host->focus(*owner);
+            if (auto* owner = runtime_->owners.value(sessionId(session.id)); owner && owner != this) {
+                owner->navigation_[sessionId(session.id)].workspace="map";
+                const bool accepted=owner->activate(sessionId(session.id));
+                if (accepted) { owner->rememberMapSession(); emit owner->changed(); }
+                return accepted && runtime_->host && runtime_->host->focus(*owner);
+            }
     if (std::any_of(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) {
         return sessionId(session.id) == active_ && session.open && session.config == SessionConfig{context, {}};
     })) {
+        rememberMapSession(); emit changed();
+        client_.showSession(active_,viewId_);
         if (!error_.isEmpty()) { error_.clear(); emit changed(); }
-        return true;
+        return client_.connection(active_) ? true : resolve(active_);
     }
     const auto existing = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return session.config == SessionConfig{context, {}}; });
     if (!inWindow && (existing == catalog_.sessions.cend() || sessionId(existing->id) != active_) && !allowLeave(Leave::Context, context)) return false;
@@ -1253,11 +1288,14 @@ bool Workspace::activate(const QString& id) {
     if (busy_ || found == catalog_.sessions.cend()) return false;
     if (auto* owner = runtime_->owners.value(id); owner && owner != this)
         return owner->activate(id) && runtime_->host && runtime_->host->focus(*owner);
-    if (id == active_ && found->open && catalog_.activeSession == QUuid(id)) return true;
+    if (id == active_ && found->open && catalog_.activeSession == QUuid(id)) {
+        if (workspacePage()=="map") { rememberMapSession(); client_.showSession(id,viewId_); emit changed(); }
+        return client_.connection(id) ? true : resolve(id);
+    }
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
     if (!client_.showSession(id, viewId_)) return false;
     const bool sessionSwitch = active_ != id;
-    emit logViewChanging(); active_ = id; publish(sessionSwitch);
+    emit logViewChanging(); active_ = id; rememberMapSession(); publish(sessionSwitch);
     if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected, viewId_);
     else publishLogs();
     return mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });
@@ -1333,20 +1371,19 @@ bool Workspace::publishDashboard() {
     if (changed) emit dashboardChanged(); return true;
 }
 bool Workspace::setWorkspacePage(const QString& page) {
-    if (page != "resources" && page != "ports" && page != "settings" && page != "events" && page != "alerts" && page != "dashboard") return false;
+    if (page != "map" && page != "resources" && page != "ports" && page != "settings" && page != "events" && page != "alerts" && page != "dashboard") return false;
     if (navigation_.value(active_).workspace == page) return true;
     navigation_[active_].workspace = page;
+    if (page=="map") rememberMapSession();
+    client_.showSession(page=="map" && mapOverview() ? QString{} : active_,viewId_);
     if (page=="dashboard") publishDashboard();
-    emit changed(); return true;
+    emit changed();
+    if ((page=="resources" || page=="events" || page=="ports" || page=="dashboard") && !active_.isEmpty() && !client_.connection(active_)) return resolve(active_);
+    return true;
 }
 bool Workspace::rememberRadarView(const QVariantMap& view) {
     if (active_.isEmpty() || !RadarIsland::validPose(view)) return false;
     navigation_[active_].radarView = view; return true;
-}
-bool Workspace::setResourceMap(bool enabled) {
-    if (navigation_.value(active_).resourceMap == enabled) return true;
-    navigation_[active_].resourceMap = enabled;
-    emit changed(); return true;
 }
 bool Workspace::inspectPath(const QString& path) {
     if (path.isEmpty()) return false;

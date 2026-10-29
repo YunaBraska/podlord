@@ -43,47 +43,7 @@ Pane {
             }
         }
     }
-    Dialog {
-        id: sourceAliasDialog
-        property string contextId: ""
-        property string canonicalName: ""
-        property string failure: ""
-        title: "Rename source context"
-        modal: true
-        focus: true
-        parent: Overlay.overlay
-        width: Math.min(520, parent.width - 24)
-        x: (parent.width - width) / 2; y: Math.max(12, (parent.height - height) / 2)
-        closePolicy: workspace.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: "Canonical context: " + sourceAliasDialog.canonicalName; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            TextField { id: sourceAliasName; objectName: "sourceAliasName"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Source display name"; placeholderText: "Empty restores the canonical name"; onAccepted: sourceAliasDialog.save() }
-            Label { Layout.fillWidth: true; text: "Only the display label changes. Credentials, context identity and sessions remain unchanged."; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
-            Label { objectName: "sourceAliasError"; Layout.fillWidth: true; visible: text !== ""; text: sourceAliasDialog.failure; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
-        }
-        footer: DialogButtonBox {
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceAlias"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceAliasDialog.close() }
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "saveSourceAlias"; text: workspace.busy ? "Saving..." : "Save"; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }
-        }
-        function edit(context) {
-            contextId = context.id; canonicalName = context.context; failure = ""
-            sourceAliasName.text = context.name
-            open(); sourceAliasName.forceActiveFocus(); sourceAliasName.selectAll()
-        }
-        function save() {
-            failure = ""
-            if (!workspace.renameSourceContext(contextId, sourceAliasName.text)) failure = "Another source operation is still running. Try again when it finishes."
-        }
-        onClosed: { contextId = ""; canonicalName = ""; sourceAliasName.text = ""; failure = "" }
-        Connections {
-            target: workspace
-            function onSourceImportFinished(success) {
-                if (!sourceAliasDialog.visible) return
-                if (success) sourceAliasDialog.close()
-                else sourceAliasDialog.failure = workspace.sourceImportError
-            }
-        }
-    }
+    SourceAliasDialog { id: sourceAliasDialog }
     signal sourcesRequested()
     signal fileRequested()
     signal folderRequested()
@@ -104,6 +64,8 @@ Pane {
         if (visible && section === "sources") workspace.refreshSourceTable()
         requests.value = workspace.requestLimit
         inactive.value = workspace.inactiveSyncMinutes
+        cacheHours.value = workspace.collectionCacheHours
+        if (visible && section === "sync") workspace.refreshCacheUsage()
         logs.text = workspace.logLimitMb.toString()
         yaml.text = workspace.yamlLimitMiB.toString()
     }
@@ -200,8 +162,10 @@ Pane {
                     Layout.fillWidth: true; visible: settings.section === "sync"
                     SettingRow { label: "Inactive session sync"; help: "Minutes. 0 disables inactive sync. Closed sessions never synchronize."; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: "Inactive session sync in minutes" } }
                     SettingRow { label: "Request limit per minute"; help: "0 adds no extra limit. Requests remain at least 400 ms apart, with up to four parallel reads. Inspector reads have priority."; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; enabled: !workspace.busy; Accessible.name: "Request limit per minute" } }
+                    SettingRow { label: "Resource cache TTL"; help: "Hours. Default 24. Longer retention can use more memory. Retains resource collections, including closed sessions. Does not extend credential or detail freshness."; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: "Resource cache TTL in hours" } }
+                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: "Cached payload (estimate): " + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: "Captured on opening or saving Sync settings. JSON and log text across sessions, excluding object overhead and shared UI projections." }
                     SettingRow { label: "Retained logs per Pod"; help: "Positive whole MB. Default 5 MB."; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Retained logs per Pod in MB" } }
-                    IconButton { glyph: ""; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text) }
+                    IconButton { glyph: ""; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value) }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "privacy"

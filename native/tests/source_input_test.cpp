@@ -203,6 +203,7 @@ bool management(const QString& scenario, const QString& root, const QString& pro
     const auto settle = [&] { require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Management operation did not settle"); };
     if (mode == "refresh_quick_controls_changed") {
         write(origin, yaml + "- name: third\n  context:\n    cluster: local\n    user: local\n");
+        press("mapSources");
         require(click(window, item("reloadSources")), "Cannot activate public Reload sources button");
         settle();
         require(sourceCount() == 2, "Reload sources did not import changed original content");

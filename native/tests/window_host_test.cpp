@@ -132,15 +132,19 @@ bool run(const QString& scenario) {
     podlord::WindowHost host(primary);
     REQUIRE(host.open() && host.windows().size() == 1);
     auto* main = host.windows().first();
-    REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && !primary.filterPresetsBusy() && primary.resourceCount() == 2; }));
-    REQUIRE(primary.windowActionsAvailable() && primary.tabs().size() == 2);
-    if (scenario == "repeat") { REQUIRE(host.open() && host.windows().size() == 1 && primary.tabs().size() == 2); return true; }
-    if (scenario == "missing") { REQUIRE(!primary.detachSession("missing") && host.windows().size() == 1); return true; }
+    REQUIRE(waitFor([&] { return !primary.busy() && !primary.filterPresetsBusy() && primary.tabs().size()==2; }));
+    REQUIRE(primary.resourceCount()==0 && api.requests==0 && primary.mapOverview());
     if (scenario == "root_restore") {
         REQUIRE(main->close()); REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
         const auto catalog = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(catalog));
         REQUIRE(std::get<podlord::SessionCatalog>(catalog).sessions[0].open && std::get<podlord::SessionCatalog>(catalog).sessions[1].open); return true;
     }
+    REQUIRE(primary.activate(primary.currentSession()));
+    REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && !primary.filterPresetsBusy() && primary.resourceCount() == 2; }));
+    REQUIRE(primary.setWorkspacePage("resources"));
+    REQUIRE(primary.windowActionsAvailable() && primary.tabs().size() == 2);
+    if (scenario == "repeat") { REQUIRE(host.open() && host.windows().size() == 1 && primary.tabs().size() == 2); return true; }
+    if (scenario == "missing") { REQUIRE(!primary.detachSession("missing") && host.windows().size() == 1); return true; }
     const auto path = QString("/api/v1/namespaces/default/pods/alpha");
     REQUIRE(primary.inspectPath(path));
     REQUIRE(waitFor([&] { return primary.canEditYaml(); }));
@@ -299,7 +303,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return !primary.busy() && detached->title().contains("Detached renamed"); })); return true;
     }
     if (scenario == "settings") {
-        REQUIRE(detached->saveReadSettings(600, 5, "5"));
+        REQUIRE(detached->saveReadSettings(600, 5, "5", detached->collectionCacheHours()));
         REQUIRE(waitFor([&] { return !detached->busy() && primary.requestLimit() == 600; }));
         REQUIRE(primary.saveRadarWater(false, 77));
         REQUIRE(waitFor([&] { return !primary.busy() && !detached->radarWaterEnabled() && detached->radarWaterSpeedPercent() == 77; })); return true;

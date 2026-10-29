@@ -1,6 +1,7 @@
 {
   "version": 1,
   "english": {
+    "nav.map": "Map",
     "about.bmc": "Buy Me a Coffee",
     "about.createIssue": "Create issue",
     "about.githubRepo": "GitHub repository",
@@ -1113,6 +1114,7 @@
       "code": "de",
       "name": "Deutsch",
       "text": {
+        "nav.map": "Karte",
         "action.applyServerSide": "SERVERSEITIG ANWENDEN",
         "action.duplicate": "DUPLIZIEREN",
         "action.reset": "ZUR\u00DCCKSETZEN",

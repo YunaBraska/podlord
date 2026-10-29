@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include <QGuiApplication>
 #include <QDir>
 #include <QFile>
@@ -192,6 +193,8 @@ int main(int argc, char** argv) {
         if (mode == "repeat" || mode == "changed") {
             if (mode == "changed") write(fixture, config("https://127.0.0.1:10"));
             finished = false;
+            require(podlord::test::clickVisible(window, "mapSources"), "Cannot reveal source controls for the repeated import");
+            button = podlord::test::visibleItem(window->contentItem(), "importK3dButton");
             require(click(window, button) && QTest::qWaitFor([&] { return finished && !workspace.busy(); }, 10000), "Repeated import did not settle");
             loaded = store.list();
             require(std::holds_alternative<podlord::SourceCatalog>(loaded)

@@ -378,11 +378,12 @@ bool ResourceClient::logsShown(const QString& id, const QString& key) const {
 bool ResourceClient::wanted(const QString& id) const { return states_.contains(id) && states_[id].open && (isVisible(id) || settings_.inactiveSyncMinutes > 0); }
 bool ResourceClient::configure(ReadSettings settings) {
     if (!settings.valid()) return false;
-    if (settings_.requestHardLimitPerMinute == settings.requestHardLimitPerMinute && settings_.inactiveSyncMinutes == settings.inactiveSyncMinutes
-        && settings_.logLimitMb == settings.logLimitMb && settings_.yamlLimitMiB == settings.yamlLimitMiB) {
-        settings_ = std::move(settings); return true;
-    }
-    settings_ = settings;
+    const bool readPolicyChanged = settings_.requestHardLimitPerMinute != settings.requestHardLimitPerMinute || settings_.inactiveSyncMinutes != settings.inactiveSyncMinutes
+        || settings_.logLimitMb != settings.logLimitMb || settings_.yamlLimitMiB != settings.yamlLimitMiB;
+    const bool collectionCacheChanged = settings_.collectionCacheHours != settings.collectionCacheHours;
+    settings_ = std::move(settings);
+    if (collectionCacheChanged) expire();
+    if (!readPolicyChanged) return true;
     for (auto state = states_.begin(); state != states_.end(); ++state)
         for (auto& history : state->logs) {
             history.trim(static_cast<qint64>(settings_.logLimitMb) * 1000000);
@@ -651,6 +652,10 @@ QString ResourceClient::status(const QString& id) const {
     if (it->pending) messages.append(QString("Loading (%1 queued or running)").arg(it->pending));
     return messages.isEmpty() ? "No resource snapshot yet" : messages.join("\n");
 }
+bool ResourceClient::collectionSnapshotAvailable(const QString& id) const {
+    const auto state=states_.constFind(id);
+    return state!=states_.cend() && !state->collections.isEmpty();
+}
 bool ResourceClient::loading(const QString& id) const { return states_.contains(id) && states_[id].pending > 0; }
 bool ResourceClient::syncLoading(const QString& id) const { return states_.contains(id) && states_[id].syncPending > 0; }
 double ResourceClient::loadingProgress(const QString& id) const {
@@ -862,7 +867,7 @@ void ResourceClient::expire() {
             for (const auto& cursor : history.cursors) next = std::min(next, std::max<qint64>(1, now.msecsTo(cursor.fetched.addSecs(60)) + 1));
         }
         for (auto entry = it->collections.begin(); entry != it->collections.end();) {
-            const auto delay = now.msecsTo(entry->at.addSecs(86400)) + 1;
+            const auto delay = now.msecsTo(entry->at.addSecs(static_cast<qint64>(settings_.collectionCacheHours) * 60 * 60)) + 1;
             if (delay <= 0) { entry = it->collections.erase(entry); rowsChanged = true; } else { next = std::min(next, delay); ++entry; }
         }
         for (auto entry = it->details.begin(); entry != it->details.end();) {
@@ -1196,6 +1201,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
                 *entry = {row, next.received};
             }
             if (different || canonicalChanged) publishRows(task.id);
+            emit collectionAccepted(task.id);
         }
     } else {
         const auto kind = document["kind"].toString();

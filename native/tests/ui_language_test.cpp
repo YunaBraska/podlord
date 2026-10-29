@@ -91,7 +91,7 @@ bool scenario(const QStringList& args) {
         original.requestHardLimitPerMinute = 120; original.logLimitMb = 7;
         require(std::holds_alternative<podlord::ReadSettings>(store.save(original, {})), "Cannot establish the settings boundary.");
         auto root = QJsonDocument::fromJson(read(path)).object();
-        if (mode == "store_old_read" || mode == "store_old_upgrade") { root["version"] = 6; root.remove("language"); root["themeIntensity"] = "subtle"; }
+        if (mode == "store_old_read" || mode == "store_old_upgrade") { root["version"] = 6; root.remove("language"); root.remove("collectionCacheHours"); root["themeIntensity"] = "subtle"; }
         else if (mode == "store_missing") root.remove("language");
         else if (mode == "store_type") root["language"] = 3;
         else if (mode == "store_empty") root["language"] = "";
@@ -114,7 +114,7 @@ bool scenario(const QStringList& args) {
         auto desired = original; desired.language = "de";
         return require(std::holds_alternative<podlord::ReadSettings>(store.save(desired, original))
             && std::get<podlord::ReadSettings>(store.load()) == desired
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 8, "Language upgrade lost unrelated settings.");
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 9, "Language upgrade lost unrelated settings.");
     }
     podlord::Workspace workspace(profile);
     QQmlApplicationEngine engine;
@@ -176,7 +176,7 @@ bool scenario(const QStringList& args) {
         require(QTest::qWaitFor([&] { return !reopened.busy(); }, 5000) && reopened.uiLanguage() == code && reopened.uiText() == workspace.uiText(), "Reopening the profile lost its language.");
     }
     if (mode == "preserve") {
-        require(workspace.saveReadSettings(120, 2, "7") && QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Cannot save read policy after a language change.");
+        require(workspace.saveReadSettings(120, 2, "7", workspace.collectionCacheHours()) && QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Cannot save read policy after a language change.");
         const auto persisted = podlord::ReadSettingsStore(profile).load();
         require(std::holds_alternative<podlord::ReadSettings>(persisted) && std::get<podlord::ReadSettings>(persisted).language == code
             && std::get<podlord::ReadSettings>(persisted).logLimitMb == 7, "Saving read policy overwrote language.");

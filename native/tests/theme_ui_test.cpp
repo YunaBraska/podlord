@@ -175,7 +175,7 @@ bool exercise(const QStringList& arguments) {
         require(reopened.property("themeName").toString() == selected && reopened.property("themeVariant").toString() == variant, "Restart lost appearance choices");
     }
     if (scenario == "preserve") {
-        require(workspace.saveReadSettings(120, 2, "7"), "Cannot save read policy after appearance");
+        require(workspace.saveReadSettings(120, 2, "7", workspace.collectionCacheHours()), "Cannot save read policy after appearance");
         require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Read-policy save did not settle");
         const auto result = podlord::ReadSettingsStore(profile).load();
         require(std::holds_alternative<podlord::ReadSettings>(result), "Cannot read combined settings");

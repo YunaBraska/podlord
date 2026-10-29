@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
             if (scenario.endsWith("_lock")) require(QDir().mkpath(directory.filePath("profile")) && lock.tryLock(0), "Could not acquire the external profile lock.");
             if (scenario.endsWith("_conflict")) {
                 podlord::Workspace other(directory.filePath("profile"));
-                require(QTest::qWaitFor([&] { return !other.busy(); }, 5000) && other.saveReadSettings(121, 0, "5"), "Could not save settings through the other workspace.");
+                require(QTest::qWaitFor([&] { return !other.busy(); }, 5000) && other.saveReadSettings(121, 0, "5", other.collectionCacheHours()), "Could not save settings through the other workspace.");
                 require(QTest::qWaitFor([&] { return !other.busy() && other.requestLimit() == 121; }, 5000), "The other workspace did not complete its save.");
             }
             click(yaml ? "inlineSaveYamlLimit" : "inlineSaveSync");

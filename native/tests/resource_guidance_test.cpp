@@ -175,11 +175,12 @@ bool ui(const QString& mode) {
         require(podlord::test::scrollIntoView(target->window(), target), "Cannot reveal guidance action for real input");
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
     };
+    require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Saved tab metadata did not restore");
+    press("resourcesWorkspaceButton");
     if (!QTest::qWaitFor([&] { return workspace.table()->rowCount() == 1 && !workspace.busy() && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Discovery: rows=%d; requests=%d; active=%s; status=%s\n", workspace.table()->rowCount(), boundary.requests, qPrintable(workspace.currentSession()), qPrintable(workspace.status()));
         require(false, "Real API discovery/list did not populate the cache");
     }
-    press("resourcesWorkspaceButton");
     require(QTest::qWaitFor([&] { return item("cell_0_0") != nullptr; }, 2000), "Resource workspace did not present its cached row");
     press("cell_0_0");
     require(QTest::qWaitFor([&] { return workspace.resourceGuidance().size() == 1 && item("resourceGuidanceToggle"); }, 5000), "Accepted detail did not publish cached guidance");

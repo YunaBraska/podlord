@@ -89,6 +89,7 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (!podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return 1;
     auto* sidebar = window->findChild<QQuickItem*>("workspaceSidebarHost");
     auto* content = window->findChild<QQuickItem*>("workspaceContent");
     if (!sidebar || !content || !sidebar->isVisible()) return 1;
