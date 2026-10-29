@@ -1,0 +1,22 @@
+name: "🛍️ CD · App Store Upload"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@6c254c34cccee8f75f5baa0f63dc3b5376cd24f2
+    with:
+      app_name: Podlord
+      bundle_id: berlin.yuna.podlord
+    secrets: inherit
+
+  upload:
+    needs: package
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@172316ba468bd7bbdf0d57ea28856d68b7aacb2e
+    with:
+      app_name: Podlord
+    secrets: inherit

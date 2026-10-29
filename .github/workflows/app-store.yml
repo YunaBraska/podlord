@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   package:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@c1e2f53278d0119c98e8ecf09c82042d0bdf108e
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@6c254c34cccee8f75f5baa0f63dc3b5376cd24f2
     with:
       app_name: Podlord
       bundle_id: berlin.yuna.podlord
