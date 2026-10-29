@@ -103,7 +103,7 @@ bool run(const QString& scenario) {
     const QStringList cases{"unknown_session", "empty_token", "empty_patch", "short_patch", "wrong_uid",
         "wrong_name", "wrong_kind", "wrong_api_version", "wrong_namespace", "wrong_uid_guard", "wrong_version_guard",
         "reversed_guards", "oversize_patch", "closed", "inactive", "disabled", "authentication",
-        "stale_revision", "expired_detail_authority", "backward_detail_authority", "credential_expired",
+        "stale_revision", "empty_detail_authority", "expired_detail_authority", "backward_detail_authority", "credential_expired",
         "queued_duplicate", "running_duplicate", "cancel_queued", "cancel_running", "cancel_wrong_token",
         "cancel_empty_queue", "cancel_read_queue", "readback_rejected", "readback_uncertain",
         "readback_unknown_session", "readback_empty_token", "readback_closed", "readback_inactive"};
@@ -123,6 +123,21 @@ bool run(const QString& scenario) {
     if (scenario == "credential_expired") connection.expiresAt = now.addSecs(600);
     require(client.open("one", connection, {}) && client.showSession("one"), "Cannot open real request client");
     require(QTest::qWaitFor([&] { return client.initialSyncComplete("one") && client.containsResource("one", path); }, 10000), "Discovery did not publish target");
+    if (scenario == "empty_detail_authority") {
+        const auto row = client.resource("one", path);
+        const auto authority = client.credentialRevision("one");
+        require(authority.has_value(), "Initial credentials are not ready");
+        kubernetes.document = {};
+        require(client.inspect("one", path), "Cannot request malformed external detail");
+        require(QTest::qWaitFor([&] { return client.detailStatus("one", path).contains("Invalid detail response."); }, 10000),
+            "Empty HTTP document was not explicitly rejected");
+        require(!client.detailRevision("one", path).has_value() && client.document("one", path).isEmpty(),
+            "Empty HTTP document granted edit authority");
+        require(client.credentialRevision("one") == authority && client.resource("one", path) == row,
+            "Malformed detail revoked credentials or replaced the collection row");
+        require(kubernetes.writes == 0, "Malformed detail caused a write");
+        return true;
+    }
     require(client.inspect("one", path) && QTest::qWaitFor([&] { return client.document("one", path) == baseline; }, 10000), "Cannot acquire fresh target through real GET");
     if (deleteCases.contains(scenario)) {
         auto target = client.resource("one", path);

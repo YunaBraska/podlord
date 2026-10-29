@@ -1357,7 +1357,7 @@ if(BUILD_TESTING)
     foreach(scenario unknown_session empty_token empty_patch short_patch wrong_uid
             wrong_name wrong_kind wrong_api_version wrong_namespace wrong_uid_guard wrong_version_guard
             reversed_guards oversize_patch closed inactive disabled authentication
-            stale_revision expired_detail_authority backward_detail_authority credential_expired
+            stale_revision empty_detail_authority expired_detail_authority backward_detail_authority credential_expired
             queued_duplicate running_duplicate cancel_queued cancel_running cancel_wrong_token
             cancel_empty_queue cancel_read_queue readback_rejected readback_uncertain
             readback_unknown_session readback_empty_token readback_closed readback_inactive)

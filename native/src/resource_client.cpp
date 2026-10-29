@@ -576,8 +576,8 @@ std::optional<quint64> ResourceClient::detailRevision(const QString& id, const Q
     if (!authority) return {};
     const auto state = states_.constFind(id);
     const auto entry = state->details.constFind(path);
-    if (entry == state->details.cend() || entry->revision != *authority || entry->document.isEmpty()
-        || detail(id, path).isEmpty()) return {};
+    // Only validated, nonempty HTTP documents enter the detail cache.
+    if (entry == state->details.cend() || entry->revision != *authority || detail(id, path).isEmpty()) return {};
     const auto age = entry->at.msecsTo(now_());
     return age >= 0 && age <= 300000 ? std::optional<quint64>{entry->revision} : std::nullopt;
 }

@@ -1,7 +1,6 @@
 {
   "version": 1,
   "english": {
-    "nav.map": "Map",
     "about.bmc": "Buy Me a Coffee",
     "about.createIssue": "Create issue",
     "about.githubRepo": "GitHub repository",
@@ -162,6 +161,7 @@
     "logs.pauseTail": "Pause tail",
     "logs.pauseTailHelp": "Pause automatic pod log tailing for the focused pod.",
     "nav.events": "EVENTS",
+    "nav.map": "Map",
     "nav.ports": "PORTS",
     "nav.resources": "RESOURCES",
     "nav.search": "Search",
@@ -1114,7 +1114,6 @@
       "code": "de",
       "name": "Deutsch",
       "text": {
-        "nav.map": "Karte",
         "action.applyServerSide": "SERVERSEITIG ANWENDEN",
         "action.duplicate": "DUPLIZIEREN",
         "action.reset": "ZUR\u00DCCKSETZEN",
@@ -1160,6 +1159,7 @@
         "inspector.overview": "\u00DCbersicht",
         "inspector.values": "Werte",
         "nav.events": "EREIGNISSE",
+        "nav.map": "Karte",
         "nav.resources": "RESSOURCEN",
         "nav.search": "Suche",
         "nav.settings": "EINSTELLUNGEN",

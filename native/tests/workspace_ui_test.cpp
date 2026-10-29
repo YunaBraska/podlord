@@ -3024,9 +3024,16 @@ bool execute(const QString& requestedScenario) {
                 std::fprintf(stderr,"Water pixels/clock/transport failed: equal=%d frames=%lld calls=%d initial=%d\n",before==capture(QRectF(8,8,100,80)),static_cast<long long>(frames.size()),int(server.requests.size()),int(calls)); return false;
             }
             if (scenario=="radar_water_reopen") {
-                if (!click(window,item(window,"toggleSidebar")) || !still() || !click(window,item(window,"toggleSidebar"))) return false;
+                if (!click(window,item(window,"toggleSidebar"))) return failed("water close toolbar");
+                if (!still()) return failed("water hidden clock");
+                if (!click(window,item(window,"toggleSidebar"))) return failed("water reopen toolbar");
                 frames.clear(); QTest::qWait(650);
-                return frames.size()>=2 && server.requests.size()==calls;
+                if (frames.size()<2 || server.requests.size()!=calls) {
+                    std::fprintf(stderr,"Reopened water: frames=%lld playing=%d visible=%d calls=%d initial=%d\n",
+                        static_cast<long long>(frames.size()),water->property("playing").toBool(),water->isVisible(),int(server.requests.size()),int(calls));
+                    return failed("water restored clock");
+                }
+                return true;
             }
             return true;
         }
