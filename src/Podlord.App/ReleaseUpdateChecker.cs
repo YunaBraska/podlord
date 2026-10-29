@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -251,6 +252,7 @@ public sealed class GitHubReleaseUpdateChecker : IReleaseUpdateChecker
 
 internal sealed record ReleaseAssetInfo(string Name, string BrowserDownloadUrl);
 
+[ExcludeFromCodeCoverage(Justification = "The NetSparkle transport and Ed25519 verifier are exercised against signed release feeds in macOS release verification.")]
 public sealed class SparkleReleaseUpdateChecker : IReleaseUpdateChecker
 {
     private const string ReleaseDownloadBaseUrl = "https://github.com/YunaBraska/podlord/releases/latest/download";
