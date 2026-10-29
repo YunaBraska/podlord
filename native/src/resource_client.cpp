@@ -849,6 +849,7 @@ void ResourceClient::suspend(const QString& credential, const QString& message) 
     scheduleLogs();
 }
 void ResourceClient::expire() {
+    using namespace Qt::StringLiterals;
     expiry_.stop();
     const auto now = now_();
     qint64 next = std::numeric_limits<qint64>::max();
@@ -856,9 +857,9 @@ void ResourceClient::expire() {
     for (auto it = states_.begin(); it != states_.end(); ++it) {
         bool rowsChanged = false, detailChanged = false;
         if (it->healthExpiry.isValid() && it->healthExpiry<=now) rowsChanged=true;
-        for (const auto& cached : it->resources) if (!cached.value["metricStale"].toBool()) {
-            const auto at=QDateTime::fromString(cached.value["metricAt"].toString(), Qt::ISODateWithMs);
-            if (!at.isValid() || cached.value["apiVersion"]!="v1") continue;
+        for (const auto& cached : it->resources) if (!cached.value["metricStale"_L1].toBool()) {
+            const auto at=QDateTime::fromString(cached.value["metricAt"_L1].toString(), Qt::ISODateWithMs);
+            if (!at.isValid() || cached.value["apiVersion"_L1]!=QStringLiteral("v1")) continue;
             const auto delay=now.msecsTo(at.addSecs(25))+1;
             if (delay<=0) rowsChanged=true; else next=std::min(next, delay);
         }
