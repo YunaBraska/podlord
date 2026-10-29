@@ -21,7 +21,12 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="JAJ.Packages.MiniAudioEx" Version="3.3.7" />
+    <PackageReference Include="NetSparkleUpdater.SparkleUpdater" Version="3.1.0" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="PodlordUpdatePublicKey" Value="$(PodlordUpdatePublicKey)" />
   </ItemGroup>
 
   <ItemGroup>

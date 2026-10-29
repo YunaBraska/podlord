@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -568,6 +569,20 @@ public sealed class AppBehaviorTests
         Assert.Null(GitHubReleaseUpdateChecker.PreferredAssetUrl(assets, "podlord-macos-arm.zip"));
         Assert.Matches(@"^podlord-(macos|win|linux)-(arm64|arm|x86|x64)\.(zip|tar\.gz)$", GitHubReleaseUpdateChecker.RuntimeReleaseAssetName());
         Assert.Matches(@"^\d+\.\d+\.\d+", GitHubReleaseUpdateChecker.CurrentApplicationVersion());
+    }
+
+    [Fact]
+    public void Signed_macos_update_feeds_are_architecture_specific()
+    {
+        Assert.Equal(
+            "https://github.com/YunaBraska/podlord/releases/latest/download/appcast-macos-arm64.xml",
+            SparkleReleaseUpdateChecker.FeedUrl(Architecture.Arm64));
+        Assert.Equal(
+            "https://github.com/YunaBraska/podlord/releases/latest/download/appcast-macos-x64.xml",
+            SparkleReleaseUpdateChecker.FeedUrl(Architecture.X64));
+        Assert.Equal(
+            "https://github.com/YunaBraska/podlord/releases/latest/download/appcast-macos-x64.xml",
+            SparkleReleaseUpdateChecker.FeedUrl(Architecture.X86));
     }
 
     [Fact]

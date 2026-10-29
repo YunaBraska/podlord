@@ -69,6 +69,7 @@ rm -rf "$PUBLISH_DIR" "$BUNDLE_DIR"
   -p:DebugType=none \
   -p:DebugSymbols=false \
   -p:PodlordAppStore="${PODLORD_APP_STORE:-false}" \
+  -p:PodlordUpdatePublicKey="${MACOS_UPDATE_PUBLIC_KEY:-}" \
   -p:Version="$VERSION" \
   -o "$PUBLISH_DIR"
 

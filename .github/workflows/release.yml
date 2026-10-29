@@ -16,8 +16,9 @@ permissions:
 
 jobs:
   release:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@7c43a771389723d3e9d037ad1b7ce6d2ab7be7de
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@57a1b3d17849cc22d170a7710a8f9976e3b7a21f
     with:
       force: ${{ inputs.force }}
       notarize_macos: true
+      macos_update_public_key: ${{ vars.MACOS_UPDATE_PUBLIC_KEY }}
     secrets: inherit

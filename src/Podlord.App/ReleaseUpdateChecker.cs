@@ -3,6 +3,9 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NetSparkleUpdater;
+using NetSparkleUpdater.Enums;
+using NetSparkleUpdater.SignatureVerifiers;
 using Podlord.Core;
 
 namespace Podlord.App;
@@ -248,13 +251,99 @@ public sealed class GitHubReleaseUpdateChecker : IReleaseUpdateChecker
 
 internal sealed record ReleaseAssetInfo(string Name, string BrowserDownloadUrl);
 
+public sealed class SparkleReleaseUpdateChecker : IReleaseUpdateChecker
+{
+    private const string ReleaseDownloadBaseUrl = "https://github.com/YunaBraska/podlord/releases/latest/download";
+    private readonly SparkleUpdater updater;
+
+    public SparkleReleaseUpdateChecker(string publicKey, Architecture architecture)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicKey);
+        updater = new SparkleUpdater(
+            FeedUrl(architecture),
+            new Ed25519Checker(SecurityMode.Strict, publicKey, string.Empty, false, 0),
+            typeof(SparkleReleaseUpdateChecker).Assembly.GetName().Name ?? "Podlord.App");
+    }
+
+    public async Task<UpdateCheckState> CheckLatestAsync(string currentVersion, CancellationToken cancellationToken)
+    {
+        var checkedAt = DateTimeOffset.UtcNow.ToString("O");
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return await Task.FromCanceled<UpdateCheckState>(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            var result = await updater.CheckForUpdatesQuietly(false).ConfigureAwait(false);
+            var update = result.Updates.FirstOrDefault();
+            if (result.Status != UpdateStatus.UpdateAvailable || update is null)
+            {
+                return new UpdateCheckState(
+                    checkedAt,
+                    currentVersion,
+                    currentVersion,
+                    string.Empty,
+                    string.Empty,
+                    false,
+                    result.Status == UpdateStatus.CouldNotDetermine ? "Signed update feed could not be verified." : string.Empty);
+            }
+
+            var latestVersion = update.Version ?? string.Empty;
+            return new UpdateCheckState(
+                checkedAt,
+                currentVersion,
+                latestVersion,
+                string.Empty,
+                update.DownloadLink ?? string.Empty,
+                GitHubReleaseUpdateChecker.IsNewerRelease(currentVersion, latestVersion),
+                string.Empty);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new UpdateCheckState(
+                checkedAt,
+                currentVersion,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                false,
+                "Signed update feed could not be verified.");
+        }
+    }
+
+    public void Dispose()
+    {
+        updater.Dispose();
+    }
+
+    internal static string FeedUrl(Architecture architecture)
+    {
+        var platform = architecture == Architecture.Arm64 ? "arm64" : "x64";
+        return $"{ReleaseDownloadBaseUrl}/appcast-macos-{platform}.xml";
+    }
+}
+
 public static class ReleaseUpdateCheckerFactory
 {
     public static IReleaseUpdateChecker CreateDefault()
     {
         var disabled = Environment.GetEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK");
-        return disabled is "1" or "true" or "TRUE"
-            ? new NoOpReleaseUpdateChecker()
+        if (disabled is "1" or "true" or "TRUE")
+        {
+            return new NoOpReleaseUpdateChecker();
+        }
+
+#if PODLORD_APP_STORE
+        return new NoOpReleaseUpdateChecker();
+#else
+        var publicKey = typeof(ReleaseUpdateCheckerFactory).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "PodlordUpdatePublicKey")
+            ?.Value;
+        return RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && !string.IsNullOrWhiteSpace(publicKey)
+            ? new SparkleReleaseUpdateChecker(publicKey, RuntimeInformation.ProcessArchitecture)
             : new GitHubReleaseUpdateChecker();
+#endif
     }
 }
