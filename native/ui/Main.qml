@@ -46,8 +46,7 @@ ApplicationWindow {
     Action { id: portCommand; text: "Open Port Forwards"; enabled: workspace.canPortForward; onTriggered: workspace.preparePortForward() }
     Action { id: settingsCommand; text: "Open Settings"; onTriggered: workspace.setWorkspacePage("settings") }
     Action { id: problemsCommand; text: "Toggle Problems"; enabled: workspace.currentSession !== ""; onTriggered: workspace.setFilterMode(workspace.problemsOnly ? "" : "problems") }
-    Action { id: k3dCommand; text: "Import K3D"; enabled: !workspace.busy; onTriggered: workspace.importK3d() }
-    CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand, k3dCommand] }
+    CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand] }
     Shortcut { sequences: ["Ctrl+K", "Meta+K"]; onActivated: commands.open() }
     Shortcut { sequences: [StandardKey.Find]; enabled: workspace.workspacePage === "map" && !workspace.mapOverview; onActivated: { window.searchOpen = true; Qt.callLater(resourceFilterInput.forceActiveFocus) } }
     Shortcut { sequences: [StandardKey.Back]; enabled: workspace.workspacePage === "map" ? workspace.canMapBack : workspace.canInspectBack; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(-1) : workspace.navigateInspector(-1) }
@@ -630,7 +629,6 @@ ApplicationWindow {
                     Button { text: "Browse"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: chooser.open() }
                     Button { objectName: "browseSourceFolder"; text: "Folder"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: folderChooser.open() }
                     Button { objectName: "importButton"; text: "Import"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: { window.sourcesExpanded = true; sourcePath.text.trim() ? workspace.importFile(sourcePath.text) : chooser.open() } }
-                    Button { objectName: "importK3dButton"; action: k3dCommand; text: "K3D"; Accessible.name: "Import generated K3D kubeconfigs"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4 }
                 }
                 GridLayout {
                     Layout.fillWidth: true

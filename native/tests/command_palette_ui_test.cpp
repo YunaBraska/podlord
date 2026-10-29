@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
         require(palette && QTest::qWaitFor([&] { return palette->property("opened").toBool(); }, 2000), "Palette did not finish opening.");
         auto* search = item("commandPaletteSearch");
         require(QTest::qWaitFor([&] { return search->hasActiveFocus(); }, 2000), "Palette search did not receive keyboard focus.");
-        require(item("commandPaletteList")->property("count").toInt() == 8, "Migrated command catalog is incomplete.");
+        require(item("commandPaletteList")->property("count").toInt() == 7, "Command catalog contains a missing or obsolete action.");
         const auto evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/command-palette-" + scenario + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png"), "Cannot capture actual palette scene.");
         const auto query = [&](const QByteArray& text) {
@@ -144,13 +144,13 @@ int main(int argc, char** argv) {
                 click("commandPaletteButton");
                 require(QTest::qWaitFor([&] { return palette->property("visible").toBool(); }, 2000)
                     && item("commandPaletteSearch")->property("text").toString().isEmpty()
-                    && item("commandPaletteList")->property("count").toInt() == 8, "Reopened palette retained an obsolete query.");
+                    && item("commandPaletteList")->property("count").toInt() == 7, "Reopened palette retained an obsolete query.");
             }
         } else if (scenario == "close") {
             click("commandPaletteClose");
             require(QTest::qWaitFor([&] { return !palette->property("visible").toBool(); }, 2000), "Close did not dismiss palette.");
         } else if (scenario == "empty") {
-            query("no-such-command");
+            query("k3d");
             require(item("commandPaletteList")->property("count").toInt() == 0
                 && item("commandPaletteEmpty")->property("text").toString() == "No commands match.", "Unknown command has no explicit feedback.");
             QTest::keyClick(window, Qt::Key_Return);

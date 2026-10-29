@@ -593,7 +593,6 @@ public:
     Q_INVOKABLE bool importGkeServiceAccount(const QString& contextId, const QString& keyPath);
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
-    Q_INVOKABLE bool importK3d();
     Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false);
     Q_INVOKABLE bool activate(const QString& id);
     Q_INVOKABLE bool close(const QString& id);

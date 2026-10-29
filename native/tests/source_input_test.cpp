@@ -1,6 +1,7 @@
 #include "workspace.h"
 #include "ui_input.h"
 #include <QGuiApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -418,6 +419,46 @@ int main(int argc, char* argv[]) {
         const QString directory = root + "/sources";
         const QString home = root + "/home";
         require(QDir().mkpath(directory) && QDir().mkpath(home), "Cannot create isolated inputs");
+        if (scenario.startsWith("generated_snapshot_")) {
+            const auto mode=scenario.mid(QString("generated_snapshot_").size());
+            require(QStringList{"v1","v2","zero","localhost","relative_credential","relative_exec","invalid_origin","file_endpoint"}.contains(mode),"Unknown historical snapshot scenario");
+            const auto origin=mode=="file_endpoint" ? directory+"/config" : mode=="invalid_origin" ? QString("podlord-generated://k3d/local/extra") : QString("podlord-generated://k3d/local");
+            auto yaml=config(mode=="zero" ? "https://0.0.0.0:9" : mode=="localhost" || mode=="file_endpoint" ? "https://localhost:9" : "https://127.0.0.1:9");
+            if (mode=="relative_credential") yaml.replace("token: source-input-secret", "tokenFile: relative-token");
+            if (mode=="relative_exec") yaml.replace("token: source-input-secret", "exec:\n      apiVersion: client.authentication.k8s.io/v1\n      command: ./credential-helper\n      interactiveMode: Never");
+            const auto digest=[](const QByteArray& value) { return QString::fromLatin1(QCryptographicHash::hash(value,QCryptographicHash::Sha256).toHex()); };
+            const auto contentHash=digest(yaml), id=digest(origin.toUtf8())+"-"+contentHash;
+            const auto context="ctx:"+digest(id.toUtf8()+'\0'+QByteArray("local"));
+            // Historical storage input. No generator or credential program is invoked.
+            QJsonObject record{{"version",mode=="v2" ? 2 : 1},{"sourcePath",origin},{"contentHash",contentHash},
+                {"yamlBase64",QString::fromLatin1(yaml.toBase64())},{"importedAt","2026-01-01T00:00:00.000Z"}};
+            if (mode=="v2") record.insert("contextAliases",QJsonObject{{context,"Operations"}});
+            const auto stored=QJsonDocument(record).toJson(QJsonDocument::Compact);
+            const auto path=profile+"/kubeconfigs/"+id+".json";
+            write(path,stored);
+            require(QFile::setPermissions(profile,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner)
+                && QFile::setPermissions(profile+"/kubeconfigs",QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner)
+                && QFile::setPermissions(path,QFile::ReadOwner|QFile::WriteOwner),"Cannot protect historical snapshot fixture");
+            const podlord::KubeconfigStore sources(profile);
+            const auto loaded=sources.list();
+            require(std::holds_alternative<podlord::SourceCatalog>(loaded),"Historical snapshot catalog cannot be read");
+            const auto catalog=std::get<podlord::SourceCatalog>(loaded);
+            if (mode=="invalid_origin") {
+                require(catalog.sources.isEmpty() && catalog.errors.size()==1,"Invalid generated origin was accepted");
+            } else {
+                require(catalog.errors.isEmpty() && catalog.sources.size()==1 && catalog.sources.first().id==id
+                    && catalog.sources.first().contexts.first().id==context,"Historical source or context identity changed");
+                require(catalog.sources.first().contexts.first().displayName==(mode=="v2" ? "Operations" : "local"),"Historical display alias changed");
+                const auto connection=sources.connection(context);
+                if (mode.startsWith("relative_")) require(std::holds_alternative<podlord::Failure>(connection),"Historical generated source resolved a relative credential path");
+                else require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).server.host()==(mode=="file_endpoint" ? "localhost" : "127.0.0.1"),"Stored endpoint changed unexpectedly");
+                require(std::holds_alternative<podlord::SessionCatalog>(podlord::SessionStore(profile).create({context,{}})),"Historical context cannot retain a session binding");
+            }
+            QFile retained(path);
+            require(retained.open(QIODevice::ReadOnly) && retained.readAll()==stored,"Reading a historical snapshot rewrote its bytes");
+            return 0;
+        }
         if (scenario.startsWith("source_alias_contract_")) {
             const QString mode = scenario.mid(22);
             const QString origin = directory + "/config";

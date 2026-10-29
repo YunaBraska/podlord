@@ -16,7 +16,8 @@ It turns Kubernetes from scattered YAML and terminal state into one cache-backed
 
 ## Core Capabilities
 
-- Import kubeconfigs from files, folders, pasted YAML, default locations, and generated k3d sources.
+- Import standard Kubernetes kubeconfigs from files, folders, pasted YAML and default locations. Configurations exported by local Kubernetes tools use the same import paths.
+- K3d belongs only to local/CI Kubernetes test infrastructure. The native product has no K3d discovery command, importer, executable lookup or installation requirement. Historical stored source identities remain readable without invoking a generator.
 - Store app-owned kubeconfig snapshots with content hashes to avoid duplicates.
 - Detect changed kubeconfig files and create new snapshots while preserving existing session bindings.
 - Open sessions in tabs or detached windows while sharing the same cache.

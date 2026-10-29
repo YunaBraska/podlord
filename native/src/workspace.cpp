@@ -5,7 +5,6 @@
 #include "resource_guidance.h"
 #include "runtime_diagnostics.h"
 #include <QDir>
-#include <QStandardPaths>
 #include "resource_metrics.h"
 #include "kind_glyph.h"
 #include "radar_island.h"
@@ -1002,15 +1001,6 @@ bool Workspace::quickImportFile(const QString& path) {
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
     }, {}, true);
-}
-bool Workspace::importK3d() {
-    return importSource([](const KubeconfigStore& store) {
-        QString executable = QStandardPaths::findExecutable("k3d");
-#ifdef Q_OS_MACOS
-        if (executable.isEmpty()) executable = QStandardPaths::findExecutable("k3d", {"/opt/homebrew/bin", "/usr/local/bin"});
-#endif
-        return store.importK3d(executable);
-    });
 }
 QString Workspace::defaultSourceOrigin() const { return QDir::home().filePath(".kube/pasted-kubeconfig"); }
 bool Workspace::importHome() { return importFile(QDir::home().filePath(".kube/config")); }

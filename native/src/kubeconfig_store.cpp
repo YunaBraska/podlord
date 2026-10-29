@@ -5,14 +5,12 @@
 #include "native_oidc.h"
 #include <QCryptographicHash>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
 #include <QMap>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
@@ -25,43 +23,14 @@
 namespace podlord {
 namespace {
 constexpr qint64 maximumKubeconfigBytes = 16 * 1024 * 1024;
-bool k3dName(const QString& name) {
-    static const QRegularExpression pattern("\\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z");
-    return pattern.match(name).hasMatch();
-}
 bool generatedSource(const QString& path) {
-    const QString prefix = "podlord-generated://k3d/";
-    return path.startsWith(prefix) && k3dName(path.mid(prefix.size()));
+    // Historical virtual origins are stored identities, not executable providers.
+    static const QRegularExpression pattern("\\Apodlord-generated://[A-Za-z0-9][A-Za-z0-9_.-]{0,127}/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z");
+    return pattern.match(path).hasMatch();
 }
 bool contentSource(const QString& path) {
     return path.startsWith("content://", Qt::CaseInsensitive);
 }
-#ifndef Q_OS_IOS
-Result<QByteArray> k3dOutput(const QString& executable, const QStringList& arguments) {
-    QProcess process;
-    process.setStandardErrorFile(QProcess::nullDevice());
-    process.start(executable, arguments, QIODevice::ReadOnly);
-    if (!process.waitForStarted(5000))
-        return Failure{StoreError::ReadFailed, "Cannot start k3d. Check its installation and local Docker/Colima connection."};
-    QElapsedTimer elapsed;
-    elapsed.start();
-    QByteArray output;
-    do {
-        process.waitForReadyRead(50);
-        output += process.readAllStandardOutput();
-        const bool oversized = output.size() > maximumKubeconfigBytes;
-        if (oversized || elapsed.elapsed() >= 30000) {
-            process.kill();
-            process.waitForFinished(5000);
-            return Failure{oversized ? StoreError::InvalidData : StoreError::ReadFailed,
-                oversized ? "k3d output exceeds the 16 MiB input limit." : "The local k3d command did not finish within 30 seconds."};
-        }
-    } while (process.state() != QProcess::NotRunning);
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
-        return Failure{StoreError::ReadFailed, "k3d command failed. Check k3d and the local Docker/Colima connection."};
-    return output;
-}
-#endif
 QString hash(const QByteArray& bytes) {
     return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
@@ -407,60 +376,6 @@ Result<std::optional<GkeServiceAccount>> importedGkeAccount(const QString& profi
 } // namespace
 
 KubeconfigStore::KubeconfigStore(QString profile) : profile_(std::move(profile)) {}
-Result<SourceImportReport> KubeconfigStore::importK3d(const QString& executable) const {
-    if (const auto failure = profileFailure(profile_)) return *failure;
-#ifdef Q_OS_IOS
-    Q_UNUSED(executable);
-    return Failure{StoreError::UnsupportedVersion, "Local k3d import is unavailable on iOS. Import a kubeconfig file instead."};
-#else
-    const QFileInfo tool(executable);
-    if (!QDir::isAbsolutePath(executable) || !tool.isFile() || !tool.isExecutable())
-        return Failure{StoreError::ReadFailed, "k3d is not available. Install k3d and Docker/Colima to import local clusters."};
-    QStringList names;
-    const auto listing = k3dOutput(executable, {"cluster", "list", "-o", "json"});
-    if (const auto* bytes = std::get_if<QByteArray>(&listing)) {
-        QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(*bytes, &error);
-        if (error.error != QJsonParseError::NoError || !document.isArray())
-            return Failure{StoreError::InvalidData, "k3d cluster list must return a JSON array."};
-        for (const auto& entry : document.array()) {
-            if (!entry.isObject()) return Failure{StoreError::InvalidData, "Invalid k3d cluster entry."};
-            QString name;
-            for (const auto* key : {"name", "Name", "clusterName", "ClusterName"})
-                if (name.isEmpty()) name = entry.toObject().value(key).toString();
-            if (!k3dName(name)) return Failure{StoreError::InvalidData, "Invalid k3d cluster name."};
-            names.append(name);
-        }
-    } else {
-        // Existing reference compatibility: older k3d versions expose a text table.
-        const auto legacy = k3dOutput(executable, {"cluster", "list", "--no-headers"});
-        if (std::holds_alternative<Failure>(legacy)) return std::get<Failure>(listing);
-        const auto legacyBytes = std::get<QByteArray>(legacy);
-        const auto text = QString::fromUtf8(legacyBytes);
-        if (text.toUtf8() != legacyBytes) return Failure{StoreError::InvalidData, "k3d cluster list must contain UTF-8 text."};
-        for (const auto& row : text.split('\n', Qt::SkipEmptyParts)) {
-            const auto name = row.simplified().section(' ', 0, 0);
-            if (!k3dName(name)) return Failure{StoreError::InvalidData, "Invalid k3d cluster name."};
-            names.append(name);
-        }
-    }
-    names.removeDuplicates();
-    names.sort();
-    SourceImportReport report;
-    for (const auto& name : names) {
-        const auto origin = "podlord-generated://k3d/" + name;
-        const auto exported = k3dOutput(executable, {"kubeconfig", "get", name});
-        if (const auto* failure = std::get_if<Failure>(&exported)) {
-            report.errors.append({origin, *failure});
-            continue;
-        }
-        const auto imported = importContent(origin, std::get<QByteArray>(exported));
-        if (const auto* failure = std::get_if<Failure>(&imported)) report.errors.append({origin, *failure});
-        else report.sources.append(std::get<SourceSnapshot>(imported));
-    }
-    return report;
-#endif
-}
 Result<SourceSnapshot> KubeconfigStore::importFile(QString path) const {
     const auto normalized = sourcePath(std::move(path));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};

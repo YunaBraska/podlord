@@ -6281,3 +6281,27 @@ Frame CPU time, resident memory, installed startup, complete paired visual
 evidence and the unexplained Android native crash remain independent release
 gaps. No release or complete visual-parity approval follows from the scoped
 passes above.
+
+## What Does The 2026-10-29 Standalone Source Boundary Prove?
+
+The native product no longer discovers K3d clusters, looks up its executable,
+exports its configs or exposes an Import K3D action. Standard kubeconfig import
+remains the only product path. Historical virtual-origin records are decoded as
+stored data, without dispatching to a generator. Their bytes, context identity,
+local aliases, endpoint interpretation and session bindings remain compatible.
+The frozen C# reference retains its historical behavior for comparison only.
+
+Evidence uses the same `2026-10-29-context-map` root as the preceding package.
+
+| Boundary | Evidence | Result and limitation |
+| --- | --- | --- |
+| Public command palette | `no-k3d-command-before.log`, `no-k3d-complete.log` | Basic/Fusion fail first with the obsolete eighth action. The final palette has seven supported actions and no result for K3d. Other navigation and narrow layouts pass. |
+| Stored-data compatibility | Eight `native.source_input.generated_snapshot_*` cases | V1/V2 records retain source/context IDs, aliases and session bindings without rewriting bytes. Historical loopback endpoints resolve, malformed origins and relative credentials/programs fail, and ordinary file endpoints remain unchanged. |
+| Test subtraction | CTest registration after removal | Forty-one tests of the deleted generator/CLI integration are removed. Eight historical-record scenarios are added. No real Kubernetes E2E journey is removed or used to justify deleting unrelated unit behavior. |
+| Complete frozen native suite | `no-k3d-complete.log`, `no-k3d-coverage/` | Two preflights and 5,089 main executions pass, totaling 5,091. Main elapsed time is 823.97 seconds. Production lines are 97.79%, branches 85.41%, and the modified Radar/Map family remains 433/474 (91.35%). Configured gates are unchanged and pass. This supersedes the partly rebuilt targeted subset. |
+| macOS standalone packaging | `no-k3d-macos-package/`, `no-k3d-production-scan.txt`, `no-k3d-binary-scan.txt` | Pinned-dependency/package preflight passes at 87,394,764 installed bytes. Neither native source/UI nor the packaged executable retains the retired command. Ad-hoc verification is not public signing/notarization or an installed startup proof. |
+| Actual Kubernetes standard-file path | `no-k3d-real-kubernetes.log`, `no-k3d-real-kubernetes/` | Discovery/search, cache-only filters, Radar, persisted context cards and six dark/light Map captures pass against the owned large Kubernetes fixture. `podlord-visual-run-gizqqi` is removed. These software-rendered captures are not a complete paired C#/C++ matrix. |
+
+The earlier rejected renderer experiments remain rejected. Resource/alert drawing
+consolidation in the existing C++ renderer was approved separately and is not
+claimed as implemented or measured by this checkpoint.

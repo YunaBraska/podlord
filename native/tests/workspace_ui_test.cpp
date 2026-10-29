@@ -667,7 +667,7 @@ bool execute(const QString& scenario) {
         window->resize(320, 640);
         return waitFor([&] {
             const QRectF screen(0, 0, window->width(), window->height());
-            for (const auto* name : {"sourcePath", "importButton", "browseSourceFolder", "importK3dButton", "contexts", "openContext", "reloadSources"}) {
+            for (const auto* name : {"sourcePath", "importButton", "browseSourceFolder", "contexts", "openContext", "reloadSources"}) {
                 auto* control = item(window, name);
                 if (!control || !control->isVisible() || !screen.contains(control->mapRectToScene(control->boundingRect()))) return false;
             }

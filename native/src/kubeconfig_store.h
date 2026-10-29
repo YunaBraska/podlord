@@ -122,11 +122,6 @@ public:
      * CleanupFailed means the catalog removal committed but private credential deletion failed.
      */
     Result<SessionCatalog> removeContext(const QString& contextId, QStringList expectedSessions) const;
-    /** Explicitly reads generated configs from a selected absolute k3d executable.
-     * No shell, kubeconfig merge, cluster authentication or session activation runs.
-     * Retains healthy snapshots and reports individual cluster export failures.
-     */
-    Result<SourceImportReport> importK3d(const QString& executable) const;
     /** Imports a file or recursively scans a directory, expanding ~ and ~/ paths.
      * Reports every failed regular file without discarding successful imports.
      * Directory symlinks and the private profile subtree are not traversed.
