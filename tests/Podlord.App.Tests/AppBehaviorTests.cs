@@ -309,6 +309,7 @@ public sealed class AppBehaviorTests
         using var viewModel = new MainWindowViewModel(state, new KubernetesResourceService(state));
 
         Assert.Equal("https://github.com/YunaBraska/podlord", viewModel.AboutRepoUrl);
+        Assert.Equal("https://yunabraska.github.io/podlord/privacy.html", viewModel.AboutPrivacyPolicyUrl);
         Assert.Equal("https://github.com/YunaBraska/podlord/issues/new", viewModel.AboutIssueUrl);
         Assert.Equal("https://github.com/YunaBraska/podlord/stargazers", viewModel.AboutStarUrl);
         Assert.Equal("https://github.com/sponsors/YunaBraska", viewModel.AboutSponsorsUrl);
