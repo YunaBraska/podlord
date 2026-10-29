@@ -10,6 +10,8 @@ Podlord is a native desktop Kubernetes operations console for people who want a 
 
 It is built with C#/.NET, Avalonia UI, and a direct Kubernetes API client. Normal app operations do not depend on a preconfigured shell context and do not call `kubectl`; kubeconfigs are imported into Podlord-owned snapshots so sessions stay explicit and repeatable.
 
+**[Product site and user documentation](https://yunabraska.github.io/podlord/)**
+
 ## Screenshots
 
 ![Podlord resource explorer](doc/screenshots/resource-explorer.png)
