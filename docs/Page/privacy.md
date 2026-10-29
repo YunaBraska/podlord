@@ -18,7 +18,7 @@ description: How PodLord handles cluster data on your computer.
 
 <section class="section">
   <h2>Network connections</h2>
-  <p>PodLord does not upload cluster data to YunaBraska. The direct-download edition checks GitHub for a newer release. GitHub receives the normal connection metadata, such as your IP address, needed to serve that request. The App Store edition uses Apple's update service instead.</p>
+  <p>PodLord does not upload cluster data to YunaBraska. The direct-download macOS edition checks a signed GitHub update feed. GitHub receives the normal connection metadata, such as your IP address, needed to serve that request. Homebrew and App Store installations use their respective update services.</p>
   <p>The App Store edition does not run external credential commands. Use kubeconfigs with embedded credentials that are valid for the cluster you select.</p>
 </section>
 
