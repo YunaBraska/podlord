@@ -270,6 +270,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     const auto previewClock=QDateTime::currentDateTimeUtc();
     podlord::Workspace workspace(profile,nullptr,scenario=="reference_zoom_preview_many"
         ? std::function<QDateTime()>{[previewClock] { return previewClock; }} : std::function<QDateTime()>{QDateTime::currentDateTimeUtc});
+    if (!realConfig.isEmpty() && !podlord::test::muteAlerts(workspace.alerts())) return false;
     QQmlApplicationEngine engine; engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml")); if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());

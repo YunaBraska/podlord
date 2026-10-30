@@ -216,7 +216,7 @@ jobs:
               failed=$(sed 's/^[0-9]*://; s/\./\\./g' "$PODLORD_NATIVE_BUILD_DIR/Testing/Temporary/LastTestsFailed.log" | paste -sd '|' -)
             fi
             if [ -n "$failed" ]; then
-              LLVM_PROFILE_FILE="$profiles/%p-%m.profraw" ctest --test-dir "$PODLORD_NATIVE_BUILD_DIR" \
+              PODLORD_TRACE_PLATFORM_TLS=1 LLVM_PROFILE_FILE="$profiles/%p-%m.profraw" ctest --test-dir "$PODLORD_NATIVE_BUILD_DIR" \
                 --tests-regex "^($failed)$" --parallel 1 --output-on-failure > "$RUNNER_TEMP/native-failure-reproduction.log" 2>&1 || :
               tail -n 45 "$RUNNER_TEMP/native-failure-reproduction.log"
             fi

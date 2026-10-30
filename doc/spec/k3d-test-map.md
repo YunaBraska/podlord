@@ -6486,3 +6486,64 @@ warm growth is 4,063,232 bytes and idle CPU is 1.59%, but peak RSS is
 339,836,928 bytes and frame work still exceeds 8 ms. Foreground measurements
 remain mandatory. No performance threshold or live-provider requirement is
 relaxed by this package.
+
+### What Did The Complete Cache And Port-Forward Follow-Up Establish?
+
+The cache-expiry optimization initially read absent JSON members through mutable
+subscripts. The existing public `read_overlap.snapshot_fields` contract caught
+the resulting manufactured `metricAt` member. Read-only lookups now use `value()`.
+The first exact-image run also exposed 13 permission failures because the local
+container ran as root. Under the ordinary user identity, those 13 cases pass
+without a product change and the snapshot regression remains red until its fix.
+Both failed runs are retained, not relabeled as passes.
+
+`nonroot-final/full.log` then passes both preflight executions and all 4,992
+remaining executions, or 4,994 total. These are executions including style
+variants, not 4,994 distinct business scenarios. Coverage is 97.73% lines and
+85.71% branches. The radar/map function family reaches 747/816 branches, 91.54%.
+This complete run precedes the additional port-input regression below. The
+latest-source complete hosted run remains required.
+
+Real Kubernetes subsequently exposed a port-form defect: unrelated inspector
+updates restored suggested ports over the entered values. `form_refresh` types
+real keyboard input into the fully opened dialog, completes a real HTTP detail
+refresh, verifies both fields and cancels without starting a forward. Both Basic
+and Fusion fail before the fix, including replacement of target port 18080 with
+8080. The dialog now initializes suggestions only when opening and otherwise
+keeps its existing editable control state. There is no second draft model or
+new persisted field.
+
+- `forward-form-before.log`: both new public UI cases reproduce the defect.
+- `forward-form-fixed-check.log`: all 224 forward UI executions pass, including
+  both new cases, validation, selection, concurrency, lifecycle and table tools.
+- `current-forward-kubernetes-fixed.log`: real Pod, Service, context removal and
+  dirty-draft/context-removal journeys pass against the local Kubernetes API.
+  Their owned cluster and profiles are cleaned up. Real port entry uses keyboard
+  events rather than setting a hidden or not-yet-open control.
+- `fail-fast-six-check.log`: all six early checks pass. Their ordering catches
+  the observed permission, row-contract and port-input failures before another
+  full run. No existing case or threshold is dropped.
+- `native-trust-plain-check.log`: delayed and canceled native trust cases pass
+  three consecutive uninstrumented executions each. `native-trust-trace-check.log`
+  separately checks the opt-in observer. Hosted primary runs do not load it.
+- `actionlint.log`: the official workflow validator accepts the changed workflow.
+
+Real native inspector, search/map, alert, metric, forward, deletion and window
+journeys mute only their disposable app profiles before opening contexts. The
+existing shared preference helper is reused. Speaker behavior retains its
+separate tests. System volume and the user's installed profile are unchanged.
+
+Desktop Linux and the iPhone simulator each completed 684 populated theme/view
+captures, covering 19 themes, two variants and 18 views. Android's signed APK
+completed its real-device-emulator journey and owned cleanup, with a 671 ms cold
+Activity launch. These mobile captures precede the final port-dialog fix and
+must not stand in for current-source device evidence. The follow-up private
+Android archive passes byte-for-byte extraction and extracted-APK signature
+checks, uses no camera/microphone/storage/Bluetooth permissions, and avoids a
+second extracted native-library copy. Packaging is not a parity claim.
+
+The foreground frame/memory gates and complete paired C#/C++ comparison remain
+open. The later background profiling run correctly rejects application
+activation and is not performance acceptance evidence. Full real Kubernetes
+verification continues after the corrected forward step. No release is approved
+by the results in this section alone.

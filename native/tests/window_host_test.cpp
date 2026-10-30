@@ -399,7 +399,9 @@ bool realTransfer(const QString& configPath) {
     const auto connection = sources.connection(source->contexts.first().id);
     const auto* local = std::get_if<podlord::ClusterConnection>(&connection);
     REQUIRE(local && (local->server.host() == "127.0.0.1" || local->server.host() == "localhost" || local->server.host() == "::1"));
-    podlord::Workspace primary(profile.path()); podlord::WindowHost host(primary); REQUIRE(host.open());
+    podlord::Workspace primary(profile.path());
+    REQUIRE(podlord::test::muteAlerts(primary.alerts()));
+    podlord::WindowHost host(primary); REQUIRE(host.open());
     REQUIRE(waitFor([&] { return !primary.busy(); }));
     REQUIRE(primary.openContext(source->contexts.first().id));
     REQUIRE(waitFor([&] { return !primary.busy() && primary.loadingProgress() == 1 && primary.resourceCount() >= 1000; }, 120000));

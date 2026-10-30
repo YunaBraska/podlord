@@ -24,6 +24,7 @@
 #include <QWebSocketServer>
 #include <QWebSocket>
 #include <QPointer>
+#include <QKeySequence>
 #include <QSignalSpy>
 #include <QtTest/QTest>
 #include <cstdio>
@@ -348,6 +349,7 @@ bool run(const QString& scenario, const QString& configPath) {
         qPrintable(QSslSocket::activeBackend()),qPrintable(QSslSocket::availableBackends().join(',')),QSslSocket::supportsSsl(),
         qPrintable(QSslSocket::sslLibraryBuildVersionString()),qPrintable(QSslSocket::sslLibraryVersionString()));
     podlord::Workspace workspace(profile.path());
+    if ((real || scenario == "form_refresh") && !podlord::test::muteAlerts(workspace.alerts())) return false;
     QQmlApplicationEngine engine; engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return false;
@@ -390,6 +392,12 @@ bool run(const QString& scenario, const QString& configPath) {
     if (!click("preparePortForward")) { std::fputs("Forward prepare control could not be clicked.\n",stderr); return false; }
     auto* local = named("portForwardLocal"); auto* remote = named("portForwardRemote");
     if (!local || !remote) { std::fputs("Forward port controls are missing.\n",stderr); return false; }
+    if (real || scenario == "form_refresh") {
+        auto* dialog = window->findChild<QObject*>(QStringLiteral("portForwardDialog"));
+        if (!dialog || !waitFor([&] { return dialog->property("opened").toBool(); })) {
+            std::fputs("Forward dialog did not finish opening.\n",stderr); return false;
+        }
+    }
     QString localText = QString::number(localPort);
     if (scenario == "invalid") localText = "65536";
     if (scenario == "invalid_empty") localText.clear();
@@ -397,9 +405,32 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "invalid_negative") localText = "-1";
     if (scenario == "invalid_fraction") localText = "8080.5";
     if (scenario == "invalid_text") localText = "port";
-    local->setProperty("text", localText);
-    remote->setProperty("text", scenario == "invalid_remote" ? "0" : scenario == "service_reject_undeclared_port" ? "81" : service ? "80" : "8080");
+    const QString remoteText = scenario == "form_refresh" ? "18080" : scenario == "invalid_remote" ? "0" : scenario == "service_reject_undeclared_port" ? "81" : service ? "80" : "8080";
+    if (real || scenario == "form_refresh") {
+        const auto enterPort = [&](QQuickItem* field, const QString& value) {
+            field->forceActiveFocus(Qt::TabFocusReason);
+            if (!waitFor([&] { return field->hasActiveFocus(); })) return false;
+            QTest::keySequence(window, QKeySequence::SelectAll);
+            QTest::keyClick(window, Qt::Key_Backspace);
+            for (const auto character : value) QTest::keyClick(window, character.toLatin1());
+            return field->property("text").toString() == value;
+        };
+        if (!enterPort(local, localText) || !enterPort(remote, remoteText)) {
+            std::fputs("Forward form did not retain keyboard input.\n",stderr); return false;
+        }
+    } else {
+        local->setProperty("text", localText);
+        remote->setProperty("text", remoteText);
+    }
     changed = true; const auto before = requests;
+    if (scenario == "form_refresh") {
+        if (!workspace.refreshInspector() || !waitFor([&] { return requests > before && !workspace.loading(); })) return false;
+        const bool retained = local->property("text").toString() == localText && remote->property("text").toString() == remoteText;
+        if (!retained) std::fprintf(stderr,"Inspector refresh overwrote entered ports: local=%s expected=%s remote=%s expected=%s\n",
+            qPrintable(local->property("text").toString()),qPrintable(localText),qPrintable(remote->property("text").toString()),qPrintable(remoteText));
+        QTest::keyClick(window, Qt::Key_Escape);
+        return retained && workspace.portForwardTarget().isEmpty() && workspace.portForwards().isEmpty() && upgrades == 0;
+    }
     if (scenario == "cancel") {
         QTest::keyClick(window, Qt::Key_Escape);
         return workspace.portForwardTarget().isEmpty() && workspace.portForwards().isEmpty() && requests == before && upgrades == 0;
@@ -426,8 +457,8 @@ bool run(const QString& scenario, const QString& configPath) {
     }
     QTcpSocket client;
     const auto failed = [&](const char* stage) {
-        std::fprintf(stderr,"Forward stage failed: %s; scenario=%s busy=%d loading=%d forwards=%lld error=%s transport=%s socket=%s details=%s\n",
-            stage,qPrintable(scenario),workspace.busy(),workspace.loading(),static_cast<long long>(workspace.portForwards().size()),
+        std::fprintf(stderr,"Forward stage failed: %s; scenario=%s expected-port=%u busy=%d loading=%d forwards=%lld error=%s transport=%s socket=%s details=%s\n",
+            stage,qPrintable(scenario),static_cast<unsigned>(localPort),workspace.busy(),workspace.loading(),static_cast<long long>(workspace.portForwards().size()),
             qPrintable(workspace.error()),qPrintable(workspace.portForwardError()),qPrintable(client.errorString()),
             qPrintable(QString::fromUtf8(QJsonDocument::fromVariant(workspace.portForwards()).toJson(QJsonDocument::Compact))));
         const auto evidence=qEnvironmentVariable("PODLORD_FORWARD_FRAME");

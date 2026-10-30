@@ -157,12 +157,12 @@ ApplicationWindow {
             RowLayout {
                 visible: !portForwardDialog.stopMode
                 Label { text: "Local TCP port" }
-                TextField { id: forwardLocal; objectName: "portForwardLocal"; Layout.fillWidth: true; text: String(workspace.portForwardTarget.localPort || ""); inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Local TCP port, 1 through 65535" }
+                TextField { id: forwardLocal; objectName: "portForwardLocal"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Local TCP port, 1 through 65535" }
             }
             RowLayout {
                 visible: !portForwardDialog.stopMode
                 Label { text: "Target TCP port" }
-                TextField { id: forwardRemote; objectName: "portForwardRemote"; Layout.fillWidth: true; text: String(workspace.portForwardTarget.remotePort || ""); inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Pod or Service TCP port, 1 through 65535" }
+                TextField { id: forwardRemote; objectName: "portForwardRemote"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Pod or Service TCP port, 1 through 65535" }
             }
             Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This resource already has a session-owned forward. Stop it to release its local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
@@ -172,6 +172,10 @@ ApplicationWindow {
             Button { id: forwardCancel; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "startPortForward"; text: "Start forwarding"; visible: !portForwardDialog.stopMode; enabled: !workspace.authenticationRequired && !workspace.busy; onClicked: workspace.startPreparedPortForward(forwardLocal.text, forwardRemote.text) }
             Button { objectName: "stopPortForward"; text: "Stop forwarding"; visible: portForwardDialog.stopMode; onClicked: workspace.stopPreparedPortForward() }
+        }
+        onAboutToShow: {
+            forwardLocal.text = String(workspace.portForwardTarget.localPort || "")
+            forwardRemote.text = String(workspace.portForwardTarget.remotePort || "")
         }
         onOpened: forwardCancel.forceActiveFocus(Qt.TabFocusReason)
         onRejected: workspace.cancelPreparedPortForward()

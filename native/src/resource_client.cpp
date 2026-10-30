@@ -508,8 +508,8 @@ void ResourceClient::publishRows(const QString& id) {
     QDateTime metricExpiry;
     for (auto& cached : resources) if (cached.value["apiVersion"]=="v1") {
         cached.value=withResourceMetrics(cached.value, metrics.value(metricKey(cached.value, cached.value["kind"].toString())), now_());
-        if (cached.value[QStringLiteral("metricStale")].toBool()) continue;
-        const auto at=QDateTime::fromString(cached.value[QStringLiteral("metricAt")].toString(), Qt::ISODateWithMs);
+        if (cached.value.value(QStringLiteral("metricStale")).toBool()) continue;
+        const auto at=QDateTime::fromString(cached.value.value(QStringLiteral("metricAt")).toString(), Qt::ISODateWithMs);
         if (!at.isValid()) continue;
         const auto deadline=at.addMSecs(metricFreshnessMilliseconds+1);
         if (!metricExpiry.isValid() || deadline<metricExpiry) metricExpiry=deadline;

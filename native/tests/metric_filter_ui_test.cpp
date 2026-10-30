@@ -363,6 +363,7 @@ bool realCluster(const QString& source) {
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
     podlord::Workspace workspace(temporary.filePath("profile"));
+    if (!podlord::test::muteAlerts(workspace.alerts())) return false;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));

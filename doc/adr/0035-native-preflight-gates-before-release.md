@@ -29,6 +29,19 @@ CI is necessary evidence, not proof that every release requirement is satisfied.
 Owned raw profiles are removed on exit; retained reports identify target misses
 and functional failures separately.
 
+Fail-fast ordering also covers the existing settings read-denial and cached-row
+field-presence contracts, plus the port-dialog refresh regression in Basic and
+Fusion. These six tests run before the remaining suite and are excluded from
+that later phase, not removed or duplicated. This catches an unsuitable root
+container and silent cache/input mutations before a full test run. Permission
+tests must execute under the CI runner's ordinary user identity.
+
+Primary native-trust tests call Apple's evaluation directly. The existing
+non-gating failure-reproduction step alone sets `PODLORD_TRACE_PLATFORM_TLS=1`
+to load the test-only observer for delayed/cancellation diagnostics. Observed
+replays do not replace the original exit status or establish an uninstrumented
+pass. Deliberate external-API fault-injection scenarios remain separate.
+
 On 2026-10-15 the native release coverage decision changed to 95% line and 85%
 branch coverage overall, plus at least 90% branch coverage for new logic.
 The full native runner enforces the new-logic floor on the newly introduced

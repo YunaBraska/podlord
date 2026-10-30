@@ -42,7 +42,7 @@ LLVM_PROFILE_FILE="$RUN/%p-%m.profraw"
 export LLVM_PROFILE_FILE
 TEST_STATUS=0
 # Reject broken defaults or application startup before spending a full suite on the same failure.
-PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default)$'
+PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default|settings\.read_denied|read_overlap\.snapshot_fields|forward\.form_refresh_(Basic|Fusion))$'
 "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
 if [ "$TEST_STATUS" -eq 0 ]; then
     "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?

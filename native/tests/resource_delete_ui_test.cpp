@@ -164,6 +164,7 @@ bool run(const QString& scenario, const QString& kubeconfig) {
     const auto* source = std::get_if<podlord::SourceSnapshot>(&imported);
     if (!source || source->contexts.isEmpty()) return false;
     podlord::Workspace workspace(profile.path());
+    if (real && !podlord::test::muteAlerts(workspace.alerts())) return false;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
