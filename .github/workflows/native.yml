@@ -193,14 +193,55 @@ jobs:
           printf 'PODLORD_RADAR_ACTION_EVIDENCE=%s/native-radar-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           brew install cmake ninja python
           node --test scripts/test-native-macos-toolchain.cjs
-          /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
           printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           printf 'CMAKE_PREFIX_PATH=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_ENV"
           printf 'OPENSSL_ROOT_DIR=%s/native-toolchain/openssl\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           printf '%s/qt-sdk/bin\n' "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_PATH"
           cmake --version
           xcrun clang --version
+      - name: Resolve exact macOS toolchain cache identity
+        id: macos-toolchain-key
+        run: |
+          set -eu
+          xcode=$(xcodebuild -version)
+          sdk_path=$(xcrun --sdk macosx --show-sdk-path)
+          sdk_version=$(xcrun --sdk macosx --show-sdk-version)
+          compiler=$(xcrun --sdk macosx clang --version)
+          cmake_version=$(cmake --version)
+          abi=$(printf '%s\n%s\n%s\n%s\n%s\n' "$xcode" "$sdk_path" "$sdk_version" "$compiler" "$cmake_version" | shasum -a 256 | awk '{print $1}')
+          printf 'xcode=%s\nmacos-sdk=%s (%s)\ncompiler=%s\ncmake=%s\nabi=%s\n' \
+            "$xcode" "$sdk_version" "$sdk_path" "$compiler" "$cmake_version" "$abi" | tee "$RUNNER_TEMP/native-macos-cache-inputs.log"
+          printf 'abi=%s\n' "$abi" >> "$GITHUB_OUTPUT"
+      - name: Restore exact public macOS toolchain
+        id: macos-toolchain-cache
+        uses: actions/cache/restore@v6
+        with:
+          key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh') }}
+          path: |
+            ${{ runner.temp }}/native-toolchain/qt
+            ${{ runner.temp }}/native-toolchain/qt-sdk
+            ${{ runner.temp }}/native-toolchain/yaml-cpp
+            ${{ runner.temp }}/native-toolchain/openssl
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+      - name: Install public macOS toolchain on cache miss
+        if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
+      - name: Validate pinned macOS toolchain
+        run: |
+          /bin/sh scripts/install-native-macos-toolchain.sh --check "$RUNNER_TEMP/native-toolchain" >> "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 35 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
           cat "$RUNNER_TEMP/native-toolchain/build-inputs.txt"
+      - name: Retain validated public macOS toolchain
+        if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.macos-toolchain-cache.outputs.cache-primary-key }}
+          path: |
+            ${{ runner.temp }}/native-toolchain/qt
+            ${{ runner.temp }}/native-toolchain/qt-sdk
+            ${{ runner.temp }}/native-toolchain/yaml-cpp
+            ${{ runner.temp }}/native-toolchain/openssl
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
       - name: Native tests, benchmarks and coverage report
         id: tests
         run: |
@@ -275,6 +316,7 @@ jobs:
             ${{ runner.temp }}/native-radar-failures
             ${{ runner.temp }}/native-toolchain.log
             ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-macos-cache-inputs.log
             ${{ runner.temp }}/native-package.log
             ${{ runner.temp }}/native-package-startup.log
             ${{ runner.temp }}/native-package-boundaries.log
@@ -334,19 +376,7 @@ jobs:
           set -eu
           host="$RUNNER_TEMP/native-toolchain"
           target="$RUNNER_TEMP/native-ios-toolchain"
-          test -L "$host/qt-sdk"
-          test -x "$host/qt-sdk/bin/qmake"
-          test -x "$host/qt-sdk/bin/qsb"
-          test "$("$host/qt-sdk/bin/qmake" -query QT_VERSION)" = 6.11.2
-          test -f "$host/qt-sdk/plugins/platforms/libqcocoa.dylib"
-          test -f "$host/qt-sdk/plugins/tls/libqopensslbackend.dylib"
-          test -f "$host/qt-sdk/lib/cmake/Qt6Multimedia/Qt6MultimediaConfig.cmake"
-          test -f "$host/qt-sdk/lib/cmake/Qt6WebSockets/Qt6WebSocketsConfig.cmake"
-          test -f "$host/qt-sdk/lib/cmake/Qt6ShaderTools/Qt6ShaderToolsConfig.cmake"
-          test -f "$host/yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
-          test -n "$(find "$host/yaml-cpp/lib" -name 'libyaml-cpp*.dylib' -type f -print -quit)"
-          test -x "$host/openssl/bin/openssl"
-          "$host/openssl/bin/openssl" version | grep -Eq '^OpenSSL 3[.]5[.]9( |$)'
+          /bin/sh scripts/install-native-macos-toolchain.sh --check "$host"
           test -f "$target/qt/plugins/tls/libqopensslbackend.a"
           test ! -e "$target/qt/plugins/tls/libqsecuretransportbackend.a"
           test -x "$target/qt/bin/qt-cmake"
@@ -359,8 +389,6 @@ jobs:
             test -f "$target/media/frameworks/lib$library.framework/lib$library"
             test -d "$target/media/lib/lib$library.xcframework"
           done
-          grep -F 'Qt: 6.11.2' "$host/build-inputs.txt"
-          grep -F 'OpenSSL: 3.5.9' "$host/build-inputs.txt"
           grep -F 'Qt: 6.11.2' "$target/build-inputs.txt"
           grep -F 'OpenSSL: 3.5.9' "$target/build-inputs.txt"
           grep -F 'FFmpeg: 7.1.5' "$target/build-inputs.txt"

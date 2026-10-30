@@ -1,11 +1,45 @@
 #!/bin/sh
 set -eu
 umask 077
+MODE=install
+if [ "$#" -eq 2 ] && [ "$1" = --check ]; then MODE=check; shift; fi
 if [ "$#" -ne 1 ]; then
-    printf 'Usage: %s /absolute/new/toolchain-directory\n' "$0" >&2
+    printf 'Usage: %s [--check] /absolute/toolchain-directory\n' "$0" >&2
     exit 2
 fi
 case "$1" in /*) TARGET=$1 ;; *) printf 'Toolchain directory must be absolute.\n' >&2; exit 2 ;; esac
+QT_VERSION=6.11.2
+YAML_VERSION=0.9.0
+YAML_SHA=25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a
+SSL_VERSION=3.5.9
+SSL_SHA=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+if [ "$MODE" = check ]; then
+    [ "$(uname -s)" = Darwin ] && [ -d "$TARGET" ]
+    test -L "$TARGET/qt-sdk"
+    test -x "$TARGET/qt-sdk/bin/qmake"
+    test -x "$TARGET/qt-sdk/bin/qsb"
+    test "$("$TARGET/qt-sdk/bin/qmake" -query QT_VERSION)" = "$QT_VERSION"
+    test -f "$TARGET/qt-sdk/plugins/platforms/libqcocoa.dylib"
+    test -f "$TARGET/qt-sdk/plugins/tls/libqopensslbackend.dylib"
+    for module in Multimedia WebSockets ShaderTools; do
+        test -f "$TARGET/qt-sdk/lib/cmake/Qt6$module/Qt6${module}Config.cmake"
+    done
+    test -f "$TARGET/qt-sdk/qml/QtQuick/Controls/qmldir"
+    test -f "$TARGET/yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
+    test -n "$(find "$TARGET/yaml-cpp/lib" -name 'libyaml-cpp*.dylib' -type f -print -quit)"
+    test -x "$TARGET/openssl/bin/openssl"
+    case "$("$TARGET/openssl/bin/openssl" version)" in
+        "OpenSSL $SSL_VERSION "*) ;;
+        *) printf 'Cached OpenSSL version differs from pinned inputs.\n' >&2; exit 1 ;;
+    esac
+    grep -F "Qt: $QT_VERSION " "$TARGET/build-inputs.txt"
+    grep -Fx "yaml-cpp: $YAML_VERSION" "$TARGET/build-inputs.txt"
+    grep -Fx "OpenSSL: $SSL_VERSION LTS" "$TARGET/build-inputs.txt"
+    grep -Fx "Build architecture: $(uname -m)" "$TARGET/build-inputs.txt"
+    grep -Fx 'Candidate deployment floor: macOS 13.0' "$TARGET/build-inputs.txt"
+    printf 'Pinned public macOS toolchain validated.\n'
+    exit 0
+fi
 if [ "$(uname -s)" != Darwin ] || [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
     printf 'Requires macOS and a new toolchain directory.\n' >&2
     exit 2
@@ -13,11 +47,6 @@ fi
 for tool in python3 cmake ninja curl shasum tar perl make; do
     command -v "$tool" >/dev/null 2>&1 || { printf 'Required tool is missing: %s\n' "$tool" >&2; exit 2; }
 done
-QT_VERSION=6.11.2
-YAML_VERSION=0.9.0
-YAML_SHA=25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a
-SSL_VERSION=3.5.9
-SSL_SHA=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 mkdir -p "$(dirname -- "$TARGET")"
 mkdir "$TARGET"
 complete=false

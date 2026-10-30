@@ -38,6 +38,22 @@ test('failed external registry installation cleans only its new toolchain', { ti
 test('toolchain installer requires its destination', async () => reject([], /Usage:/));
 test('toolchain installer refuses extra arguments', async () => reject(['/tmp/new', 'extra'], /Usage:/));
 test('toolchain installer refuses relative destinations', async () => reject(['relative'], /must be absolute/));
+test('toolchain cache validation refuses relative destinations', async () => reject(['--check', 'relative'], /must be absolute/));
+for (const scenario of ['missing', 'incomplete']) {
+    test(`toolchain cache validation rejects ${scenario} inputs without modifying them`, async () => {
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-toolchain-cache-'));
+        const target = path.join(directory, 'toolchain');
+        try {
+            if (scenario === 'incomplete') {
+                await fs.mkdir(target);
+                await fs.writeFile(path.join(target, 'keep.txt'), 'preserve');
+            }
+            await assert.rejects(execute('/bin/sh', [installer, '--check', target]), error => error.code === 1);
+            if (scenario === 'missing') await assert.rejects(fs.lstat(target), { code: 'ENOENT' });
+            else assert.equal(await fs.readFile(path.join(target, 'keep.txt'), 'utf8'), 'preserve');
+        } finally { await fs.rm(directory, { recursive: true, force: true }); }
+    });
+}
 for (const scenario of ['directory', 'file', 'symlink', 'broken-link', 'missing-tool']) {
     test(`toolchain installation preserves existing state: ${scenario}`, async () => {
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-toolchain-test-'));
