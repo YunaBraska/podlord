@@ -36,7 +36,14 @@ Pane {
         readonly property real roomBelow: Math.max(0, grid.height - anchor.y - anchor.height - 16)
         readonly property bool opensBelow: roomBelow >= roomAbove
         readonly property bool activeInteraction: tipHover.hovered || tipScroll.activeFocus
-        visible: !!target && target.visible && target.inViewport && (target.wantsTip || activeInteraction)
+        visible: false
+        function syncVisibility() {
+            const wanted = !!target && target.visible && target.inViewport && (target.wantsTip || activeInteraction)
+            if (wanted && !visible) open()
+            else if (!wanted && visible) close()
+        }
+        onTargetChanged: Qt.callLater(syncVisibility)
+        onActiveInteractionChanged: Qt.callLater(syncVisibility)
         onClosed: if (target && !target.wantsTip) target = null
         width: Math.min(480, Math.max(1, grid.width - 24))
         height: Math.min(implicitHeight, Math.max(1, opensBelow ? roomBelow : roomAbove))
@@ -259,7 +266,11 @@ Pane {
                 TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: { grid.selectResource(tile.resourceIndex); grid.forceActiveFocus(); workspace.inspectRow(tile.resourceIndex) } }
                 readonly property bool wantsTip: inViewport && (hovered || activeFocus || (grid.activeFocus && grid.currentIndex === resourceIndex))
                 readonly property string tipText: detailsNeeded ? text + (resourceMetrics.length ? "\n" + resourceMetrics.map(function(metric) { return metric.label + ": " + metric.usage + "\n" + metric.references + (metric.timestamp ? "\nMeasured " + metric.timestamp + " / " + metric.window : "") }).join("\n") : "") : ""
-                onWantsTipChanged: if (wantsTip) radarTip.target=tile
+                onWantsTipChanged: {
+                    if (wantsTip) radarTip.target=tile
+                    if (radarTip.target===tile) Qt.callLater(radarTip.syncVisibility)
+                }
+                onInViewportChanged: if (radarTip.target===tile) Qt.callLater(radarTip.syncVisibility)
                 Component.onDestruction: if (radarTip.target===tile) radarTip.target=null
                 }
             }

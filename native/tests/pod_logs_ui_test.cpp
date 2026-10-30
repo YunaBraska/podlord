@@ -28,6 +28,11 @@ bool waitFor(const std::function<bool()>& ready, int timeout = 8000) {
     return ready();
 }
 QQuickItem* item(QQuickItem* root, const QString& name) {
+    if (name.startsWith("cell_")) {
+        const auto parts = name.split('_');
+        if (parts.size() != 3) return nullptr;
+        return podlord::test::tableCell(podlord::test::visibleItem(root,"resourceTable"),parts[1].toInt(),parts[2].toInt());
+    }
     if (root->objectName() == name) return root;
     for (auto* child : root->childItems()) if (auto* found = item(child, name)) return found;
     return nullptr;
@@ -41,6 +46,11 @@ bool click(QQuickWindow* window, const QString& name) {
     auto* target = item(window, name);
     if (!target || !target->isVisible() || !target->isEnabled()) { std::fprintf(stderr, "Unavailable control: %s\n", qPrintable(name)); return false; }
     if (!podlord::test::scrollIntoView(window, target)) return false;
+    target = item(window,name);
+    if (!target || !target->isVisible() || !target->isEnabled() || target->objectName()!=name) {
+        std::fprintf(stderr,"Pointer target changed during layout: requested=%s actual=%s\n",qPrintable(name),target ? qPrintable(target->objectName()) : "missing");
+        return false;
+    }
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene({target->width() / 2, target->height() / 2}).toPoint());
     return true;
 }
@@ -110,7 +120,7 @@ public:
                         if (scenario == "negotiation" && !request->toLower().contains("\r\naccept: application/json\r\n")) status = 406;
                         const auto timestamp = container == "alpha" ? "2026-10-03T10:00:00.000000100Z" : "2026-10-03T10:00:00.000000050Z";
                         bytes = QByteArray(timestamp) + " " + container.toUtf8() + " output\n";
-                        if (scenario == "recreate" && coreReads > 1) bytes = QByteArray(timestamp) + " " + container.toUtf8() + " new instance\n";
+                        if (scenario == "recreate" && coreReads > 1 && path.section('/', -2, -2) == "first") bytes = QByteArray(timestamp) + " " + container.toUtf8() + " new instance\n";
                         if (scenario == "malformed" && container == "beta") bytes = "not-a-timestamp output\n";
                         if (scenario == "invalid_utf8" && container == "beta") bytes = QByteArray(timestamp) + " " + QByteArray(1, '\xff');
                         if (scenario == "repeat") bytes += bytes;
@@ -133,7 +143,9 @@ public:
                     } else if (path.startsWith("/api/v1/namespaces/default/pods/")) {
                         ++detailReads;
                         const bool replaced = scenario.startsWith("detail_") || ((scenario == "open_detail_recreate" || scenario == "pagination") && detailReads > 1);
-                        document = pod(path.section('/', -1), scenario == "single", replaced ? 2 : 1, scenario == "literal_all", replaced);
+                        const auto name = path.section('/', -1);
+                        const int instance = scenario == "recreate" && name == "first" ? coreReads : replaced ? 2 : 1;
+                        document = pod(name, scenario == "single", instance, scenario == "literal_all", replaced);
                     }
                     else status = 404;
                     if (bytes.isEmpty()) bytes = QJsonDocument(document).toJson(QJsonDocument::Compact);
@@ -170,6 +182,8 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (!window) return false;
     QTest::qWait(30);
     if (!waitFor([&] { return !workspace.busy(); })) return false;
+    // Log/UI repetitions do not exercise speakers. The playback test uses volume zero.
+    if (!podlord::test::muteAlerts(workspace.alerts())) return false;
     item(window, "sourcePath")->setProperty("text", source);
     if (!click(window, "importButton") || !waitFor([&] { return workspace.contexts().size() == 1 && !workspace.busy(); }) || !click(window, "openContext")) return false;
     if (!realFile.isEmpty()) {
@@ -181,13 +195,13 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     int selectedRow = 0;
     const bool resourceReady = waitFor([&] {
         if (workspace.busy()) return false;
-        if (realFile.isEmpty()) return workspace.table()->rowCount() == 2;
+        if (realFile.isEmpty() && workspace.table()->rowCount() != 2) return false;
         for (int row = 0; row < workspace.table()->rowCount(); ++row) {
             bool podKind = false, podName = false;
             for (int column = 0; column < workspace.table()->columnCount(); ++column) {
                 const auto value = workspace.table()->data(workspace.table()->index(row, column)).toString();
                 podKind = podKind || value == "Pod";
-                podName = podName || value == "podlord-native-log-e2e";
+                podName = podName || value == (realFile.isEmpty() ? "first" : "podlord-native-log-e2e");
             }
             if (podKind && podName) { selectedRow = row; return true; }
         }
@@ -315,7 +329,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (scenario == "single") return workspace.property("logSelection").toString() == "alpha" && model->rowCount() == 1 && QUrlQuery(server.logs.first()).queryItemValue("container") == "alpha";
     if (scenario == "open_detail_recreate" || scenario == "pagination") {
         if (scenario == "pagination" && (!click(window, "refreshButton") || !waitFor([&] { return server.paginationStarted; }))) return false;
-        if (!click(window, "cell_0_0") || !waitFor([&] { return model->rowCount() == 2 && model->data(model->index(0, 0)).toString().contains("[delta]") && model->data(model->index(1, 0)).toString().contains("[gamma]"); })) return false;
+        if (!click(window, QString("cell_%1_0").arg(selectedRow)) || !waitFor([&] { return model->rowCount() == 2 && model->data(model->index(0, 0)).toString().contains("[delta]") && model->data(model->index(1, 0)).toString().contains("[gamma]"); })) return false;
         if (scenario == "pagination") return waitFor([&] { return server.paginationFinished && !workspace.loading(); }) && workspace.inspected().contains("uid-first-2") && model->data(model->index(0, 0)).toString().contains("[delta]");
         return workspace.inspected().contains("uid-first-2");
     }
@@ -331,7 +345,20 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         return ready;
     }
     if (scenario == "recreate") {
-        return click(window, "refreshButton") && waitFor([&] { return server.coreReads > 1 && model->rowCount() == 2 && model->data(model->index(0, 0)).toString().contains("new instance") && model->data(model->index(1, 0)).toString().contains("new instance"); });
+        if (workspace.inspectorName() != "first") {
+            std::fprintf(stderr,"Initial Pod selection: requestedRow=%d tableName=%s inspectedName=%s path=%s\n",selectedRow,
+                qPrintable(workspace.table()->index(selectedRow,0).data(Qt::UserRole+1).toString()),
+                qPrintable(workspace.inspectorName()),qPrintable(workspace.inspectorPath()));
+            return false;
+        }
+        const bool ready = click(window, "refreshButton") && waitFor([&] {
+            return server.coreReads > 1 && workspace.inspected().contains("uid-first-2") && model->rowCount() == 2
+                && model->data(model->index(0, 0)).toString().contains("new instance")
+                && model->data(model->index(1, 0)).toString().contains("new instance");
+        });
+        if (!ready) std::fprintf(stderr,"Recreated Pod logs: reads=%d inspected=%s rows=%d status=%s error=%s\n",
+            server.coreReads,qPrintable(workspace.inspected()),model->rowCount(),qPrintable(workspace.property("logStatus").toString()),qPrintable(workspace.error()));
+        return ready;
     }
     if (scenario == "scroll" || scenario == "eviction" || scenario == "expiry") {
         if (model->rowCount() != 100) return false;

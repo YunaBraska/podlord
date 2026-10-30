@@ -465,11 +465,7 @@ QQuickItem* item(QObject* root, const QString& name) {
         for (const auto& viewName : views) {
             auto* view = item(root, viewName);
             if (!view || !view->isVisible() || view->width() <= 0) continue;
-            // Use the public view API: cached delegates can keep the same object name.
-            QQmlExpression expression(qmlContext(view), view, QString("itemAtIndex(model.index(%1, %2))").arg(parts[1], parts[2]));
-            auto* cell = expression.evaluate().value<QQuickItem*>();
-            if (expression.hasError()) std::fprintf(stderr, "Table cell lookup failed: %s\n", qPrintable(expression.error().toString()));
-            if (cell) return cell;
+            if (auto* cell = podlord::test::tableCell(view, parts[1].toInt(), parts[2].toInt())) return cell;
         }
         return nullptr;
     }
@@ -619,6 +615,8 @@ bool execute(const QString& requestedScenario) {
         if (!invalid.open(QIODevice::WriteOnly) || invalid.write("{\"version\":1,\"requestHardLimitPerMinute\":-1,\"inactiveSyncMinutes\":0}") < 0) return false;
     }
     podlord::Workspace workspace(profile, nullptr, [&] { return reference; });
+    if ((scenario.startsWith("radar_") || scenario.startsWith("map_") || scenario=="inspector_malformed")
+        && !podlord::test::muteAlerts(workspace.alerts())) return false;
     QList<qint64> dispatched;
     if (scenario == "limit") QObject::connect(&workspace, &podlord::Workspace::requestStarted, &workspace,
         [&](const QString&, const QString&, qint64 at) { dispatched.append(at); });

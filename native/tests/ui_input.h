@@ -1,8 +1,11 @@
 #pragma once
+#include "alerts.h"
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QColor>
 #include <QImage>
+#include <QQmlEngine>
+#include <QQmlExpression>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QPointer>
@@ -13,6 +16,13 @@
 #include <optional>
 
 namespace podlord::test {
+/** Configure an isolated UI profile through the real preference API before loading resources. */
+inline bool muteAlerts(Alerts* alerts) {
+    if (!alerts || !QTest::qWaitFor([&] { return !alerts->busy(); }, 8000)) return false;
+    if (alerts->muted()) return true;
+    return alerts->setPreferences(true,alerts->reducedMotion())
+        && QTest::qWaitFor([&] { return !alerts->busy() && alerts->muted(); }, 8000);
+}
 #ifdef Q_OS_IOS
 bool orientIosTestWindow(QQuickWindow* window);
 #endif
@@ -39,6 +49,14 @@ inline QQuickItem* visibleItem(QQuickItem* root, const QString& name) {
     for (auto* child : root->childItems())
         if (auto* found = visibleItem(child, name)) return found;
     return nullptr;
+}
+/** Resolve the live TableView delegate, not an old pooled item with the same name. */
+inline QQuickItem* tableCell(QQuickItem* view, int row, int column) {
+    if (!view || !view->isVisible() || view->width() <= 0 || row < 0 || column < 0) return nullptr;
+    QQmlExpression expression(qmlContext(view), view, QString("itemAtIndex(model.index(%1, %2))").arg(row).arg(column));
+    auto* cell = expression.evaluate().value<QQuickItem*>();
+    if (expression.hasError()) std::fprintf(stderr, "Table cell lookup failed: %s\n", qPrintable(expression.error().toString()));
+    return cell;
 }
 /** Open the actual workspace menu before operating its non-primary actions. */
 inline bool revealWorkspaceAction(QQuickWindow* window, const QString& name) {
