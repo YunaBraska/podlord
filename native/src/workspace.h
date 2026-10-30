@@ -680,7 +680,7 @@ private:
         int limit = 256;
         Qt::SortOrder order = Qt::AscendingOrder;
         QString inspected, page = "overview", workspace = "map";
-        QVariantMap radarView{{"x",0},{"y",0},{"zoom",1}};
+        QVariantMap radarView;
         QString eventFilter, portFilter;
         int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
         Qt::SortOrder eventOrder = Qt::AscendingOrder, portOrder = Qt::AscendingOrder,

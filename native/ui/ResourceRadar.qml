@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,7 +14,7 @@ Pane {
     readonly property int navigationIndex: grid.currentIndex
     function navigateRows(offset) {
         if (count === 0) return
-        const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
+        const row = offset === 0 ? 0 : navigationIndex < 0 ? (offset < 0 ? count - 1 : 0) : (navigationIndex + offset + count) % count
         grid.selectResource(row); grid.focusResource(row)
     }
     padding: compact ? 4 : 12
@@ -26,6 +28,10 @@ Pane {
     function focusPath(path, percent) {
         const index = workspace.alertResourceIndex(path)
         return index >= 0 && grid.focusResource(index, percent / 100)
+    }
+    function inspectResource(path) {
+        const index = workspace.alertResourceIndex(path)
+        if (grid.selectResource(index)) workspace.inspectPath(path)
     }
     PlainToolTip {
         id: radarTip
@@ -89,7 +95,7 @@ Pane {
             IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
             Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }
             IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
-            IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetView() }
+            IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetCamera() }
         }
         RowLayout {
             Layout.fillWidth: true
@@ -142,7 +148,7 @@ Pane {
                 return item && item.parent === grid && item.resourcePath !== undefined ? item.resourcePath : ""
             }
             identityScope: workspace.currentSession
-            textColor: Qt.tint("#DDE7EC", Qt.rgba(radarPane.palette.text.r, radarPane.palette.text.g, radarPane.palette.text.b, 0.2))
+            textColor: "#DDE7EC"
             readonly property int count: workspace.resourceCount
             readonly property real cellWidth: 7 * viewPose.zoom
             readonly property bool renderActive: visible && Window.window !== null && Window.window.visibility !== Window.Hidden && Window.window.visibility !== Window.Minimized
@@ -154,21 +160,52 @@ Pane {
             Accessible.description: "Deterministic resource island. Drag or use arrow keys to pan, wheel or plus and minus to zoom, Home and End to focus the first and last resource, Enter to inspect. Zero resets the map. Use the resource table and filters for the complete accessible resource list."
             property string shownSession: ""
             property bool restoring: false
+            property string hoveredResourcePath: ""
+            function updateHover() {
+                const path = renderActive && radarHover.hovered && !radarTip.activeInteraction
+                    ? resourceAt(radarHover.point.position.x, radarHover.point.position.y) : ""
+                hoveredResourcePath = path
+                if (path !== "") hoverTarget.resourcePath = path
+            }
+            function rememberPosition() {
+                if (visible && !restoring && shownSession === workspace.currentSession) workspace.rememberRadarView(viewPose)
+            }
+            function resetCamera() { resetView(); rememberPosition() }
+            function fitInitialView() {
+                if (!visible || restoring || workspace.loading || workspace.currentSession === ""
+                    || shownSession !== workspace.currentSession || workspace.radarView.zoom !== undefined) return
+                restoring = true
+                const fitted = fitView()
+                restoring = false
+                if (fitted) rememberPosition()
+            }
             function restorePosition() {
                 if (!visible) return
                 restoring = true
-                if (shownSession !== workspace.currentSession) selectResource(-1)
+                if (shownSession !== workspace.currentSession) {
+                    selectResource(-1)
+                    hoveredResourcePath = ""
+                    hoverTarget.resourcePath = ""
+                    radarTip.close()
+                    radarTip.target = null
+                }
                 shownSession = workspace.currentSession
-                viewPose = workspace.radarView
+                if (workspace.radarView.zoom !== undefined) viewPose = workspace.radarView
+                else resetView()
                 restoring = false
+                fitInitialView()
             }
             onVisibleChanged: if (visible) Qt.callLater(restorePosition)
-            onViewPoseChanged: if (visible && !restoring && shownSession === workspace.currentSession) workspace.rememberRadarView(viewPose)
+            onViewPoseChanged: rememberPosition()
+            onWidthChanged: Qt.callLater(fitInitialView)
+            onHeightChanged: Qt.callLater(fitInitialView)
+            onCurrentResourceChanged: Qt.callLater(fitInitialView)
             Component.onCompleted: restorePosition()
             Connections {
                 target: workspace
                 function onChanged() {
                     if (grid.visible && grid.shownSession !== workspace.currentSession) grid.restorePosition()
+                    else if (grid.visible) Qt.callLater(grid.fitInitialView)
                 }
             }
             Connections {
@@ -190,10 +227,15 @@ Pane {
                 else if (event.key === Qt.Key_Home) focusResource(count > 0 ? 0 : -1)
                 else if (event.key === Qt.Key_End) focusResource(count - 1)
                 else return
+                rememberPosition()
                 event.accepted = true
             }
             Keys.onReturnPressed: if (currentIndex >= 0) workspace.inspectRow(currentIndex)
             Keys.onEnterPressed: if (currentIndex >= 0) workspace.inspectRow(currentIndex)
+            Keys.onTabPressed: function(event) {
+                event.accepted = !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier | Qt.ShiftModifier)) && activeFocus && traverseVisible(0)
+                if (event.accepted) focusTarget.forceActiveFocus(Qt.TabFocusReason)
+            }
             WheelHandler {
                 target: null
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -212,7 +254,24 @@ Pane {
                     previous = activeTranslation
                 }
             }
-            TapHandler { onTapped: grid.forceActiveFocus() }
+            HoverHandler {
+                id: radarHover
+                onPointChanged: grid.updateHover()
+                onHoveredChanged: grid.updateHover()
+            }
+            TapHandler {
+                gesturePolicy: TapHandler.DragThreshold
+                onTapped: {
+                    const path = grid.resourceAt(point.position.x, point.position.y)
+                    grid.forceActiveFocus()
+                    if (path !== "") radarPane.inspectResource(path)
+                }
+            }
+            Connections {
+                target: grid
+                function onCurrentResourceChanged() { grid.updateHover() }
+                function onViewPoseChanged() { grid.updateHover() }
+            }
             RadarWater {
                 id: water
                 objectName: "radarWater"
@@ -228,27 +287,51 @@ Pane {
                     function onRequestStarted(session, path, monotonicMs) { if (session === workspace.currentSession) water.noteRequest() }
                 }
             }
-            Repeater {
-                model: grid.tiles
-                delegate: Item {
+            component ResourceTarget: Item {
                 id: tile
-                required property int resourceIndex
-                required property real worldX
-                required property real worldY
-                required property string resourcePath
-                required property var model
+                property bool keyboardTarget: false
+                property string resourcePath: ""
+                property var model: ({})
+                readonly property int resourceIndex: model.resourceIndex === undefined ? -1 : model.resourceIndex
                 readonly property bool detailsNeeded: wantsTip || radarTip.target === tile
-                readonly property var resourceMetrics: detailsNeeded ? model.resourceMetrics : []
-                readonly property bool inViewport: grid.renderActive && x + width > 0 && x < grid.width && y + height > 0 && y < grid.height
-                objectName: "radarTile_" + resourceIndex
+                readonly property var resourceMetrics: detailsNeeded && model.resourceMetrics ? model.resourceMetrics : []
+                readonly property bool inViewport: visible && grid.renderActive && x + width > 0 && x < grid.width && y + height > 0 && y < grid.height
+                visible: resourceIndex >= 0 && model.resourcePath === resourcePath
                 width: 5.5 * grid.viewPose.zoom
                 height: width
-                x: grid.width/2 + (worldX + grid.viewPose.x)*grid.viewPose.zoom - width/2
-                y: grid.height/2 + (worldY + grid.viewPose.y)*grid.viewPose.zoom - height/2
-                activeFocusOnTab: true
-                onActiveFocusChanged: if (activeFocus) grid.selectResource(resourceIndex)
-                scale: model.animationScale
-                readonly property bool hovered: hover.hovered
+                x: grid.width/2 + ((model.worldX || 0) + grid.viewPose.x)*grid.viewPose.zoom - width/2
+                y: grid.height/2 + ((model.worldY || 0) + grid.viewPose.y)*grid.viewPose.zoom - height/2
+                activeFocusOnTab: keyboardTarget
+                onActiveFocusChanged: if (activeFocus) {
+                    const index = workspace.alertResourceIndex(resourcePath)
+                    if (grid.selectResource(index) && !keyboardTarget) focusTarget.forceActiveFocus(Qt.OtherFocusReason)
+                }
+                readonly property bool hovered: resourcePath !== "" && grid.hoveredResourcePath === resourcePath
+                function refreshSnapshot() {
+                    const next = grid.renderActive ? grid.resourceInfo(resourcePath, detailsNeeded) : ({})
+                    model = next.resourcePath === resourcePath ? next : ({})
+                    scale = model.animationScale || 1
+                }
+                onResourcePathChanged: refreshSnapshot()
+                onDetailsNeededChanged: Qt.callLater(refreshSnapshot)
+                Component.onCompleted: refreshSnapshot()
+                Connections {
+                    target: grid
+                    function onCurrentResourceChanged() { tile.refreshSnapshot() }
+                    function onViewPoseChanged() { tile.refreshSnapshot() }
+                    function onEffectsEnabledChanged() { tile.refreshSnapshot() }
+                }
+                Connections {
+                    target: grid.tiles
+                    function onDataChanged(first, last, roles) {
+                        if (!tile.detailsNeeded) return
+                        // Pulse frames update only the transform, not metadata or gauges.
+                        if (roles.length === 1 && roles[0] === grid.tiles.animationRole) {
+                            const frame = grid.resourceInfo(tile.resourcePath, false)
+                            tile.scale = frame.animationScale || 1
+                        } else tile.refreshSnapshot()
+                    }
+                }
                 readonly property string text: {
                     if (!detailsNeeded) return ""
                     workspace.alerts.revision
@@ -258,13 +341,12 @@ Pane {
                         + (health === 2 ? ", Error" : health === 1 ? ", Warning" : effect.color === "fresh" ? ", Recently changed" : "")
                 }
                 Accessible.role: Accessible.Button
-                Accessible.ignored: !detailsNeeded
+                Accessible.ignored: !detailsNeeded || (!keyboardTarget && resourcePath === focusTarget.resourcePath && focusTarget.detailsNeeded)
                 Accessible.name: text
-                Accessible.onPressAction: { grid.selectResource(resourceIndex); workspace.inspectRow(resourceIndex) }
+                Accessible.focusable: true
+                Accessible.onPressAction: radarPane.inspectResource(resourcePath)
                 Accessible.description: detailsNeeded ? (resourcePath === grid.inspectedPath ? "Selected resource" : "Open resource in inspector") : ""
-                HoverHandler { id: hover }
-                TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: { grid.selectResource(tile.resourceIndex); grid.forceActiveFocus(); workspace.inspectRow(tile.resourceIndex) } }
-                readonly property bool wantsTip: inViewport && (hovered || activeFocus || (grid.activeFocus && grid.currentIndex === resourceIndex))
+                readonly property bool wantsTip: inViewport && (hovered || activeFocus || (keyboardTarget && grid.activeFocus && grid.currentIndex === resourceIndex))
                 readonly property string tipText: detailsNeeded ? text + (resourceMetrics.length ? "\n" + resourceMetrics.map(function(metric) { return metric.label + ": " + metric.usage + "\n" + metric.references + (metric.timestamp ? "\nMeasured " + metric.timestamp + " / " + metric.window : "") }).join("\n") : "") : ""
                 onWantsTipChanged: {
                     if (wantsTip) radarTip.target=tile
@@ -272,8 +354,25 @@ Pane {
                 }
                 onInViewportChanged: if (radarTip.target===tile) Qt.callLater(radarTip.syncVisibility)
                 Component.onDestruction: if (radarTip.target===tile) radarTip.target=null
+                Keys.onTabPressed: function(event) {
+                    const backwards = (event.modifiers & Qt.ShiftModifier) !== 0
+                    event.accepted = !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) && grid.traverseVisible(backwards ? -1 : 1)
+                    if (event.accepted) focusTarget.forceActiveFocus(backwards ? Qt.BacktabFocusReason : Qt.TabFocusReason)
                 }
+                Keys.onBacktabPressed: function(event) {
+                    event.accepted = !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) && grid.traverseVisible(-1)
+                    if (event.accepted) focusTarget.forceActiveFocus(Qt.BacktabFocusReason)
+                }
+                Keys.onReturnPressed: radarPane.inspectResource(resourcePath)
+                Keys.onEnterPressed: radarPane.inspectResource(resourcePath)
             }
+            ResourceTarget {
+                id: focusTarget
+                objectName: "radarFocusTarget"
+                keyboardTarget: true
+                resourcePath: grid.currentIndex >= 0 ? grid.source.data(grid.source.index(grid.currentIndex, 0), Qt.UserRole) : ""
+            }
+            ResourceTarget { id: hoverTarget; objectName: "radarHoverTarget" }
             Label {
                 objectName: "emptyRadar"
                 anchors.centerIn: parent

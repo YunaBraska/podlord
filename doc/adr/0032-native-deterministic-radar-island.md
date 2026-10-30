@@ -38,6 +38,23 @@ one-dimensional GridView offset and discrete tile-size APIs, rather than keeping
 both implementations. Camera state remains in memory as before; no new profile
 schema or persisted resource cache is introduced.
 
+On 2026-10-30 the user approved fitting the complete island once after the first
+load and allowing overview zoom down to 1%, with the existing 340% maximum.
+Workspace navigation uses an absent camera to represent a session not yet fitted,
+rather than a second initialization flag. The first visible, completed cache fits
+the full geometry, including filtered-out districts. Explicit navigation or Reset
+records a camera and prevents later fitting. Resize, filter, synchronization and
+Table/Map switches preserve it. Reset and zero still restore the original 100%
+origin. Fitting never loads resources or changes world geometry.
+The same user confirmation distinguishes Map search from table search: typing or
+clearing its expression retains the camera. Previous, Next and Enter deliberately
+focus a matching resource through the existing navigation action. Table search
+still selects its first match on editing. No second query or filter state is added.
+The existing cached terrain also owns its aggregate bounds. Fit, static preview
+and viewport queries reuse them. Bucket queries intersect those bounds before
+enumeration, so a 1% view or a camera far over water cannot scan millions of empty
+spatial buckets. This adds no separate cache or persistence owner.
+
 ## How do Table and Map share the existing workspace?
 
 The existing menu-only Table/Map implementation is interim. The user follow-up
@@ -54,8 +71,13 @@ session activation and dirty-YAML Stay/Discard, not a second session catalog.
 Cluster
 names appear at overview scale, namespace district
 labels appear when zooming in, and resource glyphs/details retain their existing
-zoom and interaction rules. Labels use the current theme, viewport buckets, cached
-text bounds and collision decluttering instead of a delegate per cached label.
+zoom and interaction rules. Labels use viewport buckets, cached text bounds and
+collision decluttering instead of a delegate per cached label. On 2026-10-30 the
+user approved contrast-safe Radar labels across light and dark themes. The water
+remains dark, so labels use a shared pale foreground rather than the surrounding
+theme's text color. A small opaque water-colored backing keeps terrain or an
+empty filtered view from reducing contrast. Filtered labels remain dimmer but
+must also reach 4.5:1. Resource, terrain and other theme colors are unchanged.
 
 A context overview is separate from an opened context map. The user follow-up on
 2026-10-28 supersedes the earlier RAM-only overview: retain the latest visual
@@ -89,14 +111,14 @@ Short landscape viewports put the same preview beside the caption and rename
 action rather than clipping the caption or removing the image. This uses one
 responsive card layout, not a separate mobile implementation.
 
-## Why use a sparse native surface with visible resource delegates?
+## Why use a sparse native surface with bounded input targets?
 
 One painted surface draws cluster/namespace context markers, resource bodies,
 selection borders and alarm effects. Coarse spatial buckets select visible
 resources. A small list model owns their paint snapshots and publishes the same
-identities and pulse scale to QML input, tooltip and accessibility items.
+identities and pulse scale to the shared QML input, tooltip and accessibility items.
 Viewport changes do not enumerate the complete resource cache or regenerate its
-geometry. Hidden Radar releases delegates and defers geometry work.
+geometry. Hidden Radar clears input snapshots and defers geometry work.
 Source-cache changes and context identity invalidate the existing geometry.
 Filter and sort changes only refresh its projection, without rebuilding the
 full-cache row signature. No second geometry model or persistent revision is added.
@@ -105,10 +127,22 @@ Painting is read-only. Alarm evaluation and expiry retain ADR 0025's single owne
 The resource/alert drawing consolidation was confirmed on 2026-10-29. It reuses
 `KindGlyph::draw` rather than maintaining a second glyph catalog. QML still owns
 the existing focus chain, pointer/touch handlers, keyboard actions and lazy
-tooltips. It no longer creates rectangles, glyph render targets or animation
-objects per resource. Resource metadata and alert-description bindings are
-evaluated only for focused, hovered or shared-tooltip targets, not copied into
-every input item. One GUI-owned animation clock runs only for exposed, visible
+tooltips. On 2026-10-30 the user approved removing the remaining per-resource
+input items. Pointer and touch hits use the existing C++ spatial index and the
+same painted resource bounds. Two shared targets retain the hovered and focused
+identities. Tab and Backtab traverse the projected path order and leave the Radar
+at its boundary rather than wrapping or creating invisible controls. Dragging
+still pans without inspecting. The existing table remains the complete accessible
+resource list. A shared target exposes the selected resource's accessible name and
+inspect action. Resource metadata is fetched from the cached model only when
+focus, hover or the shared tooltip needs it. Pulse frames update a target's scale
+without rebuilding its metadata or gauges. There are no rectangles, glyph render
+targets, animation objects or input objects per resource.
+Derived visibility does not write its own input snapshot. Detail-demand changes
+coalesce through the existing QML event loop, so a filtered proxy index change
+cannot reenter the resource-index or visibility binding. Public focus/filter
+regressions reject binding-loop warnings as well as incorrect metadata.
+One GUI-owned animation clock runs only for exposed, visible
 moving effects. It stops for hidden/offscreen content and reduced
 motion. Blink, pulse, outline and sweep retain their existing colors and periods.
 Color-only and outline effects do not run that clock.
@@ -121,7 +155,7 @@ The separate water surface and its clock are unchanged. Persisted previews
 remain static terrain-only images, independent of live effects and camera pose.
 
 A dense TableView would instantiate delegates for empty water cells, especially
-at the retained 55% zoom. A whole-cache Repeater would keep offscreen UI work
+at the supported overview zoom. A whole-cache Repeater would keep offscreen UI work
 alive. A second custom glyph/effect implementation would duplicate behavior.
 All three were rejected. Cluster and namespace markers are non-interactive
 context derived from observed groups, not synthetic Kubernetes resources.

@@ -734,7 +734,7 @@ ApplicationWindow {
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
                 ToolTip.visible: hovered; ToolTip.text: Accessible.description
                 visible: window.searchOpen && (["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
-                onTextEdited: if (workspace.filter(text)) Qt.callLater(workspace.workspacePage === "map" ? sidebar.navigateRows : resourceGrid.navigateRows, 0)
+                onTextEdited: if (workspace.filter(text) && workspace.workspacePage !== "map") Qt.callLater(resourceGrid.navigateRows, 0)
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
                         queryRow.activeGrid.navigateRows(event.modifiers & Qt.ShiftModifier ? -1 : 1); event.accepted = true

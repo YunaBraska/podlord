@@ -14,36 +14,39 @@ const cases = ['trusted', 'unknown_issuers', 'system_untrusted', 'wrong_ca', 'wr
 assert.ok(driver && openssl && cases.includes(scenario));
 async function run() {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-platform-tls-'));
+    const identity = path.basename(directory);
     const config = path.join(directory, 'openssl.cnf');
     const command = args => execute(openssl, args, { cwd: directory, timeout: 15000, env: { ...process.env, OPENSSL_CONF: config } });
     let issuerServer;
     let issuerRequests = 0;
     let issuerResponses = 0;
     try {
-        await fs.writeFile(config, '[req]\ndistinguished_name=subject\n[subject]\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n', { mode: 0o600 });
+        await fs.writeFile(config, '[req]\ndistinguished_name=subject\n[subject]\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n', { mode: 0o600 });
         for (const root of ['root', 'other']) {
             await command(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', `${root}.key`]);
-            await command(['req', '-new', '-x509', '-key', `${root}.key`, '-out', `${root}.pem`, '-days', '1', '-subj', `/CN=Podlord ${root}`, '-extensions', 'ca']);
+            await command(['req', '-new', '-x509', '-key', `${root}.key`, '-out', `${root}.pem`, '-days', '1', '-subj', `/CN=Podlord ${root} ${identity}`, '-extensions', 'ca']);
         }
         await command(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', 'server.key']);
         await command(['req', '-new', '-key', 'server.key', '-out', 'server.csr', '-subj', '/CN=Podlord native TLS']);
-        await fs.writeFile(path.join(directory, 'server.ext'), 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n');
+        await fs.writeFile(path.join(directory, 'server.ext'), 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\nauthorityKeyIdentifier=keyid:always\n');
         let issuer = 'root';
         if (scenario === 'delayed' || scenario === 'cancel_pending') {
             issuer = 'intermediate';
             await command(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', 'intermediate.key']);
-            await command(['req', '-new', '-key', 'intermediate.key', '-out', 'intermediate.csr', '-subj', '/CN=Podlord isolated intermediate']);
-            await fs.writeFile(path.join(directory, 'intermediate.ext'), 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n');
+            await command(['req', '-new', '-key', 'intermediate.key', '-out', 'intermediate.csr', '-subj', `/CN=Podlord isolated intermediate ${identity}`]);
+            await fs.writeFile(path.join(directory, 'intermediate.ext'), 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n');
             await command(['x509', '-req', '-in', 'intermediate.csr', '-CA', 'root.pem', '-CAkey', 'root.key', '-CAcreateserial', '-out', 'intermediate.pem', '-days', '1', '-extfile', 'intermediate.ext']);
             await command(['x509', '-in', 'intermediate.pem', '-outform', 'DER', '-out', 'intermediate.der']);
             const der = await fs.readFile(path.join(directory, 'intermediate.der'));
-            issuerServer = http.createServer((_request, response) => {
+            const issuerPath = `/${identity}.der`;
+            issuerServer = http.createServer((request, response) => {
+                if (request.url !== issuerPath) { response.writeHead(404); response.end(); return; }
                 ++issuerRequests;
-                const timer = setTimeout(() => { ++issuerResponses; response.writeHead(200, { 'Content-Type': 'application/pkix-cert' }); response.end(der); }, 1500);
+                const timer = setTimeout(() => { ++issuerResponses; response.writeHead(200, { 'Content-Type': 'application/pkix-cert', 'Content-Length': der.length, 'Cache-Control': 'no-store' }); response.end(der); }, 1500);
                 response.on('close', () => clearTimeout(timer));
             });
             await new Promise(resolve => issuerServer.listen(0, '127.0.0.1', resolve));
-            await fs.appendFile(path.join(directory, 'server.ext'), `authorityInfoAccess=caIssuers;URI:http://127.0.0.1:${issuerServer.address().port}/issuer.der\n`);
+            await fs.appendFile(path.join(directory, 'server.ext'), `authorityInfoAccess=caIssuers;URI:http://127.0.0.1:${issuerServer.address().port}${issuerPath}\n`);
         }
         if (scenario === 'expired') {
             await fs.writeFile(path.join(directory, 'index'), '');

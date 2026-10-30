@@ -64,7 +64,7 @@ bool camera(const QString& scenario) {
         {"pose_zoom_text",{"zoom",QStringLiteral("invalid")}}, {"pose_x_nan",{"x",nan}},
         {"pose_y_nan",{"y",nan}}, {"pose_zoom_nan",{"zoom",nan}},
         {"pose_x_extent",{"x",1e12}}, {"pose_y_extent",{"y",-1e12}},
-        {"pose_zoom_low",{"zoom",.54}}, {"pose_zoom_high",{"zoom",3.41}}};
+        {"pose_zoom_low",{"zoom",.009}}, {"pose_zoom_high",{"zoom",3.41}}};
     if (invalidFields.contains(scenario)) {
         auto pose=original; const auto field=invalidFields.value(scenario); pose[field.first]=field.second;
         radar.setViewPose(pose); radar.setViewPose(pose);
@@ -91,6 +91,53 @@ bool camera(const QString& scenario) {
     // Invalid input must not poison later legitimate navigation or move island coordinates.
     return radar.pan(14,7) && changed.size()==1 && radar.viewPose()!=original
         && coordinates(radar.tiles())==terrain && capture()!=before;
+}
+bool input() {
+    podlord::ResourceTable table;
+    podlord::ResourceFilter filter; filter.setSourceModel(&table);
+    podlord::RadarIsland radar; radar.setWidth(1200); radar.setHeight(1200); radar.setSource(&filter);
+    if (!radar.resourceAt(600,600).isEmpty() || !radar.resourceInfo("missing",true).isEmpty() || radar.traverseVisible(0)) return false;
+    QJsonArray rows;
+    for (const auto& name:{QString("first"),QString("second"),QString("third")})
+        rows.append(QJsonObject{{"path","/api/v1/namespaces/default/pods/"+name},{"name",name},{"namespace","default"},
+            {"kind","Pod"},{"uid",name+"-uid"},{"status","Running"}});
+    if (!table.publish(rows,"local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount()==3; },3000)) return false;
+    const auto original=radar.viewPose();
+    QStringList paths;
+    QHash<QString,QPointF> centers;
+    const auto names=roles(radar.tiles());
+    for (int row=0;row<radar.tiles()->rowCount();++row) {
+        const auto index=radar.tiles()->index(row,0);
+        const auto path=index.data(Qt::UserRole).toString(); paths.append(path);
+        const auto basic=radar.resourceInfo(path,false),details=radar.resourceInfo(path,true);
+        if (basic.contains("resourceName") || basic.contains("resourceMetrics") || details.value("resourceKind")!="Pod"
+            || details.value("resourcePath")!=path || !details.contains("resourceMetrics")) return false;
+        const QPointF center(600+basic.value("worldX").toDouble(),600+basic.value("worldY").toDouble());
+        centers.insert(path,center);
+        if (radar.resourceAt(center.x(),center.y())!=path || !radar.resourceAt(center.x()+3.4,center.y()).isEmpty()
+            || !radar.resourceAt(center.x(),center.y()+3.4).isEmpty()
+            || basic.value("resourceIndex")!=index.data(names.value("resourceIndex"))) return false;
+    }
+    const double nan=std::numeric_limits<double>::quiet_NaN();
+    for (const auto& point:QList<QPointF>{{-1,600},{600,-1},{1200,600},{600,1200},{nan,600},{600,nan}})
+        if (!radar.resourceAt(point.x(),point.y()).isEmpty()) return false;
+    if (!radar.traverseVisible(0) || radar.traverseVisible(-1)) return false;
+    for (int position=0;position<paths.size();++position) {
+        if (filter.index(radar.currentIndex(),0).data(Qt::UserRole)!=paths[position]) return false;
+        if (position+1<paths.size() && !radar.traverseVisible(1)) return false;
+    }
+    if (radar.traverseVisible(1) || radar.traverseVisible(2) || radar.traverseVisible(-2)
+        || !radar.traverseVisible(-1) || radar.viewPose()!=original) return false;
+    if (!filter.filter("\"second\"") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount()==1; },3000)) return false;
+    const auto first=centers.value(paths.first()),second=centers.value(paths[1]);
+    if (!radar.resourceAt(first.x(),first.y()).isEmpty() || !radar.resourceInfo(paths.first(),true).isEmpty()
+        || radar.resourceAt(second.x(),second.y())!=paths[1] || radar.resourceInfo(paths[1],false).value("resourceIndex").toInt()!=0) return false;
+    radar.setVisible(false);
+    if (!radar.resourceAt(second.x(),second.y()).isEmpty() || !radar.resourceInfo(paths[1],true).isEmpty() || radar.traverseVisible(0)) return false;
+    radar.setVisible(true); radar.setWidth(0);
+    if (!radar.resourceAt(0,0).isEmpty()) return false;
+    radar.setSource(nullptr);
+    return radar.resourceAt(0,0).isEmpty() && radar.resourceInfo(paths[1],true).isEmpty() && !radar.traverseVisible(0);
 }
 bool sourceLifecycle(const QString& scenario) {
     const auto rows=[](const QString& name) {
@@ -148,6 +195,27 @@ bool hierarchy(const QString& check = {}) {
     QAbstractItemModelTester projections(geometry.tiles(),QAbstractItemModelTester::FailureReportingMode::Fatal);
     if (!QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==rows.size(); },3000)) return false;
     const auto before=coordinates(geometry.tiles());
+    if (check=="fit") {
+        geometry.setWidth(240); geometry.setHeight(200);
+        if (!geometry.fitView() || coordinates(geometry.tiles())!=before || geometry.viewPose().value("zoom").toDouble()>=.55) return false;
+        const auto pose=geometry.viewPose();
+        for (const auto& point:before) {
+            const auto screen=QPointF(120,100)+(point+QPointF(pose.value("x").toDouble(),pose.value("y").toDouble()))*pose.value("zoom").toDouble();
+            if (!QRectF(8,8,224,184).contains(screen)) return false;
+        }
+        // Minimum zoom must query existing terrain, not millions of empty water buckets.
+        geometry.setWidth(20000); geometry.setHeight(20000);
+        geometry.setViewPose({{"x",0},{"y",0},{"zoom",.01}});
+        for (int index=0;index<3;++index) if (!geometry.pan(100,-100) || coordinates(geometry.tiles())!=before) return false;
+        geometry.setWidth(240); geometry.setHeight(200); geometry.setViewPose(pose);
+        geometry.setVisible(false);
+        if (geometry.fitView() || geometry.viewPose()!=pose) return false;
+        geometry.setVisible(true); geometry.setWidth(0);
+        if (geometry.fitView() || geometry.viewPose()!=pose) return false;
+        geometry.setWidth(240);
+        if (!table.publish({},{})) return false;
+        return !geometry.fitView() && geometry.viewPose()==pose && geometry.tiles()->rowCount()==0;
+    }
     if (check == "preview") {
         geometry.setWidth(2000); geometry.setHeight(2000);
         const auto image=geometry.previewImage();
@@ -214,12 +282,14 @@ bool hierarchy(const QString& check = {}) {
     return true;
 }
 bool exercise(const QStringList& args) {
+    if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && (args[1]=="source_rebind" || args[1]=="source_destroy")) return sourceLifecycle(args[1]);
     if (args.size()==2 && args[1].startsWith("camera_")) return camera(args[1].mid(7));
     if (args.size()==2 && args[1]=="hierarchy") return hierarchy();
     if (args.size()==2 && args[1]=="hierarchy_font") return hierarchy("font");
     if (args.size()==2 && args[1]=="hierarchy_labels") return hierarchy("labels");
     if (args.size()==2 && args[1]=="hierarchy_preview") return hierarchy("preview");
+    if (args.size()==2 && args[1]=="hierarchy_fit") return hierarchy("fit");
     if (args.size() < 3 || args.size() > 4) return false;
     QFile file(args[2]); if (!file.open(QIODevice::ReadOnly)) return false;
     QJsonParseError error;
@@ -268,11 +338,16 @@ bool exercise(const QStringList& args) {
         const auto path = filter->index(selected, 0).data(Qt::UserRole).toString();
         if (!geometry.selectResource(selected)) return false;
         if (args[1] == "selection_sort") {
+            QSignalSpy updates(geometry.tiles(),&QAbstractItemModel::dataChanged);
             filter->sort(0, Qt::DescendingOrder);
             const int actual = geometry.currentIndex();
             if (actual < 0 || filter->index(actual, 0).data(Qt::UserRole).toString() != path) return false;
             QTest::qWait(30);
             const auto names = roles(geometry.tiles());
+            if (updates.isEmpty()) return setupFailure("sort did not publish changed resource indices");
+            for (const auto& update:updates)
+                if (qvariant_cast<QList<int>>(update.at(2))!=QList<int>{names.value("resourceIndex")})
+                    return setupFailure("sort needlessly refreshed unchanged resource metadata");
             for (int row = 0; row < geometry.tiles()->rowCount(); ++row) {
                 const auto tile = geometry.tiles()->index(row, 0);
                 const int index = tile.data(names["resourceIndex"]).toInt();

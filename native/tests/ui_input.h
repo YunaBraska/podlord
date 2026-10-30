@@ -1,5 +1,6 @@
 #pragma once
 #include "alerts.h"
+#include <QAbstractItemModel>
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QColor>
@@ -49,6 +50,55 @@ inline QQuickItem* visibleItem(QQuickItem* root, const QString& name) {
     for (auto* child : root->childItems())
         if (auto* found = visibleItem(child, name)) return found;
     return nullptr;
+}
+struct RadarPoint final { QRectF bounds; QString path; };
+/** Read the published projection without manufacturing widgets or changing selection. */
+inline std::optional<RadarPoint> radarPoint(QQuickItem* radar,int resourceIndex) {
+    if (!radar || !radar->isVisible()) return {};
+    auto* model=radar->property("tiles").value<QAbstractItemModel*>();
+    if (!model) return {};
+    int indexRole=-1,xRole=-1,yRole=-1;
+    const auto roles=model->roleNames();
+    for (auto role=roles.cbegin();role!=roles.cend();++role) {
+        if (role.value()=="resourceIndex") indexRole=role.key();
+        if (role.value()=="worldX") xRole=role.key();
+        if (role.value()=="worldY") yRole=role.key();
+    }
+    if (indexRole<0 || xRole<0 || yRole<0) return {};
+    const auto pose=radar->property("viewPose").toMap();
+    const double zoom=pose.value("zoom").toDouble(),side=5.5*zoom;
+    for (int row=0;row<model->rowCount();++row) {
+        const auto index=model->index(row,0);
+        if (index.data(indexRole).toInt()!=resourceIndex) continue;
+        const QPointF center(radar->width()/2+(index.data(xRole).toDouble()+pose.value("x").toDouble())*zoom,
+            radar->height()/2+(index.data(yRole).toDouble()+pose.value("y").toDouble())*zoom);
+        return RadarPoint{QRectF(center-QPointF(side/2,side/2),QSizeF(side,side)),index.data(Qt::UserRole).toString()};
+    }
+    return {};
+}
+inline bool radarPointVisible(QQuickItem* radar,int resourceIndex) {
+    const auto point=radarPoint(radar,resourceIndex);
+    return point && QRectF(QPointF{},radar->size()).adjusted(-.5,-.5,.5,.5).contains(point->bounds);
+}
+/** Return only an actual shared input target, never a proxy for an absent point. */
+inline QQuickItem* radarTarget(QQuickWindow* window,int resourceIndex) {
+    if (!window) return nullptr;
+    for (const auto* name:{"radarFocusTarget","radarHoverTarget"}) {
+        auto* target=visibleItem(window->contentItem(),name);
+        if (target && target->property("resourceIndex").toInt()==resourceIndex) return target;
+    }
+    return nullptr;
+}
+inline QColor radarPixel(QQuickWindow* window,int resourceIndex) {
+    if (!window || !window->isVisible() || window->width()<=0) return {};
+    auto* radar=visibleItem(window->contentItem(),"resourceRadar");
+    const auto point=radarPoint(radar,resourceIndex);
+    if (!point || !radarPointVisible(radar,resourceIndex)) return {};
+    const auto center=radar->mapToScene(point->bounds.center());
+    const auto image=window->grabWindow();
+    const double ratio=double(image.width())/window->width();
+    const QPoint pixel(qRound(center.x()*ratio),qRound(center.y()*ratio));
+    return image.rect().contains(pixel) ? image.pixelColor(pixel) : QColor{};
 }
 /** Resolve the live TableView delegate, not an old pooled item with the same name. */
 inline QQuickItem* tableCell(QQuickItem* view, int row, int column) {

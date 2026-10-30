@@ -931,7 +931,12 @@ if(BUILD_TESTING)
         set_tests_properties(radar-camera-${scenario} PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     endforeach()
     add_test(NAME radar-hierarchy COMMAND radar_reference_test hierarchy)
-    foreach(scenario radar_map_glyph radar_map_glyph_reuse radar_map_theme radar_map_zoom radar_tooltip radar_map_tooltip)
+    foreach(scenario
+        radar_map_glyph radar_map_glyph_reuse radar_map_theme radar_map_zoom
+        radar_tooltip radar_map_tooltip radar_label_contrast radar_map_label_contrast
+        radar_autofit radar_map_autofit radar_tab_traversal radar_map_tab_traversal
+        radar_touch_inspect radar_map_touch_inspect radar_pulse_focus_refresh
+        radar_metadata_focus radar_map_metadata_focus)
         foreach(style Basic Fusion)
             string(TOLOWER ${style} style_id)
             add_test(NAME native.ui.${scenario}_${style_id} COMMAND workspace_ui_test ${scenario})
@@ -945,6 +950,10 @@ if(BUILD_TESTING)
     set_tests_properties(radar-hierarchy-labels PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     add_test(NAME radar-hierarchy-preview COMMAND radar_reference_test hierarchy_preview)
     set_tests_properties(radar-hierarchy-preview PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    add_test(NAME radar-hierarchy-fit COMMAND radar_reference_test hierarchy_fit)
+    set_tests_properties(radar-hierarchy-fit PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    add_test(NAME radar-input COMMAND radar_reference_test input)
+    set_tests_properties(radar-input PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     foreach(scenario reference reordered filtered namespaces pose render-check cached_scope_replay cached_scope_hit cached_uid_recreation metric_update selection_sort selection_filter selection_remove)
         add_test(NAME radar-reference-${scenario} COMMAND radar_reference_test ${scenario} "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/radar-reference.json")
         set_tests_properties(radar-reference-${scenario} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")

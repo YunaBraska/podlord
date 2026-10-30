@@ -225,6 +225,18 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     }
     if (total != 5000 || sessions.size() != 3 || workspace.logLimitMb() != 5) return false;
     if (!frame([&] { return workspace.activate(sessions.first()); }, [&] { return !workspace.busy() && workspace.currentSession() == sessions.first(); })) return false;
+    if (backgroundMetal) {
+        QJsonObject classes, visibleClasses;
+        QList<QQuickItem*> items{window->contentItem()};
+        for (qsizetype index=0;index<items.size();++index) {
+            auto* item=items[index];
+            const auto type=QString::fromLatin1(item->metaObject()->className()).section("_QML",0,0);
+            classes[type]=classes.value(type).toInt()+1;
+            if (item->isVisible()) visibleClasses[type]=visibleClasses.value(type).toInt()+1;
+            items.append(item->childItems());
+        }
+        if (!report({{"type","sceneInventory"},{"items",items.size()},{"classes",classes},{"visibleClasses",visibleClasses}})) return false;
+    }
     if (!report({{"type", "profile"}, {"sessions", 3}, {"resources", total}, {"pods", 1500},
                  {"configMaps", 2334}, {"secrets", 1166}, {"logLimitMb", workspace.logLimitMb()},
                  {"logRows", workspace.logRows()->rowCount()}, {"qt", qVersion()},

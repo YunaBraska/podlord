@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "radar_island.h"
 #include "background_http.h"
 #include "platform_tls.h"
 #include <QWebSocket>
@@ -49,6 +50,9 @@
 #include <algorithm>
 
 namespace {
+using podlord::test::radarPoint;
+using podlord::test::radarPointVisible;
+using podlord::test::radarTarget;
 bool accessibleName(QQuickWindow* window, const QString& name) {
     QList<QAccessibleInterface*> pending{QAccessible::queryAccessibleInterface(window)};
     for (qsizetype index = 0; index < pending.size() && index < 10000; ++index) {
@@ -574,7 +578,8 @@ bool showEventColumn(QQuickWindow* window, podlord::Workspace& workspace, const 
 }
 bool execute(const QString& requestedScenario) {
     const bool mapRadar=requestedScenario.startsWith("radar_map_");
-    const QString scenario=mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
+    const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
+    const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
     const bool twoContexts = (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
@@ -1126,13 +1131,22 @@ bool execute(const QString& requestedScenario) {
             return workspace.mapOverview() && workspace.currentSession()==session && server.requests.size()==calls && saveShellFrame(window,scenario);
         }
         if (scenario=="map_search") {
+            if (!waitFor([&] { return !workspace.radarView().isEmpty(); })) return false;
+            const auto camera=workspace.radarView();
+            const auto failed=[&](const char* stage) {
+                qWarning()<<"Map search:"<<stage<<"count"<<workspace.resourceCount()<<"counter"<<text(window,"queryMatchCount")
+                    <<"camera before"<<camera<<"camera after"<<workspace.radarView();
+                saveShellFrame(window,QStringLiteral("map-search-failure")); return false;
+            };
             if (!workspace.setResourceLimit("1") || !click(window,item(window,"workspaceSearchButton"))
                 || !type(window,item(window,"resourceFilter"),"Pod")
-                || !waitFor([&] { return workspace.resourceCount()==2 && text(window,"queryMatchCount")=="1/2"; })) return false;
-            if (!click(window,item(window,"queryNext")) || !waitFor([&] { return text(window,"queryMatchCount")=="2/2"; })
+                || !waitFor([&] { return workspace.resourceCount()==2 && text(window,"queryMatchCount")=="0/2"; })
+                || workspace.radarView()!=camera) return failed("typed query retains camera and selection");
+            if (!click(window,item(window,"queryNext")) || !waitFor([&] { return text(window,"queryMatchCount")=="1/2"; })
+                || !click(window,item(window,"queryNext")) || !waitFor([&] { return text(window,"queryMatchCount")=="2/2"; })
                 || !click(window,item(window,"queryNext")) || !waitFor([&] { return text(window,"queryMatchCount")=="1/2"; })
-                || !click(window,item(window,"queryPrevious")) || !waitFor([&] { return text(window,"queryMatchCount")=="2/2"; })) return false;
-            return workspace.displayedResourceCount()==1 && workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
+                || !click(window,item(window,"queryPrevious")) || !waitFor([&] { return text(window,"queryMatchCount")=="2/2"; })) return failed("explicit result navigation");
+            return workspace.displayedResourceCount()==1 && workspace.radarView()!=camera && workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
         }
         if (scenario=="map_preview_expiry") {
             QFile before(path); if (!before.open(QIODevice::ReadOnly)) return false;
@@ -2792,6 +2806,8 @@ bool execute(const QString& requestedScenario) {
         if (!click(window, item(window, mapRadar ? "mapWorkspaceButton" : "radarWorkspaceButton"))) return failed("open radar");
         auto* radar = item(window, "resourceRadar");
         if (!radar || !waitFor([&] { return radar->isVisible() && radar->width() > 0 && radar->height() > 0 && radar->property("count").toInt() == expectedRows; })) return failed("populate radar");
+        // Existing input/paint scenarios deliberately start from the public 100% reset.
+        if (!initialFit && !click(window,item(window,"resetRadar"))) return failed("reset input baseline");
         if (scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_island_")) {
             QSignalSpy frames(window, &QQuickWindow::frameSwapped);
             window->update();
@@ -2816,13 +2832,162 @@ bool execute(const QString& requestedScenario) {
             window->update();
             return frame.wait(2000);
         };
+        if (scenario=="radar_metadata_focus") {
+            QStringList loops;
+            QObject observer;
+            QObject::connect(&engine,&QQmlEngine::warnings,&observer,[&](const QList<QQmlError>& errors) {
+                for (const auto& error:errors) if (error.description().contains("Binding loop detected")) loops.append(error.toString());
+            });
+            for (const auto& name:{QString("alpha"),QString("bravo"),QString("alpha"),QString("bravo")}) {
+                if (!workspace.filterField("name",'"'+name+'"') || !waitFor([&] { return workspace.resourceCount()==1; })) return false;
+                const auto path=workspace.table()->index(0,0).data(Qt::UserRole).toString();
+                radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
+                if (!waitFor([&] { const auto* target=radarTarget(window,0); return target && target->property("text").toString().contains(name); })) return failed("focused resource metadata");
+                if (!workspace.resetResourceFilters() || !waitFor([&] { return workspace.resourceCount()==expectedRows; })) return false;
+                if (!waitFor([&] { const auto* target=radarTarget(window,workspace.alertResourceIndex(path));
+                    return target && target->property("resourcePath")==path && target->property("text").toString().contains(name); })) return failed("focused identity survives proxy index change");
+            }
+            if (!loops.isEmpty()) { qWarning() << loops; return failed("acyclic resource metadata updates"); }
+            return workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
+        }
+        if (scenario=="radar_pulse_focus_refresh") {
+            auto* cpu=item(window,"pulse_cpu");
+            if (!cpu) return failed("CPU summary control");
+            cpu->forceActiveFocus();
+            const auto focused=[&] { return window->activeFocusItem() && window->activeFocusItem()->objectName()=="pulse_cpu"; };
+            if (!workspace.filterField("name","\"alpha\"") || !waitFor([&] { return workspace.resourceCount()==1; })
+                || !focused()) return failed("metric update preserves keyboard focus");
+            if (!workspace.resetResourceFilters() || !waitFor([&] { return workspace.resourceCount()==expectedRows; })
+                || !focused() || server.requests.size()!=calls) return failed("repeated metric update preserves focus without requests");
+            QTest::keyClick(window,Qt::Key_Space);
+            return waitFor([&] { return workspace.workspacePage()=="dashboard"; });
+        }
+        if (scenario=="radar_tab_traversal") {
+            QStringList expected;
+            for (int row=0;row<workspace.table()->rowCount();++row) expected.append(workspace.table()->index(row,0).data(Qt::UserRole).toString());
+            expected.sort();
+            radar->forceActiveFocus();
+            for (const auto& path:expected) {
+                QTest::keyClick(window,Qt::Key_Tab);
+                if (!waitFor([&] { const auto* focused=window->activeFocusItem(); return focused && focused->property("resourcePath")==path; })) return failed("forward virtual resource tab order");
+            }
+            QTest::keyClick(window,Qt::Key_Backtab);
+            if (!waitFor([&] { const auto* focused=window->activeFocusItem(); return focused && focused->property("resourcePath")==expected[expected.size()-2]; })) return failed("reverse virtual resource tab order");
+            QTest::keyClick(window,Qt::Key_Tab); QTest::keyClick(window,Qt::Key_Tab);
+            if (!waitFor([&] { const auto* focused=window->activeFocusItem(); return focused && !focused->property("resourcePath").isValid(); })) return failed("resource tab traversal exits radar");
+            radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Tab); QTest::keyClick(window,Qt::Key_Backtab);
+            return waitFor([&] { return radar->hasActiveFocus(); }) && workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
+        }
+        if (scenario=="radar_touch_inspect") {
+            const auto before=radarPoint(radar,0); if (!before) return false;
+            const auto start=radar->mapToScene(before->bounds.center()).toPoint();
+            std::unique_ptr<QPointingDevice> touch(QTest::createTouchDevice());
+            QTest::touchEvent(window,touch.get()).press(0,start,window).commit();
+            for (int step=1;step<=6;++step) { QTest::touchEvent(window,touch.get()).move(0,start+QPoint(step*10,step*5),window).commit(); QTest::qWait(10); }
+            QTest::touchEvent(window,touch.get()).release(0,start+QPoint(60,30),window).commit();
+            if (!waitFor([&] { const auto moved=radarPoint(radar,0); return moved && moved->bounds.center().x()>before->bounds.center().x()+20; })
+                || !workspace.inspectorPath().isEmpty() || server.requests.size()!=calls) return failed("touch drag only pans");
+            const auto after=radarPoint(radar,0); if (!after) return false;
+            const auto point=radar->mapToScene(after->bounds.center()).toPoint();
+            QTest::touchEvent(window,touch.get()).press(0,point,window).commit();
+            QTest::touchEvent(window,touch.get()).release(0,point,window).commit();
+            return waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml(); });
+        }
+        if (initialFit) {
+            const auto completeIsland=[&] {
+                auto* tiles=radar->property("tiles").value<QAbstractItemModel*>();
+                if (!tiles || tiles->rowCount()!=expectedRows || workspace.radarView().isEmpty()) return false;
+                const auto pose=radar->property("viewPose").toMap();
+                if (pose!=workspace.radarView()) return false;
+                int xRole=-1,yRole=-1;
+                const auto roles=tiles->roleNames();
+                for (auto role=roles.cbegin();role!=roles.cend();++role) {
+                    if (role.value()=="worldX") xRole=role.key();
+                    if (role.value()=="worldY") yRole=role.key();
+                }
+                if (xRole<0 || yRole<0) return false;
+                const double zoom=pose.value("zoom").toDouble();
+                if (zoom<.01 || zoom>3.4 || (!mapRadar && zoom>=.55)) return false;
+                const QRectF viewport(0,0,radar->width(),radar->height());
+                for (int row=0;row<tiles->rowCount();++row) {
+                    const auto index=tiles->index(row,0);
+                    const QPointF center(radar->width()/2+(index.data(xRole).toDouble()+pose.value("x").toDouble())*zoom,
+                        radar->height()/2+(index.data(yRole).toDouble()+pose.value("y").toDouble())*zoom);
+                    if (!viewport.contains(center)) return false;
+                }
+                return true;
+            };
+            if (!waitFor(completeIsland) || !saveShellFrame(window,requestedScenario+"-initial")) return failed("initial whole island fit");
+            int inputTargets=0;
+            for (auto* child:radar->childItems()) {
+                const auto name=child->objectName();
+                if (name=="radarFocusTarget" || name=="radarHoverTarget" || name.startsWith("radarTile_")) ++inputTargets;
+            }
+            if (inputTargets!=2) return failed("bounded input targets for complete island");
+            const auto initial=workspace.radarView();
+            radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Right); QTest::keyClick(window,Qt::Key_Plus);
+            auto chosen=workspace.radarView();
+            if (chosen==initial || !workspace.filterField("name","\"radar-0999\"") || !waitFor([&] { return workspace.resourceCount()==1; })
+                || workspace.radarView()!=chosen || !workspace.filterField("name","") || !waitFor([&] { return workspace.resourceCount()==expectedRows; })) return failed("fit preserves filtered camera");
+            if (!click(window,item(window,"resourcesWorkspaceButton")) || !click(window,item(window,"mapWorkspaceButton"))
+                || !typeRadarQuery("radar-0999") || !waitFor([&] { return workspace.resourceCount()==1; })
+                || workspace.radarView()!=chosen) return failed("map typing preserves camera");
+            QTest::keyClick(window,Qt::Key_Return);
+            if (!waitFor([&] { return radar->property("currentIndex").toInt()>=0 && workspace.radarView()!=chosen; })
+                || !workspace.inspectorPath().isEmpty()) return failed("explicit map search navigation");
+            chosen=workspace.radarView();
+            if (!typeRadarQuery("") || !waitFor([&] { return workspace.resourceCount()==expectedRows; })
+                || workspace.radarView()!=chosen || !click(window,item(window,mapRadar ? "mapWorkspaceButton" : "resourcesWorkspaceButton"))) return false;
+            window->resize(760,640); QTest::qWait(30); window->resize(1440,920);
+            if (!waitFor([&] { return radar->property("viewPose").toMap()==chosen; }) || server.requests.size()!=calls) return failed("fit preserves resized camera");
+            const auto before=server.requests.size();
+            if (!click(window,item(window,"refreshButton")) || !waitFor([&] { return !workspace.loading() && server.requests.size()>before; })
+                || workspace.radarView()!=chosen) return failed("fit preserves refreshed camera");
+            if (!click(window,item(window,"resetRadar"))) return false;
+            const QVariantMap reset{{"x",0},{"y",0},{"zoom",1}};
+            QTest::qWait(50);
+            return workspace.radarView()==reset && radar->property("viewPose").toMap()==reset
+                && saveShellFrame(window,requestedScenario+"-reset");
+        }
+        if (scenario=="radar_label_contrast") {
+            if (!click(window,item(window,"radarZoomOut"))) return failed("label contrast setup");
+            const auto luminance=[](const QColor& color) {
+                const auto linear=[](double value) { return value<=.04045 ? value/12.92 : std::pow((value+.055)/1.055,2.4); };
+                return .2126*linear(color.redF())+.7152*linear(color.greenF())+.0722*linear(color.blueF());
+            };
+            const auto output=qEnvironmentVariable("PODLORD_RADAR_ACTION_EVIDENCE");
+            if (!output.isEmpty() && !QDir().mkpath(output)) return false;
+            for (const auto& theme:workspace.themeNames()) for (const auto& variant:{QString("dark"),QString("light")}) {
+                if (!workspace.saveAppearance(theme,variant) || !waitFor([&] { return !workspace.busy(); })) return false;
+                for (const bool dimmed:{false,true}) {
+                    if (!typeRadarQuery(dimmed ? "no-such-resource" : "")) return false;
+                    const auto foreground=dimmed ? QColor("#DDE7EC").darker(140) : QColor("#DDE7EC");
+                    const auto contrast=(luminance(foreground)+.05)/(luminance(QColor("#061621"))+.05);
+                    if (contrast<4.5) return failed("label contrast ratio");
+                    const bool rendered=waitFor([&] {
+                        const auto image=window->grabWindow();
+                        if (image.isNull()) return false;
+                        const double scale=double(image.width())/window->width();
+                        const auto area=QRectF(radar->mapToScene(QPointF{})*scale,radar->size()*scale).toAlignedRect().intersected(image.rect());
+                        int ink=0;
+                        for (int y=area.top();y<=area.bottom();++y) for (int x=area.left();x<=area.right();++x)
+                            if (image.pixel(x,y)==foreground.rgba()) ++ink;
+                        return ink>5;
+                    });
+                    if (!rendered) { qWarning()<<"Missing rendered radar label"<<theme<<variant<<dimmed; return false; }
+                    if (!output.isEmpty() && !window->grabWindow().save(output+"/"+requestedScenario+"-"+QString(theme).replace(' ','-')+"-"+variant
+                        +(dimmed ? "-dimmed-" : "-active-")+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png")) return false;
+                }
+            }
+            return server.requests.size()==calls;
+        }
         if (scenario=="radar_tooltip") {
             radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
             auto* tip=window->findChild<QObject*>("radarTooltip");
             if (!tip || !waitFor([&] { return tip->property("visible").toBool() && tip->property("height").toDouble()>0; })) return failed("tooltip opens");
             auto* parent=tip->property("parent").value<QQuickItem*>();
             auto* scroll=item(window,"radarTooltipScroll");
-            auto* tile=item(window,"radarTile_0");
+            auto* tile=radarTarget(window,0);
             if (!parent || !scroll || !tile) return failed("tooltip public controls");
             const QRectF popup(parent->mapToScene(QPointF(tip->property("x").toDouble(),tip->property("y").toDouble())),
                 QSizeF(tip->property("width").toDouble(),tip->property("height").toDouble()));
@@ -2972,7 +3137,7 @@ bool execute(const QString& requestedScenario) {
                 QTest::qWait(120);
                 const auto name=scenario=="radar_water_event_tile" ? "radar-event" : "custom-widget";
                 QQuickItem* target=nullptr;
-                for (int index=0;index<expectedRows;++index) if (workspace.table()->index(index,0).data(Qt::UserRole+1)==name) target=item(window,"radarTile_"+QString::number(index));
+                for (int index=0;index<expectedRows;++index) if (workspace.table()->index(index,0).data(Qt::UserRole+1)==name) target=radarTarget(window,index);
                 if (!target || !displayedWithin(radar,target)) return false;
                 const auto center=target->mapToItem(radar,QPointF(target->width()/2,target->height()/2));
                 if (scenario=="radar_water_event_tile") {
@@ -2981,11 +3146,11 @@ bool execute(const QString& requestedScenario) {
                     const auto before=capture(around);
                     if (!type(window,item(window,"resourceFilter"),"custom-widget") || !waitFor([&] { return radar->property("count").toInt()==1; })) return false;
                     QTest::qWait(100);
-                    auto* widget=item(window,"radarTile_0");
+                    const auto widget=radarPoint(radar,0);
                     if (!widget || workspace.table()->index(0,0).data(Qt::UserRole+1)!="custom-widget"
-                        || widget->property("resourcePath")!=workspace.table()->index(0,0).data(Qt::UserRole)) return false;
+                        || widget->path!=workspace.table()->index(0,0).data(Qt::UserRole)) return false;
                     const QRectF eventArea(center-QPointF(tileWidth/2,tileWidth/2),QSizeF(tileWidth,tileWidth));
-                    const QRectF widgetArea(widget->mapToItem(radar,QPointF{}),widget->size());
+                    const auto widgetArea=widget->bounds;
                     const auto after=capture(around);
                     int changed=0;
                     const double ratio=double(before.width())/36;
@@ -3052,15 +3217,14 @@ bool execute(const QString& requestedScenario) {
             return true;
         }
         if (scenario.startsWith("radar_island_")) {
-            auto* first = item(window, "radarTile_0");
-            if (!displayedWithin(radar, first)) return false;
-            const auto initial = first->mapToItem(radar, QPointF(first->width()/2, first->height()/2));
+            const auto first=radarPoint(radar,0);
+            if (!first || !radarPointVisible(radar,0)) return false;
+            const auto initial=first->bounds.center();
             const auto initialViewport = radar->size();
-            const auto initialWidth = first->width();
+            const auto initialWidth=first->bounds.width();
             if (scenario == "radar_island_layout") {
-                auto* second = item(window, "radarTile_1");
-                return displayedWithin(radar, second)
-                    && !QRectF(first->mapToItem(radar,QPointF{}),first->size()).intersects(QRectF(second->mapToItem(radar,QPointF{}),second->size()))
+                const auto second=radarPoint(radar,1);
+                return second && radarPointVisible(radar,1) && !first->bounds.intersects(second->bounds)
                     && server.requests.size() == calls;
             }
             radar->forceActiveFocus();
@@ -3082,13 +3246,13 @@ bool execute(const QString& requestedScenario) {
             if (scenario == "radar_island_refresh") {
                 if (!click(window,item(window,"refreshButton")) || !waitFor([&] { return !workspace.loading() && server.requests.size()>calls; })) return false;
                 return waitFor([&] {
-                    auto* tile=item(window,"radarTile_0");
-                    return tile && QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1;
+                    const auto tile=radarPoint(radar,0);
+                    return tile && QLineF(initial,tile->bounds.center()).length()<1;
                 });
             }
             if (scenario == "radar_island_sort") {
                 if (!click(window,item(window,"resourcesWorkspaceButton")) || !click(window,item(window,"header_0")) || !click(window,item(window,"header_0")) || !click(window,item(window,"radarWorkspaceButton"))) return false;
-                return waitFor([&] { auto* tile=item(window,"radarTile_2"); const auto expected=workspace.table()->index(2,0); return tile && expected.data(Qt::UserRole+1)=="alpha" && tile->property("resourcePath")==expected.data(Qt::UserRole) && QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1; }) && server.requests.size()==calls;
+                return waitFor([&] { const auto tile=radarPoint(radar,2); const auto expected=workspace.table()->index(2,0); return tile && expected.data(Qt::UserRole+1)=="alpha" && tile->path==expected.data(Qt::UserRole) && QLineF(initial,tile->bounds.center()).length()<1; }) && server.requests.size()==calls;
             }
             if (scenario == "radar_island_session") {
                 const auto session=workspace.currentSession(); QTest::keyClick(window,Qt::Key_Right); QTest::keyClick(window,Qt::Key_Down);
@@ -3099,38 +3263,38 @@ bool execute(const QString& requestedScenario) {
                 if (!click(window,item(window,"openContext")) || !waitFor([&] { return workspace.currentSession()!=session && !workspace.busy() && !workspace.loading(); },10000)) return false;
                 if (!click(window,item(window,"radarWorkspaceButton"))) return false;
                 const auto view=workspace.radarView();
-                if (view["x"].toDouble()!=0 || view["y"].toDouble()!=0 || view["zoom"].toDouble()!=1) return false;
+                if (!podlord::RadarIsland::validPose(view) || view==savedPose) return false;
                 if (!click(window,item(window,"activateSession_"+session))) return false;
                 if (!waitFor([&] { return workspace.currentSession()==session && workspace.radarView()==savedPose && radar->property("viewPose").toMap()==savedPose; })) return false;
                 radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_0);
-                return waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1; });
+                return waitFor([&] { const auto tile=radarPoint(radar,0); return tile && QLineF(initial,tile->bounds.center()).length()<1; });
             }
             if (scenario == "radar_island_pan") {
                 QTest::keyClick(window, Qt::Key_Right); QTest::keyClick(window, Qt::Key_Down);
                 const auto expected = initial - QPointF(24,24);
                 const bool remainsVisible = QRectF(expected - QPointF(initialWidth/2,initialWidth/2), QSizeF(initialWidth,initialWidth)).intersects(QRectF(QPointF{},radar->size()));
                 if (!waitFor([&] {
-                    auto* tile = item(window,"radarTile_0");
+                    const auto tile=radarPoint(radar,0);
                     const auto pose = radar->property("viewPose").toMap();
                     return pose["x"].toDouble() == -24 && pose["y"].toDouble() == -24
-                        && (tile ? QLineF(expected,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1 : !remainsVisible);
+                        && (tile ? QLineF(expected,tile->bounds.center()).length()<1 : !remainsVisible);
                 })) {
                     const auto pose = radar->property("viewPose").toMap();
-                    auto* tile = item(window,"radarTile_0");
-                    const auto actual = tile ? tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2)) : QPointF{};
+                    const auto tile=radarPoint(radar,0);
+                    const auto actual=tile ? tile->bounds.center() : QPointF{};
                     std::fprintf(stderr, "Radar key pan: focus=%d; pose=%g,%g; expected=%g,%g; actual=%g,%g; calls=%lld/%lld\n", radar->hasActiveFocus(), pose["x"].toDouble(), pose["y"].toDouble(), initial.x()-24, initial.y()-24, actual.x(), actual.y(), static_cast<long long>(server.requests.size()), static_cast<long long>(calls));
                     return false;
                 }
                 QTest::keyClick(window, Qt::Key_0);
-                if (!waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1; })) return false;
+                if (!waitFor([&] { const auto tile=radarPoint(radar,0); return tile && QLineF(initial,tile->bounds.center()).length()<1; })) return false;
                 if (!typeRadarQuery("",Qt::Key_Left)) return false;
-                auto* restored = item(window,"radarTile_0");
-                return restored && QLineF(initial,restored->mapToItem(radar,QPointF(restored->width()/2,restored->height()/2))).length()<1 && server.requests.size()==calls;
+                const auto restored=radarPoint(radar,0);
+                return restored && QLineF(initial,restored->bounds.center()).length()<1 && server.requests.size()==calls;
             }
             if (scenario == "radar_island_filter") {
-                auto* second=item(window,"radarTile_1");
-                if (!displayedWithin(radar,second)) return failed("filter source visible");
-                const auto greyPosition=second->mapToItem(radar,QPointF(second->width()/2,second->height()/2));
+                const auto second=radarPoint(radar,1);
+                if (!second || !radarPointVisible(radar,1)) return failed("filter source visible");
+                const auto greyPosition=second->bounds.center();
                 QPointF greyPoint;
                 if (!typeRadarQuery("alpha") || !waitFor([&] { return radar->property("count").toInt()==1; })) {
                     auto* input=item(window,"resourceFilter");
@@ -3138,10 +3302,9 @@ bool execute(const QString& requestedScenario) {
                         << "focus" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}) << "window" << window->size();
                     return failed("filter input");
                 }
-                auto* tile=item(window,"radarTile_0");
                 const auto viewportShift=[&] { return QPointF((radar->width()-initialViewport.width())/2,(radar->height()-initialViewport.height())/2); };
-                if (!tile || !waitFor([&] { return QLineF(initial+viewportShift(),tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<=1; })) {
-                    qWarning() << "Filtered Radar position" << initial << (tile ? tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2)) : QPointF{}) << "viewport" << radar->size();
+                if (!waitFor([&] { const auto tile=radarPoint(radar,0); return tile && QLineF(initial+viewportShift(),tile->bounds.center()).length()<=1; })) {
+                    qWarning() << "Filtered Radar position" << initial << "viewport" << radar->size();
                     return failed("filter stable position");
                 }
                 QColor terrain;
@@ -3158,8 +3321,11 @@ bool execute(const QString& requestedScenario) {
                 QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);
                 for (int step=1;step<=6;++step) { QTest::mouseMove(window,start+QPoint(step*10,step*5)); QTest::qWait(10); }
                 QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,start+QPoint(60,30));
-                if (!waitFor([&] { auto* tile=item(window,"radarTile_0"); return tile && tile->mapToItem(radar,QPointF{}).x()>initial.x()+20; }) || !workspace.inspectorPath().isEmpty() || server.requests.size()!=calls) return false;
-                return click(window,item(window,"radarTile_0")) && waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml(); });
+                if (!waitFor([&] { const auto tile=radarPoint(radar,0); return tile && tile->bounds.left()>initial.x()+20; }) || !workspace.inspectorPath().isEmpty() || server.requests.size()!=calls) return false;
+                const auto tile=radarPoint(radar,0);
+                if (!tile) return false;
+                QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,radar->mapToScene(tile->bounds.center()).toPoint());
+                return waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml(); });
             }
             const auto at=radar->mapToScene(initial);
             const bool trackpad=scenario=="radar_island_trackpad_zoom";
@@ -3168,9 +3334,9 @@ bool execute(const QString& requestedScenario) {
             QWheelEvent wheel(at,window->mapToGlobal(at.toPoint()),trackpad ? QPoint(18,120) : horizontal ? QPoint(18,0) : QPoint{},trackpad || horizontal ? QPoint{} : QPoint(0,zoomOut ? -120 : 120),Qt::NoButton,Qt::NoModifier,Qt::ScrollUpdate,false);
             QCoreApplication::sendEvent(window,&wheel);
             return waitFor([&] {
-                auto* tile=item(window,"radarTile_0");
-                const bool widthMatches=tile && (horizontal ? qAbs(tile->width()-initialWidth)<.01 : zoomOut ? tile->width()<initialWidth/1.1 : tile->width()>initialWidth*1.1);
-                return widthMatches && QLineF(initial,tile->mapToItem(radar,QPointF(tile->width()/2,tile->height()/2))).length()<1;
+                const auto tile=radarPoint(radar,0);
+                const bool widthMatches=tile && (horizontal ? qAbs(tile->bounds.width()-initialWidth)<.01 : zoomOut ? tile->bounds.width()<initialWidth/1.1 : tile->bounds.width()>initialWidth*1.1);
+                return widthMatches && QLineF(initial,tile->bounds.center()).length()<1;
             }) && server.requests.size()==calls;
         }
         if (scenario.startsWith("radar_pooled_")) {
@@ -3179,31 +3345,31 @@ bool execute(const QString& requestedScenario) {
             if (moving && !waitFor([&] { return frames.size() >= 4; })) return false;
             if (!moving) { QTest::qWait(250); frames.clear(); QTest::qWait(250); if (frames.size() > 1) return false; }
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
-            if (!waitFor([&] { return displayedWithin(radar, item(window, "radarTile_1000")); })) return false;
+            if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); })) return false;
             const int panSteps=int(std::ceil(radar->width()/24))+2;
             for (int step=0;step<panSteps;++step) QTest::keyClick(window, Qt::Key_Right);
-            if (!waitFor([&] { return !displayedWithin(radar,item(window,"radarTile_0")); })) return false;
+            if (!waitFor([&] { return !radarPointVisible(radar,0); })) return false;
             QTest::qWait(250); frames.clear(); QTest::qWait(250);
             if (frames.size() > 1) { std::fprintf(stderr, "Offscreen-only alarm caused %lld frames after settling.\n", static_cast<long long>(frames.size())); return false; }
             QTest::keyClick(window, Qt::Key_Home);
-            if (!waitFor([&] { return displayedWithin(radar, item(window, "radarTile_0")); })) return false;
+            if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,0)); })) return false;
             QTest::qWait(100); frames.clear();
             if (moving && !waitFor([&] { return frames.size() >= 4; })) return false;
             if (!moving) { QTest::qWait(250); frames.clear(); QTest::qWait(250); if (frames.size() > 1) return false; }
             return server.requests.size() == calls;
         }
         if (scenario == "radar_initial_population") {
-            auto* firstRow = item(window, "radarTile_0");
-            return displayedWithin(radar, firstRow) && workspace.table()->index(0,0).data(Qt::UserRole+1)=="radar-0000"
-                && firstRow->property("resourcePath")==workspace.table()->index(0,0).data(Qt::UserRole)
+            const auto firstRow=radarPoint(radar,0);
+            return firstRow && radarPointVisible(radar,0) && workspace.table()->index(0,0).data(Qt::UserRole+1)=="radar-0000"
+                && firstRow->path==workspace.table()->index(0,0).data(Qt::UserRole)
                 && server.requests.size() == calls;
         }
         if (scenario == "radar_reopen_position") {
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
-            if (!waitFor([&] { return displayedWithin(radar, item(window, "radarTile_1000")); })) return false;
+            if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); })) return false;
             if (!click(window, item(window, "toggleSidebar")) || !waitFor([&] { return !radar->isVisible(); })) return false;
             if (!click(window, item(window, "radarWorkspaceButton"))) return false;
-            return waitFor([&] { return displayedWithin(radar, item(window, "radarTile_1000")); }) && server.requests.size() == calls;
+            return waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); }) && server.requests.size() == calls;
         }
         if ((scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_navigation_water") {
             QList<double> samples;
@@ -3241,8 +3407,8 @@ bool execute(const QString& requestedScenario) {
             if (!alerts->saveRule(rule) || !waitFor([&] { return !alerts->busy(); })) return failed("save rule");
             if (!workspace.filter("\"alpha\"") || !waitFor([&] { return workspace.resourceCount() == 1; })) return failed("select target");
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
-            if (!waitFor([&] { return item(window, "radarTile_0") != nullptr; })) return failed("render target");
-            auto* tile = item(window, "radarTile_0");
+            if (!waitFor([&] { return radarTarget(window,0) != nullptr; })) return failed("render target");
+            auto* tile = radarTarget(window,0);
             const auto path = workspace.table()->data(workspace.table()->index(0, 0), Qt::UserRole).toString();
             if (!waitFor([&] { return alerts->effect(path).value("color").toString() == "#0088ff"; })) return failed("apply color");
             const auto renderedTile = [&] {
@@ -3340,7 +3506,7 @@ bool execute(const QString& requestedScenario) {
                 cameraChanges.append(radar->property("viewPose").toMap());
             }
             const auto renderedGlyph=[&](const QString& kind) {
-                auto* tile=item(window,"radarTile_0");
+                auto* tile=radarTarget(window,0);
                 const auto expectedResource=workspace.table()->index(0,0);
                 if (!tile || !displayedWithin(radar,tile) || tile->width()<9 || expectedResource.data(Qt::UserRole+2)!=kind
                     || tile->property("resourcePath")!=expectedResource.data(Qt::UserRole)) return false;
@@ -3376,7 +3542,7 @@ bool execute(const QString& requestedScenario) {
                 return mean<=12;
             };
             if (!waitFor([&] { return renderedGlyph("Pod"); })) {
-                auto* tile=item(window,"radarTile_0");
+                auto* tile=radarTarget(window,0);
                 qWarning() << "Glyph target" << requestedScenario << "tile" << tile << "width" << (tile ? tile->width() : 0)
                     << "kind" << workspace.table()->index(0,0).data(Qt::UserRole+2) << "viewport" << radar->size() << "pose" << radar->property("viewPose") << "zoom actions" << cameraChanges;
                 return failed("shared glyph pixels");
@@ -3427,7 +3593,7 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water")) {
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
-            if (!waitFor([&] { return displayedWithin(radar, item(window, "radarTile_1000")); })) return false;
+            if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); })) return false;
             if (radar->property("count").toInt() != workspace.table()->rowCount()) return false;
         }
         const auto pattern = scenario == "radar_empty" ? "no-such-resource" : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") ? "radar-0999" : "bravo";

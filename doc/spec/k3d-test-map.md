@@ -6547,3 +6547,65 @@ open. The later background profiling run correctly rejects application
 activation and is not performance acceptance evidence. Full real Kubernetes
 verification continues after the corrected forward step. No release is approved
 by the results in this section alone.
+
+### What Does The Fitted Radar And Bounded Input Follow-Up Establish?
+
+The confirmed first-load fit preserves later session cameras, supports 1% zoom,
+and bounds spatial queries to observed terrain. Map typing retains the camera;
+explicit result navigation selects the first match correctly. Labels retain
+4.5:1 contrast in all 19 light/dark palettes. The existing renderer remains the
+single source of geometry and colors. Shared hover/focus targets replace the
+per-resource input items. A 1,000-resource UI case requires exactly two targets,
+while real mouse/touch, Tab/Backtab, tooltips, selection and accessibility remain
+covered. Ordinary cells no longer allocate an unused accessory Loader.
+
+Evidence under `release-evidence/2026-10-30-performance-parity/`:
+
+- `radar-final-full-linux/full.log`: 5,005 baseline executions pass, with 97.74%
+  line and 85.72% branch coverage. The Radar/Map family reaches 91.43%. This
+  predates bounded input and is not final-source release evidence.
+- `radar-metadata-fixed-check.log`: all 212 final focused Radar, Map, health,
+  metric and input executions pass, including both Qt styles and theme-pixel
+  checks. Styles and hosts are executions, not distinct product features.
+- `radar-metadata-before.log`: four new public focus/filter cases reproduce a
+  binding loop introduced by the input rewrite. Derived visibility no longer
+  writes its own model; detail demand coalesces through the existing event loop.
+  The same four cases pass without warnings in the final focused run.
+- `pulse-focus-before.log`: both styles reproduce keyboard focus loss when
+  metric changes recreate summary buttons. `pulse-reuse-focus-check.log` passes
+  after retaining the controls and updating their values. The test uses the
+  native Button's Space action, not an unsupported Return-key assumption.
+- `bounded-input-real-kubernetes/`: five real terminal journeys, window transfer,
+  four forward cases, deletion/race, inspector history, cache-only search, alerts
+  and measured metrics pass before the health step exposes the new binding loop
+  and a flat-color assertion still using overview zoom. That run fails and is
+  retained as a failure, not a complete E2E pass.
+- `radar-metadata-fixed-health/`: the corrected health/Radar journey passes
+  against a fresh owned cluster. Explicit public Reset/Home actions establish
+  100% zoom for the unchanged exact red/yellow pixel assertions. The owned
+  clusters and profiles are removed after both runs.
+- `bounded-input-metal/`: on the same 5,000-resource, three-session foreground
+  profile, cached-tab p95 falls from 64.99 to 31.85 ms and peak RSS from
+  355,385,344 to 307,609,600 bytes. Warm growth is 3,244,032 bytes. These latency
+  and memory limits pass. Frame CPU still fails 8 ms, and valid 60-second idle
+  CPU is 2.28%, above 2%. This is not an overall performance pass.
+- `pulse-reuse-metal-diagnostic/` and `radar-scene-inventory-diagnostic/` are
+  nonactivating diagnostics only. Their background results cannot close the
+  foreground gate. Scene inventory and CPU samples localize remaining costs.
+- `bounded-input-macos-package/`: the private ARM64 package passes dependency,
+  minimum-OS and size checks at 33,738,942 ZIP bytes and 87,398,076 installed bytes.
+  This package precedes the final binding-loop correction. Android, iOS ARM64
+  simulator and iOS device builds also pass before that last correction.
+
+The complete `bounded-input-full-linux/` run records its exact input patch. It
+started before the final binding-loop correction and four new regressions, so
+its result must not be described as a complete final-source pass. Current-source
+mobile execution, packaging, paired screenshots and foreground gates remain open.
+
+The optional installed-package Grype scan reports 45 FFmpeg 7.1.5 version/CPE
+matches. A match is not proof of reachable vulnerable code. In particular, the
+reported critical CENC integer-overflow fix is already listed in the upstream
+[7.1.4 changelog](https://github.com/FFmpeg/FFmpeg/blob/n7.1.5/Changelog).
+Other findings still need shipped-component, configuration and backport review.
+The scan is retained as `bounded-input-macos-grype.json`; it is neither blanket
+security clearance nor a reason to suppress every match.

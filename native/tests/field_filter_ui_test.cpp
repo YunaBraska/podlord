@@ -184,7 +184,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
     QString session;
     {
         podlord::Workspace workspace(profile);
-        if ((scenario == "cache_tab_reuse" || scenario.startsWith("cache_cell_")) && !podlord::test::muteAlerts(workspace.alerts())) return false;
+        if ((scenario == "cache_tab_reuse" || scenario.startsWith("cache_cell_") || scenario.startsWith("value_copy_")
+            || scenario.startsWith("table_keyboard_")) && !podlord::test::muteAlerts(workspace.alerts())) return false;
         if (scenario == "cache_cell_accessibility") QAccessible::setActive(true);
         QQmlApplicationEngine engine;
         QQuickWindow* window = nullptr;

@@ -553,10 +553,19 @@ zero resets, and Home/End focus the first/last filtered resource. Enter inspects
 the focused resource. These keys MUST NOT control Radar while a filter or another
 input is focused. Left-button dragging pans without opening an inspector; a
 resource click does inspect. Mouse-wheel and trackpad scrolling zoom around the
-pointer without a modifier; scrolling MUST NOT pan. Zoom retains the C# range
-0.55 through 3.4. Each open session retains its own two-dimensional camera during
+pointer without a modifier; scrolling MUST NOT pan. The user-approved zoom range
+is 0.01 through 3.4. After the first load completes, Radar MUST fit the complete
+cached island once, when it has a visible viewport and no saved session camera.
+An existing or explicitly chosen camera MUST NOT be overwritten. Reset and zero
+MUST restore 100% at the original origin, not trigger another automatic fit.
+Each open session retains its own two-dimensional camera during
 view/tab switches. Filtering MUST NOT move the camera or rearrange surviving
-resources. Keyboard focus MUST retain resource identity, not a proxy row number;
+resources. Input objects MUST remain bounded to shared hover/focus targets rather than grow
+with the resource count. Spatial hit testing, mouse/touch inspection, virtual
+Tab/Backtab traversal, tooltips and accessible inspect actions MUST be preserved.
+Radar labels MUST reach 4.5:1 contrast over their dark backing in all themes,
+including dimmed labels. Other terrain and resource colors remain unchanged.
+Keyboard focus MUST retain resource identity, not a proxy row number;
 if filtering hides it, Enter MUST NOT inspect its replacement row. The user must
 explicitly select another resource. Empty membership stays empty; context decoration cannot become a
 selectable fake resource. No idle screensaver or unrelated decorative motion is introduced.
@@ -1577,6 +1586,7 @@ separate.
 
 - UI-EMPTY-01: Resources with no loaded or matching rows show the existing product logo, a localized state title and the actual empty/loading/filter explanation. The logo is bundled, non-interactive, proportionally scaled and bounded by the available space. It must not cover loaded rows or create a network request.
 - UI-SEARCH-01: The on-demand Resources/Events global search includes Previous, Next and a current/total match label. Previous and Next loop in the current cached table order, select and reveal a row, and do not open the inspector or fetch data. Enter advances; Shift+Enter goes backwards. Editing the expression starts at the first matching row. Empty expressions, zero matches and invalid expressions have disabled navigation and a 0/0 label. Existing field filters remain effective. Table-local Find remains independent and does not alter global filters.
+- UI-SEARCH-02: The Map reuses the same cached search and explicit Previous/Next/Enter navigation. As confirmed on 2026-10-30, typing or clearing an expression MUST retain its camera. Only explicit result navigation moves to a matching resource. It MUST NOT open the inspector or request data.
 - UI-APPEAR-01: Theme intensity was explicitly removed on 2026-10-08. All 19 named palettes and dark/light remain. Remove the selector, runtime state, API argument, adjustable render branches and translation keys. Read old settings without implicit writes; the next explicit save discards only the obsolete field. ADR 0024 owns migration and rollback.
 
 ## How are native release updates discovered?

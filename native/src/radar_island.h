@@ -13,11 +13,15 @@
 namespace podlord {
 class RadarTiles final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(int animationRole READ animationRole CONSTANT)
 public:
+    static constexpr int animationScaleRole = Qt::UserRole + 24;
+    int animationRole() const { return animationScaleRole; }
     enum class Animation { None, Blink, Pulse, Outline, Sweep };
     struct Entry final {
         QString path;
         QPersistentModelIndex source;
+        int resourceIndex = -1;
         QPointF world;
         QString kind;
         QColor color, announce;
@@ -83,6 +87,10 @@ public:
     Q_INVOKABLE bool focusResource(int index, double zoom = 0);
     Q_INVOKABLE bool selectResource(int index);
     Q_INVOKABLE bool resetView();
+    Q_INVOKABLE bool fitView();
+    Q_INVOKABLE QString resourceAt(double x, double y);
+    Q_INVOKABLE QVariantMap resourceInfo(const QString& path, bool details) const;
+    Q_INVOKABLE bool traverseVisible(int direction);
     Q_INVOKABLE QImage previewImage();
     void paint(QPainter* painter) override;
 signals:
@@ -108,6 +116,7 @@ private:
         QHash<QPoint, QList<QString>> buckets;
         QList<Marker> markers;
         QHash<QPoint, QList<int>> markerBuckets;
+        QRectF bounds;
     };
     QCache<QString, Terrain> terrains_{3};
     RadarTiles tiles_{this};
@@ -128,6 +137,7 @@ private:
     QSet<QString> groups_;
     QList<Marker> markers_;
     QHash<QPoint, QList<int>> markerBuckets_;
+    QRectF terrainBounds_;
     QPointF pan_;
     QColor textColor_{QStringLiteral("#DDE7EC")};
     QString currentPath_;

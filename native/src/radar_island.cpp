@@ -15,8 +15,9 @@ namespace podlord {
 namespace {
 constexpr int ResourceIndex = Qt::UserRole + 20, WorldX = ResourceIndex + 1, WorldY = ResourceIndex + 2;
 constexpr int TerrainColor = ResourceIndex + 3;
-constexpr int AnimationScale = ResourceIndex + 4;
+constexpr int AnimationScale = RadarTiles::animationScaleRole;
 constexpr double step = 7;
+constexpr double minimumZoom = .01, maximumZoom = 3.4;
 double oscillation(qint64 elapsed, qint64 halfPeriod, double low) {
     const double phase = double(std::max<qint64>(0, elapsed) % (halfPeriod * 2)) / halfPeriod;
     return 1 - (1 - low) * (phase <= 1 ? phase : 2 - phase);
@@ -69,24 +70,26 @@ QPoint place(const QPointF& target, QSet<QPoint>& occupied, const QString& key) 
     }
 }
 template<class F> void inBuckets(const QRectF& rect, F consume) {
+    if (rect.isEmpty()) return;
     const auto first=bucket(cell(rect.topLeft()-QPointF(step,step))), last=bucket(cell(rect.bottomRight()+QPointF(step,step)));
     for (int x=first.x();x<=last.x();++x) for (int y=first.y();y<=last.y();++y) consume(QPoint(x,y));
 }
 }
 int RadarTiles::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : int(entries_.size()); }
 QHash<int,QByteArray> RadarTiles::roleNames() const {
-    return {{Qt::UserRole,"resourcePath"},{Qt::UserRole+1,"resourceName"},{Qt::UserRole+2,"resourceKind"},
+    static const QHash<int,QByteArray> names{{Qt::UserRole,"resourcePath"},{Qt::UserRole+1,"resourceName"},{Qt::UserRole+2,"resourceKind"},
         {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},
         {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"}};
+    return names;
 }
 QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row()<0 || index.row()>=entries_.size()) return {};
     const auto& entry=entries_[index.row()];
-    if (role==ResourceIndex) return entry.source.row();
+    if (role==ResourceIndex) return entry.source.isValid() ? entry.resourceIndex : -1;
     if (role==WorldX) return entry.world.x();
     if (role==WorldY) return entry.world.y();
     if (role==AnimationScale) return entry.animation==Animation::Pulse ? oscillation(frameTime_-entry.started,400,.8) : 1.;
-    if (role==TerrainColor) return terrainColor(entry.source.data(Qt::UserRole+2).toString());
+    if (role==TerrainColor) return terrainColor(entry.kind);
     return entry.source.data(role);
 }
 bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
@@ -101,17 +104,20 @@ bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
         while (first>0 && !contains(entries_[first-1].path)) --first;
         beginRemoveRows({},first,last); entries_.remove(first,last-first+1); endRemoveRows(); last=first-1;
     }
-    int firstChanged=-1,lastChanged=-1;
+    int firstChanged=-1,lastChanged=-1,firstIndexChanged=-1,lastIndexChanged=-1;
     auto next=entries.cbegin();
     for (int position=0;position<entries_.size();++position) {
         while (next->path<entries_[position].path) ++next;
         auto entry=*next++;
         if (entries_[position].animation==entry.animation) entry.started=entries_[position].started;
         const bool changed=entries_[position].source!=entry.source || entries_[position].world!=entry.world || entries_[position].animation!=entry.animation;
+        const bool indexChanged=entries_[position].resourceIndex!=entry.resourceIndex;
         entries_[position]=entry;
         if (changed || refresh) { if (firstChanged<0) firstChanged=position; lastChanged=position; }
+        else if (indexChanged) { if (firstIndexChanged<0) firstIndexChanged=position; lastIndexChanged=position; }
     }
     if (firstChanged>=0) emit dataChanged(index(firstChanged,0),index(lastChanged,0));
+    if (firstIndexChanged>=0) emit dataChanged(index(firstIndexChanged,0),index(lastIndexChanged,0),{ResourceIndex});
     int position=0,candidate=0;
     while (candidate<entries.size()) {
         if (position<entries_.size() && entries_[position].path==entries[candidate].path) { ++position; ++candidate; continue; }
@@ -245,6 +251,7 @@ void RadarIsland::setIdentityScope(const QString& scope) {
 }
 void RadarIsland::synchronize() {
     dirty_=false;
+    const bool refreshMetadata=geometryDirty_;
     auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
     if (geometryDirty_) {
         geometryDirty_=false;
@@ -266,7 +273,7 @@ void RadarIsland::synchronize() {
         if (rows!=signature_) {
             signature_=rows;
             if (const auto* terrain=terrains_.object(identityScope_); terrain && terrain->signature==rows) {
-                positions_=terrain->positions; resourceBuckets_=terrain->buckets; markers_=terrain->markers; markerBuckets_=terrain->markerBuckets;
+                positions_=terrain->positions; resourceBuckets_=terrain->buckets; markers_=terrain->markers; markerBuckets_=terrain->markerBuckets; terrainBounds_=terrain->bounds;
             } else {
                 std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
                     const int aRank = rank(a.kind), bRank = rank(b.kind);
@@ -274,7 +281,7 @@ void RadarIsland::synchronize() {
                         < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
                 });
                 layout(rows);
-                terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_,markerBuckets_});
+                terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_,markerBuckets_,terrainBounds_});
             }
         }
     }
@@ -293,10 +300,10 @@ void RadarIsland::synchronize() {
             groups_.insert(row.cluster+"/"+(row.kind=="Namespace" ? row.name : row.scope));
         }
     }
-    project(true); update(); emit currentResourceChanged();
+    project(refreshMetadata); update(); emit currentResourceChanged();
 }
 void RadarIsland::layout(const QList<Row>& rows) {
-    positions_.clear(); resourceBuckets_.clear(); markers_.clear(); markerBuckets_.clear();
+    positions_.clear(); resourceBuckets_.clear(); markers_.clear(); markerBuckets_.clear(); terrainBounds_={};
     struct District final { QString key, label, group; QList<Row> rows; QList<QPoint> cells; QPoint anchor; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     struct Cluster final { QString name, label; QList<District> districts; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     const auto caption=[](const QString& value) { return value.size()>48 ? value.left(45)+"..." : value; };
@@ -373,6 +380,7 @@ void RadarIsland::layout(const QList<Row>& rows) {
         const auto clusterPoint=origin+QPoint(cluster.width/2,2);
         markers_.append({world(clusterPoint),cluster.labelBounds,"Cluster",cluster.name,cluster.label,true,
             QRectF(world(origin),QSizeF(cluster.width*step,cluster.height*step))});
+        terrainBounds_=terrainBounds_.isEmpty() ? markers_.last().area : terrainBounds_.united(markers_.last().area);
         for (const auto& district:cluster.districts) {
             const auto districtOrigin=origin+QPoint(district.x,district.y);
             const auto anchor=districtOrigin+district.anchor;
@@ -389,7 +397,7 @@ bool RadarIsland::validPose(const QVariantMap& pose) {
     bool xOk=false,yOk=false,zOk=false;
     const double x=pose.value("x").toDouble(&xOk),y=pose.value("y").toDouble(&yOk),z=pose.value("zoom").toDouble(&zOk);
     const double extent=std::numeric_limits<int>::max()*step/4;
-    return pose.size()==3 && xOk && yOk && zOk && std::isfinite(x) && std::isfinite(y) && std::isfinite(z) && std::abs(x)<extent && std::abs(y)<extent && z>=.55 && z<=3.4;
+    return pose.size()==3 && xOk && yOk && zOk && std::isfinite(x) && std::isfinite(y) && std::isfinite(z) && std::abs(x)<extent && std::abs(y)<extent && z>=minimumZoom && z<=maximumZoom;
 }
 void RadarIsland::setViewPose(const QVariantMap& pose) {
     if (!validPose(pose)) return;
@@ -407,7 +415,7 @@ bool RadarIsland::pan(double dx,double dy) {
 }
 bool RadarIsland::zoomAt(double factor,double x,double y) {
     if (!std::isfinite(factor) || factor<=0 || !std::isfinite(x) || !std::isfinite(y)) return false;
-    const double next=std::clamp(zoom_*factor,.55,3.4);
+    const double next=std::clamp(zoom_*factor,minimumZoom,maximumZoom);
     const QPointF offset(x-width()/2,y-height()/2);
     const auto nextPan=pan_+offset/next-offset/zoom_;
     setViewPose({{"x",nextPan.x()},{"y",nextPan.y()},{"zoom",next}}); return true;
@@ -419,7 +427,7 @@ bool RadarIsland::focusResource(int index,double zoom) {
     const auto point=positions_.constFind(path);
     if (point==positions_.cend()) return false;
     selectResource(index);
-    setViewPose({{"x",-point->x()},{"y",-point->y()},{"zoom",zoom>0 ? std::clamp(zoom,.55,3.4) : zoom_}}); return true;
+    setViewPose({{"x",-point->x()},{"y",-point->y()},{"zoom",zoom>0 ? std::clamp(zoom,minimumZoom,maximumZoom) : zoom_}}); return true;
 }
 int RadarIsland::currentIndex() const {
     const auto found=filtered_.constFind(currentPath_);
@@ -435,12 +443,60 @@ bool RadarIsland::selectResource(int index) {
     return true;
 }
 bool RadarIsland::resetView() { setViewPose({{"x",0},{"y",0},{"zoom",1}}); return true; }
+QString RadarIsland::resourceAt(double x,double y) {
+    if (!isVisible() || !source_ || !std::isfinite(x) || !std::isfinite(y) || x<0 || y<0 || x>=width() || y>=height()) return {};
+    if (dirty_) synchronize();
+    const QPointF point=(QPointF(x,y)-QPointF(width()/2,height()/2))/zoom_-pan_;
+    const auto candidates=resourceBuckets_.constFind(bucket(cell(point)));
+    if (candidates==resourceBuckets_.cend()) return {};
+    const auto& entries=tiles_.entries();
+    for (const auto& path:*candidates) {
+        const auto found=std::lower_bound(entries.cbegin(),entries.cend(),path,[](const auto& entry,const auto& key) { return entry.path<key; });
+        if (found==entries.cend() || found->path!=path || !found->source.isValid()) continue;
+        const double scale=found->animation==RadarTiles::Animation::Pulse ? oscillation(tiles_.frameTime()-found->started,400,.8) : 1;
+        if (std::abs(point.x()-found->world.x())<=2.75*scale && std::abs(point.y()-found->world.y())<=2.75*scale) return path;
+    }
+    return {};
+}
+QVariantMap RadarIsland::resourceInfo(const QString& path,bool details) const {
+    if (!isVisible() || !source_ || path.isEmpty()) return {};
+    const auto& entries=tiles_.entries();
+    const auto found=std::lower_bound(entries.cbegin(),entries.cend(),path,[](const auto& entry,const auto& key) { return entry.path<key; });
+    if (found==entries.cend() || found->path!=path || !found->source.isValid()) return {};
+    const auto index=tiles_.index(int(found-entries.cbegin()),0);
+    QVariantMap result;
+    const auto roles=tiles_.roleNames();
+    for (auto role=roles.cbegin();role!=roles.cend();++role)
+        if (details || role.key()>=ResourceIndex || role.key()==Qt::UserRole)
+            result.insert(QString::fromUtf8(role.value()),tiles_.data(index,role.key()));
+    return result;
+}
+bool RadarIsland::traverseVisible(int direction) {
+    if (!isVisible() || !source_ || direction<-1 || direction>1) return false;
+    if (dirty_) synchronize();
+    const auto& entries=tiles_.entries();
+    if (entries.isEmpty()) return false;
+    const auto current=std::lower_bound(entries.cbegin(),entries.cend(),currentPath_,[](const auto& entry,const auto& key) { return entry.path<key; });
+    const int position=direction==0 ? 0 : current!=entries.cend() && current->path==currentPath_
+        ? int(current-entries.cbegin())+direction : direction>0 ? 0 : int(entries.size())-1;
+    if (position<0 || position>=entries.size() || !entries[position].source.isValid()) return false;
+    return selectResource(entries[position].source.row());
+}
+bool RadarIsland::fitView() {
+    if (!isVisible() || !source_ || width()<=16 || height()<=16) return false;
+    if (dirty_) synchronize();
+    const auto& bounds=terrainBounds_;
+    if (bounds.isEmpty()) return false;
+    const auto center=bounds.center();
+    const double zoom=std::clamp(std::min((width()-16)/bounds.width(),(height()-16)/bounds.height()),minimumZoom,maximumZoom);
+    setViewPose({{"x",-center.x()},{"y",-center.y()},{"zoom",zoom}});
+    return true;
+}
 QImage RadarIsland::previewImage() {
     if (!isVisible()) return {};
     if (dirty_) synchronize();
     QImage image(320,200,QImage::Format_ARGB32_Premultiplied); image.fill(QColor("#071619"));
-    QRectF bounds;
-    for (const auto& marker:markers_) if (marker.overview) bounds=bounds.isEmpty() ? marker.area : bounds.united(marker.area);
+    const auto& bounds=terrainBounds_;
     if (bounds.isEmpty()) return image;
     QPainter painter(&image);
     const auto scale=std::min(304./bounds.width(),184./bounds.height());
@@ -459,7 +515,7 @@ void RadarIsland::project(bool refresh) {
     if (isVisible() && width()>0 && height()>0) {
         const auto onScreen=worldViewport();
         const auto viewport=onScreen.adjusted(-step,-step,step,step);
-        inBuckets(viewport,[&](const QPoint& area) {
+        inBuckets(viewport.intersected(terrainBounds_),[&](const QPoint& area) {
             const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
             for (const auto& path:*found) {
                 const auto source=filtered_.constFind(path); if (source==filtered_.cend() || !source->isValid()) continue;
@@ -469,7 +525,7 @@ void RadarIsland::project(bool refresh) {
                 const auto point=positions_.value(path);
                 if (!viewport.contains(point)) continue;
                 RadarTiles::Entry tile;
-                tile.path=path; tile.source=index; tile.world=point;
+                tile.path=path; tile.source=index; tile.resourceIndex=index.row(); tile.world=point;
                 tile.kind=index.data(Qt::UserRole+2).toString();
                 tile.color=terrainColor(tile.kind);
                 const int health=index.data(Qt::UserRole+9).toInt();
@@ -516,10 +572,10 @@ void RadarIsland::paint(QPainter* painter) {
     const QColor dimmed("#50575B");
     QList<int> visibleMarkers;
     const double labelMargin=160/zoom_;
-    inBuckets(viewport.adjusted(-labelMargin,-labelMargin,labelMargin,labelMargin),[&](const QPoint& area) { visibleMarkers.append(markerBuckets_.value(area)); });
+    inBuckets(viewport.adjusted(-labelMargin,-labelMargin,labelMargin,labelMargin).intersected(terrainBounds_),[&](const QPoint& area) { visibleMarkers.append(markerBuckets_.value(area)); });
     std::sort(visibleMarkers.begin(),visibleMarkers.end());
     visibleMarkers.erase(std::unique(visibleMarkers.begin(),visibleMarkers.end()),visibleMarkers.end());
-    inBuckets(viewport.adjusted(-step,-step,step,step),[&](const QPoint& area) {
+    inBuckets(viewport.adjusted(-step,-step,step,step).intersected(terrainBounds_),[&](const QPoint& area) {
         const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
         for (const auto& path:*found) {
             if (filtered_.contains(path)) continue;
@@ -543,7 +599,10 @@ void RadarIsland::paint(QPainter* painter) {
         label.moveTop(std::clamp(label.top(),4.,height()-label.height()-4));
         if (std::any_of(labels.cbegin(),labels.cend(),[&](const QRectF& shown) { return shown.adjusted(-4,-2,4,2).intersects(label); })) continue;
         QFont font; font.setPixelSize(clusterLabel ? 12 : 10); font.setBold(clusterLabel); painter->setFont(font);
-        painter->setPen(active ? textColor_ : dimmed);
+        // Water remains dark in every theme. A small backing also keeps labels
+        // legible over terrain and when a filter hides the water surface.
+        painter->fillRect(label.adjusted(-1,-1,1,1),QColor("#061621"));
+        painter->setPen(active ? textColor_ : textColor_.darker(140));
         painter->drawText(label,Qt::AlignCenter,QFontMetricsF(font).elidedText(marker.label,Qt::ElideRight,label.width())); labels.append(label);
     }
     const auto now=tiles_.frameTime();

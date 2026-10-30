@@ -914,7 +914,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     QSignalSpy focus(workspace.alerts(), &podlord::Alerts::focusRequested);
     if (!loadSession()) return false;
     if (scenario.startsWith("radar_")) {
-        if (!click(window, "radarWorkspaceButton") || !waitFor([&] { return item(window, "radarTile_0")!=nullptr; })) return false;
+        if (!click(window, "radarWorkspaceButton") || !click(window,"resetRadar")
+            || !waitFor([&] { return podlord::test::radarPointVisible(item(window,"resourceRadar"),0); })) return false;
         if (scenario == "radar_search_on_demand") {
             const auto* search = item(window, "resourceFilter");
             if (!search || search->isVisible()) return false;
@@ -939,14 +940,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 return 0;
             };
             const auto red=QColor("#FF5C5C");
-            if (!waitFor([&] { return problemCount()==1 && podlord::test::centerPixel(window,item(window,"radarTile_0"))==red; }) || !focus.isEmpty()) return false;
+            if (!waitFor([&] { return problemCount()==1 && podlord::test::radarPixel(window,0)==red; }) || !focus.isEmpty()) return false;
             server.holdPodResponses=true;
             server.phase="Running";
             if (!click(window,"refreshButton") || !waitFor([&] { return workspace.loading() && !server.heldPodResponses.isEmpty(); })) return false;
-            const bool preserved=problemCount()==1 && podlord::test::centerPixel(window,item(window,"radarTile_0"))==red && focus.isEmpty();
+            const bool preserved=problemCount()==1 && podlord::test::radarPixel(window,0)==red && focus.isEmpty();
             if (!server.releasePodResponses()) return false;
             if (!preserved) { std::fputs("Background sync removed an alarm from the still-visible cached resource.\n",stderr); return false; }
-            return waitFor([&] { const auto color=podlord::test::centerPixel(window,item(window,"radarTile_0")); return !workspace.loading() && problemCount()==0 && color.isValid() && color!=red; }) && focus.isEmpty();
+            return waitFor([&] { const auto color=podlord::test::radarPixel(window,0); return !workspace.loading() && problemCount()==0 && color.isValid() && color!=red; }) && focus.isEmpty();
         }
         if (scenario.startsWith("radar_focus_")) {
             if (!focus.isEmpty()) return false;
@@ -968,7 +969,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!workspace.refresh() || !waitFor([&] { return server.requests > requests && !workspace.loading(); })) return false;
         }
         const QColor expected(scenario=="radar_health_warning" || scenario=="radar_health_restarts" ? "#FFE866" : scenario=="radar_health_critical" ? "#FF5C5C" : "#7DFFC3");
-        if (!waitFor([&] { return podlord::test::centerPixel(window,item(window,"radarTile_0"))==expected; })) return false;
+        if (!waitFor([&] { return podlord::test::radarPixel(window,0)==expected; })) return false;
         const auto requests=server.requests;
         const auto capture=qEnvironmentVariable("PODLORD_RADAR_HIGHLIGHT_FRAME");
         if (!capture.isEmpty() && !window->grabWindow().save(capture)) return false;
@@ -1037,11 +1038,11 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             QSignalSpy frames(window,&QQuickWindow::frameSwapped);
             if (!workspace.filterField("namespace", target=="visual-crash-loop" ? "\"visual-b\"" : "\"visual-a\"")
                 || !type(window, "resourceFilter", '"'+target+'"')
-                || !click(window,"radarWorkspaceButton")) return failure("filter real Radar resource");
+                || !click(window,"radarWorkspaceButton") || !click(window,"resetRadar")) return failure("filter real Radar resource");
             QTest::keyClick(window,Qt::Key_Home);
-            if (!waitFor([&] { return workspace.resourceCount()==1 && item(window,"radarTile_0")!=nullptr; })) return failure("focus real Radar resource");
+            if (!waitFor([&] { return workspace.resourceCount()==1 && podlord::test::radarTarget(window,0)!=nullptr; })) return failure("focus real Radar resource");
             const QColor expected(target=="visual-crash-loop" ? "#FF5C5C" : "#FFE866");
-            if (!waitFor([&] { return podlord::test::centerPixel(window,item(window,"radarTile_0"))==expected; },60000)) return failure("real Radar severity highlight");
+            if (!waitFor([&] { return podlord::test::radarPixel(window,0)==expected; },60000)) return failure("real Radar severity highlight");
             if (!waitFor([&] { return frames.count()>0; },2000)) return failure("natural real Radar frame");
             if (QGuiApplication::platformName()=="cocoa" && (!window->isExposed() || !window->isActive())) return failure("foreground lost during real Radar frame");
             if (!radarFrames.isEmpty() && !window->grabWindow().save(radarFrames+'-'+target+".png")) return failure("real Radar screenshot");
@@ -1083,8 +1084,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         },60000);
         if (!inspected || !workspace.closeInspector() || !click(window,"radarWorkspaceButton")) return failure("fresh inspector and Pod radar");
         QTest::keyClick(window,Qt::Key_Home);
-        if (!waitFor([&] { return item(window,"radarTile_0")!=nullptr; })) return failure("focus measured Pod in viewport");
-        auto* radarTile=item(window,"radarTile_0"); radarTile->forceActiveFocus();
+        if (!waitFor([&] { return podlord::test::radarTarget(window,0)!=nullptr; })) return failure("focus measured Pod in viewport");
+        auto* radarTile=podlord::test::radarTarget(window,0); radarTile->forceActiveFocus();
         QTest::mouseMove(window,radarTile->mapToScene({radarTile->width()/2,radarTile->height()/2}).toPoint());
         if (!waitFor([] { return radarGaugesFit(); },60000)) return failure("measured radar gauges");
         const auto radarCapture=qEnvironmentVariable("PODLORD_RADAR_METRIC_FRAME");
@@ -1097,8 +1098,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             for (const auto& theme : workspace.themeNames()) {
                 for (const auto& variant : {QString("dark"), QString("light")}) {
                     if (!workspace.saveAppearance(theme,variant) || !waitFor([&] { return !workspace.busy(); })) return false;
-                    if (!waitFor([&] { return item(window,"radarTile_0")!=nullptr; })) return failure("themed Pod viewport");
-                    radarTile=item(window,"radarTile_0");
+                    if (!waitFor([&] { return podlord::test::radarTarget(window,0)!=nullptr; })) return failure("themed Pod viewport");
+                    radarTile=podlord::test::radarTarget(window,0);
                     radarTile->forceActiveFocus();
                     QTest::mouseMove(window,radarTile->mapToScene({radarTile->width()/2,radarTile->height()/2}).toPoint());
                     if (!waitFor([] { return radarGaugesFit(); })) return false;
@@ -1161,8 +1162,10 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             QQmlExpression position(qmlContext(table),table,QString("positionViewAtColumn(%1, TableView.Contain)").arg(visual)); position.evaluate();
             if (position.hasError()) return false;
         }
-        if (!workspace.setWorkspacePage("resources") || (radar && !click(window,"radarWorkspaceButton")) || !waitFor([&] { return item(window,radar ? "radarTile_0" : "cell_0_5")!=nullptr; })) { std::fprintf(stderr,"Radar resource surface did not become operable.\n"); return false; }
-        const auto requests=server.requests; auto* cell=item(window,radar ? "radarTile_0" : "cell_0_5");
+        if (!workspace.setWorkspacePage("resources") || (radar && !click(window,"radarWorkspaceButton"))) return false;
+        if (radar) { item(window,"resourceRadar")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home); }
+        if (!waitFor([&] { return radar ? podlord::test::radarTarget(window,0)!=nullptr : item(window,"cell_0_5")!=nullptr; })) { std::fprintf(stderr,"Radar resource surface did not become operable.\n"); return false; }
+        const auto requests=server.requests; auto* cell=radar ? podlord::test::radarTarget(window,0) : item(window,"cell_0_5");
         cell->forceActiveFocus();
         QTest::mouseMove(window,cell->mapToScene({cell->width()/2,cell->height()/2}).toPoint());
         const bool shown=waitFor([&] {

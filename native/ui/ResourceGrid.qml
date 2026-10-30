@@ -282,99 +282,104 @@ ColumnLayout {
             }
         }
     }
-    Component {
-        id: cellDelegate
-        Rectangle {
-            id: cell
-            property bool hoverEnabled: true
-            readonly property bool hovered: cellHover.hovered
-            readonly property bool highlighted: selected
-            property bool keyboardPressed: false
-            readonly property bool down: leftTap.pressed || keyboardPressed
-            property string text: display
-            property font font: grid.cellFont
-            property real padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
-            readonly property Item contentItem: cellText
-            signal clicked()
-            activeFocusOnTab: true
-            required property int row
-            required property int column
-            required property var model
-            required property string display
-            required property string resourcePath
-            required property color identityColor
-            required property bool selected
-            readonly property bool current: selection.currentIndex.valid && selection.currentIndex.row === row && selection.currentIndex.column === column
-            readonly property bool pinned: TableView.view === pinnedTable
-            objectName: grid.cellName ? grid.cellName(row, column, resourcePath) : (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
-            implicitWidth: 170
-            implicitHeight: grid.rowHeight
-            onActiveFocusChanged: {
-                if (activeFocus) grid.focusCell(row, column, TableView.view)
-                else keyboardPressed = false
-            }
-            Accessible.role: Accessible.Button
-            Accessible.name: text
-            Accessible.focusable: true
-            Accessible.focused: activeFocus
-            Accessible.selected: selected
-            Accessible.onPressAction: cell.clicked()
-            Text {
-                id: cellText
-                anchors.fill: parent
-                anchors.margins: cell.padding
-                text: grid.accessoryColumns.indexOf(cell.column) < 0 ? cell.text : ""
-                textFormat: Text.PlainText
-                font: cell.font
-                color: identityColor.a > 0 ? identityColor : grid.colors.text
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
-                wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap
-                maximumLineCount: grid.wrapCells ? 3 : 1
-                Loader {
-                    anchors.fill: parent
-                    active: cell.width > 0 && grid.cellAccessory !== null && grid.accessoryColumns.indexOf(cell.column) >= 0
-                    visible: active
-                    sourceComponent: grid.cellAccessory
-                    property string identity: cell.resourcePath
-                    property string resourceName: active ? grid.tableModel.data(grid.tableModel.index(cell.row,0),Qt.UserRole+1) || "" : ""
-                    property int row: cell.row
-                    property int column: cell.column
-                    property var tableView: cell.TableView.view
-                    property bool encodedValue: active && cell.model.encodedValue
-                }
-            }
-            color: highlighted || current ? grid.colors.selection : hovered ? grid.colors.raised : grid.colors.inset
-            border.color: activeFocus || (current && TableView.view.activeFocus) ? grid.colors.accent : grid.colors.border
-            border.width: 1
-            onClicked: { forceActiveFocus(Qt.MouseFocusReason); grid.activateCell(row, column) }
-            Keys.onReturnPressed: grid.activateCell(row, column)
-            Keys.onEnterPressed: grid.activateCell(row, column)
-            Keys.onPressed: function(event) {
-                if (event.key === Qt.Key_Space) {
-                    if (!event.isAutoRepeat) keyboardPressed = true
-                    event.accepted = true
-                } else event.accepted = grid.handleCellKey(event, row, column, cell)
-            }
-            Keys.onReleased: function(event) {
-                if (event.key === Qt.Key_Space && !event.isAutoRepeat) {
-                    const activate = keyboardPressed
-                    keyboardPressed = false
-                    if (activate) cell.clicked()
-                    event.accepted = true
-                }
-            }
-            readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
-            readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > text.length)
-            onWantsTipChanged: if (wantsTip) valueTip.target=cell
-            Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
-            TableView.onPooled: {
+    component ResourceCell: Rectangle {
+        id: cell
+        property bool hoverEnabled: true
+        readonly property bool hovered: cellHover.hovered
+        readonly property bool highlighted: selected
+        property bool keyboardPressed: false
+        readonly property bool down: leftTap.pressed || keyboardPressed
+        property string text: display
+        property font font: grid.cellFont
+        property real padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
+        readonly property Item contentItem: cellText
+        signal clicked()
+        activeFocusOnTab: true
+        required property int row
+        required property int column
+        required property var model
+        required property string display
+        required property string resourcePath
+        required property color identityColor
+        required property bool selected
+        readonly property bool current: selection.currentIndex.valid && selection.currentIndex.row === row && selection.currentIndex.column === column
+        readonly property bool pinned: TableView.view === pinnedTable
+        objectName: grid.cellName ? grid.cellName(row, column, resourcePath) : (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
+        implicitWidth: 170
+        implicitHeight: grid.rowHeight
+        onActiveFocusChanged: {
+            if (activeFocus) grid.focusCell(row, column, TableView.view)
+            else keyboardPressed = false
+        }
+        Accessible.role: Accessible.Button
+        Accessible.name: text
+        Accessible.focusable: true
+        Accessible.focused: activeFocus
+        Accessible.selected: selected
+        Accessible.onPressAction: cell.clicked()
+        Text {
+            id: cellText
+            anchors.fill: parent
+            anchors.margins: cell.padding
+            text: grid.accessoryColumns.indexOf(cell.column) < 0 ? cell.text : ""
+            textFormat: Text.PlainText
+            font: cell.font
+            color: identityColor.a > 0 ? identityColor : grid.colors.text
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap
+            maximumLineCount: grid.wrapCells ? 3 : 1
+        }
+        color: highlighted || current ? grid.colors.selection : hovered ? grid.colors.raised : grid.colors.inset
+        border.color: activeFocus || (current && TableView.view.activeFocus) ? grid.colors.accent : grid.colors.border
+        border.width: 1
+        onClicked: { forceActiveFocus(Qt.MouseFocusReason); grid.activateCell(row, column) }
+        Keys.onReturnPressed: grid.activateCell(row, column)
+        Keys.onEnterPressed: grid.activateCell(row, column)
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                if (!event.isAutoRepeat) keyboardPressed = true
+                event.accepted = true
+            } else event.accepted = grid.handleCellKey(event, row, column, cell)
+        }
+        Keys.onReleased: function(event) {
+            if (event.key === Qt.Key_Space && !event.isAutoRepeat) {
+                const activate = keyboardPressed
                 keyboardPressed = false
-                if (valueTip.target === cell) valueTip.target = null
+                if (activate) cell.clicked()
+                event.accepted = true
             }
-            HoverHandler { id: cellHover; enabled: cell.hoverEnabled }
-            TapHandler { id: leftTap; acceptedButtons: Qt.LeftButton; gesturePolicy: TapHandler.DragThreshold; onTapped: cell.clicked() }
-            TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup(cell, 0, cell.height) } }
+        }
+        readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
+        readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > text.length)
+        onWantsTipChanged: if (wantsTip) valueTip.target=cell
+        Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
+        TableView.onPooled: {
+            keyboardPressed = false
+            if (valueTip.target === cell) valueTip.target = null
+        }
+        HoverHandler { id: cellHover; enabled: cell.hoverEnabled }
+        TapHandler { id: leftTap; acceptedButtons: Qt.LeftButton; gesturePolicy: TapHandler.DragThreshold; onTapped: cell.clicked() }
+        TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup(cell, 0, cell.height) } }
+    }
+    Component { id: cellDelegate; ResourceCell {} }
+    Component {
+        id: accessoryCellDelegate
+        ResourceCell {
+            id: accessoryCell
+            Loader {
+                anchors.fill: parent
+                anchors.margins: accessoryCell.padding
+                active: accessoryCell.width > 0 && grid.accessoryColumns.indexOf(accessoryCell.column) >= 0
+                visible: active
+                sourceComponent: grid.cellAccessory
+                property string identity: accessoryCell.resourcePath
+                property string resourceName: active ? grid.tableModel.data(grid.tableModel.index(accessoryCell.row,0),Qt.UserRole+1) || "" : ""
+                property int row: accessoryCell.row
+                property int column: accessoryCell.column
+                property var tableView: accessoryCell.TableView.view
+                property bool encodedValue: active && accessoryCell.model.encodedValue
+            }
         }
     }
     Item {
@@ -408,7 +413,7 @@ ColumnLayout {
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && state.pinned ? state.width : 0 }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.horizontal: ScrollBar {}
-                    delegate: cellDelegate
+                    delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
                     Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
                 }
             }
@@ -433,7 +438,7 @@ ColumnLayout {
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar { id: horizontalScroll }
-                    delegate: cellDelegate
+                    delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
                     Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
                 }
             }
