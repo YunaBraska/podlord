@@ -6662,3 +6662,33 @@ Metal/frame/idle and installed-start measurements, and current paired C#/C++
 image evidence. The hidden-metric-view optimization and user-sound import
 boundary await decisions. Paused Google publisher registration is not treated
 as a passed personal GKE-login check. No release gate or feature was waived.
+
+### Completed Hosted Run For `dae1129`
+
+Run `41118370571` passes Linux x64/ARM64, Windows x64, iOS ARM64 build/bundle
+checks and the C# k3d lane. macOS ARM64 passes six preflight plus 5,153 of 5,155
+remaining executions. Only the two native trust timing cases fail. Its coverage
+is 97.79% lines, 85.76% overall branches, 14/14 display-prefix branches and
+840/920 Radar/Map branches. The previous port-keyboard failure does not recur.
+
+macOS Intel passes all six preflight and 5,155 remaining executions, including
+the narrow metric layout and all formerly timed-out theme cases. Coverage is
+97.79% lines, 85.76% overall branches, 14/14 display-prefix branches and 839/920
+Radar/Map branches. The package build and dependency boundaries pass. All seven
+startup and five CLI metadata cases record PASS, but the enclosing startup step
+is canceled at the existing 90-minute job deadline. Packaged mutual TLS is then
+skipped. This is not a green Intel job or complete package clearance.
+
+Retained artifacts are `ci-dae1129-arm64-evidence.zip` and
+`ci-dae1129-intel-evidence.zip`. The Intel native build/test step takes 73m36s,
+including a 3,469.86-second remaining-suite run. Its package boundaries add
+3m24s. These phase timings are hosted evidence, not an application performance
+benchmark or a reason to expand a release gate.
+
+The unchanged local package-boundary entrypoint was then measured before and
+after grouping its isolated static cases in a four-worker Node suite:
+`package-boundaries-serial-before.log` records 57,152.53 ms and
+`package-boundaries-parallel-after.log` records 18,932.70 ms. Both run 31 tests:
+30 pass and the same opt-in real desktop-comparison case is skipped. That live
+case remains outside the concurrent suite. No test, assertion, profile boundary
+or watchdog was removed. Hosted budget relief still needs its next CI result.

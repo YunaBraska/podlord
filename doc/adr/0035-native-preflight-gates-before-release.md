@@ -197,6 +197,13 @@ Their 45-second watchdogs, rendered-color assertions and theme matrix remain
 unchanged. Other functional tests keep their bounded parallel pool. Generated
 CTest metadata is checked for all six exclusive registrations.
 
+The static Node package-boundary suite runs at most four independent checks at
+once. Each mutating check still owns its own complete application copy and
+cleanup. The opt-in real desktop-comparison test remains a separate top-level
+test, outside that concurrent suite. Existing per-test watchdogs and assertions
+are unchanged. This bounds package-verification overhead without removing a
+check or expanding a job budget.
+
 The C# comparison CI requests Release compilation so runtime budgets exercise
 optimized code. It does not remove legacy regression cases or change their
 thresholds. Target misses are reported without failing CI; functional regressions
