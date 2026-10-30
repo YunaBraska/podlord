@@ -505,7 +505,15 @@ void ResourceClient::publishRows(const QString& id) {
         if (cached.value["kind"]=="PodMetrics") metrics[metricKey(cached.value, "Pod")]=cached.value;
         if (cached.value["kind"]=="NodeMetrics") metrics[metricKey(cached.value, "Node")]=cached.value;
     }
-    for (auto& cached : resources) if (cached.value["apiVersion"]=="v1") cached.value=withResourceMetrics(cached.value, metrics.value(metricKey(cached.value, cached.value["kind"].toString())), now_());
+    QDateTime metricExpiry;
+    for (auto& cached : resources) if (cached.value["apiVersion"]=="v1") {
+        cached.value=withResourceMetrics(cached.value, metrics.value(metricKey(cached.value, cached.value["kind"].toString())), now_());
+        if (cached.value[QStringLiteral("metricStale")].toBool()) continue;
+        const auto at=QDateTime::fromString(cached.value[QStringLiteral("metricAt")].toString(), Qt::ISODateWithMs);
+        if (!at.isValid()) continue;
+        const auto deadline=at.addMSecs(metricFreshnessMilliseconds+1);
+        if (!metricExpiry.isValid() || deadline<metricExpiry) metricExpiry=deadline;
+    }
     QMap<QByteArray, QString> eventPaths;
     QSet<QString> aliases;
     QMap<QString, QJsonObject> previous;
@@ -533,9 +541,10 @@ void ResourceClient::publishRows(const QString& id) {
         }
         snapshot.append(visible);
     }
-    snapshot=withProblemState(snapshot, now_(), state.healthExpiry);
-    if (state.healthExpiry.isValid()) {
-        const auto delay=std::max<qint64>(1, now_().msecsTo(state.healthExpiry));
+    snapshot=withProblemState(snapshot, now_(), state.presentationExpiry);
+    if (metricExpiry.isValid() && (!state.presentationExpiry.isValid() || metricExpiry<state.presentationExpiry)) state.presentationExpiry=metricExpiry;
+    if (state.presentationExpiry.isValid()) {
+        const auto delay=std::max<qint64>(1, now_().msecsTo(state.presentationExpiry));
         if (!expiry_.isActive() || delay<expiry_.remainingTime()) expiry_.start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
     }
     const bool different = snapshot != state.snapshot;
@@ -872,20 +881,13 @@ void ResourceClient::suspend(const QString& credential, const QString& message) 
     scheduleLogs();
 }
 void ResourceClient::expire() {
-    using namespace Qt::StringLiterals;
     expiry_.stop();
     const auto now = now_();
     qint64 next = std::numeric_limits<qint64>::max();
     QSet<QString> expired;
     for (auto it = states_.begin(); it != states_.end(); ++it) {
         bool rowsChanged = false, detailChanged = false;
-        if (it->healthExpiry.isValid() && it->healthExpiry<=now) rowsChanged=true;
-        for (const auto& cached : it->resources) if (!cached.value["metricStale"_L1].toBool()) {
-            const auto at=QDateTime::fromString(cached.value["metricAt"_L1].toString(), Qt::ISODateWithMs);
-            if (!at.isValid() || cached.value["apiVersion"_L1]!=QStringLiteral("v1")) continue;
-            const auto delay=now.msecsTo(at.addSecs(25))+1;
-            if (delay<=0) rowsChanged=true; else next=std::min(next, delay);
-        }
+        if (it->presentationExpiry.isValid() && it->presentationExpiry<=now) rowsChanged=true;
         for (auto& history : it->logs) {
             if (history.expire(now) && logsShown(it.key(), logKey(it.key(), history.path))) emit logsChanged(it.key(), history.path);
             for (const auto& cursor : history.cursors) next = std::min(next, std::max<qint64>(1, now.msecsTo(cursor.fetched.addSecs(60)) + 1));
@@ -899,7 +901,7 @@ void ResourceClient::expire() {
             if (delay <= 0) { entry = it->details.erase(entry); detailChanged = true; } else { next = std::min(next, delay); ++entry; }
         }
         if (rowsChanged) publishRows(it.key());
-        if (it->healthExpiry.isValid()) next=std::min(next, std::max<qint64>(1, now.msecsTo(it->healthExpiry)));
+        if (it->presentationExpiry.isValid()) next=std::min(next, std::max<qint64>(1, now.msecsTo(it->presentationExpiry)));
         if (detailChanged) reconcileLogs(it.key());
         if (rowsChanged || detailChanged) emit changed(it.key());
         if (!it->suspended && it->connection.expiresAt.isValid()) {

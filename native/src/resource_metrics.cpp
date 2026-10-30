@@ -112,7 +112,7 @@ QJsonObject withResourceMetrics(QJsonObject resource, const QJsonObject& sample,
             if (count && std::isfinite(sum)) { resource[metric]=sum; complete[metric]=count==names.size(); }
         }
     }
-    resource["metricComplete"]=complete; resource["metricAt"]=sample["metricAt"]; resource["metricWindow"]=sample["metricWindow"]; resource["metricStale"]=at.msecsTo(now)>25000; return resource;
+    resource["metricComplete"]=complete; resource["metricAt"]=sample["metricAt"]; resource["metricWindow"]=sample["metricWindow"]; resource["metricStale"]=at.msecsTo(now)>metricFreshnessMilliseconds; return resource;
 }
 QString formatMetricQuantity(double number, bool cpu, bool compact) {
     if (cpu) return compact ? number >= 1000 ? QString::number(number / 1000, 'g', 3) + "c" : QString::number(number, 'g', 3) + "m" : QString::number(number, 'g', 8)+" mCPU";

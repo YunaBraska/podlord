@@ -205,16 +205,20 @@ void RadarIsland::setSource(QAbstractItemModel* source) {
 }
 void RadarIsland::observeSource() {
     for (const auto& connection:connections_) disconnect(connection);
-    connections_.clear(); geometryDirty_=true;
+    connections_.clear(); geometryDirty_=true; filteredDirty_=true;
     const auto rebind=[this] { observeSource(); if (!source_) emit sourceChanged(); };
     const auto observe=[this,rebind](QAbstractItemModel* model,bool geometry) {
         if (!model) return;
-        const auto invalidate=[this,geometry] { geometryDirty_=geometryDirty_ || geometry; schedule(); };
+        const auto invalidate=[this,geometry] { geometryDirty_=geometryDirty_ || geometry; filteredDirty_=true; schedule(); };
         connections_.append(connect(model,&QAbstractItemModel::modelReset,this,invalidate));
         connections_.append(connect(model,&QAbstractItemModel::rowsInserted,this,invalidate));
         connections_.append(connect(model,&QAbstractItemModel::rowsRemoved,this,invalidate));
         connections_.append(connect(model,&QAbstractItemModel::dataChanged,this,invalidate));
-        connections_.append(connect(model,&QAbstractItemModel::layoutChanged,this,invalidate));
+        connections_.append(connect(model,&QAbstractItemModel::layoutChanged,this,[this,geometry,invalidate](const QList<QPersistentModelIndex>&,QAbstractItemModel::LayoutChangeHint hint) {
+            // A proxy's vertical sort cannot change membership or stable source indices.
+            if (!geometry && hint==QAbstractItemModel::VerticalSortHint) schedule();
+            else invalidate();
+        }));
         connections_.append(connect(model,&QObject::destroyed,this,rebind));
     };
     auto* source=source_.data();
@@ -274,17 +278,20 @@ void RadarIsland::synchronize() {
             }
         }
     }
-    QHash<QString,QPersistentModelIndex> filtered;
-    groups_.clear();
-    if (source_) for (int row=0;row<source_->rowCount();++row) {
-        const auto index=source_->index(row,0);
-        // Full-cache identities need stable cache indices, not persistent sorted projections.
-        filtered.insert(index.data(Qt::UserRole).toString(),proxy ? proxy->mapToSource(index) : index);
-    }
-    filtered_.swap(filtered);
-    for (const auto& row:signature_) if (filtered_.contains(row.path)) {
-        groups_.insert(row.cluster);
-        groups_.insert(row.cluster+"/"+(row.kind=="Namespace" ? row.name : row.scope));
+    if (filteredDirty_) {
+        filteredDirty_=false;
+        QHash<QString,QPersistentModelIndex> filtered;
+        groups_.clear();
+        if (source_) for (int row=0;row<source_->rowCount();++row) {
+            const auto index=source_->index(row,0);
+            // Full-cache identities need stable cache indices, not persistent sorted projections.
+            filtered.insert(index.data(Qt::UserRole).toString(),proxy ? proxy->mapToSource(index) : index);
+        }
+        filtered_.swap(filtered);
+        for (const auto& row:signature_) if (filtered_.contains(row.path)) {
+            groups_.insert(row.cluster);
+            groups_.insert(row.cluster+"/"+(row.kind=="Namespace" ? row.name : row.scope));
+        }
     }
     project(true); update(); emit currentResourceChanged();
 }

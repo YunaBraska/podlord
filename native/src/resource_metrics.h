@@ -4,6 +4,8 @@
 #include <QVariantList>
 
 namespace podlord {
+/** Metrics remain fresh at this age and become stale on the following millisecond. */
+inline constexpr qint64 metricFreshnessMilliseconds = 25000;
 /** Nonnegative Kubernetes quantities. CPU output is millicores; other resources use base units. */
 std::optional<double> metricQuantity(const QString& text, bool cpu);
 /** Format a canonical nonnegative quantity; CPU input is millicores, other input is bytes. */

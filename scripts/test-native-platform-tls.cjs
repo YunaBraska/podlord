@@ -68,10 +68,11 @@ async function run() {
         const filename = path.join(directory, 'case.json');
         await fs.writeFile(filename, JSON.stringify(input), { mode: 0o600 });
         const env = { ...process.env, DYLD_LIBRARY_PATH: path.resolve(path.dirname(openssl), '../lib') + (process.env.DYLD_LIBRARY_PATH ? path.delimiter + process.env.DYLD_LIBRARY_PATH : '') };
-        if (scenario.startsWith('fault_')) {
+        const observeNativeTrust = faultShim && ['delayed', 'cancel_pending'].includes(scenario);
+        if (scenario.startsWith('fault_') || observeNativeTrust) {
             assert.ok(faultShim && path.isAbsolute(faultShim));
             env.DYLD_INSERT_LIBRARIES = faultShim;
-            env.PODLORD_TEST_PLATFORM_FAULT = scenario;
+            env.PODLORD_TEST_PLATFORM_FAULT = observeNativeTrust ? 'trace' : scenario;
         }
         const result = await execute(driver, [filename], { timeout: 20000, env });
         if (issuerServer) {

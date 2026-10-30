@@ -23,6 +23,9 @@ bool run(const QString& scenario) {
     QTcpServer api;
     if (!temporary.isValid() || !api.listen(QHostAddress::LocalHost)) return false;
     auto reference = QDateTime::currentDateTimeUtc();
+    const bool metricExpiry = scenario.startsWith("metric_expiry_");
+    const bool reversedMetrics = scenario == "metric_expiry_reverse";
+    const bool staggeredMetrics = scenario == "metric_expiry_staggered" || reversedMetrics;
     const auto now = reference.toString(Qt::ISODateWithMs);
     const auto object = [&](const QString& kind, const QString& name) {
         return QJsonObject{{"apiVersion", "v1"}, {"kind", kind},
@@ -31,6 +34,26 @@ bool run(const QString& scenario) {
     auto pod = object("Pod", "cached-pod");
     pod["spec"] = QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "main"}, {"image", "local-image"}}}}};
     pod["status"] = QJsonObject{{"phase", "Running"}};
+    auto laterPod = object("Pod", "later-pod");
+    QJsonArray metricSamples;
+    if (metricExpiry) {
+        laterPod["spec"] = pod["spec"];
+        for (auto* candidate : {&pod, &laterPod}) {
+            auto metadata = (*candidate)["metadata"].toObject();
+            metadata["creationTimestamp"] = reference.addSecs(-600).toString(Qt::ISODateWithMs);
+            (*candidate)["metadata"] = metadata;
+            (*candidate)["status"] = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{
+                QJsonObject{{"name", "main"}, {"ready", true}, {"restartCount", 0}}}}};
+        }
+        for (int index = 0; index < (staggeredMetrics ? 2 : 1); ++index) {
+            const auto& candidate = index == 0 ? pod : laterPod;
+            const auto offset = (index == 0) != reversedMetrics ? 200 : 400;
+            metricSamples.append(QJsonObject{{"apiVersion", "metrics.k8s.io/v1beta1"}, {"kind", "PodMetrics"},
+                {"metadata", candidate["metadata"]}, {"timestamp", reference.addMSecs(-25000 + offset).toString(Qt::ISODateWithMs)},
+                {"window", "10s"}, {"containers", QJsonArray{QJsonObject{{"name", "main"},
+                    {"usage", QJsonObject{{"cpu", "10m"}, {"memory", "1Mi"}}}}}}});
+        }
+    }
     auto config = object("ConfigMap", "cached-config");
     config["data"] = QJsonObject{{"message", scenario == "unicode" ? QString::fromUtf8("Gr\xc3\xbc\xc3\x9f" "e") : "local configuration"}};
     auto secret = object("Secret", "cached-secret");
@@ -55,15 +78,26 @@ bool run(const QString& scenario) {
                 int status = 200;
                 QByteArray raw;
                 if (path == "/api") response = {{"versions", QJsonArray{"v1"}}};
-                else if (path == "/apis") response = {{"groups", QJsonArray{}}};
+                else if (path == "/apis") {
+                    const QJsonObject version{{"groupVersion", "metrics.k8s.io/v1beta1"}, {"version", "v1beta1"}};
+                    response = {{"groups", metricExpiry ? QJsonArray{QJsonObject{{"name", "metrics.k8s.io"},
+                        {"versions", QJsonArray{version}}, {"preferredVersion", version}}} : QJsonArray{}}};
+                }
                 else if (path == "/api/v1") {
                     QJsonArray resources;
                     for (const auto& pair : QList<QPair<QString, QString>>{{"pods", "Pod"}, {"configmaps", "ConfigMap"}, {"secrets", "Secret"}})
                         resources.append(QJsonObject{{"name", pair.first}, {"kind", pair.second}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}});
                     response = {{"resources", resources}};
+                } else if (metricExpiry && path == "/apis/metrics.k8s.io/v1beta1") {
+                    response = {{"resources", QJsonArray{QJsonObject{{"name", "pods"}, {"kind", "PodMetrics"},
+                        {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}}}};
+                } else if (metricExpiry && path == "/apis/metrics.k8s.io/v1beta1/pods") {
+                    response = {{"apiVersion", "metrics.k8s.io/v1beta1"}, {"kind", "PodMetricsList"},
+                        {"metadata", QJsonObject{{"resourceVersion", "1"}}}, {"items", metricSamples}};
                 } else if (path == "/api/v1/pods" || path == "/api/v1/configmaps" || path == "/api/v1/secrets") {
                     const auto kind = path.endsWith("pods") ? "Pod" : path.endsWith("configmaps") ? "ConfigMap" : "Secret";
                     QJsonArray items{kind == QString("Pod") ? pod : kind == QString("ConfigMap") ? config : secret};
+                    if (staggeredMetrics && kind == QString("Pod")) items.append(laterPod);
                     if (changed && kind == QString("ConfigMap")) items.append(object("ConfigMap", "another-config"));
                     response = {{"apiVersion", "v1"}, {"kind", QString(kind) + "List"},
                         {"metadata", QJsonObject{{"resourceVersion", changed ? "2" : "1"}}}, {"items", items}};
@@ -82,6 +116,35 @@ bool run(const QString& scenario) {
             });
         }
     });
+    if (metricExpiry) {
+        if (scenario != "metric_expiry_single" && !staggeredMetrics) return false;
+        const auto fetchedAt = reference;
+        podlord::ClusterConnection connection;
+        connection.server = QUrl(QString("http://127.0.0.1:%1").arg(api.serverPort())); connection.credentialId = "metric-expiry";
+        podlord::ResourceClient client(nullptr, [&] { return reference; });
+        const auto laterPath = QStringLiteral("/api/v1/namespaces/default/pods/later-pod");
+        const auto earlyPath = reversedMetrics ? laterPath : podPath;
+        const auto latePath = reversedMetrics ? podPath : laterPath;
+        if (!client.open("metrics", connection, {}) || !waitFor([&] {
+                return client.initialSyncComplete("metrics") && !client.loading("metrics")
+                    && client.rows("metrics").size() == (staggeredMetrics ? 4 : 3);
+            }) || !client.showSession({})) return false;
+        if (!client.resource("metrics", earlyPath)["cpu"].isDouble() || client.resource("metrics", earlyPath)["metricStale"].toBool()) return false;
+        const int calls = requests;
+        reference = fetchedAt.addMSecs(200);
+        if (client.resource("metrics", earlyPath)["metricStale"].toBool()) return false;
+        reference = reference.addMSecs(1);
+        if (!waitFor([&] { return client.resource("metrics", earlyPath)["metricStale"].toBool(); })) return false;
+        if (staggeredMetrics) {
+            if (!client.resource("metrics", latePath)["cpu"].isDouble() || client.resource("metrics", latePath)["metricStale"].toBool()) return false;
+            reference = fetchedAt.addMSecs(400);
+            if (client.resource("metrics", latePath)["metricStale"].toBool()) return false;
+            reference = reference.addMSecs(1);
+            if (!waitFor([&] { return client.resource("metrics", latePath)["metricStale"].toBool(); })) return false;
+        }
+        return client.containsResource("metrics", podPath) && client.rows("metrics").size() == (staggeredMetrics ? 4 : 3)
+            && requests == calls && client.synchronize() && requests == calls;
+    }
     if (scenario.startsWith("collection_ttl_")) {
         podlord::ReadSettings settings;
         if (scenario == "collection_ttl_short" || scenario == "collection_ttl_closed") settings.collectionCacheHours = 1;

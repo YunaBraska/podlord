@@ -6440,3 +6440,49 @@ output and issuer-request counts on failure instead of hiding them. Both local
 delayed/cancellation cases pass, but that does not resolve the hosted failures
 or change certificate validation. Release readiness remains blocked by the
 named performance, complete comparison and live-provider evidence gaps.
+
+### How Are Cache Expiry And Sort-Only Radar Updates Checked?
+
+The 2026-10-30 follow-up keeps the existing resource expiry timer as its sole
+owner. Publication records the earliest health or metric presentation deadline.
+Ordinary dispatch and cached inspection no longer rescan every retained resource
+to rediscover the same deadline. Metric freshness remains exactly 25 seconds,
+with expiry on the following millisecond. Three public HTTP regressions cover
+one sample, staggered samples and reversed arrival order. Hidden sessions keep
+their cached rows and update stale presentation without issuing requests.
+
+A proxy layout change explicitly marked as a vertical sort reuses the radar's
+stable source-index membership. All resets, data changes, row changes and layout
+changes without that contract still invalidate it. Filtering, topology, group
+labels, colors, selection and projected proxy indices remain live. This adds no
+persisted cache or background work owner.
+
+Evidence under `release-evidence/2026-10-30-performance-parity/`:
+
+- `presentation-deadline-macos-check.log`: 346 focused cache, metric, health and
+  log executions pass, including all three new expiry scenarios.
+- `radar-sort-regression-check.log`: 145 radar and cell executions pass after
+  the membership optimization, including filter, sort, refresh, session,
+  selection, water, tooltip, keyboard and accessibility behavior.
+- `exact-ci-ui-regressions.log`: all 12 cell and tooltip cases pass three
+  consecutive executions in the exact Linux CI image. Keyboard input waits
+  for completed table layout and the actual focused test window. Opposing
+  wheel events wait for completed motion and carry increasing timestamps.
+  These fixture corrections preserve all existing product assertions.
+- `hosted-fixture-fixes-check.log`: all 38 focused official-Qt macOS input and
+  native-trust cases pass locally. A test-only trust observer records Apple's
+  unmodified evaluation result on hosted delayed/cancellation failures. It
+  changes neither certificate policy nor release criteria. The earlier hosted
+  macOS 15 ARM failure still requires its actual diagnostic result.
+- `real-kubernetes-quiet/`: cache-only search, map navigation and five real
+  container-terminal journeys pass against the owned local Kubernetes API.
+  Terminal journeys cover shell, vi, control-key vi, interrupt and touch
+  interrupt. This evidence uses the preceding lightweight-cell build, not a
+  substitute for current-source platform packaging.
+
+The current-source complete suite, mobile packages and full theme captures are
+in progress. The follow-up background Metal diagnostic is not a release pass:
+warm growth is 4,063,232 bytes and idle CPU is 1.59%, but peak RSS is
+339,836,928 bytes and frame work still exceeds 8 ms. Foreground measurements
+remain mandatory. No performance threshold or live-provider requirement is
+relaxed by this package.

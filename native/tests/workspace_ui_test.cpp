@@ -2841,11 +2841,16 @@ bool execute(const QString& requestedScenario) {
                 const auto afterKey=contents->property("contentY").toDouble();
                 const auto point=scroll->mapToScene(QPointF(scroll->width()/2,scroll->height()/2));
                 // A short overflow can already be at its end after one key step.
-                QWheelEvent rewind(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                QElapsedTimer wheelClock; wheelClock.start();
+                QWheelEvent rewind(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,1200),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                rewind.setTimestamp(static_cast<ulong>(wheelClock.msecsSinceReference()));
                 QCoreApplication::sendEvent(window,&rewind);
-                if (!waitFor([&] { return contents->property("contentY").toDouble()<afterKey; }) || radar->property("viewPose")!=pose) return failed("tooltip reverse wheel isolates camera");
+                if (!waitFor([&] { return contents->property("contentY").toDouble()<afterKey
+                        && qAbs(contents->property("contentY").toDouble())<0.5 && !contents->property("moving").toBool(); })
+                    || radar->property("viewPose")!=pose) return failed("tooltip reverse wheel isolates camera");
                 const auto beforeWheel=contents->property("contentY").toDouble();
                 QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                wheel.setTimestamp(std::max<quint64>(rewind.timestamp()+1,static_cast<quint64>(wheelClock.msecsSinceReference()+wheelClock.elapsed())));
                 QCoreApplication::sendEvent(window,&wheel);
                 const bool scrolled=waitFor([&] { return contents->property("contentY").toDouble()>beforeWheel; });
                 if (!scrolled || radar->property("viewPose")!=pose) {

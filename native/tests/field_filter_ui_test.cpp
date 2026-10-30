@@ -225,7 +225,11 @@ bool run(const QString& scenario, const QString& referencePresets) {
             for (int candidate = 0; candidate < workspace.table()->rowCount(); ++candidate)
                 if (workspace.table()->index(candidate,0).data(Qt::UserRole+1).toString() == "alpha") row = candidate;
             if (row < 0 || !waitFor([&] { return item(window,QString("cell_%1_0").arg(row)) != nullptr; })) return false;
-            auto* cell = item(window,QString("cell_%1_0").arg(row));
+            const QPointer<QQuickItem> initialCell = item(window,QString("cell_%1_0").arg(row));
+            if (!initialCell || !podlord::test::scrollIntoView(window,initialCell.data())) return false;
+            const QPointer<QQuickItem> cell = item(window,QString("cell_%1_0").arg(row));
+            if (!cell) return false;
+            QSignalSpy activated(cell.data(),SIGNAL(clicked()));
             const auto path = workspace.table()->index(row,0).data(Qt::UserRole).toString();
             if (scenario == "cache_cell_accessibility") {
                 auto* accessible = QAccessible::queryAccessibleInterface(cell);
@@ -234,8 +238,15 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     || !actions || !actions->actionNames().contains(QAccessibleActionInterface::pressAction())) return false;
                 actions->doAction(QAccessibleActionInterface::pressAction());
             } else {
+                window->requestActivate();
+                if (!waitFor([&] { return QGuiApplication::focusWindow() == window; })) {
+                    std::fprintf(stderr,"Cell keyboard input requires the active test window: active=%d exposed=%d\n",window->isActive(),window->isExposed());
+                    return false;
+                }
                 cell->forceActiveFocus(Qt::TabFocusReason);
-                if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
+                if (!waitFor([&] { return cell && cell->hasActiveFocus(); })) {
+                    std::fprintf(stderr,"Cell did not receive keyboard focus.\n"); return false;
+                }
                 QTest::keyPress(window,Qt::Key_Space);
                 if (scenario == "cache_cell_space_cancel") {
                     auto* other = item(window,QString("cell_%1_0").arg((row+1)%workspace.table()->rowCount()));
@@ -245,7 +256,10 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 QTest::keyRelease(window,Qt::Key_Space);
                 if (scenario == "cache_cell_space_cancel") return workspace.inspectorPath().isEmpty() && server.requests == requests;
             }
-            return waitFor([&] { return workspace.inspectorPath() == path && workspace.inspectorName() == "alpha"; });
+            const bool inspected = waitFor([&] { return workspace.inspectorPath() == path && workspace.inspectorName() == "alpha"; });
+            if (!inspected) std::fprintf(stderr,"Cell activation: clicks=%d windowFocused=%d cellFocused=%d inspector=%s\n",
+                int(activated.size()),QGuiApplication::focusWindow()==window,cell && cell->hasActiveFocus(),qPrintable(workspace.inspectorPath()));
+            return inspected;
         }
         if (scenario == "cache_tab_reuse") {
             const auto other = workspace.contexts().last().toMap().value("id").toString();

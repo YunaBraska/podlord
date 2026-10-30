@@ -133,7 +133,7 @@ private:
     QString currentPath_;
     QString identityScope_;
     double zoom_ = 1;
-    bool pending_ = false, dirty_ = true, geometryDirty_ = true;
+    bool pending_ = false, dirty_ = true, geometryDirty_ = true, filteredDirty_ = true;
     void setIdentityScope(const QString& scope);
     void observeSource();
     void schedule();

@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <dlfcn.h>
 
 namespace {
@@ -42,6 +43,26 @@ OSStatus failingAnchors(SecTrustRef trust, CFArrayRef anchors) {
 OSStatus failingExclusiveAnchors(SecTrustRef trust, Boolean exclusive) {
     return fail("fault_exclusive_anchors", __builtin_return_address(0)) ? errSecAllocate : SecTrustSetAnchorCertificatesOnly(trust, exclusive);
 }
+OSStatus tracingEvaluation(SecTrustRef trust, dispatch_queue_t queue, SecTrustWithErrorCallback callback) {
+    if (!fail("trace", __builtin_return_address(0))) return SecTrustEvaluateAsyncWithError(trust, queue, callback);
+    Boolean fetchAllowed = false;
+    const auto fetchStatus = SecTrustGetNetworkFetchAllowed(trust, &fetchAllowed);
+    std::fprintf(stderr, "Native trust observer: fetchStatus=%d fetchAllowed=%d\n", int(fetchStatus), bool(fetchAllowed));
+    const auto status = SecTrustEvaluateAsyncWithError(trust, queue, ^(SecTrustRef evaluated, bool accepted, CFErrorRef error) {
+        char message[1024]{};
+        if (error) {
+            const auto description = CFErrorCopyDescription(error);
+            if (description) { CFStringGetCString(description, message, sizeof(message), kCFStringEncodingUTF8); CFRelease(description); }
+        }
+        std::fprintf(stderr, "Native trust observer: accepted=%d error=%ld description=%s\n", accepted,
+            error ? static_cast<long>(CFErrorGetCode(error)) : 0L, message);
+        const auto result = SecTrustCopyResult(evaluated);
+        if (result) { CFShow(result); CFRelease(result); }
+        callback(evaluated, accepted, error);
+    });
+    std::fprintf(stderr, "Native trust observer: evaluationStatus=%d\n", int(status));
+    return status;
+}
 
 // Only the isolated CLI test loads this image. System frameworks and Qt startup remain untouched.
 struct InterposedFunction { const void* replacement; const void* original; };
@@ -52,7 +73,8 @@ __attribute__((used, section("__DATA,__interpose"))) const InterposedFunction re
     {reinterpret_cast<const void*>(&failingPolicy), reinterpret_cast<const void*>(&SecPolicyCreateSSL)},
     {reinterpret_cast<const void*>(&failingTrust), reinterpret_cast<const void*>(&SecTrustCreateWithCertificates)},
     {reinterpret_cast<const void*>(&failingAnchors), reinterpret_cast<const void*>(&SecTrustSetAnchorCertificates)},
-    {reinterpret_cast<const void*>(&failingExclusiveAnchors), reinterpret_cast<const void*>(&SecTrustSetAnchorCertificatesOnly)}
+    {reinterpret_cast<const void*>(&failingExclusiveAnchors), reinterpret_cast<const void*>(&SecTrustSetAnchorCertificatesOnly)},
+    {reinterpret_cast<const void*>(&tracingEvaluation), reinterpret_cast<const void*>(&SecTrustEvaluateAsyncWithError)}
 };
 }
 

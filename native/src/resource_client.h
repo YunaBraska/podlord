@@ -165,7 +165,7 @@ private:
         quint64 revision = 0;
         QDateTime lastSync;
         QList<QDateTime> requestStarts;
-        QDateTime healthExpiry;
+        QDateTime presentationExpiry;
     };
     enum class Read { Core, Groups, Discovery, List, Detail, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket };
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
