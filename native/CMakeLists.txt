@@ -932,8 +932,10 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME radar-hierarchy COMMAND radar_reference_test hierarchy)
     foreach(scenario
+        session_tabs_controls
         radar_map_glyph radar_map_glyph_reuse radar_map_theme radar_map_zoom
-        radar_tooltip radar_map_tooltip radar_label_contrast radar_map_label_contrast
+        radar_info_panel radar_map_info_panel radar_label_contrast radar_map_label_contrast
+        radar_info_panel_phone radar_info_panel_landscape radar_map_info_panel_phone radar_map_info_panel_landscape
         radar_autofit radar_map_autofit radar_tab_traversal radar_map_tab_traversal
         radar_touch_inspect radar_map_touch_inspect radar_pulse_focus_refresh
         radar_metadata_focus radar_map_metadata_focus)

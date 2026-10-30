@@ -88,7 +88,7 @@ bool type(QQuickWindow* window, const QString& name, const QString& text) {
 }
 bool radarGaugesFit(const QString& expectedUsage = {}, const QString& expectedReference = {}) {
     for (auto* surface : QGuiApplication::allWindows()) if (auto* quick=qobject_cast<QQuickWindow*>(surface)) {
-        auto* heading=item(quick,"plainTipText");
+        auto* heading=item(quick,"radarInfoText");
         if (!heading || !heading->isVisible() || !heading->parentItem()) continue;
         auto* content=heading->parentItem();
         const auto* bar=visualItem(content,"metric_cpu_bar"); const auto* memory=visualItem(content,"metric_memory_bar");
@@ -1170,7 +1170,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         QTest::mouseMove(window,cell->mapToScene({cell->width()/2,cell->height()/2}).toPoint());
         const bool shown=waitFor([&] {
             for (auto* surface : QGuiApplication::allWindows()) if (auto* quick=qobject_cast<QQuickWindow*>(surface)) {
-                const auto* tip=item(quick,"plainTipText");
+                const auto* tip=item(quick,radar ? "radarInfoText" : "plainTipText");
                 if (quick->isVisible() && tip && tip->isVisible() && tip->property("text").toString().contains("<img src=")) return true;
             }
             return false;
@@ -1185,7 +1185,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!waitFor([] { return radarGaugesFit("25 mCPU","100 mCPU"); })) {
                 std::fprintf(stderr,"Radar metric gauges or labeled reference markers are missing or overlap.\n");
                 for (auto* surface : QGuiApplication::allWindows()) if (auto* quick=qobject_cast<QQuickWindow*>(surface)) {
-                    auto* heading=item(quick,"plainTipText");
+                    auto* heading=item(quick,"radarInfoText");
                     if (!heading || !heading->isVisible() || !heading->parentItem()) continue;
                     for (const auto& name:QStringList{"metric_cpu_bar","metric_memory_bar","metric_cpu_marker_request","metric_cpu_marker_limit",
                             "metric_cpu_usage","metric_cpu_references","metric_cpu_measurement","metric_storage_measurement"}) {

@@ -99,7 +99,7 @@ if ! awk '{ total+=$(NF-2); missed+=$(NF-1) }
 fi
 "$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
     "$ROOT/native/src/radar_island.cpp" "$ROOT/native/src/workspace.cpp" "$ROOT/native/src/workspace_map.cpp" "$ROOT/native/src/map_previews.cpp" "$ROOT/native/src/kubeconfig_store.cpp" \
-    | awk '/RadarIsland|RadarTiles|oscillation|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|navigateMap|visitMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
+    | awk '/RadarIsland|RadarTiles|oscillation|radar_island.cpp:.*5place|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|navigateMap|visitMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
     > "$BUILD/coverage/radar-map-functions.txt"
 cat "$BUILD/coverage/radar-map-functions.txt"
 if ! awk '
@@ -114,9 +114,10 @@ if ! awk '
 /KubeconfigStore4list/ { catalog=1 }
 /RadarTiles[0-9]+advanceFrame/ { clock=1 }
 /RadarIsland[0-9]+project/ { projection=1 }
+/radar_island.cpp:.*5place/ { placement=1 }
 { total+=$(NF-2); missed+=$(NF-1) }
 END {
-    if (!sync || !layout || !paint || !color || !view || !preview || !history || !capture || !catalog || !clock || !projection || total<=0) exit 1
+    if (!sync || !layout || !paint || !color || !view || !preview || !history || !capture || !catalog || !clock || !projection || !placement || total<=0) exit 1
     printf "Radar/Map function-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
     if (100*(total-missed)/total<90) exit 1
 }' "$BUILD/coverage/radar-map-functions.txt"; then

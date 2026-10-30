@@ -666,51 +666,112 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            Layout.preferredHeight: openTabs.implicitHeight
+            Layout.preferredHeight: sessionTabs.implicitHeight
             spacing: 2
             visible: !window.inputPriority && !window.compactInspector && (workspace.tabs.length > 0 || workspace.sessions.length > 0)
             IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; enabled: !workspace.busy; onClicked: quickChooser.open() }
             IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
-            ScrollView {
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            Layout.preferredHeight: openTabs.implicitHeight
-            contentWidth: openTabs.implicitWidth
-            Row {
-                id: openTabs
-                spacing: 6
-                Repeater {
-                    model: workspace.tabs
-                    Row {
-                        required property var modelData
-                        Button {
+            TabBar {
+                id: sessionTabs
+                objectName: "sessionTabs"
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                clip: true
+                    spacing: 0
+                    function indexForCurrentSession() {
+                        for (var i = 0; i < workspace.tabs.length; ++i) {
+                            if (workspace.tabs[i].id === workspace.currentSession) return i
+                        }
+                        return -1
+                    }
+                    function activateIndex(index) {
+                        const tab = itemAt(index)
+                        if (!tab || !tab.enabled) return
+                        tab.forceActiveFocus(Qt.TabFocusReason)
+                        workspace.activate(workspace.tabs[index].id)
+                        setCurrentIndex(indexForCurrentSession())
+                    }
+                    Binding {
+                        target: sessionTabs
+                        property: "currentIndex"
+                        value: sessionTabs.indexForCurrentSession()
+                    }
+                    Repeater {
+                        model: workspace.tabs
+                        TabButton {
                             id: sessionTab
+                            required property var modelData
                             objectName: "activateSession_" + modelData.id
                             implicitHeight: window.touchLayout ? 44 : 32
+                            implicitWidth: Math.min(Math.max(120, sessionName.implicitWidth + tabActions.implicitWidth + 16), window.wideLayout ? 240 : 160)
+                            width: implicitWidth
+                            leftPadding: 8
+                            rightPadding: 8
+                            topPadding: 0
+                            bottomPadding: 0
                             text: modelData.name
-                            width: Math.min(implicitWidth, window.wideLayout ? 240 : 160)
-                            contentItem: Label { text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight }
-                            ToolTip.visible: hovered || activeFocus
-                            ToolTip.text: modelData.name
                             checkable: true
                             checked: modelData.id === workspace.currentSession
                             enabled: !workspace.busy
-                            onClicked: workspace.activate(modelData.id)
+                            Accessible.name: modelData.name
+                            onClicked: sessionTabs.activateIndex(sessionTab.TabBar.index)
+                            contentItem: Row {
+                                spacing: 4
+                                Label {
+                                    id: sessionName
+                                    width: Math.max(0, sessionTab.availableWidth - tabActions.implicitWidth - 4)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.name
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                }
+                                Row {
+                                    id: tabActions
+                                    spacing: 2
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    IconButton {
+                                        objectName: "detachSession_" + modelData.id
+                                        glyph: "OpenExternal"
+                                        text: "Open " + modelData.name + " in a separate window"
+                                        visible: workspace.windowActionsAvailable
+                                        enabled: workspace.sessionWindowActionsReady
+                                        width: window.touchLayout ? 44 : 24
+                                        height: width
+                                        onClicked: workspace.detachSession(modelData.id)
+                                    }
+                                    IconButton {
+                                        objectName: "closeSession_" + modelData.id
+                                        glyph: "Close"
+                                        text: workspace.uiText["action.close"]
+                                        Accessible.name: "Close " + modelData.name
+                                        enabled: !workspace.busy
+                                        width: window.touchLayout ? 44 : 24
+                                        height: width
+                                        onClicked: workspace.close(modelData.id)
+                                    }
+                                }
+                            }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: tabMenu.popup(sessionTab, 0, sessionTab.height) }
+                            Keys.priority: Keys.BeforeItem
                             Keys.onPressed: function(event) {
-                                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) { tabMenu.popup(sessionTab, 0, sessionTab.height); event.accepted = true }
+                                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                                    tabMenu.popup(sessionTab, 0, sessionTab.height)
+                                    event.accepted = true
+                                } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+                                    var target = event.key === Qt.Key_Home ? 0 : event.key === Qt.Key_End ? workspace.tabs.length - 1 : sessionTab.TabBar.index + (event.key === Qt.Key_Left ? -1 : 1)
+                                    if (target >= 0 && target < workspace.tabs.length) sessionTabs.activateIndex(target)
+                                    event.accepted = true
+                                }
                             }
                             Menu {
                                 id: tabMenu
                                 MenuItem { objectName: "renameTab_" + modelData.id; text: "Rename session..."; enabled: !workspace.busy; onTriggered: renameSessionDialog.openFor(modelData.id, modelData.name) }
                                 MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onTriggered: workspace.detachSession(modelData.id) }
                             }
+                            ToolTip.visible: hovered || activeFocus
+                            ToolTip.text: modelData.name
                         }
-                        IconButton { objectName: "detachSession_" + modelData.id; glyph: "OpenExternal"; text: "Open " + modelData.name + " in a separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onClicked: workspace.detachSession(modelData.id) }
-                        IconButton { objectName: "closeSession_" + modelData.id; glyph: "Close"; text: workspace.uiText["action.close"]; Accessible.name: "Close " + modelData.name; enabled: !workspace.busy; onClicked: workspace.close(modelData.id) }
                     }
-                }
-            }
             }
         }
         RowLayout {

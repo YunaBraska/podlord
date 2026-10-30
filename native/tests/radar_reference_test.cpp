@@ -230,7 +230,8 @@ bool hierarchy(const QString& check = {}) {
     }
     if (check == "labels") {
         geometry.setWidth(160); geometry.setHeight(100);
-        geometry.setViewPose({{"x",0},{"y",0},{"zoom",.55}}); geometry.setTextColor(Qt::white);
+        if (!geometry.fitView()) return false;
+        geometry.setTextColor(Qt::white);
         QImage image(160,100,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
         QPainter painter(&image); geometry.paint(&painter); painter.end();
         int ink=0;
@@ -267,6 +268,29 @@ bool hierarchy(const QString& check = {}) {
         QMap<QString,QRectF> local;
         for (auto district=districtBounds.cbegin();district!=districtBounds.cend();++district) if (district.key().startsWith(cluster+"/")) local.insert(district.key(),district.value());
         if (local.size()!=4 || !separated(local)) return false;
+    }
+    for (auto district=districtBounds.cbegin();district!=districtBounds.cend();++district) {
+        QSet<QPoint> land;
+        for (auto point=before.cbegin();point!=before.cend();++point) {
+            const auto group=grouping.value(point.key());
+            if (group.first+"/"+group.second==district.key()) land.insert({qRound(point->x()/7),qRound(point->y()/7)});
+        }
+        QList<QPoint> pending{*land.cbegin()};
+        QSet<QPoint> reached{pending.first()};
+        int left=pending.first().x(),right=left,top=pending.first().y(),bottom=top;
+        for (int cursor=0;cursor<pending.size();++cursor) {
+            const auto point=pending[cursor];
+            left=std::min(left,point.x()); right=std::max(right,point.x());
+            top=std::min(top,point.y()); bottom=std::max(bottom,point.y());
+            for (const auto& delta:{QPoint(-1,0),QPoint(1,0),QPoint(0,-1),QPoint(0,1)}) {
+                const auto next=point+delta;
+                if (land.contains(next) && !reached.contains(next)) { reached.insert(next); pending.append(next); }
+            }
+        }
+        if (reached.size()!=land.size() || (land.size()>=64 && qint64(right-left+1)*(bottom-top+1)>land.size()*4)) {
+            qWarning()<<"Resource island is disconnected or sparse"<<district.key()<<reached.size()<<land.size();
+            return false;
+        }
     }
     QString namespacePath;
     for (auto group=grouping.cbegin();group!=grouping.cend();++group) if (group.value().second=="namespace-1" && group.key().contains("/namespace/")) { namespacePath=group.key(); break; }

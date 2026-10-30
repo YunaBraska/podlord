@@ -18,6 +18,7 @@
 #include <QQmlExpression>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QRegion>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -484,7 +485,16 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 if (!scroll) return false;
                 QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
                 if (!frames.wait(1000)) return false;
-                const auto point = scroll->mapToScene({scroll->width()/2,10});
+                const auto viewport=scroll->mapRectToScene(QRectF(QPointF{},scroll->size())).toAlignedRect().adjusted(1,1,-1,-1);
+                const QRectF popupBounds(popup->property("x").toReal(),popup->property("y").toReal(),
+                    popup->property("width").toReal(),popup->property("height").toReal());
+                // Scroll the visible parent, not the picker covering most of it.
+                const auto exposed=QRegion(viewport)-QRegion(popupBounds.toAlignedRect().adjusted(-2,-2,2,2));
+                QRect wheelArea;
+                for (const auto& area:exposed)
+                    if (qint64(area.width())*area.height()>qint64(wheelArea.width())*wheelArea.height()) wheelArea=area;
+                if (wheelArea.isEmpty()) { std::fputs("No unobscured filter viewport for the wheel gesture.\n",stderr); return false; }
+                const auto point=QPointF(wheelArea.center());
                 QTest::mouseMove(window,point.toPoint());
                 QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
                 QCoreApplication::sendEvent(window,&wheel);

@@ -580,7 +580,7 @@ bool execute(const QString& requestedScenario) {
     const bool mapRadar=requestedScenario.startsWith("radar_map_");
     const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
     const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
-    const bool twoContexts = (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
+    const bool twoContexts = scenario == "session_tabs_controls" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
     KubernetesBoundary server(scenario == "shell_search_events" ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
@@ -620,12 +620,12 @@ bool execute(const QString& requestedScenario) {
         if (!invalid.open(QIODevice::WriteOnly) || invalid.write("{\"version\":1,\"requestHardLimitPerMinute\":-1,\"inactiveSyncMinutes\":0}") < 0) return false;
     }
     podlord::Workspace workspace(profile, nullptr, [&] { return reference; });
-    if ((scenario.startsWith("radar_") || scenario.startsWith("map_") || scenario=="inspector_malformed")
+    if ((scenario == "session_tabs_controls" || scenario.startsWith("radar_") || scenario.startsWith("map_") || scenario=="inspector_malformed")
         && !podlord::test::muteAlerts(workspace.alerts())) return false;
     QList<qint64> dispatched;
     if (scenario == "limit") QObject::connect(&workspace, &podlord::Workspace::requestStarted, &workspace,
         [&](const QString&, const QString&, qint64 at) { dispatched.append(at); });
-    if (scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_") || scenario == "shell_touch_search_tooltip") QAccessible::setActive(true);
+    if (scenario == "session_tabs_controls" || scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_") || scenario == "shell_touch_search_tooltip") QAccessible::setActive(true);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
@@ -2094,6 +2094,58 @@ bool execute(const QString& requestedScenario) {
         }
         return renamePassed = true;
     }
+    if (scenario == "session_tabs_controls") {
+        const auto first=workspace.currentSession();
+        for (const auto& value:workspace.contexts()) {
+            if (!workspace.openContext(value.toMap()["id"].toString())
+                || !waitFor([&] { return !workspace.busy() && !workspace.loading(); })) return false;
+            if (workspace.currentSession()!=first) break;
+        }
+        const auto second=workspace.currentSession();
+        if (first==second || workspace.tabs().size()!=2) return false;
+        QStringList order;
+        for (const auto& tab:workspace.tabs()) order.append(tab.toMap()["id"].toString());
+        const auto calls=server.requests.size();
+        auto* firstTab=item(window,"activateSession_"+first);
+        auto* secondTab=item(window,"activateSession_"+second);
+        if (!firstTab || !secondTab || qAbs(secondTab->mapToScene(QPointF{}).x()-firstTab->mapToScene(QPointF(firstTab->width(),0)).x())>1) {
+            std::fputs("Session tabs do not form one contiguous strip.\n",stderr); return false;
+        }
+        for (auto* tab:{firstTab,secondTab}) {
+            auto* accessible=tab ? QAccessible::queryAccessibleInterface(tab) : nullptr;
+            if (!accessible || accessible->role()!=QAccessible::PageTab || accessible->text(QAccessible::Name).isEmpty()) {
+                std::fputs("Session entry is not an accessible page tab.\n",stderr); return false;
+            }
+        }
+        firstTab->forceActiveFocus(Qt::TabFocusReason);
+        for (const auto& action:QList<QPair<Qt::Key,QString>>{{Qt::Key_Home,first},{Qt::Key_End,second},{Qt::Key_Left,first},{Qt::Key_Right,second}}) {
+            QTest::keyClick(window,action.first);
+            if (!waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.currentSession()==action.second; })) return false;
+            auto* active=item(window,"activateSession_"+action.second);
+            if (!active || !active->property("checked").toBool()) return false;
+        }
+        const auto originalSize=window->size();
+        window->resize(390,844);
+        QTest::qWait(30);
+        item(window,"activateSession_"+first)->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window,Qt::Key_End);
+        if (!waitFor([&] {
+            const auto* active=item(window,"activateSession_"+second);
+            const auto* close=item(window,"closeSession_"+second);
+            return active && close && workspace.currentSession()==second
+                && QRectF(0,0,window->width(),window->height()).contains(active->mapRectToScene(QRectF(QPointF{},active->size())))
+                && close->width()>=44 && close->height()>=44;
+        })) { saveShellFrame(window,scenario+"-phone-failure"); std::fputs("Selected session tab or touch action is clipped or undersized.\n",stderr); return false; }
+        if (!saveShellFrame(window,scenario+"-phone")) return false;
+        window->resize(originalSize);
+        QTest::qWait(30);
+        QStringList remainingOrder;
+        for (const auto& tab:workspace.tabs()) remainingOrder.append(tab.toMap()["id"].toString());
+        if (!saveShellFrame(window,scenario) || remainingOrder!=order || server.requests.size()!=calls
+            || !click(window,item(window,"closeSession_"+first))) return false;
+        return waitFor([&] { return !workspace.busy() && workspace.tabs().size()==1; })
+            && workspace.currentSession()==second && server.requests.size()==calls;
+    }
     if (scenario == "view_restore_scope") {
         const auto first = workspace.currentSession();
         if (!type(window, item(window, "resourceFilter"), "alpha")) return false;
@@ -2803,6 +2855,10 @@ bool execute(const QString& requestedScenario) {
             rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "\"radar-0000\""}}})}.toVariantList();
             if (!workspace.alerts()->saveRule(rule) || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
         }
+        if (scenario.startsWith("radar_info_panel_")) {
+            window->resize(scenario.endsWith("_phone") ? QSize(390,844) : QSize(640,320));
+            QTest::qWait(30);
+        }
         if (!click(window, item(window, mapRadar ? "mapWorkspaceButton" : "radarWorkspaceButton"))) return failed("open radar");
         auto* radar = item(window, "resourceRadar");
         if (!radar || !waitFor([&] { return radar->isVisible() && radar->width() > 0 && radar->height() > 0 && radar->property("count").toInt() == expectedRows; })) return failed("populate radar");
@@ -2981,30 +3037,43 @@ bool execute(const QString& requestedScenario) {
             }
             return server.requests.size()==calls;
         }
-        if (scenario=="radar_tooltip") {
+        if (scenario.startsWith("radar_info_panel")) {
+            const auto initialViewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
+            const auto first=radarPoint(radar,0);
+            if (!first) return failed("first resource hover target");
+            const auto firstName=workspace.table()->index(0,0).data(Qt::UserRole+1).toString();
+            QTest::mouseMove(window,radar->mapToScene(first->bounds.center()).toPoint());
+            if (!waitFor([&] { const auto* heading=item(window,"radarInfoText"); return heading && heading->property("text").toString().contains(firstName); })) return failed("pointer reveals cached details");
+            QTest::mouseMove(window,radar->mapToScene(QPointF(8,8)).toPoint());
+            QTest::qWait(60);
+            auto* reader=item(window,"radarInfoScroll");
+            if (!reader) return failed("external info reader");
+            QTest::mouseMove(window,reader->mapToScene(QPointF(reader->width()/2,reader->height()/2)).toPoint());
+            QTest::qWait(60);
+            const auto* retained=item(window,"radarInfoText");
+            if (!retained || !retained->isVisible() || !retained->property("text").toString().contains(firstName)) return failed("pointer can cross water to read external details");
             radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
-            auto* tip=window->findChild<QObject*>("radarTooltip");
-            if (!tip || !waitFor([&] { return tip->property("visible").toBool() && tip->property("height").toDouble()>0; })) return failed("tooltip opens");
-            auto* parent=tip->property("parent").value<QQuickItem*>();
-            auto* scroll=item(window,"radarTooltipScroll");
+            auto* tip=item(window,"radarInfoPanel");
+            if (!tip || !waitFor([&] { const auto* text=item(window,"radarInfoText"); return text && text->isVisible() && !text->property("text").toString().isEmpty(); })) return failed("cached info appears outside map");
+            auto* scroll=item(window,"radarInfoScroll");
             auto* tile=radarTarget(window,0);
-            if (!parent || !scroll || !tile) return failed("tooltip public controls");
-            const QRectF popup(parent->mapToScene(QPointF(tip->property("x").toDouble(),tip->property("y").toDouble())),
-                QSizeF(tip->property("width").toDouble(),tip->property("height").toDouble()));
+            if (!scroll || !tile) return failed("info public controls");
+            const auto popup=tip->mapRectToScene(QRectF(QPointF{},tip->size()));
             const auto viewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
-            if (!viewport.adjusted(-.5,-.5,.5,.5).contains(popup)
-                || popup.intersects(tile->mapRectToScene(QRectF(QPointF{},tile->size())))) return failed("tooltip preserves map and target");
+            if (viewport!=initialViewport || viewport.intersects(popup)
+                || !QRectF(0,0,window->width(),window->height()).contains(popup)) return failed("info keeps the entire map unobscured and stable");
             auto* contents=scroll->property("contentItem").value<QQuickItem*>();
-            if (!contents) return failed("tooltip scroll surface");
+            if (!contents) return failed("info scroll surface");
             const auto pose=radar->property("viewPose");
             if (contents->property("contentHeight").toDouble()>contents->height()+1) {
                 const auto before=contents->property("contentY").toDouble();
                 scroll->forceActiveFocus(Qt::TabFocusReason);
-                if (!waitFor([&] { return scroll->hasActiveFocus() && tip->property("visible").toBool(); })) return failed("tooltip reader focus");
+                if (!waitFor([&] { return scroll->hasActiveFocus() && tip->property("visible").toBool(); })) return failed("info reader focus");
                 QTest::keyClick(window,Qt::Key_Down);
-                if (!waitFor([&] { return contents->property("contentY").toDouble()>before; })) return failed("tooltip keyboard scrolling");
+                if (!waitFor([&] { return contents->property("contentY").toDouble()>before; })) return failed("info keyboard scrolling");
                 const auto afterKey=contents->property("contentY").toDouble();
                 const auto point=scroll->mapToScene(QPointF(scroll->width()/2,scroll->height()/2));
+                QTest::mouseMove(window,point.toPoint());
                 // A short overflow can already be at its end after one key step.
                 QElapsedTimer wheelClock; wheelClock.start();
                 QWheelEvent rewind(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,1200),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
@@ -3012,21 +3081,36 @@ bool execute(const QString& requestedScenario) {
                 QCoreApplication::sendEvent(window,&rewind);
                 if (!waitFor([&] { return contents->property("contentY").toDouble()<afterKey
                         && qAbs(contents->property("contentY").toDouble())<0.5 && !contents->property("moving").toBool(); })
-                    || radar->property("viewPose")!=pose) return failed("tooltip reverse wheel isolates camera");
+                    || radar->property("viewPose")!=pose) {
+                    std::fprintf(stderr,"Info rewind: keyY=%g currentY=%g content=%g viewport=%g cameraChanged=%d focus=%s target=%d\n",
+                        afterKey,contents->property("contentY").toDouble(),contents->property("contentHeight").toDouble(),contents->height(),
+                        radar->property("viewPose")!=pose,qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),tip->property("hasDetails").toBool());
+                    return failed("info reverse wheel isolates camera");
+                }
                 const auto beforeWheel=contents->property("contentY").toDouble();
                 QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
                 wheel.setTimestamp(std::max<quint64>(rewind.timestamp()+1,static_cast<quint64>(wheelClock.msecsSinceReference()+wheelClock.elapsed())));
                 QCoreApplication::sendEvent(window,&wheel);
                 const bool scrolled=waitFor([&] { return contents->property("contentY").toDouble()>beforeWheel; });
                 if (!scrolled || radar->property("viewPose")!=pose) {
-                    std::fprintf(stderr,"Tooltip wheel: start=%g end=%g content=%g viewport=%g moving=%d accepted=%d cameraChanged=%d visible=%d\n",
+                    std::fprintf(stderr,"Info wheel: start=%g end=%g content=%g viewport=%g moving=%d accepted=%d cameraChanged=%d visible=%d\n",
                         beforeWheel,contents->property("contentY").toDouble(),contents->property("contentHeight").toDouble(),contents->height(),
                         contents->property("moving").toBool(),wheel.isAccepted(),radar->property("viewPose")!=pose,tip->property("visible").toBool());
-                    return failed("tooltip wheel isolates camera");
+                    return failed("info wheel isolates camera");
                 }
             }
+            scroll->forceActiveFocus(Qt::TabFocusReason);
+            if (!waitFor([&] { return scroll->hasActiveFocus(); })) return failed("info can receive keyboard focus");
+            const auto next=radarPoint(radar,1);
+            if (!next) return failed("second resource remains reachable");
+            const auto nextName=workspace.table()->index(1,0).data(Qt::UserRole+1).toString();
+            QTest::mouseMove(window,radar->mapToScene(next->bounds.center()).toPoint());
+            if (!waitFor([&] { const auto* text=item(window,"radarInfoText"); return text && text->property("text").toString().contains(nextName); })) return failed("hover remains live after reading info");
+            if (!saveShellFrame(window,requestedScenario)) return failed("info frame capture");
             auto* control=item(window,"radarZoom"); QSignalSpy activated(control,SIGNAL(clicked()));
-            if (!click(window,control) || !waitFor([&] { return !activated.isEmpty(); })) return failed("tooltip leaves zoom operable");
+            if (!click(window,control) || !waitFor([&] { return !activated.isEmpty(); })) return failed("info leaves zoom operable");
+            if (!typeRadarQuery("\"no-matching-resource\"")
+                || !waitFor([&] { return workspace.resourceCount()==0 && !tip->property("hasDetails").toBool(); })) return failed("filter removes stale external details");
             return server.requests.size()==calls;
         }
         if (scenario.startsWith("radar_accessibility_")) {

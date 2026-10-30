@@ -34,6 +34,7 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
     bool publish(const QList<Entry>& entries, bool refresh);
+    void refreshSourceIndices();
     const QList<Entry>& entries() const { return entries_; }
     qint64 frameTime() const { return frameTime_; }
     bool advanceFrame(qint64 at);

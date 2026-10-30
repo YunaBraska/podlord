@@ -83,7 +83,7 @@ Pane {
                 visible: sidebar.radarVisible && sidebar.expandedRadarHost === null
                 Layout.fillWidth: true
                 Layout.fillHeight: sidebar.collapsibleFilters && !sidebar.filtersExpanded
-                Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45)
+                Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45) + radar.infoPanelHeight
                 ResourceRadar {
                     id: radar
                     parent: sidebar.expandedRadarHost ?? radarSlot

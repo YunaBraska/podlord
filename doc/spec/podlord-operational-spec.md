@@ -109,6 +109,7 @@ These requirements were confirmed on 2026-09-30. Confirmation establishes requir
 | SES-025 | Switching between open session tabs MUST preserve their running port-forwards. A tab switch MUST NOT stop or recreate those forwards. |
 | SES-026 | While a log view is not visible, Podlord MUST pause polling for that view. Switching away from its session tab MUST pause its log polling. |
 | SES-027 | When returning to a visible log view, Podlord MUST show available cached logs immediately and resume their refresh unless the user has paused that view. Cache availability remains subject to the existing TTL rules. |
+| SES-028 | Open sessions MUST be presented as one genuine, accessible tab strip with a clear selected tab, horizontal overflow, keyboard switching, full-name tooltips and grouped close/window actions. Tab creation, restoration and model changes MUST NOT activate sessions or start connections. Deliberate activation MUST use the existing session and unsaved-YAML guards. Existing tab order and actions MUST be preserved. |
 
 ### What is currently proven for native session-owned port forwards?
 
@@ -541,8 +542,11 @@ are tracked independently in the [test map](k3d-test-map.md).
 ### How Must Radar Present Arriving Resources And New Problems?
 
 Radar MUST be a deterministic RTS-style resource island, not a rectangular list
-of resources. The retained C# cluster-center, namespace-arm, dependency-rank,
-stable-hash and collision-placement rules define the topology. Identical cached
+of resources. Cluster grouping, namespace districts, dependency rank and stable
+identity remain the inputs. Under the confirmed October 30 layout revision,
+actual resource tiles MUST grow as compact, connected districts rather than
+sparse spokes. No invented filler resource or corridor may create that connection.
+Caption lengths and font metrics MUST NOT determine resource coordinates. Identical cached
 identities and topology MUST produce identical world positions independent of
 table sorting, filters, health changes and resource versions. Incoming accepted
 cache collections progressively extend the map. Cluster/namespace decorations
@@ -562,9 +566,21 @@ Each open session retains its own two-dimensional camera during
 view/tab switches. Filtering MUST NOT move the camera or rearrange surviving
 resources. Input objects MUST remain bounded to shared hover/focus targets rather than grow
 with the resource count. Spatial hit testing, mouse/touch inspection, virtual
-Tab/Backtab traversal, tooltips and accessible inspect actions MUST be preserved.
+Tab/Backtab traversal, cached detail access and accessible inspect actions MUST be preserved.
 Radar labels MUST reach 4.5:1 contrast over their dark backing in all themes,
 including dimmed labels. Other terrain and resource colors remain unchanged.
+Labels MUST be outside resource point bounds, have an opaque contrasting backing
+and be drawn after points and alarm effects. Colliding names may be decluttered
+under the existing zoom rules instead of being painted through resource points.
+Hover/focus details MUST occupy a fixed area outside the map: below the small
+Radar, beside a sufficiently wide expanded map and below it otherwise. Showing
+details MUST NOT resize the canvas or hide its points. All existing metrics,
+requests, limits and measurement timestamps MUST remain reachable by scrolling.
+Pointer and keyboard interaction with those details MUST NOT freeze later
+resource hover, panning, zooming or inspection. These paths remain cache-only.
+The last valid details MUST remain available while the pointer travels to the
+external reader. Another hovered/focused resource replaces them. Invalid,
+filtered-out, offscreen, hidden-map or previous-session details MUST be cleared.
 Keyboard focus MUST retain resource identity, not a proxy row number;
 if filtering hides it, Enter MUST NOT inspect its replacement row. The user must
 explicitly select another resource. Empty membership stays empty; context decoration cannot become a

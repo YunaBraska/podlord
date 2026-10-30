@@ -6692,3 +6692,69 @@ after grouping its isolated static cases in a four-worker Node suite:
 30 pass and the same opt-in real desktop-comparison case is skipped. That live
 case remains outside the concurrent suite. No test, assertion, profile boundary
 or watchdog was removed. Hosted budget relief still needs its next CI result.
+
+### Radar Reader, Compact Islands And Session Tabs, October 30–31
+
+The user approved an external fixed Radar reader, compact real-resource
+districts without filler, foreground captions outside point bounds, and genuine
+session tabs. ADR 0032 and SES-028 own these intentional changes from the legacy
+reference. Existing camera, cache, filter, alarm and request-lifecycle contracts
+remain in force. Primary navigation was not redesigned.
+
+Evidence is retained under `2026-10-30-radar-ux`. Base `f3ea13c` plus the recorded
+input patches identify each run. Screens are actual Qt captures, not mockups.
+
+| Public behavior | Executable evidence | Result and boundary |
+| --- | --- | --- |
+| Connected, compact actual resources; stable geometry across sort, filter and fonts; captions and text-free previews | `radar-hierarchy*`, `radar-reference-*`, `radar-input` | Initial three-case regression run failed against the preceding implementation. Existing topology, selection, preview and camera cases subsequently pass. Placement has 18/18 branches in the first complete coverage run. |
+| External reader never covers or resizes the map; pointer can travel to it; wheel/keyboard scrolling does not pan; filtered details clear | `native.ui.radar_info_panel*`, `radar_map_info_panel*`, retained metric Radar tests | Desktop, 390×844 and 640×320 cases pass in Basic/Fusion. The pointer-to-reader regression failed before retention was corrected. Screens include populated readers and both map placements. |
+| Connected accessible session tabs, keyboard switching, phone overflow, 44-pixel touch actions, inactive close and no extra requests | `native.ui.session_tabs_controls_basic/fusion`, retained unsaved-YAML session/history cases | Passed. Replaces the old Row/ScrollView wrapper with the standard TabBar overflow behavior. Tab initialization and model changes do not activate sessions. |
+| Parent filter scrolling closes an anchored picker | `native.field_filter.flyout_*` | Eleven affected cases pass after correcting a test gesture that landed inside the picker instead of the unobscured parent viewport. The production dismissal contract is unchanged. |
+| Pure proxy sorting retains drawing and effects while updating resource indices | Radar source-sort, selection, metadata, input and animation cases | `sort-fastpath-tests.log`: 226/226 passed. Qt's persistent indices remain authoritative. Pending data or geometry changes retain the full synchronization path. No second resource cache is introduced. |
+| Real local Kubernetes operations | `real-kubernetes-e2e.log` | Passed shell, vi, control-vi, interrupt/touch-interrupt, window transfer, Pod/Service forwards, context removal/draft safeguards, delete/replacement UID, inspector history, cache-only search, metrics, health and cached field filters. The owned K3s fixture was deleted. This precedes the index-only sort optimization. |
+| Native iPhone rendering and interaction | `ios-current/*.log`, `ios-current/screens` | Three actual ARM64 simulator journeys pass: small reader, map reader and session tabs. The owned simulator is shut down and deleted. This precedes the index-only sort optimization. Native VoiceOver operation is not proven by Qt role assertions. |
+
+`sort-fastpath-software` completes the 5,000-resource, three-session protocol,
+including its nonsync idle phase. This is software regression evidence only.
+The earlier Cocoa run completes retained interaction samples before exposure is
+lost: filter 25.961 ms, sort 31.800 ms, cached tab 38.494 ms and inspector
+28.691 ms p95 satisfy their interaction budgets. Frame CPU p95 does not satisfy
+8 ms: 13.675, 16.850, 26.482 and 15.500 ms respectively. Scroll is 2.083 ms.
+It is a failed/incomplete foreground run, not performance or release clearance.
+The later index-only sort path still needs isolated Metal comparison.
+
+The first full Linux run passes six preflight and 5,023 of 5,024 remaining
+executions. Only the misplaced filter-wheel gesture fails. Coverage is 97.76%
+lines, 85.74% overall branches and 882/966 (91.30%) Radar/Map branches, with LLVM
+also reporting mismatched-function data. These numbers are retained observations,
+not a clean full-suite result. `full-linux-current` repeats the final source and
+corrected test rather than relabeling the earlier failure as green.
+
+The initial fresh macOS package passes dependency and size checks at 33,745,461
+download bytes and 87,414,540 installed bytes. `macos-package-current` rebuilds
+the later sort optimization. Android ARM64 and iOS simulator ARM64 builds are
+repeated for that final source. Local signing remains private/ad-hoc by agreement.
+
+#### Development-Time Review And Public Toolchain Cache
+
+Hosted Intel evidence attributes 8m08s to toolchain installation and 73m36s to
+the native build/test step. Large UI, terminal and forwarding families account
+for substantial execution time. This does not establish that their distinct
+failure or lifecycle cases are obsolete, so none were removed or replaced with
+a broad E2E claim. The previously measured static package suite improvement
+remains separate from application runtime performance.
+
+The approved macOS cache is exact-keyed by runner architecture, Xcode, SDK path
+and version, compiler, CMake and pinned installer content. Only installed public
+Qt, OpenSSL, yaml-cpp and supplier build inputs are saved. The shared installer's
+read-only `--check` validates required modules, versions, architecture and the
+deployment-floor metadata for both macOS and the iOS host toolchain. Invalid
+restored inputs fail rather than bypassing a package gate. Twelve public CLI
+tests and the real local toolchain validation pass. YAML parses locally. Actual
+restore/save behavior and time savings require hosted CI, not a local estimate.
+
+The scoped interaction review uses Apple's [tab-view guidance](https://developer.apple.com/design/human-interface-guidelines/tab-views)
+and [accessibility guidance](https://developer.apple.com/design/human-interface-guidelines/accessibility).
+Qt roles, keyboard navigation, contrast and small layouts are executable
+evidence. They are not blanket Apple conformance or a full assistive-technology
+assessment. No release threshold, supported feature or platform was waived.

@@ -8,11 +8,23 @@ The full ResourceTable cache supplies cluster, namespace, owner, kind and identi
 The existing filtered proxy supplies resource membership and inspector indices.
 On 2026-10-28 the user approved clearly separated cluster islands with namespace
 districts inside each island, replacing the earlier exact-reference topology.
-RadarIsland packs nonoverlapping cluster bounds and namespace districts using
-the original deterministic Radar arm/depth placement inside each district.
+RadarIsland packs nonoverlapping cluster bounds and namespace districts. On
+2026-10-30 the user approved replacing sparse spoke placement with compact,
+four-neighbor growth of actual resource tiles. Each district starts with a real
+Namespace resource or its first actual resource. Identity-seeded preferred
+directions and kind ranks guide the frontier, while its growth radius follows
+resource area rather than increasing linearly with population. Stable coordinate
+tie-breakers make placement independent of hash-container iteration order.
+No filler tile or connector becomes a resource or an input target. Existing
+positions can change under this approved layout revision. Old persisted previews
+are replaced on the next ordinary successful visit, not by background cluster
+loads. Font and caption widths no longer enlarge the resource geography.
 There are no circular placeholder land fills or artificial district connectors.
 These would invent geography or relationships absent from Kubernetes. Water
 separates clusters. Painting does not rebuild geometry or move tiles.
+An otherwise clean proxy-only vertical sort refreshes cached resource indices
+after Qt updates its persistent indices. It does not rebuild point payloads or
+repaint unchanged geography. Pending source changes retain normal synchronization.
 The existing 90-percent new-logic coverage requirement is enforced over the entire
 modified synchronization/layout/painting/color/view-selection function family,
 map navigation, visual preview storage and capture, including local functions.
@@ -63,7 +75,7 @@ forward navigation. Resources, Events and Ports remain available and restore the
 small Radar for the active context; only Map hides it. Opening a context from the
 overview reuses the ordinary context-opening flow, with no parallel loader or
 authentication path. The context map shares the existing renderer, filtered
-source, camera, selection, tooltip and alarm owner. Tab switching itself does not
+source, camera, selection, cached detail panel and alarm owner. Tab switching itself does not
 start a request, authenticate or reset filters, drafts or camera position for an
 already loaded session. Restored tabs are metadata-only until the first explicit
 resource-facing action, using the same normal loader. Map history reuses existing
@@ -76,7 +88,12 @@ collision decluttering instead of a delegate per cached label. On 2026-10-30 the
 user approved contrast-safe Radar labels across light and dark themes. The water
 remains dark, so labels use a shared pale foreground rather than the surrounding
 theme's text color. A small opaque water-colored backing keeps terrain or an
-empty filtered view from reducing contrast. Filtered labels remain dimmer but
+empty filtered view from reducing contrast. Labels are painted after resource
+points and effects, outside their district or cluster's resource bounds. A
+viewport-bucket collision check also keeps captions clear of neighboring
+districts. Existing semantic zoom and caption decluttering remain. Initial fit
+reserves screen space for captions without changing an explicitly chosen camera.
+Filtered labels remain dimmer but
 must also reach 4.5:1. Resource, terrain and other theme colors are unchanged.
 
 A context overview is separate from an opened context map. The user follow-up on
@@ -127,7 +144,17 @@ Painting is read-only. Alarm evaluation and expiry retain ADR 0025's single owne
 The resource/alert drawing consolidation was confirmed on 2026-10-29. It reuses
 `KindGlyph::draw` rather than maintaining a second glyph catalog. QML still owns
 the existing focus chain, pointer/touch handlers, keyboard actions and lazy
-tooltips. On 2026-10-30 the user approved removing the remaining per-resource
+cached details. The user's later October 30 confirmation replaces the floating
+Radar tooltip with one fixed external detail panel. It sits below the small
+Radar and beside a wide expanded map, below it when narrow. Its space is reserved
+independently of hover, so showing details neither covers points nor shifts the
+canvas. All measurements and references remain in its keyboard/touch-scrollable
+area. Reading that panel does not block subsequent hover or camera interaction.
+The last valid resource remains available while the pointer crosses water to
+reach the reader. A later hover/focus replaces it. Removal, filtering out,
+panning outside the viewport, hiding the map or switching session clears it.
+It reads the same cached snapshot and starts no request. On 2026-10-30 the user
+approved removing the remaining per-resource
 input items. Pointer and touch hits use the existing C++ spatial index and the
 same painted resource bounds. Two shared targets retain the hovered and focused
 identities. Tab and Backtab traverse the projected path order and leave the Radar
