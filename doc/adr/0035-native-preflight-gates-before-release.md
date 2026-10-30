@@ -49,6 +49,26 @@ binaries. macOS Developer ID/notarization, license notices, clean-device
 installation, other platform builds and function parity remain independent
 release gates.
 
+## Can Metal Be Diagnosed Without Activating The Test Window?
+
+The separately approved `--background-metal-diagnostic` mode reuses the existing
+performance driver and workload. LaunchServices starts the stable test bundle
+with `open -g`. Before Qt initialization, only the diagnostic process sets
+`QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1` to suppress Qt's own launch
+activation. This switch is checked by the pinned
+[Qt 6.11.2 Cocoa launch delegate](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm).
+Initial QML properties prevent window activation before creation.
+The driver never raises or activates that window, requires Metal and an exposed
+inactive window, and fails if it observes activation. An unavailable desktop or
+occluded renderer is not replaced by a foreground launch or software result.
+
+Only this diagnostic mutes its disposable profile before loading contexts.
+Every JSON record has `diagnosticOnly: true` and the boundary
+`background-cocoa-metal-diagnostic`. The output directory also contains an
+explicit diagnostic-only marker. Existing foreground and offscreen modes retain
+their workloads, guards and limits. Background timing can locate CPU work, but
+cannot satisfy any foreground, installed-startup or release gate.
+
 ## What Changes For A Private macOS Build?
 
 The confirmed 2026-10-06 distribution scope is private local use while the

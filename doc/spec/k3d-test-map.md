@@ -6346,3 +6346,37 @@ desktop is unavailable for the rest of this evening. The historical Android
 SIGSEGV still has no established cause. Personal Google registration and its
 live-login proof remain paused, not silently waived. No background Metal test
 mode, scheduler, relaxed gate or new product behavior is introduced here.
+
+### How Do Local Tests Stay Quiet?
+
+Ordinary local UI and stress repetitions use the app's normal mute setting in
+their disposable profiles or the existing headless Linux container without an
+audio device. Log-test profiles enable mute before importing or opening a
+context. The installed user's preferences remain unchanged. Alarm-trigger and
+deduplication assertions remain separate from speaker output. The dedicated
+native playback test already decodes and plays at zero output volume. Audible
+speaker checks are separate, explicitly requested checks, never part of a
+repeated overnight run. Confirmed on 2026-10-29.
+
+### How Is Background Metal Diagnosis Separated From Release Evidence?
+
+Approved on 2026-10-30. The existing performance entrypoint accepts an optional
+`--background-metal-diagnostic` third argument after the build and fresh evidence
+directories. It reuses the three-session, 5,000-resource workload and the existing
+frame clock, interaction, memory and idle measurements. The diagnostic starts
+the stable macOS test bundle without activation, sets a nonfocusable window
+before QML creation, and mutes only its temporary app profile. It requires Metal
+and rejects activation, unavailable exposure, unsupported arguments and software
+fallback. No user profile, foreground test, release threshold or scheduler changes.
+
+Every diagnostic JSON record contains `diagnosticOnly: true` and
+`renderingBoundary: "background-cocoa-metal-diagnostic"`. Its output directory
+contains `diagnostic-only.txt`. A successful diagnostic is not a release pass.
+An unavailable background renderer remains a reported diagnostic failure and
+never triggers a foreground retry. The earlier statement that no background
+Metal mode exists is superseded only by this separately approved test mode.
+
+Invocation: `sh scripts/measure-native-performance.sh BUILD FRESH_EVIDENCE_DIRECTORY --background-metal-diagnostic`.
+Local execution records, including failures, belong under
+`release-evidence/2026-10-30-background-metal/`. Foreground frame, startup, memory,
+paired-image and live-provider release gaps remain independent.

@@ -53,7 +53,10 @@ bool report(const QJsonObject& value) {
         record["ownedFocusWindowHasTransientParent"]=focus && focus->transientParent();
     }
     record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
-    record["renderingBoundary"] = QGuiApplication::platformName() == "offscreen" ? "headless-software" : "foreground-cocoa";
+    const bool diagnostic = QCoreApplication::arguments().contains("--background-metal-diagnostic");
+    record["diagnosticOnly"] = diagnostic;
+    record["renderingBoundary"] = diagnostic ? "background-cocoa-metal-diagnostic"
+        : QGuiApplication::platformName() == "offscreen" ? "headless-software" : "foreground-cocoa";
     const auto bytes = QJsonDocument(record).toJson(QJsonDocument::Compact);
     const bool written = std::fwrite(bytes.constData(), 1, bytes.size(), stdout) == size_t(bytes.size());
     return std::fputc('\n', stdout) != EOF && std::fflush(stdout) == 0 && written;
@@ -66,7 +69,7 @@ std::optional<qint64> residentBytes() {
     const auto kib = process.readAllStandardOutput().trimmed().toLongLong(&valid);
     return valid && kib > 0 ? std::optional<qint64>{kib * 1024} : std::nullopt;
 }
-bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* window, QElapsedTimer& startup) {
+bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* window, QElapsedTimer& startup, bool backgroundMetal) {
     const bool desktop = QGuiApplication::platformName() == "cocoa";
     if (!window) return false;
     const auto threadCpuNs = []() -> qint64 {
@@ -80,6 +83,16 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     const auto probe = std::make_shared<FrameProbeState>();
     probe->lastGuiCpu = threadCpuNs();
     QObject frameProbe;
+    bool activationObserved = backgroundMetal && (window->isActive() || QGuiApplication::applicationState() == Qt::ApplicationActive);
+    QObject::connect(qGuiApp, &QGuiApplication::applicationStateChanged, &frameProbe, [&](Qt::ApplicationState state) {
+        if (backgroundMetal && state == Qt::ApplicationActive) activationObserved = true;
+    });
+    QObject::connect(window, &QWindow::activeChanged, &frameProbe, [&] {
+        if (backgroundMetal && window->isActive()) activationObserved = true;
+    });
+    const auto validDesktopState = [&] {
+        return window->isExposed() && (backgroundMetal ? !activationObserved && !window->isActive() : window->isActive());
+    };
     auto* guiThread = QThread::currentThread();
     QObject::connect(window, &QQuickWindow::afterAnimating, &frameProbe, [probe, threadCpuNs] {
         const auto current = threadCpuNs();
@@ -116,12 +129,19 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     }, Qt::DirectConnection);
     quint64 actionToken = 0;
     if (!window || !waitFor([&] { return window->isVisible() && !workspace.busy(); })) return false;
-    window->raise(); window->requestActivate();
-    if (desktop && !waitFor([&] { return window->isExposed() && window->isActive(); })) {
-        report({{"type", "failure"}, {"reason", "foreground desktop unavailable"}, {"visible", window->isVisible()},
+    if (!backgroundMetal) { window->raise(); window->requestActivate(); }
+    if (desktop && (!waitFor([&] { return validDesktopState() || activationObserved; }) || !validDesktopState())) {
+        report({{"type", "failure"}, {"reason", backgroundMetal ? "background Metal window unavailable or activated" : "foreground desktop unavailable"}, {"visible", window->isVisible()},
                 {"exposed", window->isExposed()}, {"active", window->isActive()}});
         return false;
     }
+    if (backgroundMetal && window->rendererInterface()->graphicsApi() != QSGRendererInterface::Metal) {
+        report({{"type", "failure"}, {"reason", "background diagnosis requires Metal; no renderer fallback"}});
+        return false;
+    }
+    if (backgroundMetal && !report({{"type", "window"}, {"visible", window->isVisible()}, {"exposed", window->isExposed()},
+            {"active", window->isActive()}, {"activationObserved", activationObserved}, {"audioMuted", workspace.alerts()->muted()},
+            {"scope", "Nonactivating Metal diagnosis only; never foreground release evidence"}})) return false;
     auto* settings = podlord::test::visibleItem(window->contentItem(), "settingsWorkspaceButton");
     if (!settings || !podlord::test::scrollIntoView(window, settings)) return false;
     if (!report({{"type", "construction"}, {"milliseconds", startup.nsecsElapsed() / 1000000.0},
@@ -129,8 +149,8 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
                  {"scope", "Workspace/QML construction, not installed-process startup"}})) return false;
     const auto frame = [&](const std::function<bool()>& action, const std::function<bool()>& visible) -> std::optional<FrameTiming> {
         if (!waitFor([&] { return !workspace.busy(); })) return {};
-        if (desktop && (!window->isExposed() || !window->isActive())) {
-            report({{"type", "failure"}, {"reason", "foreground desktop unavailable"}, {"visible", window->isVisible()},
+        if (desktop && !validDesktopState()) {
+            report({{"type", "failure"}, {"reason", backgroundMetal ? "background Metal window unavailable or activated" : "foreground desktop unavailable"}, {"visible", window->isVisible()},
                     {"exposed", window->isExposed()}, {"active", window->isActive()},
                     {"visibility", int(window->visibility())}, {"applicationState", int(QGuiApplication::applicationState())}});
             return {};
@@ -168,8 +188,8 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};
         }
-        if (desktop && (!window->isExposed() || !window->isActive())) {
-            report({{"type", "failure"}, {"reason", "foreground lost during measured frame"},
+        if (desktop && !validDesktopState()) {
+            report({{"type", "failure"}, {"reason", backgroundMetal ? "background Metal window lost or activated during measured frame" : "foreground lost during measured frame"},
                     {"exposed", window->isExposed()}, {"active", window->isActive()}});
             return {};
         }
@@ -369,9 +389,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     quiet.setSingleShot(true); timeout.setSingleShot(true);
     quiet.setTimerType(Qt::PreciseTimer);
     bool timedOut = false;
-    bool foregroundLost = desktop && (!window->isExposed() || !window->isActive());
+    bool foregroundLost = desktop && !validDesktopState();
     QObject::connect(&foregroundGuard, &QTimer::timeout, &idle, [&] {
-        if (window->isExposed() && window->isActive()) return;
+        if (validDesktopState()) return;
         foregroundLost = true; idle.quit();
     });
     QObject::connect(&timeout, &QTimer::timeout, &idle, [&] { timedOut = true; idle.quit(); });
@@ -405,7 +425,8 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     timeout.start(120000); if (desktop) foregroundGuard.start(1000); idle.exec(); accumulate(); QObject::disconnect(sync);
     const double percent = idleMilliseconds > 0 ? cpuSeconds / (idleMilliseconds / 1000.0) * 100 : 100;
     const bool idlePassed = !timedOut && !foregroundLost && idleMilliseconds >= 60000 && percent <= 2;
-    if (!report({{"type", "idle"}, {"milliseconds", double(idleMilliseconds)}, {"cpuPercentOneCore", percent}, {"foregroundLost", foregroundLost}, {"passed", idlePassed}})) return false;
+    if (!report({{"type", "idle"}, {"milliseconds", double(idleMilliseconds)}, {"cpuPercentOneCore", percent}, {"foregroundLost", foregroundLost},
+                 {"activationObserved", activationObserved}, {"passed", idlePassed}})) return false;
     accepted = idlePassed && accepted;
     probe->requested.store(0);
     QObject::disconnect(window, nullptr, &frameProbe, nullptr);
@@ -414,14 +435,22 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         QTest::qWait(30000);
     }
     return report({{"type", "result"}, {"passed", accepted},
-                   {"scope", desktop ? "foreground runtime and conservative per-frame thread CPU, not installed startup, license or signing clearance"
+                   {"scope", backgroundMetal ? "background Metal diagnosis only; not foreground, startup or release evidence"
+                        : desktop ? "foreground runtime and conservative per-frame thread CPU, not installed startup, license or signing clearance"
                                       : "headless runtime regression, not foreground frames, installed startup, license or signing clearance"}}) && accepted;
 }
 }
 int main(int argc, char** argv) {
+    const bool backgroundMetal = argc == 3 && QByteArrayView(argv[2]) == "--background-metal-diagnostic";
+    // Qt's Cocoa launch delegate otherwise activates the process even after open -g.
+    if (backgroundMetal && !qputenv("QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM", "1")) return 1;
     if (!podlord::configureGraphics()) { std::fputs("Cannot configure native graphics.\n", stderr); return 1; }
     QGuiApplication app(argc, argv);
-    if (argc != 2) return 2;
+    if (argc != 2 && !backgroundMetal) return 2;
+    if (backgroundMetal && QGuiApplication::platformName() != "cocoa") {
+        std::fputs("Background Metal diagnostics require the macOS Cocoa renderer.\n", stderr);
+        return 2;
+    }
     if (QGuiApplication::platformName() != "cocoa" && !(QGuiApplication::platformName() == "offscreen" && qEnvironmentVariable("QT_QUICK_BACKEND") == "software")) {
         std::fprintf(stderr, "Use the foreground macOS Cocoa renderer or explicit offscreen/software regression measurement.\n");
         return 2;
@@ -431,14 +460,18 @@ int main(int argc, char** argv) {
     QTemporaryDir temporary;
     if (!temporary.isValid()) return 1;
     podlord::Workspace workspace(temporary.filePath("profile"));
+    if (backgroundMetal && !podlord::test::muteAlerts(workspace.alerts())) return 1;
     QQmlApplicationEngine engine;
+    if (backgroundMetal) engine.setInitialProperties({{"visible", false}, {"flags", int(Qt::Window | Qt::WindowDoesNotAcceptFocus)}});
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return 1;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if (backgroundMetal && window) window->show();
     QTimer::singleShot(0,&app,[&] {
-        const bool passed=run(config,workspace,window,startup);
+        const bool passed=run(config,workspace,window,startup,backgroundMetal);
         if (!passed) std::fprintf(stderr,"Native performance protocol failed.\n");
+        if (window) window->close();
         app.exit(passed ? 0 : 1);
     });
     return app.exec();
