@@ -6380,3 +6380,63 @@ Invocation: `sh scripts/measure-native-performance.sh BUILD FRESH_EVIDENCE_DIREC
 Local execution records, including failures, belong under
 `release-evidence/2026-10-30-background-metal/`. Foreground frame, startup, memory,
 paired-image and live-provider release gaps remain independent.
+
+### How Are Lightweight Cells And Cached Session Reuse Proven?
+
+The approved 2026-10-30 table implementation keeps the shared interaction
+contract while replacing each styled cell control with a Qt Quick rectangle and
+text. Its required model roles and bound component context preserve pooled
+delegate identity. Four separate public UI regressions cover cached session
+reuse without a model reset or extra API requests, Space activation, canceling a
+Space press on focus loss, and the actual accessible Button press action. Each
+runs in Basic and Fusion. Existing pointer, Copy, tooltip, column, inspector,
+Sources, diagnostics and alarm scenarios remain enabled.
+
+The same package removes the unused reset-only publication branch. Read-only
+session access no longer constructs temporary state objects. The radar
+reconciles its already sorted projected list directly, without building a
+second ordered map. Alarm fingerprints retain the same four JSON values in a
+fixed array. Rule action parameters are read once per rule, and an effect pass
+with no possible active action is omitted. Matching, hold durations, loading
+suppression and latest-problem focus are unchanged.
+
+Evidence is retained under
+`release-evidence/2026-10-30-performance-parity/`:
+
+- `table-package-final-linux.log`: both preflight checks and all 4,989 test
+  executions pass. LLVM reports 97.74% line and 85.75% branch coverage. The
+  radar/map function-family gate is 746/810 branches, or 92.10%.
+- `alarm-navigation-macos-check.log`: 194 focused official-Qt 6.11.2 UI
+  executions pass, including both styles and the new public regressions.
+- `light-table-package.log`: the Release package passes dependency-path,
+  minimum-platform, signing and size inspection. ZIP size is 33,735,742 bytes
+  and installed regular files total 87,397,564 bytes. This is not a public
+  Developer ID/notarization claim.
+- `desktop-light-cells/`: 108 current C#/C++ pairs cover Resources, Events,
+  Ports and all nine Settings tabs in the default state plus Imperial Ledger,
+  Sirocco Command, Ironwood Warroom and Gunmetal Sector in both variants.
+  Captures use the same local Kubernetes cluster and original window pixels.
+  Native discovery includes additional resource kinds, so cache populations
+  and problem counts are not claimed identical. The complete theme/device
+  comparison remains open.
+- `light-table-foreground-final/measurements.jsonl`: the exposed, active Cocoa
+  window remains valid throughout the workload. Interaction p95 values are
+  31.25 ms for filtering, 35.51 ms for sorting, 41.93 ms for cached tabs and
+  28.30 ms for cached inspection. Idle CPU is 1.46% over 60 seconds. Maximum
+  RSS is 298,254,336 bytes, below the 310,000,000-byte ceiling. Frame CPU still
+  misses the 8 ms gate at 18.41/19.51/26.51/16.64 ms respectively. Warm growth
+  is 6,029,312 bytes and misses the 5,000,000-byte gate. Scrolling passes at
+  2.48 ms frame p95. No threshold is changed.
+
+Background Metal diagnostics and allocation-instrumented traces are retained
+separately and do not grant foreground performance credit. Routine benchmark
+profiles are muted without changing user preferences or system volume.
+The preceding incomplete Linux baseline was deliberately stopped after source
+changes and is not substituted for the final complete run.
+
+The earlier hosted run still has unproven full-map tooltip portability and two
+macOS native-trust failures. The TLS test harness now retains the child process
+output and issuer-request counts on failure instead of hiding them. Both local
+delayed/cancellation cases pass, but that does not resolve the hosted failures
+or change certificate validation. Release readiness remains blocked by the
+named performance, complete comparison and live-provider evidence gaps.

@@ -31,7 +31,7 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    bool publish(const QJsonArray& rows, const QString& cluster = {}, bool replace = false);
+    bool publish(const QJsonArray& rows, const QString& cluster = {});
     QJsonObject row(int index) const;
     bool setAppearance(const Appearance& appearance);
 private:
@@ -268,9 +268,9 @@ public:
     QVariantList portForwards() const { return client_.portForwards(active_); }
     QAbstractItemModel* portTable() { return &ports_; }
     QVariantList portColumns() const;
-    QString portFilterText() const { return navigation_.value(active_).portFilter; }
-    int portSortColumnIndex() const { return navigation_.value(active_).portColumn; }
-    QString portSortDirection() const { return navigation_.value(active_).portOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QString portFilterText() const { return currentNavigation().portFilter; }
+    int portSortColumnIndex() const { return currentNavigation().portColumn; }
+    QString portSortDirection() const { return currentNavigation().portOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
     Q_INVOKABLE bool filterPorts(const QString& text);
     Q_INVOKABLE bool sortPortColumn(int column);
     Q_INVOKABLE bool copyPortValue(const QString& token, int column);
@@ -317,12 +317,12 @@ public:
     bool loading() const;
     bool syncLoading() const { return authenticationRunning() || client_.syncLoading(active_); }
     double loadingProgress() const { return authenticationRunning() && !client_.initialSyncComplete(active_) ? 0 : client_.loadingProgress(active_); }
-    bool problemsOnly() const { return navigation_.value(active_).mode == "problems"; }
-    bool activityOnly() const { return navigation_.value(active_).mode == "activity"; }
+    bool problemsOnly() const { return currentNavigation().mode == "problems"; }
+    bool activityOnly() const { return currentNavigation().mode == "activity"; }
     Q_INVOKABLE bool setFilterMode(const QString& mode);
     QStringList filterPresets() const;
     QString selectedFilterPreset() const;
-    int resourceLimit() const { return navigation_.value(active_).limit; }
+    int resourceLimit() const { return currentNavigation().limit; }
     int displayedResourceCount() const { return visibleTable_.rowCount(); }
     QAbstractItemModel* visibleResourceTable() { return &visibleTable_; }
     Q_INVOKABLE bool setResourceLimit(const QString& text);
@@ -378,10 +378,10 @@ public:
     Q_INVOKABLE bool selectFilterValue(const QString& value, bool selected);
     Q_INVOKABLE bool copyFilterValue(const QString& value);
     QString filterError() const { return workspacePage() == "events" ? events_.error() : table_.error(); }
-    QString workspacePage() const { return navigation_.value(active_).workspace; }
-    QString eventFilterText() const { return navigation_.value(active_).eventFilter; }
-    int eventSortColumnIndex() const { return navigation_.value(active_).eventColumn; }
-    QString eventSortDirection() const { return navigation_.value(active_).eventOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QString workspacePage() const { return currentNavigation().workspace; }
+    QString eventFilterText() const { return currentNavigation().eventFilter; }
+    int eventSortColumnIndex() const { return currentNavigation().eventColumn; }
+    QString eventSortDirection() const { return currentNavigation().eventOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
     QAbstractItemModel* eventTable() { return &events_; }
     int eventCount() const { return events_.rowCount(); }
     int totalEventCount() const { return eventRows_.rowCount(); }
@@ -396,7 +396,7 @@ public:
     QString dashboardSummary() const { return dashboardSummary_; }
     QVariantList pulseMetrics() const { return pulseMetrics_; }
     QVariantMap healthSummary() const { return healthSummary_; }
-    QVariantMap radarView() const { return navigation_.value(active_).radarView; }
+    QVariantMap radarView() const { return currentNavigation().radarView; }
     bool mapOverview() const;
     QString mapContextCaption() const;
     QString mapCatalogWarning() const;
@@ -421,13 +421,13 @@ public:
     QAbstractItemModel* inspectorLinkTable() { return &inspectorLinksTable_; }
     QVariantList inspectorEventColumns() const { return tableColumns("inspectorEvent", inspectorEventRows_); }
     QVariantList inspectorLinkColumns() const { return tableColumns("inspectorLink", inspectorLinkRows_); }
-    int inspectorEventSortColumn() const { return navigation_.value(active_).inspectorEventColumn; }
-    int inspectorLinkSortColumn() const { return navigation_.value(active_).inspectorLinkColumn; }
-    QString inspectorEventSortDirection() const { return navigation_.value(active_).inspectorEventOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
-    QString inspectorLinkSortDirection() const { return navigation_.value(active_).inspectorLinkOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    int inspectorEventSortColumn() const { return currentNavigation().inspectorEventColumn; }
+    int inspectorLinkSortColumn() const { return currentNavigation().inspectorLinkColumn; }
+    QString inspectorEventSortDirection() const { return currentNavigation().inspectorEventOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QString inspectorLinkSortDirection() const { return currentNavigation().inspectorLinkOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
     Q_INVOKABLE bool sortInspectorColumn(const QString& table, int column);
     Q_INVOKABLE bool copyInspectorCell(const QString& table, const QString& identity, int column);
-    QString inspectorPage() const { return navigation_.value(active_).page; }
+    QString inspectorPage() const { return currentNavigation().page; }
     /** Open a listed cache identity, never an arbitrary URL supplied by presentation. */
     Q_INVOKABLE bool inspectPath(const QString& path);
     QString inspectorPath() const;
@@ -496,8 +496,8 @@ public:
     QVariantList resourceValues() const;
     QAbstractItemModel* valuesTable() { return &valuesTable_; }
     QVariantList valuesColumns() const { return tableColumns("value", valueRows_); }
-    int valuesSortColumn() const { return navigation_.value(active_).valueColumn; }
-    QString valuesSortDirection() const { return navigation_.value(active_).valueOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    int valuesSortColumn() const { return currentNavigation().valueColumn; }
+    QString valuesSortDirection() const { return currentNavigation().valueOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
     bool yamlVisible() const;
     bool valuesVisible() const;
     bool valuesAvailable() const;
@@ -688,6 +688,11 @@ private:
         QStringList history;
         int historyIndex = -1;
     };
+    const Navigation& currentNavigation() const {
+        const auto found = navigation_.constFind(active_);
+        return found == navigation_.cend() ? emptyNavigation_ : found.value();
+    }
+    const Navigation emptyNavigation_;
     struct LogPosition final { QString anchor; double offset = 0; bool follow = true, evicted = false; PodLogHistory::Removal removal = PodLogHistory::Removal::None; };
     const QString profile_;
     QStringList mapHistory_{QString{}};
@@ -778,7 +783,7 @@ private:
     bool select(const SessionCatalog& catalog, bool local = true);
     bool resolve(const QString& id, bool retry = false);
     bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, const QString& renamedSession = {}, const QString& managementNotice = {}, bool inWindow = false);
-    bool publish(bool sessionSwitch = false);
+    bool publish();
     QString activeCluster() const;
     bool publishLogs();
     bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);

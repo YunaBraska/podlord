@@ -139,14 +139,7 @@ Rollback requires a compatible executable or a preserved older private profile,
 not destructive rewriting. Values now has scoped public-boundary evidence;
 Alerts/Diagnostics tools and complete paired visual parity remain separate gates.
 
-### How Does A Session Switch Differ From A Cache Refresh?
-
-Resource and Event model identities are scoped to their session. Switching the
-session replaces the published model once using the standard Qt model-reset
-boundary; equal resource paths in different sessions do not retain selection
-identity. A refresh within the same session continues using incremental updates
-so scroll and selected-resource identity can survive fresh data. Unscoped model
-callers keep the existing incremental contract, including cluster-label rebinding.
+### How Do Hidden Tables Avoid Unnecessary Work?
 
 Hidden resource grids disconnect their rendered table models while retaining the
 shared cache and view state. Radar glyphs are instantiated only at readable zoom
@@ -173,6 +166,14 @@ not introduce another model/cache or bypass asynchronous session persistence.
 Focused cells synchronize the native selection model's current index without
 selecting a row or opening the inspector. Keyboard copying and navigation then
 refer to the actually focused logical column, including pinned/reordered columns.
+
+The approved lightweight cells use Qt Quick rectangles and text instead of a
+complete styled control and palette per cell. The shared grid owns its font and
+color projection. Pointer activation, keyboard navigation, Copy, context menus,
+overflow tips and the accessible Button action remain the same public contract.
+Space activates only on release while the cell retains focus. Pooling or losing
+focus clears a pending Space press. Cached session switches retain delegates
+without carrying selection or overflow targets into the next context.
 
 Qt Dialog automatically connects its DialogButtonBox footer's decision signals.
 Forwarding those same signals again delivers two decisions for one click and is

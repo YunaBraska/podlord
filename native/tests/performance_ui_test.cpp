@@ -143,7 +143,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
             {"active", window->isActive()}, {"activationObserved", activationObserved}, {"audioMuted", workspace.alerts()->muted()},
             {"scope", "Nonactivating Metal diagnosis only; never foreground release evidence"}})) return false;
     auto* settings = podlord::test::visibleItem(window->contentItem(), "settingsWorkspaceButton");
-    if (!settings || !podlord::test::scrollIntoView(window, settings)) return false;
+    if (!settings || (backgroundMetal
+            ? !waitFor([&] { return settings->isVisible() && settings->width()>0 && settings->height()>0; })
+            : !podlord::test::scrollIntoView(window, settings))) return false;
     if (!report({{"type", "construction"}, {"milliseconds", startup.nsecsElapsed() / 1000000.0},
                  {"windowWidth", window->width()}, {"windowHeight", window->height()}, {"devicePixelRatio", window->devicePixelRatio()},
                  {"scope", "Workspace/QML construction, not installed-process startup"}})) return false;
@@ -460,9 +462,9 @@ int main(int argc, char** argv) {
     QTemporaryDir temporary;
     if (!temporary.isValid()) return 1;
     podlord::Workspace workspace(temporary.filePath("profile"));
-    if (backgroundMetal && !podlord::test::muteAlerts(workspace.alerts())) return 1;
+    if (!podlord::test::muteAlerts(workspace.alerts())) return 1;
     QQmlApplicationEngine engine;
-    if (backgroundMetal) engine.setInitialProperties({{"visible", false}, {"flags", int(Qt::Window | Qt::WindowDoesNotAcceptFocus)}});
+    if (backgroundMetal) engine.setInitialProperties({{"visible", false}, {"flags", int(Qt::Window | Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput)}});
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return 1;

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -7,6 +9,8 @@ import Podlord.Graphics 1.0
 ColumnLayout {
     id: grid
     Layout.minimumHeight: implicitHeight
+    readonly property var colors: workspace.appearanceColors
+    readonly property font cellFont: Qt.font({family: workspace.monospaceFamily, pixelSize: 13, weight: Font.Normal})
     required property var tableModel
     required property int sortColumn
     required property string sortDirection
@@ -218,7 +222,7 @@ ColumnLayout {
         IconButton { objectName: grid.prefix + "FindNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(1) }
         IconButton { objectName: grid.prefix + "FindClose"; glyph: "Close"; text: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
     }
-    Label { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+    Label { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: grid.colors.danger; Accessible.name: text }
     Label { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
     Menu {
         id: cellMenu
@@ -251,8 +255,8 @@ ColumnLayout {
             font.bold: true
             leftPadding: 10; rightPadding: 10
             background: Rectangle {
-                color: parent.down || parent.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.panel
-                border.color: parent.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+                color: parent.down || parent.hovered ? grid.colors.raised : grid.colors.panel
+                border.color: parent.activeFocus ? grid.colors.accent : grid.colors.border
             }
             contentItem: RowLayout {
                 spacing: 6
@@ -260,10 +264,10 @@ ColumnLayout {
                     visible: ["alert", "diagnostic", "audit"].indexOf(grid.prefix) < 0
                     Layout.preferredWidth: 12; Layout.preferredHeight: 12
                     kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
-                    fill: workspace.appearanceColors.accent
+                    fill: grid.colors.accent
                 }
-                Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: workspace.appearanceColors.accent; elide: Text.ElideRight }
-                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: workspace.appearanceColors.accent; font.pixelSize: 12 }
+                Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight }
+                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: 12 }
             }
             focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
             Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
@@ -280,13 +284,23 @@ ColumnLayout {
     }
     Component {
         id: cellDelegate
-        ItemDelegate {
+        Rectangle {
             id: cell
-            hoverEnabled: true
+            property bool hoverEnabled: true
+            readonly property bool hovered: cellHover.hovered
+            readonly property bool highlighted: selected
+            property bool keyboardPressed: false
+            readonly property bool down: leftTap.pressed || keyboardPressed
+            property string text: display
+            property font font: grid.cellFont
+            property real padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
+            readonly property Item contentItem: cellText
+            signal clicked()
             activeFocusOnTab: true
             required property int row
             required property int column
             required property var model
+            required property string display
             required property string resourcePath
             required property color identityColor
             required property bool selected
@@ -295,21 +309,24 @@ ColumnLayout {
             objectName: grid.cellName ? grid.cellName(row, column, resourcePath) : (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
             implicitWidth: 170
             implicitHeight: grid.rowHeight
-            font.pixelSize: 13
-            font.weight: Font.Normal
-            padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
-            highlighted: selected
-            onActiveFocusChanged: if (activeFocus) {
-                grid.focusCell(row, column, TableView.view)
+            onActiveFocusChanged: {
+                if (activeFocus) grid.focusCell(row, column, TableView.view)
+                else keyboardPressed = false
             }
-            text: model.display
-            Accessible.name: model.display
-            contentItem: Label {
+            Accessible.role: Accessible.Button
+            Accessible.name: text
+            Accessible.focusable: true
+            Accessible.focused: activeFocus
+            Accessible.selected: selected
+            Accessible.onPressAction: cell.clicked()
+            Text {
                 id: cellText
-                text: grid.accessoryColumns.indexOf(cell.column) < 0 ? model.display : ""
+                anchors.fill: parent
+                anchors.margins: cell.padding
+                text: grid.accessoryColumns.indexOf(cell.column) < 0 ? cell.text : ""
                 textFormat: Text.PlainText
                 font: cell.font
-                color: identityColor.a > 0 ? identityColor : palette.text
+                color: identityColor.a > 0 ? identityColor : grid.colors.text
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
                 wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap
@@ -320,28 +337,43 @@ ColumnLayout {
                     visible: active
                     sourceComponent: grid.cellAccessory
                     property string identity: cell.resourcePath
-                    property string resourceName: grid.tableModel.data(grid.tableModel.index(cell.row,0),Qt.UserRole+1) || ""
+                    property string resourceName: active ? grid.tableModel.data(grid.tableModel.index(cell.row,0),Qt.UserRole+1) || "" : ""
                     property int row: cell.row
                     property int column: cell.column
                     property var tableView: cell.TableView.view
-                    property bool encodedValue: cell.model.encodedValue
+                    property bool encodedValue: active && cell.model.encodedValue
                 }
             }
-            background: Rectangle {
-                color: cell.highlighted || cell.current ? workspace.appearanceColors.selection : cell.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-                border.color: cell.activeFocus || (cell.current && cell.TableView.view.activeFocus) ? workspace.appearanceColors.accent : workspace.appearanceColors.border
-                border.width: 1
-            }
+            color: highlighted || current ? grid.colors.selection : hovered ? grid.colors.raised : grid.colors.inset
+            border.color: activeFocus || (current && TableView.view.activeFocus) ? grid.colors.accent : grid.colors.border
+            border.width: 1
             onClicked: { forceActiveFocus(Qt.MouseFocusReason); grid.activateCell(row, column) }
             Keys.onReturnPressed: grid.activateCell(row, column)
             Keys.onEnterPressed: grid.activateCell(row, column)
             Keys.onPressed: function(event) {
-                event.accepted = grid.handleCellKey(event, row, column, cell)
+                if (event.key === Qt.Key_Space) {
+                    if (!event.isAutoRepeat) keyboardPressed = true
+                    event.accepted = true
+                } else event.accepted = grid.handleCellKey(event, row, column, cell)
             }
-            readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : model.display
-            readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > String(model.display || "").length)
+            Keys.onReleased: function(event) {
+                if (event.key === Qt.Key_Space && !event.isAutoRepeat) {
+                    const activate = keyboardPressed
+                    keyboardPressed = false
+                    if (activate) cell.clicked()
+                    event.accepted = true
+                }
+            }
+            readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
+            readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > text.length)
             onWantsTipChanged: if (wantsTip) valueTip.target=cell
             Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
+            TableView.onPooled: {
+                keyboardPressed = false
+                if (valueTip.target === cell) valueTip.target = null
+            }
+            HoverHandler { id: cellHover; enabled: cell.hoverEnabled }
+            TapHandler { id: leftTap; acceptedButtons: Qt.LeftButton; gesturePolicy: TapHandler.DragThreshold; onTapped: cell.clicked() }
             TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup(cell, 0, cell.height) } }
         }
     }
@@ -425,9 +457,9 @@ ColumnLayout {
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: workspace.uiText[workspace.totalResourceCount > 0 ? "resource.noMatchingTitle" : workspace.loading ? "resource.loadingTitle" : "resource.emptyTitle"]
                 textFormat: Text.PlainText; font.pixelSize: parent.columns === 2 ? 18 : 24; font.bold: true
-                color: workspace.appearanceColors.accent; wrapMode: Text.Wrap
+                color: grid.colors.accent; wrapMode: Text.Wrap
             }
-            Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: workspace.appearanceColors.muted }
+            Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: grid.colors.muted }
         }
     }
 }

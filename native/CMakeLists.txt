@@ -516,6 +516,12 @@ if(BUILD_TESTING)
     endforeach()
     add_executable(field-filter-ui-test tests/field_filter_ui_test.cpp)
     target_link_libraries(field-filter-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario cache_tab_reuse cache_cell_space cache_cell_space_cancel cache_cell_accessibility)
+      foreach(style Basic Fusion)
+        add_test(NAME native.field_filter.${scenario}_${style} COMMAND field-filter-ui-test ${scenario})
+        set_tests_properties(native.field_filter.${scenario}_${style} PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+      endforeach()
+    endforeach()
     foreach(scenario empty_filter empty_reset empty_mode empty_picker empty_load empty_save unknown_field unknown_picker invalid_mode reset_repeat mode_repeat filter_repeat filter_clear
         picker_missing_select picker_missing_selected picker_missing_copy picker_copy picker_repeat picker_deselect picker_case picker_custom_value picker_stale_session
         preset_missing_load preset_invalid_filter preset_case_collision preset_reserved preset_empty preset_long preset_rename_missing preset_rename_reserved preset_rename_empty preset_rename_long preset_rename_default preset_delete_missing preset_delete_default preset_rename_repeat preset_rename_collision preset_busy_save preset_busy_reload preset_busy_rename preset_busy_delete)

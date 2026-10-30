@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include <QAccessible>
 #include "radar_island.h"
 #include "ui_input.h"
 #include <QElapsedTimer>
@@ -11,6 +12,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QJsonDocument>
+#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlExpression>
@@ -182,6 +184,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
     QString session;
     {
         podlord::Workspace workspace(profile);
+        if ((scenario == "cache_tab_reuse" || scenario.startsWith("cache_cell_")) && !podlord::test::muteAlerts(workspace.alerts())) return false;
+        if (scenario == "cache_cell_accessibility") QAccessible::setActive(true);
         QQmlApplicationEngine engine;
         QQuickWindow* window = nullptr;
         if (!scenario.startsWith("contract_")) {
@@ -216,6 +220,50 @@ bool run(const QString& scenario, const QString& referencePresets) {
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
+        if (scenario.startsWith("cache_cell_")) {
+            int row = -1;
+            for (int candidate = 0; candidate < workspace.table()->rowCount(); ++candidate)
+                if (workspace.table()->index(candidate,0).data(Qt::UserRole+1).toString() == "alpha") row = candidate;
+            if (row < 0 || !waitFor([&] { return item(window,QString("cell_%1_0").arg(row)) != nullptr; })) return false;
+            auto* cell = item(window,QString("cell_%1_0").arg(row));
+            const auto path = workspace.table()->index(row,0).data(Qt::UserRole).toString();
+            if (scenario == "cache_cell_accessibility") {
+                auto* accessible = QAccessible::queryAccessibleInterface(cell);
+                auto* actions = accessible ? accessible->actionInterface() : nullptr;
+                if (!accessible || accessible->role() != QAccessible::Button || accessible->text(QAccessible::Name) != "alpha"
+                    || !actions || !actions->actionNames().contains(QAccessibleActionInterface::pressAction())) return false;
+                actions->doAction(QAccessibleActionInterface::pressAction());
+            } else {
+                cell->forceActiveFocus(Qt::TabFocusReason);
+                if (!waitFor([&] { return cell->hasActiveFocus(); })) return false;
+                QTest::keyPress(window,Qt::Key_Space);
+                if (scenario == "cache_cell_space_cancel") {
+                    auto* other = item(window,QString("cell_%1_0").arg((row+1)%workspace.table()->rowCount()));
+                    if (!other || other == cell) return false;
+                    other->forceActiveFocus(Qt::TabFocusReason);
+                }
+                QTest::keyRelease(window,Qt::Key_Space);
+                if (scenario == "cache_cell_space_cancel") return workspace.inspectorPath().isEmpty() && server.requests == requests;
+            }
+            return waitFor([&] { return workspace.inspectorPath() == path && workspace.inspectorName() == "alpha"; });
+        }
+        if (scenario == "cache_tab_reuse") {
+            const auto other = workspace.contexts().last().toMap().value("id").toString();
+            if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })
+                || !workspace.setWorkspacePage("resources") || !waitFor([&] { return item(window,"cell_0_0") != nullptr; })) return false;
+            auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
+            if (!displayed) return false;
+            window->update(); QTest::qWait(30);
+            const QPointer<QQuickItem> cell = item(window,"cell_0_0");
+            QSignalSpy resets(displayed,&QAbstractItemModel::modelReset);
+            const int before = server.requests;
+            if (!workspace.activate(session) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.currentSession() == session; })) return false;
+            window->update(); QTest::qWait(30);
+            const bool reused = resets.isEmpty() && cell && cell == item(window,"cell_0_0")
+                && cell->property("text").toString() == displayed->index(0,0).data().toString() && server.requests == before;
+            if (!reused) std::fprintf(stderr,"Cached session table: resets=%d cellAlive=%d extraRequests=%d\n",int(resets.size()),bool(cell),server.requests-before);
+            return reused;
+        }
         if (scenario.startsWith("limit_")) {
             auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
             if (!displayed || workspace.property("resourceLimit").toInt() != 256 || displayed->rowCount() != 256 || workspace.resourceCount() != 301) return false;

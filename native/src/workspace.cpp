@@ -161,7 +161,7 @@ bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole, Qt::UserRole + 5});
     return true;
 }
-bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool replace) {
+bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     sortValues_.clear(); sortValueColumn_ = -1;
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
@@ -176,10 +176,6 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
     }
     QMap<QString, QJsonObject> incoming;
     for (const auto& value : rows) { const auto row = value.toObject(); incoming.insert(row[identityField_].toString(), row); }
-    if (replace) {
-        beginResetModel(); rows_ = incoming.values(); endResetModel();
-        return true;
-    }
     for (int last = static_cast<int>(rows_.size()) - 1; last >= 0;) {
         if (incoming.contains(rows_[last][identityField_].toString())) { --last; continue; }
         int first = last;
@@ -353,7 +349,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         emit yamlEditChanged();
     });
     connect(&client_, &ResourceClient::logsChanged, this, [this](const QString& id, const QString& path) {
-        if (id == active_ && path == navigation_.value(active_).inspected) { publishLogs(); emit changed(); }
+        if (id == active_ && path == currentNavigation().inspected) { publishLogs(); emit changed(); }
     });
     connect(&credentials_, &CredentialProcess::changed, this, &Workspace::changed);
     if (restore) reload();
@@ -412,13 +408,13 @@ QString Workspace::title() const {
     for (const auto& session : catalog_.sessions) if (sessionId(session.id) == active_) return session.displayName();
     return "Resources";
 }
-QString Workspace::filterText() const { return navigation_.value(active_).filter; }
-int Workspace::sortColumnIndex() const { return navigation_.value(active_).column; }
-QString Workspace::sortDirection() const { return navigation_.value(active_).order == Qt::AscendingOrder ? "ASC" : "DESC"; }
+QString Workspace::filterText() const { return currentNavigation().filter; }
+int Workspace::sortColumnIndex() const { return currentNavigation().column; }
+QString Workspace::sortDirection() const { return currentNavigation().order == Qt::AscendingOrder ? "ASC" : "DESC"; }
 QString Workspace::inspected() const {
     return overview_;
 }
-QString Workspace::inspectorPath() const { return navigation_.value(active_).inspected; }
+QString Workspace::inspectorPath() const { return currentNavigation().inspected; }
 QString Workspace::inspectorName() const { return inspectorSummary_.value("name").toString(); }
 QString Workspace::inspectorScope() const { return inspectorScope_; }
 QString Workspace::inspectorStatus() const { return client_.detailStatus(active_, inspectorPath()); }
@@ -522,8 +518,8 @@ QVariantList Workspace::resourceValues() const {
     for (int row = 0; row < valueRows_.rowCount(); ++row) result.append(valueRows_.row(row).toVariantMap());
     return result;
 }
-bool Workspace::yamlVisible() const { return navigation_.value(active_).page == "yaml"; }
-bool Workspace::valuesVisible() const { return navigation_.value(active_).page == "values" && valuesAvailable(); }
+bool Workspace::yamlVisible() const { return currentNavigation().page == "yaml"; }
+bool Workspace::valuesVisible() const { return currentNavigation().page == "values" && valuesAvailable(); }
 bool Workspace::valuesAvailable() const { return isCoreValueResource(client_.resource(active_, inspectorPath())); }
 QString Workspace::monospaceFamily() const { return QFontDatabase::families().contains("Menlo") ? QString("Menlo") : QFontDatabase::systemFont(QFontDatabase::FixedFont).family(); }
 QVariantMap Workspace::settingsDiagnostics() const {
@@ -611,7 +607,7 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
             }
         valueRows_.publish(resourceValues);
     }
-    valuesTable_.sort(navigation_.value(active_).valueColumn, navigation_.value(active_).valueOrder);
+    valuesTable_.sort(currentNavigation().valueColumn, currentNavigation().valueOrder);
     emit inspectorPresentationChanged();
     if (!yamlDraft_ && (documentChanged || scopeChanged)) emit yamlTextChanged();
     if (documentChanged || scopeChanged) emit yamlEditChanged();
@@ -651,7 +647,7 @@ bool Workspace::publishRelated() {
                 {"status", (parent ? selected : row)["status"].toString()}});
         }
     }
-    const auto nav = navigation_.value(active_);
+    const auto nav = currentNavigation();
     inspectorEventsTable_.sort(nav.inspectorEventColumn, nav.inspectorEventOrder);
     inspectorLinksTable_.sort(nav.inspectorLinkColumn, nav.inspectorLinkOrder);
     if (events == inspectorEvents_ && links == inspectorLinks_) return true;
@@ -666,7 +662,7 @@ bool Workspace::setInspectorPage(const QString& page) {
     if (page != "overview" && page != "yaml" && page != "values" && page != "events" && page != "links" && page != "terminal") return false;
     if (page == "terminal" && !podInspected() && !containerTerminal()) return false;
     if (page == "values" && !valuesAvailable()) return false;
-    if (navigation_.value(active_).page == page) return true;
+    if (currentNavigation().page == page) return true;
     client_.hideLogs(viewId_); navigation_[active_].page = page;
     publishRelated(); publishLogs(); emit changed();
     if (page == "yaml" && !yamlDraft_ && inspectorDocument_.isEmpty()) refreshInspector();
@@ -761,17 +757,17 @@ bool Workspace::saveWorkspaceRestore(bool enabled) {
     auto desired = settings_; desired.workspaceRestore = enabled;
     return savePolicy(desired);
 }
-bool Workspace::podInspected() const { return client_.resource(active_, navigation_.value(active_).inspected)["kind"] == "Pod"; }
-bool Workspace::logsVisible() const { return windowVisible_ && navigation_.value(active_).page == "logs" && podInspected(); }
-bool Workspace::logsPaused() const { return client_.logsPaused(active_, navigation_.value(active_).inspected); }
+bool Workspace::podInspected() const { return client_.resource(active_, currentNavigation().inspected)["kind"] == "Pod"; }
+bool Workspace::logsVisible() const { return windowVisible_ && currentNavigation().page == "logs" && podInspected(); }
+bool Workspace::logsPaused() const { return client_.logsPaused(active_, currentNavigation().inspected); }
 QVariantList Workspace::logContainers() const {
     QVariantList options;
-    for (const auto& id : client_.logContainers(active_, navigation_.value(active_).inspected))
+    for (const auto& id : client_.logContainers(active_, currentNavigation().inspected))
         options.append(QVariantMap{{"id", id}, {"name", id == "*" ? "all" : id == "all" ? "all (container)" : id}});
     return options;
 }
-QString Workspace::logSelection() const { return client_.logSelection(active_, navigation_.value(active_).inspected); }
-QString Workspace::logStatus() const { return client_.logStatus(active_, navigation_.value(active_).inspected); }
+QString Workspace::logSelection() const { return client_.logSelection(active_, currentNavigation().inspected); }
+QString Workspace::logStatus() const { return client_.logStatus(active_, currentNavigation().inspected); }
 int Workspace::logLimitMb() const { return settings_.logLimitMb; }
 QAbstractItemModel* Workspace::logRows() { return &logs_; }
 QString Workspace::logAnchor() const { return logPositions_.value(logScope_).anchor; }
@@ -795,7 +791,7 @@ bool Workspace::followLogs() {
 bool Workspace::reportLogEviction() {
     if (logScope_.isEmpty()) return false;
     auto& position = logPositions_[logScope_]; position.anchor = logs_.entryId(0); position.offset = 0; position.follow = false; position.evicted = true;
-    position.removal = client_.logRemoval(active_, navigation_.value(active_).inspected);
+    position.removal = client_.logRemoval(active_, currentNavigation().inspected);
     emit logViewChanged(); return true;
 }
 QString Workspace::logEntry(int index) const { return logs_.data(logs_.index(index, 0), Qt::EditRole).toString(); }
@@ -806,14 +802,14 @@ bool Workspace::copyLogEntry(int index) {
 }
 bool Workspace::publishLogs() {
     emit logViewChanging();
-    const auto path = navigation_.value(active_).inspected;
+    const auto path = currentNavigation().inspected;
     logScope_ = logsVisible() ? active_ + '\n' + path + '\n' + client_.resource(active_, path)["uid"].toString() + '\n' + logSelection() : QString{};
-    logs_.publish(logsVisible() ? client_.logEntries(active_, navigation_.value(active_).inspected) : QList<LogEntry>{});
+    logs_.publish(logsVisible() ? client_.logEntries(active_, currentNavigation().inspected) : QList<LogEntry>{});
     emit logViewChanged(); return true;
 }
 bool Workspace::setLogsVisible(bool visible) {
     emit logViewChanging();
-    if (visible && (!podInspected() || !client_.showLogs(active_, navigation_.value(active_).inspected, viewId_))) { error_ = "Logs require a Pod with valid cached container metadata."; emit changed(); return false; }
+    if (visible && (!podInspected() || !client_.showLogs(active_, currentNavigation().inspected, viewId_))) { error_ = "Logs require a Pod with valid cached container metadata."; emit changed(); return false; }
     navigation_[active_].page = visible ? "logs" : "overview";
     if (!visible) client_.hideLogs(viewId_);
     publishLogs(); emit changed(); return true;
@@ -823,7 +819,7 @@ bool Workspace::setWindowVisible(bool visible) {
     emit logViewChanging(); windowVisible_ = visible;
     if (!visible && !revealedValues_.isEmpty()) { revealedValues_.clear(); publishInspector(true); }
     setWindowFocused(windowFocused_);
-    if (logsVisible()) client_.showLogs(active_, navigation_.value(active_).inspected, viewId_);
+    if (logsVisible()) client_.showLogs(active_, currentNavigation().inspected, viewId_);
     else client_.hideLogs(viewId_);
     publishLogs(); emit changed(); return true;
 }
@@ -839,15 +835,15 @@ QString Workspace::activeCluster() const {
             if (context.id == connection->contextId) return context.cluster;
     return {};
 }
-bool Workspace::publish(bool sessionSwitch) {
+bool Workspace::publish() {
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
-    const auto nav = navigation_.value(active_);
+    const auto nav = currentNavigation();
     // Do not sort incoming rows using the outgoing session's discarded order.
     visibleTable_.setLimit(nav.limit);
     if (table_.sortColumn() != nav.column || table_.sortOrder() != nav.order) table_.sort(-1);
-    rows_.publish(snapshot, cluster, sessionSwitch);
+    rows_.publish(snapshot, cluster);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;
     for (const auto& value : snapshot) {
@@ -954,7 +950,7 @@ bool Workspace::select(const SessionCatalog& catalog, bool local) {
     emit catalogsChanged();
     if (sessionChanged || active_.isEmpty()) publish();
     else emit changed();
-    if (logsVisible()) client_.showLogs(active_, navigation_.value(active_).inspected, viewId_);
+    if (logsVisible()) client_.showLogs(active_, currentNavigation().inspected, viewId_);
     else { client_.hideLogs(viewId_); publishLogs(); }
     return true;
 }
@@ -1206,7 +1202,7 @@ QVariantMap Workspace::sessionConfiguration(const QString& id) const {
         {"contextId", found->config.contextId}, {"namespaces", found->config.namespaces.join(", ")}};
 }
 QVariantList Workspace::resourceGuidance() const {
-    return podlord::resourceGuidance(client_.document(active_, navigation_.value(active_).inspected));
+    return podlord::resourceGuidance(client_.document(active_, currentNavigation().inspected));
 }
 bool Workspace::saveSessionConfiguration(const QString& id, const QString& contextId, const QString& namespaces) {
     if (busy_ || pendingLeave_) return false;
@@ -1284,8 +1280,7 @@ bool Workspace::activate(const QString& id) {
     }
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
     if (!client_.showSession(id, viewId_)) return false;
-    const bool sessionSwitch = active_ != id;
-    emit logViewChanging(); active_ = id; rememberMapSession(); publish(sessionSwitch);
+    emit logViewChanging(); active_ = id; rememberMapSession(); publish();
     if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected, viewId_);
     else publishLogs();
     return mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });
@@ -1342,7 +1337,7 @@ bool Workspace::cancelAuthentication() {
     return connection && credentials_.cancel(connection->credentialId);
 }
 bool Workspace::filter(const QString& text) {
-    if (navigation_.value(active_).filter == text) return true;
+    if (currentNavigation().filter == text) return true;
     navigation_[active_].filter = text;
     return applyResourceFilters();
 }
@@ -1362,7 +1357,7 @@ bool Workspace::publishDashboard() {
 }
 bool Workspace::setWorkspacePage(const QString& page) {
     if (page != "map" && page != "resources" && page != "ports" && page != "settings" && page != "events" && page != "alerts" && page != "dashboard") return false;
-    if (navigation_.value(active_).workspace == page) return true;
+    if (currentNavigation().workspace == page) return true;
     navigation_[active_].workspace = page;
     if (page=="map") rememberMapSession();
     client_.showSession(page=="map" && mapOverview() ? QString{} : active_,viewId_);
@@ -1407,7 +1402,7 @@ bool Workspace::sortInspectorColumn(const QString& table, int column) {
     model->sort(previous, order); queueViewSave(table); emit changed(); return true;
 }
 bool Workspace::filterEvents(const QString& text) {
-    if (navigation_.value(active_).eventFilter == text) return true;
+    if (currentNavigation().eventFilter == text) return true;
     navigation_[active_].eventFilter = text; events_.filter(text); queueViewSave("event"); emit resourcePresentationChanged(); emit changed(); return true;
 }
 bool Workspace::sortEventColumn(int column) {
@@ -1469,7 +1464,7 @@ bool Workspace::openInspector(const QString& path, int historyIndex) {
 }
 int Workspace::inspectorHistoryTarget(int step) const {
     if ((step != -1 && step != 1) || inspectorPath().isEmpty() || busy_ || pendingLeave_) return -1;
-    const auto nav = navigation_.value(active_);
+    const auto nav = currentNavigation();
     for (int i = nav.historyIndex + step; i >= 0 && i < nav.history.size(); i += step)
         if (client_.containsResource(active_, nav.history[i])) return i;
     return -1;
@@ -1477,7 +1472,7 @@ int Workspace::inspectorHistoryTarget(int step) const {
 bool Workspace::canInspectBack() const { return inspectorHistoryTarget(-1) >= 0; }
 bool Workspace::canInspectForward() const { return inspectorHistoryTarget(1) >= 0; }
 bool Workspace::inspectHistory(const QString& path, int index) {
-    const auto nav = navigation_.value(active_);
+    const auto nav = currentNavigation();
     if (index < 0 || index >= nav.history.size() || nav.history[index] != path || !client_.containsResource(active_, path)) {
         error_ = "The requested history resource is no longer available in this session cache."; emit changed(); return false;
     }
@@ -1487,7 +1482,7 @@ bool Workspace::inspectHistory(const QString& path, int index) {
 bool Workspace::navigateInspector(int step) {
     const auto index = inspectorHistoryTarget(step);
     if (index < 0) return false;
-    const auto path = navigation_.value(active_).history[index];
+    const auto path = currentNavigation().history[index];
     return allowLeave(Leave::History, path, index) && inspectHistory(path, index);
 }
 bool Workspace::copyCell(int row, int column) {

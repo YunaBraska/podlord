@@ -375,7 +375,10 @@ bool ResourceClient::isVisible(const QString& id) const {
 bool ResourceClient::logsShown(const QString& id, const QString& key) const {
     return !key.isEmpty() && std::any_of(views_.cbegin(), views_.cend(), [&](const View& view) { return view.session == id && view.logKey == key; });
 }
-bool ResourceClient::wanted(const QString& id) const { return states_.contains(id) && states_[id].open && (isVisible(id) || settings_.inactiveSyncMinutes > 0); }
+bool ResourceClient::wanted(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && state->open && (isVisible(id) || settings_.inactiveSyncMinutes > 0);
+}
 bool ResourceClient::configure(ReadSettings settings) {
     if (!settings.valid()) return false;
     const bool readPolicyChanged = settings_.requestHardLimitPerMinute != settings.requestHardLimitPerMinute || settings_.inactiveSyncMinutes != settings.inactiveSyncMinutes
@@ -481,7 +484,10 @@ bool ResourceClient::dismissInspector(const QString& id) {
     dropQueued([&](const auto& task) { return task.id == id && task.read == Read::Detail; });
     return true;
 }
-QJsonArray ResourceClient::rows(const QString& id) const { return states_.contains(id) ? states_[id].snapshot : QJsonArray{}; }
+QJsonArray ResourceClient::rows(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state == states_.cend() ? QJsonArray{} : state->snapshot;
+}
 void ResourceClient::publishRows(const QString& id) {
     auto& state = states_[id];
     QMap<QString, CachedResource> resources;
@@ -656,13 +662,22 @@ bool ResourceClient::collectionSnapshotAvailable(const QString& id) const {
     const auto state=states_.constFind(id);
     return state!=states_.cend() && !state->collections.isEmpty();
 }
-bool ResourceClient::loading(const QString& id) const { return states_.contains(id) && states_[id].pending > 0; }
-bool ResourceClient::syncLoading(const QString& id) const { return states_.contains(id) && states_[id].syncPending > 0; }
+bool ResourceClient::loading(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && state->pending > 0;
+}
+bool ResourceClient::syncLoading(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && state->syncPending > 0;
+}
 double ResourceClient::loadingProgress(const QString& id) const {
     const auto state = states_.constFind(id);
     return state == states_.cend() ? 0 : state->progress;
 }
-bool ResourceClient::initialSyncComplete(const QString& id) const { return states_.contains(id) && states_[id].initialized; }
+bool ResourceClient::initialSyncComplete(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && state->initialized;
+}
 bool ResourceClient::collectionRead(Read read) { return read == Read::Core || read == Read::Groups || read == Read::Discovery || read == Read::List; }
 bool ResourceClient::parallelRead(const Task& task) { return !task.change && task.forwardToken.isEmpty() && (collectionRead(task.read) || task.read == Read::Detail); }
 void ResourceClient::updateProgress(const QString& id) {
@@ -671,14 +686,22 @@ void ResourceClient::updateProgress(const QString& id) {
     if (!state.syncPending && state.open && !state.suspended) { state.progress = 1; state.initialized = true; }
     else if (state.syncPending) state.progress = std::max(state.progress, double(state.syncCompleted) / (state.syncTotal + 1));
 }
-bool ResourceClient::authenticationRequired(const QString& id) const { return states_.contains(id) && states_[id].suspended; }
+bool ResourceClient::authenticationRequired(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && state->suspended;
+}
 std::optional<ClusterConnection> ResourceClient::connection(const QString& id) const {
     const auto found = states_.constFind(id);
     return found == states_.cend() ? std::optional<ClusterConnection>{} : found->connection;
 }
 QString ResourceClient::logKey(const QString& id, const QString& path) const {
-    const auto row = resource(id, path);
-    return path + '\n' + row["uid"].toString();
+    const auto state = states_.constFind(id);
+    if (state == states_.cend()) return path + '\n';
+    const auto cached = state->resources.constFind(path);
+    if (cached != state->resources.cend() && !cached->value.isEmpty())
+        return path + '\n' + cached->value.value(QStringLiteral("uid")).toString();
+    const auto detail = state->details.constFind(path);
+    return path + '\n' + (detail == state->details.cend() ? QString{} : detail->value.value(QStringLiteral("uid")).toString());
 }
 const PodLogHistory* ResourceClient::logHistory(const QString& id, const QString& path) const {
     const auto state = states_.constFind(id);

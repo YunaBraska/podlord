@@ -2840,9 +2840,20 @@ bool execute(const QString& requestedScenario) {
                 if (!waitFor([&] { return contents->property("contentY").toDouble()>before; })) return failed("tooltip keyboard scrolling");
                 const auto afterKey=contents->property("contentY").toDouble();
                 const auto point=scroll->mapToScene(QPointF(scroll->width()/2,scroll->height()/2));
+                // A short overflow can already be at its end after one key step.
+                QWheelEvent rewind(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                QCoreApplication::sendEvent(window,&rewind);
+                if (!waitFor([&] { return contents->property("contentY").toDouble()<afterKey; }) || radar->property("viewPose")!=pose) return failed("tooltip reverse wheel isolates camera");
+                const auto beforeWheel=contents->property("contentY").toDouble();
                 QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
                 QCoreApplication::sendEvent(window,&wheel);
-                if (!waitFor([&] { return contents->property("contentY").toDouble()>afterKey; }) || radar->property("viewPose")!=pose) return failed("tooltip wheel isolates camera");
+                const bool scrolled=waitFor([&] { return contents->property("contentY").toDouble()>beforeWheel; });
+                if (!scrolled || radar->property("viewPose")!=pose) {
+                    std::fprintf(stderr,"Tooltip wheel: start=%g end=%g content=%g viewport=%g moving=%d accepted=%d cameraChanged=%d visible=%d\n",
+                        beforeWheel,contents->property("contentY").toDouble(),contents->property("contentHeight").toDouble(),contents->height(),
+                        contents->property("moving").toBool(),wheel.isAccepted(),radar->property("viewPose")!=pose,tip->property("visible").toBool());
+                    return failed("tooltip wheel isolates camera");
+                }
             }
             auto* control=item(window,"radarZoom"); QSignalSpy activated(control,SIGNAL(clicked()));
             if (!click(window,control) || !waitFor([&] { return !activated.isEmpty(); })) return failed("tooltip leaves zoom operable");

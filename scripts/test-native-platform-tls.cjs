@@ -80,8 +80,16 @@ async function run() {
         }
         process.stdout.write(result.stdout);
     } finally {
-        if (issuerServer) { issuerServer.closeAllConnections(); await new Promise(resolve => issuerServer.close(resolve)); }
+        if (issuerServer) {
+            if (issuerRequests !== 1 || issuerResponses !== 1)
+                process.stderr.write(`Native issuer fetch: scenario=${scenario} requests=${issuerRequests} responses=${issuerResponses}\n`);
+            issuerServer.closeAllConnections(); await new Promise(resolve => issuerServer.close(resolve));
+        }
         await fs.rm(directory, { recursive: true, force: true });
     }
 }
-run().catch(error => { process.stderr.write(`${error.stderr || error.message}\n`); process.exitCode = 1; });
+run().catch(error => {
+    if (error.stdout) process.stderr.write(error.stdout);
+    process.stderr.write(`${error.stderr || error.message}\n`);
+    process.exitCode = 1;
+});

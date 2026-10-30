@@ -58,11 +58,15 @@ with `open -g`. Before Qt initialization, only the diagnostic process sets
 activation. This switch is checked by the pinned
 [Qt 6.11.2 Cocoa launch delegate](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm).
 Initial QML properties prevent window activation before creation.
+The window also rejects pointer input. The diagnostic skips the shared input
+helper that raises Cocoa windows even during layout checks.
 The driver never raises or activates that window, requires Metal and an exposed
 inactive window, and fails if it observes activation. An unavailable desktop or
 occluded renderer is not replaced by a foreground launch or software result.
 
-Only this diagnostic mutes its disposable profile before loading contexts.
+Routine performance modes mute their disposable profiles before loading
+contexts. Audio behavior has its separate tests. No user profile or system
+volume changes.
 Every JSON record has `diagnosticOnly: true` and the boundary
 `background-cocoa-metal-diagnostic`. The output directory also contains an
 explicit diagnostic-only marker. Existing foreground and offscreen modes retain

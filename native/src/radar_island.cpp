@@ -90,32 +90,39 @@ QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     return entry.source.data(role);
 }
 bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
-    QMap<QString,Entry> incoming;
-    for (const auto& entry:entries) incoming.insert(entry.path,entry);
+    // Projection already supplies unique paths in order. Reconcile that list directly.
+    const auto contains=[&](const QString& path) {
+        const auto found=std::lower_bound(entries.cbegin(),entries.cend(),path,[](const auto& entry,const auto& key) { return entry.path<key; });
+        return found!=entries.cend() && found->path==path;
+    };
     for (int last=int(entries_.size())-1;last>=0;) {
-        if (incoming.contains(entries_[last].path)) { --last; continue; }
+        if (contains(entries_[last].path)) { --last; continue; }
         int first=last;
-        while (first>0 && !incoming.contains(entries_[first-1].path)) --first;
+        while (first>0 && !contains(entries_[first-1].path)) --first;
         beginRemoveRows({},first,last); entries_.remove(first,last-first+1); endRemoveRows(); last=first-1;
     }
     int firstChanged=-1,lastChanged=-1;
+    auto next=entries.cbegin();
     for (int position=0;position<entries_.size();++position) {
-        auto entry=incoming.take(entries_[position].path);
+        while (next->path<entries_[position].path) ++next;
+        auto entry=*next++;
         if (entries_[position].animation==entry.animation) entry.started=entries_[position].started;
         const bool changed=entries_[position].source!=entry.source || entries_[position].world!=entry.world || entries_[position].animation!=entry.animation;
         entries_[position]=entry;
         if (changed || refresh) { if (firstChanged<0) firstChanged=position; lastChanged=position; }
     }
     if (firstChanged>=0) emit dataChanged(index(firstChanged,0),index(lastChanged,0));
-    for (auto next=incoming.cbegin();next!=incoming.cend();) {
-        const auto position=std::lower_bound(entries_.cbegin(),entries_.cend(),next.key(),[](const auto& entry,const auto& path) { return entry.path<path; });
-        int index=int(position-entries_.cbegin());
-        QList<Entry> added;
-        do { added.append(next.value()); ++next; }
-        while (next!=incoming.cend() && (position==entries_.cend() || next.key()<position->path));
-        beginInsertRows({},index,index+static_cast<int>(added.size())-1);
-        for (const auto& entry:added) entries_.insert(index++,entry);
+    int position=0,candidate=0;
+    while (candidate<entries.size()) {
+        if (position<entries_.size() && entries_[position].path==entries[candidate].path) { ++position; ++candidate; continue; }
+        const int first=candidate;
+        while (candidate<entries.size() && (position==entries_.size() || entries[candidate].path<entries_[position].path)) ++candidate;
+        const int count=candidate-first;
+        beginInsertRows({},position,position+count-1);
+        entries_.insert(position,count,Entry{});
+        std::copy_n(entries.cbegin()+first,count,entries_.begin()+position);
         endInsertRows();
+        position+=count;
     }
     return true;
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include "resource_client.h"
 #include <QColor>
 #include <QRegularExpression>
@@ -106,10 +107,11 @@ signals:
     void zoomPreviewChanged();
     void zoomPreviewReady(const QString& session, const QString& path, int percent);
 private:
+    using Fingerprint = std::array<QJsonValue, 4>;
     struct State final {
         QMap<QString, QJsonObject> previous;
         QMap<QString, QDateTime> changedAt;
-        QMap<QString, QJsonObject> triggered;
+        QMap<QString, Fingerprint> triggered;
         QMap<QString, QDateTime> colorUntil, animationUntil;
         QSet<QString> visiblePaths, visibleMatches;
         QVariantList matches;

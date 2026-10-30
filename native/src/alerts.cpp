@@ -525,17 +525,24 @@ bool Alerts::dispatch() {
         const auto result=watcher->result(); watcher->deleteLater(); evaluating_=false;
         auto found=states_.find(session);
         if (found==states_.end() || found->generation!=generation || closed_.contains(session)) { dispatch(); return; }
-        auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,QJsonObject> triggered; QSet<QString> alive, visibleMatches;
+        auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> triggered; QSet<QString> alive, visibleMatches;
         state.initialized = true;
         QDateTime next=result.next;
         const auto deadline=[&](QDateTime at) { if (at>now && (!next.isValid() || at<next)) next=at; };
         for (const auto& rule : catalog.rules) {
             const auto id=rule.value["id"].toString(); bool changed=false; int count=0; QString first, focusPath;
+            const auto color=rule.value[QStringLiteral("color")].toString();
+            const auto animation=rule.value[QStringLiteral("animation")].toString();
+            const auto colorMode=rule.value[QStringLiteral("colorMode")].toString();
+            const auto animationMode=rule.value[QStringLiteral("animationMode")].toString();
+            const int colorSeconds=rule.value[QStringLiteral("colorSeconds")].toInt();
+            const int animationSeconds=rule.value[QStringLiteral("animationSeconds")].toInt();
             QDateTime latestChange; int focusSeverity=-1;
             for (const auto& row : result.matches.value(id)) {
-                const auto path=row["path"].toString(), key=id+'\n'+path+'\n'+row["uid"].toString(); alive.insert(key); ++count; if (first.isEmpty()) first=path;
-                QJsonObject fingerprint{{"status", row["status"]}, {"ready", row["ready"]}, {"restarts", row["restarts"]}, {"issue", row["issue"]}};
-                const bool entered=!state.triggered.contains(key) || state.triggered[key]!=fingerprint; changed=changed || entered; triggered[key]=fingerprint;
+                const auto path=row[QStringLiteral("path")].toString(), key=id+'\n'+path+'\n'+row[QStringLiteral("uid")].toString(); alive.insert(key); ++count; if (first.isEmpty()) first=path;
+                const Fingerprint fingerprint{row[QStringLiteral("status")],row[QStringLiteral("ready")],row[QStringLiteral("restarts")],row[QStringLiteral("issue")]};
+                const auto previous=state.triggered.constFind(key);
+                const bool entered=previous==state.triggered.cend() || previous.value()!=fingerprint; changed=changed || entered; triggered[key]=fingerprint;
                 const auto changedAt=state.changedAt.value(path);
                 const int severity=row["problemSeverity"].toInt();
                 if (entered && (focusPath.isEmpty() || changedAt>latestChange
@@ -544,34 +551,36 @@ bool Alerts::dispatch() {
                 }
                 const bool visible = state.visiblePaths.contains(path);
                 if (visible) visibleMatches.insert(key);
-                const auto startHold = [&](const QString& action, QMap<QString, QDateTime>& holds) {
-                    const auto mode = rule.value[action + "Mode"].toString();
-                    if (mode == "no-match" || (action == "animation" && baseline)) return;
+                const auto startHold = [&](const QString& mode, int seconds, bool initialAnimation, QMap<QString, QDateTime>& holds) {
+                    if (mode == "no-match" || initialAnimation) return;
                     if (mode == "new-in-view") {
                         if (!baseline && visible && !state.visibleMatches.contains(key))
-                            holds[key] = now.addSecs(rule.value[action + "Seconds"].toInt());
+                            holds[key] = now.addSecs(seconds);
                     } else if (entered && (!holds.contains(key) || holds.value(key) <= now)) {
-                        holds[key] = mode == "once" ? now.addMSecs(1350) : now.addSecs(rule.value[action + "Seconds"].toInt());
+                        holds[key] = mode == "once" ? now.addMSecs(1350) : now.addSecs(seconds);
                     }
                 };
-                if (rule.value["color"] != "none") startHold("color", state.colorUntil);
-                if (rule.value["animation"] != "none") startHold("animation", state.animationUntil);
+                if (color != "none") startHold(colorMode, colorSeconds, false, state.colorUntil);
+                if (animation != "none") startHold(animationMode, animationSeconds, baseline, state.animationUntil);
             }
             if (count) matches.append(QVariantMap{{"id", id}, {"name", rule.value["name"].toString()}, {"count", count}, {"path", first}});
             if (!baseline && changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
             if (!baseline && !focusPath.isEmpty() && rule.value["zoom"].toInt()>0) emit focusRequested(session, focusPath, rule.value["zoom"].toInt());
             if (!rule.value["enabled"].toBool()) continue;
+            const bool hasColor=color!="none" && (colorMode=="no-match" ? count>0 : !state.colorUntil.isEmpty());
+            const bool hasAnimation=animation!="none" && (animationMode=="no-match" ? count>0 : !state.animationUntil.isEmpty());
+            if (!hasColor && !hasAnimation) continue;
             for (const auto& row : result.rows) {
-                const auto path=row["path"].toString(), key=id+'\n'+path+'\n'+row["uid"].toString();
+                const auto path=row[QStringLiteral("path")].toString(), key=id+'\n'+path+'\n'+row[QStringLiteral("uid")].toString();
                 const bool matching=alive.contains(key);
-                const auto active=[&](const QString& action, const QMap<QString,QDateTime>& holds) {
-                    const auto mode=rule.value[action+"Mode"].toString(); if (mode=="no-match") return matching;
+                const auto active=[&](const QString& mode, const QMap<QString,QDateTime>& holds) {
+                    if (mode=="no-match") return matching;
                     const auto until=holds.value(key); deadline(until);
                     return until>now && (mode!="new-in-view" || (matching && state.visiblePaths.contains(path)));
                 };
                 auto effect=effects.value(path);
-                if (rule.value["color"]!="none" && active("color", state.colorUntil) && !(rule.value["color"]=="fresh" && effect.contains("color"))) effect["color"]=rule.value["color"].toString();
-                if (rule.value["animation"]!="none" && active("animation", state.animationUntil)) effect["animation"]=rule.value["animation"].toString();
+                if (hasColor && active(colorMode, state.colorUntil) && !(color=="fresh" && effect.contains("color"))) effect["color"]=color;
+                if (hasAnimation && active(animationMode, state.animationUntil)) effect["animation"]=animation;
                 if (!effect.isEmpty()) effects[path]=effect;
             }
         }
