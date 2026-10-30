@@ -9,9 +9,16 @@ public:
     explicit ResourceDisplayModel(QAbstractItemModel* source) {
         setSourceModel(source);
         // Eligibility depends on row position after sorting and removals.
-        connect(source, &QAbstractItemModel::layoutChanged, this, [this] { refreshRows(); });
-        connect(source, &QAbstractItemModel::rowsInserted, this, [this] { refreshRows(); });
-        connect(source, &QAbstractItemModel::rowsRemoved, this, [this] { refreshRows(); });
+        connect(source, &QAbstractItemModel::layoutChanged, this, [this, source] {
+            if (source->rowCount() > limit_) refreshRows();
+        });
+        // Only shifts inside the capped prefix can change existing eligibility.
+        connect(source, &QAbstractItemModel::rowsInserted, this, [this, source](const QModelIndex&, int first, int) {
+            if (first < limit_ && source->rowCount() > limit_) refreshRows();
+        });
+        connect(source, &QAbstractItemModel::rowsRemoved, this, [this, source](const QModelIndex&, int first, int last) {
+            if (first < limit_ && qint64(source->rowCount()) + last - first + 1 > limit_) refreshRows();
+        });
     }
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override {
         const auto value = QSortFilterProxyModel::data(index, role);

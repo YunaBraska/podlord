@@ -1182,7 +1182,23 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!capture.isEmpty()) window->grabWindow().save(capture);
         }
         if (shown && (scenario=="metric_radar_gauges" || scenario=="metric_radar_gauges_narrow")) {
-            if (!waitFor([] { return radarGaugesFit("25 mCPU","100 mCPU"); })) { std::fprintf(stderr,"Radar metric gauges or labeled reference markers are missing or overlap.\n"); return false; }
+            if (!waitFor([] { return radarGaugesFit("25 mCPU","100 mCPU"); })) {
+                std::fprintf(stderr,"Radar metric gauges or labeled reference markers are missing or overlap.\n");
+                for (auto* surface : QGuiApplication::allWindows()) if (auto* quick=qobject_cast<QQuickWindow*>(surface)) {
+                    auto* heading=item(quick,"plainTipText");
+                    if (!heading || !heading->isVisible() || !heading->parentItem()) continue;
+                    for (const auto& name:QStringList{"metric_cpu_bar","metric_memory_bar","metric_cpu_marker_request","metric_cpu_marker_limit",
+                            "metric_cpu_usage","metric_cpu_references","metric_cpu_measurement","metric_storage_measurement"}) {
+                        const auto* field=visualItem(heading->parentItem(),name);
+                        if (!field) { qWarning()<<"Radar metric missing:"<<name; continue; }
+                        qWarning()<<"Radar metric:"<<name<<"visible:"<<field->isVisible()
+                            <<"scene:"<<field->mapRectToScene(QRectF(QPointF{},field->size()))<<"text:"<<field->property("text").toString();
+                    }
+                }
+                const auto capture=qEnvironmentVariable("PODLORD_RADAR_METRIC_FRAME");
+                if (!capture.isEmpty()) window->grabWindow().save(capture);
+                return false;
+            }
             const auto capture=qEnvironmentVariable("PODLORD_RADAR_METRIC_FRAME");
             if (!capture.isEmpty() && !window->grabWindow().save(capture)) return false;
         }

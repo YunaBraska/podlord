@@ -57,6 +57,10 @@ broader UI/runtime code has many independently verified public behaviors but
 does not yet meet the former 90% aggregate branch threshold. This decision
 does not waive missing behavior, package, device, image, or performance evidence.
 
+The capped display model's source-change optimization has a separate 90% branch
+gate across its complete constructor family, including the insertion, removal
+and layout callbacks. The existing overall and Radar/Map gates remain unchanged.
+
 CI uploads evidence only, not unsigned or legally unreviewed native release
 binaries. macOS Developer ID/notarization, license notices, clean-device
 installation, other platform builds and function parity remain independent
@@ -185,6 +189,13 @@ six processes: 130.83 s and 76.08 s. This motivates bounded concurrency, not a
 hosted-run performance claim. Desktop focus, CPU and RSS measurements remain
 exclusive. The 60-minute job budget and release coverage/performance targets are unchanged;
 Intel's previous incomplete run must be replaced by executed evidence.
+
+Only the six multi-theme Radar image tests run exclusively within CTest. The
+October 30 Intel run exceeded five 45-second capture watchdogs under concurrent
+load, while the same checks completed individually in 19.73 to 29.05 seconds.
+Their 45-second watchdogs, rendered-color assertions and theme matrix remain
+unchanged. Other functional tests keep their bounded parallel pool. Generated
+CTest metadata is checked for all six exclusive registrations.
 
 The C# comparison CI requests Release compilation so runtime budgets exercise
 optimized code. It does not remove legacy regression cases or change their

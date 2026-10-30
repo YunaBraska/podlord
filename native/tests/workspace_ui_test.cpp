@@ -4982,6 +4982,15 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
                     || !waitFor([&] { return workspace.themeName() == names[themeIndex] && workspace.themeVariant() == variant; })) return failure("theme selection");
                 for (int index = 0; index < sections.size(); ++index)
                     if (!section(index) || !capture("settings-" + sections[index].first, themeIndex, variant)) return false;
+                if (!workspace.setWorkspacePage("map") || workspace.mapOverview()
+                    || !capture("map-context",themeIndex,variant)) return failure("theme context map capture");
+                if (!workspace.showMapOverview() || !waitFor([&] {
+                    if (!workspace.mapOverview() || workspace.contexts().isEmpty()) return false;
+                    const auto context=workspace.contexts().first().toMap().value("id").toString();
+                    const auto* preview=item(window,"contextMapPreview_"+context);
+                    return preview && preview->property("status").toInt()==1;
+                }) || !capture("map-overview",themeIndex,variant)) return failure("theme persisted overview capture");
+                if (!workspace.navigateMap(-1) || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })) return failure("theme map history back");
                 for (const auto& view : QList<QPair<QString, QString>>{{"resources", "resourcesWorkspaceButton"},
                     {"radar", "radarWorkspaceButton"}, {"events", "eventsWorkspaceButton"}, {"ports", "portForwardTasksButton"}}) {
                     if (!click(window, item(window, view.second))) return failure("theme workspace navigation");
@@ -5003,6 +5012,17 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
                     if (!capture("inspector-" + view.first, themeIndex, variant)) return false;
                 }
                 if (!click(window, item(window, "closeInspector"))) return failure("theme inspector close");
+                if (!workspace.filterField("kind","\"Pod\"") || !type(window,item(window,"resourceFilter"),"\"visual-multi-container\"") || !waitFor([&] {
+                    const auto* cell=item(window,"cell_0_0"); return workspace.resourceCount()==1 && cell && cell->isVisible();
+                }) || !click(window,item(window,"cell_0_0")) || !waitFor([&] { return workspace.canEditYaml(); })) return failure("theme terminal Pod readiness");
+                if (!workspace.setInspectorPage("terminal") || !waitFor([&] {
+                    const auto* connect=item(window,"terminalConnect"); return connect && connect->isVisible() && connect->isEnabled();
+                }) || !capture("inspector-terminal",themeIndex,variant)) return failure("theme terminal ready form capture");
+                if (!workspace.setInspectorPage("overview") || !waitFor([&] {
+                    const auto* terminal=item(window,"terminalConnect");
+                    const auto* close=item(window,"closeInspector");
+                    return (!terminal || !terminal->isVisible()) && close && close->isVisible() && close->isEnabled();
+                }) || !click(window,item(window,"closeInspector"))) return failure("theme terminal inspector close");
                 auto* sidebarHost = item(window, "workspaceSidebarHost");
                 auto* drawer = window->findChild<QObject*>("sidebarDrawer");
                 const bool revealSidebar = !(sidebarHost && sidebarHost->isVisible())

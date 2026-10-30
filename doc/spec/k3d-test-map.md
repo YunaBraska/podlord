@@ -6597,15 +6597,68 @@ Evidence under `release-evidence/2026-10-30-performance-parity/`:
   This package precedes the final binding-loop correction. Android, iOS ARM64
   simulator and iOS device builds also pass before that last correction.
 
-The complete `bounded-input-full-linux/` run records its exact input patch. It
-started before the final binding-loop correction and four new regressions, so
-its result must not be described as a complete final-source pass. Current-source
-mobile execution, packaging, paired screenshots and foreground gates remain open.
+The complete `bounded-input-full-linux/` run records its exact input patch and
+passes six preflight plus 5,010 remaining executions. Coverage is 97.75% lines,
+85.70% branches and 836/920, 90.87%, for the Radar/Map family. It started before
+the final binding-loop correction and four new regressions, so it is not a
+complete final-source pass. The final targeted run above covers that correction.
+
+After commit `02c38d3`, `radar-current-android-device/` passes all 12 real
+Kubernetes UI steps on the signed Android 36 ARM64 emulator package. Cold
+Activity launch is 864 ms. The installed regular-file sum is 99,755,350 bytes,
+below 100,000,000. Signature, 16 KiB ZIP alignment, network-only system permissions and
+byte-for-byte APK.zip extraction pass. `radar-current-ios-themes/` completes all
+684 real-Kubernetes iPhone ARM64 simulator captures: 19 themes, two variants,
+18 views. Both lanes stop their owned device, profile and cluster. These are
+simulated-device results, not physical-phone or C#/C++ paired-image evidence.
+The current macOS packaging run is `radar-current-macos-package/`.
+Paired screenshots and foreground gates remain open. Hosted CI for `02c38d3`
+completed with native macOS failures. Its trust-fixture change is not a fix.
 
 The optional installed-package Grype scan reports 45 FFmpeg 7.1.5 version/CPE
 matches. A match is not proof of reachable vulnerable code. In particular, the
 reported critical CENC integer-overflow fix is already listed in the upstream
 [7.1.4 changelog](https://github.com/FFmpeg/FFmpeg/blob/n7.1.5/Changelog).
-Other findings still need shipped-component, configuration and backport review.
-The scan is retained as `bounded-input-macos-grype.json`; it is neither blanket
-security clearance nor a reason to suppress every match.
+The current application gives its media decoder only bundled OGG assets, not
+arbitrary media files or URLs. The public catalog-reference, asset, unknown-sound
+and sound-type cases pass in the complete run. The corresponding runtime/store
+entrypoints resolve catalog IDs and reject injected source fields. ADR 0025
+records that boundary and why future sound import needs a renewed decoder audit.
+This does not erase the dependency findings. The scan remains retained as
+`bounded-input-macos-grype.json`, without a blanket suppression rule or a claim
+that the bundled FFmpeg build is free of vulnerabilities.
+
+## 2026-10-30: Capped Display Updates And Complete Native Theme Surfaces
+
+The display proxy no longer re-filters unchanged row eligibility for source
+changes beyond its capped prefix or when the complete source fits below the
+cap. The 256-row default, sorting, filtering, copy roles and visible values are
+unchanged. No second resource cache or refresh timer was added.
+
+Evidence below is under `release-evidence/2026-10-30-performance-parity/`.
+
+| Boundary | Executed result | Limit of this evidence |
+| --- | --- | --- |
+| Same 5,000-resource, three-session software workload before/after the display-prefix change | Cached tab p95 63.113 to 39.736 ms; peak RSS 211,648,512 to 177,127,424 bytes. After: filter 39.278 ms, sort 33.244 ms, Inspector 35.569 ms, 60-second idle 0.779%, warm growth 688,128 bytes. All software gates pass. | `display-prefix-before/` and `display-prefix-after/`; not a foreground Metal or installed-startup pass. |
+| Complete Linux native suite with the current production optimization | Six preflight plus 5,014 remaining executions pass. Lines 97.75%, overall branches 85.73%, display-prefix constructor/callback family 14/14 branches, Radar/Map family 837/920, 90.98%. | `display-prefix-full-linux/` records its source patch. Later changes only add failure diagnostics and capture scheduling, checked separately. Counts include style variants, not 5,020 different product features. |
+| Existing filter/table/column/Map/Radar regressions | 723/723 executions pass. | `display-prefix-check.log`. |
+| Real local Kubernetes, current host drivers | All five interactive Terminal journeys, window transfer, forward lifecycle/context removal, deletion/race, Inspector history, cache-only search, resource fields, metrics and health pass. | `display-prefix-real-e2e/` and its log. These are headless native UI journeys, not paired C#/C++ images. |
+| Native iPhone theme matrix through real Kubernetes TLS | 798 images: every one of 19 themes and two variants contains the exact same 21-view set, now including context Map, persisted overview and Terminal ready form. | `map-terminal-ios-themes/`; the Terminal picture is disconnected. Connected shell/vi/interruption are proved by the separate real E2E journeys. |
+| Current signed Android APK on disposable Android 36 ARM64 emulator | All 12 real accessibility/touch journeys pass. Cold Activity launch 630 ms; installed regular-file sum 99,755,317 bytes. Emulator, ADB, private ports/profile and fixture are cleaned. | `display-prefix-android-device/`; simulated device, not live cloud OAuth or physical hardware. `cleanup.json` confirms the trap completed. |
+| Current private Android package | APK 98,319,522 bytes; approved APK.zip 37,476,153 bytes. Signature, 16 KiB alignment and byte-for-byte extraction pass. System permissions are network only. The app-private dynamic-receiver permission is signature protected. | `display-prefix-android-package/`; not a store release. |
+| Current macOS package and iOS ARM64 device build | macOS ZIP 33,739,072 bytes, installed 87,398,076 bytes; dependency/platform/signature checks pass. iOS device build passes after removing stale SDK 27.1 library paths from the owned build cache following the local SDK 27.2 update. | `display-prefix-macos-package/` and `display-prefix-ios-device-sdk27.2-build.log`; no physical-device, clean-install or new foreground claim. |
+| Capture concurrency and failure localization | Six expensive Radar theme tests have verified `RUN_SERIAL=true` and unchanged 45-second watchdogs; all six pass in 43.31 seconds total. Ten affected CI regressions pass locally, and the port keyboard case passes 16 repeat executions across Basic/Fusion. | `theme-capture-scheduling.txt`, `theme-capture-serial-check.log`, `current-ci-regression-check.log`, `ports-keyboard-reproduce.log`. Intel-specific failures are not declared fixed by local passes. |
+
+Hosted `02c38d3` passes Linux x64/ARM64, Windows x64, the iOS device build/bundle
+job and the C# k3d lane. macOS ARM64 fails the port keyboard case and the two
+native trust timing cases. macOS Intel fails narrow Radar metric layout and
+five concurrent multi-theme capture watchdogs. New geometry/frame diagnostics
+cover the previously unobserved narrow-gauge failure, and keyboard diagnostics
+separate navigation from unexpected API traffic. The native trust test-method
+decision remains pending. No certificate validation is bypassed.
+
+Release remains blocked by unclosed hosted native failures, current foreground
+Metal/frame/idle and installed-start measurements, and current paired C#/C++
+image evidence. The hidden-metric-view optimization and user-sound import
+boundary await decisions. Paused Google publisher registration is not treated
+as a passed personal GKE-login check. No release gate or feature was waived.

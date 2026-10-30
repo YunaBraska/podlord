@@ -12,6 +12,16 @@ Persist rule definitions and the mute/reduced-motion preferences in a private, v
 
 One deadline timer owns bounded effects and time-dependent evaluation. A lazily created Qt Multimedia player owns local preview/playback; mute stops playback and no hidden view owns a refresh loop. Bundled sounds retain their real source/license attribution. Regular expressions have bounded match/depth work and explicit failure feedback.
 
+The current playback boundary accepts catalog IDs, not media paths or URLs.
+The catalog resolves all 116 actual audio assets to embedded `qrc:` OGG data.
+Rule decoding rejects unknown IDs and extra fields; preview also resolves an ID
+through that catalog before creating a player. Attribution source URLs are not
+playback URLs. This matters when reviewing FFmpeg version-based vulnerability
+matches: untrusted Kubernetes data or rule JSON cannot choose decoder input in
+the current implementation. It is not blanket decoder clearance. The specified
+future user-sound import needs its own format/size/retention decision and renewed
+decoder review before accepting untrusted media. That capability remains open.
+
 ## Alternatives And Consequences
 
 Evaluating only the visible filter set was rejected because filters could conceal operational alarms. Per-view timers were rejected because they duplicate lifecycle ownership and replay hidden work. A second configuration framework was unnecessary: existing private-profile conventions cover conflict-safe persistence.

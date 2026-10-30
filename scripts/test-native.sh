@@ -85,6 +85,19 @@ if ! awk '/credentialRevision/ { credential=1 }
     exit 1
 fi
 "$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/resource_display_model.h" \
+    | awk '/ResourceDisplayModelC[12]E/ { print }' > "$BUILD/coverage/display-prefix-functions.txt"
+cat "$BUILD/coverage/display-prefix-functions.txt"
+if ! awk '{ total+=$(NF-2); missed+=$(NF-1) }
+          END {
+              if (total<=0) exit 1
+              printf "Display-prefix constructor-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
+              if (100*(total-missed)/total<90) exit 1
+          }' "$BUILD/coverage/display-prefix-functions.txt"; then
+    printf 'Native display-prefix coverage gate failed: require 90%% branches across the constructor and its source-change callbacks.\n' >&2
+    exit 1
+fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
     "$ROOT/native/src/radar_island.cpp" "$ROOT/native/src/workspace.cpp" "$ROOT/native/src/workspace_map.cpp" "$ROOT/native/src/map_previews.cpp" "$ROOT/native/src/kubeconfig_store.cpp" \
     | awk '/RadarIsland|RadarTiles|oscillation|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|navigateMap|visitMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
     > "$BUILD/coverage/radar-map-functions.txt"

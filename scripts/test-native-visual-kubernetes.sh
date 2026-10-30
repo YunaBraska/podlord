@@ -370,9 +370,15 @@ if [ "$MODE" = ios-themes ]; then
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const matrix=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 assert.equal(matrix.platform,'ios');
-assert.equal(matrix.captures.length,684);
-assert.equal(new Set(matrix.captures.map(frame=>frame.theme)).size,19);
-console.log('iOS real Kubernetes theme matrix passed: 19 themes, two variants, 18 views.');
+const views=[...['alerts','appearance','diagnostics','graphics','privacy','sources','sync','workspace','about'].map(section=>'settings-'+section),
+    'map-context','map-overview','resources','radar','events','ports',
+    ...['overview','yaml','events','links','values','terminal'].map(section=>'inspector-'+section)].sort();
+assert.equal(matrix.captures.length,19*2*views.length);
+const themes=new Set(matrix.captures.map(frame=>frame.theme));
+assert.equal(themes.size,19);
+for(const theme of themes) for(const variant of ['dark','light'])
+    assert.deepEqual(matrix.captures.filter(frame=>frame.theme===theme&&frame.variant===variant).map(frame=>frame.view).sort(),views);
+console.log('iOS real Kubernetes theme matrix passed: 19 themes, two variants, 21 views including both maps and the terminal ready form.');
 JS
     printf 'iOS review completed; cleaning up owned simulator, cluster and profiles.\n'
     exit 0
