@@ -1660,6 +1660,10 @@
                                                 Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutGithubRepoButtonText}" />
                                         <Button Click="AboutOpenLinkClicked"
+                                                Tag="{Binding AboutPrivacyPolicyUrl}"
+                                                Padding="{StaticResource PlPaddingButton}"
+                                                Content="{Binding AboutPrivacyPolicyButtonText}" />
+                                        <Button Click="AboutOpenLinkClicked"
                                                 Tag="{Binding AboutIssueUrl}"
                                                 Padding="{StaticResource PlPaddingButton}"
                                                 Content="{Binding AboutCreateIssueButtonText}" />

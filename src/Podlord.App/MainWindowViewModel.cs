@@ -629,6 +629,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string AboutGithubRepoButtonText => T("about.githubRepo");
 
+    public string AboutPrivacyPolicyButtonText => T("about.privacyPolicy");
+
     public string AboutCreateIssueButtonText => T("about.createIssue");
 
     public string AboutSponsorsButtonText => T("about.sponsors");
@@ -682,6 +684,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public string PortForwardColumnTooltipText => T("tooltip.portForwardColumn");
 
     public string AboutRepoUrl => "https://github.com/YunaBraska/podlord";
+
+    public string AboutPrivacyPolicyUrl => "https://yunabraska.github.io/podlord/privacy.html";
 
     public string AboutIssueUrl => "https://github.com/YunaBraska/podlord/issues/new";
 
@@ -6615,6 +6619,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         nameof(AboutProjectHeadingText),
         nameof(AboutStarRepoButtonText),
         nameof(AboutGithubRepoButtonText),
+        nameof(AboutPrivacyPolicyButtonText),
         nameof(AboutCreateIssueButtonText),
         nameof(AboutSponsorsButtonText),
         nameof(AboutBuyMeACoffeeButtonText),

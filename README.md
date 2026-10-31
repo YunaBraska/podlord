@@ -49,15 +49,14 @@ Release assets are built for:
 
 Each release also includes `SHA256SUMS` for archive verification.
 
-macOS builds are ad-hoc signed but not notarized. Without an Apple Developer license, opening the app can be nasty: Gatekeeper may require right-click Open, Privacy & Security approval, or removing quarantine on the downloaded app.
+Stable macOS releases are signed with Developer ID and notarized. Preview assets
+are not a supported installation channel.
 
 Open on macOS:
 
 1. Unzip the release.
 2. Move `Podlord.app` to `/Applications`.
-3. Right-click `Podlord.app`, then choose `Open`.
-4. If blocked, allow Podlord in `System Settings -> Privacy & Security`.
-5. Last resort: `xattr -dr com.apple.quarantine /Applications/Podlord.app`.
+3. Open `Podlord.app` normally.
 
 ## Run From Source
 
