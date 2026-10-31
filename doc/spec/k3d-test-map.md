@@ -6845,3 +6845,51 @@ The retained session-scoped QML baseline fails the same-context coordinate and
 preview comparison. The context-scoped version passes all four new cases in
 7.08 seconds and all 211 affected Radar/UI executions in 217.54 seconds.
 These checks do not replace complete package, platform or release measurements.
+
+### Rebased Store and session-handoff packet, October 31
+
+The C++ branch was rebased onto main with all existing native source retained.
+The upstream Avalonia upgrade required the explicit PNG encoder API in the C#
+frame-hash test. The resource-map integration assertion now requests a complete
+fresh snapshot and waits for its declared fixtures, matching the existing
+real-cluster discovery readiness contract.
+
+- `native.window.handoff_{Basic,Fusion}` switches warmed contexts through the
+  public workspace action, observes the public table-model lifecycle, and
+  checks filter, inspector identity and camera restoration without empty
+  remove/insert transitions.
+- `native.about.privacy_{Basic,Fusion}` clicks the actual privacy link. Only the
+  external browser handoff is intercepted. No Kubernetes request is expected.
+- `native.store.*` runs in the separately compiled native Store channel. It
+  covers app-owned import independence, rejected folders/external references,
+  explicit unknown-provider rejection, preserved native OIDC parsing, denied
+  home/original refresh, hidden controls and disabled/cached update actions.
+- `native.tls.platform_delayed` and `platform_cancel_pending` use a real full
+  certificate chain with Apple's unchanged evaluator. A test-only Security
+  callback interposer delays delivery. Cancellation must return before that
+  real completion. No production certificate policy or timing gate changes.
+
+Evidence is retained under `2026-10-31-app-store`. Passing these targeted cases
+alone does not establish full visual parity, foreground performance, Store
+submission or release readiness.
+
+### Native Store, Universal2 and session handoff acceptance, 2026-10-31
+
+These are local working-tree checks after the main rebase, not a published or Store-signed release. Native test totals count executable scenarios and explicit Qt-style variants, not distinct product features.
+
+| Boundary | Result |
+| --- | --- |
+| C# comparison reference after rebase | 460/460, including 84 local Kubernetes cases. |
+| Final normal native suite | 6 preflights plus 5,180 remaining tests passed. Production line coverage 97.81%, branch coverage 85.70%. |
+| Store/provider/import selection | 218/218 passed. The narrower Store CI selection now contains 213 cases, including GKE confirmation in Basic and Fusion. |
+| Changed C++ branches in this packet | 42/46 outcomes, 91.30%, combining normal and Store builds against native baseline `470101a`. This does not measure QML, shell scripts or other platform builds. LLVM also reported one function-data mismatch. That warning is not suppressed. |
+| Paste and authentication UI | 40/40 normal-build cases passed. Store origin entry stays hidden. Full prompt bounds, not just their centre, are checked at 320 pixels. Local portrait and 1,440-pixel screenshots were inspected. CI retains the Store frames. |
+| Cached session handoff | Eight Basic/Fusion cases cover equal, growing and shrinking snapshots and Events clearing/restoration. Equal-size handoff retains the visible cell. Returning to cached Events causes no API requests. |
+| Real local Kubernetes | TLS/client-certificate authentication, multi-container logs, YAML/JSON Patch, conflict reconciliation, Secret remasking, interactive PTY/vi/ANSI/resize/interrupts and deletion/UID protection passed. The owned temporary cluster was removed. |
+| Store thin packages | ARM64 and Intel packages passed dependency-path, macOS-13-floor, signature-preflight and existing thin-size checks using explicit matching OpenSSL SDK roots. Ad-hoc signing is not distribution signing. |
+| Universal2 composition | Both architectures merged successfully. Installed regular files total 173,613,844 bytes. Unsigned PKG is 66,747,637 bytes. Existing 100/50-MB gates are unchanged and therefore not satisfied by this combined package. |
+| Packaging guards | Nine public CLI guard cases passed, including existing-output preservation and archive symlink traversal rejection. An unsigned-PKG round-trip matched all 730 files/symlinks, modes and file hashes before the final UI-only rebuild. |
+
+The last valid foreground performance run remains a blocker: interaction latency passes, but per-frame CPU exceeds 8 ms, warmed RSS grows 8,224,768 bytes against 5 MB, and nonsync idle CPU is 2.44% of one core against 2%. It predates the final authentication-layout-only fix and is not final release clearance. The nonactivating Metal/sample run is diagnostic only. Full current cross-platform picture/device and distribution/license evidence is not established by these local checks.
+
+Local detailed evidence is retained in the `2026-10-31-app-store` comparison-evidence directory, outside Git. Package reproduction must set `OPENSSL_ROOT_DIR` for the matching architecture as well as `CMAKE_PREFIX_PATH`. Omitting the root selected the host Homebrew library and correctly failed the macOS-13 floor check. No tag, release, Store upload, production-cluster access or Google-account changes were performed.

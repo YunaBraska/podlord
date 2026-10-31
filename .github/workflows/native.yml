@@ -192,7 +192,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/native-radar-failures"
           printf 'PODLORD_RADAR_ACTION_EVIDENCE=%s/native-radar-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           brew install cmake ninja python
-          node --test scripts/test-native-macos-toolchain.cjs
+          node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs
           printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           printf 'CMAKE_PREFIX_PATH=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_ENV"
           printf 'OPENSSL_ROOT_DIR=%s/native-toolchain/openssl\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
@@ -263,6 +263,22 @@ jobs:
             fi
           fi
           exit "$status"
+      - name: Verify native Mac App Store boundaries
+        if: ${{ !cancelled() }}
+        run: |
+          store="$RUNNER_TEMP/native-store"
+          cmake -S native -B "$store" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_MAC_APP_STORE=ON > "$RUNNER_TEMP/native-store.log" 2>&1
+          cmake --build "$store" --target store-boundary-test podlord-native native-eks-test native-gke-test native-oci-test gke-import-ui-test oci-import-ui-test workspace_ui_test --parallel 3 >> "$RUNNER_TEMP/native-store.log" 2>&1
+          export PODLORD_SHELL_EVIDENCE="$RUNNER_TEMP/native-store-frames"
+          ctest --test-dir "$store" --tests-regex '^native\.(store\.|authentication\.(eks|gke|oci)_|source_import\.(gke|oci)_|ui\.gke_prompt_)' --no-tests=error --output-on-failure --parallel 2 >> "$RUNNER_TEMP/native-store.log" 2>&1
+          tail -n 25 "$RUNNER_TEMP/native-store.log"
+      - name: Build and inspect the native Store slice
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          PODLORD_MAC_APP_STORE=ON /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-store-package" > "$RUNNER_TEMP/native-store-package.log" 2>&1 || status=$?
+          tail -n 25 "$RUNNER_TEMP/native-store-package.log"
+          exit "$status"
       - name: Build and inspect the native macOS package
         id: package
         if: ${{ !cancelled() }}
@@ -317,6 +333,11 @@ jobs:
             ${{ runner.temp }}/native-toolchain.log
             ${{ runner.temp }}/native-toolchain/build-inputs.txt
             ${{ runner.temp }}/native-macos-cache-inputs.log
+            ${{ runner.temp }}/native-store.log
+            ${{ runner.temp }}/native-store-frames
+            ${{ runner.temp }}/native-store-package.log
+            ${{ runner.temp }}/native-store-package/podlord-native.zip
+            ${{ runner.temp }}/native-store-package/package-evidence.txt
             ${{ runner.temp }}/native-package.log
             ${{ runner.temp }}/native-package-startup.log
             ${{ runner.temp }}/native-package-boundaries.log
@@ -328,6 +349,7 @@ jobs:
             ${{ runner.temp }}/native-package/package-evidence.txt
             ${{ runner.temp }}/native-package/runtime-dependencies.txt
             ${{ runner.temp }}/native-package/libraries.txt
+            ${{ runner.temp }}/native-package/podlord-native.zip
 
   ios:
     name: Native iOS ARM64 build and bundle checks

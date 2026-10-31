@@ -184,7 +184,7 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
-                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
+                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; visible: !workspace.appStore; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: !workspace.appStore && importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
                     IconButton {
                         id: sourceActionsButton
                         objectName: "sourceActionsMenuButton"
@@ -207,12 +207,12 @@ Pane {
                         contentItem: ColumnLayout {
                             spacing: 4
                             IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: "Browse kubeconfig file"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
-                            IconButton { objectName: "browseSourceFolder"; glyph: ""; showText: true; text: "Browse kubeconfig folder"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
+                            IconButton { objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Browse kubeconfig folder"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
                             IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: "Paste kubeconfig"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
-                            IconButton { objectName: "importHomeButton"; glyph: ""; showText: true; text: "Import ~/.kube/config"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
-                            IconButton { objectName: "refreshSourceFilesButton"; glyph: ""; showText: true; text: "Reimport changed source files"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
+                            IconButton { objectName: "importHomeButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Import ~/.kube/config"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
+                            IconButton { objectName: "refreshSourceFilesButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Reimport changed source files"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
                             IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: "Import OCI API key"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
-                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: "Import GKE service-account key"; Layout.fillWidth: true; visible: Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
+                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: "Import GKE service-account key"; Layout.fillWidth: true; visible: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
                             IconButton { glyph: ""; showText: true; text: "Reload imported metadata"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.reload() } }
                         }
                     }

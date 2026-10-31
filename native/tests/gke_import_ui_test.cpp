@@ -39,7 +39,7 @@ bool run(const QString& scenario) {
         "      command: gke-gcloud-auth-plugin\ncontexts:\n- name: google\n  context:\n    cluster: google\n    user: google\n");
     if (!std::holds_alternative<SourceSnapshot>(source)) return false;
     const auto contextId = std::get<SourceSnapshot>(source).contexts.first().id;
-#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID) && !defined(PODLORD_MAC_APP_STORE)
     const auto original = store.connection(contextId);
     const auto* originalConnection = std::get_if<ClusterConnection>(&original);
     if (!originalConnection || !originalConnection->exec || originalConnection->exec->gke) return false;

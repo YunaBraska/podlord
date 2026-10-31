@@ -132,7 +132,8 @@ ColumnLayout {
             model: about.visible ? [
                 {id: "Star", text: workspace.uiText["about.starRepo"], url: "https://github.com/YunaBraska/podlord/stargazers"},
                 {id: "Project", text: workspace.uiText["about.githubRepo"], url: "https://github.com/YunaBraska/podlord"},
-                {id: "Issues", text: workspace.uiText["about.createIssue"], url: "https://github.com/YunaBraska/podlord/issues/new"}
+                {id: "Issues", text: workspace.uiText["about.createIssue"], url: "https://github.com/YunaBraska/podlord/issues/new"},
+                {id: "Privacy", text: workspace.uiText["about.privacyPolicy"], url: "https://yunabraska.github.io/podlord/privacy.html"}
             ] : []
             LinkButton {}
         }

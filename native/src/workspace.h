@@ -31,7 +31,7 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
-    bool publish(const QJsonArray& rows, const QString& cluster = {});
+    bool publish(const QJsonArray& rows, const QString& cluster = {}, bool replace = false);
     QJsonObject row(int index) const;
     bool setAppearance(const Appearance& appearance);
 private:
@@ -85,6 +85,7 @@ private:
 /** UI reads snapshots only. Public actions schedule real stores/transport work. */
 class Workspace final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(bool appStore READ appStore CONSTANT)
     Q_PROPERTY(QVariantList contexts READ contexts NOTIFY catalogsChanged)
     Q_PROPERTY(podlord::Alerts* alerts READ alerts CONSTANT)
     Q_PROPERTY(podlord::ReleaseUpdates* releaseUpdates READ releaseUpdates CONSTANT)
@@ -391,6 +392,13 @@ public:
     Q_INVOKABLE bool copyEventCell(int row, int column);
     Q_INVOKABLE bool copyPathCell(const QString& path, int column, bool event);
     int resourceCount() const { return table_.rowCount(); }
+    bool appStore() const {
+#ifdef PODLORD_MAC_APP_STORE
+        return true;
+#else
+        return false;
+#endif
+    }
     int totalResourceCount() const { return rows_.rowCount(); }
     QAbstractItemModel* dashboardTable() { return &dashboardRows_; }
     QString dashboardSummary() const { return dashboardSummary_; }
@@ -774,7 +782,7 @@ private:
     std::optional<PendingLeave> pendingLeave_;
     bool yamlFresh_ = false;
     QMap<QString, Navigation> navigation_;
-    QString active_, error_;
+    QString active_, error_, publishedSession_, credentialImportContext_;
     QString settingsError_, sessionRenameError_;
     ReadSettings settings_;
     bool settingsReady_ = false;

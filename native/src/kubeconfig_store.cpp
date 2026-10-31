@@ -641,6 +641,9 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
     if (const auto failure = profileFailure(profile_)) return *failure;
     path = std::get<QString>(normalized);
     const QFileInfo root(path);
+#ifdef PODLORD_MAC_APP_STORE
+    if (root.isDir()) return Failure{StoreError::UnsupportedVersion, "The App Store build imports individual selected files or pasted kubeconfigs, not folders."};
+#endif
     if (!contentSource(path) && !root.exists()) return Failure{StoreError::ReadFailed, "Kubeconfig source does not exist."};
     if (root.isDir() && root == QFileInfo(profile_))
         return Failure{StoreError::InvalidInput, "The private application profile cannot be scanned as a source folder."};
@@ -737,6 +740,9 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     }
                     const QString path = text(node, pathKey);
                     if (path.isEmpty()) return QByteArray{};
+#ifdef PODLORD_MAC_APP_STORE
+                    return Failure{StoreError::UnsupportedVersion, "The App Store build requires embedded certificates and tokens. Import keys explicitly through Sources instead of referencing external files."};
+#endif
                     if (generatedSource(source.sourcePath) && QDir::isRelativePath(path))
                         return Failure{StoreError::InvalidInput, "Generated kubeconfigs require embedded credentials/certificates or absolute file references."};
                     if (contentSource(source.sourcePath) && QDir::isRelativePath(path))
@@ -881,7 +887,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     const auto parsed = nativeOidc(command);
                     if (const auto* failure = std::get_if<Failure>(&parsed)) return *failure;
                     command.oidc = std::get<std::optional<OidcLogin>>(parsed);
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
                     if (!command.oidc) {
                         const auto aks = nativeAks(command);
                         if (const auto* failure = std::get_if<Failure>(&aks)) return *failure;
@@ -891,7 +897,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     const auto importedGke = importedGkeAccount(profile_, contextId);
                     if (const auto* failure = std::get_if<Failure>(&importedGke)) return *failure;
                     const auto& account = std::get<std::optional<GkeServiceAccount>>(importedGke);
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
                     const bool useNativeGke = true;
 #else
                     const bool useNativeGke = account.has_value();
@@ -906,7 +912,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                                 return Failure{StoreError::UnsupportedVersion, "This GKE context requires an explicitly imported Google service-account key on mobile."};
                         }
                     }
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
                     if (!command.oidc && !command.gke) {
                         const auto eks = nativeEksConfig(command);
                         if (const auto* failure = std::get_if<Failure>(&eks)) return *failure;
@@ -918,7 +924,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         command.oci = std::get<std::optional<OciLogin>>(oci);
                     }
 #endif
-#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID) && !defined(PODLORD_MAC_APP_STORE)
                     if (hasImportedOci && !command.oidc) {
                         const auto oci = nativeOciConfig(command);
                         if (const auto* failure = std::get_if<Failure>(&oci)) return *failure;
@@ -927,7 +933,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
 #endif
                     if (mode == "Always" && !command.oidc && !command.gke && !command.eks && !command.oci)
                         return Failure{StoreError::UnsupportedVersion, "This credential command requires terminal input; the desktop login has no terminal stdin."};
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
                     if (!command.oidc && !command.gke && !command.eks && !command.oci)
                         return Failure{StoreError::UnsupportedVersion, "This kubeconfig uses an environment-bound or external credential command. On mobile, sign in with a supported browser identity or import a personal token or certificate; VM and CI identities cannot be moved to this device."};
 #endif

@@ -38,10 +38,11 @@ Dialog {
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
         }
-        Label { text: "Origin path for relative certificate, token and plugin paths" }
+        Label { visible: !workspace.appStore; text: "Origin path for relative certificate, token and plugin paths" }
         TextField {
             id: origin
             objectName: "pasteSourceOrigin"
+            visible: !workspace.appStore
             Layout.fillWidth: true
             enabled: !dialog.awaitingImport
             selectByMouse: true

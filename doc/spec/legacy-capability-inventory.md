@@ -51,7 +51,7 @@ whole-product parity passes.
 | LEG-002 | Import default/home kubeconfig | `MainWindowViewModel.ImportHome`; `AppState.ImportHomeKubeconfig` uses `PODLORD_HOME`. | SES; source import scenarios. | Route pending. |
 | LEG-003 | Import selected paths, including the documented file/folder workflow | `ImportPathClicked`; `ImportPathNow`, `ImportPaths`, `KubeconfigImporter.ImportFile`. | SES; folder recursion/validation inventory. | Wired; catalog pending. |
 | LEG-004 | Import pasted kubeconfig text | `MainWindowViewModel.ImportPasteNow`; `KubeconfigImporter.ImportText`. | SES; exact UI entry and validation. | Route pending. |
-| LEG-005 | Import generated k3d configuration | `MainWindowViewModel.ImportK3dNowAsync`. | SES; external CLI/service boundary and cleanup. | Route pending. |
+| LEG-005 | Historical generated k3d import | Removed from production on main in `cccc805`. | Ordinary kubeconfig import remains authoritative. | Retired product feature, not a native migration gap. k3d/k3s remain local/CI test infrastructure only. |
 | LEG-006 | Refresh imported sources and preserve configuration snapshots | `RefreshSourcesNow`; snapshot-related `KubeconfigImporter` entrypoints. | SES; existing-source refresh UI and snapshot invariants. | Route pending. |
 | LEG-007 | Edit/save/remove source metadata | `SaveSelectedSource`, `RemoveSource`; `RemoveSourceClicked`. | SES; edit/delete scope and references. | Removal wired; remaining routes pending. |
 | LEG-008 | Edit/save/duplicate session configuration | `SaveSelectedSession`, `DuplicateSelectedSession`. | SES; exact editable fields and duplicate semantics. | Route pending; catalog pending. |

@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Input.Raw;
 using Avalonia.LogicalTree;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Podlord.Core;
@@ -504,11 +505,11 @@ public sealed class MainWindowHeadlessTests
 
     private static byte[] CaptureFrameHash(Window window)
     {
-        var bitmap = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Rendered frame capture failed.");
+        using var bitmap = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Rendered frame capture failed.");
         var path = Path.Combine(Path.GetTempPath(), $"podlord-frame-{Guid.NewGuid():N}.png");
         try
         {
-            bitmap.Save(path);
+            bitmap.Save(path, PngBitmapEncoderOptions.Default);
             return System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path));
         }
         finally

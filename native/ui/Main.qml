@@ -398,12 +398,28 @@ ApplicationWindow {
         id: authentication
         objectName: "authenticationConfirmation"
         title: "Retry authentication: " + workspace.title
+        width: Math.min(440, window.width - 24)
+        height: Math.min(implicitHeight, window.height - 24)
         anchors.centerIn: parent
         modal: true
         property string session: ""
         property string prompt: ""
         onOpened: { session = workspace.currentSession; prompt = workspace.authenticationPrompt }
-        Label { text: authentication.prompt; textFormat: Text.PlainText; wrapMode: Text.WordWrap; width: 380 }
+        contentItem: ScrollView {
+            id: authenticationBody
+            implicitWidth: 380
+            implicitHeight: authenticationText.implicitHeight
+            contentWidth: availableWidth
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Label {
+                id: authenticationText
+                width: authenticationBody.availableWidth
+                text: authentication.prompt
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+        }
         footer: DialogButtonBox {
             Button { objectName: "authenticationAccept"; text: "Authenticate"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
             Button { objectName: "authenticationCancel"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
@@ -621,6 +637,7 @@ ApplicationWindow {
                     TextField {
                         id: sourcePath
                         objectName: "sourcePath"
+                        visible: !workspace.appStore
                         inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                         Layout.fillWidth: true
                         Layout.minimumWidth: 160
@@ -631,8 +648,8 @@ ApplicationWindow {
                         onAccepted: workspace.importFile(text)
                     }
                     Button { text: "Browse"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: chooser.open() }
-                    Button { objectName: "browseSourceFolder"; text: "Folder"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: folderChooser.open() }
-                    Button { objectName: "importButton"; text: "Import"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: { window.sourcesExpanded = true; sourcePath.text.trim() ? workspace.importFile(sourcePath.text) : chooser.open() } }
+                    Button { objectName: "browseSourceFolder"; visible: !workspace.appStore; text: "Folder"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: folderChooser.open() }
+                    Button { objectName: "importButton"; visible: !workspace.appStore; text: "Import"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: { window.sourcesExpanded = true; sourcePath.text.trim() ? workspace.importFile(sourcePath.text) : chooser.open() } }
                 }
                 GridLayout {
                     Layout.fillWidth: true
@@ -654,10 +671,10 @@ ApplicationWindow {
                     }
                     Button { objectName: "openContext"; text: "Open context"; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { if (workspace.openContext(contexts.currentValue)) window.sourcesExpanded = false } }
                     Button { objectName: "importOciKey"; text: "OCI key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { ociImportContext.currentIndex = contexts.currentIndex; ociImportDialog.open() } }
-                    Button { objectName: "importGkeKey"; text: "GKE key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; visible: Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { gkeImportContext.currentIndex = contexts.currentIndex; gkeImportDialog.open() } }
+                    Button { objectName: "importGkeKey"; text: "GKE key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; visible: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { gkeImportContext.currentIndex = contexts.currentIndex; gkeImportDialog.open() } }
                     RowLayout {
                         Layout.fillWidth: parent.columns === 2
-                        Button { objectName: "reloadSources"; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.refreshSources() }
+                        Button { objectName: "reloadSources"; visible: !workspace.appStore; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.refreshSources() }
                         IconButton { objectName: "closeSourceControls"; glyph: "Close"; text: "Close source controls"; visible: workspace.currentSession !== "" || workspace.contexts.length > 0; onClicked: window.sourcesExpanded = false }
                     }
                 }

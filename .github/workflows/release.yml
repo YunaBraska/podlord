@@ -1,28 +1,44 @@
-# yuna-release: true
-name: 🏷️ CD · Release
+name: Native release candidate
 
 on:
   workflow_dispatch:
-    inputs:
-      force:
-        description: Force.
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 jobs:
   native-preflight:
     uses: ./.github/workflows/native.yml
 
-  release:
+  candidate:
     needs: native-preflight
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_release.yml@57a1b3d17849cc22d170a7710a8f9976e3b7a21f
-    with:
-      force: ${{ inputs.force }}
-      notarize_macos: true
-      macos_update_public_key: ${{ vars.MACOS_UPDATE_PUBLIC_KEY }}
-    secrets: inherit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: native-*-${{ github.sha }}
+          path: native-input
+      - name: Collect verified native desktop candidates
+        shell: sh
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          mkdir native-candidate
+          cp "native-input/native-preflight-macos-15-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-arm64.zip
+          cp "native-input/native-preflight-macos-15-intel-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-x64.zip
+          cp "native-input/native-windows-x64-$SOURCE_COMMIT/podlord-windows-x64.zip" native-candidate/podlord-native-win-x64.zip
+          for archive in native-candidate/*.zip; do
+            bytes=$(wc -c < "$archive")
+            [ "$bytes" -gt 0 ] && [ "$bytes" -le 50000000 ] || { printf 'Candidate exceeds the existing download gate: %s\n' "$archive" >&2; exit 1; }
+          done
+          (cd native-candidate && sha256sum ./*.zip > SHA256SUMS)
+          printf '%s\n' "$SOURCE_COMMIT" > native-candidate/SOURCE_COMMIT
+          printf '%s\n' 'Native desktop candidates only. No tag, GitHub release, Store upload or release approval is created. Linux/mobile packages and full visual, performance, licensing and publisher gates remain required.' > native-candidate/SCOPE.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: podlord-native-candidates-${{ github.sha }}
+          path: native-candidate
+          if-no-files-found: error
+          retention-days: 14

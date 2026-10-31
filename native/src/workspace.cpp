@@ -161,7 +161,7 @@ bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole, Qt::UserRole + 5});
     return true;
 }
-bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
+bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool replace) {
     sortValues_.clear(); sortValueColumn_ = -1;
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
@@ -176,6 +176,19 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster) {
     }
     QMap<QString, QJsonObject> incoming;
     for (const auto& value : rows) { const auto row = value.toObject(); incoming.insert(row[identityField_].toString(), row); }
+    if (replace && (rows_.size() != incoming.size() || !std::equal(rows_.cbegin(), rows_.cend(), incoming.keyBegin(),
+            [this](const auto& row, const auto& key) { return row[identityField_].toString() == key; }))) {
+        const int previous = rowCount(), next = static_cast<int>(incoming.size());
+        // Replace the snapshot once. Retain visible slots instead of destroying their delegates.
+        if (next > previous) beginInsertRows({}, previous, next - 1);
+        else if (next < previous) beginRemoveRows({}, next, previous - 1);
+        rows_ = incoming.values();
+        if (next > previous) endInsertRows();
+        else if (next < previous) endRemoveRows();
+        const int retained = std::min(previous, next);
+        if (retained > 0) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
+        return true;
+    }
     for (int last = static_cast<int>(rows_.size()) - 1; last >= 0;) {
         if (incoming.contains(rows_[last][identityField_].toString())) { --last; continue; }
         int first = last;
@@ -836,6 +849,8 @@ QString Workspace::activeCluster() const {
     return {};
 }
 bool Workspace::publish() {
+    const bool sessionChanged = publishedSession_ != active_;
+    publishedSession_ = active_;
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
@@ -843,7 +858,7 @@ bool Workspace::publish() {
     // Do not sort incoming rows using the outgoing session's discarded order.
     visibleTable_.setLimit(nav.limit);
     if (table_.sortColumn() != nav.column || table_.sortOrder() != nav.order) table_.sort(-1);
-    rows_.publish(snapshot, cluster);
+    rows_.publish(snapshot, cluster, sessionChanged);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;
     for (const auto& value : snapshot) {
@@ -855,7 +870,7 @@ bool Workspace::publish() {
         else ++healthy;
     }
     healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
-    if (!eventSnapshot.isEmpty() || eventRows_.rowCount() != 0) eventRows_.publish(eventSnapshot, cluster);
+    if (!eventSnapshot.isEmpty() || eventRows_.rowCount() != 0) eventRows_.publish(eventSnapshot, cluster, sessionChanged);
     publishPorts();
     table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);
     if (filterPickerSession_ != active_) {
@@ -869,11 +884,13 @@ bool Workspace::publish() {
 }
 bool Workspace::reload() {
     if (busy_) return false;
+    const auto credentialContext = credentialImportContext_;
+    credentialImportContext_.clear();
     ++runtime_->selectionRevision;
     busy_ = true; emit changed();
     using Catalogs = std::tuple<Result<SourceCatalog>, Result<SessionCatalog>, Result<ReadSettings>>;
     auto* watcher = new QFutureWatcher<Catalogs>(this);
-    connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher] {
+    connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher, credentialContext] {
         const auto [sources, sessions, settings] = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&settings)) { settingsError_ = failure->message; settingsReady_ = false; client_.enableRequests(false); }
         else {
@@ -901,7 +918,7 @@ bool Workspace::reload() {
             const bool closeOnStartup = restore && !settings_.workspaceRestore;
             const auto schemas = tableSchemas(true);
             busy_ = true;
-            connect(order, &QFutureWatcher<OrderedViews>::finished, this, [this, order, restore] {
+            connect(order, &QFutureWatcher<OrderedViews>::finished, this, [this, order, restore, credentialContext] {
                 const auto [result, views] = order->result(); order->deleteLater(); busy_ = false;
                 if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; emit changed(); }
                 else {
@@ -912,7 +929,8 @@ bool Workspace::reload() {
                     if (restore) {
                         navigation_[active_].workspace="map";
                         emit changed();
-                    } else if (selected && !active_.isEmpty() && client_.connection(active_)) resolve(active_);
+                    } else if (selected && !active_.isEmpty() && (client_.connection(active_)
+                        || (!credentialContext.isEmpty() && sessionConfiguration(active_).value("contextId").toString() == credentialContext))) resolve(active_);
                 }
             });
             order->setFuture(QtConcurrent::run([profile, schemas, restore, closeOnStartup] {
@@ -998,8 +1016,8 @@ bool Workspace::quickImportFile(const QString& path) {
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
     }, {}, true);
 }
-QString Workspace::defaultSourceOrigin() const { return QDir::home().filePath(".kube/pasted-kubeconfig"); }
-bool Workspace::importHome() { return importFile(QDir::home().filePath(".kube/config")); }
+QString Workspace::defaultSourceOrigin() const { return appStore() ? QDir(profile_).filePath("pasted-kubeconfig") : QDir::home().filePath(".kube/pasted-kubeconfig"); }
+bool Workspace::importHome() { return !appStore() && importFile(QDir::home().filePath(".kube/config")); }
 bool Workspace::importText(QString originPath, const QString& yaml) {
     return importSource([originPath = std::move(originPath), yaml](const KubeconfigStore& store) -> Result<SourceImportReport> {
         const auto result = store.importText(originPath, yaml);
@@ -1008,6 +1026,7 @@ bool Workspace::importText(QString originPath, const QString& yaml) {
     });
 }
 bool Workspace::refreshSources() {
+    if (appStore()) return false;
     QStringList paths;
     for (const auto& source : sources_.sources)
         if (!source.sourcePath.startsWith("podlord-generated://")) paths.append(source.sourcePath);
@@ -1128,7 +1147,8 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
                 : notice;
             for (const auto& issue : report.errors) sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
             if (!credentialContext.isEmpty()) credentials_.revoke(importedCredentialId(credentialContext));
-            reload();
+            credentialImportContext_ = credentialContext;
+            if (!reload()) credentialImportContext_.clear();
             emit sourceImportFinished(!report.sources.isEmpty() && report.errors.isEmpty());
         }
     });

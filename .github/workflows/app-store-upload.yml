@@ -1,21 +1,53 @@
-name: "🛍️ CD · App Store Upload"
+name: Upload prepared native Store package
 
 on:
   workflow_dispatch:
+    inputs:
+      package_run_id:
+        description: Successful Native Mac App Store package workflow run to upload, without rebuilding.
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  package:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@6c254c34cccee8f75f5baa0f63dc3b5376cd24f2
-    with:
-      app_name: Podlord
-      bundle_id: berlin.yuna.podlord
-    secrets: inherit
+  retrieve:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify source workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_RUN: ${{ inputs.package_run_id }}
+        shell: sh
+        run: |
+          set -eu
+          case "$PACKAGE_RUN" in ''|*[!0-9]*) printf 'A numeric package workflow run ID is required.\n' >&2; exit 2 ;; esac
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PACKAGE_RUN" > source-run.json
+          jq -e '.conclusion == "success" and .event == "workflow_dispatch" and .path == ".github/workflows/app-store.yml"' source-run.json
+      - uses: actions/download-artifact@v7
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.package_run_id }}
+          name: app-store-package
+          path: app-store-package
+      - name: Reject non-native or incomplete packages
+        shell: sh
+        run: |
+          set -eu
+          test -f app-store-package/Podlord.pkg
+          grep -Fx 'implementation=cpp' app-store-package/native-build.txt
+          grep -Fx 'architectures=arm64 x86_64' app-store-package/native-build.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-store-package
+          path: app-store-package
+          if-no-files-found: error
+          retention-days: 1
 
   upload:
-    needs: package
+    needs: retrieve
     uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@172316ba468bd7bbdf0d57ea28856d68b7aacb2e
     with:
       app_name: Podlord

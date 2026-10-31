@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdio>
 #include <dlfcn.h>
+#include <dispatch/dispatch.h>
 
 namespace {
 std::atomic<bool> armed{false};
@@ -58,7 +59,15 @@ OSStatus tracingEvaluation(SecTrustRef trust, dispatch_queue_t queue, SecTrustWi
             error ? static_cast<long>(CFErrorGetCode(error)) : 0L, message);
         const auto result = SecTrustCopyResult(evaluated);
         if (result) { CFShow(result); CFRelease(result); }
-        callback(evaluated, accepted, error);
+        CFRetain(evaluated);
+        if (error) CFRetain(error);
+        std::fprintf(stderr, "PODLORD_TRUST_COMPLETION scheduled delay_ms=1500\n");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1500 * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+            std::fprintf(stderr, "PODLORD_TRUST_COMPLETION delivered\n");
+            callback(evaluated, accepted, error);
+            if (error) CFRelease(error);
+            CFRelease(evaluated);
+        });
     });
     std::fprintf(stderr, "Native trust observer: evaluationStatus=%d\n", int(status));
     return status;

@@ -317,6 +317,7 @@ bool realCluster(const QString& original) {
     if (!window) return false;
     QTest::qWait(20);
     if (!waitFor([&] { return !workspace.busy(); })) return false;
+    if (!click(window, "mapSources")) return false;
     auto* field = item(window, "sourcePath");
     if (!field) return false;
     field->forceActiveFocus(); for (const auto c : input) QTest::keyClick(window, c.toLatin1());
@@ -325,13 +326,14 @@ bool realCluster(const QString& original) {
     if (!click(window, "openContext") || !waitFor([&] { return workspace.authenticationRequired() && !workspace.busy(); }) || !read(counter).isEmpty()) return false;
     if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept") && item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return false;
     if (!waitFor([&] { return !workspace.authenticationRunning() && !workspace.busy() && !workspace.authenticationRequired(); })) return false;
+    if (!click(window, "resourcesWorkspaceButton") || !click(window, "resourceFindButton")) return false;
     auto* filter = item(window, "resourceFilter");
     if (!filter || !filter->isEnabled()) return false;
     filter->forceActiveFocus(); for (const auto c : QByteArray("podlord-native-e2e")) QTest::keyClick(window, c);
     if (!waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); }, 60000)) {
         std::fprintf(stderr, "Exec certificate Kubernetes read failed: %s %s\n", qPrintable(workspace.error()), qPrintable(workspace.status())); return false;
     }
-    return click(window, "resourcesWorkspaceButton") && click(window, "cell_0_0") && waitFor([&] { return workspace.inspected().contains("fetchedAt"); })
+    return click(window, "cell_0_0") && waitFor([&] { return workspace.inspected().contains("fetchedAt"); })
         && workspace.inspected().contains("ConfigMap") && read(counter) == "call\n";
 }
 } // namespace

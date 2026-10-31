@@ -47,6 +47,7 @@ int main(int argc, char** argv) {
 #endif
     const bool actual = podlord::platformTrustsPeer(chain, document["name"].toString(), authorities, errors, stop);
     const auto completedMs = elapsed.elapsed();
+    if (cancelAfter > 0) std::fprintf(stderr, "PODLORD_TRUST_DRIVER returned\n");
     std::printf("Native peer trust: expected=%d actual=%d elapsed_us=%lld\n", document["expected"].toBool(), actual,
         static_cast<long long>(elapsed.nsecsElapsed() / 1000));
     if (cancelAfter > 0) {

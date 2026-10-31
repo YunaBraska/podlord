@@ -464,8 +464,12 @@ spec:
     [Fact]
     public async Task Test_map_scenarios_are_present_in_cluster()
     {
-        var snapshot = await cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(Search: "podlord"));
-        var map = snapshot.Rows
+        var rows = await WaitForRowsWithCondition(
+            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(Search: "podlord", Limit: 5_000, ForceRefresh: true)),
+            rows => new[] { "podlord-healthy", "podlord-broken", "podlord-success", "podlord-fail", "podlord-cron", "podlord-config", "podlord-secret", "podlord-data" }
+                .All(name => rows.Any(row => row.Name == name)),
+            TimeSpan.FromMinutes(4));
+        var map = rows
             .GroupBy(row => row.Kind)
             .ToDictionary(group => group.Key, group => group.Select(row => row.Name).ToHashSet(StringComparer.Ordinal));
 

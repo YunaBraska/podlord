@@ -26,6 +26,10 @@ find_tool() {
     fi
 }
 CMAKE=$(find_tool cmake)
+STORE=${PODLORD_MAC_APP_STORE:-OFF}
+case "$STORE" in ON|OFF) ;; *) printf 'PODLORD_MAC_APP_STORE must be ON or OFF.\n' >&2; exit 2 ;; esac
+ARCH=${PODLORD_MACOS_ARCH:-$(uname -m)}
+case "$ARCH" in arm64|x86_64) ;; *) printf 'Unsupported macOS package architecture.\n' >&2; exit 2 ;; esac
 OPENSSL_PREFIX=${OPENSSL_ROOT_DIR:-}
 if [ -z "$OPENSSL_PREFIX" ] && command -v brew >/dev/null 2>&1; then
     OPENSSL_PREFIX=$(brew --prefix openssl@3 2>/dev/null || true)
@@ -41,7 +45,8 @@ trap 'exit 143' TERM
 "$CMAKE" -S "$ROOT/native" -B "$WORK/build" \
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:-/opt/homebrew}" \
     -DOPENSSL_ROOT_DIR="$OPENSSL_PREFIX" \
-    -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DPODLORD_COVERAGE=OFF
+    -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
+    -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DPODLORD_COVERAGE=OFF -DPODLORD_MAC_APP_STORE="$STORE"
 QT_CORE_DIR=$(sed -n 's/^Qt6Core_DIR:PATH=//p' "$WORK/build/CMakeCache.txt")
 if [ -z "$QT_CORE_DIR" ] || [ ! -d "$QT_CORE_DIR" ]; then
     printf 'The configured Qt Core SDK could not be resolved.\n' >&2
@@ -126,7 +131,11 @@ find "$APP" -type f -name '*.dylib' \
     -exec /usr/bin/codesign --force --sign - '{}' +
 find "$APP/Contents/Frameworks" -type d -name '*.framework' -prune -print |
     while IFS= read -r framework; do /usr/bin/codesign --force --sign - "$framework"; done
-/usr/bin/codesign --force --sign - "$APP"
+if [ "$STORE" = ON ]; then
+    /usr/bin/codesign --force --sign - --entitlements "$ROOT/native/macos/AppStore.entitlements" "$APP"
+else
+    /usr/bin/codesign --force --sign - "$APP"
+fi
 /usr/bin/codesign --verify --deep --strict "$APP"
 mkdir "$WORK/evidence"
 mv "$APP" "$WORK/evidence/podlord-native.app"
@@ -139,12 +148,13 @@ if ! /bin/sh "$ROOT/scripts/check-native-macos-dependencies.sh" "$APP" > "$WORK/
 DOWNLOAD=$(/usr/bin/stat -f '%z' "$WORK/evidence/podlord-native.zip")
 INSTALLED=$(find "$APP" -type f -exec /usr/bin/stat -f '%z' '{}' + | awk '{total+=$1} END {printf "%.0f\n",total}')
 {
-    printf 'Platform: %s\n' "$(uname -m)"
+    printf 'Platform: %s; build host: %s\n' "$ARCH" "$(uname -m)"
     /usr/bin/sw_vers
     printf 'Build: Release; BUILD_TESTING=OFF; PODLORD_COVERAGE=OFF\n'
     printf 'Dependency paths: %s\nDownload bytes (ZIP): %s\nInstalled bytes (regular-file logical sum): %s\n' "$DEPENDENCIES" "$DOWNLOAD" "$INSTALLED"
     printf 'Limits: download 50000000 bytes; installed 100000000 bytes.\n'
     printf 'Signing: ad-hoc local verification, not Developer ID/notarization.\n'
+    printf 'Mac App Store channel: %s; publishing requires distribution signing and provisioning.\n' "$STORE"
     printf 'Scope: packaging preflight only; clean-device startup, runtime-loaded plugins, licenses, functional parity and other targets remain separate gates.\n'
     (cd "$WORK/evidence" && /usr/bin/shasum -a 256 podlord-native.app/Contents/MacOS/podlord-native podlord-native.zip)
 } > "$WORK/evidence/package-evidence.txt"

@@ -1625,3 +1625,27 @@ On mobile, `aws eks get-token` with an explicit cluster name or ID and region ma
 
 ### Native OKE API-key credential boundary
 On mobile, `oci ce cluster generate-token` may use a complete imported `exec.env` containing `OCI_CLI_REGION`, `OCI_CLI_USER`, `OCI_CLI_TENANCY`, `OCI_CLI_FINGERPRINT` and Oracle's supported `OCI_CLI_KEY_CONTENT` PEM value, or a config profile and unencrypted PEM key explicitly selected through Sources for that owned context. Podlord validates and stores the selected credential privately, never displays its key, and deletes it when the context is removed. It signs a cluster-bound four-minute token locally after confirmation; it never runs OCI CLI or kubectl. Missing values, unknown options, unimported key-file references, encrypted keys and environment-bound identities fail before Kubernetes traffic. The default Oracle kubeconfig alone lacks the region and key, so it is not sufficient without the explicit import. See [ADR 0050](../adr/0050-native-oke-api-key-tokens.md). Installed-device and live-tenancy evidence remain separate release requirements.
+
+### Native Mac App Store channel, confirmed 2026-10-31
+
+| ID | Acceptance |
+|---|---|
+| MACSTORE-001 | `PODLORD_MAC_APP_STORE=ON` is a macOS-only compile-time channel. It imports individual system-picker files or pasted YAML into private owned snapshots. Removing/changing the original file MUST NOT change the imported connection. |
+| MACSTORE-002 | Folder/home imports, typed-path controls, original-file refresh and external certificate/token references MUST be unavailable. Referenced credential material MUST fail explicitly before external file I/O. Existing owned snapshots remain available. |
+| MACSTORE-003 | Confirmed native authentication and explicit cloud-key imports MUST remain available. Unknown `exec` providers MUST fail explicitly and MUST NOT start a process. Direct-download authentication remains unchanged. |
+| MACSTORE-004 | Store builds MUST neither check GitHub for updates nor expose cached direct-download/release actions. Updates belong to the Store. |
+| MACSTORE-005 | The app MUST carry sandbox, user-selected read-only file, network client and local listener entitlements. Ad-hoc preflight MUST NOT be described as distribution signing or Store approval. |
+| PRIV-NATIVE-001 | About MUST expose the same public privacy-policy URL as the reference. The policy MUST distinguish native identity-provider connections, private imported keys, RAM caches and persisted map previews. Desktop uninstall MUST NOT be described as guaranteed profile deletion. |
+| PERF-HANDOFF-001 | Switching cached sessions MUST publish each table snapshot atomically, without an intermediate empty model caused by removing the outgoing rows before inserting incoming rows. Existing canonical client snapshots remain the only resource cache. Filters, selection, camera, scroll behavior and fresh-YAML edit protection remain session-owned. Performance limits are unchanged. |
+
+### Native Store package architecture
+
+- `MACSTORE-006`: The macOS Store application is Universal2. Its executable and every shipped Mach-O dependency contain native `arm64` and `x86_64` code. Both thin inputs come from the same revision, preserve the `berlin.yuna.podlord` identity and retain the Store-specific authentication and file-access boundary. Neither architecture may silently fall back to emulation.
+- `MACSTORE-007`: Universal2 composition rejects mismatched resource trees, unsafe archive paths, bundle symlinks escaping the application and an existing output destination. The merged unsigned application is not a distributable release. Signing, package checks and the agreed size gates still apply.
+- `REL-CPP-001`: Native release and Store packaging workflows prepare the C++ application. The C# build remains available as a comparison reference. A prepared candidate is not evidence of full platform, UI, performance or Store readiness and does not itself publish a tag, release or upload.
+
+- `MACSTORE-008`: Pasted kubeconfigs retain an app-owned private origin in the Store channel. The paste dialog does not offer an external origin-path field there. Direct-download origin entry remains available. Import alone starts neither a Kubernetes request nor an authentication command.
+
+### Native authentication confirmation layout
+
+Authentication confirmation preserves its captured session and explicit-consent guard when resized. Its prompt and actions fit the supported viewport. Long tokens wrap and long content remains vertically scrollable instead of expanding beyond the window. The existing 320-pixel portrait support applies to this dialog too. Resizing or cancelling never starts authentication.

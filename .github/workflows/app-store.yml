@@ -1,15 +1,95 @@
-name: "🛍️ CD · App Store"
+name: Native Mac App Store package
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  native-preflight:
+    uses: ./.github/workflows/native.yml
+
   package:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store.yml@6c254c34cccee8f75f5baa0f63dc3b5376cd24f2
-    with:
-      app_name: Podlord
-      bundle_id: berlin.yuna.podlord
-    secrets: inherit
+    needs: native-preflight
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: native-preflight-macos-15-${{ github.sha }}
+          path: store-arm64
+      - uses: actions/download-artifact@v7
+        with:
+          name: native-preflight-macos-15-intel-${{ github.sha }}
+          path: store-x64
+      - name: Import application certificate
+        id: application-certificate
+        uses: Apple-Actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466
+        with:
+          keychain: ${{ runner.temp }}/podlord-store-${{ github.run_id }}
+          create-keychain: true
+          p12-file-base64: ${{ secrets.MACOS_APP_STORE_APPLICATION_CERTIFICATE }}
+          p12-password: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_PASSWORD }}
+      - name: Import installer certificate
+        uses: Apple-Actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466
+        with:
+          keychain: ${{ runner.temp }}/podlord-store-${{ github.run_id }}
+          create-keychain: false
+          keychain-password: ${{ steps.application-certificate.outputs.keychain-password }}
+          p12-file-base64: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE }}
+          p12-password: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_PASSWORD }}
+      - name: Prepare profile and native Universal2 package
+        env:
+          PROFILE: ${{ secrets.MACOS_APP_STORE_PROFILE }}
+        run: |
+          set -eu
+          umask 077
+          credentials=$(mktemp -d "$RUNNER_TEMP/podlord-store-profile.XXXXXX")
+          trap 'rm -rf "$credentials"' 0
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          profile="$credentials/profile.provisionprofile"
+          printf '%s' "$PROFILE" | base64 -D > "$profile"
+          security cms -D -i "$profile" > "$credentials/profile.plist"
+          team=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$credentials/profile.plist")
+          identifier=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$credentials/profile.plist")
+          [ "$identifier" = "$team.berlin.yuna.podlord" ]
+          keychain="$RUNNER_TEMP/podlord-store-$GITHUB_RUN_ID.keychain"
+          application=$(security find-identity -v "$keychain" | awk '/"Mac App Distribution:|"Apple Distribution:|"3rd Party Mac Developer Application:/ {print $2; exit}')
+          installer=$(security find-identity -v "$keychain" | awk '/"Mac Installer Distribution:|"3rd Party Mac Developer Installer:/ {print $2; exit}')
+          [ -n "$application" ] && [ -n "$installer" ]
+          version=$(sed -n 's/^project(PodlordNative VERSION \([^ ]*\) .*/\1/p' native/CMakeLists.txt)
+          APP_STORE_BUNDLE_ID=berlin.yuna.podlord APP_STORE_TEAM_ID="$team" \
+            MACOS_APP_STORE_APPLICATION_IDENTITY="$application" MACOS_APP_STORE_PROFILE_PATH="$profile" \
+            PODLORD_STORE_ARM64_ARCHIVE="$GITHUB_WORKSPACE/store-arm64/native-store-package/podlord-native.zip" \
+            PODLORD_STORE_X64_ARCHIVE="$GITHUB_WORKSPACE/store-x64/native-store-package/podlord-native.zip" \
+            /bin/sh scripts/package-app-store.sh "$version" "$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT.0"
+          productbuild --component dist/app-store/Podlord.app /Applications "$credentials/unsigned.pkg"
+          productsign --sign "$installer" "$credentials/unsigned.pkg" dist/app-store/Podlord.pkg
+          pkgutil --check-signature dist/app-store/Podlord.pkg
+          bytes=$(/usr/bin/stat -f '%z' dist/app-store/Podlord.pkg)
+          printf 'Signed PKG bytes: %s\nDownload limit: 50000000\n' "$bytes" >> dist/app-store/size-evidence.txt
+          [ "$bytes" -le 50000000 ]
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-store-package
+          path: |
+            dist/app-store/Podlord.pkg
+            dist/app-store/native-build.txt
+            dist/app-store/size-evidence.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain package diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-store-package-diagnostics
+          path: dist/app-store/size-evidence.txt
+          if-no-files-found: ignore

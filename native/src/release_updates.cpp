@@ -62,9 +62,15 @@ ReleaseUpdates::ReleaseUpdates(QString profile, QObject* parent, std::function<Q
       now_(std::move(now)), endpoint_(std::move(endpoint)) {
     const auto disabled = qEnvironmentVariable("PODLORD_DISABLE_UPDATE_CHECK");
     enabled_ = disabled != "1" && disabled.compare("true", Qt::CaseInsensitive) != 0;
+#ifdef PODLORD_MAC_APP_STORE
+    enabled_ = false;
+#endif
     weekly_.setSingleShot(true); deadline_.setSingleShot(true);
     connect(&weekly_, &QTimer::timeout, this, &ReleaseUpdates::checkIfDue);
     connect(&deadline_, &QTimer::timeout, this, [this] { complete("The release server did not finish within 10 seconds. Retry explicitly."); });
+#ifdef PODLORD_MAC_APP_STORE
+    return;
+#endif
     const auto cached = load();
     if (const auto* failure = std::get_if<Failure>(&cached)) localError_ = failure->message;
     else check_ = std::get<Check>(cached);
@@ -73,6 +79,12 @@ ReleaseUpdates::~ReleaseUpdates() {
     if (reply_) { disconnect(reply_, nullptr, this, nullptr); reply_->abort(); }
 }
 QVariantMap ReleaseUpdates::state() const {
+#ifdef PODLORD_MAC_APP_STORE
+    return {{"busy", false}, {"enabled", false}, {"available", false}, {"newer", false},
+        {"currentVersion", currentVersion_}, {"latestVersion", QString{}}, {"lastCheckedAt", QString{}},
+        {"releaseUrl", QString{}}, {"downloadUrl", QString{}}, {"error", QString{}},
+        {"status", "Updates are managed by the Mac App Store."}};
+#endif
     const bool isNewer = newer(currentVersion_, check_.latestVersion);
     const bool available = isNewer && !check_.downloadUrl.isEmpty();
     const auto error = localError_.isEmpty() ? check_.error : localError_;

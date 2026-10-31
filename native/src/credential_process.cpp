@@ -148,8 +148,8 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
         });
         login->start(); emit changed(); return true;
     }
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-    results_.insert(id, Failure{StoreError::UnsupportedVersion, "External credential commands are unavailable on mobile devices."});
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
+    results_.insert(id, Failure{StoreError::UnsupportedVersion, "External credential commands are unavailable in this build. Use native sign-in or explicitly import a personal credential."});
     emit changed(); emit completed(id, session);
     return false;
 #else

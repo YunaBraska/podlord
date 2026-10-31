@@ -51,6 +51,7 @@ bool run(const QString& scenario) {
     }
     const QMap<QString, QPair<QString, QString>> links{
         {"project", {"aboutProject", "https://github.com/YunaBraska/podlord"}},
+        {"privacy", {"aboutPrivacy", "https://yunabraska.github.io/podlord/privacy.html"}},
         {"issues", {"aboutIssues", "https://github.com/YunaBraska/podlord/issues/new"}},
         {"star", {"aboutStar", "https://github.com/YunaBraska/podlord/stargazers"}},
         {"sponsors", {"aboutSponsors", "https://github.com/sponsors/YunaBraska"}},

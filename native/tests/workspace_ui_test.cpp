@@ -782,7 +782,24 @@ bool execute(const QString& requestedScenario) {
         return workspace.contexts().size() == 1 && workspace.sessions().isEmpty() && workspace.currentSession().isEmpty()
             && server.requests.isEmpty();
     }
-    if (!type(window, item(window, "sourcePath"), source) || (scenario!="map_source_enter" && !click(window, item(window, "importButton")))) {
+    if (workspace.appStore() || scenario == "gke_prompt") {
+        if (!click(window, item(window, "settingsWorkspaceButton"))
+            || !waitFor([&] { auto* section = item(window, "settingsSourcesSection"); return section && section->isVisible(); })
+            || !click(window, item(window, "settingsSourcesSection"))
+            || !click(window, item(window, "sourceActionsMenuButton")) || !click(window, item(window, "pasteSourceButton"))
+            || !waitFor([&] { auto* input = item(window, "pasteSourceYaml"); return input && input->isVisible(); })) return false;
+        auto* origin = item(window, "pasteSourceOrigin");
+        if (!origin || origin->isVisible() == workspace.appStore() || origin->property("text").toString().isEmpty()) {
+            std::fputs("Paste must retain its origin and expose external path entry only outside the Store channel.\n", stderr); return false;
+        }
+        item(window, "pasteSourceYaml")->forceActiveFocus();
+        QInputMethodEvent input;
+        input.setCommitString(QString::fromUtf8(yaml));
+        QCoreApplication::sendEvent(item(window, "pasteSourceYaml"), &input);
+        if (!click(window, item(window, "importPastedSource"))
+            || !waitFor([&] { return !workspace.busy() && !item(window, "pasteSourceYaml")->isVisible(); })
+            || !click(window, item(window, "mapWorkspaceButton"))) return false;
+    } else if (!type(window, item(window, "sourcePath"), source) || (scenario!="map_source_enter" && !click(window, item(window, "importButton")))) {
         std::fputs("Source import action unavailable.\n",stderr); return false;
     }
     if (scenario=="map_source_enter") QTest::keyClick(window,Qt::Key_Return);
@@ -972,7 +989,7 @@ bool execute(const QString& requestedScenario) {
         }
         return workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty() && saveShellFrame(window,scenario);
     }
-    const auto openAction=scenario=="map_source_enter" ? "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString() : QStringLiteral("openContext");
+    const auto openAction=scenario=="map_source_enter" || scenario=="gke_prompt" || workspace.appStore() ? "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString() : QStringLiteral("openContext");
     if (!waitFor([&] { auto* action=item(window,openAction); return action && action->isVisible(); }) || !click(window,item(window,openAction))) { std::fputs("Open context action unavailable.\n",stderr); return false; }
     if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); },10000)) return false;
     if (!scenario.startsWith("map_") && !click(window,item(window,"resourcesWorkspaceButton"))) return false;
@@ -1346,6 +1363,8 @@ bool execute(const QString& requestedScenario) {
         return server.requests == QStringList{"/api"} && server.delayedReadDelivered && !server.prematureDisconnect;
     }
     if (scenario == "gke_prompt") {
+        window->resize(320, 640);
+        if (!waitFor([&] { return window->contentItem()->width() == 320 && window->contentItem()->height() == 640; })) return false;
         if (!waitFor([&] { return workspace.authenticationRequired(); }) || !click(window, item(window, "authenticationButton"))) return false;
         auto* accept = item(window, "authenticationAccept");
         if (!accept || !waitFor([&] { return accept->isVisible(); })) return false;
@@ -1353,11 +1372,24 @@ bool execute(const QString& requestedScenario) {
         if (!evidence.isEmpty() && (!QDir().mkpath(evidence)
             || !window->grabWindow().save(evidence + "/gke-confirmation-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png"))) return false;
         const auto prompt = workspace.authenticationPrompt();
-        const bool mobile = QGuiApplication::platformName() == "ios" || QGuiApplication::platformName() == "android";
-        const bool correct = mobile ? prompt.contains("native Google authorization") && prompt.contains("No imported command runs")
+        const bool native = workspace.appStore() || QGuiApplication::platformName() == "ios" || QGuiApplication::platformName() == "android";
+        const bool correct = native ? prompt.contains("native Google authorization") && prompt.contains("No imported command runs")
             : prompt.contains("gke-gcloud-auth-plugin") && prompt.contains("This runs the imported configuration");
+        const bool fits = waitFor([&] {
+            for (auto* label : window->findChildren<QQuickItem*>())
+                if (label->isVisible() && label->property("text").toString() == prompt)
+                    return window->contentItem()->mapRectToScene(window->contentItem()->boundingRect())
+                        .contains(label->mapRectToScene(label->boundingRect()));
+            return false;
+        });
+        if (!fits) std::fputs("Authentication prompt is clipped at 320 pixels.\n", stderr);
+        if (!evidence.isEmpty()) {
+            window->resize(1440, 900);
+            if (!waitFor([&] { return window->contentItem()->width() == 1440 && window->contentItem()->height() == 900; })
+                || !window->grabWindow().save(evidence + "/gke-confirmation-wide-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png")) return false;
+        }
         QTest::keyClick(window, Qt::Key_Escape);
-        return correct && waitFor([&] { return !accept->isVisible(); }) && server.requests.isEmpty() && !workspace.authenticationRunning();
+        return correct && fits && waitFor([&] { return !accept->isVisible(); }) && server.requests.isEmpty() && !workspace.authenticationRunning();
     }
     if (scenario == "plugin" || scenario == "invalid_ca" || scenario == "empty_token")
         return waitFor([&] { return !text(window, "errorMessage").isEmpty(); }) && server.requests.isEmpty();

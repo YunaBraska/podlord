@@ -36,10 +36,13 @@ class Kubernetes final : public QTcpServer {
 public:
     QWebSocketServer streams{"Kubernetes boundary", QWebSocketServer::NonSecureMode};
     int requests = 0, upgrades = 0;
+    QString nameSpace = "default";
+    QStringList names{"alpha", "beta"};
+    bool hasEvents = false;
     bool authorized = true;
     QJsonObject pod(const QString& name) const {
         return {{"apiVersion", "v1"}, {"kind", "Pod"},
-            {"metadata", QJsonObject{{"name", name}, {"namespace", "default"}, {"uid", name + "-uid"}, {"resourceVersion", "1"}}},
+            {"metadata", QJsonObject{{"name", name}, {"namespace", nameSpace}, {"uid", nameSpace + name + "-uid"}, {"resourceVersion", "1"}}},
             {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}, {"image", "boundary"},
                 {"ports", QJsonArray{QJsonObject{{"containerPort", 8080}}}}}}}}},
             {"status", QJsonObject{{"phase", "Running"}}}};
@@ -60,8 +63,21 @@ public:
                     const auto path = url.path(); QJsonObject body; QByteArray payload;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", QJsonArray{}}};
-                    else if (path == "/api/v1") body = {{"resources", QJsonArray{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list", "get"}}}}}};
-                    else if (path == "/api/v1/pods") body = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{}}, {"items", QJsonArray{pod("alpha"), pod("beta")}}};
+                    else if (path == "/api/v1") {
+                        QJsonArray resources{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list", "get"}}}};
+                        if (hasEvents) resources.append(QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list", "get"}}});
+                        body = {{"resources", resources}};
+                    }
+                    else if (path == "/api/v1/pods") {
+                        QJsonArray rows; for (const auto& name : names) rows.append(pod(name));
+                        body = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{}}, {"items", rows}};
+                    }
+                    else if (path == "/api/v1/events") body = {{"apiVersion", "v1"}, {"kind", "EventList"}, {"metadata", QJsonObject{}},
+                        {"items", QJsonArray{QJsonObject{{"apiVersion", "v1"}, {"kind", "Event"},
+                            {"metadata", QJsonObject{{"name", "first-event"}, {"namespace", nameSpace}, {"uid", "first-event-uid"}, {"resourceVersion", "1"}}},
+                            {"involvedObject", QJsonObject{{"kind", "Pod"}, {"name", "alpha"}, {"namespace", nameSpace}}},
+                            {"type", "Normal"}, {"reason", "Scheduled"}, {"message", "First session only"}, {"count", 1},
+                            {"lastTimestamp", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}}}}};
                     else if (path.endsWith("/log")) payload = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toUtf8() + " log " + QByteArray::number(requests) + '\n';
                     else body = pod(path.section('/', -1));
                     if (payload.isEmpty()) payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
@@ -94,7 +110,16 @@ public:
 bool run(const QString& scenario) {
     QTemporaryDir profile; Kubernetes api;
     REQUIRE(profile.isValid() && api.listen(QHostAddress::LocalHost));
-    const auto yaml = QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:%1\nusers:\n- name: local\n  user:\n    token: window-test-token\ncontexts:\n- name: first\n  context:\n    cluster: local\n    user: local\n- name: second\n  context:\n    cluster: local\n    user: local\n").arg(api.serverPort());
+    const bool handoff = scenario == "handoff" || scenario == "handoff_grow" || scenario == "handoff_shrink" || scenario == "handoff_events";
+    Kubernetes other;
+    if (handoff) REQUIRE(other.listen(QHostAddress::LocalHost));
+    if (scenario == "handoff_grow") api.names.append("gamma");
+    api.hasEvents = scenario == "handoff_events";
+    other.nameSpace = "second";
+    if (scenario == "handoff_shrink") other.names.append("gamma");
+    const int firstCount = api.names.size() + int(api.hasEvents), secondCount = other.names.size();
+    const auto extraCluster = handoff ? QString("- name: other\n  cluster:\n    server: http://127.0.0.1:%1\n").arg(other.serverPort()) : QString{};
+    const auto yaml = QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:%1\n%2users:\n- name: local\n  user:\n    token: window-test-token\ncontexts:\n- name: first\n  context:\n    cluster: local\n    user: local\n- name: second\n  context:\n    cluster: %3\n    user: local\n").arg(api.serverPort()).arg(extraCluster, handoff ? QString("other") : QString("local"));
     const auto imported = podlord::KubeconfigStore(profile.path()).importText(profile.filePath("source.yaml"), yaml);
     const auto* source = std::get_if<podlord::SourceSnapshot>(&imported); REQUIRE(source && source->contexts.size() == 2);
     podlord::SessionStore store(profile.path());
@@ -140,14 +165,66 @@ bool run(const QString& scenario) {
         REQUIRE(std::get<podlord::SessionCatalog>(catalog).sessions[0].open && std::get<podlord::SessionCatalog>(catalog).sessions[1].open); return true;
     }
     REQUIRE(primary.activate(primary.currentSession()));
-    REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && !primary.filterPresetsBusy() && primary.resourceCount() == 2; }));
+    REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && !primary.filterPresetsBusy() && primary.totalResourceCount() == firstCount; }));
     REQUIRE(primary.setWorkspacePage("resources"));
     REQUIRE(primary.windowActionsAvailable() && primary.tabs().size() == 2);
     if (scenario == "repeat") { REQUIRE(host.open() && host.windows().size() == 1 && primary.tabs().size() == 2); return true; }
     if (scenario == "missing") { REQUIRE(!primary.detachSession("missing") && host.windows().size() == 1); return true; }
+    if (scenario == "handoff_events") {
+        REQUIRE(primary.setWorkspacePage("events"));
+        REQUIRE(waitFor([&] { return primary.eventTable()->rowCount() == 1; }));
+        const int firstRequests = api.requests;
+        REQUIRE(primary.activate(b));
+        REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && primary.totalResourceCount() == secondCount; }));
+        REQUIRE(primary.setWorkspacePage("events") && primary.eventTable()->rowCount() == 0);
+        const int secondRequests = other.requests;
+        REQUIRE(primary.activate(a));
+        REQUIRE(waitFor([&] { return !primary.busy() && primary.totalResourceCount() == firstCount && primary.eventTable()->rowCount() == 1; }));
+        REQUIRE(api.requests == firstRequests && other.requests == secondRequests);
+        return api.authorized && other.authorized;
+    }
     const auto path = QString("/api/v1/namespaces/default/pods/alpha");
     REQUIRE(primary.inspectPath(path));
     REQUIRE(waitFor([&] { return primary.canEditYaml(); }));
+    if (handoff) {
+        REQUIRE(primary.filter("=alpha"));
+        REQUIRE(primary.rememberRadarView({{"zoom", 0.75}, {"x", 12.0}, {"y", 18.0}}));
+        const auto camera = primary.radarView();
+        REQUIRE(primary.activate(b));
+        REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && primary.resourceCount() == secondCount; }));
+        REQUIRE(primary.setWorkspacePage("resources"));
+        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "cell_0_0"); }));
+        const QPointer<QQuickItem> retainedCell = podlord::test::visibleItem(main->contentItem(), "cell_0_0");
+        QAbstractItemModel* rows = primary.visibleResourceTable();
+        while (auto* proxy = qobject_cast<QAbstractProxyModel*>(rows)) rows = proxy->sourceModel();
+        QSignalSpy removed(rows, &QAbstractItemModel::rowsRemoved);
+        QSignalSpy inserted(rows, &QAbstractItemModel::rowsInserted);
+        QSignalSpy reset(rows, &QAbstractItemModel::modelReset);
+        bool coherent = true;
+        const auto observe = [&] {
+            const bool first = primary.currentSession() == a;
+            coherent = coherent && rows->rowCount() == (first ? firstCount : secondCount);
+            for (int row = 0; row < rows->rowCount(); ++row)
+                coherent = coherent && rows->index(row, 2).data().toString() == (first ? "default" : "second");
+        };
+        QObject observer;
+        QObject::connect(rows, &QAbstractItemModel::rowsInserted, &observer, observe);
+        QObject::connect(rows, &QAbstractItemModel::rowsRemoved, &observer, observe);
+        QObject::connect(rows, &QAbstractItemModel::dataChanged, &observer, observe);
+        REQUIRE(primary.activate(a));
+        REQUIRE(primary.resourceCount() == 1 && primary.totalResourceCount() == firstCount);
+        REQUIRE(primary.filterText() == "=alpha" && primary.inspectorPath() == path && primary.radarView() == camera);
+        REQUIRE(coherent && reset.isEmpty());
+        if (firstCount == secondCount) REQUIRE(removed.isEmpty() && inserted.isEmpty()
+            && waitFor([&] { return retainedCell && retainedCell == podlord::test::visibleItem(main->contentItem(), "cell_0_0"); }));
+        REQUIRE(waitFor([&] { return !primary.busy(); }));
+        REQUIRE(primary.activate(b));
+        REQUIRE(primary.resourceCount() == secondCount && primary.filterText().isEmpty());
+        REQUIRE(coherent && reset.isEmpty());
+        if (firstCount == secondCount) REQUIRE(removed.isEmpty() && inserted.isEmpty()
+            && waitFor([&] { return retainedCell && retainedCell == podlord::test::visibleItem(main->contentItem(), "cell_0_0"); }));
+        return true;
+    }
     if (scenario == "alerts_initial") {
         REQUIRE(waitFor([&] { return !primary.alerts()->busy(); }));
         REQUIRE(primary.alerts()->setPreferences(true, true));
