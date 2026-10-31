@@ -19,6 +19,17 @@ a { color: var(--accent); text-underline-offset: 0.16em; }
 nav { display: flex; flex-wrap: wrap; gap: 18px; }
 nav a { color: #475569; font-size: 0.92rem; font-weight: 650; text-decoration: none; }
 nav a:hover { color: var(--accent); }
+.product-menu { position: relative; }
+.product-menu summary { color: #475569; cursor: pointer; font-size: 0.92rem; font-weight: 650; list-style: none; }
+.product-menu summary::-webkit-details-marker { display: none; }
+.product-menu summary::after { content: "⌄"; display: inline-block; margin-left: 5px; transition: transform 120ms ease; }
+.product-menu[open] summary::after { transform: rotate(180deg); }
+.product-menu-panel { position: absolute; right: 0; z-index: 3; width: min(330px, calc(100vw - 32px)); margin-top: 10px; padding: 8px; border: 1px solid #dfe6ef; background: #fff; box-shadow: 0 16px 36px rgba(30, 41, 59, 0.16); }
+.product-menu-panel a { display: block; padding: 10px 12px; color: #172033; text-decoration: none; }
+.product-menu-panel a:hover { background: var(--accent-soft); color: #172033; }
+.product-menu-panel strong, .product-menu-panel span { display: block; }
+.product-menu-panel strong { font-size: 0.92rem; }
+.product-menu-panel span { margin-top: 2px; color: #64748b; font-size: 0.8rem; font-weight: 500; }
 main { padding: 54px 0 76px; }
 .eyebrow { margin: 0 0 12px; color: var(--accent); font-size: 0.82rem; font-weight: 760; letter-spacing: 0.08em; text-transform: uppercase; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr); align-items: center; gap: 58px; padding: 28px 0 72px; }
@@ -83,6 +94,11 @@ pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
 .theme-dark .section, .theme-dark .feature-grid, .theme-dark .feature, .theme-dark .doc-list, .theme-dark .doc-list li, .theme-dark .install-step, .theme-dark .site-footer { border-color: #34382f; }
 .theme-dark .feature { background: #151813; }
 .theme-dark .button.secondary { border-color: #686759; color: #eee8d8; }
+.theme-dark .product-menu summary { color: #c4c1b6; }
+.theme-dark .product-menu-panel { border-color: #34382f; background: #171a15; box-shadow: none; }
+.theme-dark .product-menu-panel a { color: #eee8d8; }
+.theme-dark .product-menu-panel a:hover { background: #332816; color: #eee8d8; }
+.theme-dark .product-menu-panel span { color: #a9a69c; }
 .theme-dark .install-option code { color: #f2dfb5; background: #332816; }
 .theme-dark .callout { color: #f1e6c9; background: #332816; }
 .theme-dark .help-document h2, .theme-dark .help-document img, .theme-dark .help-document th, .theme-dark .help-document td { border-color: #34382f; }
@@ -91,6 +107,7 @@ pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
   .container { width: min(100% - 32px, 1120px); }
   .header-content { min-height: auto; padding: 18px 0; align-items: flex-start; flex-direction: column; gap: 12px; }
   nav { gap: 14px; }
+  .product-menu-panel { right: auto; left: 0; }
   main { padding: 28px 0 50px; }
   .hero { grid-template-columns: 1fr; gap: 30px; padding: 20px 0 48px; }
   .hero h1 { font-size: clamp(2.4rem, 14vw, 3.65rem); }
