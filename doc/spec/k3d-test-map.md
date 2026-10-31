@@ -6822,8 +6822,26 @@ remain intact. `render-driver-tests.log` passes both Basic/Fusion cases, and
 `final-tests.log` passes all 207/207 executions in 210.23 seconds. No product
 control is removed or hidden to make the capture fit.
 
-Identity scope remains the existing session identity under RAD-DET-01. Sharing
-one context-based geography across independently created sessions is a pending
-product decision, not implied by cold reconstruction. The preceding full-suite,
+The subsequent user decision makes identity context-based under RAD-DET-01.
+This supersedes the earlier session-scoped boundary. The preceding full-suite,
 package and platform results cover the earlier revision and do not clear this
 geometry change. Existing release gates remain unchanged.
+
+### Context-Scoped Island Identity, October 31
+
+The shared small Radar and expanded map now derive geometry identity from the
+existing immutable context ID in the active session configuration. There is no
+new context registry, stored seed, resource cache or synchronization path.
+Per-session navigation and alert ownership are unchanged.
+
+`native.ui.radar_context_identity_{basic,fusion}` and
+`native.ui.radar_map_context_identity_{basic,fusion}` use the ordinary imported
+kubeconfig and loopback Kubernetes HTTP fixture with over 1,000 resources. They
+create an independent saved session through the public duplicate action, open
+it normally, and compare actual world coordinates and terrain previews. They
+also check alias independence, separate camera state and cache-only return to
+the first session. Evidence belongs under `2026-10-31-context-radar-identity`.
+The retained session-scoped QML baseline fails the same-context coordinate and
+preview comparison. The context-scoped version passes all four new cases in
+7.08 seconds and all 211 affected Radar/UI executions in 217.54 seconds.
+These checks do not replace complete package, platform or release measurements.

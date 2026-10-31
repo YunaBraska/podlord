@@ -26,6 +26,13 @@ coastal distance only during this layout pass, avoiding repeated trigonometry
 inside candidate scans. No new persisted state or rendering layer is introduced.
 Equal-population fixtures compare translation-normalized occupied cells, not
 colors or labels, and cold reconstruction must reproduce coordinates and previews.
+The subsequent October 31 user decision scopes that identity to the imported
+context, not the current session. The shared Radar obtains the immutable context
+ID from the existing session configuration. No new identifier, persistence field
+or Workspace state is added. Equal full projections of that context share the
+same geometry across session copies, while camera, selection, filters and alert
+lifecycle remain session-owned. A local alias is presentation, not a seed.
+Different namespace-limited resource projections are still different inputs.
 No filler tile or connector becomes a resource or an input target. Existing
 positions can change under this approved layout revision. Old persisted previews
 are replaced on the next ordinary successful visit, not by background cluster

@@ -103,7 +103,7 @@ Pane {
                     const item = Window.window ? Window.window.activeFocusItem : null
                     return item && item.parent === grid && item.resourcePath !== undefined ? item.resourcePath : ""
                 }
-                identityScope: workspace.currentSession
+                identityScope: workspace.sessionConfiguration(workspace.currentSession).contextId || ""
                 textColor: "#DDE7EC"
                 readonly property int count: workspace.resourceCount
                 readonly property real cellWidth: 7 * viewPose.zoom

@@ -583,7 +583,7 @@ bool execute(const QString& requestedScenario) {
     const bool twoContexts = scenario == "session_tabs_controls" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
-    KubernetesBoundary server(scenario == "shell_search_events" ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
+    KubernetesBoundary server(scenario == "radar_context_identity" ? "radar_initial_population" : scenario == "shell_search_events" ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     const auto source = temporary.filePath("source.config");
     QFile file(source);
@@ -1828,7 +1828,7 @@ bool execute(const QString& requestedScenario) {
         if (listed < 0 || inspected != listed + 1) { std::fprintf(stderr, "Priority order %d -> %d; requests: %s\n", listed, inspected, qPrintable(server.requests.join('\n'))); return false; }
         return true;
     }
-    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
         && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
@@ -2093,6 +2093,59 @@ bool execute(const QString& requestedScenario) {
             return renamePassed = waitFor([&] { return !restored.busy() && restored.currentSession() == id && restored.title() == "Renamed"; });
         }
         return renamePassed = true;
+    }
+    if (scenario == "radar_context_identity") {
+        const auto first=workspace.currentSession();
+        const auto context=workspace.sessionConfiguration(first)["contextId"].toString();
+        if (context.isEmpty()) return false;
+        QPointer<podlord::RadarIsland> radar;
+        const auto show=[&] {
+            if (!click(window,item(window,mapRadar ? "radarWorkspaceButton" : "resourcesWorkspaceButton"))) return false;
+            return waitFor([&] {
+                radar=window->findChild<podlord::RadarIsland*>("resourceRadar");
+                return radar && radar->isVisible() && !workspace.busy() && !workspace.loading() && workspace.totalResourceCount()>=1000;
+            },10000);
+        };
+        const auto points=[&] {
+            QMap<QString,QPointF> result;
+            if (!radar) return result;
+            auto* tiles=radar->tiles(); const auto roles=tiles->roleNames();
+            for (int row=0;row<tiles->rowCount();++row) {
+                const auto tile=tiles->index(row,0);
+                result.insert(tile.data(roles.key("resourcePath")).toString(),
+                    QPointF(tile.data(roles.key("worldX")).toDouble(),tile.data(roles.key("worldY")).toDouble()));
+            }
+            return result;
+        };
+        if (!show()) return false;
+        const QVariantMap firstPose{{"x",100},{"y",-40},{"zoom",.01}};
+        radar->setViewPose(firstPose);
+        if (!waitFor([&] { return radar->tiles()->rowCount()==workspace.totalResourceCount() && workspace.radarView()==firstPose; })) return false;
+        const auto original=points(); const auto preview=radar->previewImage();
+        if (preview.isNull() || original.size()<1000 || !workspace.duplicateSession(first,"Island copy")
+            || !waitFor([&] { return !workspace.busy(); })) return false;
+        QString second;
+        for (const auto& value:workspace.sessions()) {
+            const auto id=value.toMap()["id"].toString();
+            if (id!=first && workspace.sessionConfiguration(id)["name"]=="Island copy") second=id;
+        }
+        if (second.isEmpty() || workspace.sessionConfiguration(second)["contextId"]!=context || !workspace.activate(second)
+            || !waitFor([&] { return workspace.currentSession()==second && !workspace.busy() && !workspace.loading(); },10000)
+            || !show()) return false;
+        radar->setViewPose({{"x",0},{"y",0},{"zoom",.01}});
+        if (!waitFor([&] { return points()==original; }) || radar->previewImage()!=preview) {
+            std::fprintf(stderr,"Same-context sessions changed resource coordinates or preview: first=%s second=%s context=%s\n",
+                qPrintable(first),qPrintable(second),qPrintable(context));
+            return false;
+        }
+        const auto calls=server.requests.size();
+        if (!workspace.renameSourceContext(context,"Local island alias") || !waitFor([&] { return !workspace.busy(); })
+            || points()!=original || radar->previewImage()!=preview) return false;
+        if (!click(window,item(window,"activateSession_"+first))
+            || !waitFor([&] { return workspace.currentSession()==first && !workspace.busy() && !workspace.loading(); })
+            || !show()) return false;
+        return waitFor([&] { return workspace.radarView()==firstPose && radar->viewPose()==firstPose && points()==original; })
+            && radar->previewImage()==preview && server.requests.size()==calls;
     }
     if (scenario == "session_tabs_controls") {
         const auto first=workspace.currentSession();
