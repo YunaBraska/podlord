@@ -164,6 +164,7 @@ class RadarWater : public QQuickPaintedItem {
     Q_PROPERTY(int speedPercent READ speedPercent WRITE setSpeedPercent NOTIFY speedPercentChanged)
 public:
     explicit RadarWater(QQuickItem* parent = nullptr);
+    ~RadarWater() override;
     QVariantMap viewPose() const { return pose_; }
     QColor color() const { return color_; }
     bool playing() const { return playing_; }
@@ -185,6 +186,7 @@ private:
     QTimer timer_;
     QElapsedTimer clock_;
     QQueue<qint64> requests_;
+    QMetaObject::Connection exposureConnection_;
     qint64 interactionUntil_ = 0;
     int speed_ = 45, phase_ = 0;
     bool playing_ = false;

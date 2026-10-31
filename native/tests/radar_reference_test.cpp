@@ -27,6 +27,59 @@ bool setupFailure(const char* message) {
     std::fprintf(stderr, "Radar reference setup failed: %s\n", message);
     return false;
 }
+bool waterExposedOnly() {
+    QQuickWindow window;
+    QQuickWindow replacement;
+    window.setGeometry(0, 0, 144, 96);
+    replacement.setGeometry(0, 0, 144, 96);
+    window.setColor(Qt::black);
+    replacement.setColor(Qt::black);
+    podlord::RadarWater water(window.contentItem());
+    water.setSize(window.size());
+    water.setPlaying(true);
+    water.setSpeedPercent(100);
+    const auto pixels = [&] {
+        QImage image(water.size().toSize(), QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        water.paint(&painter);
+        return image;
+    };
+    const auto hidden = pixels();
+    QTest::qWait(250);
+    if (pixels() != hidden) return setupFailure("water animated before its window was exposed");
+    window.show();
+    if (!QTest::qWaitFor([&] { return window.isExposed(); }, 3000)) return setupFailure("water test window was not exposed");
+    const auto first = window.grabWindow();
+    QTest::qWait(250);
+    const auto second = window.grabWindow();
+    if (first.isNull() || first == second) return setupFailure("water did not resume after its window was exposed");
+    window.hide();
+    if (!QTest::qWaitFor([&] { return !window.isExposed(); }, 3000)) return setupFailure("water test window did not hide");
+    const auto hiddenAfterHide = pixels();
+    QTest::qWait(250);
+    if (pixels() != hiddenAfterHide) return setupFailure("water animated while its window was hidden");
+    window.show();
+    if (!QTest::qWaitFor([&] { return window.isExposed(); }, 3000)) return setupFailure("water test window did not re-expose");
+    const auto resumed = window.grabWindow();
+    QTest::qWait(250);
+    if (resumed.isNull() || resumed == window.grabWindow()) return setupFailure("water did not resume after its window was re-exposed");
+    water.setParentItem(replacement.contentItem());
+    const auto reparented = pixels();
+    QTest::qWait(250);
+    if (pixels() != reparented) return setupFailure("water animated after reparenting to an unexposed window");
+    replacement.show();
+    if (!QTest::qWaitFor([&] { return replacement.isExposed(); }, 3000)) return setupFailure("replacement water window was not exposed");
+    const auto replacementFirst = replacement.grabWindow();
+    QTest::qWait(250);
+    if (replacementFirst.isNull() || replacementFirst == replacement.grabWindow()) return setupFailure("water did not resume after replacement window exposure");
+    water.setParentItem(nullptr);
+    const auto detached = pixels();
+    QTest::qWait(250);
+    replacement.close();
+    window.close();
+    return pixels() == detached || setupFailure("water animated after detaching from its window");
+}
 QHash<QByteArray, int> roles(QAbstractItemModel* model) {
     QHash<QByteArray, int> result;
     const auto names = model->roleNames();
@@ -370,6 +423,7 @@ bool silhouettes() {
     return passed || setupFailure("equally populated contexts have indistinguishable silhouettes");
 }
 bool exercise(const QStringList& args) {
+    if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && (args[1]=="source_rebind" || args[1]=="source_destroy")) return sourceLifecycle(args[1]);

@@ -1649,3 +1649,7 @@ On mobile, `oci ce cluster generate-token` may use a complete imported `exec.env
 ### Native authentication confirmation layout
 
 Authentication confirmation preserves its captured session and explicit-consent guard when resized. Its prompt and actions fit the supported viewport. Long tokens wrap and long content remains vertically scrollable instead of expanding beyond the window. The existing 320-pixel portrait support applies to this dialog too. Resizing or cancelling never starts authentication.
+
+### Radar water exposure lifecycle
+
+An unexposed window does not advance or repaint the water animation, including before its first display and after a view moves to an unexposed window. Requested playback, speed and camera settings remain intact. Animation resumes automatically when the current window is exposed again. Detaching or destroying the view stops its animation work and releases the former window binding. This specializes the existing hidden-surface work rule and does not change visible animation speed or the foreground performance gates.

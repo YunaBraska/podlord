@@ -6888,8 +6888,16 @@ These are local working-tree checks after the main rebase, not a published or St
 | Real local Kubernetes | TLS/client-certificate authentication, multi-container logs, YAML/JSON Patch, conflict reconciliation, Secret remasking, interactive PTY/vi/ANSI/resize/interrupts and deletion/UID protection passed. The owned temporary cluster was removed. |
 | Store thin packages | ARM64 and Intel packages passed dependency-path, macOS-13-floor, signature-preflight and existing thin-size checks using explicit matching OpenSSL SDK roots. Ad-hoc signing is not distribution signing. |
 | Universal2 composition | Both architectures merged successfully. Installed regular files total 173,613,844 bytes. Unsigned PKG is 66,747,637 bytes. Existing 100/50-MB gates are unchanged and therefore not satisfied by this combined package. |
-| Packaging guards | Nine public CLI guard cases passed, including existing-output preservation and archive symlink traversal rejection. An unsigned-PKG round-trip matched all 730 files/symlinks, modes and file hashes before the final UI-only rebuild. |
+| Packaging guards | Nine public CLI guard cases passed, including existing-output preservation and archive symlink traversal rejection. The final unsigned Universal2 PKG for this packet round-tripped with all 730 files/symlinks, modes and SHA-256 hashes intact. |
 
 The last valid foreground performance run remains a blocker: interaction latency passes, but per-frame CPU exceeds 8 ms, warmed RSS grows 8,224,768 bytes against 5 MB, and nonsync idle CPU is 2.44% of one core against 2%. It predates the final authentication-layout-only fix and is not final release clearance. The nonactivating Metal/sample run is diagnostic only. Full current cross-platform picture/device and distribution/license evidence is not established by these local checks.
 
 Local detailed evidence is retained in the `2026-10-31-app-store` comparison-evidence directory, outside Git. Package reproduction must set `OPENSSL_ROOT_DIR` for the matching architecture as well as `CMAKE_PREFIX_PATH`. Omitting the root selected the host Homebrew library and correctly failed the macOS-13 floor check. No tag, release, Store upload, production-cluster access or Google-account changes were performed.
+
+### Radar water exposure follow-up
+
+The public `radar-water-exposed-only` regression first failed against the previous renderer because its pixels changed before the window was exposed. It now checks initial exposure, hide/re-show, transfer to an unexposed replacement window, re-exposure, detachment and cleanup. The water's requested playback and drawing behavior remain unchanged while visible.
+
+The final follow-up run passed 6 preflights and 5,181 remaining tests, 5,187 total. Production line coverage is 97.81% and branch coverage is 85.72%. All 16 changed C++ branch outcomes in this follow-up are covered against baseline `4f38b55`. No new foreground performance clearance is claimed. The Store package evidence in the preceding packet is not a rebuilt distribution of this follow-up.
+
+A separate table row-order-reset batching experiment passed 70 targeted interaction tests but did not demonstrate a convincing benefit in the nonactivating Metal comparison. It was removed completely. That diagnostic comparison is not release evidence and did not change any performance gate.

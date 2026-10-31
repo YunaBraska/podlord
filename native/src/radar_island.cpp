@@ -707,11 +707,24 @@ void RadarIsland::paint(QPainter* painter) {
 RadarWater::RadarWater(QQuickItem* parent) : QQuickPaintedItem(parent) {
     setAntialiasing(false); clock_.start();
     connect(this,&QQuickItem::visibleChanged,this,&RadarWater::syncTimer);
-    connect(this,&QQuickItem::windowChanged,this,[this] { syncTimer(); });
+    const auto bindWindow=[this](QQuickWindow* window) {
+        disconnect(exposureConnection_);
+        exposureConnection_={};
+        if (window) exposureConnection_=connect(window,&QQuickWindow::afterAnimating,this,&RadarWater::syncTimer);
+        syncTimer();
+    };
+    connect(this,&QQuickItem::windowChanged,this,bindWindow);
+    bindWindow(window());
     connect(&timer_,&QTimer::timeout,this,[this] {
-        if (clock_.elapsed() < interactionUntil_) { syncTimer(); return; }
-        phase_=(phase_+1)&1023; update(); syncTimer();
+        syncTimer();
+        if (!timer_.isActive() || clock_.elapsed() < interactionUntil_) return;
+        phase_=(phase_+1)&1023; update();
     });
+}
+RadarWater::~RadarWater() {
+    timer_.stop();
+    disconnect(exposureConnection_);
+    disconnect(this,nullptr,this,nullptr);
 }
 void RadarWater::setViewPose(const QVariantMap& pose) {
     if (!RadarIsland::validPose(pose) || pose_==pose) return;
@@ -733,7 +746,7 @@ int RadarWater::interval() {
     return std::clamp(qRound(460-speed_*.01*380-requests_.size()/240.*40),60,520);
 }
 void RadarWater::syncTimer() {
-    if (!playing_ || !isVisible() || !window() || speed_<=0) { timer_.stop(); return; }
+    if (!playing_ || !isVisible() || !window() || !window()->isExposed() || speed_<=0) { timer_.stop(); return; }
     const int next=std::max(interval(),int(std::max(qint64{0},interactionUntil_-clock_.elapsed())));
     if (!timer_.isActive() || timer_.interval()!=next) timer_.start(next);
 }

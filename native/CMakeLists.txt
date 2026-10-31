@@ -943,6 +943,8 @@ if(BUILD_TESTING)
         add_test(NAME radar-${scenario} COMMAND radar_reference_test ${scenario})
         set_tests_properties(radar-${scenario} PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     endforeach()
+    add_test(NAME radar-water-exposed-only COMMAND radar_reference_test water_exposed_only)
+    set_tests_properties(radar-water-exposed-only PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     foreach(scenario pose_missing pose_extra pose_x_text pose_y_text pose_zoom_text pose_x_nan pose_y_nan pose_zoom_nan
             pose_x_extent pose_y_extent pose_zoom_low pose_zoom_high pan_x_nan pan_y_nan
             zoom_factor_nan zoom_factor_zero zoom_anchor_x_nan zoom_anchor_y_nan)
