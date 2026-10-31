@@ -120,45 +120,48 @@ QString formatMetricQuantity(double number, bool cpu, bool compact) {
     while (number>=1024 && unit<units.size()-1) { number/=1024; ++unit; }
     return QString::number(number, 'g', compact ? 3 : 8)+(compact ? "" : " ")+(compact && unit > 0 ? units[unit].chopped(1) : units[unit]);
 }
-QVariantList resourceMetricSummary(const QJsonArray& resources) {
-    struct Total final {
-        double used=0, reference=0;
-        int eligible=0, observed=0, referenced=0;
-        bool incomplete=false, stale=false;
-        QDateTime oldestStaleMeasurement;
-    };
-    std::array<std::array<Total,3>,4> totals{};
-    std::array<int,4> counts{};
+ResourceMetricContribution resourceMetricContribution(const QJsonObject& row) {
+    ResourceMetricContribution result;
+    if (row["apiVersion"] != "v1") return result;
+    const auto kind = row["kind"].toString();
+    result.group = kind == "Node" ? 0 : kind == "Pod" ? 1 : kind == "PersistentVolumeClaim" ? 2 : kind == "PersistentVolume" ? 3 : -1;
+    if (result.group < 0) return result;
     const std::array<QString,3> ids{"cpu", "memory", "storage"};
-    for (const auto& value : resources) {
-        const auto row=value.toObject();
-        if (row["apiVersion"]!="v1") continue;
-        const auto kind=row["kind"].toString();
-        const int group=kind=="Node" ? 0 : kind=="Pod" ? 1 : kind=="PersistentVolumeClaim" ? 2 : kind=="PersistentVolume" ? 3 : -1;
-        if (group<0) continue;
-        ++counts[group];
-        for (int metric=0; metric<3; ++metric) {
-            if ((metric<2 && group>1) || (metric==2 && group==1)) continue;
-            auto& total=totals[group][metric]; ++total.eligible;
-            const auto used=row[ids[metric]];
-            if (used.isDouble()) {
-                total.used+=used.toDouble(); ++total.observed;
-                total.incomplete=total.incomplete || !row["metricComplete"].toObject()[ids[metric]].toBool();
-                total.stale=total.stale || row["metricStale"].toBool();
-                if (row["metricStale"].toBool()) {
-                    const auto at=QDateTime::fromString(row["metricAt"].toString(), Qt::ISODateWithMs);
-                    if (at.isValid() && (!total.oldestStaleMeasurement.isValid() || at<total.oldestStaleMeasurement))
-                        total.oldestStaleMeasurement=at;
-                }
-            }
-            const auto reference=row["metricReferences"].toObject()[ids[metric]].toObject();
-            const QString key=group==1 ? "limit" : "capacity";
-            if (reference[key].isDouble()) {
-                total.reference+=reference[key].toDouble(); ++total.referenced;
-                total.incomplete=total.incomplete || (reference.contains(key+"Complete") && !reference[key+"Complete"].toBool());
-            }
+    for (int metric = 0; metric < 3; ++metric) {
+        if ((metric < 2 && result.group > 1) || (metric == 2 && result.group == 1)) continue;
+        auto& total = result.metrics[metric]; ++total.eligible;
+        const auto used = row[ids[metric]];
+        if (used.isDouble()) {
+            total.used = used.toDouble(); ++total.observed;
+            total.incomplete = !row["metricComplete"].toObject()[ids[metric]].toBool();
+            total.stale = row["metricStale"].toBool();
+            if (total.stale) total.oldestStaleMeasurement = QDateTime::fromString(row["metricAt"].toString(), Qt::ISODateWithMs);
+        }
+        const auto reference = row["metricReferences"].toObject()[ids[metric]].toObject();
+        const QString key = result.group == 1 ? "limit" : "capacity";
+        if (reference[key].isDouble()) {
+            total.reference = reference[key].toDouble(); ++total.referenced;
+            total.incomplete = total.incomplete || (reference.contains(key + "Complete") && !reference[key + "Complete"].toBool());
         }
     }
+    return result;
+}
+ResourceMetricSummary& ResourceMetricSummary::add(const ResourceMetricContribution& contribution) {
+    if (contribution.group < 0 || contribution.group >= int(counts.size())) return *this;
+    ++counts[contribution.group];
+    for (int metric = 0; metric < 3; ++metric) {
+        auto& total = totals[contribution.group][metric];
+        const auto& value = contribution.metrics[metric];
+        total.used += value.used; total.reference += value.reference;
+        total.eligible += value.eligible; total.observed += value.observed; total.referenced += value.referenced;
+        total.incomplete = total.incomplete || value.incomplete; total.stale = total.stale || value.stale;
+        if (value.oldestStaleMeasurement.isValid() && (!total.oldestStaleMeasurement.isValid() || value.oldestStaleMeasurement < total.oldestStaleMeasurement))
+            total.oldestStaleMeasurement = value.oldestStaleMeasurement;
+    }
+    return *this;
+}
+QVariantList ResourceMetricSummary::presentation() const {
+    const std::array<QString,3> ids{"cpu", "memory", "storage"};
     QVariantList result;
     for (int metric=0; metric<3; ++metric) {
         const int group=counts[0]>0 ? 0 : metric<2 ? 1 : counts[2]>0 ? 2 : 3;
@@ -186,6 +189,11 @@ QVariantList resourceMetricSummary(const QJsonArray& resources) {
     result.append(QVariantMap{{"id","pods"},{"label","Pods"},{"usage",QString::number(counts[1])},{"bar",false},{"fraction",0},{"description","Pods in the filtered session cache."}});
     result.append(QVariantMap{{"id","nodes"},{"label","Nodes"},{"usage",QString::number(counts[0])},{"bar",false},{"fraction",0},{"description","Nodes in the filtered session cache."}});
     return result;
+}
+QVariantList resourceMetricSummary(const QJsonArray& resources) {
+    ResourceMetricSummary summary;
+    for (const auto& resource : resources) summary.add(resourceMetricContribution(resource.toObject()));
+    return summary.presentation();
 }
 QVariantList resourceMetricPresentation(const QJsonObject& resource) {
     const auto references=resource["metricReferences"].toObject(); if (references.isEmpty()) return {};

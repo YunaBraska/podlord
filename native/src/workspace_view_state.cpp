@@ -6,6 +6,7 @@
 
 namespace podlord {
 Workspace::~Workspace() {
+    if (snapshotPreparation_) snapshotPreparation_->watcher->cancel();
     runtime_->windows.removeAll(this);
     for (auto it = runtime_->owners.begin(); it != runtime_->owners.end();)
         if (it.value() == this) { client_.close(it.key()); it = runtime_->owners.erase(it); }

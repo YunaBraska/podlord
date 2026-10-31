@@ -6956,4 +6956,65 @@ Detailed logs, profiles and the current package are retained outside Git under
 not alter the direct/thin 100/50-MB gates. No new Universal2 distribution, complete
 current cross-platform image matrix, installed startup, live cloud-login or
 licensing clearance is claimed. Google-account work stays paused. The next
-proposed background snapshot-preparation architecture awaits the user's decision.
+background snapshot-preparation architecture was subsequently approved and is
+implemented in the following packet.
+
+### Background snapshot preparation and short-landscape Radar, 2026-10-31
+
+The canonical ResourceClient cache remains authoritative. Each visible window
+owns one cancellable preparation task and retains completed immutable derived
+projections for its open sessions. No additional resource persistence, polling
+or API requests are introduced. Cold publication remains immediate. Completed
+results are accepted only for the current canonical snapshot, cluster and
+session owner. Age stays live. Typed metric contributions use the same decoder
+and reducer as the JSON entrypoint.
+
+The public regressions first exposed unnecessary notifications for unchanged
+snapshots, non-const JSON reads adding missing fields, and transient Radar
+projection against an outgoing source. All three fail-before cases now pass.
+Queued source replacement, hiding, detachment, window closure, malformed
+metadata, incompatible schemas, cancellation and stale metric timestamps are
+covered through public model/workspace entrypoints.
+
+The Android landscape capture exposed a real zero-height map after system-bar
+insets. The approved exception places the fixed external details reader beside
+both small and expanded maps in very short landscape windows. Eight Basic/Fusion
+320- and 272-pixel-height cases check geometry, actual water/resource pixels and
+unchanged hover/focus layout. Successful frames are retained. A positive canvas
+alone does not establish complete mobile usability or image parity.
+
+| Boundary | Evidence for this packet |
+| --- | --- |
+| Affected native tests | 913/913 Radar/window/metric/filter/alert executions pass, followed by 36/36 layout cases and the latest 35/35 snapshot/lifecycle/short-layout cases. These overlapping selections are not unique feature counts. |
+| Complete native suite | A fresh 5,245-case run is in progress when this packet is recorded. The earlier 5,233-case run had four zero-height layout failures, subsequently reproduced and fixed. It is not described as a complete green run. |
+| Changed C++ branches | 263/286 outcomes, 91.96%, on added branch-start lines against `effb134`, combining the preceding full profile with current affected/lifecycle profiles and the current application mapping. QML, scripts and other platforms are excluded. LLVM retains one unchanged function-data mismatch warning. |
+| Store channel | Current Store build and all 213 CI-selected provider/import/Store boundaries pass. |
+| Real local Kubernetes | TLS/client certificates, multi-container logs, read-only draft checks, confirmed JSON Patch, conflict reconciliation, Secret write/read-back/remasking, PTY/vi/ANSI/resize/interrupts and UID-protected deletion pass. Owned cluster `podlord-native-run-ekzr95` and its volumes are removed. |
+| macOS direct package | Fresh standalone packaging preflight passes. This is not installed-startup, distribution-signing, licensing or full-parity clearance. |
+| Android package | Current ARM64 APK builds, uses the existing local signing identity and passes 16-KiB alignment. Its first new journey stopped before installation because the local Kubernetes fixture failed with container-runtime/fsnotify errors. A sequential fixture attempt is pending. |
+
+The latest valid foreground measurement retains the unchanged 8-ms frame-CPU
+gate. Filter p95 is 12.06 ms, sort 15.27 ms, cached session 19.45 ms and cached
+inspector 10.70 ms. Scroll passes at 3.29 ms. Interaction latency passes. Peak RSS
+308,953,088 bytes and warm growth 4,751,360 bytes narrowly pass their 310/5-MB
+limits. Nonsync idle CPU is 2.43% against 2%. The window stayed active/exposed and
+was closed afterward. These results predate the final allocation-literal and
+landscape-only adjustments. CPU remains a release blocker. Background Metal
+runs remain diagnostics, not foreground release evidence.
+
+Hosted run 41230525878 passed Kubernetes, Windows, iOS and macOS ARM64, but failed
+Linux retained-cell assertions and timed out on Intel. The retained-cell tests
+now resolve live delegates through Qt's public table API and retain a resource
+that actually survives the incoming filter. They keep their identity, mutation,
+request and deadline assertions. The Intel job reached the shared 90-minute
+limit after 70m40s for native build/tests/coverage, 10m26s for Store boundaries
+and 6m43s for the Store package. Its direct-package build was then cancelled.
+This is not evidence of a package-size failure. A fresh hosted run remains
+necessary. No CI timeout or performance limit was raised.
+
+Detailed logs, source/package manifests, profiles and frames remain under
+`2026-10-31-app-store/background-snapshot-*` outside Git. Earlier Android ADB
+exit-255 failures are not cleared by a launcher-only probe: that separate probe
+completed 440 reads but did not reproduce the installed-app journey. Audio is
+disabled throughout routine tests. Google-account work stays paused, and no
+release, tag or Store upload is performed.

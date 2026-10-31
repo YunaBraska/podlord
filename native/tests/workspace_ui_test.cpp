@@ -2960,11 +2960,42 @@ bool execute(const QString& requestedScenario) {
         return click(window,item(window,"refreshSettingsDiagnostics")) && server.requests.size()==calls;
     }
     if (scenario.startsWith("radar_")) {
+        const bool shortLandscape = scenario.startsWith("radar_info_panel_short_landscape");
+        // The real 640x320 Android capture has 24-pixel system bars at both edges.
+        const QSize landscapeSurface(640, scenario.endsWith("_insets") ? 272 : 320);
         const auto failed = [&](const char* stage) {
             const auto* alerts = workspace.alerts();
             std::fprintf(stderr, "Radar setup failed: stage=%s resources=%d busy=%d water=%d alerts_busy=%d error=%s evaluation=%s\n",
                 stage, workspace.resourceCount(), workspace.busy(), workspace.radarWaterEnabled(), alerts->busy(),
                 qPrintable(alerts->error()), qPrintable(alerts->evaluationError()));
+            if (shortLandscape) {
+                std::fprintf(stderr,"Short landscape radar: scenario=%s window=%dx%d content=%gx%g backend=%d\n",
+                    qPrintable(requestedScenario),window->width(),window->height(),window->contentItem()->width(),window->contentItem()->height(),
+                    int(window->rendererInterface()->graphicsApi()));
+                const auto geometry = [&](const char* name, QQuickItem* entry) {
+                    if (!entry) { std::fprintf(stderr,"Radar geometry %s: missing\n",name); return; }
+                    const auto scene=entry->mapRectToScene(entry->boundingRect());
+                    const auto exposed=podlord::test::visibleBounds(window,entry);
+                    std::fprintf(stderr,"Radar geometry %s: type=%s scene=(%g,%g %gx%g) exposed=(%g,%g %gx%g) visible=%d clip=%d opacity=%g\n",
+                        name,entry->metaObject()->className(),scene.x(),scene.y(),scene.width(),scene.height(),
+                        exposed.x(),exposed.y(),exposed.width(),exposed.height(),entry->isVisible(),entry->clip(),entry->opacity());
+                };
+                auto* map=item(window,"resourceRadar");
+                auto* pane=map;
+                while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
+                geometry("source-sidebar",window->findChild<QQuickItem*>("workspaceSidebarHost"));
+                geometry("host",pane ? pane->parentItem() : nullptr);
+                geometry("pane",pane);
+                geometry("map-layout",map ? map->parentItem() : nullptr);
+                geometry("map",map);
+                geometry("water",item(window,"radarWater"));
+                geometry("info",item(window,"radarInfoPanel"));
+                auto* source=map ? map->property("source").value<QAbstractItemModel*>() : nullptr;
+                std::fprintf(stderr,"Radar source: rows=%d count=%d expanded=%d\n",source ? source->rowCount() : -1,
+                    map ? map->property("count").toInt() : -1,pane && pane->property("expanded").toBool());
+                const auto capture=qEnvironmentVariable("PODLORD_UI_FAILURE_FRAME");
+                if (!capture.isEmpty()) window->grabWindow().save(capture);
+            }
             const auto evidence = qEnvironmentVariable("PODLORD_RADAR_ACTION_EVIDENCE");
             if (!evidence.isEmpty()) window->grabWindow().save(evidence + "/" + scenario + "-"
                 + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-setup.png", "PNG");
@@ -2991,8 +3022,8 @@ bool execute(const QString& requestedScenario) {
             if (!workspace.alerts()->saveRule(rule) || !waitFor([&] { return !workspace.alerts()->busy(); })) return false;
         }
         if (scenario.startsWith("radar_info_panel_")) {
-            window->resize(scenario.endsWith("_phone") ? QSize(390,844) : QSize(640,320));
-            QTest::qWait(30);
+            window->resize(scenario.endsWith("_phone") ? QSize(390,844) : shortLandscape ? landscapeSurface : QSize(640,320));
+            if (!shortLandscape) QTest::qWait(30);
         }
         if (!click(window, item(window, mapRadar ? "mapWorkspaceButton" : "radarWorkspaceButton"))) return failed("open radar");
         auto* radar = item(window, "resourceRadar");
@@ -3007,6 +3038,77 @@ bool execute(const QString& requestedScenario) {
             if (!frame.isEmpty() && !window->grabWindow().save(frame)) return false;
         }
         const auto calls = server.requests.size();
+        if (shortLandscape) {
+            auto* water=item(window,"radarWater");
+            auto* info=item(window,"radarInfoPanel");
+            auto* pane=radar;
+            while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
+            const auto renderedFrame=[&] {
+                QSignalSpy frames(window,&QQuickWindow::frameSwapped);
+                window->update();
+                return waitFor([&] { return !frames.isEmpty(); });
+            };
+            if (!renderedFrame()) return failed("renderer/requested frame missing");
+            if (window->size()!=landscapeSurface || window->contentItem()->size()!=QSizeF(landscapeSurface)
+                || !window->property("compactLandscape").toBool()) return failed("geometry/exact short landscape composition");
+            if (!water || !info || !pane || pane->property("expanded").toBool()!=mapRadar)
+                return failed("geometry/radar composition owner");
+            const auto scene=[](QQuickItem* entry) { return entry->mapRectToScene(entry->boundingRect()); };
+            const auto geometryValid=[&] {
+                const auto map=scene(radar),background=scene(water),details=scene(info);
+                const QRectF windowBounds(0,0,window->width(),window->height());
+                return radar->isVisible() && water->isVisible() && info->isVisible()
+                    && map.width()>0 && map.height()>0 && details.width()>0 && details.height()>0
+                    && background==map && !map.intersects(details)
+                    && windowBounds.contains(map) && windowBounds.contains(details)
+                    && podlord::test::visibleBounds(window,radar).contains(map)
+                    && podlord::test::visibleBounds(window,water).contains(background)
+                    && podlord::test::visibleBounds(window,info).contains(details);
+            };
+            if (!geometryValid()) return failed("geometry/starved, clipped or overlapping map and fixed info");
+            const auto initialMap=scene(radar),initialInfo=scene(info);
+            const QColor background("#061621");
+            const auto painted=[&](int index) {
+                const auto point=radarPoint(radar,index);
+                if (!point || !radarPointVisible(radar,index)
+                    || point->path!=workspace.table()->index(index,0).data(Qt::UserRole).toString())
+                    return failed("geometry/real resource point outside map");
+                const auto frame=window->grabWindow();
+                if (frame.isNull()) return failed("renderer/empty window capture");
+                const double ratio=double(frame.width())/window->width();
+                const auto area=QRectF(scene(radar).topLeft()*ratio,radar->size()*ratio).toAlignedRect().intersected(frame.rect());
+                int waterPixels=0;
+                for (int y=area.top();y<=area.bottom();++y) for (int x=area.left();x<=area.right();++x)
+                    if (frame.pixelColor(x,y)==background) ++waterPixels;
+                const auto resourcePixel=podlord::test::radarPixel(window,index);
+                if (waterPixels==0 || !resourcePixel.isValid() || resourcePixel==background) {
+                    std::fprintf(stderr,"Short landscape paint: resource=%d waterPixels=%d mapPixels=%dx%d resourcePixel=%s\n",
+                        index,waterPixels,area.width(),area.height(),qPrintable(resourcePixel.name(QColor::HexArgb)));
+                    return failed(waterPixels==0 ? "renderer/water background missing" : "renderer/real resource point missing");
+                }
+                return true;
+            };
+            for (const int index : {0,expectedRows-1}) {
+                radar->forceActiveFocus();
+                QTest::keyClick(window,index==0 ? Qt::Key_Home : Qt::Key_End);
+                const auto name=workspace.table()->index(index,0).data(Qt::UserRole+1).toString();
+                if (!waitFor([&] {
+                    auto* heading=item(window,"radarInfoText");
+                    return radarPointVisible(radar,index) && heading && heading->isVisible()
+                        && heading->property("text").toString().contains(name) && info->property("hasDetails").toBool();
+                })) return failed("geometry/focused real resource and external info unavailable");
+                const auto point=radarPoint(radar,index);
+                if (!point) return failed("geometry/focused resource point missing");
+                QTest::mouseMove(window,radar->mapToScene(point->bounds.center()).toPoint());
+                if (!renderedFrame()) return failed("renderer/hover frame missing");
+                if (!geometryValid() || scene(radar)!=initialMap || scene(info)!=initialInfo)
+                    return failed("geometry/focus or hover resized fixed map/info regions");
+                if (!painted(index)) return false;
+            }
+            if (server.requests.size()!=calls || workspace.resourceCount()!=expectedRows || !workspace.inspectorPath().isEmpty())
+                return failed("cached radar composition changed requests, filters or inspector");
+            return saveShellFrame(window,requestedScenario);
+        }
         const auto typeRadarQuery=[&](const QString& value, Qt::Key key=Qt::Key_unknown) {
             // On a phone, leave the modal mini-radar before using the main search,
             // then return through the same public sidebar button a user uses.

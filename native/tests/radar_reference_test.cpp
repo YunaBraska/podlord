@@ -95,6 +95,35 @@ QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
     }
     return result;
 }
+bool projectionSnapshot() {
+    podlord::ResourceTable table;
+    const QJsonObject original{{"path", "/api/v1/namespaces/default/pods/old"}, {"name", "old"},
+        {"kind", "Pod"}, {"namespace", "default"}, {"uid", "old-uid"}, {"status", "Running"}};
+    if (!table.publish({original}, "local")) return false;
+    podlord::RadarIsland radar;
+    radar.setWidth(240); radar.setHeight(200); radar.setSource(&table);
+    if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 1; }, 3000)) return setupFailure("initial complete projection");
+    QSignalSpy removed(radar.tiles(), &QAbstractItemModel::rowsRemoved), reset(radar.tiles(), &QAbstractItemModel::modelReset);
+    auto replacement = original;
+    replacement["path"] = "/api/v1/namespaces/default/pods/new"; replacement["name"] = "new"; replacement["uid"] = "new-uid";
+    if (!table.publish({replacement}, "local")) return false;
+    radar.setViewPose({{"x", 12}, {"y", -17}, {"zoom", .75}});
+    radar.setViewPose({{"x", 2}, {"y", -5}, {"zoom", .8}});
+    const QVariantMap wanted{{"x", 0}, {"y", 0}, {"zoom", 1}};
+    radar.setViewPose(wanted);
+    if (radar.tiles()->rowCount() != 1 || !removed.isEmpty() || !reset.isEmpty())
+        return setupFailure("camera published an incomplete outgoing snapshot before source synchronization");
+    const auto names = roles(radar.tiles());
+    if (!QTest::qWaitFor([&] {
+        return radar.tiles()->rowCount() == 1
+            && radar.tiles()->index(0, 0).data(names["resourcePath"]).toString() == replacement["path"].toString();
+    }, 3000)) return setupFailure("latest source projection did not settle");
+    if (radar.viewPose() != wanted) return setupFailure("deferred projection lost the latest camera");
+    podlord::RadarIsland reference;
+    reference.setWidth(240); reference.setHeight(200); reference.setSource(&table);
+    if (!QTest::qWaitFor([&] { return reference.tiles()->rowCount() == 1; }, 3000)) return false;
+    return coordinates(radar.tiles()) == coordinates(reference.tiles()) || setupFailure("coalesced projection changed deterministic coordinates");
+}
 bool camera(const QString& scenario) {
     podlord::ResourceTable table;
     if (!table.publish(QJsonArray{QJsonObject{{"path","/api/v1/namespaces/default/pods/camera"},
@@ -423,6 +452,7 @@ bool silhouettes() {
     return passed || setupFailure("equally populated contexts have indistinguishable silhouettes");
 }
 bool exercise(const QStringList& args) {
+    if (args.size() == 2 && args[1] == "projection_snapshot") return projectionSnapshot();
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();

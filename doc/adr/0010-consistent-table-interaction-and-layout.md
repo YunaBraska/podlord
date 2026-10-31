@@ -104,9 +104,45 @@ not their transient presentation state, and do not reset the model.
 Clock-dependent Age and value previews are not retained. Tooltips reuse the
 same plain-text formatter and apply escaping at their own boundary. The
 existing single-column sort-key buffer remains snapshot-owned and can survive
-the NONE state. No per-session presentation registry, persisted data, additional
-resource cache, refresh timer or network request is introduced. These values
-are subject to the unchanged process-memory and CPU gates, not an exemption.
+the NONE state. These values are subject to the unchanged process-memory and
+CPU gates, not an exemption.
+
+### Background Snapshot Preparation
+
+The confirmed background-preparation decision extends the derived values to
+completed projections for open sessions. The canonical ResourceClient snapshot
+remains authoritative. No additional Kubernetes data, persistence, refresh timer
+or network request is introduced. A projection retains shared immutable source
+documents, formatted non-clock cells, the selected sort keys, typed metric
+contributions, event membership and health counts. It does not retain another
+Qt view or model per session.
+
+The prepared row identity and categorical roles reuse decoded strings rather
+than repeatedly materializing them from JSON. Type flags preserve the existing
+empty-string result for non-string metadata. Identical canonical rows adopt
+derived values without emitting visible model changes.
+
+Each visible window owns at most one cancellable preparation task in the
+existing Qt thread pool. The worker reads captured values and owns its temporary
+model. It never accesses the live GUI model, transport or stores. Publication
+checks the current session, window visibility, session ownership, canonical
+snapshot and cluster label. Replaced results are discarded. The next task reads
+the latest authoritative state instead of maintaining another pending queue or
+generation counter.
+
+Cold snapshots still use the existing immediate publication path. Completed
+projections warm subsequent reads and cached handoffs without delaying filter
+results, selection or inspector freshness. Filtered summaries reduce typed
+contributions in the same visible order. The JSON entrypoint uses the same
+decoder and reducer, preserving missing, stale, partial and overflow behavior.
+Age remains live. Prepared display values are complete before sharing, so the
+worker never shares partially mutable lazy cells with the GUI.
+
+Hiding or closing a window cancels its task. Showing it republishes only the
+current cache. Closed sessions drop projections, and detachment transfers a
+completed projection with its existing session owner. The existing memory and
+frame-CPU gates must demonstrate whether this trade-off is acceptable. A
+passing functional test alone does not establish a performance gain.
 
 ### How Does The Ports Table Preserve Forward Ownership And Older Layouts?
 

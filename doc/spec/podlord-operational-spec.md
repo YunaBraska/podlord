@@ -574,6 +574,10 @@ and be drawn after points and alarm effects. Colliding names may be decluttered
 under the existing zoom rules instead of being painted through resource points.
 Hover/focus details MUST occupy a fixed area outside the map: below the small
 Radar, beside a sufficiently wide expanded map and below it otherwise. Showing
+the small or expanded Radar in very short landscape windows MUST instead place
+the fixed reader beside the map so system bars cannot collapse the canvas to
+zero height. This exception applies responsively, not through a separate mobile
+implementation. Portrait and taller windows keep the existing placement. Showing
 details MUST NOT resize the canvas or hide its points. All existing metrics,
 requests, limits and measurement timestamps MUST remain reachable by scrolling.
 Pointer and keyboard interaction with those details MUST NOT freeze later
@@ -1124,18 +1128,18 @@ while the containing resource item exists. Reduced-motion handling remains in
 the same presentation owner; background alarm evaluation still covers the whole
 session under ALT-001.
 
-The single shared Radar tooltip now reuses the inspector/dashboard metric gauge.
+The shared external Radar details reader reuses the inspector/dashboard metric gauge.
 It displays cached CPU, memory and storage presentation, observed units,
 request/limit/capacity markers when available, denominator labels, incomplete or
 stale annotations, and measurement source/time/window. Long usage labels wrap
 within the available width; the bar occupies its own flexible row instead of
-competing with labels. Tooltip gauges exist only while the tooltip is shown.
-As confirmed on 2026-10-29, the Radar tooltip stays inside the drawing viewport,
-below its toolbar. It MUST NOT cover the zoom, reset or workspace actions.
-The triggering resource remains uncovered and clickable. Its cached details stay
-available while the user hovers or focuses the scroll surface. Existing context,
+competing with labels. Gauges exist only while cached details are shown.
+Placement and dismissal follow the fixed external reader contract above,
+including the confirmed short-landscape exception. The reader MUST NOT cover
+the map, zoom, reset or workspace actions. Its cached details stay available
+while the user hovers or focuses the scroll surface. Existing context,
 filtering and hidden-surface dismissal rules remain in force.
-When its full content exceeds that viewport, a native vertical scroll surface
+When its full content exceeds the reader, a native vertical scroll surface
 retains all cached details instead of truncating them or covering other controls.
 Hover, focus, scrolling and painting do not request measurements. An absent
 storage usage value remains unavailable. Configured references are not presented

@@ -65,6 +65,7 @@ while [ ! -f "$RUN/ready" ]; do
     sleep 0.1
 done
 export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-cocoa} QT_QUICK_CONTROLS_STYLE=Fusion
+export PODLORD_DISABLE_AUDIO=1 PODLORD_DISABLE_UPDATE_CHECK=1
 if [ "$QT_QPA_PLATFORM" = offscreen ]; then
     QT_QUICK_BACKEND=software; export QT_QUICK_BACKEND
 else
@@ -75,6 +76,7 @@ if [ "$QT_QPA_PLATFORM" = cocoa ] && [ -n "$BUNDLE" ]; then
     if [ "$MODE" = --background-metal-diagnostic ]; then set -- -g --env QSG_RHI_BACKEND=metal; fi
     /usr/bin/open -n -W "$@" -a "$BUNDLE" --stdout "$OUT/measurements.jsonl" --stderr "$OUT/ui.log" \
         --env QT_QPA_PLATFORM=cocoa --env "QT_QUICK_CONTROLS_STYLE=$QT_QUICK_CONTROLS_STYLE" \
+        --env PODLORD_DISABLE_AUDIO=1 --env PODLORD_DISABLE_UPDATE_CHECK=1 \
         --env "DYLD_LIBRARY_PATH=${DYLD_LIBRARY_PATH:-}" --env "TMPDIR=$TMPDIR" \
         --env QSG_INFO=1 --args "$RUN/kubeconfig" ${MODE:+"$MODE"} > "$OUT/launch.log" 2>&1 &
     LAUNCHER=$!

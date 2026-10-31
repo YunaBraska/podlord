@@ -264,20 +264,38 @@ bool run(const QString& scenario, const QString& referencePresets) {
             return inspected;
         }
         if (scenario == "cache_tab_reuse") {
+            const auto currentCell = [&] { return podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "resourceTable"), 0, 0); };
+            const int expectedSortColumn = workspace.sortColumnIndex();
+            const auto expectedSortDirection = workspace.sortDirection();
             const auto other = workspace.contexts().last().toMap().value("id").toString();
             if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })
-                || !workspace.setWorkspacePage("resources") || !waitFor([&] { return item(window,"cell_0_0") != nullptr; })) return false;
+                || !workspace.setWorkspacePage("resources") || !waitFor([&] { return currentCell() != nullptr; })) return false;
             auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
             if (!displayed) return false;
             window->update(); QTest::qWait(30);
-            const QPointer<QQuickItem> cell = item(window,"cell_0_0");
+            const QPointer<QQuickItem> cell = currentCell();
+            void* const retainedAddress = static_cast<void*>(cell.data());
             QSignalSpy resets(displayed,&QAbstractItemModel::modelReset);
+            QSignalSpy removed(displayed,&QAbstractItemModel::rowsRemoved), inserted(displayed,&QAbstractItemModel::rowsInserted);
+            const auto fromSession = workspace.currentSession();
             const int before = server.requests;
             if (!workspace.activate(session) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.currentSession() == session; })) return false;
             window->update(); QTest::qWait(30);
-            const bool reused = resets.isEmpty() && cell && cell == item(window,"cell_0_0")
+            const bool reused = resets.isEmpty() && cell && cell == currentCell()
                 && cell->property("text").toString() == displayed->index(0,0).data().toString() && server.requests == before;
-            if (!reused) std::fprintf(stderr,"Cached session table: resets=%d cellAlive=%d extraRequests=%d\n",int(resets.size()),bool(cell),server.requests-before);
+            if (!reused) {
+                auto* current = currentCell();
+                const auto actualText = cell ? cell->property("text").toString() : QString("<destroyed>");
+                const auto expectedText = displayed->index(0,0).data().toString();
+                std::fprintf(stderr,"Cached session table comparisons: resetEmpty=%d cellAlive=%d sameCell=%d textMatch=%d requestsUnchanged=%d sessionMatch=%d sortMatch=%d\n",
+                    resets.isEmpty(),bool(cell),cell.data()==current,cell && actualText==expectedText,server.requests==before,
+                    workspace.currentSession()==session,workspace.sortColumnIndex()==expectedSortColumn && workspace.sortDirection()==expectedSortDirection);
+                std::fprintf(stderr,"Cached session table state: resets=%d removed=%d inserted=%d extraRequests=%d retainedOriginal=%p retainedLive=%p current=%p actualText=\"%s\" currentText=\"%s\" expectedText=\"%s\" fromSession=%s actualSession=%s expectedSession=%s actualSort=%d/%s expectedSort=%d/%s\n",
+                    int(resets.size()),int(removed.size()),int(inserted.size()),server.requests-before,retainedAddress,static_cast<void*>(cell.data()),static_cast<void*>(current),
+                    qPrintable(actualText),qPrintable(current ? current->property("text").toString() : QString("<missing>")),qPrintable(expectedText),
+                    qPrintable(fromSession),qPrintable(workspace.currentSession()),qPrintable(session),workspace.sortColumnIndex(),qPrintable(workspace.sortDirection()),
+                    expectedSortColumn,qPrintable(expectedSortDirection));
+            }
             return reused;
         }
         if (scenario.startsWith("limit_")) {

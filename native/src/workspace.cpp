@@ -20,6 +20,7 @@
 #include <QStringDecoder>
 #include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
+#include <array>
 #include <tuple>
 #include <QRegularExpression>
 #include <cmath>
@@ -82,13 +83,9 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() >= rows_.size() || index.column() >= fields_.size()) return {};
     const auto& entry = rows_[index.row()];
     const auto& row = entry.document;
+    if (role >= Qt::UserRole && role <= Qt::UserRole + 4) return metadata(index.row(), role);
     switch (role) {
-    case Qt::UserRole: return row[identityField_].toString();
-    case Qt::UserRole + 1: return row["name"_L1].toString();
-    case Qt::UserRole + 2: return row["kind"_L1].toString();
-    case Qt::UserRole + 3: return row["namespace"_L1].toString();
-    case Qt::UserRole + 4: return row["status"_L1].toString();
-    case Qt::UserRole + 5: return appearanceStatus(appearance_, row["status"_L1].toString());
+    case Qt::UserRole + 5: return appearanceStatus(appearance_, metadata(index.row(), Qt::UserRole + 4));
     case Qt::UserRole + 7: return resourceMetricPresentation(row);
     case Qt::UserRole + 8: return row.contains("metricReferences"_L1);
     case Qt::UserRole + 9: return row["problemSeverity"_L1].toInt();
@@ -130,21 +127,22 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         const bool metric = field == "cpu" || field == "memory" || field == "storage";
         QString value = cell.isDouble() ? QString::number(cell.toDouble(), 'g', 16) : text;
         if (metric) {
-            value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : "-";
+            value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : QStringLiteral("-");
             if (cell.isDouble() && !row["metricComplete"].toObject()[field].toBool()) value += " (incomplete)";
             if (cell.isDouble() && row["metricStale"].toBool()) value += " (stale)";
         } else if (field == "createdAt") {
-            if (!created.isValid() || created > now) value = "-";
+            if (!created.isValid() || created > now) value = QStringLiteral("-");
             else {
                 const auto seconds = created.secsTo(now);
                 value = seconds >= 86400 ? QString::number(seconds/86400)+"d" : seconds >= 3600 ? QString::number(seconds/3600)+"h"
                     : seconds >= 60 ? QString::number(seconds/60)+"m" : QString::number(seconds)+"s";
             }
-        } else if ((field == "restarts" || field == "ready" || field == "owner" || field == "issue" || field == "cluster") && value.isEmpty()) value = "-";
+        } else if ((field == "restarts" || field == "ready" || field == "owner" || field == "issue" || field == "cluster") && value.isEmpty()) value = QStringLiteral("-");
         if (cacheDisplay) entry.display[index.column()] = value;
         return value;
     }
-    if (role == Qt::UserRole + 12) return field == "from" || field == "to" ? row[field + "Path"].toString() : row[identityField_].toString();
+    if (role == Qt::UserRole + 12) return field == "from" || field == "to" ? row[field + "Path"].toString()
+        : metadata(index.row(), Qt::UserRole);
     if (role == Qt::ForegroundRole) {
         if (field == "status" || field == "eventType" || (field == "type" && fields_.contains("reason"))) return appearanceStatus(appearance_, text);
         static const QStringList identities{"kind", "namespace", "status", "node", "image", "cluster", "eventType", "type", "from", "to"};
@@ -163,6 +161,17 @@ QHash<int, QByteArray> ResourceTable::roleNames() const {
         {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}};
 }
 QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index].document : QJsonObject{}; }
+QString ResourceTable::metadata(int row, int role) const {
+    if (row < 0 || row >= rows_.size()) return {};
+    const auto& entry = rows_[row];
+    if (role == Qt::UserRole) return entry.prepared ? entry.identity : entry.document[identityField_].toString();
+    const int column = role - Qt::UserRole - 1;
+    if (column < 0 || column >= 4) return {};
+    if (entry.prepared) return entry.metadataStrings & (1 << column) ? *entry.display[column] : QString{};
+    using namespace Qt::StringLiterals;
+    static constexpr std::array<QLatin1StringView, 4> fields{"name"_L1, "kind"_L1, "namespace"_L1, "status"_L1};
+    return entry.document[fields[column]].toString();
+}
 bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (appearance_ == appearance) return true;
     appearance_ = appearance;
@@ -355,7 +364,11 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         publishInspector(); emit yamlEditChanged(); emit changed();
         if (mapPreviewNeeded()) emit mapPreviewRequested(id);
     } });
-    connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) { if (id == active_) publish(); });
+    connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
+        preparedSnapshots_.remove(id);
+        if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
+        if (id == active_ && windowVisible_) publish();
+    });
     connect(&client_, &ResourceClient::collectionAccepted, this, [this](const QString& id) {
         if (id==active_) { pendingMapPreview_=id; if (mapPreviewNeeded()) emit mapPreviewRequested(id); }
     });
@@ -849,6 +862,8 @@ bool Workspace::setWindowVisible(bool visible) {
     emit logViewChanging(); windowVisible_ = visible;
     if (!visible && !revealedValues_.isEmpty()) { revealedValues_.clear(); publishInspector(true); }
     setWindowFocused(windowFocused_);
+    if (visible) publish();
+    else if (snapshotPreparation_) snapshotPreparation_->watcher->cancel();
     if (logsVisible()) client_.showLogs(active_, currentNavigation().inspected, viewId_);
     else client_.hideLogs(viewId_);
     publishLogs(); emit changed(); return true;
@@ -859,24 +874,34 @@ bool Workspace::eventFilter(QObject* watched, QEvent* event) {
     if (watched == window_ && (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress || event->type() == QEvent::Wheel || event->type() == QEvent::TouchBegin)) client_.userActivity(viewId_);
     return QObject::eventFilter(watched, event);
 }
-QString Workspace::activeCluster() const {
-    if (const auto connection = client_.connection(active_))
+QString Workspace::activeCluster(const QString& session) const {
+    if (const auto connection = client_.connection(session.isEmpty() ? active_ : session))
         for (const auto& source : sources_.sources) for (const auto& context : source.contexts)
             if (context.id == connection->contextId) return context.cluster;
     return {};
 }
 bool Workspace::publish() {
     const bool sessionChanged = publishedSession_ != active_;
+    if (sessionChanged) {
+        const auto outgoing = preparedSnapshots_.find(publishedSession_);
+        if (outgoing != preparedSnapshots_.end()) rows_.retainPreparedSort(outgoing.value());
+    }
     publishedSession_ = active_;
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
     const auto nav = currentNavigation();
     visibleTable_.setLimit(nav.limit);
-    rows_.publish(snapshot, cluster, sessionChanged);
+    const auto prepared = preparedSnapshots_.constFind(active_);
+    const bool ready = prepared != preparedSnapshots_.cend() && prepared->source == snapshot && prepared->cluster == cluster
+        && rows_.publishPrepared(*prepared, sessionChanged);
+    if (!ready) rows_.publish(snapshot, cluster, sessionChanged);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;
-    for (const auto& value : snapshot) {
+    if (ready) {
+        eventSnapshot = prepared->events;
+        healthSummary_ = prepared->health;
+    } else for (const auto& value : snapshot) {
         const auto row=value.toObject();
         if (row["kubernetesEvent"].toBool()) eventSnapshot.append(value);
         const int severity=row["problemSeverity"].toInt();
@@ -884,7 +909,7 @@ bool Workspace::publish() {
         else if (severity==1) ++warning;
         else ++healthy;
     }
-    healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
+    if (!ready) healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
     if (!eventSnapshot.isEmpty() || eventRows_.rowCount() != 0) eventRows_.publish(eventSnapshot, cluster, sessionChanged);
     publishPorts();
     table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);
@@ -895,6 +920,7 @@ bool Workspace::publish() {
     events_.filter(nav.eventFilter); events_.sort(nav.eventColumn, nav.eventOrder);
     dashboardDirty_=true; publishDashboard();
     publishInspector(false, true); emit resourcePresentationChanged(); emit changed();
+    prepareSnapshot();
     return true;
 }
 bool Workspace::reload() {
@@ -1379,13 +1405,15 @@ bool Workspace::filter(const QString& text) {
 bool Workspace::publishDashboard() {
     if (!dashboardDirty_) return true;
     QMap<QString, int> kinds; int problems=0;
-    QJsonArray scoped;
+    ResourceMetricSummary metricSummary;
     for (int index=0; index<table_.rowCount(); ++index) {
-        const auto row=rows_.row(table_.mapToSource(table_.index(index, 0)).row()); scoped.append(row); ++kinds[row["kind"].toString()]; if (row["problems"].toBool()) ++problems;
+        const int sourceRow = table_.mapToSource(table_.index(index, 0)).row();
+        const auto row=rows_.row(sourceRow); ++kinds[row["kind"].toString()]; if (row["problems"].toBool()) ++problems;
+        rows_.accumulateMetrics(sourceRow, metricSummary);
     }
     QStringList counts; for (auto it=kinds.begin(); it!=kinds.end(); ++it) counts.append(it.key()+": "+QString::number(it.value()));
     const auto summary=QString("%1 / %2 cached resources; %3 with problems. ").arg(table_.rowCount()).arg(rows_.rowCount()).arg(problems)+counts.join(" / ");
-    const auto metrics=resourceMetricSummary(scoped);
+    const auto metrics=metricSummary.presentation();
     const bool changed=dashboardSummary_!=summary || pulseMetrics_!=metrics;
     dashboardSummary_=summary; pulseMetrics_=metrics; dashboardDirty_=false;
     if (changed) emit dashboardChanged(); return true;

@@ -10,7 +10,8 @@ Pane {
     id: radarPane
     property bool compact: false
     property bool expanded: false
-    readonly property bool detailsBeside: expanded && availableWidth >= 840
+    readonly property bool shortLandscape: Window.window && Window.window.width > Window.window.height && Window.window.height < 500
+    readonly property bool detailsBeside: shortLandscape || expanded && availableWidth >= 840
     readonly property real infoPanelHeight: detailsBeside ? 0 : expanded ? Math.min(160, Math.max(44, availableHeight / 3)) : Window.window && Window.window.height < 500 ? 44 : 112
     readonly property int count: workspace.resourceCount
     readonly property int navigationIndex: grid.currentIndex
@@ -348,11 +349,11 @@ Pane {
                 }
                 onTargetChanged: Qt.callLater(syncTarget)
                 Layout.fillWidth: !radarPane.detailsBeside
-                Layout.minimumWidth: radarPane.detailsBeside ? 200 : 0
-                Layout.preferredWidth: radarPane.detailsBeside ? Math.min(320, radarPane.availableWidth * 0.32) : -1
+                Layout.minimumWidth: radarPane.detailsBeside && !radarPane.shortLandscape ? 200 : 0
+                Layout.preferredWidth: radarPane.detailsBeside ? Math.min(320, radarPane.availableWidth * (radarPane.shortLandscape ? 0.42 : 0.32)) : -1
                 Layout.fillHeight: radarPane.detailsBeside
                 Layout.preferredHeight: radarPane.detailsBeside ? -1 : radarPane.infoPanelHeight
-                padding: 8
+                padding: radarPane.shortLandscape ? 4 : 8
                 Accessible.role: Accessible.Grouping
                 Accessible.name: "Cached resource details"
                 background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }

@@ -8,8 +8,11 @@
 #include "table_layout.h"
 #include "view_state.h"
 #include "resource_display_model.h"
+#include "resource_metrics.h"
 #include "release_updates.h"
 #include <QFuture>
+#include <QFutureWatcher>
+#include <QPromise>
 #include "alerts.h"
 #include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
@@ -23,7 +26,29 @@ class WorkspaceRuntime;
 class WindowHost;
 class ResourceTable final : public QAbstractTableModel {
     Q_OBJECT
+    struct Row {
+        QJsonObject document;
+        mutable QList<std::optional<QString>> display;
+        std::shared_ptr<const ResourceMetricContribution> metrics = {};
+        QString identity = {};
+        quint8 metadataStrings = 0;
+        bool prepared = false;
+        bool operator==(const Row& other) const { return document == other.document; }
+    };
 public:
+    /** Immutable completed projection. Only canonical snapshot equality permits reuse. */
+    class PreparedSnapshot final {
+        friend class ResourceTable;
+        friend class Workspace;
+        QJsonArray source, events;
+        QString cluster;
+        QStringList fields;
+        QString identity;
+        QList<Row> rows;
+        QList<QVariant> sortValues;
+        int sortColumn = -1;
+        QVariantMap health;
+    };
     explicit ResourceTable(QObject* parent = nullptr,
                            QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"},
                            QStringList captions = {"Name", "Kind", "Namespace", "Status", "Node", "Image", "Cluster", "CPU", "Memory", "Storage", "Age", "Ready", "Restarts", "Owner", "Issue", "UID"}, QString identityField = "path", bool preserveInputOrder = false);
@@ -33,7 +58,13 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
     bool publish(const QJsonArray& rows, const QString& cluster = {}, bool replace = false);
+    static void prepare(QPromise<PreparedSnapshot>& promise, QJsonArray source, QString cluster, int sortColumn);
+    bool publishPrepared(const PreparedSnapshot& snapshot, bool replace = false);
+    bool retainPreparedSort(PreparedSnapshot& snapshot) const;
+    ResourceMetricSummary& accumulateMetrics(int row, ResourceMetricSummary& summary) const;
     QJsonObject row(int index) const;
+    /** Identity/name/kind/namespace/status roles without a QVariant conversion. */
+    QString metadata(int row, int role) const;
     bool setAppearance(const Appearance& appearance);
 private:
     friend class ResourceFilter;
@@ -41,11 +72,6 @@ private:
     const QStringList fields_, captions_;
     const QString identityField_;
     const bool preserveInputOrder_;
-    struct Row {
-        QJsonObject document;
-        mutable QList<std::optional<QString>> display;
-        bool operator==(const Row& other) const { return document == other.document; }
-    };
     QList<Row> rows_;
     QList<QVariant> sortValues_;
     int sortValueColumn_ = -1;
@@ -755,6 +781,14 @@ private:
     Alerts alerts_;
     CredentialProcess& credentials_;
     ResourceTable rows_;
+    QMap<QString, ResourceTable::PreparedSnapshot> preparedSnapshots_;
+    struct SnapshotPreparation final {
+        QString session, cluster;
+        QJsonArray source;
+        QFutureWatcher<ResourceTable::PreparedSnapshot>* watcher;
+    };
+    std::optional<SnapshotPreparation> snapshotPreparation_;
+    void prepareSnapshot();
     ResourceFilter table_;
     ResourceDisplayModel visibleTable_{&table_};
     ResourceTable eventRows_;
@@ -798,7 +832,7 @@ private:
     bool resolve(const QString& id, bool retry = false);
     bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, const QString& renamedSession = {}, const QString& managementNotice = {}, bool inWindow = false);
     bool publish();
-    QString activeCluster() const;
+    QString activeCluster(const QString& session = {}) const;
     bool publishLogs();
     bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);
     bool publishRelated();

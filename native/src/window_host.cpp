@@ -98,6 +98,8 @@ bool WindowHost::detach(Workspace& source, const QString& session) {
         emit source.changed(); return false;
     }
     source.runtime_->owners[session] = target;
+    if (source.preparedSnapshots_.contains(session)) target->preparedSnapshots_.insert(session, source.preparedSnapshots_.take(session));
+    if (source.snapshotPreparation_ && source.snapshotPreparation_->session == session) source.snapshotPreparation_->watcher->cancel();
     source.alerts_.transferSession(session, target->alerts_);
     source.navigation_.remove(session); source.savedViews_.remove(session);
     for (auto it = source.logPositions_.begin(); it != source.logPositions_.end();)

@@ -296,11 +296,12 @@ void RadarIsland::synchronize() {
             const auto cluster=clusterColumn<0 ? QString{} : cache->data(cache->index(0,clusterColumn),Qt::UserRole+6).toString();
             rows.reserve(cache->rowCount());
             for (int index=0;index<cache->rowCount();++index) {
-                const auto row=cache->row(index); const auto kind=row["kind"].toString(), name=row["name"].toString();
-                const auto scope=row["namespace"].toString();
+                const auto row=cache->row(index);
+                const auto kind=cache->metadata(index,Qt::UserRole+2), name=cache->metadata(index,Qt::UserRole+1);
+                const auto scope=cache->metadata(index,Qt::UserRole+3);
                 const auto uid=row["uid"].toString();
                 const auto identity=identityScope_+":"+kind+":"+scope+":"+name+":"+(uid.isEmpty() ? "-" : uid);
-                rows.append({row["path"].toString(),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
+                rows.append({cache->metadata(index,Qt::UserRole),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
             }
         }
         if (rows!=signature_) {
@@ -555,6 +556,7 @@ QImage RadarIsland::previewImage() {
 }
 QRectF RadarIsland::worldViewport() const { return {QPointF(-width()/2/zoom_,-height()/2/zoom_)-pan_,QSizeF(width()/zoom_,height()/zoom_)}; }
 void RadarIsland::project(bool refresh) {
+    if (dirty_) { schedule(); return; }
     using Animation=RadarTiles::Animation;
     QList<RadarTiles::Entry> visible;
     const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());

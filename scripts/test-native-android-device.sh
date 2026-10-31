@@ -8,8 +8,13 @@ apk=$1
 source=$2
 out=$3
 adbPort=5039
-consolePort=5680
+consolePort=5584
 serial="emulator-$consolePort"
+case "${PODLORD_ANDROID_ADB_TRACE:-0}" in
+  0) adbTrace="" ;;
+  1) adbTrace="transport,shell,services,sockets" ;;
+  *) printf 'PODLORD_ANDROID_ADB_TRACE must be 0 or 1\n' >&2; exit 2 ;;
+esac
 [ -f "$apk" ] && [ -f "$source" ] || { printf 'APK and fixture kubeconfig must exist.\n' >&2; exit 2; }
 for tool in platform-tools/adb emulator/emulator cmdline-tools/latest/bin/avdmanager build-tools/36.0.0/aapt; do
   [ -x "$sdk/$tool" ] || { printf 'Required Android SDK tool is missing: %s\n' "$tool" >&2; exit 2; }
@@ -32,20 +37,33 @@ if [ -n "${JAVA_HOME:-}" ]; then PATH="$JAVA_HOME/bin:$PATH"; export PATH; fi
 mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME"
 name="podlord-private-$(basename "$tmp" | tr '[:upper:]' '[:lower:]')"
 emupid=""
-ownedadb=0
+adbpid=""
+adb() {
+  if [ -z "$adbpid" ] || ! kill -0 "$adbpid" 2>/dev/null; then printf 'Owned private ADB server is not running\n' >&2; return 1; fi
+  ADB_TRACE= "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" "$@"
+}
 cleanup() {
   result=$?
   testResult=$result
   cleanupFailed=0
   trap - 0
   if [ -n "$emupid" ]; then
-    "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" logcat -b crash -d > "$out/crash-logcat.txt" 2>&1 || :
-    "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" logcat -d --pid="$(cat "$out/product-pid.txt" 2>/dev/null)" > "$out/product-final-logcat.txt" 2>&1 || :
-    "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" emu kill > "$out/emulator-stop.log" 2>&1 || :
-    kill "$emupid" 2>/dev/null || :
-    wait "$emupid" 2>/dev/null || :
+    adb logcat -b crash -d > "$out/crash-logcat.txt" 2>&1 || :
+    adb logcat -d --pid="$(cat "$out/product-pid.txt" 2>/dev/null)" > "$out/product-final-logcat.txt" 2>&1 || :
+    adb emu kill > "$out/emulator-stop.log" 2>&1 || :
   fi
-  if [ "$ownedadb" = 1 ]; then "$sdk/platform-tools/adb" -P "$adbPort" kill-server > "$out/adb-stop.log" 2>&1 || :; fi
+  for ownedpid in "$emupid" "$adbpid"; do
+    [ -n "$ownedpid" ] || continue
+    printf 'Stopping owned PID %s\n' "$ownedpid" >> "$out/owned-process-stop.log"
+    kill "$ownedpid" 2>/dev/null || :
+    for attempt in $(seq 1 5); do
+      if ! kill -0 "$ownedpid" 2>/dev/null; then break; fi
+      sleep 1
+    done
+    if kill -0 "$ownedpid" 2>/dev/null; then kill -KILL "$ownedpid" 2>/dev/null || cleanupFailed=1; fi
+    wait "$ownedpid" 2>/dev/null || :
+    if kill -0 "$ownedpid" 2>/dev/null; then cleanupFailed=1; fi
+  done
   node -e 'const fs=require("node:fs"),p=process.argv[1];if(!p.startsWith(process.env.HOME+"/.cache/podlord/private-android-release."))throw Error("Unexpected cleanup path");fs.rmSync(p,{recursive:true});' "$tmp" || cleanupFailed=1
   for port in "$adbPort" "$consolePort" "$((consolePort + 1))"; do
     if lsof -n -iTCP:"$port" -sTCP:LISTEN > "$out/cleanup-port-$port.txt" 2>&1; then cleanupFailed=1; fi
@@ -57,18 +75,26 @@ cleanup() {
 trap cleanup 0
 trap 'exit 130' INT TERM
 printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k 'system-images;android-36;google_apis;arm64-v8a' -p "$tmp/device" > "$out/avd-create.log" 2>&1
-"$sdk/platform-tools/adb" -P "$adbPort" --one-device "$serial" start-server > "$out/adb-start.log" 2>&1
-ownedadb=1
+ADB_TRACE="$adbTrace" "$sdk/platform-tools/adb" -P "$adbPort" --one-device "$serial" server nodaemon > "$out/adb-server.log" 2>&1 &
+adbpid=$!
+printf '%s\n' "$adbpid" > "$out/adb-server-pid.txt"
+adbready=0
+for attempt in $(seq 1 10); do
+  if ! kill -0 "$adbpid" 2>/dev/null; then tail -n 16 "$out/adb-server.log"; exit 1; fi
+  if lsof -nP -a -p "$adbpid" -iTCP:"$adbPort" -sTCP:LISTEN > "$out/adb-server-listener.txt" 2>&1; then adbready=1; break; fi
+  sleep 1
+done
+if [ "$adbready" != 1 ]; then printf 'Owned private ADB server did not listen\n' >&2; exit 1; fi
 "$sdk/emulator/emulator" -avd "$name" -port "$consolePort" -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader -memory 2048 -cores 4 > "$out/emulator.log" 2>&1 &
 emupid=$!
 ready=0
 for attempt in $(seq 1 90); do
+  if ! kill -0 "$adbpid" 2>/dev/null; then printf 'Owned private ADB server exited during boot\n' >&2; exit 1; fi
   if ! kill -0 "$emupid" 2>/dev/null; then tail -n 16 "$out/emulator.log"; exit 1; fi
-  if [ "$("$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then ready=1; break; fi
+  if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then ready=1; break; fi
   sleep 2
 done
-if [ "$ready" != 1 ]; then "$sdk/platform-tools/adb" -P "$adbPort" devices -l; tail -n 12 "$out/emulator.log"; exit 1; fi
-adb() { "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" "$@"; }
+if [ "$ready" != 1 ]; then adb devices -l; tail -n 12 "$out/emulator.log"; exit 1; fi
 adb shell input keyevent 82
 adb install --no-streaming "$apk" > "$out/install.log" 2>&1
 activity=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$out/badging.txt")
@@ -90,9 +116,13 @@ uid=$(adb shell stat -c %u /data/user/0/berlin.yuna.podlord | tr -d '\r')
 adb push "$tmp/emulator-kubeconfig" "$private" > "$out/fixture-push.log" 2>&1
 adb shell chown "$uid:$uid" "$private"
 adb shell chmod 600 "$private"
-node - "$out" "$sdk/platform-tools/adb" "$adbPort" "$serial" <<'JOURNEY'
+node - "$out" "$sdk/platform-tools/adb" "$adbPort" "$serial" "$emupid" "$consolePort" "$adbpid" <<'JOURNEY'
 const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');
-const [out,adb,port,device]=process.argv.slice(2), serial=['-P',port,'-s',device];
+const [out,adb,port,device,emulatorPid,consolePort,adbServerPid]=process.argv.slice(2), serial=['-P',port,'-s',device];
+const adbTraceEnabled=process.env.PODLORD_ANDROID_ADB_TRACE==='1',adbServerLog=path.join(out,'adb-server.log'),adbClientStderrLog=path.join(out,'adb-client-stderr.log');
+const adbClientStderr=adbTraceEnabled?fs.openSync(adbClientStderrLog,'a+'):null;
+const adbEnvironment={...process.env,ADB_TRACE:adbTraceEnabled?'transport,shell,services,sockets':''};
+process.on('exit',()=>{if(adbClientStderr!==null)fs.closeSync(adbClientStderr);});
 const inspectorCycles=Number(process.env.PODLORD_ANDROID_INSPECTOR_CYCLES||0);
 if(!Number.isInteger(inspectorCycles)||inspectorCycles<0||inspectorCycles>50)throw Error('Inspector diagnostic cycles must be an integer from 0 to 50');
 const coldInspectorCycles=Number(process.env.PODLORD_ANDROID_COLD_INSPECTOR_CYCLES||0);
@@ -100,22 +130,47 @@ if(!Number.isInteger(coldInspectorCycles)||coldInspectorCycles<0||coldInspectorC
 if(inspectorCycles&&coldInspectorCycles)throw Error('Choose warm or cold inspector diagnostics, not both');
 const inspectorOnly=process.env.PODLORD_ANDROID_INSPECTOR_ONLY||'0';
 if(!['0','1'].includes(inspectorOnly)||(inspectorOnly==='1'&&(inspectorCycles||coldInspectorCycles)))throw Error('Choose a single inspector diagnostic mode');
-const run=(...args)=>cp.execFileSync(adb,[...serial,...args],{encoding:'utf8',timeout:30000,maxBuffer:4000000});
+let firstCommandFailure=false,lastSuccessfulUiAt=null;
+const runAdb=(args,encoding='utf8')=>{
+ const startedAt=new Date().toISOString();
+ const traceStart=adbClientStderr===null?null:fs.fstatSync(adbClientStderr).size;
+ try{
+  try{process.kill(Number(adbServerPid),0);}catch(error){throw Object.assign(Error('Owned private ADB server is not running'),{code:error.code});}
+  return cp.execFileSync(adb,[...serial,...args],{encoding,timeout:30000,maxBuffer:4000000,env:adbEnvironment,...(adbClientStderr===null?{}:{stdio:['ignore','pipe',adbClientStderr]})});
+ }
+ catch(error){
+  if(!firstCommandFailure){
+   firstCommandFailure=true;
+   try{
+    const traceEnd=adbClientStderr===null?null:fs.fstatSync(adbClientStderr).size;
+    const tracedStderr=adbClientStderr===null?null:Buffer.alloc(traceEnd-traceStart);
+    if(tracedStderr)fs.readSync(adbClientStderr,tracedStderr,0,tracedStderr.length,traceStart);
+    const failure={startedAt,failedAt:new Date().toISOString(),command:[adb,...serial,...args],status:error.status??null,signal:error.signal??null,code:error.code??null,stdout:String(error.stdout||''),stderr:String(tracedStderr||error.stderr||''),ownedAdbServerPid:Number(adbServerPid),adbTrace:{enabled:adbTraceEnabled,serverLog:adbServerLog,clientStderrLog:adbTraceEnabled?adbClientStderrLog:null,traceStart,traceEnd},lastSuccessfulUiAt,uiSnapshot:'Saved UI XML is the last successful read, not proof of current device state',host:{}};
+    for(const [name,command,args] of [
+     ['emulatorProcess','ps',['-p',emulatorPid,'-o','pid=,ppid=,stat=,etime=,command=']],
+     ['adbServerProcess','ps',['-p',adbServerPid,'-o','pid=,ppid=,stat=,etime=,command=']],
+     ['privatePortListeners','lsof',['-nP','-iTCP:'+port,'-iTCP:'+consolePort,'-iTCP:'+(Number(consolePort)+1),'-sTCP:LISTEN']],
+     ['privatePortConnections','lsof',['-nP','-iTCP:'+port,'-iTCP:'+consolePort,'-iTCP:'+(Number(consolePort)+1)]]
+    ]){
+     const result=cp.spawnSync(command,args,{encoding:'utf8',timeout:3000,maxBuffer:1000000});
+     failure.host[name]={status:result.status,signal:result.signal,error:result.error?.message,stdout:result.stdout||'',stderr:result.stderr||''};
+    }
+    fs.writeFileSync(path.join(out,'first-adb-failure.json'),JSON.stringify(failure,null,2)+'\n');
+   }catch(diagnosticError){console.error('First ADB failure diagnostics unavailable: '+String(diagnosticError));}
+  }
+  throw error;
+ }
+};
+const run=(...args)=>runAdb(args);
 const decode=s=>s.replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&#10;','\n').replaceAll('&#13;','\r').replaceAll('&#9;','\t').replaceAll('&amp;','&');
 const parseNodes=xml=>[...xml.matchAll(/<node\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/g)].map(m=>Object.fromEntries([...m[0].matchAll(/([\w-]+)=(["'])([\s\S]*?)\2/g)].map(a=>[a[1],decode(a[3])])));
 require('node:assert/strict').deepEqual(parseNodes(`<node text='key: "value > other" &amp; &apos;' resource-id="yaml"/><node text="&amp;lt;"/>`),[{text:`key: "value > other" & '`, 'resource-id':'yaml'},{text:'&lt;'}]);
 require('node:assert/strict').equal(decode('&#10;&#13;&#9;&amp;#10;'),'\n\r\t&#10;');
 let xml='',nodes=[];const steps=[];
 function state(){
- const read=()=>{run('wait-for-device');run('shell','uiautomator','dump','/sdcard/podlord-journey.xml');return run('shell','cat','/sdcard/podlord-journey.xml');};
- try{xml=read();}catch(error){
-  fs.appendFileSync(path.join(out,'transport-read-recovery.log'),String(error)+'\n');
-  run('wait-for-device');
-  const expected=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
-  if(run('shell','pidof','berlin.yuna.podlord').trim()!==expected)throw Error('Product exited or restarted during transport recovery');
-  xml=read();
- }
- nodes=parseNodes(xml);return nodes;
+ run('wait-for-device');run('shell','uiautomator','dump','/sdcard/podlord-journey.xml');
+ xml=run('shell','cat','/sdcard/podlord-journey.xml');
+ nodes=parseNodes(xml);lastSuccessfulUiAt=new Date().toISOString();return nodes;
 }
 function target(id){
  let scrolled=false;
@@ -140,7 +195,7 @@ function target(id){
 }
 function tap(n){const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);if(b[2]<=b[0]||b[3]<=b[1])throw Error('Target outside viewport');const point=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];run('shell','input','tap',...point.map(String));state();const after=nodes.find(x=>x['resource-id']===n['resource-id']);fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({id:n['resource-id'],bounds:n.bounds,point,beforeChecked:n.checked,afterBounds:after?.bounds,afterChecked:after?.checked,focused:nodes.filter(x=>x.focused==='true').map(x=>({id:x['resource-id'],text:x.text,description:x['content-desc']}))})+'\n');}
 function click(id){tap(target(id));}
-function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),cp.execFileSync(adb,[...serial,'exec-out','screencap','-p'],{timeout:30000,maxBuffer:4000000}));}
+function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
 function completeJourney(){fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));}
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,error:String(error)},null,2)+'\n');

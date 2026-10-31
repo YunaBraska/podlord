@@ -290,6 +290,15 @@ target_sources(podlord_workspace PRIVATE src/yaml_presentation.cpp)
 target_sources(podlord_workspace PRIVATE src/platform_websocket_tls.cpp)
 target_sources(podlord_workspace PRIVATE src/runtime_diagnostics.cpp src/workspace_diagnostics.cpp)
 target_sources(podlord_workspace PRIVATE src/resource_cache_diagnostics.cpp src/release_updates.cpp src/workspace_windows.cpp src/window_host.cpp)
+target_sources(podlord_workspace PRIVATE src/workspace_snapshots.cpp)
+if(BUILD_TESTING)
+    add_executable(snapshot-preparation-test tests/snapshot_preparation_test.cpp)
+    target_link_libraries(snapshot-preparation-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario values repeat metrics metrics_oldest filter_sort stale recreated schema schema_identity schema_order handoff empty cluster age cancel canceled_entry unchanged metadata canonical)
+        add_test(NAME native.snapshot_preparation.${scenario} COMMAND snapshot-preparation-test ${scenario})
+        set_tests_properties(native.snapshot_preparation.${scenario} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
+    endforeach()
+endif()
 if(WIN32)
     target_link_libraries(podlord_workspace PRIVATE Psapi)
 endif()
@@ -387,7 +396,7 @@ if(BUILD_TESTING)
     add_executable(window-host-test tests/window_host_test.cpp)
     target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test)
     foreach(style Basic Fusion)
-        foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus cross_focus handoff handoff_grow handoff_shrink handoff_events handoff_sort filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal close_isolation main_close root_restore dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
+        foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus cross_focus handoff handoff_grow handoff_shrink handoff_events handoff_sort snapshot_latest snapshot_hidden snapshot_detach snapshot_close_window filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal close_isolation main_close root_restore dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
             add_test(NAME native.window.${scenario}_${style} COMMAND window-host-test ${scenario})
             set_tests_properties(native.window.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_UPDATE_CHECK=1")
         endforeach()
@@ -940,7 +949,7 @@ if(BUILD_TESTING)
     endforeach()
     add_executable(radar_reference_test tests/radar_reference_test.cpp)
     target_link_libraries(radar_reference_test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario source_rebind source_destroy)
+    foreach(scenario source_rebind source_destroy projection_snapshot)
         add_test(NAME radar-${scenario} COMMAND radar_reference_test ${scenario})
         set_tests_properties(radar-${scenario} PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     endforeach()
@@ -960,6 +969,8 @@ if(BUILD_TESTING)
         radar_map_glyph radar_map_glyph_reuse radar_map_theme radar_map_zoom
         radar_info_panel radar_map_info_panel radar_label_contrast radar_map_label_contrast
         radar_info_panel_phone radar_info_panel_landscape radar_map_info_panel_phone radar_map_info_panel_landscape
+        radar_info_panel_short_landscape radar_map_info_panel_short_landscape
+        radar_info_panel_short_landscape_insets radar_map_info_panel_short_landscape_insets
         radar_context_identity radar_map_context_identity
         radar_autofit radar_map_autofit radar_tab_traversal radar_map_tab_traversal
         radar_touch_inspect radar_map_touch_inspect radar_pulse_focus_refresh

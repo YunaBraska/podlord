@@ -34,6 +34,9 @@ bool WorkspaceRuntime::publishCatalog(const SessionCatalog& catalog, Workspace* 
     for (auto it = owners.begin(); it != owners.end();) {
         if (open.contains(it.key())) { ++it; continue; }
         it.value()->alerts_.closeSession(it.key());
+        it.value()->preparedSnapshots_.remove(it.key());
+        if (it.value()->snapshotPreparation_ && it.value()->snapshotPreparation_->session == it.key())
+            it.value()->snapshotPreparation_->watcher->cancel();
         client.close(it.key()); it = owners.erase(it);
     }
     for (const auto& id : open) if (!owners.contains(id)) owners.insert(id, source);
@@ -122,6 +125,8 @@ bool Workspace::prepareWindowClose() {
 bool Workspace::finishWindowClose() {
     if (windowClosed_) return true;
     windowClosed_ = true;
+    if (snapshotPreparation_) snapshotPreparation_->watcher->cancel();
+    preparedSnapshots_.clear();
     if (window_) window_->removeEventFilter(this);
     client_.hideLogs(viewId_);
     client_.showSession({}, viewId_);
