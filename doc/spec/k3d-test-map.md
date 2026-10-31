@@ -6786,3 +6786,44 @@ and [accessibility guidance](https://developer.apple.com/design/human-interface-
 Qt roles, keyboard navigation, contrast and small layouts are executable
 evidence. They are not blanket Apple conformance or a full assistive-technology
 assessment. No release threshold, supported feature or platform was waived.
+
+### Resource-Shaped Coastlines, October 31
+
+The user's clarification strengthens RAD-DET-01: repeatability is not enough
+if equally populated contexts collapse into the same round silhouette. The
+shared circular growth limit is replaced by stable identity-seeded coastline
+guidance and kind/owner branches. Only actual resource cells are occupied.
+Cluster separation, compact connected districts, external labels and full-cache
+filter semantics remain unchanged. ADR 0032 owns the placement rationale.
+
+`radar-silhouettes` exercises the public ResourceTable/filter/Radar path with
+eight equally populated 1,025-resource inventories. Six different context-like
+identities share identical kind counts. Two further inventories change resource
+families within the first identity. The test compares translation-normalized
+occupied cells, rejects near-identical shapes in these controlled identity
+fixtures, and checks exact cold reconstruction after reversed input and sorting.
+Its optional evidence directory contains actual renderer previews and a labelled
+contact sheet. These are isolated terrain previews, not installed-window or
+whole-product image-parity evidence.
+
+Results are retained under `2026-10-31-radar-silhouettes`. The unchanged preceding
+placement fails the new regression: its 15 identity-only fixture pairs overlap
+by 94.63–99.71% after translation normalization. Changed placement passes at
+47.41–82.15%. A separate process produces byte-identical copies of all nine PNG
+artifacts, including the contact sheet. This is exact preview/coordinate replay
+evidence, not a promise that mathematically every tiny resource set has a unique
+outline.
+
+The first scoped CTest run passes 205/207 executions. Both failures are isolated
+renderer-capture preparations: the estimated window size did not reserve the
+external reader's actual height. The driver now measures canvas chrome before
+requesting the full-cache population viewport. Pixel and population assertions
+remain intact. `render-driver-tests.log` passes both Basic/Fusion cases, and
+`final-tests.log` passes all 207/207 executions in 210.23 seconds. No product
+control is removed or hidden to make the capture fit.
+
+Identity scope remains the existing session identity under RAD-DET-01. Sharing
+one context-based geography across independently created sessions is a pending
+product decision, not implied by cold reconstruction. The preceding full-suite,
+package and platform results cover the earlier revision and do not clear this
+geometry change. Existing release gates remain unchanged.

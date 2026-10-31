@@ -1,6 +1,7 @@
 #include "workspace.h"
 #include "radar_island.h"
 #include <QFile>
+#include <QDir>
 #include <QGuiApplication>
 #include <QFont>
 #include <QPainter>
@@ -305,7 +306,71 @@ bool hierarchy(const QString& check = {}) {
     if (!table.publish(reversed,{}) || !QTest::qWaitFor([&] { return coordinates(geometry.tiles())==before; },3000)) return false;
     return true;
 }
+bool silhouettes() {
+    const QStringList clusters{"production","development","staging","edge","analytics","tools"};
+    const QList<QStringList> inventories{{"Pod"},{"Pod","Deployment","Service","ConfigMap","Secret","PersistentVolumeClaim"},
+        {"ConfigMap","Secret","PersistentVolumeClaim","ServiceAccount"}};
+    const auto output=qEnvironmentVariable("PODLORD_RADAR_SILHOUETTE_EVIDENCE");
+    if (!output.isEmpty() && !QDir().mkpath(output)) return false;
+    QImage sheet(1280,448,QImage::Format_ARGB32_Premultiplied); sheet.fill(QColor("#071619"));
+    QPainter captions(&sheet); captions.setPen(QColor("#DDE7EC"));
+    auto font=captions.font(); font.setPixelSize(13); captions.setFont(font);
+    QList<QSet<QPoint>> shapes;
+    bool passed=true;
+    for (int variant=0;variant<8;++variant) {
+        const auto cluster=clusters[variant<6 ? variant : 0];
+        const auto inventory=inventories[variant<6 ? 0 : variant-5];
+        const auto label=variant<6 ? cluster : cluster+(variant==6 ? "-workloads" : "-configuration");
+        QJsonArray rows{QJsonObject{{"path","/api/v1/namespaces/default"},{"kind","Namespace"},{"name","default"},
+            {"uid","namespace-uid"},{"cluster",cluster}}};
+        for (int index=0;index<1024;++index) {
+            const auto kind=inventory[index%inventory.size()], name="object-"+QString::number(index);
+            rows.append(QJsonObject{{"path","/api/v1/namespaces/default/"+kind+"/"+name},{"kind",kind},{"name",name},
+                {"uid",kind+"-uid-"+QString::number(index)},{"namespace","default"},{"cluster",cluster},
+                {"owner",variant==6 ? "workload-"+QString::number(index/32) : QString{}},{"status","Running"}});
+        }
+        podlord::ResourceTable table; podlord::ResourceFilter filter; filter.setSourceModel(&table);
+        QElapsedTimer elapsed; elapsed.start();
+        if (!table.publish(rows,cluster)) return false;
+        podlord::RadarIsland geometry; geometry.setWidth(20000); geometry.setHeight(20000);
+        geometry.setProperty("identityScope","silhouette-session"); geometry.setSource(&filter);
+        if (!QTest::qWaitFor([&] { return geometry.tiles()->rowCount()==rows.size(); },3000)) return false;
+        const auto before=coordinates(geometry.tiles());
+        std::fprintf(stdout,"Island %s: %lld real resources, publish/project %lld ms\n",qPrintable(label),
+            static_cast<long long>(before.size()),static_cast<long long>(elapsed.elapsed()));
+        int left=std::numeric_limits<int>::max(),top=left;
+        for (const auto& point:before) { left=std::min(left,qRound(point.x()/7)); top=std::min(top,qRound(point.y()/7)); }
+        QSet<QPoint> shape;
+        for (const auto& point:before) shape.insert({qRound(point.x()/7)-left,qRound(point.y()/7)-top});
+        if (shape.size()!=rows.size()) return setupFailure("silhouette adds, drops or overlaps real resources");
+        for (int previous=0;previous<shapes.size();++previous) {
+            auto common=shape; common.intersect(shapes[previous]);
+            const double overlap=double(common.size())/shape.size();
+            std::fprintf(stdout,"Silhouette %s vs %d: %.2f%% normalized overlap\n",qPrintable(label),previous,overlap*100);
+            // These equally populated fixtures must differ in geography, not
+            // just labels, positions on the page or terrain colors.
+            if (shape==shapes[previous] || (variant<6 && overlap>=.9)) passed=false;
+        }
+        shapes.append(shape);
+        const auto preview=geometry.previewImage();
+        if (preview.isNull()) return false;
+        captions.drawImage(QPoint((variant%4)*320,(variant/4)*224),preview);
+        captions.drawText(QRect((variant%4)*320,(variant/4)*224+200,320,24),Qt::AlignCenter,label);
+        if (!output.isEmpty() && !preview.save(output+"/"+label+".png")) return false;
+        QJsonArray reversed; for (auto row=rows.end();row!=rows.begin();) reversed.append(*--row);
+        if (!table.publish(reversed,cluster)) return false;
+        filter.sort(0,Qt::DescendingOrder);
+        podlord::RadarIsland cold; cold.setWidth(20000); cold.setHeight(20000);
+        cold.setProperty("identityScope","silhouette-session"); cold.setSource(&filter);
+        if (!QTest::qWaitFor([&] { return cold.tiles()->rowCount()==rows.size(); },3000)
+            || coordinates(cold.tiles())!=before || cold.previewImage()!=preview) return setupFailure("cold/reordered silhouette is not identical");
+    }
+    captions.end();
+    if (!output.isEmpty() && !sheet.save(output+"/island-silhouettes.png")) return false;
+    return passed || setupFailure("equally populated contexts have indistinguishable silhouettes");
+}
 bool exercise(const QStringList& args) {
+    if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && (args[1]=="source_rebind" || args[1]=="source_destroy")) return sourceLifecycle(args[1]);
     if (args.size()==2 && args[1].startsWith("camera_")) return camera(args[1].mid(7));
@@ -506,6 +571,11 @@ Window {
     if (!emptyState || !QQmlProperty(emptyState, "visible", &engine).write(false)) return setupFailure("renderer-only empty state");
     grid->setProperty("identityScope", document["sessionId"].toString());
     grid->setViewPose({{"x",0}, {"y",0}, {"zoom",1}});
+    if (!QTest::qWaitFor([&] { return window->isExposed() && grid->width()>0 && grid->height()>0; },3000)) return setupFailure("rendered viewport layout");
+    // Population needs the complete canvas, not a window estimate which also
+    // includes the toolbar and the reserved external resource reader.
+    const QSize chrome(qCeil(window->width()-grid->width()),qCeil(window->height()-grid->height()));
+    window->resize(populationViewport+chrome);
     if (!QTest::qWaitFor([&] { return grid->tiles()->rowCount() >= expected.size() && window->isExposed(); }, 3000)) return setupFailure("rendered cache population");
     window->resize(1208,1240);
     if (!QTest::qWaitFor([&] { return grid->width()==1200 && grid->height()>0 && grid->height()<=1240; }, 3000)) return setupFailure("capture viewport restoration");

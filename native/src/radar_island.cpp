@@ -51,18 +51,29 @@ QColor terrainColor(const QString& kind) {
     static const QList<QColor> colors{{"#6B7378"},{"#6B7378"},{"#2E5941"},{"#4E6A43"},{"#665A3F"},{"#7D7048"},{"#286473"},{"#1B4357"}};
     return colors[ring(kind,3)];
 }
-QPoint place(const QPointF& target, QSet<QPoint>& occupied, QSet<QPoint>& frontier, const QString& key) {
+QPoint place(const QPointF& target, QSet<QPoint>& occupied, QHash<QPoint,double>& frontier, const QString& key, const std::array<double,3>& coast) {
+    const auto coastalDistance=[&](const QPoint& point) {
+        const double angle=std::atan2(double(point.y()),double(point.x()));
+        const double shore=1+.28*std::cos(2*angle+coast[0])+.18*std::sin(3*angle+coast[1])+.11*std::cos(5*angle+coast[2]);
+        return (double(point.x())*point.x()+double(point.y())*point.y())/(shore*shore);
+    };
+    const auto offer=[&](const QPoint& point) {
+        if (!occupied.contains(point) && !frontier.contains(point)) frontier.insert(point,coastalDistance(point));
+    };
+    if (frontier.isEmpty())
+        for (const auto& delta:{QPoint(-1,0),QPoint(1,0),QPoint(0,-1),QPoint(0,1)}) offer(delta);
     auto center=cell(target);
-    // A resource grows the real island's edge, not a distant spoke. The radius
-    // grows with area, leaving room for an irregular identity-seeded coastline.
+    // Area bounds growth, not a shared circular outline. The fixed identity
+    // profile guides only real frontier cells and never paints synthetic land.
     const auto radius=std::ceil(std::sqrt((occupied.size()+1)/std::numbers::pi)*1.15+2);
-    const auto distance=std::hypot(double(center.x()),double(center.y()));
+    const auto distance=std::sqrt(coastalDistance(center));
     if (distance>radius) center={qRound(center.x()*radius/distance),qRound(center.y()*radius/distance)};
     std::optional<QPoint> best;
     std::tuple<bool,qint64,quint32,int,int> score;
-    for (const auto& candidate:frontier) {
+    for (auto edge=frontier.cbegin();edge!=frontier.cend();++edge) {
+        const auto candidate=edge.key();
         const auto delta=candidate-center;
-        const bool outside=qint64(candidate.x())*candidate.x()+qint64(candidate.y())*candidate.y()>radius*radius;
+        const bool outside=edge.value()>radius*radius;
         const qint64 squared=qint64(delta.x())*delta.x()+qint64(delta.y())*delta.y();
         if (best && std::pair{outside,squared}>std::pair{std::get<0>(score),std::get<1>(score)}) continue;
         const auto next=std::tuple{outside,squared,hash(key+":"+QString::number(candidate.x())+":"+QString::number(candidate.y())),candidate.x(),candidate.y()};
@@ -70,7 +81,7 @@ QPoint place(const QPointF& target, QSet<QPoint>& occupied, QSet<QPoint>& fronti
     }
     occupied.insert(*best); frontier.remove(*best);
     for (const auto& delta:{QPoint(-1,0),QPoint(1,0),QPoint(0,-1),QPoint(0,1)})
-        if (!occupied.contains(*best+delta)) frontier.insert(*best+delta);
+        offer(*best+delta);
     return *best;
 }
 template<class F> void inBuckets(const QRectF& rect, F consume) {
@@ -344,7 +355,10 @@ void RadarIsland::layout(const QList<Row>& rows) {
             district.key=groupedDistrict.key(); district.label=caption(district.key.isEmpty() ? QStringLiteral("Cluster resources") : district.key);
             district.group=cluster.name+"/"+district.key; district.rows=groupedDistrict.value(); district.labelBounds=bounds(district.label,false);
             QSet<QPoint> occupied; occupied.insert(QPoint{});
-            QSet<QPoint> frontier{QPoint(-1,0),QPoint(1,0),QPoint(0,-1),QPoint(0,1)};
+            QHash<QPoint,double> frontier;
+            const auto shoreKey=identityScope_+":"+district.group;
+            const std::array<double,3> coast{range("coast-two:"+shoreKey,-std::numbers::pi,std::numbers::pi),
+                range("coast-three:"+shoreKey,-std::numbers::pi,std::numbers::pi),range("coast-five:"+shoreKey,-std::numbers::pi,std::numbers::pi)};
             QHash<QString,QPoint> local;
             QList<Row> resources;
             for (const auto& row:district.rows)
@@ -356,9 +370,10 @@ void RadarIsland::layout(const QList<Row>& rows) {
             for (int index=0;index<resources.size();++index) {
                 const auto& row=resources[index]; const int arm=index%arms,depth=index/arms;
                 if (local.isEmpty()) { local.insert(row.path,QPoint{}); continue; }
-                const double theta=direction+(arms==1 ? 0 : (arm/double(arms-1)-.5)*spread)+range(row.identity+":branch",-.04,.04);
+                const double family=range(district.group+":"+row.kind+":"+row.owner+":coast-branch",-.7,.7);
+                const double theta=direction+family+(arms==1 ? 0 : (arm/double(arms-1)-.5)*spread)+range(row.identity+":branch",-.04,.04);
                 const double distance=8+ring(row.kind)*6.2+depth*6.4+(row.kind=="Event" ? 8 : 0),drift=range(row.identity+":drift",-3.5,3.5);
-                local.insert(row.path,place(QPointF(std::cos(theta)*distance-std::sin(theta)*drift,std::sin(theta)*distance+std::cos(theta)*drift),occupied,frontier,row.identity));
+                local.insert(row.path,place(QPointF(std::cos(theta)*distance-std::sin(theta)*drift,std::sin(theta)*distance+std::cos(theta)*drift),occupied,frontier,row.identity,coast));
             }
             int left=0,right=0,top=0,bottom=0;
             for (const auto& point:occupied) {

@@ -931,6 +931,8 @@ if(BUILD_TESTING)
         set_tests_properties(radar-camera-${scenario} PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     endforeach()
     add_test(NAME radar-hierarchy COMMAND radar_reference_test hierarchy)
+    add_test(NAME radar-silhouettes COMMAND radar_reference_test silhouettes)
+    set_tests_properties(radar-silhouettes PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     foreach(scenario
         session_tabs_controls
         radar_map_glyph radar_map_glyph_reuse radar_map_theme radar_map_zoom

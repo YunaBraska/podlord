@@ -15,6 +15,17 @@ Namespace resource or its first actual resource. Identity-seeded preferred
 directions and kind ranks guide the frontier, while its growth radius follows
 resource area rather than increasing linearly with population. Stable coordinate
 tie-breakers make placement independent of hash-container iteration order.
+On 2026-10-31 the user clarified that repeatable coordinates alone are insufficient:
+resource islands need recognizable, distinct silhouettes. A shared circular growth
+limit flattened those differences. Identity-seeded coastline harmonics now guide
+the frontier, with kind/owner families guiding resource branches. The coastline
+seed does not include time, health, metrics or population, so an ordinary update
+does not randomly reseed it. Population, kind, owner and individual identities
+still determine which real cells are occupied. Frontier cells retain their
+coastal distance only during this layout pass, avoiding repeated trigonometry
+inside candidate scans. No new persisted state or rendering layer is introduced.
+Equal-population fixtures compare translation-normalized occupied cells, not
+colors or labels, and cold reconstruction must reproduce coordinates and previews.
 No filler tile or connector becomes a resource or an input target. Existing
 positions can change under this approved layout revision. Old persisted previews
 are replaced on the next ordinary successful visit, not by background cluster
