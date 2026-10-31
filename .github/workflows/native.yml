@@ -267,11 +267,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           store="$RUNNER_TEMP/native-store"
-          cmake -S native -B "$store" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_MAC_APP_STORE=ON > "$RUNNER_TEMP/native-store.log" 2>&1
-          cmake --build "$store" --target store-boundary-test podlord-native native-eks-test native-gke-test native-oci-test gke-import-ui-test oci-import-ui-test workspace_ui_test --parallel 3 >> "$RUNNER_TEMP/native-store.log" 2>&1
           export PODLORD_SHELL_EVIDENCE="$RUNNER_TEMP/native-store-frames"
-          ctest --test-dir "$store" --tests-regex '^native\.(store\.|authentication\.(eks|gke|oci)_|source_import\.(gke|oci)_|ui\.gke_prompt_)' --no-tests=error --output-on-failure --parallel 2 >> "$RUNNER_TEMP/native-store.log" 2>&1
-          tail -n 25 "$RUNNER_TEMP/native-store.log"
+          status=0
+          {
+            cmake -S native -B "$store" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_MAC_APP_STORE=ON &&
+            cmake --build "$store" --target store-boundary-test podlord-native native-eks-test native-gke-test native-oci-test gke-import-ui-test oci-import-ui-test workspace_ui_test --parallel 3 &&
+            ctest --test-dir "$store" --tests-regex '^native\.(store\.|authentication\.(eks|gke|oci)_|source_import\.(gke|oci)_|ui\.gke_prompt_)' --no-tests=error --output-on-failure --parallel 2
+          } > "$RUNNER_TEMP/native-store.log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/native-store.log"; else tail -n 25 "$RUNNER_TEMP/native-store.log"; fi
+          exit "$status"
       - name: Build and inspect the native Store slice
         if: ${{ !cancelled() }}
         run: |

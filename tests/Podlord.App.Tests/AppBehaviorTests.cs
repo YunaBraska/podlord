@@ -735,17 +735,14 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Native_release_uses_shared_archives_and_public_asset_names()
+    public void Legacy_reference_build_uses_shared_archives_and_public_asset_names()
     {
         var root = LocateProjectRoot();
         var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
-        var releaseWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
         var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
         var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
 
         Assert.Matches(@"wc_dotnet_build_native\.yml@[a-f0-9]{40}", mergeWorkflow);
-        Assert.Matches(@"wc_dotnet_release\.yml@[a-f0-9]{40}", releaseWorkflow);
-        Assert.Contains("# yuna-release: true", releaseWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("macos-arm64) RID=osx-arm64 ;;", macOSBundleScript, StringComparison.Ordinal);
         Assert.Contains("macos-x64) RID=osx-x64 ;;", macOSBundleScript, StringComparison.Ordinal);
@@ -756,6 +753,28 @@ public sealed class AppBehaviorTests
         Assert.Contains("macos-arm64) dotnet_rid=osx-arm64 ;;", publishScript, StringComparison.Ordinal);
         Assert.Contains("-r \"$dotnet_rid\"", publishScript, StringComparison.Ordinal);
         Assert.Contains("-o \"out/podlord-$rid\"", publishScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Native_release_candidate_requires_verified_archives_without_publication()
+    {
+        var root = LocateProjectRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
+
+        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/native.yml", workflow, StringComparison.Ordinal);
+        Assert.Contains("needs: native-preflight", workflow, StringComparison.Ordinal);
+        Assert.Contains("native-*-${{ github.sha }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("podlord-native-macos-arm64.zip", workflow, StringComparison.Ordinal);
+        Assert.Contains("podlord-native-macos-x64.zip", workflow, StringComparison.Ordinal);
+        Assert.Contains("podlord-native-win-x64.zip", workflow, StringComparison.Ordinal);
+        Assert.Contains("SHA256SUMS", workflow, StringComparison.Ordinal);
+        Assert.Contains("SOURCE_COMMIT", workflow, StringComparison.Ordinal);
+        Assert.Contains("if-no-files-found: error", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("wc_dotnet_release", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("contents: write", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("gh release", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("softprops/action-gh-release", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
