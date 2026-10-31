@@ -117,6 +117,7 @@ private:
         QVariantList matches;
         QString evaluationError;
         QMap<QString, QVariantMap> effects;
+        QDateTime evaluatedAt, evaluateBefore;
         quint64 generation = 0;
         bool initialized = false;
         bool visibleInitialized = false;

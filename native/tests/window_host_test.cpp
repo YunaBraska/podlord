@@ -110,7 +110,7 @@ public:
 bool run(const QString& scenario) {
     QTemporaryDir profile; Kubernetes api;
     REQUIRE(profile.isValid() && api.listen(QHostAddress::LocalHost));
-    const bool handoff = scenario == "handoff" || scenario == "handoff_grow" || scenario == "handoff_shrink" || scenario == "handoff_events";
+    const bool handoff = scenario == "handoff" || scenario == "handoff_grow" || scenario == "handoff_shrink" || scenario == "handoff_events" || scenario == "handoff_sort";
     Kubernetes other;
     if (handoff) REQUIRE(other.listen(QHostAddress::LocalHost));
     if (scenario == "handoff_grow") api.names.append("gamma");
@@ -193,10 +193,15 @@ bool run(const QString& scenario) {
         REQUIRE(primary.activate(b));
         REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && primary.resourceCount() == secondCount; }));
         REQUIRE(primary.setWorkspacePage("resources"));
+        if (scenario == "handoff_sort") { REQUIRE(primary.sortColumn(0)); REQUIRE(primary.sortColumn(0)); }
         REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "cell_0_0"); }));
         const QPointer<QQuickItem> retainedCell = podlord::test::visibleItem(main->contentItem(), "cell_0_0");
         QAbstractItemModel* rows = primary.visibleResourceTable();
-        while (auto* proxy = qobject_cast<QAbstractProxyModel*>(rows)) rows = proxy->sourceModel();
+        podlord::ResourceFilter* filtered = nullptr;
+        while (auto* proxy = qobject_cast<QAbstractProxyModel*>(rows)) {
+            if (auto* resourceFilter = qobject_cast<podlord::ResourceFilter*>(rows)) filtered = resourceFilter;
+            rows = proxy->sourceModel();
+        }
         QSignalSpy removed(rows, &QAbstractItemModel::rowsRemoved);
         QSignalSpy inserted(rows, &QAbstractItemModel::rowsInserted);
         QSignalSpy reset(rows, &QAbstractItemModel::modelReset);
@@ -208,19 +213,28 @@ bool run(const QString& scenario) {
                 coherent = coherent && rows->index(row, 2).data().toString() == (first ? "default" : "second");
         };
         QObject observer;
+        bool layoutCoherent = true;
+        if (scenario == "handoff_sort") {
+            REQUIRE(filtered);
+            QObject::connect(filtered, &QAbstractItemModel::layoutChanged, &observer, [&] {
+                const auto expected = primary.currentSession() == a ? "default" : "second";
+                for (int row = 0; row < filtered->rowCount(); ++row)
+                    layoutCoherent = layoutCoherent && filtered->index(row, 2).data() == expected;
+            });
+        }
         QObject::connect(rows, &QAbstractItemModel::rowsInserted, &observer, observe);
         QObject::connect(rows, &QAbstractItemModel::rowsRemoved, &observer, observe);
         QObject::connect(rows, &QAbstractItemModel::dataChanged, &observer, observe);
         REQUIRE(primary.activate(a));
         REQUIRE(primary.resourceCount() == 1 && primary.totalResourceCount() == firstCount);
         REQUIRE(primary.filterText() == "=alpha" && primary.inspectorPath() == path && primary.radarView() == camera);
-        REQUIRE(coherent && reset.isEmpty());
+        REQUIRE(coherent && reset.isEmpty() && layoutCoherent);
         if (firstCount == secondCount) REQUIRE(removed.isEmpty() && inserted.isEmpty()
             && waitFor([&] { return retainedCell && retainedCell == podlord::test::visibleItem(main->contentItem(), "cell_0_0"); }));
         REQUIRE(waitFor([&] { return !primary.busy(); }));
         REQUIRE(primary.activate(b));
         REQUIRE(primary.resourceCount() == secondCount && primary.filterText().isEmpty());
-        REQUIRE(coherent && reset.isEmpty());
+        REQUIRE(coherent && reset.isEmpty() && layoutCoherent);
         if (firstCount == secondCount) REQUIRE(removed.isEmpty() && inserted.isEmpty()
             && waitFor([&] { return retainedCell && retainedCell == podlord::test::visibleItem(main->contentItem(), "cell_0_0"); }));
         return true;

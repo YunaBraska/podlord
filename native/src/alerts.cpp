@@ -90,6 +90,11 @@ bool criterionMatches(const AlertCriterion& criterion, const QJsonObject& row, c
 struct Evaluated final { QMap<QString, QList<QJsonObject>> matches; QMap<QString, QJsonObject> rows; QDateTime next; QStringList errors; };
 Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, const QMap<QString,QDateTime>& changes, QDateTime now) {
     Evaluated result; QMap<QString, QList<double>> samples;
+    QSet<QString> sampleFields;
+    for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool())
+        for (const auto& group : rule.groups) for (const auto& criterion : group)
+            if (numeric(criterion.field) && (criterion.expression == "p95" || criterion.expression == "outlier"))
+                sampleFields.insert(criterion.field);
     const auto deadline = [&](QDateTime at) { if (at > now && (!result.next.isValid() || at < result.next)) result.next = at; };
     for (const auto& value : snapshot) {
         auto row = value.toObject(); const auto path = row["path"].toString();
@@ -100,7 +105,7 @@ Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, cons
         // Activity is classified once by the session cache, shared with resource filtering.
         deadline(changed.addSecs(30)); deadline(changed.addSecs(900)); deadline(created.addSecs(900));
         result.rows.insert(path, row);
-        for (const auto& field : {"restarts", "age", "cpu", "memory", "storage"}) if (const auto sample=number(row, field, now)) samples[field].append(*sample);
+        for (const auto& field : sampleFields) if (const auto sample=number(row, field, now)) samples[field].append(*sample);
     }
     for (auto& values : samples) std::sort(values.begin(), values.end());
     for (const auto& rule : catalog.rules) {
@@ -492,6 +497,7 @@ QVariantMap Alerts::effect(const QString& path) const { const auto state=states_
 bool Alerts::queue(const QString& session) {
     if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return false;
     auto& state = states_[session];
+    state.evaluatedAt = {}; state.evaluateBefore = {};
     // Publish resource changes before a busy worker can defer them. Visibility changes reuse this snapshot.
     if (client_->initialSyncComplete(session)) {
         const auto snapshot = client_->rows(session); const auto now = now_(); QMap<QString, QJsonObject> current;
@@ -520,13 +526,24 @@ bool Alerts::dispatch() {
     const bool baseline = !state.initialized;
     const auto previous=state.previous; const auto now=now_();
     const auto changes=state.changedAt; const auto catalog=catalog_; const auto generation=state.generation;
+    const bool reuse = state.evaluatedAt.isValid() && now >= state.evaluatedAt
+        && (!state.evaluateBefore.isValid() || now < state.evaluateBefore) && state.evaluationError.isEmpty();
+    const auto triggered = reuse ? state.triggered : QMap<QString, Fingerprint>{};
+    const auto evaluateBefore = state.evaluateBefore;
     evaluating_=true; auto* watcher=new QFutureWatcher<Evaluated>(this);
-    connect(watcher, &QFutureWatcher<Evaluated>::finished, this, [this, watcher, session, generation, catalog, baseline] {
+    connect(watcher, &QFutureWatcher<Evaluated>::finished, this, [this, watcher, session, generation, catalog, baseline, evaluatedAt = now, reuse] {
         const auto result=watcher->result(); watcher->deleteLater(); evaluating_=false;
         auto found=states_.find(session);
         if (found==states_.end() || found->generation!=generation || closed_.contains(session)) { dispatch(); return; }
         auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> triggered; QSet<QString> alive, visibleMatches;
         state.initialized = true;
+        if (!reuse) {
+            state.evaluatedAt = evaluatedAt; state.evaluateBefore = result.next;
+            // Age changes continuously, including percentile/outlier populations.
+            for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool())
+                for (const auto& group : rule.groups) for (const auto& criterion : group)
+                    if (criterion.field == "age") state.evaluateBefore = evaluatedAt;
+        }
         QDateTime next=result.next;
         const auto deadline=[&](QDateTime at) { if (at>now && (!next.isValid() || at<next)) next=at; };
         for (const auto& rule : catalog.rules) {
@@ -570,7 +587,7 @@ bool Alerts::dispatch() {
             const bool hasColor=color!="none" && (colorMode=="no-match" ? count>0 : !state.colorUntil.isEmpty());
             const bool hasAnimation=animation!="none" && (animationMode=="no-match" ? count>0 : !state.animationUntil.isEmpty());
             if (!hasColor && !hasAnimation) continue;
-            for (const auto& row : result.rows) {
+            const auto applyEffect = [&](const QJsonObject& row) {
                 const auto path=row[QStringLiteral("path")].toString(), key=id+'\n'+path+'\n'+row[QStringLiteral("uid")].toString();
                 const bool matching=alive.contains(key);
                 const auto active=[&](const QString& mode, const QMap<QString,QDateTime>& holds) {
@@ -582,7 +599,10 @@ bool Alerts::dispatch() {
                 if (hasColor && active(colorMode, state.colorUntil) && !(color=="fresh" && effect.contains("color"))) effect["color"]=color;
                 if (hasAnimation && active(animationMode, state.animationUntil)) effect["animation"]=animation;
                 if (!effect.isEmpty()) effects[path]=effect;
-            }
+            };
+            const bool usesHolds = (hasColor && colorMode != "no-match") || (hasAnimation && animationMode != "no-match");
+            if (usesHolds) { for (const auto& row : result.rows) applyEffect(row); }
+            else { for (const auto& row : result.matches.value(id)) applyEffect(row); }
         }
         state.triggered=triggered;
         state.visibleMatches=visibleMatches;
@@ -594,7 +614,19 @@ bool Alerts::dispatch() {
         if (next.isValid()) { const auto remaining=std::clamp<qint64>(now.msecsTo(next), 1, std::numeric_limits<int>::max()); if (!expiry_.isActive() || expiry_.remainingTime()>remaining) expiry_.start(static_cast<int>(remaining)); }
         dispatch();
     });
-    watcher->setFuture(QtConcurrent::run([previous, catalog, changes, now] {
+    watcher->setFuture(QtConcurrent::run([previous, catalog, changes, now, reuse, triggered, evaluateBefore] {
+        if (reuse) {
+            Evaluated result; result.rows = previous; result.next = evaluateBefore;
+            // Reconstruct only transient rule projections from the existing match identities.
+            for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool()) {
+                const auto id = rule.value["id"].toString();
+                auto& matching = result.matches[id];
+                for (auto it = previous.cbegin(); it != previous.cend(); ++it)
+                    if (triggered.contains(id + '\n' + it.key() + '\n' + it.value()["uid"].toString()))
+                        matching.append(it.value());
+            }
+            return result;
+        }
         QJsonArray snapshot;
         for (const auto& row : previous) snapshot.append(row);
         return evaluate(snapshot, catalog, changes, now);
@@ -602,7 +634,7 @@ bool Alerts::dispatch() {
 }
 bool Alerts::play(const QString& id) {
     for (const auto& value : sounds()) { const auto sound=value.toMap(); if (sound["id"].toString()!=id) continue;
-        if (id=="none") return true;
+        if (id=="none" || qEnvironmentVariableIntValue("PODLORD_DISABLE_AUDIO") != 0) return true;
         if (!player_) { output_=std::make_unique<QAudioOutput>(); player_=std::make_unique<QMediaPlayer>(); player_->setAudioOutput(output_.get());
             connect(player_.get(), &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) { error_="Local alert sound could not be played. Visual alarms remain active."; emit rulesChanged(); });
             connect(player_.get(), &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {

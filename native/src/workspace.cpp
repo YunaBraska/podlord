@@ -80,7 +80,8 @@ int ResourceTable::columnCount(const QModelIndex& parent) const { return parent.
 QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     using namespace Qt::StringLiterals;
     if (!index.isValid() || index.row() >= rows_.size() || index.column() >= fields_.size()) return {};
-    const auto& row = rows_[index.row()];
+    const auto& entry = rows_[index.row()];
+    const auto& row = entry.document;
     switch (role) {
     case Qt::UserRole: return row[identityField_].toString();
     case Qt::UserRole + 1: return row["name"_L1].toString();
@@ -97,6 +98,13 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     default: break;
     }
     const auto& field = fields_[index.column()];
+    if (role == Qt::ToolTipRole)
+        return "<span>" + data(index, Qt::DisplayRole).toString().toHtmlEscaped().replace('\n', "<br>") + "</span>";
+    const bool cacheDisplay = role == Qt::DisplayRole && field != "createdAt"_L1 && field != "preview"_L1;
+    if (cacheDisplay) {
+        if (entry.display.size() != fields_.size()) entry.display.resize(fields_.size());
+        if (entry.display[index.column()]) return *entry.display[index.column()];
+    }
     if (role == Qt::UserRole + 6) {
         if (index.column() == sortValueColumn_ && sortValues_.size() == rows_.size()) return sortValues_[index.row()];
         const auto sortValue = row["sortValues"_L1].toObject().value(field);
@@ -114,7 +122,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     }
     const auto cell = row[field];
     const auto text = field == "cluster" && !row.contains(field) ? cluster_ : cell.toString();
-    const bool presentation = role == Qt::DisplayRole || role == Qt::ToolTipRole;
+    const bool presentation = role == Qt::DisplayRole;
     const bool age = field == "createdAt" && (presentation || role == Qt::UserRole + 11);
     const auto created = age ? QDateTime::fromString(text, Qt::ISODateWithMs) : QDateTime{};
     const auto now = age ? QDateTime::currentDateTimeUtc() : QDateTime{};
@@ -122,19 +130,19 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         const bool metric = field == "cpu" || field == "memory" || field == "storage";
         QString value = cell.isDouble() ? QString::number(cell.toDouble(), 'g', 16) : text;
         if (metric) {
-        value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : "-";
-        if (cell.isDouble() && !row["metricComplete"].toObject()[field].toBool()) value += " (incomplete)";
-        if (cell.isDouble() && row["metricStale"].toBool()) value += " (stale)";
-    } else if (field == "createdAt") {
-        if (!created.isValid() || created > now) value = "-";
-        else {
-            const auto seconds = created.secsTo(now);
-            value = seconds >= 86400 ? QString::number(seconds/86400)+"d" : seconds >= 3600 ? QString::number(seconds/3600)+"h"
-                : seconds >= 60 ? QString::number(seconds/60)+"m" : QString::number(seconds)+"s";
-        }
-    } else if ((field == "restarts" || field == "ready" || field == "owner" || field == "issue" || field == "cluster") && value.isEmpty()) value = "-";
-        if (role == Qt::DisplayRole) return value;
-        return "<span>" + value.toHtmlEscaped().replace('\n', "<br>") + "</span>";
+            value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : "-";
+            if (cell.isDouble() && !row["metricComplete"].toObject()[field].toBool()) value += " (incomplete)";
+            if (cell.isDouble() && row["metricStale"].toBool()) value += " (stale)";
+        } else if (field == "createdAt") {
+            if (!created.isValid() || created > now) value = "-";
+            else {
+                const auto seconds = created.secsTo(now);
+                value = seconds >= 86400 ? QString::number(seconds/86400)+"d" : seconds >= 3600 ? QString::number(seconds/3600)+"h"
+                    : seconds >= 60 ? QString::number(seconds/60)+"m" : QString::number(seconds)+"s";
+            }
+        } else if ((field == "restarts" || field == "ready" || field == "owner" || field == "issue" || field == "cluster") && value.isEmpty()) value = "-";
+        if (cacheDisplay) entry.display[index.column()] = value;
+        return value;
     }
     if (role == Qt::UserRole + 12) return field == "from" || field == "to" ? row[field + "Path"].toString() : row[identityField_].toString();
     if (role == Qt::ForegroundRole) {
@@ -154,7 +162,7 @@ QHash<int, QByteArray> ResourceTable::roleNames() const {
         {Qt::UserRole + 1, "resourceName"}, {Qt::UserRole + 2, "resourceKind"}, {Qt::UserRole + 3, "resourceNamespace"},
         {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}};
 }
-QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index] : QJsonObject{}; }
+QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index].document : QJsonObject{}; }
 bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (appearance_ == appearance) return true;
     appearance_ = appearance;
@@ -165,10 +173,15 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
     sortValues_.clear(); sortValueColumn_ = -1;
     const bool clusterChanged = cluster_ != cluster;
     cluster_ = cluster;
+    if (clusterChanged) {
+        const auto column = fields_.indexOf("cluster");
+        if (column >= 0) for (auto& row : rows_)
+            if (row.display.size() > column) row.display[column].reset();
+    }
     if (preserveInputOrder_) {
-        QList<QJsonObject> ordered;
+        QList<Row> ordered;
         ordered.reserve(rows.size());
-        for (const auto& value : rows) ordered.append(value.toObject());
+        for (const auto& value : rows) ordered.append(Row{value.toObject(), {}});
         if (ordered != rows_ || clusterChanged) {
             beginResetModel(); rows_ = std::move(ordered); endResetModel();
         }
@@ -177,12 +190,15 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
     QMap<QString, QJsonObject> incoming;
     for (const auto& value : rows) { const auto row = value.toObject(); incoming.insert(row[identityField_].toString(), row); }
     if (replace && (rows_.size() != incoming.size() || !std::equal(rows_.cbegin(), rows_.cend(), incoming.keyBegin(),
-            [this](const auto& row, const auto& key) { return row[identityField_].toString() == key; }))) {
+            [this](const auto& row, const auto& key) { return row.document[identityField_].toString() == key; }))) {
         const int previous = rowCount(), next = static_cast<int>(incoming.size());
         // Replace the snapshot once. Retain visible slots instead of destroying their delegates.
         if (next > previous) beginInsertRows({}, previous, next - 1);
         else if (next < previous) beginRemoveRows({}, next, previous - 1);
-        rows_ = incoming.values();
+        QList<Row> replacement;
+        replacement.reserve(next);
+        for (const auto& value : incoming) replacement.append(Row{value, {}});
+        rows_ = std::move(replacement);
         if (next > previous) endInsertRows();
         else if (next < previous) endRemoveRows();
         const int retained = std::min(previous, next);
@@ -190,17 +206,17 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
         return true;
     }
     for (int last = static_cast<int>(rows_.size()) - 1; last >= 0;) {
-        if (incoming.contains(rows_[last][identityField_].toString())) { --last; continue; }
+        if (incoming.contains(rows_[last].document[identityField_].toString())) { --last; continue; }
         int first = last;
-        while (first > 0 && !incoming.contains(rows_[first-1][identityField_].toString())) --first;
+        while (first > 0 && !incoming.contains(rows_[first-1].document[identityField_].toString())) --first;
         beginRemoveRows({}, first, last); rows_.remove(first, last-first+1); endRemoveRows();
         last = first-1;
     }
     int firstChanged = -1, lastChanged = -1, firstColumn = columnCount(), lastColumn = -1;
     for (int index = 0; index < rows_.size(); ++index) {
-        const auto value = incoming.take(rows_[index][identityField_].toString());
-        if (value != rows_[index]) {
-            const auto& previous = rows_[index];
+        const auto value = incoming.take(rows_[index].document[identityField_].toString());
+        if (value != rows_[index].document) {
+            const auto& previous = rows_[index].document;
             const bool presentationChanged = fields_.contains("createdAt") || std::any_of(fields_.cbegin(), fields_.cend(), [&](const auto& field) {
                 return field == "cluster" ? (value.contains(field) || previous.contains(field) ? value[field] != previous[field] : clusterChanged)
                     : value[field] != previous[field] || (field == "preview" && value["value"] != previous["value"])
@@ -208,7 +224,7 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
                             && (value["metricComplete"] != previous["metricComplete"] || value["metricStale"] != previous["metricStale"]));
             });
             if (presentationChanged) { firstColumn = 0; lastColumn = columnCount()-1; }
-            rows_[index] = value;
+            rows_[index] = Row{value, {}};
             if (firstChanged < 0) firstChanged = index;
             lastChanged = index;
         }
@@ -233,23 +249,22 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
     if (firstChanged >= 0 && lastColumn >= 0)
         emit dataChanged(index(firstChanged,firstColumn),index(lastChanged,lastColumn),roles);
     for (auto next = incoming.cbegin(); next != incoming.cend();) {
-        const auto position = std::lower_bound(rows_.cbegin(), rows_.cend(), next.key(), [this](const auto& row, const auto& key) { return row[identityField_].toString() < key; });
+        const auto position = std::lower_bound(rows_.cbegin(), rows_.cend(), next.key(), [this](const auto& row, const auto& key) { return row.document[identityField_].toString() < key; });
         int index = static_cast<int>(position - rows_.cbegin());
         QList<QJsonObject> added;
         do { added.append(next.value()); ++next; }
-        while (next != incoming.cend() && (position == rows_.cend() || next.key() < (*position)[identityField_].toString()));
+        while (next != incoming.cend() && (position == rows_.cend() || next.key() < position->document[identityField_].toString()));
         beginInsertRows({}, index, index+static_cast<int>(added.size())-1);
-        for (const auto& value : added) rows_.insert(index++,value);
+        for (const auto& value : added) rows_.insert(index++, Row{value, {}});
         endInsertRows();
     }
     return true;
 }
 void ResourceTable::prepareSort(int column) {
-    if (column < -1 || column >= fields_.size()) return;
+    if (column < 0 || column >= fields_.size() || fields_[column] == "createdAt") return;
     if (column == sortValueColumn_ && sortValues_.size() == rows_.size()) return;
     sortValues_.clear(); sortValueColumn_ = -1;
-    // Age validity depends on the current clock; other keys belong to this snapshot.
-    if (column < 0 || fields_[column] == "createdAt") return;
+    // Non-clock keys remain valid for this snapshot, including while sort is NONE.
     sortValues_.reserve(rows_.size());
     for (int row = 0; row < rows_.size(); ++row) sortValues_.append(data(index(row, column), Qt::UserRole + 6));
     sortValueColumn_ = column;
@@ -321,6 +336,8 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         });
     }
     table_.setSourceModel(&rows_);
+    // Workspace applies the incoming snapshot's filter and order after publication.
+    table_.setDynamicSortFilter(false);
     events_.setSourceModel(&eventRows_);
     ports_.setSourceModel(&portRows_);
     ports_.setSortRole(Qt::UserRole + 6);
@@ -855,9 +872,7 @@ bool Workspace::publish() {
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
     const auto nav = currentNavigation();
-    // Do not sort incoming rows using the outgoing session's discarded order.
     visibleTable_.setLimit(nav.limit);
-    if (table_.sortColumn() != nav.column || table_.sortOrder() != nav.order) table_.sort(-1);
     rows_.publish(snapshot, cluster, sessionChanged);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;

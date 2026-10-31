@@ -12,6 +12,7 @@ ResourceFilter::ResourceFilter(QObject* parent) : QSortFilterProxyModel(parent) 
 }
 void ResourceFilter::sort(int column, Qt::SortOrder order) {
     if (auto* rows = qobject_cast<ResourceTable*>(sourceModel())) rows->prepareSort(column);
+    if (!dynamicSortFilter()) refreshFilter();
     QSortFilterProxyModel::sort(column, order);
 }
 Result<QList<ResourceFilter::Token>> ResourceFilter::compile(const QString& text) {
@@ -304,23 +305,31 @@ bool ResourceFilter::matchesQuantity(const QVariant& value, const QList<Token>& 
 }
 bool ResourceFilter::lessThan(const QModelIndex& left, const QModelIndex& right) const {
     const auto missing = [](const QVariant& value) {
-        return !value.isValid() || value.isNull() || (value.metaType().id() == QMetaType::QString && value.toString().isEmpty())
-            || (value.metaType().id() == QMetaType::QDateTime && !value.toDateTime().isValid());
+        const auto* text = get_if<QString>(&value);
+        const auto* date = get_if<QDateTime>(&value);
+        return !value.isValid() || value.isNull() || (text && text->isEmpty()) || (date && !date->isValid());
     };
-    const auto leftValue = sourceModel()->data(left, sortRole());
-    const auto rightValue = sourceModel()->data(right, sortRole());
-    const bool a = missing(leftValue), b = missing(rightValue);
-    if (a != b) return sortOrder() == Qt::AscendingOrder ? !a : a;
-    if (!a) {
-        if (!isSortLocaleAware() && leftValue.metaType().id() == QMetaType::QString && rightValue.metaType().id() == QMetaType::QString) {
-            const int comparison = QString::compare(leftValue.toString(), rightValue.toString(), sortCaseSensitivity());
-            if (comparison != 0) return comparison < 0;
-        } else {
-            if (QSortFilterProxyModel::lessThan(left, right)) return true;
-            if (QSortFilterProxyModel::lessThan(right, left)) return false;
+    const auto compareKeys = [&](const QVariant& leftValue, const QVariant& rightValue) {
+        const bool a = missing(leftValue), b = missing(rightValue);
+        if (a != b) return sortOrder() == Qt::AscendingOrder ? !a : a;
+        if (!a) {
+            const auto* leftText = get_if<QString>(&leftValue);
+            const auto* rightText = get_if<QString>(&rightValue);
+            if (!isSortLocaleAware() && leftText && rightText) {
+                const int comparison = QString::compare(*leftText, *rightText, sortCaseSensitivity());
+                if (comparison != 0) return comparison < 0;
+            } else {
+                if (QSortFilterProxyModel::lessThan(left, right)) return true;
+                if (QSortFilterProxyModel::lessThan(right, left)) return false;
+            }
         }
-    }
-    const auto x = sourceModel()->data(left, Qt::UserRole).toString(), y = sourceModel()->data(right, Qt::UserRole).toString();
-    return sortOrder() == Qt::AscendingOrder ? x < y : x > y;
+        const auto x = sourceModel()->data(left, Qt::UserRole).toString(), y = sourceModel()->data(right, Qt::UserRole).toString();
+        return sortOrder() == Qt::AscendingOrder ? x < y : x > y;
+    };
+    const auto* rows = qobject_cast<const ResourceTable*>(sourceModel());
+    if (rows && sortRole() == Qt::UserRole + 6 && left.column() == rows->sortValueColumn_
+        && rows->sortValues_.size() == rows->rowCount())
+        return compareKeys(rows->sortValues_[left.row()], rows->sortValues_[right.row()]);
+    return compareKeys(sourceModel()->data(left, sortRole()), sourceModel()->data(right, sortRole()));
 }
 }

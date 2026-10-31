@@ -66,11 +66,47 @@ or a second layout authority. Version 4 must be supported before an older native
 binary can consume the upgraded file; the preserved C# comparison profile remains
 independent.
 
+### Shared Native Pointer Input
+
+Each visible pinned or scrolling Qt table owns one shared hover handler and
+left/right tap handlers. Loaded cells retain keyboard focus, accessibility
+actions and the shared plain-text overflow tip without owning pointer handlers.
+Qt's public cell hit testing resolves content coordinates and logical model
+columns. No overlay captures scrolling or replaces the native Flickable.
+
+Embedded buttons and scrollbars keep their own input. A gesture records its
+originating cell, resource identity, column and context. Pooling, cancellation,
+model detachment or a context change invalidates that origin. Releasing over a
+different record must not inspect or mutate it. Hover follows the loaded cell
+after scrolling or layout changes, without fetching data or creating a timer.
+
 Hover-enabled native delegates expose the shared plain-text overflow tip for both
 mouse and keyboard users. No per-cell popup, refresh timer, network owner or
 additional table framework is introduced. Canonical row updates retain the user's
 selection and reading position. The test map records both regression failures
 before fixes and subsequent executed evidence; visual parity remains a separate gate.
+
+### Derived Native Cell Values
+
+The workspace owns applying the Resources snapshot and its filter/sort order.
+Its existing Qt proxy uses explicit updates rather than automatically sorting
+incoming data under the outgoing session's order. Manual sorting refreshes
+filter membership before applying the requested order. Other proxies retain
+their normal automatic Qt updates. No outgoing sort reset is emitted under the
+incoming session identity, and no temporary empty model is introduced.
+
+Each existing source row may lazily retain its formatted display values. The
+canonical JSON document remains authoritative. Replacing or removing that row
+also removes its derived values. Inherited cluster text is invalidated when the
+active cluster label changes. Unchanged ordered snapshots compare documents,
+not their transient presentation state, and do not reset the model.
+
+Clock-dependent Age and value previews are not retained. Tooltips reuse the
+same plain-text formatter and apply escaping at their own boundary. The
+existing single-column sort-key buffer remains snapshot-owned and can survive
+the NONE state. No per-session presentation registry, persisted data, additional
+resource cache, refresh timer or network request is introduced. These values
+are subject to the unchanged process-memory and CPU gates, not an exemption.
 
 ### How Does The Ports Table Preserve Forward Ownership And Older Layouts?
 

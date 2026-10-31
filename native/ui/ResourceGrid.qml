@@ -43,7 +43,12 @@ ColumnLayout {
         if (visible) table.positionViewAtRow(row, TableView.Contain)
     }
     readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
-    onContextScopeChanged: { cellMenu.close(); valueTip.target = null; if (selection) selection.clear() }
+    onContextScopeChanged: {
+        cellMenu.close(); valueTip.target = null
+        if (table) table.clearInput()
+        if (pinnedTable) pinnedTable.clearInput()
+        if (selection) selection.clear()
+    }
     signal actionRequested(string identity, int column, string label)
     signal currentRequested(string identity)
     function focusCell(row, column, owner) {
@@ -282,13 +287,91 @@ ColumnLayout {
             }
         }
     }
+    component ResourceTableView: TableView {
+        id: surface
+        property Item hoveredCell: null
+        readonly property Item pressedCell: leftTap.pressed && leftTap.origin ? leftTap.origin.cell : null
+
+        function cellAtScene(position) {
+            const viewport = mapFromItem(null, position.x, position.y)
+            if (!visible || !model || viewport.x < 0 || viewport.y < 0 || viewport.x >= width || viewport.y >= height) return null
+            if (childAt(viewport.x, viewport.y) instanceof ScrollBar) return null
+            const content = contentItem.mapFromItem(null, position.x, position.y)
+            const cell = itemAtCell(cellAtPosition(content))
+            if (!cell) return null
+            let point = cell.mapFromItem(null, position.x, position.y)
+            let child = cell.childAt(point.x, point.y)
+            while (child) {
+                if (child instanceof AbstractButton) return null
+                point = child.mapFromItem(null, position.x, position.y)
+                child = child.childAt(point.x, point.y)
+            }
+            return cell
+        }
+        function updateHover() {
+            const cell = pointer && pointer.hovered ? cellAtScene(pointer.point.scenePosition) : null
+            hoveredCell = cell && cell.hoverEnabled ? cell : null
+        }
+        function pressOrigin(position) {
+            const cell = cellAtScene(position)
+            return cell ? {cell: cell, path: cell.resourcePath, column: cell.column, scope: grid.contextScope} : null
+        }
+        function activateOrigin(origin, position, menu) {
+            const cell = cellAtScene(position)
+            if (!origin || !cell || cell !== origin.cell || cell.resourcePath !== origin.path || cell.column !== origin.column || grid.contextScope !== origin.scope) return
+            if (menu) {
+                cellMenu.path = grid.pathAt(cell.row)
+                cellMenu.endpoint = grid.endpointAt(cell.row, cell.column)
+                cellMenu.column = cell.column
+                cellMenu.popup(cell, 0, cell.height)
+            } else cell.clicked()
+        }
+        function forgetCell(cell) {
+            if (hoveredCell === cell) hoveredCell = null
+            if (leftTap && leftTap.origin && leftTap.origin.cell === cell) leftTap.origin = null
+            if (rightTap && rightTap.origin && rightTap.origin.cell === cell) rightTap.origin = null
+        }
+        function clearInput() {
+            hoveredCell = null
+            if (leftTap) leftTap.origin = null
+            if (rightTap) rightTap.origin = null
+        }
+        onContentXChanged: updateHover()
+        onContentYChanged: updateHover()
+        onLayoutChanged: updateHover()
+        onModelChanged: clearInput()
+        onVisibleChanged: if (!visible) clearInput()
+        HoverHandler {
+            id: pointer
+            onPointChanged: surface.updateHover()
+            onHoveredChanged: surface.updateHover()
+        }
+        TapHandler {
+            id: leftTap
+            property var origin: null
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.DragThreshold
+            onPressedChanged: if (pressed) origin = surface.pressOrigin(point.scenePosition)
+            onCanceled: origin = null
+            onTapped: (eventPoint) => surface.activateOrigin(origin, eventPoint.scenePosition, false)
+        }
+        TapHandler {
+            id: rightTap
+            property var origin: null
+            acceptedButtons: Qt.RightButton
+            gesturePolicy: TapHandler.DragThreshold
+            onPressedChanged: if (pressed) origin = surface.pressOrigin(point.scenePosition)
+            onCanceled: origin = null
+            onTapped: (eventPoint) => surface.activateOrigin(origin, eventPoint.scenePosition, true)
+        }
+    }
     component ResourceCell: Rectangle {
         id: cell
         property bool hoverEnabled: true
-        readonly property bool hovered: cellHover.hovered
+        readonly property bool hovered: TableView.view && TableView.view.hoveredCell === cell
         readonly property bool highlighted: selected
         property bool keyboardPressed: false
-        readonly property bool down: leftTap.pressed || keyboardPressed
+        readonly property bool down: (TableView.view && TableView.view.pressedCell === cell) || keyboardPressed
         property string text: display
         property font font: grid.cellFont
         property real padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
@@ -297,7 +380,6 @@ ColumnLayout {
         activeFocusOnTab: true
         required property int row
         required property int column
-        required property var model
         required property string display
         required property string resourcePath
         required property color identityColor
@@ -350,23 +432,26 @@ ColumnLayout {
                 event.accepted = true
             }
         }
-        readonly property string tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
+        property string tipText: text
         readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > text.length)
         onWantsTipChanged: if (wantsTip) valueTip.target=cell
-        Component.onDestruction: if (valueTip.target===cell) valueTip.target=null
+        Component.onDestruction: {
+            if (valueTip.target === cell) valueTip.target = null
+            if (TableView.view) TableView.view.forgetCell(cell)
+        }
         TableView.onPooled: {
             keyboardPressed = false
             if (valueTip.target === cell) valueTip.target = null
+            if (TableView.view) TableView.view.forgetCell(cell)
         }
-        HoverHandler { id: cellHover; enabled: cell.hoverEnabled }
-        TapHandler { id: leftTap; acceptedButtons: Qt.LeftButton; gesturePolicy: TapHandler.DragThreshold; onTapped: cell.clicked() }
-        TapHandler { acceptedButtons: Qt.RightButton; onTapped: { cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column; cellMenu.popup(cell, 0, cell.height) } }
     }
     Component { id: cellDelegate; ResourceCell {} }
     Component {
         id: accessoryCellDelegate
         ResourceCell {
             id: accessoryCell
+            required property var model
+            tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
             Loader {
                 anchors.fill: parent
                 anchors.margins: accessoryCell.padding
@@ -396,7 +481,7 @@ ColumnLayout {
                 Layout.fillHeight: true
                 spacing: 0
                 HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; delegate: headerDelegate }
-                TableView {
+                ResourceTableView {
                     id: pinnedTable
                     animate: false
                     activeFocusOnTab: true
@@ -421,7 +506,7 @@ ColumnLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 spacing: 0
                 HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; delegate: headerDelegate }
-                TableView {
+                ResourceTableView {
                     id: table
                     animate: false
                     activeFocusOnTab: true

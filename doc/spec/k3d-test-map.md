@@ -6901,3 +6901,59 @@ The public `radar-water-exposed-only` regression first failed against the previo
 The final follow-up run passed 6 preflights and 5,181 remaining tests, 5,187 total. Production line coverage is 97.81% and branch coverage is 85.72%. All 16 changed C++ branch outcomes in this follow-up are covered against baseline `4f38b55`. No new foreground performance clearance is claimed. The Store package evidence in the preceding packet is not a rebuilt distribution of this follow-up.
 
 A separate table row-order-reset batching experiment passed 70 targeted interaction tests but did not demonstrate a convincing benefit in the nonactivating Metal comparison. It was removed completely. That diagnostic comparison is not release evidence and did not change any performance gate.
+
+### Table input, snapshot projections and CI follow-up, 2026-10-31
+
+Shared table input replaces per-cell pointer handlers while preserving real
+mouse/touch drag, activation, context menus, keyboard actions, tooltips and
+accessibility. ResourceTable owns lazy display values with its canonical row
+snapshot. Age and editable value previews remain live. Snapshot, membership and
+cluster changes invalidate affected values. Sort comparisons reuse existing keys.
+The public handoff regression first failed in both Qt styles. Resources now apply
+the incoming snapshot's filter/order explicitly rather than announcing outgoing
+rows under the incoming session.
+
+Alarm visibility changes reuse existing match identities only within their valid
+time interval. Queue-owned data, rule and deadline changes invalidate them. Age
+rules and backward clock movement force evaluation. Worker generation checks and
+the same effect projection preserve entry holds and notification deduplication.
+No additional persisted resource data or refresh requests were introduced. The
+player now honors the existing silent-test flag. Actual playback is separate.
+
+| Boundary | Current local evidence |
+| --- | --- |
+| Normal native production packet | 6 preflights plus 5,203 remaining tests pass. Production coverage: 97.67% lines, 85.78% branches. |
+| Changed C++ branches | 204/218 outcomes, 93.58%, on added branch-start lines against `24f7ac4`, using the fresh normal profile and application mapping. This excludes QML, shell and other platforms. LLVM retains one warning for unchanged `TrustCancellation::isCanceled`, hash `0x0`. It is not suppressed. |
+| Targeted table/alarm/window packet | 514/514 pass, including clock expiry/rollback, age, rule changes, view re-entry and no duplicate notifications. |
+| Radar/window repetition | After diagnostic-only UI additions, all six Basic/Fusion context-identity and retained-cell handoff scenarios pass 20 times each, 120 executions. This is ARM64 macOS evidence, not an Intel/Linux reproduction. |
+| Store/provider/import selection | 213/213 pass. Clean Store configuration also finds the explicitly supplied official Qt/yaml-cpp/OpenSSL SDKs without a pre-existing CMake cache. |
+| Release/Store guards | 13/13 public packaging/workflow checks pass. Controlled external build-tool failures preserve configure/build/test status, diagnostics, SDK arguments and stop order. The earlier shell demonstrably hid failed CTest output. |
+| C# reference | 179 AppBehavior scenarios pass. The obsolete C# publication assertion is replaced by separate legacy-reference and approved native-candidate contracts. This is not a new full C# coverage run. |
+| iOS ARM64 simulator | Drag and touch activation pass in Basic and Fusion, 4/4. The private simulator is deleted afterward. This does not replace the full mobile image matrix or physical-device evidence. |
+| Real local Kubernetes | TLS/client certificates, multi-container logs, YAML/JSON Patch, conflict reconciliation, Secret remasking, PTY/vi/ANSI/resize/interrupts and deletion/UID protection pass. Owned cluster `podlord-native-run-83hywd` is removed. |
+| Current ARM64 direct package | Dependency paths and existing macOS-floor/thin-size checks pass. ZIP: 33,756,783 bytes. Installed regular files: 87,432,108 bytes. This is an ad-hoc packaging preflight, not notarized, installed-startup or Store-distribution evidence. |
+
+The isolated model benchmark previously improved query p95 from 13.93 to 8.89 ms.
+That is not a frame-CPU clearance. The current valid foreground run passes
+interaction latency but fails frame CPU: filter 12.76 ms, sort 14.25 ms, cached
+session 22.18 ms and cached inspector 12.47 ms against 8 ms. Per-action maximum
+p95 also fails. Scroll passes at 2.66 ms. Peak RSS is 283,115,520 bytes against
+310 MB, but warm growth is 5,980,160 bytes against 5 MB. Nonsync idle CPU is
+2.47% of one core against 2%. Background Metal runs and sampling remain diagnostic
+only. The painter experiment without demonstrated gain was removed completely.
+No renderer change or performance-gate adjustment is included in this packet.
+
+Previous hosted run 41216912481 has actual functional failures in Linux Fusion
+handoff and Intel/Linux context-map identity. Coverage passed there; exit 8 was
+CTest's saved failure status. The Store lane failed before testing because its
+CMake invocation omitted explicit SDK prefixes. That invocation and its failed-log
+handling are corrected. Context-map failures now emit stage, session, population,
+camera and request diagnostics plus an optional frame. Assertions and deadlines
+are unchanged. A fresh hosted run must still establish those platform results.
+
+Detailed logs, profiles and the current package are retained outside Git under
+`2026-10-31-app-store`. The existing Universal2 Store-only 200/80-MB exception does
+not alter the direct/thin 100/50-MB gates. No new Universal2 distribution, complete
+current cross-platform image matrix, installed startup, live cloud-login or
+licensing clearance is claimed. Google-account work stays paused. The next
+proposed background snapshot-preparation architecture awaits the user's decision.

@@ -16,6 +16,7 @@
 #include <QVariantList>
 #include <QPointer>
 #include <memory>
+#include <optional>
 
 namespace podlord {
 class WorkspaceRuntime;
@@ -40,7 +41,12 @@ private:
     const QStringList fields_, captions_;
     const QString identityField_;
     const bool preserveInputOrder_;
-    QList<QJsonObject> rows_;
+    struct Row {
+        QJsonObject document;
+        mutable QList<std::optional<QString>> display;
+        bool operator==(const Row& other) const { return document == other.document; }
+    };
+    QList<Row> rows_;
     QList<QVariant> sortValues_;
     int sortValueColumn_ = -1;
     Appearance appearance_;

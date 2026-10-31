@@ -2129,8 +2129,21 @@ bool execute(const QString& requestedScenario) {
     if (scenario == "radar_context_identity") {
         const auto first=workspace.currentSession();
         const auto context=workspace.sessionConfiguration(first)["contextId"].toString();
-        if (context.isEmpty()) return false;
         QPointer<podlord::RadarIsland> radar;
+        QString stage="context lookup";
+        bool passed=false;
+        int cachedCalls=-1;
+        const auto diagnostics=qScopeGuard([&] {
+            if (passed) return;
+            qWarning() << "Context island parity stage:" << stage << "map" << mapRadar
+                << "session" << workspace.currentSession() << "context" << context
+                << "page" << workspace.workspacePage() << "busy/loading" << workspace.busy() << workspace.loading()
+                << "resources/tiles" << workspace.totalResourceCount() << (radar ? radar->tiles()->rowCount() : -1)
+                << "remembered pose" << workspace.radarView() << "rendered pose" << (radar ? radar->viewPose() : QVariantMap{})
+                << "requests before/after" << cachedCalls << server.requests.size();
+            saveShellFrame(window,requestedScenario+"-failure");
+        });
+        if (context.isEmpty()) return false;
         const auto show=[&] {
             if (!click(window,item(window,mapRadar ? "radarWorkspaceButton" : "resourcesWorkspaceButton"))) return false;
             return waitFor([&] {
@@ -2149,13 +2162,17 @@ bool execute(const QString& requestedScenario) {
             }
             return result;
         };
+        stage="show original island";
         if (!show()) return false;
         const QVariantMap firstPose{{"x",100},{"y",-40},{"zoom",.01}};
+        stage="original population and camera";
         radar->setViewPose(firstPose);
         if (!waitFor([&] { return radar->tiles()->rowCount()==workspace.totalResourceCount() && workspace.radarView()==firstPose; })) return false;
+        stage="preview capture and session duplication";
         const auto original=points(); const auto preview=radar->previewImage();
         if (preview.isNull() || original.size()<1000 || !workspace.duplicateSession(first,"Island copy")
             || !waitFor([&] { return !workspace.busy(); })) return false;
+        stage="locate and open duplicate";
         QString second;
         for (const auto& value:workspace.sessions()) {
             const auto id=value.toMap()["id"].toString();
@@ -2164,6 +2181,7 @@ bool execute(const QString& requestedScenario) {
         if (second.isEmpty() || workspace.sessionConfiguration(second)["contextId"]!=context || !workspace.activate(second)
             || !waitFor([&] { return workspace.currentSession()==second && !workspace.busy() && !workspace.loading(); },10000)
             || !show()) return false;
+        stage="duplicate coordinate and preview parity";
         radar->setViewPose({{"x",0},{"y",0},{"zoom",.01}});
         if (!waitFor([&] { return points()==original; }) || radar->previewImage()!=preview) {
             std::fprintf(stderr,"Same-context sessions changed resource coordinates or preview: first=%s second=%s context=%s\n",
@@ -2171,12 +2189,16 @@ bool execute(const QString& requestedScenario) {
             return false;
         }
         const auto calls=server.requests.size();
+        cachedCalls=calls;
+        stage="rename alias without geometry changes";
         if (!workspace.renameSourceContext(context,"Local island alias") || !waitFor([&] { return !workspace.busy(); })
             || points()!=original || radar->previewImage()!=preview) return false;
+        stage="return to original session";
         if (!click(window,item(window,"activateSession_"+first))
             || !waitFor([&] { return workspace.currentSession()==first && !workspace.busy() && !workspace.loading(); })
             || !show()) return false;
-        return waitFor([&] { return workspace.radarView()==firstPose && radar->viewPose()==firstPose && points()==original; })
+        stage="restore camera, geometry and preview without transport";
+        return passed=waitFor([&] { return workspace.radarView()==firstPose && radar->viewPose()==firstPose && points()==original; })
             && radar->previewImage()==preview && server.requests.size()==calls;
     }
     if (scenario == "session_tabs_controls") {
@@ -2518,6 +2540,34 @@ bool execute(const QString& requestedScenario) {
             return shown;
         };
         const auto value = [&](int row, const QString& field) { return model->data(model->index(row, column(field))).toString(); };
+        if (scenario == "table_pointer_drag" || scenario == "table_pointer_touch") {
+            if (!show(column("name"))) return false;
+            auto* cell = item(window, "cell_0_" + QString::number(column("name")));
+            const auto start = cell->mapToScene({cell->width() / 2, cell->height() / 2}).toPoint();
+            const auto previousX = view->property("contentX").toDouble();
+            const bool touchInput = scenario == "table_pointer_touch";
+            std::unique_ptr<QPointingDevice> touch(touchInput ? QTest::createTouchDevice() : nullptr);
+            if (touchInput) QTest::touchEvent(window, touch.get()).press(0, start, window).commit();
+            else QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, start);
+            for (int step = 1; step <= 6; ++step) {
+                const auto point = start - QPoint(step * 10, 0);
+                if (touchInput) QTest::touchEvent(window, touch.get()).move(0, point, window).commit();
+                else QTest::mouseMove(window, point);
+                QTest::qWait(10);
+            }
+            if (touchInput) QTest::touchEvent(window, touch.get()).release(0, start - QPoint(60, 0), window).commit();
+            else QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, start - QPoint(60, 0));
+            if (!waitFor([&] { return view->property("contentX").toDouble() > previousX + 20 && !view->property("moving").toBool(); })
+                || !workspace.inspectorPath().isEmpty() || server.requests.size() != requests) return false;
+            if (!show(column("name"))) return false;
+            cell = item(window, "cell_0_" + QString::number(column("name")));
+            if (touchInput) {
+                const auto point = cell->mapToScene({cell->width() / 2, cell->height() / 2}).toPoint();
+                QTest::touchEvent(window, touch.get()).press(0, point, window).commit();
+                QTest::touchEvent(window, touch.get()).release(0, point, window).commit();
+            } else if (!click(window, cell)) return false;
+            return waitFor([&] { return workspace.inspectorName() == "alpha" && workspace.canEditYaml(); });
+        }
         if (scenario == "table_columns") return model->columnCount() == fields.size() && workspace.resourceColumns().size() == fields.size();
         if (scenario == "table_compact_tools") {
             auto* content = item(window, "workspaceContent");

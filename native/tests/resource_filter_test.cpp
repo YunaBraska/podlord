@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QDateTime>
+#include <QStringListModel>
 #include <QtCore/qtestsupport_core.h>
 #include <algorithm>
 #include <cstdio>
@@ -10,6 +11,77 @@
 namespace {
 bool tableScenario(const QString& scenario) {
     using podlord::ResourceTable;
+    if (scenario == "table_cached_refresh") {
+        ResourceTable rows(nullptr, {"name", "cpu"}, {"Name", "CPU"});
+        QJsonObject row{{"path", "a"}, {"name", "alpha"}, {"cpu", 2000},
+            {"metricComplete", QJsonObject{{"cpu", false}}}, {"metricStale", true}};
+        rows.publish({row});
+        if (rows.data(rows.index(0, 0)) != "alpha" || rows.data(rows.index(0, 0)) != "alpha"
+            || !rows.data(rows.index(0, 1)).toString().contains("incomplete")
+            || !rows.data(rows.index(0, 1), Qt::ToolTipRole).toString().contains("stale")) return false;
+        row["name"] = "new<one>\nline"; row["cpu"] = 3000;
+        row["metricComplete"] = QJsonObject{{"cpu", true}}; row["metricStale"] = false;
+        rows.publish({row});
+        const auto metric = rows.data(rows.index(0, 1)).toString();
+        return rows.data(rows.index(0, 0)) == "new<one>\nline"
+            && rows.data(rows.index(0, 0), Qt::ToolTipRole) == "<span>new&lt;one&gt;<br>line</span>"
+            && metric.contains("3000") && !metric.contains("incomplete") && !metric.contains("stale");
+    }
+    if (scenario == "table_cached_membership") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"});
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "alpha"}}, QJsonObject{{"path", "z"}, {"name", "zulu"}}});
+        if (rows.data(rows.index(0, 0)) != "alpha" || rows.data(rows.index(1, 0)) != "zulu") return false;
+        bool readingPosition = true;
+        QObject::connect(&rows, &QAbstractItemModel::rowsAboutToBeInserted, [&] {
+            readingPosition = readingPosition && rows.data(rows.index(rows.rowCount() - 1, 0)) == "zulu";
+        });
+        rows.publish({QJsonObject{{"path", "0"}, {"name", "zero"}}, QJsonObject{{"path", "c"}, {"name", "charlie"}},
+            QJsonObject{{"path", "z"}, {"name", "zulu"}}});
+        return readingPosition && rows.rowCount() == 3 && rows.data(rows.index(0, 0)) == "zero"
+            && rows.data(rows.index(1, 0)) == "charlie" && rows.data(rows.index(2, 0)) == "zulu";
+    }
+    if (scenario == "table_cached_handoff") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"});
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "alpha"}}, QJsonObject{{"path", "b"}, {"name", "bravo"}}});
+        if (rows.data(rows.index(0, 0)) != "alpha" || rows.data(rows.index(1, 0)) != "bravo") return false;
+        rows.publish({QJsonObject{{"path", "x"}, {"name", "x-ray"}}, QJsonObject{{"path", "y"}, {"name", "yankee"}},
+            QJsonObject{{"path", "z"}, {"name", "zulu"}}}, {}, true);
+        if (rows.rowCount() != 3 || rows.data(rows.index(0, 0)) != "x-ray" || rows.data(rows.index(2, 0)) != "zulu") return false;
+        rows.publish({QJsonObject{{"path", "w"}, {"name", "whiskey"}}}, {}, true);
+        if (rows.rowCount() != 1 || rows.data(rows.index(0, 0)) != "whiskey") return false;
+        rows.publish({}, {}, true);
+        if (rows.rowCount() != 0) return false;
+        rows.publish({QJsonObject{{"path", "a"}, {"name", "final"}}}, {}, true);
+        return rows.rowCount() == 1 && rows.data(rows.index(0, 0)) == "final";
+    }
+    if (scenario == "table_cached_cluster") {
+        ResourceTable rows(nullptr, {"cluster"}, {"Cluster"});
+        const QJsonArray snapshot{QJsonObject{{"path", "a"}, {"cluster", "fixed"}}, QJsonObject{{"path", "b"}}};
+        rows.publish(snapshot, "old");
+        if (rows.data(rows.index(0, 0)) != "fixed" || rows.data(rows.index(1, 0), Qt::ToolTipRole) != "<span>old</span>") return false;
+        rows.publish(snapshot, "new");
+        return rows.data(rows.index(0, 0)) == "fixed" && rows.data(rows.index(1, 0)) == "new"
+            && rows.data(rows.index(1, 0), Qt::UserRole + 6) == "new";
+    }
+    if (scenario == "table_cached_age") {
+        ResourceTable rows(nullptr, {"createdAt"}, {"Age"});
+        rows.publish({QJsonObject{{"path", "a"}, {"createdAt", QDateTime::currentDateTimeUtc().addMSecs(1000).toString(Qt::ISODateWithMs)}}});
+        if (rows.data(rows.index(0, 0)) != "-") return false;
+        return QTest::qWaitFor([&] { return rows.data(rows.index(0, 0)).toString().endsWith('s'); }, 5000);
+    }
+    if (scenario == "table_cached_ordered_repeat") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"}, "path", true);
+        QJsonArray snapshot{QJsonObject{{"path", "b"}, {"name", "bravo"}}, QJsonObject{{"path", "a"}, {"name", "alpha"}}};
+        rows.publish(snapshot);
+        if (rows.data(rows.index(0, 0)) != "bravo" || rows.data(rows.index(1, 0)) != "alpha") return false;
+        int resets = 0;
+        QObject::connect(&rows, &QAbstractItemModel::modelReset, [&] { ++resets; });
+        rows.publish(snapshot);
+        if (resets != 0 || rows.data(rows.index(0, 0)) != "bravo") return false;
+        snapshot[1] = QJsonObject{{"path", "a"}, {"name", "updated"}};
+        rows.publish(snapshot);
+        return resets == 1 && rows.data(rows.index(1, 0)) == "updated";
+    }
     if (scenario == "table_empty_bounds") {
         ResourceTable rows(nullptr, {"name"}, {"Name"});
         return rows.rowCount() == 0 && rows.columnCount() == 1 && rows.row(0).isEmpty()
@@ -163,6 +235,32 @@ bool run(const QString& scenario) {
             filter.sort(0, Qt::DescendingOrder); return ordered() == "abc";
         }
         if (scenario == "sort_changed_column") { filter.sort(2); return ordered() == "bac"; }
+        if (scenario == "sort_manual_update") {
+            filter.setDynamicSortFilter(false);
+            if (!filter.filter("\"Pod\"")) return false;
+            a["kind"] = "Widget"; c["kind"] = "Pod"; rows.publish({a, b, c});
+            filter.sort(0);
+            return ordered() == "bc";
+        }
+        if (scenario == "sort_display_role") {
+            filter.setSortRole(Qt::DisplayRole); filter.sort(2);
+            if (ordered() != "cab") return false;
+            filter.sort(2, Qt::DescendingOrder);
+            return ordered() == "bac";
+        }
+        if (scenario == "sort_external_model") {
+            QStringListModel external({"bravo", "Alpha", "charlie"});
+            filter.setSourceModel(&external); filter.setSortRole(Qt::DisplayRole); filter.sort(0);
+            if (filter.index(0, 0).data() != "Alpha" || filter.index(2, 0).data() != "charlie") return false;
+            filter.sort(0, Qt::DescendingOrder);
+            return filter.index(0, 0).data() == "charlie" && filter.index(2, 0).data() == "Alpha";
+        }
+        if (scenario == "sort_locale") {
+            filter.setSortLocaleAware(true); filter.sort(0);
+            if (ordered() != "abc") return false;
+            filter.sort(0, Qt::DescendingOrder);
+            return ordered() == "cba";
+        }
         if (scenario == "sort_numeric") {
             filter.sort(2); a["restarts"] = 1; b["restarts"] = 20; c["restarts"] = 0;
             rows.publish({a, b, c}); return ordered() == "cab";

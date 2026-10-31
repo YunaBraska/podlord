@@ -12,6 +12,22 @@ Persist rule definitions and the mute/reduced-motion preferences in a private, v
 
 One deadline timer owns bounded effects and time-dependent evaluation. A lazily created Qt Multimedia player owns local preview/playback; mute stops playback and no hidden view owns a refresh loop. Bundled sounds retain their real source/license attribution. Regular expressions have bounded match/depth work and explicit failure feedback.
 
+Pure visibility changes reuse the existing rule-match identities while their
+resource snapshot, catalog and time conditions remain valid. Two in-memory time
+bounds describe that validity. Resource, catalog and deadline work invalidate it
+at the existing queue owner. Backward clock movement or an elapsed condition
+deadline requires fresh evaluation. Age rules remain uncached because their
+numeric population changes continuously. Reuse remains off the UI thread and
+passes through the same generation-checked effect projection, preserving
+view-entry holds, whole-session counts and notification deduplication. No second
+resource dataset or persisted evaluation cache is introduced.
+
+Numeric population statistics are built only for enabled percentile/outlier
+criteria. Stateless effects traverse their matching rows, while bounded holds
+still account for unmatched resources until expiry. Functional test runs honor
+`PODLORD_DISABLE_AUDIO` at the player boundary without suppressing visual effects
+or notification signals. Actual playback remains a separate device check.
+
 The current playback boundary accepts catalog IDs, not media paths or URLs.
 The catalog resolves all 116 actual audio assets to embedded `qrc:` OGG data.
 Rule decoding rejects unknown IDs and extra fields; preview also resolves an ID

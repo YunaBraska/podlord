@@ -120,6 +120,7 @@ bool run(const QString& scenario) {
     ResourceClient client(nullptr, [&] { return now; });
     Alerts alerts(profile.path(), &client, nullptr, [&] { return now; });
     QSignalSpy focuses(&alerts, &Alerts::focusRequested);
+    QSignalSpy sounds(&alerts, &Alerts::soundRequested);
     if (!waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
     const auto builtins = alerts.rules();
     for (int index = 1; index < builtins.size(); ++index) {
@@ -129,7 +130,7 @@ bool run(const QString& scenario) {
     auto rule = alerts.rules().first().toMap();
     rule["id"] = "view-rule"; rule["name"] = "View rule"; rule["builtIn"] = false;
     rule["sound"] = "none"; rule["zoom"] = scenario.endsWith("animation") ? 125 : 0; rule["color"] = "#123456"; rule["animation"] = "pulse";
-    const bool view = scenario.startsWith("view_");
+    const bool view = scenario.startsWith("view_") || scenario == "reuse_notifications";
     rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", view ? "newInView" : "name"},
         {"expression", view ? (scenario == "view_false" ? "false" : "true") : "worker"}}})}.toVariantList();
     if (scenario == "duration_survives_unmatch") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
@@ -145,6 +146,10 @@ bool run(const QString& scenario) {
         QJsonObject{{"field", "restarts"}, {"expression", "<1"}}})}.toVariantList();
     if (scenario == "recent_change_baseline") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
         QJsonObject{{"field", "recentlyChanged"}, {"expression", "true"}}})}.toVariantList();
+    if (scenario == "reuse_freshness_expiry" || scenario == "reuse_clock_back") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "recentlyChanged"}, {"expression", "true"}}})}.toVariantList();
+    if (scenario == "reuse_age_forward" || scenario == "reuse_age_backward") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "age"}, {"expression", scenario == "reuse_age_forward" ? "<65s" : ">65s"}}})}.toVariantList();
     if (scenario == "view_snapshot_pending") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
         QJsonObject{{"field", "restarts"}, {"expression", "=2"}}})}.toVariantList();
     if (const auto it = criteria.constFind(scenario); it != criteria.cend())
@@ -152,6 +157,7 @@ bool run(const QString& scenario) {
             QJsonObject{{"field", it->field}, {"expression", it->expression}}})}.toVariantList();
     rule["colorMode"] = view ? "new-in-view" : scenario.startsWith("once_") ? "once" : "duration";
     rule["animationMode"] = rule["colorMode"];
+    if (scenario.startsWith("reuse_") && !view) { rule["colorMode"] = "no-match"; rule["animationMode"] = "no-match"; }
     rule["colorSeconds"] = 2; rule["animationSeconds"] = 2;
     if (!alerts.saveRule(rule) || !waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
     ClusterConnection connection;
@@ -172,6 +178,44 @@ bool run(const QString& scenario) {
     };
     const auto effect = [&] { return alerts.effect(path); };
     const int requests = server.requests;
+    if (scenario == "reuse_age_forward" || scenario == "reuse_age_backward") {
+        const bool forward = scenario == "reuse_age_forward";
+        if (countForRule() != (forward ? 1 : 0)) return false;
+        now = now.addSecs(6);
+        if (!alerts.setVisibleResources("session", {})
+            || !waitFor([&] { return countForRule() == (forward ? 0 : 1); })) return false;
+        if (forward) return effect()["color"] != "#123456" && server.requests == requests;
+        now = now.addSecs(-6);
+        return alerts.setVisibleResources("session", {path}) && waitFor([&] { return countForRule() == 0; })
+            && effect()["color"] != "#123456" && server.requests == requests;
+    }
+    if (scenario == "reuse_freshness_expiry" || scenario == "reuse_clock_back" || scenario == "reuse_notifications") {
+        if (scenario != "reuse_notifications" && countForRule() != 0) return false;
+        ++server.version; ++server.restarts; now = now.addSecs(1);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.resource("session", path)["restarts"].toInt() == 1 && countForRule() == 1; })) return false;
+        const int refreshedRequests = server.requests;
+        if (scenario == "reuse_notifications") {
+            if (!waitFor([&] { return !focuses.isEmpty() && !sounds.isEmpty(); })) return false;
+            const auto focusCount = focuses.size(), soundCount = sounds.size();
+            return alerts.setVisibleResources("session", {}) && alerts.setVisibleResources("session", {path})
+                && waitFor([&] { return effect()["color"] == "#123456" && effect()["animation"] == "pulse"; })
+                && focuses.size() == focusCount && sounds.size() == soundCount && server.requests == refreshedRequests;
+        }
+        now = now.addSecs(31);
+        if (!alerts.setVisibleResources("session", {}) || !waitFor([&] { return countForRule() == 0; })
+            || effect()["color"] == "#123456") return false;
+        if (scenario == "reuse_freshness_expiry") return server.requests == refreshedRequests;
+        now = now.addSecs(-30);
+        return alerts.setVisibleResources("session", {path}) && waitFor([&] { return countForRule() == 1; })
+            && effect()["color"] == "#123456" && server.requests == refreshedRequests;
+    }
+    if (scenario == "reuse_catalog") {
+        if (countForRule() != 1) return false;
+        rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "absent"}}})}.toVariantList();
+        return alerts.saveRule(rule) && waitFor([&] { return !alerts.busy() && countForRule() == 0; })
+            && alerts.setVisibleResources("session", {}) && effect()["color"] != "#123456" && server.requests == requests;
+    }
     if (scenario == "view_snapshot_cpu") {
 #ifdef CLOCK_THREAD_CPUTIME_ID
         if (!waitFor([&] { return countForRule() == 15000; }) || effect()["color"] == "#123456") return false;
