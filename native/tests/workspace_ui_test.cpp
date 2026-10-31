@@ -3335,8 +3335,33 @@ bool execute(const QString& requestedScenario) {
                 });
             }
             if (scenario == "radar_island_sort") {
-                if (!click(window,item(window,"resourcesWorkspaceButton")) || !click(window,item(window,"header_0")) || !click(window,item(window,"header_0")) || !click(window,item(window,"radarWorkspaceButton"))) return false;
-                return waitFor([&] { const auto tile=radarPoint(radar,2); const auto expected=workspace.table()->index(2,0); return tile && expected.data(Qt::UserRole+1)=="alpha" && tile->path==expected.data(Qt::UserRole) && QLineF(initial,tile->bounds.center()).length()<1; }) && server.requests.size()==calls;
+                auto* drawer=window->findChild<QObject*>("sidebarDrawer");
+                if (drawer && drawer->property("visible").toBool()) {
+                    QTest::keyClick(window,Qt::Key_Escape);
+                    if (!waitFor([&] { return !drawer->property("visible").toBool(); })) return failed("close phone radar before table input");
+                }
+                if (!click(window,item(window,"resourcesWorkspaceButton"))) return false;
+                auto* header=item(window,"header_0");
+                auto* viewport=item(window,"resourceHeaderView");
+                if (!header || !viewport) return false;
+                // A frozen-column layout can expose only part of a header on a
+                // phone. Tap that real visible part, not its offscreen center.
+                const auto area=header->mapRectToScene(QRectF(QPointF{},header->size()))
+                    .intersected(viewport->mapRectToScene(QRectF(QPointF{},viewport->size())))
+                    .intersected(QRectF(0,0,window->width(),window->height()));
+                if (area.isEmpty()) return false;
+                if (!saveShellFrame(window,requestedScenario+"-before-sort")) return false;
+                QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,area.center().toPoint());
+                QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,area.center().toPoint());
+                if (!click(window,item(window,"radarWorkspaceButton"))) return false;
+                const bool retained=waitFor([&] { const auto tile=radarPoint(radar,2); const auto expected=workspace.table()->index(2,0); return tile && expected.data(Qt::UserRole+1)=="alpha" && tile->path==expected.data(Qt::UserRole) && QLineF(initial,tile->bounds.center()).length()<1; });
+                if (!retained) {
+                    saveShellFrame(window,requestedScenario+"-sort-failure");
+                    std::fprintf(stderr,"Sorted Radar: last name=%s, viewport=%gx%g, calls=%lld/%lld\n",
+                        qPrintable(workspace.table()->index(2,0).data(Qt::UserRole+1).toString()),radar->width(),radar->height(),static_cast<long long>(server.requests.size()),static_cast<long long>(calls));
+                    return failed("sort retains identity and position");
+                }
+                return server.requests.size()==calls;
             }
             if (scenario == "radar_island_session") {
                 const auto session=workspace.currentSession(); QTest::keyClick(window,Qt::Key_Right); QTest::keyClick(window,Qt::Key_Down);

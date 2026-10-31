@@ -6702,7 +6702,8 @@ reference. Existing camera, cache, filter, alarm and request-lifecycle contracts
 remain in force. Primary navigation was not redesigned.
 
 Evidence is retained under `2026-10-30-radar-ux`. Base `f3ea13c` plus the recorded
-input patches identify each run. Screens are actual Qt captures, not mockups.
+input patches identify each run. Runtime changes are committed as `1dab2c1` and
+the public toolchain cache as `c2ba47f`. Screens are actual Qt captures, not mockups.
 
 | Public behavior | Executable evidence | Result and boundary |
 | --- | --- | --- |
@@ -6711,11 +6712,14 @@ input patches identify each run. Screens are actual Qt captures, not mockups.
 | Connected accessible session tabs, keyboard switching, phone overflow, 44-pixel touch actions, inactive close and no extra requests | `native.ui.session_tabs_controls_basic/fusion`, retained unsaved-YAML session/history cases | Passed. Replaces the old Row/ScrollView wrapper with the standard TabBar overflow behavior. Tab initialization and model changes do not activate sessions. |
 | Parent filter scrolling closes an anchored picker | `native.field_filter.flyout_*` | Eleven affected cases pass after correcting a test gesture that landed inside the picker instead of the unobscured parent viewport. The production dismissal contract is unchanged. |
 | Pure proxy sorting retains drawing and effects while updating resource indices | Radar source-sort, selection, metadata, input and animation cases | `sort-fastpath-tests.log`: 226/226 passed. Qt's persistent indices remain authoritative. Pending data or geometry changes retain the full synchronization path. No second resource cache is introduced. |
-| Real local Kubernetes operations | `real-kubernetes-e2e.log` | Passed shell, vi, control-vi, interrupt/touch-interrupt, window transfer, Pod/Service forwards, context removal/draft safeguards, delete/replacement UID, inspector history, cache-only search, metrics, health and cached field filters. The owned K3s fixture was deleted. This precedes the index-only sort optimization. |
-| Native iPhone rendering and interaction | `ios-current/*.log`, `ios-current/screens` | Three actual ARM64 simulator journeys pass: small reader, map reader and session tabs. The owned simulator is shut down and deleted. This precedes the index-only sort optimization. Native VoiceOver operation is not proven by Qt role assertions. |
+| Real local Kubernetes operations | `real-kubernetes-current.log` | Passed on the final runtime, including the index-only sort optimization: shell, vi, control-vi, interrupt/touch-interrupt, window transfer, Pod/Service forwards, context removal/draft safeguards, delete/replacement UID, inspector history, cache-only search, metrics, health and cached field filters. The owned K3s fixture was deleted. |
+| Native iPhone rendering and interaction | `ios-verified/*.log`, `ios-verified/screens` | Four actual ARM64 simulator journeys pass on the final runtime: small reader, map reader, sorting without changing island positions and session tabs. The sort driver closes the modal phone drawer and taps the visible header intersection, preserving the agreed desktop column order. Both desktop styles pass the same corrected case. The owned simulator is shut down and deleted. Native VoiceOver operation is not proven by Qt role assertions. |
 
 `sort-fastpath-software` completes the 5,000-resource, three-session protocol,
-including its nonsync idle phase. This is software regression evidence only.
+including its nonsync idle phase. Filter, sort, cached-tab and inspector p95
+latencies are 41.163, 35.073, 39.604 and 34.353 ms. Maximum resident memory is
+205,881,344 bytes, warm growth is 393,216 bytes and one-core idle CPU is 0.965%
+over 60,001 ms. All software regression gates pass. This is not Metal evidence.
 The earlier Cocoa run completes retained interaction samples before exposure is
 lost: filter 25.961 ms, sort 31.800 ms, cached tab 38.494 ms and inspector
 28.691 ms p95 satisfy their interaction budgets. Frame CPU p95 does not satisfy
@@ -6723,17 +6727,23 @@ lost: filter 25.961 ms, sort 31.800 ms, cached tab 38.494 ms and inspector
 It is a failed/incomplete foreground run, not performance or release clearance.
 The later index-only sort path still needs isolated Metal comparison.
 
-The first full Linux run passes six preflight and 5,023 of 5,024 remaining
-executions. Only the misplaced filter-wheel gesture fails. Coverage is 97.76%
-lines, 85.74% overall branches and 882/966 (91.30%) Radar/Map branches, with LLVM
-also reporting mismatched-function data. These numbers are retained observations,
-not a clean full-suite result. `full-linux-current` repeats the final source and
-corrected test rather than relabeling the earlier failure as green.
+The first full Linux run failed the misplaced filter-wheel gesture. The final
+`full-linux-current` run passes all six preflight and 5,024 remaining executions:
+5,030 total, with exit status zero. The remaining suite takes 1,406.23 seconds.
+Coverage is 97.76% lines, 85.75% overall branches and 897/982 (91.34%) Radar/Map
+branches. LLVM reports 42 functions with mismatched data. Coverage gates pass,
+but that instrumentation warning remains a reporting risk rather than a
+warning-free coverage claim.
 
-The initial fresh macOS package passes dependency and size checks at 33,745,461
-download bytes and 87,414,540 installed bytes. `macos-package-current` rebuilds
-the later sort optimization. Android ARM64 and iOS simulator ARM64 builds are
-repeated for that final source. Local signing remains private/ad-hoc by agreement.
+The final `macos-package-current` Release package passes dependency, architecture,
+minimum-OS, signature and size preflight checks at 33,745,870 download bytes and
+87,414,652 installed bytes. Its ZIP SHA-256 is
+`349e72aa0e4c3cc5f62c22d8b928e620a62338b8c05a51379a3c5f345b1577f9`.
+Android ARM64 and iOS simulator ARM64 builds pass for the final runtime. Android
+has not repeated signed-APK installation and touch journeys for this packet.
+Local macOS signing remains private/ad-hoc by agreement. Test apps, the owned
+Kubernetes fixture and the final owned iOS simulator are confirmed stopped or
+removed. Reusable toolchains, build caches and retained evidence are preserved.
 
 #### Development-Time Review And Public Toolchain Cache
 
@@ -6750,8 +6760,26 @@ Qt, OpenSSL, yaml-cpp and supplier build inputs are saved. The shared installer'
 read-only `--check` validates required modules, versions, architecture and the
 deployment-floor metadata for both macOS and the iOS host toolchain. Invalid
 restored inputs fail rather than bypassing a package gate. Twelve public CLI
-tests and the real local toolchain validation pass. YAML parses locally. Actual
-restore/save behavior and time savings require hosted CI, not a local estimate.
+tests and the real local toolchain validation pass. YAML parses locally. In
+[hosted run 41146172937](https://github.com/YunaBraska/podlord/actions/runs/41146172937),
+both macOS architectures successfully resolve, restore-attempt, install on a
+miss, validate and save the public toolchain. The separate iOS ARM64 job passes
+and completes its public toolchain cache save. A warm-hit timing comparison has
+not yet run, so no hosted time saving is claimed.
+
+That run is not an overall green release result. macOS ARM64 still fails
+`native.tls.platform_delayed` and `native.tls.platform_cancel_pending`: native
+trust returns an untrusted-certificate result without the issuer request the
+timing scenarios expect. This repeats the previously recorded native-trust
+test boundary. No validation is disabled and no timing test is waived. Intel
+is still running at this checkpoint. The existing CI cancels superseded runs,
+so a test/evidence-only follow-up push must not interrupt that active job.
+
+The remaining performance blocker is the 8 ms foreground frame-CPU gate.
+The proposed atomic cached-session publication change awaits its architecture
+decision. Current Metal comparison, installed startup and complete paired
+image evidence remain separate release gates. A software pass or toolchain
+cache hit cannot substitute for them.
 
 The scoped interaction review uses Apple's [tab-view guidance](https://developer.apple.com/design/human-interface-guidelines/tab-views)
 and [accessibility guidance](https://developer.apple.com/design/human-interface-guidelines/accessibility).
