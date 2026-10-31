@@ -1,4 +1,4 @@
-# 0007 Separate Mac App Store kubeconfig boundary
+# 0051 Separate Mac App Store kubeconfig boundary
 
 ## Status
 
@@ -40,6 +40,14 @@ signing, provisioning, publisher metadata and Apple review remain separate.
 
 The native Mac App Store application contains both `arm64` and `x86_64` slices. Intel support is not delegated to Rosetta or removed from the Store channel. The two Store-configured builds must originate from the same source revision and use matching dependencies and deployment targets.
 
-`scripts/merge-native-macos-apps.sh` verifies the signed thin input bundles, their identifiers, contained symlinks and matching resource files before merging their Mach-O binaries. The result is unsigned and must pass the existing signing and packaging boundary before distribution. The existing download and installed-size gates remain applicable unless a separate explicit size decision changes them.
+`scripts/merge-native-macos-apps.sh` verifies the signed thin input bundles, their identifiers, contained symlinks and matching resource files before merging their Mach-O binaries. The result is unsigned and must pass the existing signing and packaging boundary before distribution.
+
+The approved combined Universal2 Store limits are 200,000,000 installed bytes
+and 80,000,000 bytes for the signed PKG. The installed measurement includes the
+provisioning profile and final signatures. This exception counts both native
+runtimes without hiding dependencies or requiring a separate download. Direct
+downloads and each thin architecture retain their existing 100,000,000 installed
+and 50,000,000 download limits. The exception neither authorizes publication
+nor clears signing, platform or performance gates.
 
 The native publication workflows prepare C++ candidates. The C# application remains an independently runnable comparison reference, not the implementation shipped by those workflows. Preparing or checking a candidate does not authorize a release, tag or Store upload.

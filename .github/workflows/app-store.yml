@@ -75,8 +75,8 @@ jobs:
           productsign --sign "$installer" "$credentials/unsigned.pkg" dist/app-store/Podlord.pkg
           pkgutil --check-signature dist/app-store/Podlord.pkg
           bytes=$(/usr/bin/stat -f '%z' dist/app-store/Podlord.pkg)
-          printf 'Signed PKG bytes: %s\nDownload limit: 50000000\n' "$bytes" >> dist/app-store/size-evidence.txt
-          [ "$bytes" -le 50000000 ]
+          printf 'Signed Universal2 Store PKG bytes: %s\nDownload limit: 80000000\n' "$bytes" >> dist/app-store/size-evidence.txt
+          [ "$bytes" -le 80000000 ]
       - uses: actions/upload-artifact@v7
         with:
           name: app-store-package

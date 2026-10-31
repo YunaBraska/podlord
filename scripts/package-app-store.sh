@@ -22,9 +22,6 @@ mkdir -p "$DIST"
 APP="$DIST/Podlord.app"
 /bin/sh "$ROOT/scripts/merge-native-macos-apps.sh" "$PODLORD_STORE_ARM64_ARCHIVE" "$PODLORD_STORE_X64_ARCHIVE" "$APP"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$version" ] || { printf 'Candidate version differs from the requested source version.\n' >&2; exit 1; }
-INSTALLED=$(find "$APP" -type f -exec /usr/bin/stat -f '%z' '{}' + | awk '{n+=$1} END {printf "%.0f\n",n}')
-printf 'Universal2 installed bytes: %s\nLimit: 100000000\n' "$INSTALLED" > "$DIST/size-evidence.txt"
-[ "$INSTALLED" -le 100000000 ] || { cat "$DIST/size-evidence.txt" >&2; printf 'Universal2 exceeds the unchanged installed-size gate.\n' >&2; exit 1; }
 cp "$MACOS_APP_STORE_PROFILE_PATH" "$APP/Contents/embedded.provisionprofile"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :LSApplicationCategoryType string public.app-category.developer-tools' "$APP/Contents/Info.plist"
@@ -46,4 +43,7 @@ done < "$DIST/frameworks.txt"
 rm "$DIST/frameworks.txt"
 /usr/bin/codesign --force --entitlements "$ENTITLEMENTS" --options runtime --timestamp --sign "$MACOS_APP_STORE_APPLICATION_IDENTITY" "$APP"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+INSTALLED=$(find "$APP" -type f -exec /usr/bin/stat -f '%z' '{}' + | awk '{n+=$1} END {printf "%.0f\n",n}')
+printf 'Universal2 Store installed bytes: %s\nLimit: 200000000\n' "$INSTALLED" > "$DIST/size-evidence.txt"
+[ "$INSTALLED" -le 200000000 ] || { cat "$DIST/size-evidence.txt" >&2; printf 'Universal2 Store application exceeds its installed-size gate.\n' >&2; exit 1; }
 printf 'implementation=cpp\nversion=%s\nbuild=%s\narchitectures=arm64 x86_64\n' "$version" "$build_number" > "$DIST/native-build.txt"
