@@ -26,8 +26,8 @@ jobs:
         run: |
           set -eu
           mkdir native-candidate
-          cp "native-input/native-preflight-macos-15-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-arm64.zip
-          cp "native-input/native-preflight-macos-15-intel-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-x64.zip
+          cp "native-input/native-package-direct-macos-15-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-arm64.zip
+          cp "native-input/native-package-direct-macos-15-intel-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-x64.zip
           cp "native-input/native-windows-x64-$SOURCE_COMMIT/podlord-windows-x64.zip" native-candidate/podlord-native-win-x64.zip
           for archive in native-candidate/*.zip; do
             bytes=$(wc -c < "$archive")

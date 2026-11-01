@@ -187,8 +187,23 @@ Native macOS CI runs six isolated test processes, matching the already bounded
 Linux pool. The same 146 public Terminal scenarios passed locally with four and
 six processes: 130.83 s and 76.08 s. This motivates bounded concurrency, not a
 hosted-run performance claim. Desktop focus, CPU and RSS measurements remain
-exclusive. The 60-minute job budget and release coverage/performance targets are unchanged;
-Intel's previous incomplete run must be replaced by executed evidence.
+exclusive. The 90-minute macOS job budgets and release coverage/performance
+targets remain unchanged; Intel's previous incomplete run must be replaced by
+executed evidence.
+
+On 2026-10-31 the user approved independent macOS package jobs to remove the
+serial package tail from the full native test job. `macos` keeps its complete
+tests, benchmarks, coverage and six-process pool. `macos-package` runs the same
+Apple Silicon/Intel runners independently for `direct` and `store`, without a
+`needs: macos` dependency. Both jobs reuse one local composite action with the
+unchanged public SDK cache identity and ABI validation. Store boundaries keep
+the existing 213-case selection and frames. Direct packages build their own
+startup/TLS drivers and retain all 12 Cocoa/CLI and three mutual-TLS scenarios,
+dependency checks, logs and budgets. Package evidence uses
+`native-package-${channel}-${runner}-${sha}`; preflight evidence keeps its old
+name. Store and release consumers still await the entire reusable native
+workflow before loading their channel's package artifacts. No gate, watchdog
+or distribution approval changes, and no application or user state is cached.
 
 Only the six multi-theme Radar image tests run exclusively within CTest. The
 October 30 Intel run exceeded five 45-second capture watchdogs under concurrent

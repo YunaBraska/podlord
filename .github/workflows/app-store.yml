@@ -22,11 +22,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v7
         with:
-          name: native-preflight-macos-15-${{ github.sha }}
+          name: native-package-store-macos-15-${{ github.sha }}
           path: store-arm64
       - uses: actions/download-artifact@v7
         with:
-          name: native-preflight-macos-15-intel-${{ github.sha }}
+          name: native-package-store-macos-15-intel-${{ github.sha }}
           path: store-x64
       - name: Import application certificate
         id: application-certificate

@@ -187,61 +187,8 @@ jobs:
       PODLORD_TEST_JOBS: '6'
     steps:
       - uses: actions/checkout@v6
-      - name: Install native build dependencies
-        run: |
-          mkdir -p "$RUNNER_TEMP/native-radar-failures"
-          printf 'PODLORD_RADAR_ACTION_EVIDENCE=%s/native-radar-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          brew install cmake ninja python
-          node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs
-          printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'CMAKE_PREFIX_PATH=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_ENV"
-          printf 'OPENSSL_ROOT_DIR=%s/native-toolchain/openssl\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf '%s/qt-sdk/bin\n' "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_PATH"
-          cmake --version
-          xcrun clang --version
-      - name: Resolve exact macOS toolchain cache identity
-        id: macos-toolchain-key
-        run: |
-          set -eu
-          xcode=$(xcodebuild -version)
-          sdk_path=$(xcrun --sdk macosx --show-sdk-path)
-          sdk_version=$(xcrun --sdk macosx --show-sdk-version)
-          compiler=$(xcrun --sdk macosx clang --version)
-          cmake_version=$(cmake --version)
-          abi=$(printf '%s\n%s\n%s\n%s\n%s\n' "$xcode" "$sdk_path" "$sdk_version" "$compiler" "$cmake_version" | shasum -a 256 | awk '{print $1}')
-          printf 'xcode=%s\nmacos-sdk=%s (%s)\ncompiler=%s\ncmake=%s\nabi=%s\n' \
-            "$xcode" "$sdk_version" "$sdk_path" "$compiler" "$cmake_version" "$abi" | tee "$RUNNER_TEMP/native-macos-cache-inputs.log"
-          printf 'abi=%s\n' "$abi" >> "$GITHUB_OUTPUT"
-      - name: Restore exact public macOS toolchain
-        id: macos-toolchain-cache
-        uses: actions/cache/restore@v6
-        with:
-          key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh') }}
-          path: |
-            ${{ runner.temp }}/native-toolchain/qt
-            ${{ runner.temp }}/native-toolchain/qt-sdk
-            ${{ runner.temp }}/native-toolchain/yaml-cpp
-            ${{ runner.temp }}/native-toolchain/openssl
-            ${{ runner.temp }}/native-toolchain/build-inputs.txt
-      - name: Install public macOS toolchain on cache miss
-        if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
-      - name: Validate pinned macOS toolchain
-        run: |
-          /bin/sh scripts/install-native-macos-toolchain.sh --check "$RUNNER_TEMP/native-toolchain" >> "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 35 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
-          cat "$RUNNER_TEMP/native-toolchain/build-inputs.txt"
-      - name: Retain validated public macOS toolchain
-        if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          key: ${{ steps.macos-toolchain-cache.outputs.cache-primary-key }}
-          path: |
-            ${{ runner.temp }}/native-toolchain/qt
-            ${{ runner.temp }}/native-toolchain/qt-sdk
-            ${{ runner.temp }}/native-toolchain/yaml-cpp
-            ${{ runner.temp }}/native-toolchain/openssl
-            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+      - name: Set up pinned public macOS toolchain
+        uses: ./.github/actions/native-macos-toolchain
       - name: Native tests, benchmarks and coverage report
         id: tests
         run: |
@@ -263,66 +210,6 @@ jobs:
             fi
           fi
           exit "$status"
-      - name: Verify native Mac App Store boundaries
-        if: ${{ !cancelled() }}
-        run: |
-          store="$RUNNER_TEMP/native-store"
-          export PODLORD_SHELL_EVIDENCE="$RUNNER_TEMP/native-store-frames"
-          status=0
-          {
-            cmake -S native -B "$store" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_MAC_APP_STORE=ON &&
-            cmake --build "$store" --target store-boundary-test podlord-native native-eks-test native-gke-test native-oci-test gke-import-ui-test oci-import-ui-test workspace_ui_test --parallel 3 &&
-            ctest --test-dir "$store" --tests-regex '^native\.(store\.|authentication\.(eks|gke|oci)_|source_import\.(gke|oci)_|ui\.gke_prompt_)' --no-tests=error --output-on-failure --parallel 2
-          } > "$RUNNER_TEMP/native-store.log" 2>&1 || status=$?
-          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/native-store.log"; else tail -n 25 "$RUNNER_TEMP/native-store.log"; fi
-          exit "$status"
-      - name: Build and inspect the native Store slice
-        if: ${{ !cancelled() }}
-        run: |
-          status=0
-          PODLORD_MAC_APP_STORE=ON /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-store-package" > "$RUNNER_TEMP/native-store-package.log" 2>&1 || status=$?
-          tail -n 25 "$RUNNER_TEMP/native-store-package.log"
-          exit "$status"
-      - name: Build and inspect the native macOS package
-        id: package
-        if: ${{ !cancelled() }}
-        run: |
-          status=0
-          /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-package" > "$RUNNER_TEMP/native-package.log" 2>&1 || status=$?
-          tail -n 25 "$RUNNER_TEMP/native-package.log"
-          exit "$status"
-      - name: Verify packaged dependency boundaries
-        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        env:
-          PODLORD_NATIVE_PACKAGE: ${{ runner.temp }}/native-package/podlord-native.app
-        run: |
-          node --test scripts/test-native-macos-dependencies.cjs > "$RUNNER_TEMP/native-package-boundaries.log" 2>&1
-          cat "$RUNNER_TEMP/native-package-boundaries.log"
-      - name: Verify packaged Cocoa startup and command-line metadata
-        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        env:
-          PODLORD_TEST_QPA_PLATFORM: cocoa
-        run: |
-          for scenario in default ambient_kubeconfig ambient_exec profile_file profile_symlink explicit_override explicit_empty; do
-            "$PODLORD_NATIVE_BUILD_DIR/application_startup_test" "$RUNNER_TEMP/native-package/podlord-native.app/Contents/MacOS/podlord-native" "$scenario"
-            printf 'Packaged startup: %s PASS\n' "$scenario"
-          done > "$RUNNER_TEMP/native-package-startup.log" 2>&1
-          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/native-package/podlord-native.app/Contents/Info.plist")
-          for scenario in help version help_invalid_profile version_invalid_profile unknown_option; do
-            "$PODLORD_NATIVE_BUILD_DIR/application_startup_test" "$RUNNER_TEMP/native-package/podlord-native.app/Contents/MacOS/podlord-native" "$scenario" "$version"
-            printf 'Packaged command-line metadata: %s PASS\n' "$scenario"
-          done >> "$RUNNER_TEMP/native-package-startup.log" 2>&1
-          cat "$RUNNER_TEMP/native-package-startup.log"
-      - name: Verify packaged mutual TLS and certificate rejection
-        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        run: |
-          profiles=$(mktemp -d "$RUNNER_TEMP/native-package-tls.XXXXXX")
-          trap 'find "$profiles" -maxdepth 1 -type f -name "*.profraw" -delete; rmdir "$profiles"' 0
-          export LLVM_PROFILE_FILE="$profiles/%p-%m.profraw"
-          for scenario in trusted untrusted_ca untrusted_client; do
-            node scripts/test-native-tls.cjs "$PODLORD_NATIVE_BUILD_DIR/tls-connection-test" "$RUNNER_TEMP/native-toolchain/openssl/bin/openssl" "$scenario" "$RUNNER_TEMP/native-package/podlord-native.app"
-          done > "$RUNNER_TEMP/native-package-tls.log" 2>&1
-          cat "$RUNNER_TEMP/native-package-tls.log"
       - name: Retain native preflight evidence, not release binaries
         if: always()
         uses: actions/upload-artifact@v7
@@ -337,19 +224,121 @@ jobs:
             ${{ runner.temp }}/native-toolchain.log
             ${{ runner.temp }}/native-toolchain/build-inputs.txt
             ${{ runner.temp }}/native-macos-cache-inputs.log
+            ${{ runner.temp }}/podlord-native-build/coverage/report.txt
+            ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
+            ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json
+            ${{ runner.temp }}/podlord-native-build/coverage/source-benchmark.json
+
+  macos-package:
+    name: Native package ${{ matrix.channel }} ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+        channel: [direct, store]
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up pinned public macOS toolchain
+        uses: ./.github/actions/native-macos-toolchain
+      - name: Build direct package test drivers
+        if: ${{ !cancelled() && matrix.channel == 'direct' }}
+        run: |
+          status=0
+          {
+            cmake -S native -B "$PODLORD_NATIVE_BUILD_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_COVERAGE=OFF &&
+            cmake --build "$PODLORD_NATIVE_BUILD_DIR" --target application_startup_test tls-connection-test --parallel 3
+          } > "$RUNNER_TEMP/native-package-drivers.log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/native-package-drivers.log"; else tail -n 25 "$RUNNER_TEMP/native-package-drivers.log"; fi
+          exit "$status"
+      - name: Verify native Mac App Store boundaries
+        if: ${{ !cancelled() && matrix.channel == 'store' }}
+        run: |
+          store="$RUNNER_TEMP/native-store"
+          export PODLORD_SHELL_EVIDENCE="$RUNNER_TEMP/native-store-frames"
+          status=0
+          {
+            cmake -S native -B "$store" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_MAC_APP_STORE=ON &&
+            cmake --build "$store" --target store-boundary-test podlord-native native-eks-test native-gke-test native-oci-test gke-import-ui-test oci-import-ui-test workspace_ui_test --parallel 3 &&
+            ctest --test-dir "$store" --tests-regex '^native\.(store\.|authentication\.(eks|gke|oci)_|source_import\.(gke|oci)_|ui\.gke_prompt_)' --no-tests=error --output-on-failure --parallel 2
+          } > "$RUNNER_TEMP/native-store.log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/native-store.log"; else tail -n 25 "$RUNNER_TEMP/native-store.log"; fi
+          exit "$status"
+      - name: Build and inspect the native Store slice
+        if: ${{ !cancelled() && matrix.channel == 'store' }}
+        run: |
+          status=0
+          PODLORD_MAC_APP_STORE=ON /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-store-package" > "$RUNNER_TEMP/native-store-package.log" 2>&1 || status=$?
+          tail -n 25 "$RUNNER_TEMP/native-store-package.log"
+          exit "$status"
+      - name: Build and inspect the native macOS package
+        id: package
+        if: ${{ !cancelled() && matrix.channel == 'direct' }}
+        run: |
+          status=0
+          /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-package" > "$RUNNER_TEMP/native-package.log" 2>&1 || status=$?
+          tail -n 25 "$RUNNER_TEMP/native-package.log"
+          exit "$status"
+      - name: Verify packaged dependency boundaries
+        if: ${{ !cancelled() && matrix.channel == 'direct' && steps.package.outcome == 'success' }}
+        env:
+          PODLORD_NATIVE_PACKAGE: ${{ runner.temp }}/native-package/podlord-native.app
+        run: |
+          node --test scripts/test-native-macos-dependencies.cjs > "$RUNNER_TEMP/native-package-boundaries.log" 2>&1
+          cat "$RUNNER_TEMP/native-package-boundaries.log"
+      - name: Verify packaged Cocoa startup and command-line metadata
+        if: ${{ !cancelled() && matrix.channel == 'direct' && steps.package.outcome == 'success' }}
+        env:
+          PODLORD_TEST_QPA_PLATFORM: cocoa
+        run: |
+          for scenario in default ambient_kubeconfig ambient_exec profile_file profile_symlink explicit_override explicit_empty; do
+            "$PODLORD_NATIVE_BUILD_DIR/application_startup_test" "$RUNNER_TEMP/native-package/podlord-native.app/Contents/MacOS/podlord-native" "$scenario"
+            printf 'Packaged startup: %s PASS\n' "$scenario"
+          done > "$RUNNER_TEMP/native-package-startup.log" 2>&1
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/native-package/podlord-native.app/Contents/Info.plist")
+          for scenario in help version help_invalid_profile version_invalid_profile unknown_option; do
+            "$PODLORD_NATIVE_BUILD_DIR/application_startup_test" "$RUNNER_TEMP/native-package/podlord-native.app/Contents/MacOS/podlord-native" "$scenario" "$version"
+            printf 'Packaged command-line metadata: %s PASS\n' "$scenario"
+          done >> "$RUNNER_TEMP/native-package-startup.log" 2>&1
+          cat "$RUNNER_TEMP/native-package-startup.log"
+      - name: Verify packaged mutual TLS and certificate rejection
+        if: ${{ !cancelled() && matrix.channel == 'direct' && steps.package.outcome == 'success' }}
+        run: |
+          profiles=$(mktemp -d "$RUNNER_TEMP/native-package-tls.XXXXXX")
+          trap 'find "$profiles" -maxdepth 1 -type f -name "*.profraw" -delete; rmdir "$profiles"' 0
+          export LLVM_PROFILE_FILE="$profiles/%p-%m.profraw"
+          for scenario in trusted untrusted_ca untrusted_client; do
+            node scripts/test-native-tls.cjs "$PODLORD_NATIVE_BUILD_DIR/tls-connection-test" "$RUNNER_TEMP/native-toolchain/openssl/bin/openssl" "$scenario" "$RUNNER_TEMP/native-package/podlord-native.app"
+          done > "$RUNNER_TEMP/native-package-tls.log" 2>&1
+          cat "$RUNNER_TEMP/native-package-tls.log"
+      - name: Retain native package evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-package-${{ matrix.channel }}-${{ matrix.runner }}-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-toolchain.log
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-macos-cache-inputs.log
             ${{ runner.temp }}/native-store.log
             ${{ runner.temp }}/native-store-frames
             ${{ runner.temp }}/native-store-package.log
             ${{ runner.temp }}/native-store-package/podlord-native.zip
             ${{ runner.temp }}/native-store-package/package-evidence.txt
+            ${{ runner.temp }}/native-store/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/native-store-package/runtime-dependencies.txt
+            ${{ runner.temp }}/native-store-package/libraries.txt
+            ${{ runner.temp }}/native-package-drivers.log
             ${{ runner.temp }}/native-package.log
             ${{ runner.temp }}/native-package-startup.log
             ${{ runner.temp }}/native-package-boundaries.log
             ${{ runner.temp }}/native-package-tls.log
-            ${{ runner.temp }}/podlord-native-build/coverage/report.txt
-            ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
-            ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json
-            ${{ runner.temp }}/podlord-native-build/coverage/source-benchmark.json
             ${{ runner.temp }}/native-package/package-evidence.txt
             ${{ runner.temp }}/native-package/runtime-dependencies.txt
             ${{ runner.temp }}/native-package/libraries.txt
