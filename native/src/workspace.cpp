@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <tuple>
+#include <utility>
 #include <QRegularExpression>
 #include <cmath>
 #ifdef Q_OS_ANDROID
@@ -100,7 +101,8 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     const bool cacheDisplay = role == Qt::DisplayRole && field != "createdAt"_L1 && field != "preview"_L1;
     if (cacheDisplay) {
         if (entry.display.size() != fields_.size()) entry.display.resize(fields_.size());
-        if (entry.display[index.column()]) return *entry.display[index.column()];
+        const auto& cached = std::as_const(entry.display)[index.column()];
+        if (cached) return *cached;
     }
     if (role == Qt::UserRole + 6) {
         if (index.column() == sortValueColumn_ && sortValues_.size() == rows_.size()) return sortValues_[index.row()];
@@ -167,7 +169,7 @@ QString ResourceTable::metadata(int row, int role) const {
     if (role == Qt::UserRole) return entry.prepared ? entry.identity : entry.document[identityField_].toString();
     const int column = role - Qt::UserRole - 1;
     if (column < 0 || column >= 4) return {};
-    if (entry.prepared) return entry.metadataStrings & (1 << column) ? *entry.display[column] : QString{};
+    if (entry.prepared) return entry.metadataStrings & (1 << column) ? *std::as_const(entry.display)[column] : QString{};
     using namespace Qt::StringLiterals;
     static constexpr std::array<QLatin1StringView, 4> fields{"name"_L1, "kind"_L1, "namespace"_L1, "status"_L1};
     return entry.document[fields[column]].toString();
@@ -1408,7 +1410,8 @@ bool Workspace::publishDashboard() {
     ResourceMetricSummary metricSummary;
     for (int index=0; index<table_.rowCount(); ++index) {
         const int sourceRow = table_.mapToSource(table_.index(index, 0)).row();
-        const auto row=rows_.row(sourceRow); ++kinds[row["kind"].toString()]; if (row["problems"].toBool()) ++problems;
+        ++kinds[rows_.metadata(sourceRow, Qt::UserRole + 2)];
+        if (rows_.row(sourceRow)["problems"].toBool()) ++problems;
         rows_.accumulateMetrics(sourceRow, metricSummary);
     }
     QStringList counts; for (auto it=kinds.begin(); it!=kinds.end(); ++it) counts.append(it.key()+": "+QString::number(it.value()));

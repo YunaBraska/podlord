@@ -304,7 +304,10 @@ bool run(const QString& scenario) {
         // filtered out by A and Qt may correctly destroy that delegate.
         const int retainedRow = scenario == "handoff_sort" ? 1 : 0;
         const auto currentCell = [&] { return podlord::test::tableCell(podlord::test::visibleItem(main->contentItem(), "resourceTable"), retainedRow, 0); };
-        REQUIRE(waitFor([&] { return currentCell(); }));
+        REQUIRE(waitFor([&] {
+            return podlord::test::tableColumnsReady(podlord::test::visibleItem(main->contentItem(), "resourceTable"), primary.resourceColumns())
+                && currentCell();
+        }));
         const QPointer<QQuickItem> retainedCell = currentCell();
         if (scenario == "handoff_sort") REQUIRE(retainedCell->property("text").toString() == "alpha");
         void* const retainedAddress = static_cast<void*>(retainedCell.data());

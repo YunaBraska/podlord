@@ -101,7 +101,10 @@ bool Workspace::dispatchViewSave() {
         if (const auto* failure = std::get_if<Failure>(&result)) {
             viewStateErrors_[session] = "Session " + session + ": " + failure->message; pendingViews_.remove(session);
         } else savedViews_[session] = std::get<TableViewStates>(result);
-        dispatchViewSave(); emit changed();
+        dispatchViewSave();
+        // Successful persistence changes no displayed state. Failures and a
+        // pending close still need their decision/error bindings refreshed.
+        if (std::holds_alternative<Failure>(result) || viewClosePending_) emit changed();
         if (viewClosePending_ && !viewSaving_ && !presetsBusy_ && pendingViews_.isEmpty() && !viewStateFailed()) emit windowCloseApproved();
     });
     viewSaveFuture_ = QtConcurrent::run([profile = profile_, schemas = tableSchemas(true), session, table, value, expected] {

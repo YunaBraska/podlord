@@ -124,6 +124,42 @@ bool projectionSnapshot() {
     if (!QTest::qWaitFor([&] { return reference.tiles()->rowCount() == 1; }, 3000)) return false;
     return coordinates(radar.tiles()) == coordinates(reference.tiles()) || setupFailure("coalesced projection changed deterministic coordinates");
 }
+bool projectionIdentity(bool filtered) {
+    podlord::ResourceTable table;
+    const QJsonObject original{{"path", "/api/v1/namespaces/default/pods/original"}, {"name", "original"},
+        {"kind", "Pod"}, {"namespace", "default"}, {"uid", "original-uid"}, {"status", "Running"}};
+    const QJsonObject replacement{{"path", "/api/v1/nodes/replacement"}, {"name", "replacement"},
+        {"kind", "Node"}, {"uid", "replacement-uid"}, {"status", "Ready"}};
+    if (!table.publish({original}, "local")) return false;
+    podlord::ResourceFilter filter;
+    filter.setSourceModel(&table);
+    QAbstractItemModel* source = filtered ? static_cast<QAbstractItemModel*>(&filter) : &table;
+    podlord::RadarIsland radar;
+    radar.setWidth(2000); radar.setHeight(2000); radar.setSource(source);
+    auto* tiles = radar.tiles();
+    const auto names = roles(tiles);
+    if (!QTest::qWaitFor([&] { return tiles->rowCount() == 1; }, 3000)) return false;
+    if (tiles->index(0, 0).data(names["resourcePath"]).toString() != original["path"].toString()) return false;
+    if (!table.publish({replacement}, "local", true)) return false;
+    // Atomic session handoff retains model rows. Until the queued projection is
+    // ready, old geometry must never expose an incoming resource's identity.
+    const auto pending = tiles->index(0, 0);
+    if (!pending.data(names["resourcePath"]).toString().isEmpty()
+        || !pending.data(names["resourceKind"]).toString().isEmpty()
+        || pending.data(names["resourceIndex"]).toInt() != -1)
+        return setupFailure("outgoing radar point exposed another resource during atomic handoff");
+    if (!QTest::qWaitFor([&] {
+        return tiles->rowCount() == 1
+            && tiles->index(0, 0).data(names["resourcePath"]).toString() == replacement["path"].toString();
+    }, 3000)) return false;
+    if (tiles->index(0, 0).data(names["resourceKind"]).toString() != "Node"
+        || tiles->index(0, 0).data(names["resourceIndex"]).toInt() != 0) return false;
+    podlord::RadarIsland reference;
+    reference.setWidth(2000); reference.setHeight(2000); reference.setSource(source);
+    if (!QTest::qWaitFor([&] { return reference.tiles()->rowCount() == 1; }, 3000)) return false;
+    return coordinates(tiles) == coordinates(reference.tiles())
+        || setupFailure("atomic handoff changed deterministic coordinates");
+}
 bool camera(const QString& scenario) {
     podlord::ResourceTable table;
     if (!table.publish(QJsonArray{QJsonObject{{"path","/api/v1/namespaces/default/pods/camera"},
@@ -453,6 +489,8 @@ bool silhouettes() {
 }
 bool exercise(const QStringList& args) {
     if (args.size() == 2 && args[1] == "projection_snapshot") return projectionSnapshot();
+    if (args.size() == 2 && args[1] == "projection_identity_direct") return projectionIdentity(false);
+    if (args.size() == 2 && args[1] == "projection_identity_proxy") return projectionIdentity(true);
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();

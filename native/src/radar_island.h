@@ -4,6 +4,7 @@
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QQuickPaintedItem>
+#include <QSortFilterProxyModel>
 #include <QSet>
 #include <QTimer>
 #include <QElapsedTimer>
@@ -34,11 +35,13 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
     bool publish(const QList<Entry>& entries, bool refresh);
-    void refreshSourceIndices();
+    void refreshSourceIndices(const QSortFilterProxyModel& view);
     const QList<Entry>& entries() const { return entries_; }
     qint64 frameTime() const { return frameTime_; }
     bool advanceFrame(qint64 at);
 private:
+    friend class RadarIsland;
+    QPointer<QAbstractItemModel> view_;
     QList<Entry> entries_;
     qint64 frameTime_ = 0;
 };

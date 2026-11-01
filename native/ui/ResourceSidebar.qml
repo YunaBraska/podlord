@@ -11,6 +11,9 @@ Pane {
     property bool filtersExpanded: false
     property Item expandedRadarHost: null
     property bool radarVisible: true
+    readonly property bool compactMapRail: collapsibleFilters && expandedRadarHost !== null && !filtersExpanded
+    readonly property real collapsedFilterWidth: leftPadding + rightPadding + sidebarLayout.spacing + healthStrip.Layout.preferredWidth + filterToggle.implicitWidth
+    readonly property Item mapNavigationHost: radar.navigationHost
     readonly property int count: radar.count
     readonly property int navigationIndex: radar.navigationIndex
     function navigateRows(offset) { radar.navigateRows(offset) }
@@ -38,8 +41,10 @@ Pane {
     padding: 6
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
     contentItem: RowLayout {
+        id: sidebarLayout
         spacing: 6
         Rectangle {
+            id: healthStrip
             objectName: "sessionHealthStrip"
             Layout.preferredWidth: 6; Layout.fillHeight: true
             color: workspace.appearanceColors.inset
@@ -94,6 +99,7 @@ Pane {
                 }
             }
             IconButton {
+                id: filterToggle
                 objectName: "toggleLandscapeFilters"
                 visible: sidebar.collapsibleFilters
                 Layout.fillWidth: true

@@ -905,6 +905,13 @@ ApplicationWindow {
                     anchors.fill: parent
                     visible: workspace.workspacePage === "map"
                     RowLayout {
+                        id: mapNavigationSlot
+                        Layout.fillWidth: true
+                        visible: !sidebar.compactMapRail
+                    }
+                    RowLayout {
+                        id: mapNavigationRow
+                        parent: sidebar.compactMapRail ? sidebar.mapNavigationHost : mapNavigationSlot
                         Layout.fillWidth: true
                         IconButton { objectName: "mapBack"; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
                         IconButton { objectName: "mapForward"; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }
@@ -987,9 +994,9 @@ ApplicationWindow {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
                 visible: window.sidebarDocked && window.sidebarOpen && !window.inputPriority && !(workspace.workspacePage === "map" && workspace.mapOverview)
-                SplitView.preferredWidth: window.compactLandscape ? 240 : 392
-                SplitView.minimumWidth: window.compactLandscape ? 228 : 300
-                SplitView.maximumWidth: window.compactLandscape ? 320 : 720
+                SplitView.preferredWidth: sidebar.compactMapRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 240 : 392
+                SplitView.minimumWidth: sidebar.compactMapRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 228 : 300
+                SplitView.maximumWidth: sidebar.compactMapRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 320 : 720
             }
         }
         RowLayout {

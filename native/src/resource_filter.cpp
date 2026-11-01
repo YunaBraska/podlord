@@ -2,6 +2,7 @@
 #include "resource_metrics.h"
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace podlord {
 ResourceFilter::ResourceFilter(QObject* parent) : QSortFilterProxyModel(parent) {
@@ -269,20 +270,31 @@ bool ResourceFilter::matches(const QString& value, const QList<Token>& tokens) c
     return false;
 }
 bool ResourceFilter::filterAcceptsRow(int row, const QModelIndex& parent) const {
-    if (!error_.isEmpty() || !sourceModel()) return false;
-    const auto identity = sourceModel()->index(row, 0, parent);
-    if (mode_ == "problems" && sourceModel()->data(identity, Qt::UserRole + 9).toInt() == 0) return false;
-    if (mode_ == "activity" && !sourceModel()->data(identity, Qt::UserRole + 10).toBool()) return false;
+    const auto* source = sourceModel();
+    if (!error_.isEmpty() || !source) return false;
+    const auto identity = source->index(row, 0, parent);
+    if (mode_ == "problems" && source->data(identity, Qt::UserRole + 9).toInt() == 0) return false;
+    if (mode_ == "activity" && !source->data(identity, Qt::UserRole + 10).toBool()) return false;
+    const auto* rows = qobject_cast<const ResourceTable*>(source);
+    const auto matchesCell = [&](int column, const QList<Token>& tokens) {
+        if (rows) {
+            const auto& display = std::as_const(rows->rows_[row].display);
+            if (column < display.size() && display[column]) return matches(*display[column], tokens);
+        }
+        return matches(source->data(source->index(row, column, parent)).toString(), tokens);
+    };
     for (auto field = fieldTokens_.cbegin(); field != fieldTokens_.cend(); ++field) {
-        const auto index = sourceModel()->index(row, field.key(), parent);
         const bool quantity = field.value().first().kind == Token::Quantity;
-        const bool age = sourceModel()->headerData(field.key(), Qt::Horizontal, Qt::UserRole) == "createdAt";
-        if (quantity ? !matchesQuantity(sourceModel()->data(index, Qt::UserRole + (age ? 11 : 6)), field.value())
-            : !matches(sourceModel()->data(index).toString(), field.value())) return false;
+        if (quantity) {
+            const auto index = source->index(row, field.key(), parent);
+            const bool age = source->headerData(field.key(), Qt::Horizontal, Qt::UserRole) == "createdAt";
+            if (!matchesQuantity(source->data(index, Qt::UserRole + (age ? 11 : 6)), field.value())) return false;
+        } else if (!matchesCell(field.key(), field.value())) return false;
     }
     if (tokens_.isEmpty()) return true;
-    for (int column = 0; column < sourceModel()->columnCount(); ++column) {
-        const bool accepted = matches(sourceModel()->data(sourceModel()->index(row, column, parent)).toString(), tokens_);
+    const int columns = source->columnCount();
+    for (int column = 0; column < columns; ++column) {
+        const bool accepted = matchesCell(column, tokens_);
         if (!error_.isEmpty()) return false;
         if (accepted) return true;
     }
@@ -304,6 +316,7 @@ bool ResourceFilter::matchesQuantity(const QVariant& value, const QList<Token>& 
     return !hasExact || exactAccepted;
 }
 bool ResourceFilter::lessThan(const QModelIndex& left, const QModelIndex& right) const {
+    const auto* rows = qobject_cast<const ResourceTable*>(sourceModel());
     const auto missing = [](const QVariant& value) {
         const auto* text = get_if<QString>(&value);
         const auto* date = get_if<QDateTime>(&value);
@@ -323,10 +336,10 @@ bool ResourceFilter::lessThan(const QModelIndex& left, const QModelIndex& right)
                 if (QSortFilterProxyModel::lessThan(right, left)) return false;
             }
         }
-        const auto x = sourceModel()->data(left, Qt::UserRole).toString(), y = sourceModel()->data(right, Qt::UserRole).toString();
+        const auto x = rows ? rows->metadata(left.row(), Qt::UserRole) : sourceModel()->data(left, Qt::UserRole).toString();
+        const auto y = rows ? rows->metadata(right.row(), Qt::UserRole) : sourceModel()->data(right, Qt::UserRole).toString();
         return sortOrder() == Qt::AscendingOrder ? x < y : x > y;
     };
-    const auto* rows = qobject_cast<const ResourceTable*>(sourceModel());
     if (rows && sortRole() == Qt::UserRole + 6 && left.column() == rows->sortValueColumn_
         && rows->sortValues_.size() == rows->rowCount())
         return compareKeys(rows->sortValues_[left.row()], rows->sortValues_[right.row()]);

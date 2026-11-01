@@ -269,7 +269,10 @@ bool run(const QString& scenario, const QString& referencePresets) {
             const auto expectedSortDirection = workspace.sortDirection();
             const auto other = workspace.contexts().last().toMap().value("id").toString();
             if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })
-                || !workspace.setWorkspacePage("resources") || !waitFor([&] { return currentCell() != nullptr; })) return false;
+                || !workspace.setWorkspacePage("resources") || !waitFor([&] {
+                    return podlord::test::tableColumnsReady(podlord::test::visibleItem(window->contentItem(), "resourceTable"), workspace.resourceColumns())
+                        && currentCell() != nullptr;
+                })) return false;
             auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
             if (!displayed) return false;
             window->update(); QTest::qWait(30);

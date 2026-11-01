@@ -580,6 +580,13 @@ zero height. This exception applies responsively, not through a separate mobile
 implementation. Portrait and taller windows keep the existing placement. Showing
 details MUST NOT resize the canvas or hide its points. All existing metrics,
 requests, limits and measurement timestamps MUST remain reachable by scrolling.
+In compact landscape, a loaded map with collapsed filters MUST use one shared
+navigation/zoom row and reserve only the filter toggle's icon rail, padding and
+health strip beside the map. Opening filters restores their usable width and
+separate navigation row when necessary. All existing navigation actions MUST
+remain reachable. Camera, selection and cached data remain unchanged when
+filters open or close. The Resources table and its small Radar remain available. Portrait,
+larger windows and the context overview retain their existing layout.
 Pointer and keyboard interaction with those details MUST NOT freeze later
 resource hover, panning, zooming or inspection. These paths remain cache-only.
 The last valid details MUST remain available while the pointer travels to the

@@ -100,12 +100,21 @@ QHash<int,QByteArray> RadarTiles::roleNames() const {
 QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row()<0 || index.row()>=entries_.size()) return {};
     const auto& entry=entries_[index.row()];
-    if (role==ResourceIndex) return entry.source.isValid() ? entry.resourceIndex : -1;
     if (role==WorldX) return entry.world.x();
     if (role==WorldY) return entry.world.y();
     if (role==AnimationScale) return entry.animation==Animation::Pulse ? oscillation(frameTime_-entry.started,400,.8) : 1.;
     if (role==TerrainColor) return terrainColor(entry.kind);
-    return entry.source.data(role);
+    QModelIndex source;
+    if (view_ && entry.source.isValid()) {
+        const auto* proxy=qobject_cast<QSortFilterProxyModel*>(view_.data());
+        if (entry.source.model()==(proxy ? proxy->sourceModel() : view_.data())) {
+            source=proxy ? proxy->mapFromSource(entry.source) : QModelIndex(entry.source);
+            // Atomic model replacement can reuse a row before geometry catches up.
+            if (source.data(Qt::UserRole).toString()!=entry.path) source={};
+        }
+    }
+    if (role==ResourceIndex) return source.isValid() ? source.row() : -1;
+    return source.data(role);
 }
 bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
     // Projection already supplies unique paths in order. Reconcile that list directly.
@@ -147,11 +156,11 @@ bool RadarTiles::publish(const QList<Entry>& entries, bool refresh) {
     }
     return true;
 }
-void RadarTiles::refreshSourceIndices() {
+void RadarTiles::refreshSourceIndices(const QSortFilterProxyModel& view) {
     int first=-1,last=-1;
     for (int row=0;row<entries_.size();++row) {
         auto& entry=entries_[row];
-        const auto resourceIndex=entry.source.row();
+        const auto resourceIndex=view.mapFromSource(entry.source).row();
         if (entry.resourceIndex==resourceIndex) continue;
         entry.resourceIndex=resourceIndex;
         if (first<0) first=row;
@@ -239,6 +248,7 @@ void RadarIsland::setSource(QAbstractItemModel* source) {
 void RadarIsland::observeSource() {
     for (const auto& connection:connections_) disconnect(connection);
     connections_.clear(); geometryDirty_=true; filteredDirty_=true;
+    tiles_.view_=source_;
     const auto rebind=[this] { observeSource(); if (!source_) emit sourceChanged(); };
     const auto observe=[this,rebind](QAbstractItemModel* model,bool geometry) {
         if (!model) return;
@@ -247,12 +257,12 @@ void RadarIsland::observeSource() {
         connections_.append(connect(model,&QAbstractItemModel::rowsInserted,this,invalidate));
         connections_.append(connect(model,&QAbstractItemModel::rowsRemoved,this,invalidate));
         connections_.append(connect(model,&QAbstractItemModel::dataChanged,this,invalidate));
-        connections_.append(connect(model,&QAbstractItemModel::layoutChanged,this,[this,geometry,invalidate](const QList<QPersistentModelIndex>&,QAbstractItemModel::LayoutChangeHint hint) {
+        connections_.append(connect(model,&QAbstractItemModel::layoutChanged,this,[this,model,geometry,invalidate](const QList<QPersistentModelIndex>&,QAbstractItemModel::LayoutChangeHint hint) {
             // A proxy's vertical sort cannot change membership or stable source indices.
             if (!geometry && hint==QAbstractItemModel::VerticalSortHint && !dirty_ && isVisible()) {
-                // Persistent proxy indices have already followed the sort. The
-                // cached drawing and resource metadata have not changed.
-                tiles_.refreshSourceIndices();
+                // Keep one canonical source index per resource, not another
+                // persistent proxy index that Qt must maintain on every sort.
+                tiles_.refreshSourceIndices(*static_cast<QSortFilterProxyModel*>(model));
                 emit currentResourceChanged();
             }
             else if (!geometry && hint==QAbstractItemModel::VerticalSortHint) schedule();
@@ -573,16 +583,16 @@ void RadarIsland::project(bool refresh) {
                 const auto point=positions_.value(path);
                 if (!viewport.contains(point)) continue;
                 RadarTiles::Entry tile;
-                tile.path=path; tile.source=index; tile.resourceIndex=index.row(); tile.world=point;
+                tile.path=path; tile.source=*source; tile.resourceIndex=index.row(); tile.world=point;
                 tile.kind=index.data(Qt::UserRole+2).toString();
                 tile.color=terrainColor(tile.kind);
                 const int health=index.data(Qt::UserRole+9).toInt();
-                tile.announce=QColor(health==2 ? "#FF5C5C" : health==1 ? "#FFE866" : "#7DFFC3");
+                tile.announce=QColor::fromRgb(health==2 ? 0xFF5C5C : health==1 ? 0xFFE866 : 0x7DFFC3);
                 const auto effect=alerts_ ? alerts_->effect(path) : QVariantMap{};
                 const auto tone=effect.value(QStringLiteral("color")).toString();
                 tile.glow=effect.contains(QStringLiteral("color"));
                 if (tone=="status") { if (health==1 || health==2) tile.color=tile.announce; }
-                else if (tone=="fresh") tile.color=QColor("#7DFFC3");
+                else if (tone=="fresh") tile.color=QColor::fromRgb(0x7DFFC3);
                 else if (!tone.isEmpty()) { const QColor color(tone); if (color.isValid()) tile.color=color; }
                 if (effectsEnabled_ && alerts_ && !alerts_->reducedMotion() && onScreen.intersects(QRectF(point-QPointF(2.75,2.75),QSizeF(5.5,5.5)))) {
                     const auto animation=effect.value(QStringLiteral("animation")).toString();
@@ -668,13 +678,22 @@ void RadarIsland::paint(QPainter* painter) {
         }
     }
     const auto now=tiles_.frameTime();
+    const double side=5.5*zoom_;
+    const QRectF box(-side/2,-side/2,side,side);
+    painter->save();
+    painter->setOpacity(1);
     for (const auto& entry:tiles_.entries()) {
         if (!entry.source.isValid()) continue;
+        const bool highlighted=entry.path==hoveredPath_ || entry.path==focusedPath_ || entry.path==inspectedPath_
+            || (hasActiveFocus() && entry.path==currentPath_);
+        if (entry.animation==RadarTiles::Animation::None && !entry.glow && !highlighted && side<9) {
+            // Ordinary pixels need no per-resource painter state or transform.
+            tile(entry.world,entry.color);
+            continue;
+        }
         const auto elapsed=now-entry.started;
-        const double side=5.5*zoom_;
         const double scale=entry.animation==RadarTiles::Animation::Pulse ? oscillation(elapsed,400,.8) : 1;
         const double opacity=entry.animation==RadarTiles::Animation::Blink ? oscillation(elapsed,350,.35) : 1;
-        const QRectF box(-side/2,-side/2,side,side);
         const auto outline=[&](const QRectF& bounds,const QColor& color,double width) {
             painter->fillRect(QRectF(bounds.left(),bounds.top(),bounds.width(),width),color);
             painter->fillRect(QRectF(bounds.left(),bounds.bottom()-width,bounds.width(),width),color);
@@ -685,7 +704,7 @@ void RadarIsland::paint(QPainter* painter) {
         painter->translate(screen(entry.world)); painter->scale(scale,scale);
         if (entry.glow) { painter->setOpacity(opacity*.35); outline(box.adjusted(-1.5,-1.5,1.5,1.5),entry.color,2); }
         painter->setOpacity(opacity); painter->fillRect(box,entry.color);
-        if (entry.path==hoveredPath_ || entry.path==focusedPath_ || entry.path==inspectedPath_ || (hasActiveFocus() && entry.path==currentPath_))
+        if (highlighted)
             outline(box,QColor("#7DFFC3"),1.2);
         if (side>=9) KindGlyph::draw(painter,box,entry.kind,glyphFill_,entry.color);
         if (entry.animation==RadarTiles::Animation::Outline) outline(box.adjusted(-1,-1,1,1),entry.announce,2);
@@ -696,6 +715,7 @@ void RadarIsland::paint(QPainter* painter) {
         }
         painter->restore();
     }
+    painter->restore();
     // Labels are a foreground annotation, never terrain or an input target.
     for (const auto& [label,index]:labels) {
         const auto& marker=markers_[index];

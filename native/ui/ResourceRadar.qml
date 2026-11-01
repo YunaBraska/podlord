@@ -10,6 +10,7 @@ Pane {
     id: radarPane
     property bool compact: false
     property bool expanded: false
+    readonly property Item navigationHost: navigationSlot
     readonly property bool shortLandscape: Window.window && Window.window.width > Window.window.height && Window.window.height < 500
     readonly property bool detailsBeside: shortLandscape || expanded && availableWidth >= 840
     readonly property real infoPanelHeight: detailsBeside ? 0 : expanded ? Math.min(160, Math.max(44, availableHeight / 3)) : Window.window && Window.window.height < 500 ? 44 : 112
@@ -41,8 +42,13 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
+            RowLayout {
+                id: navigationSlot
+                Layout.fillWidth: true
+                visible: children.length > 0
+            }
             IconButton { objectName: "radarWorkspaceButton"; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
-            Item { Layout.fillWidth: true }
+            Item { Layout.fillWidth: true; visible: !navigationSlot.visible }
             IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
             Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }
             IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }

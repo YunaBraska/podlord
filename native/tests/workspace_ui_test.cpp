@@ -2174,11 +2174,14 @@ bool execute(const QString& requestedScenario) {
             || !waitFor([&] { return !workspace.busy(); })) return false;
         stage="locate and open duplicate";
         QString second;
-        for (const auto& value:workspace.sessions()) {
-            const auto id=value.toMap()["id"].toString();
-            if (id!=first && workspace.sessionConfiguration(id)["name"]=="Island copy") second=id;
-        }
-        if (second.isEmpty() || workspace.sessionConfiguration(second)["contextId"]!=context || !workspace.activate(second)
+        if (!waitFor([&] {
+            for (const auto& value:workspace.sessions()) {
+                const auto id=value.toMap()["id"].toString();
+                if (id!=first && workspace.sessionConfiguration(id)["name"]=="Island copy") second=id;
+            }
+            return !second.isEmpty();
+        })) return false;
+        if (workspace.sessionConfiguration(second)["contextId"]!=context || !workspace.activate(second)
             || !waitFor([&] { return workspace.currentSession()==second && !workspace.busy() && !workspace.loading(); },10000)
             || !show()) return false;
         stage="duplicate coordinate and preview parity";
@@ -2285,6 +2288,29 @@ bool execute(const QString& requestedScenario) {
         });
         if (!broken.open(QIODevice::ReadOnly)) return false;
         return saved && broken.readAll() == "{" && restored.viewStateFailed() && restored.filterText() == "bravo";
+    }
+    if (scenario == "view_save_quiet") {
+        // Reload admission is the public barrier for draining pending writes.
+        bool initialReload = false;
+        if (!waitFor([&] { return initialReload || (initialReload = workspace.reloadSavedViews()); })
+            || !waitFor([&] { return !workspace.busy(); })) return false;
+        const auto calls = server.requests.size();
+        if (!workspace.filter("alpha")) return false;
+        QSignalSpy changes(&workspace, &podlord::Workspace::changed);
+        int completionChanges = -1;
+        bool reloaded = false;
+        if (!waitFor([&] {
+            if (reloaded) return true;
+            const int beforeReload = changes.size();
+            if (!workspace.reloadSavedViews()) return false;
+            reloaded = true;
+            completionChanges = beforeReload;
+            return true;
+        }) || !waitFor([&] { return !workspace.busy(); })) return false;
+        if (completionChanges != 0)
+            std::fprintf(stderr, "Successful view save invalidated unchanged UI %d times.\n", completionChanges);
+        return completionChanges == 0 && workspace.filterText() == "alpha"
+            && !workspace.viewStateFailed() && server.requests.size() == calls;
     }
     if (scenario.startsWith("view_restore_")) {
         if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })) return false;
@@ -3066,6 +3092,34 @@ bool execute(const QString& requestedScenario) {
                     && podlord::test::visibleBounds(window,info).contains(details);
             };
             if (!geometryValid()) return failed("geometry/starved, clipped or overlapping map and fixed info");
+            if (mapRadar) {
+                auto* host=item(window,"workspaceSidebarHost");
+                auto* toggle=item(window,"toggleLandscapeFilters");
+                const QPointer<QQuickItem> back=item(window,"mapBack");
+                const auto compactTools=[&] {
+                    auto* zoom=item(window,"radarZoom");
+                    if (!host || !toggle || !back || !zoom || host->width()>80
+                        || toggle->width()<44 || radar->height()<zoom->height()
+                        || std::abs(scene(back).top()-scene(zoom).top())>1) return false;
+                    const auto bounds=scene(pane);
+                    for (const auto* name : {"mapBack","mapForward","mapOverview","mapSources",
+                            "radarWorkspaceButton","radarZoomOut","radarZoom","resetRadar"}) {
+                        auto* control=item(window,name);
+                        if (!control || !control->isVisible() || !bounds.contains(scene(control))
+                            || !podlord::test::visibleBounds(window,control).contains(scene(control))) return false;
+                    }
+                    return true;
+                };
+                if (!waitFor(compactTools)) return failed("geometry/compact map toolbar or collapsed filter rail");
+                const auto camera=radar->property("viewPose");
+                if (!click(window,toggle) || !waitFor([&] { return host->width()>=228; }))
+                    return failed("geometry/expanded filter controls unavailable");
+                if (!back || item(window,"mapBack")!=back || radar->property("viewPose")!=camera)
+                    return failed("geometry/filter expansion replaced navigation or camera");
+                if (!click(window,toggle) || !waitFor(compactTools) || radar->property("viewPose")!=camera
+                    || server.requests.size()!=calls)
+                    return failed("geometry/filter collapse changed camera or requested resources");
+            }
             const auto initialMap=scene(radar),initialInfo=scene(info);
             const QColor background("#061621");
             const auto painted=[&](int index) {

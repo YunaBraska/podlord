@@ -100,6 +100,25 @@ inline QColor radarPixel(QQuickWindow* window,int resourceIndex) {
     const QPoint pixel(qRound(center.x()*ratio),qRound(center.y()*ratio));
     return image.rect().contains(pixel) ? image.pixelColor(pixel) : QColor{};
 }
+/** Wait for the public TableView column mapping before retaining a delegate. */
+inline bool tableColumnsReady(QQuickItem* view, const QVariantList& columns) {
+    if (!view || !view->isVisible() || columns.isEmpty()) return false;
+    QStringList checks;
+    checks.append(QString("columns === %1").arg(columns.size()));
+    int position = 0;
+    for (const bool pinned : {true, false}) {
+        for (const auto& value : columns) {
+            const auto column = value.toMap();
+            if ((column["visible"].toBool() && column["pinned"].toBool()) != pinned) continue;
+            checks.append(QString("columnAtIndex(model.index(0, %1)) === %2")
+                .arg(column["column"].toInt()).arg(position++));
+        }
+    }
+    QQmlExpression expression(qmlContext(view), view, checks.join(" && "));
+    const auto ready = expression.evaluate();
+    if (expression.hasError()) std::fprintf(stderr, "Table column lookup failed: %s\n", qPrintable(expression.error().toString()));
+    return !expression.hasError() && ready.toBool();
+}
 /** Resolve the live TableView delegate, not an old pooled item with the same name. */
 inline QQuickItem* tableCell(QQuickItem* view, int row, int column) {
     if (!view || !view->isVisible() || view->width() <= 0 || row < 0 || column < 0) return nullptr;
