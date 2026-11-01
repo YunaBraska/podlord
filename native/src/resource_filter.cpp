@@ -318,9 +318,10 @@ bool ResourceFilter::matchesQuantity(const QVariant& value, const QList<Token>& 
 bool ResourceFilter::lessThan(const QModelIndex& left, const QModelIndex& right) const {
     const auto* rows = qobject_cast<const ResourceTable*>(sourceModel());
     const auto missing = [](const QVariant& value) {
-        const auto* text = get_if<QString>(&value);
+        if (!value.isValid() || value.isNull()) return true;
+        if (const auto* text = get_if<QString>(&value)) return text->isEmpty();
         const auto* date = get_if<QDateTime>(&value);
-        return !value.isValid() || value.isNull() || (text && text->isEmpty()) || (date && !date->isValid());
+        return date && !date->isValid();
     };
     const auto compareKeys = [&](const QVariant& leftValue, const QVariant& rightValue) {
         const bool a = missing(leftValue), b = missing(rightValue);

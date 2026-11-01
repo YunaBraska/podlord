@@ -199,6 +199,21 @@ timers or QObject creation, following the
 The separate water surface and its clock are unchanged. Persisted previews
 remain static terrain-only images, independent of live effects and camera pose.
 
+Kind and health reads may use the existing validated canonical index only for
+the exact, transparent `ResourceFilter` implementation. Derived and generic
+proxies retain their own metadata-role behavior, including C++ overrides without
+another `Q_OBJECT`. Proxy mapping still determines visible membership and the
+interactive row index. This introduces no additional resource or metadata cache.
+
+Alarm presentation notices reach the renderer through its context-owned queued
+Qt connection. A synchronous session/model handoff therefore finishes before
+projection. The existing dirty/pending synchronization can consume the latest
+rows and alarm state together instead of first projecting outgoing rows. Rule,
+reduced-motion and destruction handling retain their immediate connections.
+No extra timer or coordination state is introduced. Public regressions cover
+A-to-B-to-A handoff and styled proxy metadata. Receiver destruction cancels
+queued delivery; callbacks read the current source and alarm owner.
+
 A dense TableView would instantiate delegates for empty water cells, especially
 at the supported overview zoom. A whole-cache Repeater would keep offscreen UI work
 alive. A second custom glyph/effect implementation would duplicate behavior.

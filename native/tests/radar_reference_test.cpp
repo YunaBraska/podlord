@@ -211,6 +211,72 @@ bool camera(const QString& scenario) {
     return radar.pan(14,7) && changed.size()==1 && radar.viewPose()!=original
         && coordinates(radar.tiles())==terrain && capture()!=before;
 }
+bool presentationHandoff() {
+    class ObservedFilter final : public podlord::ResourceFilter {
+    public:
+        mutable int kindReads=0;
+        QVariant data(const QModelIndex& index, int role) const override {
+            if (role==Qt::UserRole+2) ++kindReads;
+            return ResourceFilter::data(index,role);
+        }
+    };
+    QTemporaryDir profile;
+    if (!profile.isValid()) return false;
+    podlord::Workspace workspace(profile.filePath("profile"));
+    if (!QTest::qWaitFor([&] { return !workspace.busy() && !workspace.alerts()->busy(); },3000)) return false;
+    podlord::ResourceTable table;
+    ObservedFilter filter; filter.setSourceModel(&table);
+    podlord::RadarIsland radar,reference;
+    for (auto* island:{&radar,&reference}) { island->setWidth(1200); island->setHeight(1200); }
+    auto row=[](const QString& name) {
+        return QJsonObject{{"path","/api/v1/namespaces/default/pods/"+name},{"name",name},
+            {"namespace","default"},{"kind",name=="a" ? "Pod" : "Secret"},{"uid",name+"-uid"},{"status","Running"}};
+    };
+    if (!table.publish({row("a")},"local") || !workspace.alerts()->showSession("a")) return false;
+    radar.setSource(&filter); radar.setAlerts(workspace.alerts()); reference.setSource(&table);
+    if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==1 && reference.tiles()->rowCount()==1; },3000)) return false;
+    const auto color=roles(radar.tiles()).value("terrainColor");
+    for (const auto& name:{QString("b"),QString("a")}) {
+        filter.kindReads=0;
+        if (!workspace.alerts()->showSession(name)) return false;
+        if (filter.kindReads!=0) return setupFailure("presentation projected outgoing rows before the model handoff");
+        const auto incoming=row(name);
+        if (!table.publish({incoming},"local")) return false;
+        if (!QTest::qWaitFor([&] {
+            return radar.tiles()->rowCount()==1 && reference.tiles()->rowCount()==1
+                && radar.tiles()->index(0,0).data(Qt::UserRole).toString()==incoming["path"].toString()
+                && reference.tiles()->index(0,0).data(Qt::UserRole).toString()==incoming["path"].toString();
+        },3000)) return setupFailure("latest presentation and resource snapshot did not settle together");
+        if (filter.kindReads!=1 || radar.tiles()->index(0,0).data(color)!=reference.tiles()->index(0,0).data(color))
+            return setupFailure("handoff repeated projection or retained an outgoing resource color");
+    }
+    return true;
+}
+bool proxyMetadata() {
+    class MetadataFilter final : public podlord::ResourceFilter {
+    public:
+        QVariant data(const QModelIndex& index, int role) const override {
+            if (index.isValid() && role==Qt::UserRole+2) return QStringLiteral("Secret");
+            return ResourceFilter::data(index,role);
+        }
+    };
+    QJsonObject row{{"path","/api/v1/namespaces/default/pods/metadata"},{"name","metadata"},
+        {"namespace","default"},{"kind","Pod"},{"uid","metadata-uid"},{"status","Running"}};
+    podlord::ResourceTable table,expected;
+    if (!table.publish({row},"local")) return false;
+    row["kind"]="Secret";
+    if (!expected.publish({row},"local")) return false;
+    MetadataFilter filter; filter.setSourceModel(&table);
+    podlord::RadarIsland radar,reference;
+    for (auto* island:{&radar,&reference}) { island->setWidth(1200); island->setHeight(1200); }
+    radar.setSource(&filter); reference.setSource(&expected);
+    if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==1 && reference.tiles()->rowCount()==1; },3000))
+        return setupFailure("proxy metadata projection did not settle");
+    const auto actual=radar.tiles()->index(0,0),wanted=reference.tiles()->index(0,0);
+    const auto color=roles(radar.tiles()).value("terrainColor");
+    return (actual.data(Qt::UserRole+2)==QStringLiteral("Secret") && actual.data(color)==wanted.data(color))
+        || setupFailure("radar bypassed a proxy metadata override without Q_OBJECT");
+}
 bool input() {
     podlord::ResourceTable table;
     podlord::ResourceFilter filter; filter.setSourceModel(&table);
@@ -504,6 +570,8 @@ bool exercise(const QStringList& args) {
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
+    if (args.size()==2 && args[1]=="proxy_metadata") return proxyMetadata();
+    if (args.size()==2 && args[1]=="presentation_handoff") return presentationHandoff();
     if (args.size()==2 && (args[1]=="source_rebind" || args[1]=="source_destroy")) return sourceLifecycle(args[1]);
     if (args.size()==2 && args[1].startsWith("camera_")) return camera(args[1].mid(7));
     if (args.size()==2 && args[1]=="hierarchy") return hierarchy();

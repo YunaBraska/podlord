@@ -7068,9 +7068,52 @@ was visible but inactive. Desktop control subsequently reports the Mac locked.
 No current CPU or foreground release clearance is claimed.
 
 The compiler diagnostics additionally show failed C++ AOT generation for many
-bindings, including runtime context-variable accesses. This is not proof of
-their runtime cost. A decision on explicitly typed, per-window Workspace
-injection is pending. No dependent UI architecture change has been made.
+bindings, including runtime context-variable accesses. The approved typed,
+per-window Workspace experiment was implemented and measured, then discarded
+by explicit user decision. It increased native code generation across four
+sampled files from 208 to 241 bindings, including added injection bindings, but
+did not improve measured process CPU. Four headless batches of 35 actions used
+1,460 ms before and 1,560 ms after. Both used the existing 5,000-resource,
+three-session fixture and five warmups per action class. Final headless peak
+RSS was 211,042,304 bytes, warm growth 212,992 bytes and nonsync idle 0.88%.
+These software-rendered observations do not clear the foreground gates. The
+final foreground attempt was visible but inactive. All 62 experiment-owned
+tracked files were restored to `93bf8fe`; the rejected diff and measurements
+remain under `typed-workspace-20261101`. No typed binding is shipped.
+
+A fresh serial native-audio run passes 116/116 existing playback cases in
+109.20 seconds, with each output explicitly muted and no system-volume change.
+The earlier sink stall and failed complete-suite result remain retained. This
+successful run does not establish the stall's cause or a relationship to desktop
+locking. The experimental UI run was stopped after its lazy Terminal loaders
+exposed missing initial Workspace properties. That rejected run is not current
+functional clearance. Fresh checks must use the restored implementation.
+
+The subsequent runtime-profile-led changes preserve custom proxy metadata,
+avoid redundant sort-key type checks, and defer Radar presentation until the
+existing queued model synchronization can consume the latest session rows.
+Both new public regressions first failed and then passed: a metadata override
+without another `Q_OBJECT`, and A-to-B-to-A handoff without an outgoing
+projection or stale terrain color. The complete affected selection passes
+666/666 executions in 240.55 seconds. This includes overlapping earlier checks,
+not 666 new features. Android ARM64 and native ARM64 iOS-simulator application
+builds also pass.
+
+A paired interaction-only headless diagnostic measures process CPU per 35-action
+batch as follows: filter 370 to 380 ms, sort 230 to 200 ms, cached session 630 to
+590 ms and cached inspector 310 to 300 ms. OS accounting has centisecond
+resolution. One pair is not a statistical speed guarantee. Both diagnostic
+processes were intentionally stopped before the memory and idle phases and are
+not complete performance-protocol passes. The frame probe now reports GUI and
+render-thread components from the same captured counters. Component percentiles
+are not additive. Total CPU, calibration, token/drain counts and both 8-ms gates
+remain unchanged.
+
+The existing `native-e2e` Kubernetes route also passes after restoration to
+`93bf8fe`, including shell/vi, terminal transfer, forwarding, deletion races,
+Inspector, cache/search, metrics/health and cached field filters. Its owned
+`podlord-visual-run-o52khk` fixture is removed. That run predates the final small
+renderer/sort changes and is baseline evidence, not frozen final-release proof.
 
 Detailed evidence is retained under `2026-10-31-app-store/compact-map-*`,
 `radar-canonical-index-*`, `radar-source-lifetime-final*`, `radar-paint-*`,

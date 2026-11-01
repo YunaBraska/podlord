@@ -27,7 +27,11 @@
 
 namespace {
 struct FrameTiming final { double renderedMs, actionMs; quint64 token; };
-struct CompletedFrame final { qint64 at; QList<double> processingMs; };
+struct FrameCpu final {
+    qint64 guiNs, renderNs;
+    double milliseconds() const { return guiNs < 0 || renderNs < 0 ? -1 : (guiNs + renderNs) / 1000000.0; }
+};
+struct CompletedFrame final { qint64 at; QList<FrameCpu> processing; };
 struct FrameProbeState final {
     std::atomic<quint64> requested{0};
     std::atomic<quint64> ready{0};
@@ -117,7 +121,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         if (!probe->renderToken) return;
         const bool valid = current >= probe->renderStart && probe->renderStart >= 0 && probe->synchronizedGuiCpu >= 0
             && QThread::currentThread() != guiThread;
-        const double milliseconds = valid ? (probe->synchronizedGuiCpu + current - probe->renderStart) / 1000000.0 : -1;
+        const FrameCpu cpu{valid ? probe->synchronizedGuiCpu : -1, valid ? current - probe->renderStart : -1};
         const std::lock_guard lock(probe->mutex);
         if (!probe->completed.contains(probe->renderToken)) {
             if (!probe->synchronized) return;
@@ -125,7 +129,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         }
         auto& completed = probe->completed[probe->renderToken];
         if (probe->readyFrame && !completed.at) completed.at = monotonicNs();
-        completed.processingMs.append(milliseconds);
+        completed.processing.append(cpu);
     }, Qt::DirectConnection);
     quint64 actionToken = 0;
     if (!window || !waitFor([&] { return window->isVisible() && !workspace.busy(); })) return false;
@@ -198,9 +202,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         if (desktop) {
             const auto at = completedFrame()->at;
             for (int drain = 0; drain < 2; ++drain) {
-                const auto count = completedFrame()->processingMs.size();
+                const auto count = completedFrame()->processing.size();
                 window->update();
-                if (!waitFor([&] { const auto sample = completedFrame(); return sample && sample->processingMs.size() > count && visible(); }, 2000))
+                if (!waitFor([&] { const auto sample = completedFrame(); return sample && sample->processing.size() > count && visible(); }, 2000))
                     return {};
             }
             probe->requested.store(0);
@@ -270,7 +274,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         QList<double> observed;
         {
             const std::lock_guard lock(probe->mutex);
-            observed = probe->completed.value(sample->token).processingMs;
+            for (const auto& cpu : probe->completed.value(sample->token).processing) observed.append(cpu.milliseconds());
         }
         const double maximum = observed.isEmpty() ? -1 : *std::max_element(observed.cbegin(), observed.cend());
         const bool detected = injected && observed.size() >= 3 && observed.first() >= 0
@@ -281,18 +285,27 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     }
     const auto reportFrameWork = [&](const QString& name, const QList<quint64>& tokens) {
         if (!desktop) return true;
-        QList<double> samples, maxima;
+        QList<double> samples, maxima, guiSamples, renderSamples;
         {
             const std::lock_guard lock(probe->mutex);
             for (const auto token : tokens) {
                 const auto found = probe->completed.constFind(token);
-                if (found == probe->completed.cend() || found->processingMs.size() < 3) return false;
-                samples.append(found->processingMs);
-                maxima.append(*std::max_element(found->processingMs.cbegin(), found->processingMs.cend()));
+                if (found == probe->completed.cend() || found->processing.size() < 3) return false;
+                double maximum = -1;
+                for (const auto& cpu : found->processing) {
+                    const auto total = cpu.milliseconds();
+                    samples.append(total);
+                    maximum = std::max(maximum, total);
+                    guiSamples.append(cpu.guiNs / 1000000.0);
+                    renderSamples.append(cpu.renderNs / 1000000.0);
+                }
+                maxima.append(maximum);
             }
         }
         std::sort(samples.begin(), samples.end());
         std::sort(maxima.begin(), maxima.end());
+        std::sort(guiSamples.begin(), guiSamples.end());
+        std::sort(renderSamples.begin(), renderSamples.end());
         const int p95 = static_cast<int>((samples.size() * 95 + 99) / 100) - 1;
         const bool valid = tokens.size() == 30 && !samples.isEmpty() && samples.first() >= 0
             && window->rendererInterface()->graphicsApi() == QSGRendererInterface::Metal;
@@ -300,6 +313,8 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         return report({{"type", "frameWork"}, {"name", name}, {"samples", samples.size()},
                        {"distinctActions", tokens.size()}, {"p95Ms", valid ? samples[p95] : -1},
                        {"actionMaximumP95Ms", valid ? maxima[28] : -1}, {"maxMs", valid ? samples.last() : -1},
+                       {"guiP95Ms", valid ? guiSamples[p95] : -1}, {"renderP95Ms", valid ? renderSamples[p95] : -1},
+                       {"componentPercentilesAreNotAdditive", true},
                        {"p95LimitMs", 8}, {"passed", passed},
                        {"method", "30 distinct post-action synchronization tokens; all frames through expected public state plus two synchronized drain frames; both frame and per-action maximum p95; GUI and render thread CPU excludes sleeping/GPU/display waiting"}}) && passed;
     };

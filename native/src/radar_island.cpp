@@ -11,6 +11,7 @@
 #include <optional>
 #include <numbers>
 #include <tuple>
+#include <typeinfo>
 
 namespace podlord {
 namespace {
@@ -214,7 +215,8 @@ void RadarIsland::setAlerts(Alerts* alerts) {
     alertConnections_.clear(); alerts_=alerts;
     const auto refresh=[this] { if (dirty_) schedule(); else { project(); update(); } };
     if (alerts_) {
-        alertConnections_.append(connect(alerts_.data(),&Alerts::presentationChanged,this,refresh));
+        // A session presentation changes before its model handoff in the same turn.
+        alertConnections_.append(connect(alerts_.data(),&Alerts::presentationChanged,this,refresh,Qt::QueuedConnection));
         alertConnections_.append(connect(alerts_.data(),&Alerts::rulesChanged,this,refresh));
         alertConnections_.append(connect(alerts_.data(),&QObject::destroyed,this,refresh));
     }
@@ -570,6 +572,8 @@ void RadarIsland::project(bool refresh) {
     using Animation=RadarTiles::Animation;
     QList<RadarTiles::Entry> visible;
     const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
+    // Subclasses can override roles without declaring another Q_OBJECT.
+    const bool passthrough=proxy && typeid(*proxy)==typeid(ResourceFilter);
     if (isVisible() && width()>0 && height()>0) {
         const auto onScreen=worldViewport();
         const auto viewport=onScreen.adjusted(-step,-step,step,step);
@@ -584,9 +588,10 @@ void RadarIsland::project(bool refresh) {
                 if (!viewport.contains(point)) continue;
                 RadarTiles::Entry tile;
                 tile.path=path; tile.source=*source; tile.resourceIndex=index.row(); tile.world=point;
-                tile.kind=index.data(Qt::UserRole+2).toString();
+                const auto metadata=passthrough ? QModelIndex(*source) : index;
+                tile.kind=metadata.data(Qt::UserRole+2).toString();
                 tile.color=terrainColor(tile.kind);
-                const int health=index.data(Qt::UserRole+9).toInt();
+                const int health=metadata.data(Qt::UserRole+9).toInt();
                 tile.announce=QColor::fromRgb(health==2 ? 0xFF5C5C : health==1 ? 0xFFE866 : 0x7DFFC3);
                 const auto effect=alerts_ ? alerts_->effect(path) : QVariantMap{};
                 const auto tone=effect.value(QStringLiteral("color")).toString();
