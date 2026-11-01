@@ -102,8 +102,9 @@ bool Workspace::dispatchViewSave() {
             viewStateErrors_[session] = "Session " + session + ": " + failure->message; pendingViews_.remove(session);
         } else savedViews_[session] = std::get<TableViewStates>(result);
         dispatchViewSave();
-        // Successful persistence changes no displayed state. Failures and a
-        // pending close still need their decision/error bindings refreshed.
+        emit sessionWindowActionsReadyChanged();
+        // Completion changes window-action readiness, not general display data.
+        // Failures and a pending close also refresh their decision/error UI.
         if (std::holds_alternative<Failure>(result) || viewClosePending_) emit changed();
         if (viewClosePending_ && !viewSaving_ && !presetsBusy_ && pendingViews_.isEmpty() && !viewStateFailed()) emit windowCloseApproved();
     });

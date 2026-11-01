@@ -9,6 +9,8 @@ NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-na
 MODE=${1:-desktop}
 [ "$#" -le 1 ] || { printf 'Expected one mode: desktop, mobile, ios-themes, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
 case "$MODE" in desktop|mobile|ios-themes|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+METADATA_AUDIT=${PODLORD_KUBERNETES_METADATA_AUDIT:-0}
+case "$METADATA_AUDIT" in 0|1) ;; *) printf 'Metadata audit must be 0 or 1.\n' >&2; exit 1 ;; esac
 if [ "$MODE" = ios-themes ]; then
     [ "$(uname -s)" = Darwin ] || { printf 'iOS simulator evidence requires macOS.\n' >&2; exit 1; }
     IOS_APP="${PODLORD_IOS_BUILD_DIR:-}/Release-iphonesimulator/workspace_ui_test.app"
@@ -139,6 +141,24 @@ cleanup() {
                 docker logs --tail 80 "$NAME" > "$EVIDENCE/$NAME-failure.log" 2>&1 || :
                 tail -n 20 "$EVIDENCE/$NAME-failure.log" >&2 || :
             fi
+            if [ "$METADATA_AUDIT" = 1 ] && [ -f "$RUN/metadata-audit-started" ]; then
+                audit_status=0
+                node - "$NAME" "$EVIDENCE/$NAME-request-audit.jsonl" <<'AUDIT' || audit_status=$?
+const fs=require('node:fs'),cp=require('node:child_process');
+const raw=cp.execFileSync('docker',['exec',process.argv[2],'cat','/var/log/podlord-metadata-audit.jsonl'],{encoding:'utf8',timeout:10000,maxBuffer:16000000});
+const records=raw.trim().split('\n').filter(Boolean).map(line=>{
+    const value=JSON.parse(line);
+    if(value.level!=='Metadata'||value.requestObject||value.responseObject)throw Error('Fixture audit exceeded Metadata scope');
+    const object=value.objectRef||{};
+    return {auditID:value.auditID,stage:value.stage,time:value.requestReceivedTimestamp,verb:value.verb,
+        username:value.user?.username,userAgent:value.userAgent,
+        object:{apiGroup:object.apiGroup,apiVersion:object.apiVersion,resource:object.resource,
+            subresource:object.subresource,namespace:object.namespace,name:object.name}};
+});
+fs.writeFileSync(process.argv[3],records.map(value=>JSON.stringify(value)).join('\n')+'\n');
+AUDIT
+                if [ "$audit_status" -ne 0 ]; then printf 'Owned fixture Metadata audit capture failed.\n' >&2; status=1; fi
+            fi
             volumes=$(docker inspect "$NAME" --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}') || status=1
             docker rm -fv "$NAME" || status=1
             remaining=$(docker container ls -a --filter "label=podlord.native.e2e=$NAME" --format '{{.ID}}') || status=1
@@ -246,14 +266,25 @@ fi
 existing=$(docker container ls -a --filter "name=^/$NAME$" --format '{{.ID}}')
 [ -z "$existing" ] || { printf 'Existing cluster identity is not owned by this run.\n' >&2; exit 1; }
 CREATED=1
+set --
+if [ "$METADATA_AUDIT" = 1 ]; then
+    cat > "$RUN/metadata-audit-policy.json" <<'POLICY'
+{"apiVersion":"audit.k8s.io/v1","kind":"Policy","omitStages":["ResponseStarted","ResponseComplete"],"rules":[{"level":"Metadata","users":["system:admin"]},{"level":"None"}]}
+POLICY
+    set -- --kube-apiserver-arg=audit-policy-file=/etc/podlord-metadata-audit-policy.json \
+        --kube-apiserver-arg=audit-log-path=/var/log/podlord-metadata-audit.jsonl \
+        --kube-apiserver-arg=audit-log-mode=blocking
+fi
 docker create --name "$NAME" --label "podlord.native.e2e=$NAME" --privileged \
     --tmpfs /run --tmpfs /var/run -p 127.0.0.1::6443 rancher/k3s:v1.35.5-k3s1 \
     server --disable=traefik --disable=servicelb --write-kubeconfig-mode=600 --tls-san=10.0.2.2 \
-    --kubelet-arg='eviction-hard=memory.available<100Mi,nodefs.available<512Mi,imagefs.available<512Mi,nodefs.inodesFree<5%,imagefs.inodesFree<5%'
+    --kubelet-arg='eviction-hard=memory.available<100Mi,nodefs.available<512Mi,imagefs.available<512Mi,nodefs.inodesFree<5%,imagefs.inodesFree<5%' "$@"
 mkdir -p "$RUN/k3s-data/agent/images"
 docker image save rancher/k3s:v1.35.5-k3s1 > "$RUN/k3s-data/agent/images/pod-image.tar"
 docker cp "$RUN/k3s-data/." "$NAME:/var/lib/rancher/k3s/"
+if [ "$METADATA_AUDIT" = 1 ]; then docker cp "$RUN/metadata-audit-policy.json" "$NAME:/etc/podlord-metadata-audit-policy.json"; fi
 docker start "$NAME"
+if [ "$METADATA_AUDIT" = 1 ]; then : > "$RUN/metadata-audit-started"; fi
 port=$(docker port "$NAME" 6443/tcp | sed 's/^127\.0\.0\.1://')
 attempt=0
 while :; do

@@ -1446,7 +1446,8 @@ if(BUILD_TESTING AND APPLE AND NOT IOS)
         add_test(NAME native.audio.${sound}_repeat
             COMMAND audio-playback-test qrc:/podlord/audio/${audio_relative} 2)
         set_tests_properties(native.audio.${sound}_repeat PROPERTIES
-            TIMEOUT 30 ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa")
+            TIMEOUT 30 RESOURCE_LOCK native_audio_output
+            ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
     endforeach()
 endif()
 

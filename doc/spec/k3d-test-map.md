@@ -6986,14 +6986,14 @@ alone does not establish complete mobile usability or image parity.
 | Boundary | Evidence for this packet |
 | --- | --- |
 | Affected native tests | 913/913 Radar/window/metric/filter/alert executions pass, followed by 36/36 layout cases and the latest 35/35 snapshot/lifecycle/short-layout cases. These overlapping selections are not unique feature counts. |
-| Complete native suite | A fresh 5,245-case run is in progress when this packet is recorded. The earlier 5,233-case run had four zero-height layout failures, subsequently reproduced and fixed. It is not described as a complete green run. |
+| Complete native suite | The `f82229d` baseline completed 5,245/5,245 executions, with 97.70% line and 85.82% branch coverage. Main-suite time was 2,299.26 seconds with four jobs. This is a baseline result, not clearance for later changes. |
 | Changed C++ branches | 263/286 outcomes, 91.96%, on added branch-start lines against `effb134`, combining the preceding full profile with current affected/lifecycle profiles and the current application mapping. QML, scripts and other platforms are excluded. LLVM retains one unchanged function-data mismatch warning. |
 | Store channel | Current Store build and all 213 CI-selected provider/import/Store boundaries pass. |
 | Real local Kubernetes | TLS/client certificates, multi-container logs, read-only draft checks, confirmed JSON Patch, conflict reconciliation, Secret write/read-back/remasking, PTY/vi/ANSI/resize/interrupts and UID-protected deletion pass. Owned cluster `podlord-native-run-ekzr95` and its volumes are removed. |
 | macOS direct package | Fresh standalone packaging preflight passes. This is not installed-startup, distribution-signing, licensing or full-parity clearance. |
-| Android package | Current ARM64 APK builds, uses the existing local signing identity and passes 16-KiB alignment. Its first new journey stopped before installation because the local Kubernetes fixture failed with container-runtime/fsnotify errors. A sequential fixture attempt is pending. |
+| Android package | After the first fixture setup failure, the sequential installed journey passed 12/12 checks against 1,842 resources. Installed size was 99,853,346 bytes. The owned emulator, private ADB, cluster, volumes and ports were cleaned. |
 
-The latest valid foreground measurement retains the unchanged 8-ms frame-CPU
+The baseline foreground measurement retains the unchanged 8-ms frame-CPU
 gate. Filter p95 is 12.06 ms, sort 15.27 ms, cached session 19.45 ms and cached
 inspector 10.70 ms. Scroll passes at 3.29 ms. Interaction latency passes. Peak RSS
 308,953,088 bytes and warm growth 4,751,360 bytes narrowly pass their 310/5-MB
@@ -7018,3 +7018,62 @@ exit-255 failures are not cleared by a launcher-only probe: that separate probe
 completed 440 reads but did not reproduce the installed-app journey. Audio is
 disabled throughout routine tests. Google-account work stays paused, and no
 release, tag or Store upload is performed.
+
+### Compact map and cached-view follow-up, 2026-11-01
+
+The approved flat-landscape layout reuses the existing navigation row beside
+zoom controls and reduces collapsed filters to a 68-logical-pixel rail. Expanding
+filters restores their usable width. No controls, table, small Radar, camera,
+selection or cache behavior are removed. Four geometry regressions failed before
+the layout change and pass afterward in Basic and Fusion. The installed Android
+journey passed 12/12 checks against 1,845 resources. Its large-map canvas grew
+from 181x39 to 281x89 pixels. Installed size was 99,856,087 bytes, leaving only
+143,913 bytes below the existing installed-size limit. This APK predates the
+subsequent Radar-index and view-save notification changes.
+
+Radar tiles now reuse canonical source indices rather than maintaining an
+additional persistent proxy index for each point. Direct/proxy regressions first
+failed when an atomic session handoff exposed a new resource at outgoing
+geometry. Both now pass. Source destruction and rebinding also invalidate public
+metadata immediately, before queued geometry synchronization. Ordinary points
+avoid per-point painter state changes. The complete reference PNG is
+byte-identical before and after that drawing change.
+
+Successful view persistence no longer invalidates the entire workspace UI. The
+first implementation missed the existing, separately notified window-action
+readiness property. The full run exposed both affected window-filter cases.
+Completion now emits that scoped signal, while save failures and close decisions
+retain their general notifications. The quiet-save regression checks both the
+absence of redundant general notifications and delivery of readiness changes.
+
+| Boundary | Latest evidence and remaining gap |
+| --- | --- |
+| Focused native checks | 122/122 window/save checks and 45/45 Radar checks pass after the readiness correction. Earlier overlapping selections passed 1,154 cache/filter/metric/window cases and 703 layout/integration cases. These counts are executions, not unique features. |
+| Complete native run | Six preflights passed. The following 5,244-case suite failed 103 cases: 88 native audio playback cases, 13 other timeouts and two window readiness regressions. Main-suite time was 2,245.94 seconds. This is not a green full-suite result. |
+| Failure follow-up | The window regression is fixed and covered by the 122-case run. All 13 non-audio timeout cases pass in the separate four-job diagnostic run. Their original long delays are not explained or erased by that result. A clean complete run remains required. |
+| Audio | A single silent playback reproduction still stalls at 81 ms in BufferingMedia with a valid device and no reported backend error. Explicit muting also stalls. Output remains muted. Playback tests now share an audio-device resource lock and disable foreground transformation. Neither change is claimed to fix this stall. No audio cases or deadlines were removed. |
+| Coverage | The failed full run reports 97.70% lines and 85.90% branches. Combining it with successful current-source window, Radar-lifetime and timeout checks covers 89/90 added branch outcomes against `f82229d` across the four changed C++ production files. The missing outcome is the defensive null-source row-filter guard. LLVM retains 44 function-data mismatch warnings across the combined executable mappings. These scoped counters are not a fresh coherent full-suite or release clearance. |
+| Real Kubernetes | Local API E2E checks pass for client TLS, multi-container logs, confirmed YAML/Secret writes and read-back, PTY/vi/ANSI/interrupts, window transfer, port-forwards, UID-protected deletion, search, metrics, health and cached field filters. The run overlaps the later readiness-only relink, so it is not a frozen final-package release proof. Owned fixture `podlord-visual-run-6lcnhl` was removed. |
+| Platform builds | Final-source macOS native targets, Android APK and ARM64 iOS simulator app build. Current Store provider/import/boundary checks pass 213/213. The first iOS link used a stale Xcode dependency graph. Explicit CMake configuration followed by build succeeds. These builds are not device-runtime, package-size or final-signing clearance. |
+| Android extra proof | One additional attempt reused the previous APK and loaded 1,846 resources before a recorded ADB transport disconnect. The same guest app, emulator and private daemon remained alive. Native last-pixel touch and frozen filter/camera roundtrip checks were not reached. Metadata-only request audit and owned cleanup were preserved. No retry or product crash is asserted. |
+| CI packaging split | Hosted `7798265` passes direct and Store package jobs on Intel and Apple Silicon. The test jobs still failed existing session/delegate races. Targeted fixes wait for ranked session publication and public table-column mapping. Current hosted validation is still required. Local packaging/toolchain/cleanup guards pass 48/48. |
+
+The latest valid foreground run before the final index/notification/drawing
+changes reports filter/sort/tab/inspector frame CPU p95 of
+12.15/12.17/14.95/11.16 ms against 8 ms. RSS is 280,756,224 bytes and warm growth
+2,113,536 bytes. Nonsync idle is 2.32% against 2%. Later nonactivating Metal runs
+are diagnostic only and still exceed the frame limit. A later foreground attempt
+was visible but inactive. Desktop control subsequently reports the Mac locked.
+No current CPU or foreground release clearance is claimed.
+
+The compiler diagnostics additionally show failed C++ AOT generation for many
+bindings, including runtime context-variable accesses. This is not proof of
+their runtime cost. A decision on explicitly typed, per-window Workspace
+injection is pending. No dependent UI architecture change has been made.
+
+Detailed evidence is retained under `2026-10-31-app-store/compact-map-*`,
+`radar-canonical-index-*`, `radar-source-lifetime-final*`, `radar-paint-*`,
+`window-save-readiness-*`, `view-save-quiet-*` and `quiet-save-metal-diagnostic`
+outside Git. Original failures remain retained. Routine tests stay silent,
+test-owned apps and local stacks are closed, and no release or Store upload is
+performed. Google-account work remains paused.

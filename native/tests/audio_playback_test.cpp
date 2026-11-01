@@ -1,4 +1,5 @@
 #include <QAudioOutput>
+#include <QAudioDevice>
 #include <QFile>
 #include <QGuiApplication>
 #include <QMediaPlayer>
@@ -16,7 +17,7 @@ int main(int argc, char** argv) {
     if (!valid || repetitions < 1 || repetitions > 2 || source.scheme() != "qrc"
         || !QFile::exists(":" + source.path())) return 2;
     QAudioOutput output;
-    output.setVolume(0);
+    output.setMuted(true);
     QMediaPlayer player;
     player.setAudioOutput(&output);
     int completed = 0;
@@ -41,7 +42,10 @@ int main(int argc, char** argv) {
             QTimer::singleShot(0, &app, [&] { player.stop(); player.play(); });
         });
     QTimer::singleShot(25000, &app, [&] {
-        std::fprintf(stderr, "Embedded sound playback timed out: %s\n", qPrintable(player.errorString()));
+        std::fprintf(stderr, "Embedded sound playback timed out: %s; state=%d status=%d completed=%d position=%lld duration=%lld audio=%d volume=%g muted=%d device=%d applicationState=%d\n",
+            qPrintable(player.errorString()), int(player.playbackState()), int(player.mediaStatus()), completed,
+            static_cast<long long>(player.position()), static_cast<long long>(player.duration()), player.hasAudio(),
+            output.volume(), output.isMuted(), !output.device().isNull(), int(QGuiApplication::applicationState()));
         app.exit(1);
     });
     player.setSource(source);

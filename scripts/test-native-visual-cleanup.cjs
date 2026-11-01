@@ -15,11 +15,11 @@ const root = path.resolve(__dirname, '..');
 const build = process.env.PODLORD_NATIVE_BUILD_DIR;
 if (!build) throw new Error('PODLORD_NATIVE_BUILD_DIR must identify the real native test build.');
 
-async function exercise(scenario, mode = 'native-e2e') {
+async function exercise(scenario, mode = 'native-e2e', metadataAudit = false) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-cleanup-'));
     const socket = path.join(directory, 'docker.sock');
     const trace = [];
-    let name = '', exists = false, owned = false, boundaryFailure, applicationLog = '';
+    let name = '', exists = false, owned = false, running = false, runner, execAttempts = 0, boundaryFailure, applicationLog = '';
     const server = http.createServer(async (request, response) => {
         try {
         const url = new URL(request.url, 'http://localhost');
@@ -37,6 +37,15 @@ async function exercise(scenario, mode = 'native-e2e') {
             json(200, exists ? [{ Id: 'a'.repeat(64), Names: ['/' + name], Labels: owned ? { 'podlord.native.e2e': name } : {} }] : []); return;
         }
         if (route === '/containers/create') {
+            const chunks=[];
+            for await (const chunk of request) chunks.push(chunk);
+            const command=JSON.parse(Buffer.concat(chunks).toString('utf8')).Cmd;
+            const audit=command.filter(arg=>arg.startsWith('--kube-apiserver-arg=audit-'));
+            assert.deepEqual(audit,metadataAudit?[
+                '--kube-apiserver-arg=audit-policy-file=/etc/podlord-metadata-audit-policy.json',
+                '--kube-apiserver-arg=audit-log-path=/var/log/podlord-metadata-audit.jsonl',
+                '--kube-apiserver-arg=audit-log-mode=blocking',
+            ]:[],'Audit must be explicit, owned and Metadata-only');
             name = url.searchParams.get('name'); exists = true;
             owned = scenario !== 'collision';
             if (scenario === 'collision') { json(409, { message: 'The container name is already in use.' }); return; }
@@ -44,6 +53,16 @@ async function exercise(scenario, mode = 'native-e2e') {
             json(201, { Id: 'a'.repeat(64), Warnings: [] }); return;
         }
         if (route === '/images/get') {
+            if(metadataAudit){
+                const entries=await fs.readdir(path.join(build,'e2e'));
+                const run=entries.find(entry=>'podlord-'+entry.toLowerCase().replaceAll('.','-')===name);
+                const policy=JSON.parse(await fs.readFile(path.join(build,'e2e',run,'metadata-audit-policy.json'),'utf8'));
+                assert.deepEqual(policy,{apiVersion:'audit.k8s.io/v1',kind:'Policy',omitStages:['ResponseStarted','ResponseComplete'],rules:[{level:'Metadata',users:['system:admin']},{level:'None'}]});
+            }
+            if(scenario==='audit_export_failure'){
+                response.writeHead(200,{'Content-Type':'application/x-tar'});
+                response.end(Buffer.alloc(1024)); return;
+            }
             if (scenario === 'coverage' || scenario === 'application_log') {
                 const entries = await fs.readdir(path.join(build, 'e2e'));
                 const run = entries.find(entry => 'podlord-' + entry.toLowerCase().replaceAll('.', '-') === name);
@@ -68,9 +87,23 @@ async function exercise(scenario, mode = 'native-e2e') {
             json(exists ? 200 : 404, exists ? {
                 Id: 'a'.repeat(64), Name: '/' + name,
                 Config: { Labels: owned ? { 'podlord.native.e2e': name } : {}, Tty: false },
-                State: { Status: 'created', Running: false },
+                State: { Status: running ? 'running' : 'created', Running: running },
+                NetworkSettings: { Ports: { '6443/tcp': [{ HostIp: '127.0.0.1', HostPort: '16443' }] } },
                 Mounts: [{ Type: 'volume', Name: 'private-test-volume' }]
             } : { message: 'No such container.' }); return;
+        }
+        if(scenario==='audit_export_failure'&&route===`/containers/${name}/archive`){
+            if(request.method==='HEAD'){
+                response.writeHead(200,{'X-Docker-Container-Path-Stat':Buffer.from(JSON.stringify({name:path.basename(url.searchParams.get('path')),size:0,mode:2147484141,mtime:'2026-01-01T00:00:00Z',linkTarget:''})).toString('base64')});
+                response.end(); return;
+            }
+            if(request.method==='PUT'){request.resume();request.once('end',()=>{response.writeHead(200);response.end();});return;}
+        }
+        if(scenario==='audit_export_failure'&&route===`/containers/${name}/start`){running=true;response.writeHead(204);response.end();return;}
+        if(scenario==='audit_export_failure'&&route===`/containers/${name}/exec`){
+            execAttempts++;
+            if(execAttempts===1)response.once('finish',()=>runner.kill('SIGTERM'));
+            json(500,{message:'Deliberate owned fixture exec/export failure'});return;
         }
         if (route === `/containers/${name}/logs` || route === `/containers/${'a'.repeat(64)}/logs`) { response.writeHead(200, { 'Content-Type': 'application/vnd.docker.raw-stream' }); response.end(); return; }
         if (request.method === 'DELETE' && route === `/containers/${name}`) {
@@ -89,9 +122,10 @@ async function exercise(scenario, mode = 'native-e2e') {
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
         const result = await new Promise((resolve, reject) => {
             const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), mode], {
-                cwd: root, env: { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${socket}`, PODLORD_NATIVE_BUILD_DIR: build, PODLORD_VISUAL_EVIDENCE_DIR: path.join(directory, 'evidence'), ...(mode === 'mobile' ? { PODLORD_NATIVE_APP: '/missing/native-app', PODLORD_LEGACY_APP: '/missing/reference-app' } : {}) },
+                cwd: root, env: { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${socket}`, PODLORD_KUBERNETES_METADATA_AUDIT: metadataAudit?'1':'0', PODLORD_NATIVE_BUILD_DIR: build, PODLORD_VISUAL_EVIDENCE_DIR: path.join(directory, 'evidence'), ...(mode === 'mobile' ? { PODLORD_NATIVE_APP: '/missing/native-app', PODLORD_LEGACY_APP: '/missing/reference-app' } : {}) },
                 stdio: ['ignore', 'pipe', 'pipe']
             });
+            runner=child;
             let output = '';
             child.stdout.on('data', bytes => { output += bytes; });
             child.stderr.on('data', bytes => { output += bytes; });
@@ -113,6 +147,11 @@ async function exercise(scenario, mode = 'native-e2e') {
             if (scenario === 'remove_failure') assert.match(result.output, /Owned containers remain:/, 'Remaining resources must be reported explicitly.');
         }
         assert.equal(trace.some(call => call.route.includes('/prune')), false, 'No global resource prune is permitted.');
+        if(scenario==='audit_export_failure'){
+            assert.equal(running,true,'The real runner must reach started/audited ownership before failure');
+            assert.ok(execAttempts>=2,'Audit export must fail after the original readiness failure');
+            assert.match(result.output,/Owned fixture Metadata audit capture failed\./,'Audit failure must be explicit while owned deletion still runs');
+        }
         if (scenario === 'coverage') {
             const retained = path.join(directory, 'evidence', name + '-profiles', 'help.profraw');
             assert.ok((await fs.stat(retained)).size > 0, 'Cleanup must retain real execution evidence, not its credentials or profile.');
@@ -133,6 +172,8 @@ for (const scenario of ['preexisting', 'collision', 'lost_reply', 'after_create'
 }
 
 test('mobile review setup and owned cleanup need no desktop applications', { timeout: 20000 }, () => exercise('after_create', 'mobile'));
+test('mobile fixture Metadata audit is opt-in and preserves owned cleanup', { timeout: 20000 }, () => exercise('after_create', 'mobile', true));
+test('failed Metadata audit export still removes the started owned fixture and volumes', { timeout: 20000 }, () => exercise('audit_export_failure', 'mobile', true));
 
 test('iOS theme review rejects a missing simulator app before Docker access', { timeout: 5000, skip: process.platform !== 'darwin' }, async () => {
     const result = await new Promise((resolve, reject) => {

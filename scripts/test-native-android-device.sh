@@ -130,6 +130,10 @@ if(!Number.isInteger(coldInspectorCycles)||coldInspectorCycles<0||coldInspectorC
 if(inspectorCycles&&coldInspectorCycles)throw Error('Choose warm or cold inspector diagnostics, not both');
 const inspectorOnly=process.env.PODLORD_ANDROID_INSPECTOR_ONLY||'0';
 if(!['0','1'].includes(inspectorOnly)||(inspectorOnly==='1'&&(inspectorCycles||coldInspectorCycles)))throw Error('Choose a single inspector diagnostic mode');
+const mapRoundtrip=process.env.PODLORD_ANDROID_MAP_ROUNDTRIP||'0';
+if(!['0','1'].includes(mapRoundtrip)||(mapRoundtrip==='1'&&(inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single map roundtrip diagnostic mode');
+const fixture=process.env.PODLORD_ANDROID_FIXTURE_CONTAINER||'';
+if(mapRoundtrip==='1'&&(!/^podlord-visual-run-[a-z0-9]+$/.test(fixture)||process.env.PODLORD_KUBERNETES_METADATA_AUDIT!=='1'||!/^unix:\/\//.test(process.env.DOCKER_HOST||'')))throw Error('Map roundtrip requires its owned local Metadata-audited fixture');
 let firstCommandFailure=false,lastSuccessfulUiAt=null;
 const runAdb=(args,encoding='utf8')=>{
  const startedAt=new Date().toISOString();
@@ -179,15 +183,16 @@ function target(id){
   const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
     const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.ResourceSidebar_');
     const inspector=n['resource-id']?.includes('.workspaceInspector.');
-    const host=inspector?nodes.find(x=>x['resource-id']?.endsWith('.workspaceInspector')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
+    const host=/^inline/.test(id)?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>x['resource-id']?.endsWith('.workspaceInspector')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
     const clip=bounds(host);return !clip||(b[1]>=clip[1]&&b[3]<=clip[3]);
   })());
   if(n){if(!scrolled)return n;const before=n.bounds;state();const stable=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
   const nav=/WorkspaceButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
   const inspector=nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.['resource-id']?.includes('.workspaceInspector.');
-  const host=inspector?nodes.find(n=>n['resource-id']?.endsWith('.workspaceInspector')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
+  const settings=/^inline/.test(id);
+  const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>n['resource-id']?.endsWith('.workspaceInspector')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
   const b=bounds(host);if(!b)break;
-  const x=inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
+  const x=inspector||settings?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
   const reverse=id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   run('shell','input','swipe',String(x),String(reverse?b[1]+12:b[3]-12),String(x),String(reverse?b[3]-12:b[1]+12),'350');scrolled=true;state();
  }
@@ -243,6 +248,7 @@ if(coldInspectorCycles){
  steps.push({step:'First inspector opening after process restart and explicit context loading',cycles:coldInspectorCycles});
  completeJourney();process.exit(0);
 }
+if(mapRoundtrip==='1')mapTouchRoundtrip();
 terminalJourney();
 search('');steps.push({step:'Landscape search remains above the real soft keyboard and restores navigation after dismissal'});
 const miniRadar=target('resourceRadar').bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
@@ -297,6 +303,67 @@ function search(value){
  run('shell','input','keyevent','4');state();click('workspaceSearchButton');
 }
 function describe(id){const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));return n?[n.text,n['content-desc']].filter(Boolean).join('\n'):'';}
+function mapTouchRoundtrip(){
+ const assert=require('node:assert/strict'),crypto=require('node:crypto'),zlib=require('node:zlib');
+ const value=n=>n?.text||n?.['content-desc']||'';
+ const find=id=>nodes.find(n=>n['resource-id']?.endsWith('.'+id));
+ const rect=n=>n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
+ const zoom=()=>{const left=rect(target('radarZoomOut')),right=rect(target('radarZoom'));const n=nodes.find(n=>/^\d+%$/.test(value(n))&&n.bounds&&rect(n)[0]>left[2]&&rect(n)[2]<right[0]&&rect(n)[1]>=left[1]&&rect(n)[3]<=left[3]);assert.ok(n,'Visible public zoom percentage is required');return Number(value(n).slice(0,-1));};
+ const counter=label=>{
+  const owner=cp.execFileSync('docker',['inspect','--type','container',fixture,'--format','{{index .Config.Labels "podlord.native.e2e"}}'],{encoding:'utf8',timeout:10000,maxBuffer:1000000}).trim();
+  assert.equal(owner,fixture,'Only the owned fixture audit may be read');
+  const script=`awk '/"stage":"RequestReceived"/ && /"username":"system:admin"/ { n++ } END { print n+0 }' /var/log/podlord-metadata-audit.jsonl`;
+  const count=Number(cp.execFileSync('docker',['exec',fixture,'/bin/sh','-c',script],{encoding:'utf8',timeout:10000,maxBuffer:1000000}).trim());
+  assert.ok(Number.isSafeInteger(count)&&count>0,'Metadata audit must contain actual admin API requests');
+  const result={label,at:new Date().toISOString(),count,scope:'Owned fixture system:admin RequestReceived events; blocking Metadata audit, no request bodies'};
+  fs.appendFileSync(path.join(out,'map-request-counts.jsonl'),JSON.stringify(result)+'\n');return result;
+ };
+ const image=file=>{
+  const bytes=fs.readFileSync(path.join(out,file+'.png'));let width,height,bpp,interlace,parts=[];
+  for(let p=8;p<bytes.length;){const length=bytes.readUInt32BE(p),type=bytes.toString('ascii',p+4,p+8),data=bytes.subarray(p+8,p+8+length);if(type==='IHDR'){width=data.readUInt32BE(0);height=data.readUInt32BE(4);assert.equal(data[8],8);assert.ok([2,6].includes(data[9]));bpp=data[9]===6?4:3;interlace=data[12];}if(type==='IDAT')parts.push(data);p+=length+12;}
+  assert.equal(interlace,0);assert.deepEqual([width,height],[640,320]);const raw=zlib.inflateSync(Buffer.concat(parts)),stride=width*bpp,pixels=Buffer.alloc(height*stride);let offset=0;
+  const paeth=(a,b,c)=>{const p=a+b-c,pa=Math.abs(p-a),pb=Math.abs(p-b),pc=Math.abs(p-c);return pa<=pb&&pa<=pc?a:pb<=pc?b:c;};
+  for(let y=0;y<height;y++){const filter=raw[offset++];assert.ok(filter<=4);for(let x=0;x<stride;x++){const i=y*stride+x,a=x>=bpp?pixels[i-bpp]:0,b=y?pixels[i-stride]:0,c=y&&x>=bpp?pixels[i-stride-bpp]:0;pixels[i]=(raw[offset++]+(filter===0?0:filter===1?a:filter===2?b:filter===3?Math.floor((a+b)/2):paeth(a,b,c)))&255;}}
+  return {width,height,bpp,pixels,crop:b=>{const chunks=[];for(let y=b[1];y<=b[3];y++)chunks.push(pixels.subarray((y*width+b[0])*bpp,(y*width+b[2]+1)*bpp));return Buffer.concat(chunks);},rgb:(x,y)=>pixels.subarray((y*width+x)*bpp,(y*width+x)*bpp+3).toString('hex')};
+ };
+ const density=run('shell','wm','density'),display=run('shell','wm','size');
+ fs.writeFileSync(path.join(out,'touch-display.txt'),density+display+run('shell','dumpsys','display'));
+ assert.match(density,/Physical density:\s*160/);assert.doesNotMatch(density,/Override density:/);
+ click('settingsWorkspaceButton');click('settingsSectionPicker');
+ const graphics=nodes.find(n=>value(n)==='Graphics'&&n.enabled==='true'&&n.bounds&&rect(n)[2]>rect(n)[0]);assert.ok(graphics,'Graphics must be selected through the public settings picker');tap(graphics);
+ if(target('inlineRadarWaterEnabled').checked==='true')click('inlineRadarWaterEnabled');
+ waitNode('inlineRadarWaterEnabled',n=>n.checked==='false');
+ if(target('inlineReducedMotion').checked!=='true')click('inlineReducedMotion');
+ waitNode('inlineReducedMotion',n=>n.checked==='true');capture('roundtrip-frozen-settings');
+ click('resourcesWorkspaceButton');search('visual-config-0001');click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)==='visual-config-0001');capture('roundtrip-query-before');click('workspaceSearchButton');
+ click('mapWorkspaceButton');waitNode('resourceRadar',n=>rect(n)[2]>rect(n)[0]&&rect(n)[3]>rect(n)[1]);
+ click('resetRadar');const resetZoom=zoom();
+ for(let i=0;i<16&&zoom()<25;i++)click('radarZoom');
+ for(let i=0;i<16&&zoom()>100;i++)click('radarZoomOut');
+ assert.ok(zoom()>=20&&zoom()<=100,'Prepare an observable, unclamped public zoom range');
+ const ids=['mapBack','mapForward','mapOverview','mapSources','radarWorkspaceButton','radarZoomOut','radarZoom','resetRadar','toggleLandscapeFilters'];
+ const controls=ids.map(id=>{const matches=nodes.filter(n=>n['resource-id']?.endsWith('.'+id));assert.equal(matches.length,1,id+' must have one public instance');const n=matches[0],b=rect(n);assert.deepEqual([b[2]-b[0]+1,b[3]-b[1]+1],[44,44],id+' must retain the Qt inclusive 44px rectangle');return {id,bounds:b,androidDelta:[b[2]-b[0],b[3]-b[1]],qtInclusiveSize:[44,44],enabled:n.enabled};});
+ const edge=(id,position,expect)=>{
+  const n=target(id),b=rect(n),before=zoom(),center=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];assert.equal(n.enabled,'true');
+  const point=position==='right'?[b[2],center[1]]:position==='bottom'?[center[0],b[3]]:position==='corner'?[b[2],b[3]]:position==='outside-right'?[b[2]+1,center[1]]:[center[0],b[3]+1];
+  run('shell','input','tap',...point.map(String));state();const after=zoom(),result={at:new Date().toISOString(),id,position,bounds:b,point,beforeZoomPercent:before,afterZoomPercent:after,expected:expect};fs.appendFileSync(path.join(out,'native-edge-touches.jsonl'),JSON.stringify(result)+'\n');capture('edge-'+id+'-'+position);
+  if(expect==='increase')assert.ok(after>before,'Native last-pixel zoom-in touch must change visible zoom');else if(expect==='decrease')assert.ok(after<before,'Native last-pixel zoom-out touch must change visible zoom');else if(expect==='reset'){assert.notEqual(before,resetZoom);assert.equal(after,resetZoom);}else assert.equal(after,before,'The next coordinate beyond the 44px target must not activate zoom');
+ };
+ edge('radarZoom','right','increase');edge('radarZoomOut','bottom','decrease');edge('radarZoom','corner','increase');edge('radarZoom','outside-right','unchanged');edge('radarZoom','outside-bottom','unchanged');edge('resetRadar','corner','reset');
+ capture('roundtrip-map-selection-setup');const initial=image('roundtrip-map-selection-setup'),b=rect(target('resourceRadar'));let waterPoint=null;
+ for(let y=b[1]+2;y<b[3]-2&&!waterPoint;y++)for(let x=b[0]+2;x<b[2]-2;x++)if(['061621','071621'].includes(initial.rgb(x,y))){waterPoint=[x,y];break;}
+ assert.ok(waterPoint,'Focus the real radar through visible water, not a hidden getter');run('shell','input','tap',...waterPoint.map(String));state();run('shell','input','keyevent','122');state();waitNode('radarInfoText',n=>value(n).includes('visual-config-0001'));
+ click('radarZoom');click('radarZoomOut');waitNode('syncStatus',n=>/Synced:/i.test(value(n)));
+ const snapshot=name=>{const scene=rect(target('resourceRadar')),selected=value(find('radarInfoText')),matches=value(find('resourceMatchCount')),percent=zoom();assert.ok(selected.includes('visual-config-0001'),'A real selected resource must remain publicly visible');capture(name);const pixels=image(name).crop(scene);return {bounds:scene,selected,matches,zoomPercent:percent,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
+ const before=snapshot('map-filter-before'),requestBefore=counter('before');
+ click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(zoom(),before.zoomPercent,'Opening filters must retain visible zoom');assert.equal(value(find('resourceMatchCount')),before.matches,'Opening filters must retain matches');
+ click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='false');const after=snapshot('map-filter-closed'),requestClosed=counter('closed');
+ assert.deepEqual(after.bounds,before.bounds);assert.equal(after.zoomPercent,before.zoomPercent);assert.equal(after.matches,before.matches);assert.equal(after.selected,before.selected);assert.equal(after.sha256,before.sha256,'Frozen public radar pixels must roundtrip exactly');assert.equal(requestOpen.count,requestBefore.count,'Opening filters must issue zero admin API requests');assert.equal(requestClosed.count,requestBefore.count,'Closing filters must issue zero admin API requests');
+ click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)==='visual-config-0001');capture('roundtrip-query-after');click('workspaceSearchButton');const requestAfterQuery=counter('after-query-verification');assert.equal(requestAfterQuery.count,requestBefore.count);
+ const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt 6.11.2 JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:'visual-config-0001',motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Public pixels/zoom/filter/selection roundtrip, not inaccessible exact Qt camera getters; disabled Back/Forward are not activated'};
+ fs.writeFileSync(path.join(out,'touch-roundtrip.json'),JSON.stringify(report,null,2)+'\n');
+ click('resourcesWorkspaceButton');search('');
+}
 search('visual-config-0001');
 waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-config-0001'));
 click('cell_0_0');

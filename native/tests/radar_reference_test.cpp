@@ -268,11 +268,21 @@ bool sourceLifecycle(const QString& scenario) {
     auto source=std::make_unique<podlord::ResourceFilter>(); source->setSourceModel(&first);
     podlord::RadarIsland radar; radar.setWidth(2000); radar.setHeight(2000); radar.setSource(source.get());
     if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==1; },3000)) return false;
+    const auto names=roles(radar.tiles());
+    const auto detached=[&] {
+        if (radar.tiles()->rowCount()==0) return true;
+        const auto old=radar.tiles()->index(0,0);
+        return old.data(names["resourcePath"]).toString().isEmpty()
+            && old.data(names["resourceKind"]).toString().isEmpty()
+            && old.data(names["resourceIndex"]).toInt()==-1;
+    };
     if (scenario=="source_destroy") {
         source.reset();
+        if (!detached()) return setupFailure("destroyed source still exposes a resource before queued synchronization");
         if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount()==0 && radar.currentIndex()==-1; },3000)) return false;
     } else {
         source->setSourceModel(&second);
+        if (!detached()) return setupFailure("rebound source exposes another model's resource before queued synchronization");
         if (!QTest::qWaitFor([&] { return coordinates(radar.tiles()).contains("/api/v1/namespaces/default/pods/second"); },3000)) return false;
     }
     QSignalSpy detachedUpdates(&radar,&podlord::RadarIsland::currentResourceChanged);

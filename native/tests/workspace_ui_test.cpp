@@ -2297,19 +2297,23 @@ bool execute(const QString& requestedScenario) {
         const auto calls = server.requests.size();
         if (!workspace.filter("alpha")) return false;
         QSignalSpy changes(&workspace, &podlord::Workspace::changed);
+        QSignalSpy readiness(&workspace, &podlord::Workspace::sessionWindowActionsReadyChanged);
         int completionChanges = -1;
+        int completionReadiness = -1;
         bool reloaded = false;
         if (!waitFor([&] {
             if (reloaded) return true;
             const int beforeReload = changes.size();
+            const int beforeReadiness = readiness.size();
             if (!workspace.reloadSavedViews()) return false;
             reloaded = true;
             completionChanges = beforeReload;
+            completionReadiness = beforeReadiness;
             return true;
         }) || !waitFor([&] { return !workspace.busy(); })) return false;
         if (completionChanges != 0)
             std::fprintf(stderr, "Successful view save invalidated unchanged UI %d times.\n", completionChanges);
-        return completionChanges == 0 && workspace.filterText() == "alpha"
+        return completionChanges == 0 && completionReadiness > 0 && workspace.filterText() == "alpha"
             && !workspace.viewStateFailed() && server.requests.size() == calls;
     }
     if (scenario.startsWith("view_restore_")) {
