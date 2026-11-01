@@ -7154,8 +7154,8 @@ diagnostic adds no release gate and is not a foreground frame-CPU measurement.
 | Development throughput | On the same Mac, the main suite takes 1,271.00 seconds with eight jobs versus the preceding 2,370.06 seconds with four jobs. This is about 46% shorter for these two runs, not a guarantee for other hosts. The complete new script takes 1,300.57 seconds including build and reports. Existing exclusive resource locks remain active. |
 | Complete coverage | 97.71% lines and 85.95% branches. Existing authority, provider, Apple trust, display-prefix and Radar/Map gates pass. The Radar/Map function family is 927/1018 branches, 91.06%. |
 | Focused model evidence | 346 Inspector, Logs and multiwindow executions pass. All 30 branch outcomes in the new model are covered. A later complete run includes the final mobile-safe lifecycle test. |
-| Isolated UI-binding comparison | Qt 6.11.2, Fusion, software rendering, identical HTTP fixture and C++ metadata owner. Only the old QVariant-list binding versus the stable model binding changes. For 30 retained updates, old-binding process CPU totals are 953.051 and 921.926 ms. Stable-model totals are 535.717 and 577.619 ms, about 41% lower on average. Per-run p95 values are 36.380/36.017 versus 22.673/23.412 ms. Selection is lost with the old binding and retained with the new one. These are not whole-application or frame-CPU improvement claims. |
-| Native memory diagnostic | One nonactivating Metal comparison reports peak RSS of 300,908,544 before and 271,319,040 bytes after, with warm growth of 4,079,616 and 2,277,376 bytes. Both fit the unchanged 310-MB/5-MB bounds. It is a background diagnostic, not final foreground clearance. |
+| Earlier UI-binding diagnostic | Qt 6.11.2, Fusion, software rendering, the same resource template and C++ metadata owner. For 30 retained updates, old-binding process CPU totals are 953.051 and 921.926 ms. Stable-model totals are 535.717 and 577.619 ms. Per-run p95 values are 36.380/36.017 versus 22.673/23.412 ms. Selection is lost with the old binding and retained with the new one. However, input origins and context IDs were not frozen between these runs. The roughly 41% difference is therefore not a controlled improvement claim or adoption clearance. |
+| Earlier native memory diagnostic | One nonactivating Metal comparison reports peak RSS of 300,908,544 before and 271,319,040 bytes after, with warm growth of 4,079,616 and 2,277,376 bytes. Input identity was not frozen. These numbers do not prove a memory improvement or foreground clearance. |
 | Real Kubernetes | The current native E2E route passes: shell/vi/control/interrupt/touch, terminal and isolated-forward window transfer, Pod/Service/context/draft forwarding, deletion and UID race, Inspector history, cache search, metrics, health and cached field filters. Owned fixture `podlord-visual-run-xgpalz` is removed. |
 | Platform evidence | Android ARM64 application and native ARM64 iOS Simulator application/UI-driver builds pass. All three new Inspector scenarios also pass on a headless iPhone 17 / iOS 26.4 / Fusion simulator. Success is checked from each application's result marker, not merely the `simctl` exit code. Both task-created simulators are shut down and deleted. The retained iPhone screenshot shows the selected Name during live updates. This is simulated runtime evidence, not a physical-device or Android runtime claim. |
 | macOS direct package | Release, tests/coverage disabled, standalone dependency and ad-hoc signature checks pass. ZIP: 33,775,666 bytes. Installed regular-file sum: 87,467,900 bytes. Unchanged direct-download bounds are 50/100 MB. No distribution signing, notarization, Store upload or complete runtime clearance is asserted. |
@@ -7178,13 +7178,95 @@ record exists and its header is covered. No coverage suppression was added.
 The notification-granularity and column-projection experiments did not show a
 reliable CPU gain and are not shipped.
 
-Release clearance remains open. The new model's background Metal runs do not
-meet the 8-ms frame-CPU gate, and the new idle observation is 2.015% against 2%.
-The final foreground attempt has an exposed but inactive window and is invalid.
-It does not replace a successful CPU/memory foreground proof. Signing and
-Google-account work remain deferred as previously agreed. No broader UI or
-functional parity claim follows from this Inspector packet.
+Release clearance remains open. A subsequent valid foreground run of
+`c4b651d` retains focus throughout. Filter/sort/tab/Inspector frame CPU p95 is
+11.45/14.49/18.43/11.81 ms against 8 ms; scroll passes at 3.63 ms. Their
+interaction p95 values are 22.46/21.05/24.84/21.68 ms and pass the unchanged
+100/50-ms latency limits. Peak RSS is 312,164,352 bytes against 310,000,000;
+warm growth passes at 4,358,144 bytes. Settled nonsync idle is 2.004% against
+2%, with 60,002 ms retained and five refresh admissions excluded. The earlier
+inactive-window attempt remains invalid. The model is therefore not cleared
+for release or final adoption under its agreed memory condition. No gate is
+lowered. Signing and Google-account work remain deferred as previously agreed.
+No broader UI or functional parity claim follows from this Inspector packet.
 
 Evidence is retained outside Git under
 `2026-10-31-app-store/typed-workspace-20261101/inspector-model-*` and
 `metadata-updates-*`, alongside the rejected experiments and prior failures.
+
+### Reproducible Performance Input, 2026-11-01
+
+The performance fixture previously generated a fresh temporary origin and
+three ephemeral API ports for every run. Both affect the imported source and
+context IDs, which seed the deterministic radar topology. Identical resource
+counts therefore did not establish identical islands. This is a confirmed
+comparison defect, not proof that it caused the observed RSS variation.
+
+`measure-native-performance.sh` now retains the synthetic kubeconfig and a
+small replay manifest. `PODLORD_PERFORMANCE_REPLAY_FIXTURE` reuses its exact
+origin, endpoints, config digest and expected context IDs. The real Workspace
+imports through `importText` with that origin, then reports its actual IDs.
+The shell rejects missing or mismatched identity evidence. Occupied recorded
+ports fail explicitly rather than silently selecting another island. The
+fixture implementation hash must also match. Dates are regenerated relative
+to each run, so this is identity/topology replay, not byte-for-byte clock replay.
+No production identity override, cache or network behavior is introduced.
+
+Four public fixture-CLI regressions pass: same-input replay with reset large-log
+state, occupied-port rejection without disturbing the original fixture,
+malformed metadata and a changed implementation fingerprint. An actual UI
+driver run also rejects wrong expected context IDs without overwriting them.
+The script runs these fixture checks before every measurement and cleans its
+owned processes and temporary data on exit.
+
+Two paired background Metal trials use the same recorded identity. Retaining
+the tabs list only within `indexForCurrentSession` yields tab frame-CPU p95
+19.11/19.35 ms versus reference 19.11/18.13 ms. There is no consistent gain,
+so that production experiment is not retained. The Inspector-title scalar
+trial likewise has mixed CPU/RSS outcomes and is not retained. No background
+run clears a foreground gate.
+
+The original failing foreground run's deleted random inputs cannot be
+reconstructed from its old artifacts. Its 312-MB RSS and frame/idle failures
+remain open. A new captured input does not supersede that failure merely by
+producing a more favorable topology. A sampled fixed-input Metal diagnosis
+and an instrumented offscreen QML trace are retained for hotspot analysis
+only. Sampling/tracing perturb execution and are excluded from release proof.
+
+Evidence is under `2026-10-31-app-store/typed-workspace-20261101/fixture-*`,
+`fixed-input-cpu-*`, and `qml-replay-*`. The fixture captures contain synthetic
+localhost endpoints and the test-only bearer value, not user credentials.
+
+The final shell identity check is exercised with the actual UI driver in both
+directions: a valid replay preserves the captured identity, while a replay
+with wrong expected context IDs fails and leaves those expectations unchanged.
+The valid diagnostic still fails its frame-CPU gates, as expected. Successful
+replay validation does not mean successful application performance.
+
+### Log-Cell Rendering Experiments, 2026-11-01
+
+A bounded offscreen UI capture exercises normal, hover, selected, pressed and
+keyboard-focus states in Basic and Fusion. Replacing the nested `Label` with
+`Text`, with explicit inherited font and palette, produces ten byte-identical
+PNGs. A second trial also disables unused implicit-width measurement. Its ten
+PNGs are likewise byte-identical. Both trials retain the standard outer
+`ItemDelegate` rather than cloning its platform-specific input and styles.
+
+Both trials are rejected. With identical replayed context IDs, the first
+trial's tab frame-CPU p95 is 18.92/20.00 ms, versus reference 18.98/18.73 ms.
+Its second warm-growth result fails at 7,454,720 bytes. The explicit-width
+trial reports 20.51/18.94 ms for tabs and 305,332,224/305,479,680-byte peak RSS.
+It does not establish an overall CPU or memory improvement. These are
+nonactivating Metal diagnostics, not foreground or adoption clearance.
+
+Production QML is restored. The capture-only test and its CMake registrations
+are also removed instead of growing the permanent suite for a rejected
+implementation. The trial patch, ten-state image pairs and raw runs remain
+outside Git as `rejected-log-cell-trials.patch`, `log-line-*` and `log-width-*`
+under the evidence directory above. No release gate or product behavior changes.
+After restoration, all 54 registered log-UI executions pass in 25.91 seconds.
+The four fixture-CLI regressions and shell syntax check pass again. The restored
+benchmark executable uses the original production QML with the verified new
+replay driver. The earlier full native, Kubernetes and simulator results remain
+the evidence for the unchanged production implementation, not a claim that
+those complete suites were repeated for these test-harness-only changes.

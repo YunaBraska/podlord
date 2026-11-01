@@ -12,6 +12,10 @@
 #include <QProcess>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QFile>
+#include <QDir>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QTest>
 #include <QThread>
@@ -212,12 +216,35 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         }
         return FrameTiming{*rendered, actionMs, 0};
     };
-    if (!workspace.importFile(config) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 3; })) return false;
+    QFile configFile(config), fixtureFile(config + ".fixture.json");
+    if (!configFile.open(QIODevice::ReadOnly) || !fixtureFile.open(QIODevice::ReadOnly)
+        || configFile.size() > 65536 || fixtureFile.size() > 65536) {
+        report({{"type","failure"},{"reason","Performance fixture inputs are missing or too large."}}); return false;
+    }
+    const auto bytes = configFile.readAll();
+    const auto fixture = QJsonDocument::fromJson(fixtureFile.readAll());
+    const auto metadata = fixture.object();
+    const auto origin = metadata.value("origin").toString();
+    if (!fixture.isObject() || metadata.value("format").toInt() != 1 || !QDir::isAbsolutePath(origin)
+        || metadata.value("clockMode") != "fresh-relative-time"
+        || metadata.value("configSha256").toString().toLatin1() != QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex()) {
+        report({{"type","failure"},{"reason","Performance fixture metadata does not match its input."}}); return false;
+    }
+    if (!workspace.importText(origin,QString::fromUtf8(bytes)) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 3; })) return false;
+    const auto contexts = workspace.contexts();
+    QStringList contextIds;
+    for (const auto& context : contexts) contextIds.append(context.toMap().value("id").toString());
+    const auto expected = metadata.value("expectedContextIds").toArray();
+    if (!report({{"type","fixtureIdentity"},{"origin",origin},{"configSha256",metadata.value("configSha256")},
+        {"contextIds",QJsonArray::fromStringList(contextIds)},{"clockMode",metadata.value("clockMode")},{"startedAt",metadata.value("startedAt")}})) return false;
+    if (!expected.isEmpty() && expected != QJsonArray::fromStringList(contextIds)) {
+        report({{"type","failure"},{"reason","Replayed context identities changed."}}); return false;
+    }
     QStringList sessions, clusters;
     QList<int> counts;
     int total = 0;
     const auto path = QStringLiteral("/api/v1/namespaces/benchmark/pods/load-0");
-    for (const auto& entry : workspace.contexts()) {
+    for (const auto& entry : contexts) {
         if (!workspace.openContext(entry.toMap()["id"].toString()) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() >= 1666; })) return false;
         sessions.append(workspace.currentSession());
         clusters.append(entry.toMap()["cluster"].toString());

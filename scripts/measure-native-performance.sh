@@ -55,7 +55,8 @@ trap 'exit 143' TERM
 if [ "$MODE" = --background-metal-diagnostic ]; then
     printf '%s\n' 'Background Metal diagnostic only. Not release evidence. Audio muted in a disposable profile.' > "$OUT/diagnostic-only.txt"
 fi
-"$NODE" "$ROOT/native/tests/performance_api.mjs" "$RUN" > "$OUT/api.log" 2>&1 &
+"$NODE" --test "$ROOT/native/tests/performance_fixture_test.mjs" > "$OUT/fixture-checks.log" 2>&1
+"$NODE" "$ROOT/native/tests/performance_api.mjs" "$RUN" "${PODLORD_PERFORMANCE_REPLAY_FIXTURE:-}" > "$OUT/api.log" 2>&1 &
 SERVER=$!
 attempt=0
 while [ ! -f "$RUN/ready" ]; do
@@ -64,6 +65,8 @@ while [ ! -f "$RUN/ready" ]; do
     [ "$attempt" -lt 100 ] || { printf '%s\n' 'Local API did not become ready.' >&2; exit 1; }
     sleep 0.1
 done
+cp "$RUN/kubeconfig" "$OUT/fixture-kubeconfig.yaml"
+cp "$RUN/kubeconfig.fixture.json" "$OUT/fixture.json"
 export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-cocoa} QT_QUICK_CONTROLS_STYLE=Fusion
 export PODLORD_DISABLE_AUDIO=1 PODLORD_DISABLE_UPDATE_CHECK=1
 if [ "$QT_QPA_PLATFORM" = offscreen ]; then
@@ -101,6 +104,22 @@ STATUS=0
 wait "$LAUNCHER" || STATUS=$?
 APP=
 LAUNCHER=
+"$NODE" -e '
+    const fs = require("node:fs");
+    const fixture = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const records = fs.readFileSync(process.argv[2], "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
+    const identities = records.filter(r => r.type === "fixtureIdentity");
+    const identity = identities[0];
+    if (identities.length !== 1 || identity.origin !== fixture.origin || identity.configSha256 !== fixture.configSha256
+        || identity.clockMode !== fixture.clockMode || identity.startedAt !== fixture.startedAt
+        || !Array.isArray(identity.contextIds) || identity.contextIds.length !== 3 || new Set(identity.contextIds).size !== 3
+        || !identity.contextIds.every(id => typeof id === "string" && id.length > 0)
+        || (fixture.expectedContextIds.length !== 0 && JSON.stringify(identity.contextIds) !== JSON.stringify(fixture.expectedContextIds))) {
+        console.error("Performance fixture identity is missing or changed."); process.exit(1);
+    }
+    if (fixture.expectedContextIds.length === 0) fixture.expectedContextIds = identity.contextIds;
+    fs.writeFileSync(process.argv[1], JSON.stringify(fixture, null, 2) + "\n");
+' "$OUT/fixture.json" "$OUT/measurements.jsonl" || STATUS=1
 # LaunchServices can return success even when the application reports failure.
 if [ "$STATUS" -eq 0 ]; then
     "$NODE" -e '
