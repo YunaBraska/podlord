@@ -49,10 +49,11 @@ bool Workspace::resetResourceFilters() {
 }
 bool Workspace::filterInspectorField(const QString& field) {
     if (inspectorScope_.isEmpty()) return false;
-    const auto row = std::find_if(overviewFields_.cbegin(),overviewFields_.cend(),[&](const QVariant& candidate) {
+    const auto& fields = overviewFields_.fields();
+    const auto row = std::find_if(fields.cbegin(),fields.cend(),[&](const QVariant& candidate) {
         const auto value = candidate.toMap(); return value.value("id") == field && value.value("filterable").toBool();
     });
-    if (row == overviewFields_.cend()) return false;
+    if (row == fields.cend()) return false;
     const auto expression = ResourceFilter::selectValue({},row->toMap().value("value").toString(),true);
     if (const auto* accepted = std::get_if<QString>(&expression)) return filterField(field,*accepted);
     return false;

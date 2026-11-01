@@ -189,7 +189,7 @@ Pane {
         visible: workspace.inspectorPage === "overview"
         clip: true
         reuseItems: true
-        model: visible ? workspace.overviewFields : []
+        model: visible ? workspace.overviewFieldModel : null
         Accessible.name: "Resource metadata overview"
         Accessible.description: workspace.inspected
         ScrollBar.vertical: ScrollBar {}

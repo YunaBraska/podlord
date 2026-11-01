@@ -139,7 +139,7 @@ bool Workspace::finishWindowClose() {
     rows_.publish({}); eventRows_.publish({}); portRows_.publish({});
     inspectorEventRows_.publish({}); inspectorLinkRows_.publish({}); valueRows_.publish({}); logs_.publish({});
     sourceRows_.publish({}); diagnosticRows_.publish({}); requestAuditRows_.publish({});
-    inspectorDocument_ = {}; inspectorSummary_ = {}; overviewFields_.clear(); inspectorEvents_.clear(); inspectorLinks_.clear();
+    inspectorDocument_ = {}; inspectorSummary_ = {}; overviewFields_.publish({}); inspectorEvents_.clear(); inspectorLinks_.clear();
     overview_.clear(); yaml_.clear(); inspectorScope_.clear(); logScope_.clear();
     emit windowClosed(); return true;
 }

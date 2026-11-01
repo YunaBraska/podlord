@@ -7122,3 +7122,69 @@ outside Git. `audio-clock-diagnosis` retains the sink investigation. Original
 failures remain retained. Routine tests stay silent,
 test-owned apps and local stacks are closed, and no release or Store upload is
 performed. Google-account work remains paused.
+
+### Stable Inspector Metadata And Coherent Validation, 2026-11-01
+
+Inspector metadata now has one authoritative `InspectorFields` Qt list model
+per Workspace. Field IDs retain row identity. Changed maps update only their
+row, inserted/moved/removed fields use Qt's incremental notifications, and
+closing the Inspector or window clears the same model. The existing metadata
+getter and field-filter action read that storage. There is no second Kubernetes
+cache, persistence, dependency, or production timer. Layout and controls are
+unchanged. Hidden Overview views still detach their presentation model.
+
+Three distinct public UI scenarios run in Basic and Fusion:
+`table_overview_stable_refresh` preserves the selected Name and readiness row
+through a real HTTP collection refresh, `table_overview_stable_lifecycle` checks
+empty/reopen and Pod/Widget/Pod shape changes, and
+`table_overview_live_updates` preserves selection across repeated HTTP detail
+updates. Qt's model-contract checker also exercises insertion, movement,
+removal, foreign indexes and retired indexes. The lifecycle test navigates a
+real cached identity through `inspectPath`, so it does not depend on a table
+input hidden by the approved small-screen Inspector takeover.
+
+The normal repeated-update test performs three updates. Setting
+`PODLORD_INSPECTOR_PROFILE=1` performs five warmups and 30 retained updates,
+including two rendered drain frames per update. This optional process-CPU
+diagnostic adds no release gate and is not a foreground frame-CPU measurement.
+
+| Evidence | Current result and boundary |
+| --- | --- |
+| Complete native suite | Six preflights and 5,252 main executions pass, 5,258 total. These include style variants and protocol cases, not 5,258 distinct features. No existing test or limit was removed. |
+| Development throughput | On the same Mac, the main suite takes 1,271.00 seconds with eight jobs versus the preceding 2,370.06 seconds with four jobs. This is about 46% shorter for these two runs, not a guarantee for other hosts. The complete new script takes 1,300.57 seconds including build and reports. Existing exclusive resource locks remain active. |
+| Complete coverage | 97.71% lines and 85.95% branches. Existing authority, provider, Apple trust, display-prefix and Radar/Map gates pass. The Radar/Map function family is 927/1018 branches, 91.06%. |
+| Focused model evidence | 346 Inspector, Logs and multiwindow executions pass. All 30 branch outcomes in the new model are covered. A later complete run includes the final mobile-safe lifecycle test. |
+| Isolated UI-binding comparison | Qt 6.11.2, Fusion, software rendering, identical HTTP fixture and C++ metadata owner. Only the old QVariant-list binding versus the stable model binding changes. For 30 retained updates, old-binding process CPU totals are 953.051 and 921.926 ms. Stable-model totals are 535.717 and 577.619 ms, about 41% lower on average. Per-run p95 values are 36.380/36.017 versus 22.673/23.412 ms. Selection is lost with the old binding and retained with the new one. These are not whole-application or frame-CPU improvement claims. |
+| Native memory diagnostic | One nonactivating Metal comparison reports peak RSS of 300,908,544 before and 271,319,040 bytes after, with warm growth of 4,079,616 and 2,277,376 bytes. Both fit the unchanged 310-MB/5-MB bounds. It is a background diagnostic, not final foreground clearance. |
+| Real Kubernetes | The current native E2E route passes: shell/vi/control/interrupt/touch, terminal and isolated-forward window transfer, Pod/Service/context/draft forwarding, deletion and UID race, Inspector history, cache search, metrics, health and cached field filters. Owned fixture `podlord-visual-run-xgpalz` is removed. |
+| Platform evidence | Android ARM64 application and native ARM64 iOS Simulator application/UI-driver builds pass. All three new Inspector scenarios also pass on a headless iPhone 17 / iOS 26.4 / Fusion simulator. Success is checked from each application's result marker, not merely the `simctl` exit code. Both task-created simulators are shut down and deleted. The retained iPhone screenshot shows the selected Name during live updates. This is simulated runtime evidence, not a physical-device or Android runtime claim. |
+| macOS direct package | Release, tests/coverage disabled, standalone dependency and ad-hoc signature checks pass. ZIP: 33,775,666 bytes. Installed regular-file sum: 87,467,900 bytes. Unchanged direct-download bounds are 50/100 MB. No distribution signing, notarization, Store upload or complete runtime clearance is asserted. |
+
+The idle CPU probe now excludes admitted refresh work as well as visible loading.
+It first drains this fixture's 400-ms-spaced requests and replies bounded at
+750 ms, then accumulates 60 seconds of settled nonsync time. A new admission
+pauses accumulation until settling completes. Recorded `idleWindow` intervals
+allow independent comparison with API ingress. An explicitly diagnostic-only
+forced refresh excludes eight requests, retains 60,003 ms and measures 1.773%
+of one core. No API ingress falls within the retained intervals. The 2% limit,
+60-second sample, 120-second watchdog and frame gates remain unchanged. Only
+the literal diagnostic value `1` enables injection, and injection is rejected
+outside background diagnostic mode.
+
+The earlier coherent baseline suite also passes all 5,252 executions before
+the six new style executions. Its LLVM mismatch diagnostics were traced to
+unused zero-hash copies of `TrustCancellation::isCanceled`; the real call
+record exists and its header is covered. No coverage suppression was added.
+The notification-granularity and column-projection experiments did not show a
+reliable CPU gain and are not shipped.
+
+Release clearance remains open. The new model's background Metal runs do not
+meet the 8-ms frame-CPU gate, and the new idle observation is 2.015% against 2%.
+The final foreground attempt has an exposed but inactive window and is invalid.
+It does not replace a successful CPU/memory foreground proof. Signing and
+Google-account work remain deferred as previously agreed. No broader UI or
+functional parity claim follows from this Inspector packet.
+
+Evidence is retained outside Git under
+`2026-10-31-app-store/typed-workspace-20261101/inspector-model-*` and
+`metadata-updates-*`, alongside the rejected experiments and prior failures.

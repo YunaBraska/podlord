@@ -45,7 +45,9 @@
 #include <QTest>
 #include <QWheelEvent>
 #include <QItemSelectionModel>
+#include <QAbstractItemModelTester>
 #include <cstdio>
+#include <ctime>
 #include <functional>
 #include <algorithm>
 
@@ -361,7 +363,7 @@ public:
                                 value["metadata"] = metadata;
                                 QJsonArray containers, states;
                                 const int desired = index == 0 ? 10 : index == 1 ? 2 : 1;
-                                const int ready = index == 0 && (scenario == "table_overview_full" || (scenario == "table_overview_refresh" && refresh > 1)) ? 10
+                                const int ready = index == 0 && (scenario == "table_overview_full" || ((scenario == "table_overview_refresh" || scenario == "table_overview_stable_refresh") && refresh > 1)) ? 10
                                     : index == 0 && scenario == "table_overview_none" ? 0 : index == 0 ? 2 : 1;
                                 for (int container = 0; container < desired; ++container) {
                                     const auto containerName = "worker" + QString::number(container);
@@ -419,6 +421,11 @@ public:
                             if (kind == "Event") resource[version == "v1" ? "involvedObject" : "regarding"]=QJsonObject{{"kind","Pod"},{"name","alpha"},{"uid","event-target"}};
                             document=path.contains("/namespaces/") ? resource : QJsonObject{{"metadata",QJsonObject{}},{"items",QJsonArray{resource}}};
                         }
+                    }
+                    if (scenario == "table_overview_live_updates" && path.startsWith("/api/v1/namespaces/default/pods/")) {
+                        auto metadata = document["metadata"].toObject();
+                        metadata["resourceVersion"] = QString::number(requests.size());
+                        document["metadata"] = metadata;
                     }
                     if (raw.isEmpty()) raw = QJsonDocument(document).toJson(QJsonDocument::Compact);
                     const auto response = "HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Type: application/json\r\nConnection: close\r\nRetry-After: 1\r\nLocation: http://127.0.0.1:9/credential-leak\r\nContent-Length: " + QByteArray::number(raw.size()) + "\r\n\r\n" + raw;
@@ -2645,6 +2652,75 @@ bool execute(const QString& requestedScenario) {
             if (scenario=="table_overview_copy") {
                 item(window,"overview_ready")->forceActiveFocus(); QTest::keySequence(window,QKeySequence::SelectAll); QTest::keySequence(window,QKeySequence::Copy);
                 return QGuiApplication::clipboard()->text()==expected && server.requests.size()==calls;
+            }
+            if (scenario=="table_overview_stable_refresh") {
+                QPointer<QQuickItem> name = item(window,"overview_name");
+                QPointer<QQuickItem> readiness = bar;
+                if (!name || !QMetaObject::invokeMethod(name,"select",Q_ARG(int,0),Q_ARG(int,5))
+                    || name->property("selectedText") != "alpha") return false;
+                const auto scope = workspace.inspectorScope();
+                if (!click(window,item(window,"refreshButton"))
+                    || !waitFor([&] { return !workspace.loading() && text(window,"overview_ready")=="10/10"; })) return false;
+                const bool retained = name && readiness && name == item(window,"overview_name")
+                    && readiness == item(window,"overviewReadinessBar") && name->property("selectedText") == "alpha"
+                    && workspace.inspectorScope() == scope && qAbs(readiness->property("value").toDouble()-1)<0.001;
+                if (!retained) std::fprintf(stderr,"Metadata refresh discarded unchanged text selection or readiness row.\n");
+                return retained;
+            }
+            if (scenario=="table_overview_stable_lifecycle") {
+                auto* fields = overview->property("model").value<QAbstractItemModel*>();
+                if (!fields || fields->rowCount() == 0 || fields->rowCount(fields->index(0,0)) != 0
+                    || fields->data({}).isValid() || fields->data(fields->index(0,0),-1).isValid()
+                    || fields->data(model->index(0,0),Qt::UserRole).isValid()) return false;
+                QAbstractItemModelTester contract(fields,QAbstractItemModelTester::FailureReportingMode::Fatal);
+                const auto path = workspace.inspectorPath();
+                const auto retired = fields->index(fields->rowCount()-1,0);
+                if (!click(window,item(window,"closeInspector")) || fields->rowCount() != 0 || fields->data(retired,Qt::UserRole).isValid()) return false;
+                if (!workspace.inspectPath(path) || !waitFor([&] { return text(window,"overview_name")=="alpha"; })) return false;
+                QString customPath;
+                for (int row = 0; row < model->rowCount(); ++row)
+                    if (model->data(model->index(row,column("name"))) == "custom-widget") customPath = model->data(model->index(row,0),Qt::UserRole).toString();
+                if (overview->property("model").value<QAbstractItemModel*>() != fields || fields->rowCount() == 0
+                    || customPath.isEmpty() || !workspace.inspectPath(customPath) || !waitFor([&] { return workspace.canEditYaml(); })) return false;
+                if (!waitFor([&] {
+                    if (text(window,"overview_kind") != "Widget" || overview->property("count").toInt() != fields->rowCount()) return false;
+                    for (int row = 0; row < fields->rowCount(); ++row)
+                        if (fields->data(fields->index(row,0),Qt::UserRole).toMap().value("id") == "ready") return false;
+                    return true;
+                })) {
+                    std::fprintf(stderr,"Custom resource retained Pod metadata: name=%s kind=%s ready=%s\n",qPrintable(workspace.inspectorName()),qPrintable(text(window,"overview_kind")),qPrintable(text(window,"overview_ready")));
+                    return false;
+                }
+                return workspace.inspectPath(path) && waitFor([&] { return text(window,"overview_name")=="alpha"
+                    && text(window,"overview_ready")=="2/10" && item(window,"overviewReadinessBar"); })
+                    && overview->property("model").value<QAbstractItemModel*>() == fields;
+            }
+            if (scenario=="table_overview_live_updates") {
+                const bool profiling = qgetenv("PODLORD_INSPECTOR_PROFILE") == "1";
+                QPointer<QQuickItem> name = item(window,"overview_name");
+                if (!name || !QMetaObject::invokeMethod(name,"select",Q_ARG(int,0),Q_ARG(int,5))) return false;
+                QList<double> cpu;
+                bool retained = true;
+                for (int update = 0; update < (profiling ? 35 : 3); ++update) {
+                    QSignalSpy presentation(&workspace,&podlord::Workspace::inspectorPresentationChanged);
+                    const auto started = profiling ? std::clock() : 0;
+                    if (!workspace.refreshInspector() || !waitFor([&] { return !presentation.isEmpty() && workspace.canEditYaml() && !workspace.loading(); })) return false;
+                    for (int drain = 0; drain < 2; ++drain) {
+                        QSignalSpy rendered(window,&QQuickWindow::frameSwapped); window->update();
+                        if (rendered.isEmpty() && !rendered.wait(2000)) return false;
+                    }
+                    if (profiling && update >= 5) cpu.append(1000.0 * (std::clock()-started)/CLOCKS_PER_SEC);
+                    retained = retained && name && name == item(window,"overview_name") && name->property("selectedText") == "alpha";
+                }
+                if (profiling) {
+                    std::sort(cpu.begin(),cpu.end());
+                    double total = 0;
+                    for (const auto sample : cpu) total += sample;
+                    std::fprintf(stdout,"%s\n",QJsonDocument(QJsonObject{{"type","metadata-update-cpu"},{"diagnosticOnly",true},
+                        {"samples",cpu.size()},{"totalCpuMs",total},{"p95CpuMs",cpu[28]},{"retainedSelection",retained},
+                        {"scope","Process CPU for explicit HTTP detail refresh and two rendered drain frames, five warmups; not release frame clearance"}}).toJson(QJsonDocument::Compact).constData());
+                }
+                return retained && text(window,"overview_ready")=="2/10";
             }
             if (scenario=="table_overview_refresh") {
                 const auto scope=workspace.inspectorScope();

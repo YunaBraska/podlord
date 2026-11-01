@@ -14,6 +14,7 @@
 #include <QFutureWatcher>
 #include <QPromise>
 #include "alerts.h"
+#include <QAbstractListModel>
 #include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
 #include <QVariantList>
@@ -24,6 +25,17 @@
 namespace podlord {
 class WorkspaceRuntime;
 class WindowHost;
+/** The inspector's sole metadata projection, retaining unchanged field delegates. */
+class InspectorFields final : public QAbstractListModel {
+public:
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    QHash<int, QByteArray> roleNames() const override;
+    void publish(QVariantList fields);
+    const QVariantList& fields() const { return fields_; }
+private:
+    QVariantList fields_;
+};
 class ResourceTable final : public QAbstractTableModel {
     Q_OBJECT
     struct Row {
@@ -199,6 +211,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString sortDirection READ sortDirection NOTIFY changed)
     Q_PROPERTY(QString inspected READ inspected NOTIFY changed)
     Q_PROPERTY(QVariantList overviewFields READ overviewFields NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* overviewFieldModel READ overviewFieldModel CONSTANT)
     Q_PROPERTY(QVariantList inspectorEvents READ inspectorEvents NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QVariantList inspectorLinks READ inspectorLinks NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QAbstractItemModel* inspectorEventTable READ inspectorEventTable CONSTANT)
@@ -454,7 +467,8 @@ public:
     int sortColumnIndex() const;
     QString sortDirection() const;
     QString inspected() const;
-    QVariantList overviewFields() const { return overviewFields_; }
+    QVariantList overviewFields() const { return overviewFields_.fields(); }
+    QAbstractItemModel* overviewFieldModel() { return &overviewFields_; }
     QVariantList inspectorEvents() const { return inspectorEvents_; }
     QVariantList inspectorLinks() const { return inspectorLinks_; }
     QAbstractItemModel* inspectorEventTable() { return &inspectorEventsTable_; }
@@ -810,7 +824,8 @@ private:
     QString logScope_;
     QString inspectorScope_, overview_, yaml_;
     QJsonObject inspectorDocument_, inspectorSummary_;
-    QVariantList overviewFields_, inspectorEvents_, inspectorLinks_;
+    InspectorFields overviewFields_;
+    QVariantList inspectorEvents_, inspectorLinks_;
     QSortFilterProxyModel dashboardRows_;
     QString dashboardSummary_;
     QVariantList pulseMetrics_;

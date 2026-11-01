@@ -75,6 +75,46 @@ bool containsValue(const QJsonObject& document, const QString& id) {
         && document[field].toObject().contains(key);
 }
 } // namespace
+int InspectorFields::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(fields_.size()); }
+QVariant InspectorFields::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.model() != this || index.row() >= fields_.size() || role != Qt::UserRole) return {};
+    return fields_[index.row()];
+}
+QHash<int, QByteArray> InspectorFields::roleNames() const { return {{Qt::UserRole, "modelData"}}; }
+void InspectorFields::publish(QVariantList fields) {
+    if (fields_.isEmpty()) {
+        if (fields.isEmpty()) return;
+        beginInsertRows({},0,static_cast<int>(fields.size()-1));
+        fields_ = std::move(fields);
+        endInsertRows();
+        return;
+    }
+    for (int row = 0; row < fields.size(); ++row) {
+        const auto id = fields[row].toMap().value("id");
+        int retained = row;
+        while (retained < fields_.size() && fields_[retained].toMap().value("id") != id) ++retained;
+        if (retained == fields_.size()) {
+            beginInsertRows({},row,row);
+            fields_.insert(row,std::move(fields[row]));
+            endInsertRows();
+            continue;
+        }
+        if (retained != row) {
+            beginMoveRows({},retained,retained,{},row);
+            fields_.move(retained,row);
+            endMoveRows();
+        }
+        if (fields_[row] != fields[row]) {
+            fields_[row] = std::move(fields[row]);
+            emit dataChanged(index(row),index(row),{Qt::UserRole});
+        }
+    }
+    if (fields_.size() > fields.size()) {
+        beginRemoveRows({},static_cast<int>(fields.size()),static_cast<int>(fields_.size()-1));
+        fields_.erase(fields_.begin()+fields.size(),fields_.end());
+        endRemoveRows();
+    }
+}
 ResourceTable::ResourceTable(QObject* parent, QStringList fields, QStringList captions, QString identityField, bool preserveInputOrder)
     : QAbstractTableModel(parent), fields_(std::move(fields)), captions_(std::move(captions)), identityField_(std::move(identityField)), preserveInputOrder_(preserveInputOrder) {}
 int ResourceTable::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(rows_.size()); }
@@ -606,7 +646,7 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     if (yamlDraft_ && (yamlDraft_->session != active_ || yamlDraft_->path != path)) clearYamlDraft();
     if (scopeChanged || document.isEmpty()) revealedValues_.clear();
     inspectorScope_ = scope; inspectorSummary_ = summary;
-    overviewFields_.clear();
+    QVariantList fields;
     QStringList overview;
     const QStringList keys{"name", "kind", "namespace", "cluster", "status", "issue", "ready", "restarts", "owner", "node", "image", "createdAt", "uid", "resourceVersion", "fetchedAt"};
     const QStringList labels{"Name", "Kind", "Namespace", "Cluster", "Status", "Issue", "Ready", "Restarts", "Owner", "Node", "Image", "Created", "UID", "Version", "Detail retrieved"};
@@ -625,14 +665,15 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
                 {"tone", desired == 0 ? "unknown" : ready >= desired ? "success" : ready == 0 ? "danger" : "warning"},
                 {"description", QString("%1 ready: %2 of %3").arg(summary["apiVersion"] == "v1" && summary["kind"] == "Pod" ? "Containers" : "Replicas").arg(ready).arg(desired)}};
         }
-        overviewFields_.append(field);
+        fields.append(field);
         overview.append(keys[index] + ": " + value);
     }
     overview_ = overview.join('\n');
     for (const auto& value : resourceMetricPresentation(summary)) {
         const auto metric=value.toMap();
-        overviewFields_.append(QVariantMap{{"id", "metric_"+metric["id"].toString()}, {"label", metric["label"]}, {"value", metric["usage"]}, {"metric", metric}});
+        fields.append(QVariantMap{{"id", "metric_"+metric["id"].toString()}, {"label", metric["label"]}, {"value", metric["usage"]}, {"metric", metric}});
     }
+    overviewFields_.publish(std::move(fields));
     if (revealChanged || scopeChanged || documentChanged || document.isEmpty()) {
         inspectorDocument_ = document;
         if (documentChanged) yaml_ = resourceYaml(document);

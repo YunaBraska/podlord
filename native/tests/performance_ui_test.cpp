@@ -414,10 +414,22 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     accepted = memoryPassed && accepted;
     if (!workspace.filter("") || !workspace.pauseLogs(true)) return false;
     QEventLoop idle;
-    QTimer quiet, timeout, foregroundGuard;
-    quiet.setSingleShot(true); timeout.setSingleShot(true);
+    // Cached views can be ready while their explicit refresh is still queued.
+    // Drain the fixture's 400-ms-spaced reads and 750-ms detail replies first.
+    QElapsedTimer admissionQuiet, drainDeadline;
+    admissionQuiet.start(); drainDeadline.start();
+    const auto drain = QObject::connect(&workspace, &podlord::Workspace::requestStarted, &idle,
+        [&](const QString&, const QString&, qint64) { admissionQuiet.restart(); });
+    while ((workspace.loading() || workspace.busy() || admissionQuiet.elapsed() < 1000) && drainDeadline.elapsed() < 20000)
+        QTest::qWait(10);
+    QObject::disconnect(drain);
+    if (workspace.loading() || workspace.busy() || admissionQuiet.elapsed() < 1000) return false;
+    QTimer quiet, timeout, foregroundGuard, settling;
+    quiet.setSingleShot(true); timeout.setSingleShot(true); settling.setSingleShot(true);
     quiet.setTimerType(Qt::PreciseTimer);
+    settling.setTimerType(Qt::PreciseTimer);
     bool timedOut = false;
+    int idleRequests = 0;
     bool foregroundLost = desktop && !validDesktopState();
     QObject::connect(&foregroundGuard, &QTimer::timeout, &idle, [&] {
         if (validDesktopState()) return;
@@ -427,13 +439,20 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     QElapsedTimer period;
     double cpuSeconds = 0;
     qint64 idleMilliseconds = 0;
+    bool idleEvidenceValid = true;
     bool synchronizing = workspace.loading() || workspace.busy();
     auto cpu = std::clock(); period.start();
+    auto intervalStarted = QDateTime::currentDateTimeUtc();
+    const auto idleBegan = drainDeadline.elapsed();
     if (cpu == std::clock_t(-1)) return false;
     const auto accumulate = [&] {
         if (!synchronizing) {
-            cpuSeconds += double(std::clock() - cpu) / CLOCKS_PER_SEC;
-            idleMilliseconds += period.elapsed();
+            const auto used = double(std::clock() - cpu) / CLOCKS_PER_SEC;
+            const auto duration = period.elapsed();
+            cpuSeconds += used; idleMilliseconds += duration;
+            idleEvidenceValid = report({{"type", "idleWindow"}, {"startedAt", intervalStarted.toString(Qt::ISODateWithMs)},
+                {"endedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+                {"milliseconds", double(duration)}, {"cpuMilliseconds", used * 1000}}) && idleEvidenceValid;
         }
     };
     QObject::connect(&quiet, &QTimer::timeout, &idle, [&] {
@@ -441,21 +460,37 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         if (remaining > 0) quiet.start(static_cast<int>(remaining));
         else idle.quit();
     });
-    const auto sync = QObject::connect(&workspace, &podlord::Workspace::changed, &idle, [&] {
-        const bool next = workspace.loading() || workspace.busy();
+    const auto updateSync = [&] {
+        const bool next = workspace.loading() || workspace.busy() || admissionQuiet.elapsed() < 1000;
         if (next == synchronizing) return;
         accumulate();
-        if (next) quiet.stop();
-        else quiet.start(static_cast<int>(std::max<qint64>(1, 60000 - idleMilliseconds)));
+        if (next) { quiet.stop(); settling.start(1000); }
+        else { settling.stop(); quiet.start(static_cast<int>(std::max<qint64>(1, 60000 - idleMilliseconds))); }
         synchronizing = next; cpu = std::clock(); period.restart();
+        intervalStarted = QDateTime::currentDateTimeUtc();
+    };
+    const auto sync = QObject::connect(&workspace, &podlord::Workspace::changed, &idle, updateSync);
+    QObject::connect(&workspace, &podlord::Workspace::requestStarted, &idle,
+        [&](const QString&, const QString&, qint64) {
+            ++idleRequests; admissionQuiet.restart(); updateSync(); settling.start(1000);
+        });
+    QObject::connect(&settling, &QTimer::timeout, &idle, [&] {
+        updateSync();
+        if (synchronizing) settling.start(1000);
     });
     if (!synchronizing) quiet.start(60000);
     if (!report({{"type", "phase"}, {"name", "idle"}, {"logPaused", true}, {"requiredNonsyncMilliseconds", 60000}})) return false;
+    const bool forcedRefresh = qgetenv("PODLORD_PERFORMANCE_IDLE_REFRESH_DIAGNOSTIC") == "1";
+    if (forcedRefresh) QTimer::singleShot(1500, &idle, [&] {
+        if (!report({{"type", "diagnosticInput"}, {"action", "Workspace.refresh"}}) || !workspace.refresh()) idle.quit();
+    });
     timeout.start(120000); if (desktop) foregroundGuard.start(1000); idle.exec(); accumulate(); QObject::disconnect(sync);
     const double percent = idleMilliseconds > 0 ? cpuSeconds / (idleMilliseconds / 1000.0) * 100 : 100;
-    const bool idlePassed = !timedOut && !foregroundLost && idleMilliseconds >= 60000 && percent <= 2;
+    const bool idlePassed = idleEvidenceValid && !timedOut && !foregroundLost && idleMilliseconds >= 60000 && percent <= 2
+        && (!forcedRefresh || idleRequests > 0);
     if (!report({{"type", "idle"}, {"milliseconds", double(idleMilliseconds)}, {"cpuPercentOneCore", percent}, {"foregroundLost", foregroundLost},
-                 {"activationObserved", activationObserved}, {"passed", idlePassed}})) return false;
+                 {"activationObserved", activationObserved}, {"excludedRequests", idleRequests},
+                 {"wallMilliseconds", double(drainDeadline.elapsed() - idleBegan)}, {"passed", idlePassed}})) return false;
     accepted = idlePassed && accepted;
     probe->requested.store(0);
     QObject::disconnect(window, nullptr, &frameProbe, nullptr);
@@ -471,6 +506,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
 }
 int main(int argc, char** argv) {
     const bool backgroundMetal = argc == 3 && QByteArrayView(argv[2]) == "--background-metal-diagnostic";
+    if (qgetenv("PODLORD_PERFORMANCE_IDLE_REFRESH_DIAGNOSTIC") == "1" && !backgroundMetal) {
+        std::fputs("Forced idle refresh is diagnostic only, not release evidence.\n", stderr); return 2;
+    }
     // Qt's Cocoa launch delegate otherwise activates the process even after open -g.
     if (backgroundMetal && !qputenv("QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM", "1")) return 1;
     if (!podlord::configureGraphics()) { std::fputs("Cannot configure native graphics.\n", stderr); return 1; }
