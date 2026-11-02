@@ -130,8 +130,10 @@ if(!Number.isInteger(coldInspectorCycles)||coldInspectorCycles<0||coldInspectorC
 if(inspectorCycles&&coldInspectorCycles)throw Error('Choose warm or cold inspector diagnostics, not both');
 const inspectorOnly=process.env.PODLORD_ANDROID_INSPECTOR_ONLY||'0';
 if(!['0','1'].includes(inspectorOnly)||(inspectorOnly==='1'&&(inspectorCycles||coldInspectorCycles)))throw Error('Choose a single inspector diagnostic mode');
+const sourceOnly=process.env.PODLORD_ANDROID_SOURCE_ONLY||'0';
+if(!['0','1'].includes(sourceOnly)||(sourceOnly==='1'&&(inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single Sources diagnostic mode');
 const mapRoundtrip=process.env.PODLORD_ANDROID_MAP_ROUNDTRIP||'0';
-if(!['0','1'].includes(mapRoundtrip)||(mapRoundtrip==='1'&&(inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single map roundtrip diagnostic mode');
+if(!['0','1'].includes(mapRoundtrip)||(mapRoundtrip==='1'&&(sourceOnly==='1'||inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single map roundtrip diagnostic mode');
 const fixture=process.env.PODLORD_ANDROID_FIXTURE_CONTAINER||'';
 if(mapRoundtrip==='1'&&(!/^podlord-visual-run-[a-z0-9]+$/.test(fixture)||process.env.PODLORD_KUBERNETES_METADATA_AUDIT!=='1'||!/^unix:\/\//.test(process.env.DOCKER_HOST||'')))throw Error('Map roundtrip requires its owned local Metadata-audited fixture');
 let firstCommandFailure=false,lastSuccessfulUiAt=null;
@@ -182,15 +184,17 @@ function target(id){
  for(let attempt=0;attempt<8;attempt++){
   const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
     const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.ResourceSidebar_');
-    const inspector=n['resource-id']?.includes('.workspaceInspector.');
-    const host=/^inline/.test(id)?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>x['resource-id']?.endsWith('.workspaceInspector')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
+    const inspector=/\.(workspaceInspector|sourceInspector)\./.test(n['resource-id']||'');
+    const settings=/^inline/.test(id)||n['resource-id']?.includes('.settingsContent.');
+    const host=settings?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>/\.(workspaceInspector|sourceInspector)$/.test(x['resource-id']||'')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
     const clip=bounds(host);return !clip||(b[1]>=clip[1]&&b[3]<=clip[3]);
   })());
   if(n){if(!scrolled)return n;const before=n.bounds;state();const stable=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
   const nav=/WorkspaceButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
-  const inspector=nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.['resource-id']?.includes('.workspaceInspector.');
-  const settings=/^inline/.test(id);
-  const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>n['resource-id']?.endsWith('.workspaceInspector')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
+  const current=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
+  const inspector=/\.(workspaceInspector|sourceInspector)\./.test(current?.['resource-id']||'');
+  const settings=/^inline/.test(id)||current?.['resource-id']?.includes('.settingsContent.');
+  const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>/\.(workspaceInspector|sourceInspector)$/.test(n['resource-id']||'')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
   const b=bounds(host);if(!b)break;
   const x=inspector||settings?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
   const reverse=id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
@@ -201,7 +205,7 @@ function target(id){
 function tap(n){const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);if(b[2]<=b[0]||b[3]<=b[1])throw Error('Target outside viewport');const point=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];run('shell','input','tap',...point.map(String));state();const after=nodes.find(x=>x['resource-id']===n['resource-id']);fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({id:n['resource-id'],bounds:n.bounds,point,beforeChecked:n.checked,afterBounds:after?.bounds,afterChecked:after?.checked,focused:nodes.filter(x=>x.focused==='true').map(x=>({id:x['resource-id'],text:x.text,description:x['content-desc']}))})+'\n');}
 function click(id){tap(target(id));}
 function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
-function completeJourney(){fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));}
+function completeJourney(){fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',mode:sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));}
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,error:String(error)},null,2)+'\n');
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
@@ -221,6 +225,7 @@ run('shell','settings','put','system','accelerometer_rotation','0');run('shell',
 const deadline=Date.now()+120000;let count=0;
 do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):0;const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
 if(count<1000){capture('load-failure');throw Error('Real cluster cache did not fill');}steps.push({step:'Real TLS source import and cached resources',resources:count});run('shell','settings','put','system','user_rotation','0');state();capture('loaded-portrait');
+if(sourceOnly==='1'){search('visual-multi-container');sourceJourney();completeJourney();process.exit(0);}
 run('shell','settings','put','system','accelerometer_rotation','0');run('shell','settings','put','system','user_rotation','1');state();capture('loaded-landscape');
 if(inspectorOnly==='1'){
  search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
@@ -423,6 +428,33 @@ steps.push({step:'Native Kubernetes PTY connects, executes echo, returns output 
 click('collapseTerminal');click('closeInspector');
 }
 
+function sourceJourney(){
+if(nodes.some(n=>n['resource-id']?.endsWith('.workspaceInspector')&&n.bounds!=='[0,0][0,0]'))click('closeInspector');
+run('shell','settings','put','system','user_rotation','0');state();
+click('settingsWorkspaceButton');click('settingsSectionPicker');
+const sourceSection=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
+if(!sourceSection)throw Error('Sources is unavailable in the public Settings picker');
+tap(sourceSection);waitNode('sourceCell_0_0',n=>n.enabled==='true');click('sourceCell_0_0');
+waitNode('sourceOverviewTab',n=>n.checked==='true');capture('source-inspector-overview');
+click('sourceYamlTab');waitNode('editSourceYaml',n=>n.enabled==='true');
+waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||''));capture('source-yaml-read-only');
+const importedFile=run('shell','cat','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');
+run('shell','settings','put','system','user_rotation','1');state();
+click('editSourceYaml');click('sourceInspectorYaml');
+inputAboveKeyboard(['sourceInspectorYaml'],'source-editor-keyboard');
+run('shell','input','keyevent','123','66');run('shell','input','text',"'#%sandroid-owned-source-draft'");
+run('shell','input','keyevent','4');state();
+waitNode('sourceInspectorYaml',n=>(n.text+' '+n['content-desc']).includes('android-owned-source-draft'));
+capture('source-yaml-local-draft');click('applySourceYaml');
+waitNode('sourceOverviewTab',n=>n.checked==='true');click('sourceYamlTab');
+waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||'')&&(n.text+' '+n['content-desc']).includes('android-owned-source-draft'));
+if(run('shell','cat','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig')!==importedFile)throw Error('Source Apply modified the original imported file');
+capture('source-yaml-applied');click('closeSourceInspector');click('resourcesWorkspaceButton');
+waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+steps.push({step:'Sources touch inspector, explicit local YAML editing and immutable Apply preserve the original file and existing session query'});
+}
+
+sourceJourney();
 completeJourney();
 JOURNEY
 

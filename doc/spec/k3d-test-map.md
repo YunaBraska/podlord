@@ -7545,7 +7545,20 @@ the unchanged session query. Original imported-file bytes are unchanged.
 Installed regular files total 99,947,217 bytes. Cleanup exits 0. Evidence:
 `source-editor-android-runtime-scoped/{journey,result,cleanup}.json` and its
 Overview, read-only, keyboard, draft and applied screenshots. This scoped result
-is not the full Android journey or iOS Sources proof.
+uses `PODLORD_ANDROID_SOURCE_ONLY=1` for faster focused iteration and is not iOS
+Sources proof. The unchanged default mode subsequently passes the complete
+13-step Android journey, including the earlier resource YAML, filters, maps,
+navigation, All-container logs and actual PTY shell, plus Source editing and
+immutable Apply. Installed regular files total 99,977,650 bytes, leaving 22,350
+bytes below the unchanged limit. Emulator/ADB/AVD/ports and the owned real
+Kubernetes fixture clean up with exit 0. Evidence:
+`source-editor-android-runtime-integrated/{journey,result,cleanup}.json` and
+`source-editor-android-fixture-integrated.log`.
+
+The ARM64 Store-channel packaging preflight also passes at 33,786,174 ZIP bytes
+and 87,501,020 installed regular-file bytes. It verifies dependencies and ad-hoc
+signature integrity, not a signed Store submission or sandboxed interactive
+runtime. Evidence: `source-editor-current-store-arm64-package/`.
 
 The same real-device work exposes portrait keyboard occlusion: the focused
 Source YAML lies below its clipped inspector, behind the keyboard. Extending
