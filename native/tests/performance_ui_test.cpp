@@ -317,20 +317,27 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     const auto reportFrameWork = [&](const QString& name, const QList<quint64>& tokens) {
         if (!desktop) return true;
         QList<double> samples, maxima, guiSamples, renderSamples;
+        QJsonArray actionMaxima;
         {
             const std::lock_guard lock(probe->mutex);
             for (const auto token : tokens) {
                 const auto found = probe->completed.constFind(token);
                 if (found == probe->completed.cend() || found->processing.size() < 3) return false;
-                double maximum = -1;
+                double maximum = -1, maximumGui = -1, maximumRender = -1;
                 for (const auto& cpu : found->processing) {
                     const auto total = cpu.milliseconds();
                     samples.append(total);
-                    maximum = std::max(maximum, total);
+                    if (total > maximum) {
+                        maximum = total;
+                        maximumGui = cpu.guiNs / 1000000.0;
+                        maximumRender = cpu.renderNs / 1000000.0;
+                    }
                     guiSamples.append(cpu.guiNs / 1000000.0);
                     renderSamples.append(cpu.renderNs / 1000000.0);
                 }
                 maxima.append(maximum);
+                actionMaxima.append(QJsonObject{{"action", actionMaxima.size()}, {"frames", found->processing.size()},
+                    {"maxMs", maximum}, {"guiMsAtMaximum", maximumGui}, {"renderMsAtMaximum", maximumRender}});
             }
         }
         std::sort(samples.begin(), samples.end());
@@ -348,6 +355,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
                        {"distinctActions", tokens.size()}, {"p95Ms", valid ? samples[p95] : -1},
                        {"actionMaximumP95Ms", valid ? maxima[28] : -1}, {"maxMs", valid ? samples.last() : -1},
                        {"guiP95Ms", valid ? guiSamples[p95] : -1}, {"renderP95Ms", valid ? renderSamples[p95] : -1},
+                       {"actionMaxima", actionMaxima},
                        {"componentPercentilesAreNotAdditive", true},
                        {"p95LimitMs", limit}, {"passed", passed},
                        {"method", "30 distinct post-action synchronization tokens; all frames through expected public state plus two synchronized drain frames; both frame and per-action maximum p95; GUI and render thread CPU excludes sleeping/GPU/display waiting"}}) && passed;

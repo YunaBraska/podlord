@@ -2640,22 +2640,54 @@ bool execute(const QString& requestedScenario) {
             if (!overview) return false;
             if (scenario == "table_overview_custom") return text(window,"overview_cluster")=="local" && !item(window,"overview_ready") && !item(window,"overviewReadinessBar") && server.requests.size()==calls;
             const QString expected=scenario=="table_overview_full" ? "10/10" : scenario=="table_overview_none" || scenario=="table_overview_pending" ? "0/10" : "2/10";
-            if (!waitFor([&] { return text(window,"overview_ready")==expected && item(window,"overviewReadinessBar"); })) return false;
+            int navigationKeys=0;
+            const auto navigateToField=[&](const QString& id) {
+                auto* rows=overview->property("model").value<QAbstractItemModel*>();
+                if (!rows) return;
+                const auto current=overview->property("currentIndex").toInt();
+                for (int row=0; row<rows->rowCount(); ++row) {
+                    if (rows->data(rows->index(row,0),Qt::UserRole).toMap()["id"]!=id || row==current) continue;
+                    overview->forceActiveFocus(Qt::TabFocusReason);
+                    QTest::keyClick(window,current<row ? Qt::Key_Down : Qt::Key_Up);
+                    ++navigationKeys;
+                    break;
+                }
+            };
+            if (!waitFor([&] {
+                const bool ready=text(window,"overview_ready")==expected && item(window,"overviewReadinessBar");
+                if (!ready && scenario=="table_overview_metadata") navigateToField("ready");
+                return ready;
+            })) {
+                std::fprintf(stderr,"Overview readiness: scenario=%s expected=%s actual=%s keys=%d current=%d count=%d contentY=%g height=%g\n",
+                    qPrintable(scenario),qPrintable(expected),qPrintable(text(window,"overview_ready")),navigationKeys,
+                    overview->property("currentIndex").toInt(),overview->property("count").toInt(),
+                    overview->property("contentY").toDouble(),overview->height());
+                return false;
+            }
             auto* bar=item(window,"overviewReadinessBar");
             const auto fraction=scenario=="table_overview_full" ? 1.0 : scenario=="table_overview_none" || scenario=="table_overview_pending" ? 0.0 : 0.2;
             const QString color=scenario=="table_overview_full" ? "success" : scenario=="table_overview_none" || scenario=="table_overview_pending" ? "danger" : "warning";
             const auto* fill=item(window,"overviewReadinessFill");
             if (!fill || qAbs(bar->property("value").toDouble()-fraction)>0.001 || fill->property("color").value<QColor>() != workspace.appearanceColors()[color].value<QColor>()) return false;
             if (scenario=="table_overview_metadata") {
-                if (text(window,"overview_cluster")!="local" || text(window,"overview_restarts")!="10") return false;
-                for (int attempt=0; attempt<12 && text(window,"overview_owner")!="ReplicaSet/workload"; ++attempt) {
-                    QSignalSpy frame(window,&QQuickWindow::afterAnimating);
-                    const auto point=overview->mapToScene({overview->width()/2,overview->height()/2});
-                    QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},{0,-120},Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
-                    QCoreApplication::sendEvent(window,&wheel); window->update();
-                    if (frame.isEmpty() && !frame.wait(1000)) return false;
-                }
-                return text(window,"overview_owner")=="ReplicaSet/workload" && server.requests.size()==calls;
+                const QStringList ids{"cluster","restarts","owner"}, values{"local","10","ReplicaSet/workload"};
+                qsizetype next=0;
+                const bool visible=waitFor([&] {
+                    if (next==ids.size()) return true;
+                    auto* field=item(window,"overview_"+ids[next]);
+                    if (field && field->isVisible() && field->width()>0 && field->height()>0
+                        && podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))
+                        && field->property("text")==values[next]) {
+                        if (++next==ids.size()) return true;
+                    }
+                    navigateToField(ids[next]);
+                    return false;
+                });
+                if (!visible) std::fprintf(stderr,"Overview metadata: missing visible field=%s actual=%s keys=%d current=%d count=%d contentY=%g height=%g\n",
+                    qPrintable(ids[next]),qPrintable(text(window,"overview_"+ids[next])),navigationKeys,
+                    overview->property("currentIndex").toInt(),overview->property("count").toInt(),
+                    overview->property("contentY").toDouble(),overview->height());
+                return visible && server.requests.size()==calls;
             }
             if (scenario=="table_overview_copy") {
                 const QPointer<QQuickItem> field = item(window,"overview_ready");

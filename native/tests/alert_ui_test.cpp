@@ -1235,8 +1235,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return workspace.dashboardTable()->rowCount()==0 && workspace.dashboardSummary().contains("0 / 1") && server.requests==requests;
     }
     if (scenario.startsWith("metric_")) {
+        int navigationKeys=0;
         const auto failure=[&](const char* stage) {
-            const auto* overview=item(window,"overviewScroll");
+            auto* overview=item(window,"overviewScroll");
             const auto* usage=item(window,"metric_cpu_usage");
             const auto* reference=item(window,"metric_cpu_references");
             std::fprintf(stderr,"Metric Inspector failed at %s: path=%s page=%s fresh=%d error=%s status=%s requests=%d overviewY=%g originY=%g height=%g contentHeight=%g usage=%s references=%s\n",
@@ -1246,6 +1247,26 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 overview ? overview->height() : 0,overview ? overview->property("contentHeight").toDouble() : 0,
                 qPrintable(usage ? usage->property("text").toString() : QString("<absent>")),
                 qPrintable(reference ? reference->property("text").toString() : QString("<absent>")));
+            if (overview) {
+                const auto viewport=podlord::test::visibleBounds(window,overview);
+                const auto scene=overview->mapRectToScene(QRectF(QPointF{},overview->size()));
+                const auto current=overview->property("currentIndex").toInt();
+                auto* model=overview->property("model").value<QAbstractItemModel*>();
+                const auto rowId=model && current>=0 && current<model->rowCount()
+                    ? model->data(model->index(current,0),Qt::UserRole).toMap()["id"].toString() : QString("<none>");
+                const auto* focus=window->activeFocusItem();
+                std::fprintf(stderr,"  Overview input: keys=%d focus=%s activeFocus=%d moving=%d keyboard=%d current=%d/%d row=%s scene=(%g,%g,%g,%g) viewport=(%g,%g,%g,%g)\n",
+                    navigationKeys,qPrintable(focus ? focus->objectName() : QString("<none>")),overview->hasActiveFocus(),
+                    overview->property("moving").toBool(),overview->property("keyNavigationEnabled").toBool(),
+                    current,overview->property("count").toInt(),qPrintable(rowId),scene.x(),scene.y(),scene.width(),scene.height(),
+                    viewport.x(),viewport.y(),viewport.width(),viewport.height());
+                for (auto* parent=overview->parentItem(); parent; parent=parent->parentItem()) if (parent->clip()) {
+                    const auto bounds=parent->mapRectToScene(QRectF(QPointF{},parent->size()));
+                    std::fprintf(stderr,"  Clip: %s name=%s scene=(%g,%g,%g,%g) contentY=%g moving=%d\n",
+                        parent->metaObject()->className(),qPrintable(parent->objectName()),bounds.x(),bounds.y(),bounds.width(),bounds.height(),
+                        parent->property("contentY").toDouble(),parent->property("moving").toBool());
+                }
+            }
             return false;
         };
         if (!click(window,"resourcesWorkspaceButton") || !click(window,"cell_0_0") || !click(window,"overviewButton")) return failure("public Inspector entry");
@@ -1259,17 +1280,20 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             }
             return true;
         };
-        overview->forceActiveFocus(Qt::TabFocusReason);
-        QTest::keyClick(window,Qt::Key_Home);
-        QElapsedTimer inputClock; inputClock.start();
         if (!waitFor([&] {
-            if (!workspace.canEditYaml() || workspace.inspectorPath()!="/api/v1/namespaces/default/pods/alpha"
-                || overview->property("moving").toBool()) return false;
-            if (visibleMetric()) return true;
-            const auto point=overview->mapToScene(QPointF(qMin(8.0,overview->width()/2),overview->height()/2));
-            QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
-            wheel.setTimestamp(static_cast<ulong>(inputClock.msecsSinceReference()+inputClock.elapsed()));
-            QCoreApplication::sendEvent(window,&wheel);
+            if (!workspace.canEditYaml() || workspace.inspectorPath()!="/api/v1/namespaces/default/pods/alpha") return false;
+            if (visibleMetric()) return !overview->property("moving").toBool();
+            auto* model=overview->property("model").value<QAbstractItemModel*>();
+            if (!model) return false;
+            // The public row ID guides input, never the hidden metric value.
+            int cpuRow=-1;
+            for (int row=0; row<model->rowCount(); ++row)
+                if (model->data(model->index(row,0),Qt::UserRole).toMap()["id"]=="metric_cpu") { cpuRow=row; break; }
+            const auto current=overview->property("currentIndex").toInt();
+            if (cpuRow<0 || current==cpuRow) return false;
+            overview->forceActiveFocus(Qt::TabFocusReason);
+            QTest::keyClick(window,current<cpuRow ? Qt::Key_Down : Qt::Key_Up);
+            ++navigationKeys;
             return false;
         })) return failure("fresh detail and visible CPU gauge");
         const bool measured=waitFor([&] {
