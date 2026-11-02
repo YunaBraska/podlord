@@ -275,27 +275,28 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 })) return false;
             auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
             if (!displayed) return false;
-            window->update(); QTest::qWait(30);
-            const QPointer<QQuickItem> cell = currentCell();
-            void* const retainedAddress = static_cast<void*>(cell.data());
             QSignalSpy resets(displayed,&QAbstractItemModel::modelReset);
             QSignalSpy removed(displayed,&QAbstractItemModel::rowsRemoved), inserted(displayed,&QAbstractItemModel::rowsInserted);
             const auto fromSession = workspace.currentSession();
             const int before = server.requests;
             if (!workspace.activate(session) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.currentSession() == session; })) return false;
-            window->update(); QTest::qWait(30);
-            const bool reused = resets.isEmpty() && cell && cell == currentCell()
-                && cell->property("text").toString() == displayed->index(0,0).data().toString() && server.requests == before;
+            window->update();
+            // TableView may recycle a delegate while restoring the session's column geometry.
+            // The stable contract is the model and its visible values, not a cell object's address.
+            const bool reused = waitFor([&] {
+                const auto* cell = currentCell();
+                return cell && cell->isVisible() && cell->width() > 0 && cell->height() > 0
+                    && cell->property("text").toString() == displayed->index(0,0).data().toString();
+            }) && workspace.property("visibleResourceTable").value<QAbstractItemModel*>() == displayed
+                && resets.isEmpty() && removed.isEmpty() && inserted.isEmpty() && server.requests == before
+                && workspace.sortColumnIndex() == expectedSortColumn && workspace.sortDirection() == expectedSortDirection;
             if (!reused) {
                 auto* current = currentCell();
-                const auto actualText = cell ? cell->property("text").toString() : QString("<destroyed>");
                 const auto expectedText = displayed->index(0,0).data().toString();
-                std::fprintf(stderr,"Cached session table comparisons: resetEmpty=%d cellAlive=%d sameCell=%d textMatch=%d requestsUnchanged=%d sessionMatch=%d sortMatch=%d\n",
-                    resets.isEmpty(),bool(cell),cell.data()==current,cell && actualText==expectedText,server.requests==before,
-                    workspace.currentSession()==session,workspace.sortColumnIndex()==expectedSortColumn && workspace.sortDirection()==expectedSortDirection);
-                std::fprintf(stderr,"Cached session table state: resets=%d removed=%d inserted=%d extraRequests=%d retainedOriginal=%p retainedLive=%p current=%p actualText=\"%s\" currentText=\"%s\" expectedText=\"%s\" fromSession=%s actualSession=%s expectedSession=%s actualSort=%d/%s expectedSort=%d/%s\n",
-                    int(resets.size()),int(removed.size()),int(inserted.size()),server.requests-before,retainedAddress,static_cast<void*>(cell.data()),static_cast<void*>(current),
-                    qPrintable(actualText),qPrintable(current ? current->property("text").toString() : QString("<missing>")),qPrintable(expectedText),
+                std::fprintf(stderr,"Cached session table state: modelRetained=%d resets=%d removed=%d inserted=%d extraRequests=%d currentText=\"%s\" expectedText=\"%s\" fromSession=%s actualSession=%s expectedSession=%s actualSort=%d/%s expectedSort=%d/%s\n",
+                    workspace.property("visibleResourceTable").value<QAbstractItemModel*>()==displayed,
+                    int(resets.size()),int(removed.size()),int(inserted.size()),server.requests-before,
+                    qPrintable(current ? current->property("text").toString() : QString("<missing>")),qPrintable(expectedText),
                     qPrintable(fromSession),qPrintable(workspace.currentSession()),qPrintable(session),workspace.sortColumnIndex(),qPrintable(workspace.sortDirection()),
                     expectedSortColumn,qPrintable(expectedSortDirection));
             }

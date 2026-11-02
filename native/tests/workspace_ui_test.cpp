@@ -34,6 +34,7 @@
 #include <QQmlContext>
 #include <QQmlExpression>
 #include <QQuickItem>
+#include <QQuickItemGrabResult>
 #include <QQuickWindow>
 #include <QPointer>
 #include <QSignalSpy>
@@ -71,12 +72,15 @@ bool waitFor(const std::function<bool()>& ready, int timeout = 7000) {
     while (!ready() && timer.elapsed() < timeout) QTest::qWait(10);
     return ready();
 }
-bool saveShellFrame(QQuickWindow* window,const QString& scenario) {
+bool saveShellFrame(QQuickWindow* window,const QString& scenario,QQuickItem* target = nullptr) {
     const auto output=qEnvironmentVariable("PODLORD_SHELL_EVIDENCE");
     if (output.isEmpty()) return true;
     QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
-    return waitFor([&] { return !frames.isEmpty(); }) && QDir().mkpath(output)
-        && window->grabWindow().save(output+"/"+scenario+"-"+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png");
+    if (!waitFor([&] { return !frames.isEmpty(); }) || !QDir().mkpath(output)) return false;
+    const auto path = output+"/"+scenario+"-"+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png";
+    if (!target) return window->grabWindow().save(path);
+    const auto grab = target->grabToImage();
+    return grab && waitFor([&] { return !grab->image().isNull(); }) && grab->image().save(path);
 }
 bool displayedWithin(QQuickItem* view, QQuickItem* target) {
     if (!target || !target->isVisible() || target->width() <= 0 || target->height() <= 0) return false;
@@ -2654,8 +2658,23 @@ bool execute(const QString& requestedScenario) {
                 return text(window,"overview_owner")=="ReplicaSet/workload" && server.requests.size()==calls;
             }
             if (scenario=="table_overview_copy") {
-                item(window,"overview_ready")->forceActiveFocus(); QTest::keySequence(window,QKeySequence::SelectAll); QTest::keySequence(window,QKeySequence::Copy);
-                return QGuiApplication::clipboard()->text()==expected && server.requests.size()==calls;
+                const QPointer<QQuickItem> field = item(window,"overview_ready");
+                if (!field || !click(window,field)) return false;
+                QTest::keySequence(window,QKeySequence::SelectAll); QTest::keySequence(window,QKeySequence::Copy);
+                if (QGuiApplication::clipboard()->text()!=expected) return false;
+                QTest::keyClick(window,Qt::Key_Tab);
+                if (!field || field->hasActiveFocus()) return false;
+                QTest::keyClick(window,Qt::Key_Tab,Qt::ShiftModifier);
+                if (!waitFor([&] { return field && field->hasActiveFocus(); })) return false;
+                QTest::keySequence(window,QKeySequence::SelectAll);
+                QTest::keyClick(window,Qt::Key_Delete);
+                if (text(window,"overview_ready")!=expected) return false;
+                QGuiApplication::clipboard()->setText("unexpected replacement");
+                QTest::keySequence(window,QKeySequence::Paste);
+                if (text(window,"overview_ready")!=expected || !accessibleName(window,"Ready: "+expected)) return false;
+                QTest::keySequence(window,QKeySequence::SelectAll);
+                return text(window,"overview_ready")==expected && server.requests.size()==calls
+                    && saveShellFrame(window,scenario,item(window,"workspaceInspector"));
             }
             if (scenario=="table_overview_stable_refresh") {
                 QPointer<QQuickItem> name = item(window,"overview_name");
@@ -2679,13 +2698,23 @@ bool execute(const QString& requestedScenario) {
                 QAbstractItemModelTester contract(fields,QAbstractItemModelTester::FailureReportingMode::Fatal);
                 const auto path = workspace.inspectorPath();
                 const auto retired = fields->index(fields->rowCount()-1,0);
-                if (!click(window,item(window,"closeInspector")) || fields->rowCount() != 0 || fields->data(retired,Qt::UserRole).isValid()) return false;
-                if (!workspace.inspectPath(path) || !waitFor([&] { return text(window,"overview_name")=="alpha"; })) return false;
+                if (!click(window,item(window,"closeInspector")) || fields->rowCount() != 0 || fields->data(retired,Qt::UserRole).isValid()) {
+                    std::fprintf(stderr,"Metadata close: path=%s rows=%d retired=%d\n",qPrintable(workspace.inspectorPath()),fields->rowCount(),fields->data(retired,Qt::UserRole).isValid());
+                    return false;
+                }
+                if (!workspace.inspectPath(path) || !waitFor([&] { return text(window,"overview_name")=="alpha"; })) {
+                    std::fprintf(stderr,"Metadata reopen: path=%s name=%s page=%s modelRows=%d viewCount=%d field=%s error=%s\n",qPrintable(workspace.inspectorPath()),qPrintable(workspace.inspectorName()),qPrintable(workspace.inspectorPage()),fields->rowCount(),overview->property("count").toInt(),qPrintable(text(window,"overview_name")),qPrintable(workspace.error()));
+                    saveShellFrame(window,scenario+"-reopen-failure",item(window,"workspaceInspector"));
+                    return false;
+                }
                 QString customPath;
                 for (int row = 0; row < model->rowCount(); ++row)
                     if (model->data(model->index(row,column("name"))) == "custom-widget") customPath = model->data(model->index(row,0),Qt::UserRole).toString();
                 if (overview->property("model").value<QAbstractItemModel*>() != fields || fields->rowCount() == 0
-                    || customPath.isEmpty() || !workspace.inspectPath(customPath) || !waitFor([&] { return workspace.canEditYaml(); })) return false;
+                    || customPath.isEmpty() || !workspace.inspectPath(customPath) || !waitFor([&] { return workspace.canEditYaml(); })) {
+                    std::fprintf(stderr,"Metadata custom open: modelAttached=%d rows=%d customPath=%s current=%s editable=%d error=%s\n",overview->property("model").value<QAbstractItemModel*>()==fields,fields->rowCount(),qPrintable(customPath),qPrintable(workspace.inspectorPath()),workspace.canEditYaml(),qPrintable(workspace.error()));
+                    return false;
+                }
                 if (!waitFor([&] {
                     if (text(window,"overview_kind") != "Widget" || overview->property("count").toInt() != fields->rowCount()) return false;
                     for (int row = 0; row < fields->rowCount(); ++row)
@@ -2740,9 +2769,10 @@ bool execute(const QString& requestedScenario) {
                     const auto* metric=item(window,"metric_storage_bar");
                     std::fprintf(stderr,"Rendered metric: present=%d visible=%d height=%g rows=%d scroll=%g/%g\n",metric!=nullptr,metric && metric->isVisible(),metric ? metric->height() : -1,scroll->property("count").toInt(),scroll->property("contentY").toDouble(),scroll->property("contentHeight").toDouble());
                 }
-                return compact && server.requests.size()==calls;
+                return compact && server.requests.size()==calls
+                    && saveShellFrame(window,scenario,item(window,"workspaceInspector"));
             }
-            return server.requests.size()==calls;
+            return server.requests.size()==calls && saveShellFrame(window,scenario,item(window,"workspaceInspector"));
         }
         if (scenario == "table_cluster_switch") {
             const auto first=workspace.currentSession();

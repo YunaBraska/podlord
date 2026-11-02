@@ -153,6 +153,7 @@ bool run(const QString& scenario, const QString& configPath) {
     QPointer<QTcpSocket> heldDetail;
     bool holdDetail = false;
     QStringList dispatchOrder;
+    QStringList requestTargets;
     QObject::connect(&api, &QTcpServer::newConnection, &api, [&] {
         while (auto* socket = api.nextPendingConnection()) {
             QObject::connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
@@ -175,6 +176,7 @@ bool run(const QString& scenario, const QString& configPath) {
                 socket->readAll(); ++requests;
                 const QUrl url(QString::fromUtf8(bytes.split('\n').first().split(' ').value(1)));
                 const auto path = url.path();
+                requestTargets.append(QString::fromUtf8(bytes.left(bytes.indexOf(' '))) + ' ' + url.toString(QUrl::FullyEncoded));
                 QJsonObject result; int http = 200;
                 if (path == "/api") result = {{"versions", QJsonArray{"v1"}}};
                 else if (path == "/apis") result = {{"groups", QJsonArray{}}};
@@ -549,6 +551,14 @@ bool run(const QString& scenario, const QString& configPath) {
             named("portForwardLocal")->setProperty("text", QString::number(secondPort)); named("portForwardRemote")->setProperty("text", "80");
             if (!click("startPortForward") || !waitFor([&] { return workspace.portForwards().size() == 2 && !workspace.loading(); })) return false;
         }
+        if (scenario == "ports_table_context_inspect" && !waitFor([&] {
+            return workspace.inspectorPath() == selected && workspace.canEditYaml() && !workspace.loading();
+        })) {
+            std::fprintf(stderr, "Ports context inspect initial detail completion: inspector=%s expected=%s freshCanEditYaml=%d workspaceLoading=%d requests=%d targets=[%s] status=%s error=%s\n",
+                qPrintable(workspace.inspectorPath()), qPrintable(selected), workspace.canEditYaml(), workspace.loading(), requests,
+                qPrintable(requestTargets.join(", ")), qPrintable(workspace.inspectorStatus()), qPrintable(workspace.error()));
+            return false;
+        }
         auto calls=requests;
         const auto openedStreams = upgrades;
         const auto token=workspace.portForwards().first().toMap()["id"].toString();
@@ -616,8 +626,24 @@ bool run(const QString& scenario, const QString& configPath) {
                 if (!menu("portContextStop") || !waitFor([&] { return workspace.portForwards().isEmpty() && table->rowCount() == 0; })) return false;
                 QTcpServer reusable; return reusable.listen(QHostAddress::LocalHost, localPort) && requests == calls;
             }
-            if (scenario == "ports_table_context_inspect") return workspace.closeInspector() && menu("portMenuInspector")
-                && waitFor([&] { return workspace.inspectorPath() == selected; }) && requests == calls;
+            if (scenario == "ports_table_context_inspect") {
+                const QString expectedTarget = "GET " + selected;
+                const auto failed = [&](const char* stage) {
+                    std::fprintf(stderr, "Ports context inspect %s: inspector=%s expected=%s freshCanEditYaml=%d workspaceLoading=%d requests=%d expected=%d upgrades=%d/%d targets=[%s] expectedTarget=%s status=%s error=%s\n",
+                        stage, qPrintable(workspace.inspectorPath()), qPrintable(selected), workspace.canEditYaml(), workspace.loading(), requests, calls + 1,
+                        upgrades, openedStreams, qPrintable(requestTargets.mid(calls).join(", ")), qPrintable(expectedTarget),
+                        qPrintable(workspace.inspectorStatus()), qPrintable(workspace.error()));
+                    return false;
+                };
+                if (!workspace.closeInspector()) return failed("close inspector");
+                if (!menu("portMenuInspector")) return failed("context menu action");
+                if (!waitFor([&] { return workspace.inspectorPath() == selected; })) return failed("cached inspector path");
+                if (!waitFor([&] { return workspace.canEditYaml(); })) return failed("fresh inspector detail completion");
+                if (!waitFor([&] { return !workspace.loading(); })) return failed("workspace read completion");
+                if (workspace.inspectorPath() != selected || requests != calls + 1 || upgrades != openedStreams
+                    || requestTargets.mid(calls) != QStringList{expectedTarget}) return failed("completed read target/count");
+                return true;
+            }
             if (scenario == "ports_table_keyboard_copy") {
                 auto* cell = named("portCell_0_0"); if (!cell || !podlord::test::scrollIntoView(window, cell)) return false;
                 cell->forceActiveFocus(); QTest::keySequence(window, QKeySequence::Copy);

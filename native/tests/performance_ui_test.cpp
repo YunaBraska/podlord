@@ -17,6 +17,7 @@
 #include <QDir>
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDebug>
 #include <QTest>
 #include <QThread>
 #include <QSGRendererInterface>
@@ -66,6 +67,9 @@ bool report(const QJsonObject& value) {
     record["renderingBoundary"] = diagnostic ? "background-cocoa-metal-diagnostic"
         : QGuiApplication::platformName() == "offscreen" ? "headless-software" : "foreground-cocoa";
     const auto bytes = QJsonDocument(record).toJson(QJsonDocument::Compact);
+    if (qEnvironmentVariableIsSet("PODLORD_QML_TRACE_ACTIONS")
+        && (record.value("type") == "interactionStart" || record.value("type") == "interaction"))
+        qInfo().noquote() << "PODLORD_QML_ACTION" << bytes;
     const bool written = std::fwrite(bytes.constData(), 1, bytes.size(), stdout) == size_t(bytes.size());
     return std::fputc('\n', stdout) != EOF && std::fflush(stdout) == 0 && written;
 }
@@ -387,7 +391,12 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         }) && accepted;
     if (!frame([&] { return workspace.activate(sessions.first()); }, [&] { return !workspace.busy() && workspace.currentSession() == sessions.first(); })) return false;
     accepted = benchmark("cached-inspector", 50, [&](int) { return workspace.closeInspector() && workspace.inspectPath(path); },
-        [&](int) { return workspace.inspectorPath() == path && workspace.inspectorName() == "load-0" && !workspace.overviewFields().isEmpty(); }) && accepted;
+        [&](int) {
+            const auto* name = podlord::test::visibleItem(window->contentItem(), "overview_name");
+            return workspace.inspectorPath() == path && workspace.inspectorName() == "load-0" && !workspace.overviewFields().isEmpty()
+                && name && name->property("text") == "load-0" && name->width() > 0 && name->height() > 0
+                && QRectF(0,0,window->width(),window->height()).contains(name->mapToScene({name->width()/2,name->height()/2}));
+        }) && accepted;
     if (!workspace.closeInspector()) return false;
     auto* scrollingTable = podlord::test::visibleItem(window->contentItem(), "resourceTable");
     if (!scrollingTable || !scrollingTable->isVisible()) return false;

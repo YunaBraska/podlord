@@ -7338,8 +7338,9 @@ The initial atomic-log background Metal trial reports 16.278 ms tab frame-CPU
 p95 versus a fixed-input reference of 18.732 ms, with 304,939,008-byte peak RSS
 and 3,702,784-byte warm growth. Its idle exposure failed and a repeat did not
 complete. These observations do not establish adoption or release clearance.
-The current desktop is locked. Native foreground CPU/memory proof remains open.
-The source change is a working-branch candidate, not a release-ready claim.
+At that stage the desktop was unavailable and foreground CPU/memory proof was
+still open. The November 2 foreground handoff comparison below supersedes that
+candidate status, without clearing the frame-CPU release gate.
 
 The original C4 software reference also lacked the table-notification fixes,
 so that comparison cannot isolate the log optimization. A subsequent control
@@ -7391,3 +7392,31 @@ Local evidence: `atomic-log-foreground-control-20261102`,
 `quiet-audio-final-full-suite.log`, `quiet-audio-final-regressions.log` and
 `quiet-audio-negative-results.json`, under the
 existing `2026-10-31-app-store/typed-workspace-20261101` evidence directory.
+
+### 2026-11-02: Inspector allocation trial and hosted-test corrections
+
+No Inspector production optimization is retained from this trial. Standard
+TextArea controls, context menus, row geometry and existing pooling are restored.
+
+| Scope | Evidence and limitation |
+| --- | --- |
+| Bare TextEdit trial | Two software comparisons save about 2.2% Inspector process CPU, without preserving the standard context-menu proof. Native surface acquisition fails. Rejected rather than adding a replacement menu for an unproven gain. |
+| Selective row Loader trial | Normal metadata controls and metric gauges are instantiated separately. Initial cached-reopen failures and layout differences are reproduced and corrected. All 200 built Inspector-related cases pass. Six Basic/Fusion component captures have no pixel differences outside their known live timestamp rows. This is C++ before/after evidence, not complete C#/C++ parity. |
+| Trial measurements | Four same-identity software runs average 331.601/290.015 ms of process CPU for 35 cached Inspector actions, about 12.5% less. RSS does not improve consistently. Subsequent matched-driver Metal background diagnoses do not establish a gain or a complete memory result, and lose their exposed surface. Foreground attempts cannot acquire an active window. Rejected under the agreed adoption condition. No release limit changes. |
+| Public completion checks | The Inspector benchmark now requires the expected visible Name value with positive geometry inside the window. Optional QML action markers default off. The copy scenario uses mouse focus, Tab/Shift-Tab, selection, clipboard and accessibility. Delete and a distinct pasted replacement are checked separately, preventing delete-then-restore from passing a broken read-only field. |
+| Full local trial matrix | Six preflights and 5,272 main cases pass, 5,278/5,278 total. Main time 1,173.80 s. Reported coverage is 97.76% lines and 86.03% branches, with 44 LLVM mismatched-function warnings retained. This run precedes the subsequent CI-only assertion corrections and is not a claim that the rejected production trial was adopted. |
+| Restored production Inspector | After restoring the original QML exactly, all 200 Inspector-related cases and another 18 cache/Ports executions pass. Android ARM64 and iOS ARM64 application/UI-driver builds pass again. The benchmark is rebuilt and signed with its unchanged test identity. Only test and documentation changes remain. |
+| Real Kubernetes and platform builds | Local TLS/client certificates, YAML/check/apply/reconciliation, masked Secrets, all-container logs, PTY/vi/resize/interrupts and UID-protected deletion pass. The script removes its owned container and volumes. Android ARM64 application and iOS ARM64 application/UI-driver builds pass. No new simulated-device runtime proof is inferred from those builds. |
+| Hosted Linux failures | Both architectures report the correct currently visible cell and zero reset/remove/insert/request churn, but fail an assertion against an old recycled QML delegate. The test now checks the current visible value, stable public model, sort restoration and notification/request constraints, not delegate addresses or a fixed 30-ms sleep. |
+| Hosted Ports failure | The context-menu test incorrectly expects no detail request. It now waits for the initial detail before its baseline, then requires the reopened fresh Inspector and exactly one GET to the selected resource, without another stream. Six affected Basic/Fusion cases pass ten times each: 60/60 executions in 65.92 s, with no test removed. |
+| Physical package checks | All 30 applicable scenarios pass against the exact Intel package from run 41409513501. The existing optional live-comparison case remains unconfigured, not counted as passed. Copy-on-write copies remain independent: all original bundle file hashes are unchanged after mutation cases. Two scans replace four concurrent scans, and subprocesses use the test cancellation signal. The unchanged 30-s deadlines remain in force. On this ARM host, wall time is 18.72/33.62 s before/after, while summed user/system CPU is 59.50/56.42 s. This is a local throughput tradeoff, not an Intel CI pass or a product-speed gain. A forced 50-ms CLI cancellation fails as expected and leaves no owned checker process or temporary directory. |
+
+Hosted failures are from run `41409513501` at `640bb1d`. The corrected assertions
+and package scheduling require a fresh hosted run. The complete visual/function
+matrix and valid foreground frame-CPU proof remain separate release gates.
+
+Evidence remains in the same directory: `lazy-overview-*`,
+`ci-ui-regression-repeat.log`, `ci-41409513501-*`,
+`package-boundaries-{control,candidate}*`, `package-fixture-unchanged.log` and
+`package-boundaries-cancel-probe.log`. Rejected sources and binaries are local
+diagnostic evidence only, not production compatibility paths.
