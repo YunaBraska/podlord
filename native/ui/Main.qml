@@ -991,14 +991,14 @@ ApplicationWindow {
                 }
                 Loader {
                     id: dockedInspector
-                    objectName: "workspaceInspector"
+                    objectName: "inspectorLoader"
                     SplitView.fillHeight: window.compactInspector
                     SplitView.preferredHeight: window.compactInspector ? inspectorSplit.height : Math.min(420, workspaceSplit.height * 0.60)
                     SplitView.minimumHeight: window.compactInspector ? 0 : Math.min(300, workspaceSplit.height * 0.70)
                     visible: window.hasInspector && !(workspace.workspacePage === "map" && workspace.mapOverview)
                     sourceComponent: workspace.sourceInspection.snapshotId ? sourceInspectorComponent : resourceInspectorComponent
                 }
-                Component { id: resourceInspectorComponent; ResourceInspector {} }
+                Component { id: resourceInspectorComponent; ResourceInspector { objectName: "workspaceInspector" } }
                 Component { id: sourceInspectorComponent; SourceInspector {} }
             }
             Item {

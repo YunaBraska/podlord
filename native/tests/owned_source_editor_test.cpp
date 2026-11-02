@@ -25,7 +25,7 @@ QByteArray read(const QString& path) {
 }
 bool run(const QString& scenario) {
     using namespace podlord;
-    require(QStringList{"content","local","repeat","invalid","empty","limit","byte_limit","at_limit","missing","removed","mismatch","snapshot_identity","context_identity","tampered","symlink"}.contains(scenario), "Unknown owned-source editor scenario.");
+    require(QStringList{"content","local","repeat","invalid","empty","limit","byte_limit","at_limit","missing","removed","mismatch","snapshot_identity","context_identity","invalid_profile","invalid_session_catalog","tampered","symlink"}.contains(scenario), "Unknown owned-source editor scenario.");
     QTemporaryDir temporary;
     require(temporary.isValid(), "Private fixture directory unavailable.");
     const auto profile=temporary.filePath("profile"), originalPath=temporary.filePath("original-config");
@@ -64,7 +64,7 @@ bool run(const QString& scenario) {
     require(std::holds_alternative<SessionCatalog>(sessions.activate(std::get<SessionCatalog>(saved).sessions.first().id)), "Cannot select saved session fixture.");
     QString draft=QString::fromUtf8(original)+"# edited owned copy\n";
     StoreError expected=StoreError::InvalidData;
-    const bool rejected=QStringList{"invalid","empty","limit","byte_limit","missing","removed","mismatch","snapshot_identity","context_identity","tampered","symlink"}.contains(scenario);
+    const bool rejected=QStringList{"invalid","empty","limit","byte_limit","missing","removed","mismatch","snapshot_identity","context_identity","invalid_profile","invalid_session_catalog","tampered","symlink"}.contains(scenario);
     constexpr qsizetype limit=16*1024*1024;
     if (scenario=="content") {
         const auto pasted=store.importText(source.sourcePath,draft);
@@ -94,6 +94,7 @@ bool run(const QString& scenario) {
         context=std::get<SourceSnapshot>(other).contexts.first().id; expected=StoreError::NotFound;
     } else if (scenario=="snapshot_identity") { snapshot="../original-config"; expected=StoreError::InvalidInput; }
     else if (scenario=="context_identity") { context="../original-config"; expected=StoreError::InvalidInput; }
+    else if (scenario=="invalid_profile") expected=StoreError::InvalidInput;
     else if (scenario=="tampered") write(source.ownedPath,"{broken}");
     else if (scenario=="symlink") {
         require(QFile::remove(source.ownedPath) && QFile::link(originalPath,source.ownedPath), "Cannot replace owned fixture with symlink.");
@@ -104,7 +105,11 @@ bool run(const QString& scenario) {
     const auto files=ownedDirectory.entryList({"*.json"},QDir::Files|QDir::System,QDir::Name);
     const bool exists=QFileInfo::exists(source.ownedPath);
     const auto envelope=exists ? read(source.ownedPath) : QByteArray{};
-    const auto edited=store.editOwnedYaml(snapshot,context,draft);
+    const auto sessionPath=profile+"/sessions.json";
+    const auto sessionBytes=read(sessionPath);
+    if (scenario=="invalid_session_catalog") write(sessionPath,"{broken}");
+    const auto edited=scenario=="invalid_profile" ? KubeconfigStore("relative-profile").editOwnedYaml(snapshot,context,draft)
+        : store.editOwnedYaml(snapshot,context,draft);
     if (rejected) {
         require(std::holds_alternative<Failure>(edited), "Rejected owned-source edit succeeded.");
         const auto error=std::get<Failure>(edited);
@@ -126,6 +131,10 @@ bool run(const QString& scenario) {
             const auto pasted=store.importText(QUrl::fromLocalFile(originalPath).toString(),draft);
             require(std::holds_alternative<SourceSnapshot>(pasted) && std::get<SourceSnapshot>(pasted).id==result.id, "Existing local paste behavior changed.");
         }
+    }
+    if (scenario=="invalid_session_catalog") {
+        require(read(sessionPath)=="{broken}", "Rejected source edit rewrote damaged sessions.");
+        write(sessionPath,sessionBytes);
     }
     const auto after=sessions.list();
     require(std::holds_alternative<SessionCatalog>(after) && std::get<SessionCatalog>(after)==std::get<SessionCatalog>(before), "Owned-source edit changed existing sessions or selection.");

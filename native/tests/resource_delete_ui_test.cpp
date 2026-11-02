@@ -203,6 +203,10 @@ bool run(const QString& scenario, const QString& kubeconfig) {
     if (clusterScoped && (!targetText.contains("cluster scoped") || targetText.contains("default"))) return false;
     if (!real && !clusterScoped && !targetText.contains("default")) return false;
     if (scenario == "preview" || scenario == "narrow") {
+        if (scenario=="preview" && (workspace.inspectSourceContext(source->contexts.first().id)
+            || !workspace.sourceInspection().isEmpty() || !pending() || workspace.inspectorName()!="delete-target")) {
+            std::fputs("Source inspection displaced pending resource deletion.\n",stderr); return false;
+        }
         return waitFor([&] { const auto* cancel = item("cancelResourceDelete"); return cancel && cancel->hasActiveFocus(); }) && deletes == 0;
     }
     if (scenario == "cancel") return click("cancelResourceDelete") && !pending() && deletes == 0;
@@ -240,7 +244,12 @@ bool run(const QString& scenario, const QString& kubeconfig) {
     if (!click("confirmResourceDelete")) return false;
     if (scenario == "double_confirm" && workspace.confirmDeletion(true)) return false;
     if (scenario == "hidden") {
-        if (!waitFor([&] { return deletes == 1; }) || !workspace.closeInspector()) return false;
+        if (!waitFor([&] { return deletes == 1; })) return false;
+        if (!deleting() || workspace.inspectSourceContext(source->contexts.first().id)
+            || !workspace.sourceInspection().isEmpty() || !deleting() || workspace.inspectorName()!="delete-target") {
+            std::fputs("Source inspection displaced dispatched resource deletion.\n",stderr); return false;
+        }
+        if (!workspace.closeInspector()) return false;
         return waitFor([&] { return !workspace.loading(); }) && deletes == 1 && details == 2 && workspace.inspectorPath().isEmpty();
     }
     if (scenario == "close_tab") {

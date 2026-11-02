@@ -12,6 +12,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -240,11 +241,24 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         }
         auto* list = item(window,"podLogEntries");
         if (!list) return false;
+        const char* stage = "initial layout";
+        bool completed = false;
+        const auto failure = qScopeGuard([&] {
+            if (!completed) std::fprintf(stderr,
+                "Log handoff failed: scenario=%s stage=%s rows=%d selection=%s index=%d y=%.1f height=%.1f contentHeight=%.1f beginning=%d end=%d follow=%d activeFocus=%d\n",
+                qPrintable(scenario),stage,model->rowCount(),qPrintable(workspace.property("logSelection").toString()),
+                list->property("currentIndex").toInt(),list->property("contentY").toDouble(),list->height(),
+                list->property("contentHeight").toDouble(),list->property("atYBeginning").toBool(),
+                list->property("atYEnd").toBool(),workspace.property("logFollow").toBool(),list->hasActiveFocus());
+        });
         const auto settle = [&] {
             for (int drain = 0; drain < 2; ++drain) {
                 QSignalSpy rendered(window,&QQuickWindow::frameSwapped);
                 window->requestUpdate();
-                if (rendered.isEmpty() && !rendered.wait(1000)) return false;
+                if (rendered.isEmpty() && !rendered.wait(1000)) {
+                    std::fprintf(stderr,"Log handoff frame unavailable: visible=%d exposed=%d drain=%d\n",window->isVisible(),window->isExposed(),drain);
+                    return false;
+                }
             }
             return true;
         };
@@ -273,14 +287,18 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             if (!switched || selected < 0 || list->property("currentIndex").toInt() != selected) {
                 std::fprintf(stderr,"Overlapping log scope accepted an old click: selected=%d after=%d\n",selected,list->property("currentIndex").toInt()); return false;
             }
-            return click(window,"copyLogEntry") && QGuiApplication::clipboard()->text() == workspace.logEntry(selected);
+            completed = click(window,"copyLogEntry") && QGuiApplication::clipboard()->text() == workspace.logEntry(selected);
+            return completed;
         }
+        stage = "select and restore beginning";
         if (!select("beta",beta) || !beginning() || !select("alpha",alpha) || !beginning()) return false;
+        stage = "visible entry after Home";
         if (!waitFor([&] { return item(window,"logEntry_1") != nullptr; })) return false;
         auto* row = item(window,"logEntry_1");
         const auto position = row->mapToScene({row->width()/2,row->height()/2}).toPoint();
         if (scenario == "handoff_pointer") QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,position);
         else if (!click(window,"logEntry_1") || list->property("currentIndex").toInt() != 1) return false;
+        stage = "replace selected scope";
         const bool switched = select("beta",beta) && waitFor([&] {
             auto* first = item(window,"logEntry_0");
             return first && first->property("text").toString().contains("[beta]") && list->property("atYBeginning").toBool()
@@ -293,9 +311,12 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         }
         if (!switched || !click(window,"copyLogEntry")
             || QGuiApplication::clipboard()->text() != workspace.logEntry(0) || !workspace.logEntry(0).contains("[beta]")) return false;
+        stage = "restore and resume follow";
         if (!select("alpha",alpha) || !waitFor([&] { return !workspace.property("logFollow").toBool() && list->property("atYBeginning").toBool(); })
             || !click(window,"liveFollow") || !waitFor([&] { return workspace.property("logFollow").toBool() && list->property("atYEnd").toBool(); })) return false;
-        return click(window,"overviewButton") && waitFor([&] { return model->rowCount() == 0 && !workspace.logsVisible(); });
+        stage = "leave logs";
+        completed = click(window,"overviewButton") && waitFor([&] { return model->rowCount() == 0 && !workspace.logsVisible(); });
+        return completed;
     }
     if (scenario == "compact_scroll") {
         if (!waitFor([&] { return model->rowCount() >= 2; })) {

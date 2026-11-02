@@ -72,6 +72,10 @@ bool run(const QString& scenario) {
     require(test::selectSettingsSection(window, "sources"), "Cannot select Sources.");
     require(QTest::qWaitFor([&] { return control("sourceFindButton") && control("settingsSourceList")
         && control("settingsSourceList")->property("count").toInt() == 2; }), "Shared Sources table missing.");
+    require(QTest::qWaitFor([&] {
+        auto* view=control("sourceTable");
+        return test::tableColumnsReady(view,workspace.sourceColumns()) && test::tableCell(view,0,0);
+    }), "Sources table has not published its columns and first live cell.");
     auto* model = workspace.property("sourceTable").value<QAbstractItemModel*>();
     require(model && model->columnCount() == 10 && model->headerData(2,Qt::Horizontal).toString() == "User", "Sources User column missing.");
     require(model->index(0,1).data() == "local", "Source cluster metadata missing.");
@@ -105,6 +109,10 @@ bool run(const QString& scenario) {
         require(workspace.sourceSortDirection() == "NONE" && model->index(0,0).data() == firstName, "Unsorted User order failed.");
         require(workspace.sortSourceColumn(7) && workspace.sourceSortColumn() == 7 && workspace.sourceSortDirection() == "ASC", "Shifted Status column is not sortable.");
     } else if (scenario == "copy_keyboard") {
+        require(QTest::qWaitFor([&] {
+            auto* view=control("sourceTable");
+            return test::tableCell(view,0,2) && test::visibleItem(window->contentItem(),"sourceCell_0_2")==test::tableCell(view,0,2);
+        }), "Sources User keyboard target is not the live cell.");
         focus("sourceCell_0_2"); QTest::keySequence(window, QKeySequence::Copy);
         require(QGuiApplication::clipboard()->text() == firstUser, "Source User clipboard value is not the entry name.");
         focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Copy);

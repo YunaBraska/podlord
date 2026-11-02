@@ -124,6 +124,26 @@ END {
     printf 'Native Radar/Map coverage gate failed: require geometry, batched painting, projection, animation clock, workspace selection, map navigation, preview storage and capture owners with 90%% branches across their complete function families.\n' >&2
     exit 1
 fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/workspace_sources.cpp" "$ROOT/native/src/kubeconfig_store.cpp" "$ROOT/native/src/workspace.h" \
+    | awk '/Workspace[0-9]+(clearSourceInspection|inspectSourceContext|canEditSourceYaml|beginSourceEdit|setSourceDraft|applySourceDraft|sourceInspection|sourceYaml|sourceInspectionError|sourceInspectionLoading|sourceEditing|sourceDraft)|sourceInspectionMetadata|readOwnedContext|KubeconfigStore[0-9]+(ownedYaml|editOwnedYaml)/ { print }' \
+    > "$BUILD/coverage/source-editor-functions.txt"
+cat "$BUILD/coverage/source-editor-functions.txt"
+if ! awk '
+/Workspace[0-9]+inspectSourceContext/ { inspect=1 }
+/Workspace[0-9]+applySourceDraft/ { apply=1 }
+/Workspace[0-9]+sourceInspectionEv/ { getters=1 }
+/readOwnedContext/ { read=1 }
+/KubeconfigStore[0-9]+editOwnedYaml/ { persist=1 }
+{ total+=$(NF-2); missed+=$(NF-1) }
+END {
+    if (!inspect || !apply || !getters || !read || !persist || total<=0) exit 1
+    printf "Source editor new-function-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
+    if (100*(total-missed)/total<90) exit 1
+}' "$BUILD/coverage/source-editor-functions.txt"; then
+    printf 'Native source-editor coverage gate failed: require 90%% branches across the new controller, getters and protected owned-snapshot read/write function families.\n' >&2
+    exit 1
+fi
 if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($13+0<90) fail=1 }
           $1=="platform_tls_apple.mm" { apple=1; if ($13+0<90) fail=1 }
           $1=="native_eks.cpp" { eks=1; if ($13+0<90) fail=1 }

@@ -26,7 +26,7 @@ void Workspace::clearSourceInspection() {
     emit sourceInspectionChanged(); emit sourceDraftChanged(); emit yamlEditChanged();
 }
 bool Workspace::inspectSourceContext(const QString& contextId) {
-    if (busy_ || pendingLeave_ || yamlApplyLocked() || deletionPending() || deletionRunning()) return false;
+    if (busy_ || yamlApplyLocked() || deletionPending() || deletionRunning()) return false;
     for (const auto& source : sources_.sources) for (const auto& context : source.contexts) {
         if (context.id!=contextId) continue;
         const auto metadata=sourceInspectionMetadata(source,context);
@@ -38,7 +38,7 @@ bool Workspace::inspectSourceContext(const QString& contextId) {
         sourceRead_=watcher;
         connect(watcher,&QFutureWatcher<Result<QString>>::finished,this,[this,watcher] {
             const auto result=watcher->result(); watcher->deleteLater();
-            if (sourceRead_!=watcher || !sourceInspection_) return;
+            if (sourceRead_!=watcher) return;
             sourceRead_=nullptr; sourceInspection_->loading=false;
             if (const auto* failure=std::get_if<Failure>(&result)) {
                 sourceInspection_->error=failure->message;
@@ -54,15 +54,14 @@ bool Workspace::inspectSourceContext(const QString& contextId) {
     return false;
 }
 bool Workspace::canEditSourceYaml() const {
-    if (!sourceInspection_ || sourceInspection_->loading || !sourceInspection_->error.isEmpty()
-        || sourceInspection_->yaml.isEmpty() || busy_ || pendingLeave_) return false;
+    if (!sourceInspection_ || sourceInspection_->loading || sourceInspection_->yaml.isEmpty() || busy_ || pendingLeave_) return false;
     const auto context=sourceInspection_->metadata.value("contextId");
     for (const auto* owner : runtime_->windows)
         if (owner->busy_ && owner->sourceRemoval_.value("contextId")==context) return false;
     return true;
 }
 bool Workspace::beginSourceEdit() {
-    if (!canEditSourceYaml()) return false;
+    if (sourceEditing() || !canEditSourceYaml()) return false;
     sourceInspection_->draft=sourceInspection_->yaml; sourceInspection_->editing=true;
     emit sourceDraftChanged(); emit yamlEditChanged(); return true;
 }
@@ -74,7 +73,7 @@ bool Workspace::setSourceDraft(const QString& text) {
     return true;
 }
 bool Workspace::applySourceDraft() {
-    if (!sourceEditing() || busy_ || pendingLeave_ || sourceInspection_->loading) return false;
+    if (!sourceEditing() || busy_ || pendingLeave_) return false;
     const auto snapshot=sourceInspection_->metadata.value("snapshotId").toString();
     const auto contextId=sourceInspection_->metadata.value("contextId").toString();
     const auto context=sourceInspection_->metadata.value("context").toString();
@@ -85,7 +84,7 @@ bool Workspace::applySourceDraft() {
     connect(watcher,&QFutureWatcher<Result<SourceSnapshot>>::finished,this,[this,watcher,context,draft] {
         const auto result=watcher->result(); watcher->deleteLater(); busy_=false;
         if (const auto* failure=std::get_if<Failure>(&result)) {
-            if (sourceInspection_) sourceInspection_->error=failure->message;
+            sourceInspection_->error=failure->message;
             sourceImportError_=failure->message;
             emit sourceInspectionChanged(); emit changed(); emit sourceImportFinished(false); return;
         }

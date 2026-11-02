@@ -319,6 +319,10 @@ bool ui(const QString& scenario, const QString& kubeconfig = {}) {
             if (!replace(draft) || !workspace.previewYamlApply() || workspace.yamlApplyPreview() || !workspace.yamlApplyLocked()) {
                 std::fputs("Local preparation did not yield the UI event loop.\n", stderr); return false;
             }
+            if (workspace.inspectSourceContext(contexts.first().id) || !workspace.sourceInspection().isEmpty()
+                || workspace.yamlText()!=draft || !workspace.yamlApplyLocked()) {
+                std::fputs("Source inspection displaced a preparing resource mutation.\n",stderr); return false;
+            }
             return await([&] { return workspace.yamlApplyPreview(); }) && patches == 0 && click("cancelYamlApply") && workspace.yamlText() == draft;
         }
         if (!replace(draft) || !click("previewYaml") || !await([&] { return workspace.yamlApplyPreview(); }) || !workspace.yamlApplyLocked()
