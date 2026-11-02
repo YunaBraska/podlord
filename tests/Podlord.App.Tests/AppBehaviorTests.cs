@@ -735,7 +735,7 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Native_release_uses_shared_archives_and_public_asset_names()
+    public void Snapshot_release_uses_shared_archives_and_public_asset_names()
     {
         var root = LocateProjectRoot();
         var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
@@ -743,7 +743,7 @@ public sealed class AppBehaviorTests
         var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
         var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
 
-        Assert.Matches(@"wc_dotnet_build_native\.yml@[a-f0-9]{40}", mergeWorkflow);
+        Assert.Matches(@"wc_dotnet_snapshot\.yml@[a-f0-9]{40}", mergeWorkflow);
         Assert.Matches(@"wc_dotnet_release\.yml@[a-f0-9]{40}", releaseWorkflow);
         Assert.Contains("# yuna-release: true", releaseWorkflow, StringComparison.Ordinal);
 
@@ -759,20 +759,21 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Ci_workflows_use_shared_pull_request_and_main_merge_builds()
+    public void Ci_workflows_use_shared_pull_request_builds_and_main_snapshots()
     {
         var root = LocateProjectRoot();
         var pullRequestWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-pr.yml"));
         var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
 
         Assert.Contains("pull_request:", pullRequestWorkflow, StringComparison.Ordinal);
-        Assert.Contains("group: podlord-pr-${{ github.event.pull_request.number }}", pullRequestWorkflow, StringComparison.Ordinal);
+        Assert.Contains("group: podlord-pr-${{ github.event.pull_request.number || github.ref }}", pullRequestWorkflow, StringComparison.Ordinal);
         Assert.Matches(@"wc_dotnet_build_common\.yml@[a-f0-9]{40}", pullRequestWorkflow);
+        Assert.Contains("ref: ${{ github.event.pull_request.head.sha || github.sha }}", pullRequestWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("push:", pullRequestWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("push:\n    branches:\n      - main", mergeWorkflow, StringComparison.Ordinal);
-        Assert.Matches(@"wc_dotnet_build_common\.yml@[a-f0-9]{40}", mergeWorkflow);
-        Assert.Matches(@"wc_dotnet_build_native\.yml@[a-f0-9]{40}", mergeWorkflow);
+        Assert.Matches(@"wc_dotnet_snapshot\.yml@[a-f0-9]{40}", mergeWorkflow);
+        Assert.Contains("contents: write", mergeWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("dev", mergeWorkflow, StringComparison.Ordinal);
     }
 
