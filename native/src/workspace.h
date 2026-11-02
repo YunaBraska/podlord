@@ -281,6 +281,13 @@ class Workspace final : public QObject {
     Q_PROPERTY(QAbstractItemModel* table READ table CONSTANT)
     Q_PROPERTY(QVariantList resourceColumns READ resourceColumns NOTIFY tableLayoutChanged)
     Q_PROPERTY(QAbstractItemModel* sourceTable READ sourceTable CONSTANT)
+    Q_PROPERTY(QVariantMap sourceInspection READ sourceInspection NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(QString sourceYaml READ sourceYaml NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(QString sourceInspectionError READ sourceInspectionError NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(bool sourceInspectionLoading READ sourceInspectionLoading NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(bool sourceEditing READ sourceEditing NOTIFY sourceDraftChanged)
+    Q_PROPERTY(bool canEditSourceYaml READ canEditSourceYaml NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(QString sourceDraft READ sourceDraft NOTIFY sourceDraftChanged)
     Q_PROPERTY(QVariantList sourceColumns READ sourceColumns NOTIFY tableLayoutChanged)
     Q_PROPERTY(int sourceSortColumn READ sourceSortColumn NOTIFY sourcesPresentationChanged)
     Q_PROPERTY(QString sourceSortDirection READ sourceSortDirection NOTIFY sourcesPresentationChanged)
@@ -595,6 +602,17 @@ public:
     QString sourceSortDirection() const { return sourceTable_.sortColumn() < 0 ? "NONE" : sourceTable_.sortOrder() == Qt::AscendingOrder ? "ASC" : "DESC"; }
     /** Publishes imported context metadata only; never reads files or requests cluster data. */
     Q_INVOKABLE bool refreshSourceTable();
+    QVariantMap sourceInspection() const { return sourceInspection_ ? sourceInspection_->metadata : QVariantMap{}; }
+    QString sourceYaml() const { return sourceInspection_ ? sourceInspection_->yaml : QString{}; }
+    QString sourceInspectionError() const { return sourceInspection_ ? sourceInspection_->error : QString{}; }
+    bool sourceInspectionLoading() const { return sourceInspection_ && sourceInspection_->loading; }
+    bool sourceEditing() const { return sourceInspection_ && sourceInspection_->editing; }
+    bool canEditSourceYaml() const;
+    QString sourceDraft() const { return sourceInspection_ ? sourceInspection_->draft : QString{}; }
+    Q_INVOKABLE bool inspectSourceContext(const QString& contextId);
+    Q_INVOKABLE bool beginSourceEdit();
+    Q_INVOKABLE bool setSourceDraft(const QString& text);
+    Q_INVOKABLE bool applySourceDraft();
     Q_INVOKABLE bool sortSourceColumn(int column);
     Q_INVOKABLE bool copySourceCell(const QString& identity, int column);
     Q_PROPERTY(QVariantList alertColumns READ alertColumns NOTIFY tableLayoutChanged)
@@ -664,6 +682,8 @@ signals:
     void deletionAvailabilityChanged();
     void sourceImportFinished(bool success);
     void sourceRemovalChanged();
+    void sourceInspectionChanged();
+    void sourceDraftChanged();
     void diagnosticsPresentationChanged();
     void sessionRenamed(const QString& id);
     void sourcesPresentationChanged();
@@ -725,7 +745,7 @@ private:
     bool yamlChecking_ = false;
     QString yamlCheckToken_;
     bool bindYamlApply();
-    enum class Leave { Resource, Session, Context, Tab, Inspector, Window, Draft, Reload, History, MapHistory, Detach };
+    enum class Leave { Resource, Source, Session, Context, Tab, Inspector, Window, Draft, Reload, History, MapHistory, Detach };
     struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
     struct Navigation final {
         QString filter, mode;
@@ -776,6 +796,15 @@ private:
     TableSchemas layoutSchemas() const;
     QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
     SourceCatalog sources_;
+    struct SourceInspection final {
+        QVariantMap metadata;
+        QString yaml, draft, error;
+        bool loading=true, editing=false;
+    };
+    std::optional<SourceInspection> sourceInspection_;
+    QFutureWatcher<Result<QString>>* sourceRead_ = nullptr;
+    void clearSourceInspection();
+    bool reloadCatalogs(bool reconnect);
     bool sourceCatalogFailed_ = false;
     QVariantMap sourceRemoval_;
     Appearance appearance_;
@@ -783,6 +812,7 @@ private:
     QString sourceImportNotice_;
     QString sourceImportError_, sessionManagementError_, sessionManagementNotice_;
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
+    QFuture<Result<SourceSnapshot>> sourceEditFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
     bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice = {}, bool ignoreInvalid = false, const QString& credentialContext = {});
     bool contextUsable(const QString& id) const;
@@ -813,8 +843,8 @@ private:
     QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
     ResourceTable valueRows_;
     QSortFilterProxyModel valuesTable_;
-    ResourceTable sourceRows_{nullptr, {"name", "cluster", "context", "auth", "source", "imported", "status", "rename", "remove"},
-        {"Name", "Cluster", "Context", "Authentication", "Source", "Imported", "Status", "Rename", "Remove"}, "id"};
+    ResourceTable sourceRows_{nullptr, {"name", "cluster", "user", "context", "auth", "source", "imported", "status", "rename", "remove"},
+        {"Name", "Cluster", "User", "Context", "Authentication", "Source", "Imported", "Status", "Rename", "Remove"}, "id"};
     QSortFilterProxyModel sourceTable_;
     ResourceTable diagnosticRows_, requestAuditRows_;
     QSortFilterProxyModel diagnosticTable_, requestAuditTable_;

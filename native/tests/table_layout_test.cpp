@@ -37,7 +37,7 @@ bool scenario(const QString& name) {
     auto layout = defaults.value("resource");
     if (name.startsWith("source_upgrade_")) {
         auto expanded=schemas;
-        expanded["source"]={"name","cluster","rename","remove"};
+        expanded["source"]={"name","cluster","user","context","auth","source","imported","status","rename","remove"};
         auto retained=layout; retained[0].pinned=true; retained[1].width=231;
         QJsonObject values{{"resource",input(retained)},{"event",input(defaults.value("event"))}};
         if (name=="source_upgrade_unknown") values["unknown"]=QJsonArray{};
@@ -48,17 +48,59 @@ bool scenario(const QString& name) {
         if (!QDir().mkpath(profile) || !write(path,bytes)) return false;
         const TableLayoutStore upgraded(profile,expanded);
         const auto loaded=upgraded.load();
-        if (name!="source_upgrade_read" && name!="source_upgrade_save") return failure(loaded,StoreError::InvalidData) && read(path)==bytes;
+        if (name!="source_upgrade_read" && name!="source_upgrade_save") {
+            if (!failure(loaded,StoreError::InvalidData) || read(path)!=bytes) return false;
+            if (name=="source_upgrade_invalid") {
+                auto previous=expanded; previous["source"].removeAll("user");
+                const auto source=input(defaultTableLayouts(previous).value("source"));
+                for (const auto& invalid : {QString("count"), QString("duplicate"), QString("unknown")}) {
+                    auto entries=source;
+                    if (invalid=="count") entries.removeLast();
+                    else if (invalid=="duplicate") entries[0]=entries[1];
+                    else { auto column=entries[0].toObject(); column["id"]="unknown"; entries[0]=column; }
+                    const auto rejected=QJsonDocument(QJsonObject{{"version",10},{"layouts",QJsonObject{{"resource",input(retained)},{"event",input(defaults.value("event"))},{"source",entries}}}}).toJson();
+                    if (!write(path,rejected) || !failure(upgraded.load(),StoreError::InvalidData) || read(path)!=rejected) return false;
+                }
+            }
+            return true;
+        }
         if (!std::holds_alternative<TableLayouts>(loaded) || read(path)!=bytes) return false;
         const auto actual=std::get<TableLayouts>(loaded);
         if (actual.value("resource")!=retained || actual.value("source")!=defaultTableLayouts(expanded).value("source")) return false;
-        if (name=="source_upgrade_read") return true;
-        auto columns=actual.value("source"); columns[1].pinned=true;
-        const auto saved=upgraded.save("source",input(columns),actual.value("source"));
-        return std::holds_alternative<TableLayouts>(saved) && std::get<TableLayouts>(saved).value("source")==columns
-            && std::get<TableLayouts>(saved).value("resource")==retained
-            && QJsonDocument::fromJson(read(path)).object()["version"]==10
-            && failure(store.load(),StoreError::InvalidData);
+        if (name=="source_upgrade_save") {
+            auto columns=actual.value("source"); columns[1].pinned=true;
+            const auto saved=upgraded.save("source",input(columns),actual.value("source"));
+            if (!std::holds_alternative<TableLayouts>(saved) || std::get<TableLayouts>(saved).value("source")!=columns
+                || std::get<TableLayouts>(saved).value("resource")!=retained
+                || QJsonDocument::fromJson(read(path)).object()["version"]!=10
+                || !failure(store.load(),StoreError::InvalidData)) return false;
+        }
+        auto previous=expanded; previous["source"].removeAll("user");
+        for (const int version : {9,10}) for (const bool custom : {false,true}) {
+            auto source=defaultTableLayouts(previous).value("source");
+            if (custom) {
+                source.swapItemsAt(4,8); source[2].pinned=true; source[3].width=333; source[6].visible=false;
+            }
+            const auto before=QJsonDocument(QJsonObject{{"version",version},{"layouts",QJsonObject{{"resource",input(retained)},{"event",input(defaults.value("event"))},{"source",input(source)}}}}).toJson();
+            if (!write(path,before)) return false;
+            const auto migrated=upgraded.load();
+            auto expected=source; expected.insert(custom ? 9 : 5,{"user",true,false,170});
+            if (!std::holds_alternative<TableLayouts>(migrated) || read(path)!=before
+                || std::get<TableLayouts>(migrated).value("source")!=expected
+                || std::get<TableLayouts>(migrated).value("resource")!=retained
+                || std::get<TableLayouts>(migrated).value("event")!=defaults.value("event")) return false;
+            if (name=="source_upgrade_save") {
+                auto columns=expected;
+                for (auto& column : columns) if (column.id=="user") { column.visible=false; column.width=347; }
+                if (!std::holds_alternative<TableLayouts>(upgraded.save("source",input(columns),expected))) return false;
+                const auto restored=upgraded.load();
+                if (!std::holds_alternative<TableLayouts>(restored) || std::get<TableLayouts>(restored).value("source")!=columns
+                    || std::get<TableLayouts>(restored).value("resource")!=retained
+                    || std::get<TableLayouts>(restored).value("event")!=defaults.value("event")
+                    || QJsonDocument::fromJson(read(path)).object()["version"]!=10) return false;
+            }
+        }
+        return true;
     }
     if (name.startsWith("diagnostics_upgrade_")) {
         auto expanded=schemas;

@@ -7496,3 +7496,30 @@ Release remains open for the two Sources decisions, fresh hosted confirmation,
 settled reference Inspector and remaining menu/dialog/state comparisons, a valid
 current startup measurement and the already recorded live-provider gaps.
 No screenshots, profiles, binaries, signing data or credentials are added to Git.
+
+### 2026-11-02: confirmed Sources editor and User-column increment
+
+The Sources decisions above are resolved: implement the reference's source-only
+inspector and owned-copy editor, add the canonical kubeconfig User column, and
+preserve all prior snapshots and sessions on Apply. UI-SRC-01 through UI-SRC-07
+own these requirements. Apply is not context removal and never starts a new
+connection or authentication. The wide header metric group is right-aligned
+under SHL-003, without changing narrow stacking or metric order.
+
+| Boundary | Current result | Evidence under `2026-10-31-app-store/typed-workspace-20261101` |
+| --- | --- | --- |
+| Source row to editor | A row opens the source inspector rather than activating a session. YAML stays read-only until explicit Edit. Changed/unchanged Apply, invalid input, reset recovery, Stay/Discard, missing/tampered/symlinked copies, identity rejection, close during read, 320-pixel geometry and two-window removal have public UI checks in Basic and Fusion. | `source-inspector-final-tests.log` |
+| Source persistence boundary | Fifteen public-store cases pass, covering protected `content://` origins, local origins, immutable prior content, session/selection preservation, repeated imports, invalid/empty YAML, UTF-8 byte limits and exact-limit acceptance, removed/mismatched identities, traversal, damage and symlinks. The document-origin fixture follows the protected on-disk input format, not a live Android document-provider interaction. Generic paste does not gain document-URI permissions. | `owned-source-editor-20261102/run.T40Fsf/{build,tests}.log` |
+| User and saved layouts | User is the entry name, never credential contents. Sorting/copying and exact legacy Sources-column migration preserve existing layout choices. The current combined Source/store/table/layout selection passes 202 executions, comprising 162 behavior and 40 style-variant executions. These are not 202 different features. | `source-inspector-final-tests.log` |
+| Reproduced regressions | A clean editor could race another window's removal, rejected YAML could leave Edit disabled after reset, and a YAML page created during metadata reload could remain disabled. Each has a failing public regression followed by the scoped green run. Removal is also disabled in the owning editor while editing. | `source-inspector-windows-red.log`, `source-inspector-guards-red.log`, `source-inspector-binding-red.log`, `source-inspector-remove-button-red.log`, `source-inspector-final-tests.log` |
+| Existing UI surfaces | The broader pre-final-guard Source/Inspector-host/table integration run passes 1,002 executions. The subsequent complete current suite is separate evidence, not implied by this earlier scoped run. | `source-inspector-regressions.log` |
+| Real connected Kubernetes session | Both styles load real resources, then inspect/edit/Apply a source. The source API revalidates the owned snapshot, preserves old files and exact session bindings, and adds no Kubernetes requests. The complete existing TLS, resource YAML, Secret, logs, exec-certificate, PTY and deletion protocol also passes. Its owned cluster and volumes are cleaned. The new test uses the existing real-cluster 60-second functional watchdog, not a relaxed performance limit. | `source-inspector-real-kubernetes.log` |
+| Rendering and reach | Desktop and 320-pixel Overview/YAML captures are inspected with synthetic credentials only. Source tabs have an explicit selected appearance, and close/edit controls remain reachable. Android ARM64 and iOS ARM64 simulator app builds pass. These builds do not prove new mobile interaction or current signed-package size. | `source-editor-final-{desktop,320}.png`, their `.overview.png` files, `source-inspector-{android,ios}-build.log` |
+| Previous hosted closure | All eleven jobs for `d7352dd` pass, including both Linux architectures, both native Mac architectures, Windows, iOS, real k3d and all four Mac package jobs. The new Sources changes still require their own hosted result. | Hosted run 41501037464 |
+
+The complete current native suite/coverage, refreshed packages and hosted checks
+remain in progress. The Mac is explicitly locked during this increment, so no
+fresh C#/C++ native comparison or foreground startup/frame result is claimed.
+The prior unresolved reference Inspector states and live-provider gaps remain
+open. Sound decoding and device tests are silent. No generated files or access
+material are included in Git.

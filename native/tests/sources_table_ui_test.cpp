@@ -20,7 +20,7 @@ bool run(const QString& scenario) {
     const auto profile = directory.filePath("profile");
     const auto source = directory.filePath("config");
     QFile config(source);
-    const QByteArray bytes("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: 'http://127.0.0.1:9'}\nusers:\n- name: local\n  user: {}\ncontexts:\n- name: zulu\n  context: {cluster: local, user: local}\n- name: alpha\n  context: {cluster: local, user: local}\n");
+    const QByteArray bytes("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: 'http://127.0.0.1:9'}\nusers:\n- name: alpha-user\n  user: {token: fixture-private-token}\n- name: zulu-user\n  user: {username: fixture-private-login, password: fixture-private-password}\ncontexts:\n- name: zulu\n  context: {cluster: local, user: alpha-user}\n- name: alpha\n  context: {cluster: local, user: zulu-user}\n");
     require(config.open(QIODevice::WriteOnly) && config.write(bytes) == bytes.size(), "Cannot write test kubeconfig.");
     config.close();
     Workspace workspace(profile);
@@ -73,12 +73,23 @@ bool run(const QString& scenario) {
     require(QTest::qWaitFor([&] { return control("sourceFindButton") && control("settingsSourceList")
         && control("settingsSourceList")->property("count").toInt() == 2; }), "Shared Sources table missing.");
     auto* model = workspace.property("sourceTable").value<QAbstractItemModel*>();
-    require(model && model->columnCount() == 9, "Sources columns missing.");
+    require(model && model->columnCount() == 10 && model->headerData(2,Qt::Horizontal).toString() == "User", "Sources User column missing.");
     require(model->index(0,1).data() == "local", "Source cluster metadata missing.");
+    for (int row=0;row<model->rowCount();++row) {
+        const auto expectedUser = model->index(row,3).data() == "zulu" ? "alpha-user" : "zulu-user";
+        require(model->index(row,2).data() == expectedUser, "Source User is not the canonical kubeconfig user entry name.");
+        for (int column=0;column<model->columnCount();++column)
+            require(!model->index(row,column).data().toString().contains("fixture-private-"), "Source table leaked credential contents.");
+    }
+    QStringList columnOrder;
+    for (const auto& value : workspace.sourceColumns()) columnOrder.append(value.toMap()["id"].toString());
+    require(columnOrder == QStringList{"rename","remove","name","imported","cluster","user","context","auth","source","status"}, "Default Sources User column is not after Cluster.");
     const auto identity = model->index(0,0).data(Qt::UserRole).toString();
     const auto firstName = model->index(0,0).data().toString();
+    const auto firstUser = model->index(0,2).data().toString();
     if (scenario == "table" || scenario == "narrow") {
         require(control("sourceColumnsButton") && control("renameSource_"+identity) && control("removeSource_"+identity), "Source row actions missing.");
+        if (scenario == "table") require(QTest::qWaitFor([&] { auto* cell=control("sourceCell_0_2"); return cell && cell->property("text")==firstUser; }), "Canonical User name is not rendered in the Sources table.");
     } else if (scenario == "sort") {
         click("sourceHeader_0");
         require(model->index(0,0).data() == "alpha" && workspace.property("sourceSortDirection") == "ASC", "Ascending source sort failed.");
@@ -86,7 +97,16 @@ bool run(const QString& scenario) {
         require(model->index(0,0).data() == "zulu" && workspace.property("sourceSortDirection") == "DESC", "Descending source sort failed.");
         click("sourceHeader_0");
         require(workspace.property("sourceSortDirection") == "NONE" && model->index(0,0).data() == firstName, "Unsorted source order failed.");
+        click("sourceHeader_2");
+        require(model->index(0,2).data() == "alpha-user" && model->index(0,0).data() == "zulu" && workspace.sourceSortDirection() == "ASC", "Ascending User sort failed.");
+        click("sourceHeader_2");
+        require(model->index(0,2).data() == "zulu-user" && model->index(0,0).data() == "alpha" && workspace.sourceSortDirection() == "DESC", "Descending User sort failed.");
+        click("sourceHeader_2");
+        require(workspace.sourceSortDirection() == "NONE" && model->index(0,0).data() == firstName, "Unsorted User order failed.");
+        require(workspace.sortSourceColumn(7) && workspace.sourceSortColumn() == 7 && workspace.sourceSortDirection() == "ASC", "Shifted Status column is not sortable.");
     } else if (scenario == "copy_keyboard") {
+        focus("sourceCell_0_2"); QTest::keySequence(window, QKeySequence::Copy);
+        require(QGuiApplication::clipboard()->text() == firstUser, "Source User clipboard value is not the entry name.");
         focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Copy);
         const auto copied = QGuiApplication::clipboard()->text();
         if (copied != firstName) std::fprintf(stderr,"Source copy: expected=%s actual=%s focus=%s\n",qPrintable(firstName),qPrintable(copied),qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}));
@@ -100,10 +120,16 @@ bool run(const QString& scenario) {
             click("sourceFindNext"); require(control("sourceFindCount")->property("text") == "2/2", "Next source match missing.");
             click("sourceFindNext"); require(control("sourceFindCount")->property("text") == "1/2", "Source Find did not wrap.");
             click("sourceFindPrevious"); require(control("sourceFindCount")->property("text") == "2/2", "Previous source match missing.");
+            fill("sourceFindInput", "alpha-user");
+            require(QTest::qWaitFor([&] { return control("sourceFindCount")->property("text") == "1/1"; }), "Sources Find did not match the canonical User name.");
+            fill("sourceFindInput", "fixture-private-");
+            require(QTest::qWaitFor([&] { return control("sourceFindCount")->property("text") == "0/0"; }), "Sources Find exposed credential contents.");
         }
     } else if (scenario == "columns" || scenario == "columns_restart") {
         click("sourceColumnsButton"); click("sourceColumnVisible_auth");
         const auto shown = control("sourceColumnVisible_auth")->property("checked").toBool();
+        click("sourceColumnVisible_user");
+        require(!control("sourceColumnVisible_user")->property("checked").toBool(), "Sources User column could not be hidden.");
         click("sourceColumnPinned_cluster");
         const auto pinned = control("sourceColumnPinned_cluster")->property("checked").toBool();
         if (shown || !pinned) {
@@ -113,12 +139,13 @@ bool run(const QString& scenario) {
         }
         click("sourceSaveColumns");
         const auto accepted = [](const QVariantList& columns) {
-            bool hidden = false, pinned = false;
+            bool hidden = false, userHidden = false, pinned = false;
             for (const auto& value : columns) { const auto column = value.toMap();
                 if (column["id"] == "auth") hidden = !column["visible"].toBool();
+                if (column["id"] == "user") userHidden = !column["visible"].toBool();
                 if (column["id"] == "cluster") pinned = column["pinned"].toBool();
             }
-            return hidden && pinned;
+            return hidden && userHidden && pinned;
         };
         require(QTest::qWaitFor([&] { return !workspace.property("tableLayoutSaving").toBool()
             && accepted(workspace.property("sourceColumns").toList()); }), "Source layout not applied.");
@@ -135,11 +162,12 @@ bool run(const QString& scenario) {
         for (int i=0;i<20;++i) require(workspace.refreshSourceTable(), "Repeated cache publication failed.");
         require(model->rowCount()==2 && model->index(0,0).data(Qt::UserRole)==identity, "Repeated publication changed membership.");
     } else if (scenario.startsWith("sort_rejected_")) {
-        const int column=scenario.endsWith("negative") ? -1 : scenario.endsWith("action") ? 7 : 9;
+        const int column=scenario.endsWith("negative") ? -1 : scenario.endsWith("action") ? 8 : 10;
         require(!workspace.sortSourceColumn(column) && workspace.sourceSortDirection()=="NONE", "Unsupported source sort accepted.");
+        if (scenario.endsWith("action")) require(!workspace.sortSourceColumn(9), "Remove action column accepted sorting.");
     } else if (scenario.startsWith("copy_rejected_")) {
         QGuiApplication::clipboard()->setText("retained-clipboard");
-        const int column=scenario.endsWith("negative") ? -1 : scenario.endsWith("high") ? 9 : 0;
+        const int column=scenario.endsWith("negative") ? -1 : scenario.endsWith("high") ? 10 : 0;
         const auto key=scenario.endsWith("empty") ? QString{} : scenario.endsWith("missing") ? "absent-source" : identity;
         require(!workspace.copySourceCell(key,column) && QGuiApplication::clipboard()->text()=="retained-clipboard", "Unsupported source copy changed clipboard.");
     } else if (scenario == "rename") {

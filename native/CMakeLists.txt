@@ -34,6 +34,17 @@ set_target_properties(podlord_vterm PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED
 target_include_directories(podlord_vterm PUBLIC ${libvterm_SOURCE_DIR}/include)
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(owned-source-editor-test tests/owned_source_editor_test.cpp)
+    target_link_libraries(owned-source-editor-test PRIVATE podlord_workspace)
+    set(owned_source_editor_scenarios content local repeat invalid empty limit byte_limit at_limit missing removed mismatch snapshot_identity context_identity tampered)
+    if(UNIX)
+        list(APPEND owned_source_editor_scenarios symlink)
+    endif()
+    foreach(scenario IN LISTS owned_source_editor_scenarios)
+        add_test(NAME native.owned_source_editor.${scenario} COMMAND owned-source-editor-test ${scenario})
+        set_tests_properties(native.owned_source_editor.${scenario} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
+    endforeach()
     add_executable(settings-layout-ui-test tests/settings_layout_ui_test.cpp tests/ui_input.h)
     target_link_libraries(settings-layout-ui-test PRIVATE podlord_workspace Qt6::Test)
     foreach(style Basic Fusion)
@@ -60,6 +71,19 @@ if(BUILD_TESTING)
         set_tests_properties(native.cache_diagnostics.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
     add_executable(sources-table-ui-test tests/sources_table_ui_test.cpp tests/ui_input.h)
+    add_executable(source-inspector-ui-test tests/source_inspector_ui_test.cpp tests/ui_input.h)
+    target_link_libraries(source-inspector-ui-test PRIVATE podlord_workspace Qt6::Test)
+    set(source_inspector_scenarios view apply invalid reset_invalid metadata_reload repeat missing tampered dirty_stay dirty_discard narrow close_loading remove identities removal_editing removal_pending)
+    if(UNIX)
+        list(APPEND source_inspector_scenarios symlink)
+    endif()
+    foreach(scenario IN LISTS source_inspector_scenarios)
+        foreach(style Basic Fusion)
+            add_test(NAME native.source_inspector.${scenario}_${style} COMMAND source-inspector-ui-test ${scenario})
+            set_tests_properties(native.source_inspector.${scenario}_${style} PROPERTIES TIMEOUT 45
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+        endforeach()
+    endforeach()
     target_link_libraries(sources-table-ui-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario table narrow sort copy_keyboard find find_empty find_keyboard columns columns_restart rename remove_cancel remove remove_all refresh_changed hidden repeat sort_rejected_negative sort_rejected_high sort_rejected_action copy_rejected_negative copy_rejected_high copy_rejected_empty copy_rejected_missing)
         foreach(style Basic Fusion)
@@ -357,7 +381,7 @@ set(workspace_qml_files
     ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
     ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
     ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml
-    ui/MapOverview.qml ui/SourceAliasDialog.qml
+    ui/MapOverview.qml ui/SourceAliasDialog.qml ui/SourceInspector.qml
 )
 foreach(qml_file IN LISTS workspace_qml_files)
     get_filename_component(qml_alias "${qml_file}" NAME)

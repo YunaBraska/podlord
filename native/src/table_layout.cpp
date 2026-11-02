@@ -79,8 +79,8 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
         }
         result.insert(table.key(), layout);
         if (table.key()=="source") {
-            const QStringList order{"rename","remove","name","imported","cluster","context","auth","source","status"};
-            const QMap<QString,int> widths{{"name",210},{"cluster",160},{"context",210},{"auth",150},{"source",350},{"imported",205},{"status",240},{"rename",44},{"remove",44}};
+            const QStringList order{"rename","remove","name","imported","cluster","user","context","auth","source","status"};
+            const QMap<QString,int> widths{{"name",210},{"cluster",160},{"user",170},{"context",210},{"auth",150},{"source",350},{"imported",205},{"status",240},{"rename",44},{"remove",44}};
             std::stable_sort(result[table.key()].begin(),result[table.key()].end(),[&](const auto& a,const auto& b) {
                 return order.indexOf(a.id)<order.indexOf(b.id);
             });
@@ -132,6 +132,15 @@ Result<TableLayouts> TableLayoutStore::load() const {
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) {
         if (added.contains(table.key())) { result.insert(table.key(), defaultTableLayouts(schemas_).value(table.key())); continue; }
         auto layout = decode(values[table.key()], table.value());
+        if (!layout && table.key() == "source" && table.value() == QStringList{"name","cluster","user","context","auth","source","imported","status","rename","remove"}) {
+            const QStringList previous{"name","cluster","context","auth","source","imported","status","rename","remove"};
+            layout = decode(values[table.key()], previous);
+            if (layout) for (qsizetype i = 0; i < layout->size(); ++i) {
+                if (layout->at(i).id != "cluster") continue;
+                layout->insert(i + 1, {"user", true, false, 170});
+                break;
+            }
+        }
         if (!layout && root["version"] == 1 && table.key() == "resource") {
             const QStringList previous{"name", "kind", "namespace", "status", "node", "image"};
             if (std::all_of(previous.cbegin(), previous.cend(), [&](const auto& id) { return table.value().contains(id); })) {

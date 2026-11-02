@@ -1844,6 +1844,25 @@ bool execute(const QString& requestedScenario) {
         return false;
     }
     if (scenario == "compact_toolbar") {
+        const auto originalSize=window->size();
+        if (QGuiApplication::platformName()!="ios" && QGuiApplication::platformName()!="android") {
+            for (const auto width : {1440,1920}) {
+                window->resize(width,originalSize.height());
+                if (!waitFor([&] {
+                    auto* header=item(window,"workspaceToolbar");
+                    auto* metrics=item(window,"headerMetrics");
+                    auto* last=item(window,"pulse_nodes");
+                    if (!header || !metrics || !last) return false;
+                    const auto right=header->width()-6;
+                    return qAbs(metrics->mapToItem(header,QPointF(metrics->width(),0)).x()-right)<=1
+                        && qAbs(last->mapToItem(header,QPointF(last->width(),0)).x()-right)<=1;
+                })) {
+                    std::fprintf(stderr,"Header metric group is not right-aligned at width %d.\n",width);
+                    return false;
+                }
+            }
+            window->resize(originalSize);
+        }
         if (!click(window,item(window,"workspaceSearchButton"))) return false;
         if (!waitFor([&] { const auto* tab=item(window,"activateSession_"+workspace.currentSession()); return tab && tab->isVisible() && tab->height()>0; })) return false;
         return waitFor([&] {

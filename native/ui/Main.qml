@@ -21,7 +21,8 @@ ApplicationWindow {
     readonly property bool compactLandscape: width >= 600 && height < 600 && width > height
     readonly property bool touchLayout: !wideLayout || compactLandscape
     readonly property bool sidebarDocked: wideLayout || compactLandscape
-    readonly property bool compactInspector: (compactLandscape || width < 600) && workspace.inspectorPath !== "" && !(workspace.workspacePage === "map" && workspace.mapOverview)
+    readonly property bool hasInspector: workspace.inspectorPath !== "" || !!workspace.sourceInspection.snapshotId
+    readonly property bool compactInspector: (compactLandscape || width < 600) && hasInspector && !(workspace.workspacePage === "map" && workspace.mapOverview)
     readonly property real keyboardTop: Qt.inputMethod.visible
         && Qt.inputMethod.keyboardRectangle.width >= width * 0.75
         && Qt.inputMethod.keyboardRectangle.height > 0
@@ -514,7 +515,14 @@ ApplicationWindow {
                 IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
                 }
             }
-            PulseStrip { condensed: window.compactLandscape; Layout.fillWidth: true; Layout.preferredHeight: implicitHeight; onDetailsRequested: workspace.setWorkspacePage("dashboard") }
+            PulseStrip {
+                objectName: "headerMetrics"
+                condensed: window.compactLandscape
+                Layout.fillWidth: headerLayout.columns === 1
+                Layout.alignment: Qt.AlignRight
+                Layout.preferredHeight: implicitHeight
+                onDetailsRequested: workspace.setWorkspacePage("dashboard")
+            }
         }
     }
     Menu {
@@ -981,14 +989,17 @@ ApplicationWindow {
                     }
                 }
                 }
-                ResourceInspector {
+                Loader {
                     id: dockedInspector
                     objectName: "workspaceInspector"
                     SplitView.fillHeight: window.compactInspector
                     SplitView.preferredHeight: window.compactInspector ? inspectorSplit.height : Math.min(420, workspaceSplit.height * 0.60)
                     SplitView.minimumHeight: window.compactInspector ? 0 : Math.min(300, workspaceSplit.height * 0.70)
-                    visible: workspace.inspectorPath !== "" && !(workspace.workspacePage === "map" && workspace.mapOverview)
+                    visible: window.hasInspector && !(workspace.workspacePage === "map" && workspace.mapOverview)
+                    sourceComponent: workspace.sourceInspection.snapshotId ? sourceInspectorComponent : resourceInspectorComponent
                 }
+                Component { id: resourceInspectorComponent; ResourceInspector {} }
+                Component { id: sourceInspectorComponent; SourceInspector {} }
             }
             Item {
                 id: sidebarHost

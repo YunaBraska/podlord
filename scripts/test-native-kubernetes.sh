@@ -34,6 +34,7 @@ fi
 [ -x "$BUILD/container-terminal-ui-test" ] || { printf 'Build the native terminal UI tests first.\n' >&2; exit 1; }
 [ -x "$BUILD/yaml-draft-check-test" ] || { printf 'Build the native YAML draft UI tests first.\n' >&2; exit 1; }
 [ -x "$BUILD/resource-delete-ui-test" ] || { printf 'Build the native deletion UI tests first.\n' >&2; exit 1; }
+[ -x "$BUILD/source-inspector-ui-test" ] || { printf 'Build the native source inspector UI tests first.\n' >&2; exit 1; }
 mkdir -p "$BUILD/e2e"
 RUN=$(mktemp -d "$BUILD/e2e/run.XXXXXX")
 LLVM_PROFILE_FILE="$RUN/%p-%m.profraw"
@@ -144,6 +145,11 @@ printf 'Native Qt Quick / confirmed exec client certificate + real Kubernetes TL
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
     "$BUILD/pod_logs_ui_test" real "$RUN/kubeconfig"
 printf 'Native Qt Quick / multi-container Pod logs + real Kubernetes TLS E2E passed.\n'
+for style in Basic Fusion; do
+    QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE="$style" \
+        "$BUILD/source-inspector-ui-test" apply_live "$RUN/kubeconfig"
+done
+printf 'Native Qt Quick / source-only YAML editing preserves real connected sessions without new Kubernetes requests in Basic and Fusion.\n'
 kubectl --kubeconfig "$RUN/kubeconfig" get secret podlord-native-secret-e2e -o=jsonpath='{.data}' > "$RUN/secret-data-before-apply.json"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
     PODLORD_E2E_SCREENSHOT="$BUILD/e2e/native-yaml-apply.png" \

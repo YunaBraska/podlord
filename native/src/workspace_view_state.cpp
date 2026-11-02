@@ -14,6 +14,7 @@ Workspace::~Workspace() {
     client_.showSession({}, viewId_);
     disconnect(&client_, nullptr, this, nullptr);
     sourceImportFuture_.waitForFinished();
+    sourceEditFuture_.waitForFinished();
     sessionMutationFuture_.waitForFinished();
     if (presetsBusy_) presetsFuture_.waitForFinished();
     // Normal window closure drains asynchronously. Direct destruction must not leave

@@ -133,6 +133,17 @@ public:
      * Listing never changes persisted data.
      */
     Result<SourceCatalog> list() const;
+    /** Reads sensitive editor YAML only from a validated app-owned snapshot.
+     * Removed contexts, invalid identities and damaged copies fail explicitly.
+     * Never falls back to the original file or executes credential providers.
+     */
+    Result<QString> ownedYaml(const QString& snapshotId, const QString& contextId) const;
+    /** Imports an edited owned snapshot under its validated original origin, including document URIs.
+     * Requires an existing, intact snapshot and a non-removed context belonging to it.
+     * Retains prior YAML and sessions, using the ordinary 16 MiB UTF-8 import and recency policy.
+     * Never reads the original source, executes a credential provider, or contacts a cluster.
+     */
+    Result<SourceSnapshot> editOwnedYaml(const QString& snapshotId, const QString& contextId, const QString& yaml) const;
     /** Resolves one owned context, including paths relative to the original source.
      * Referenced credentials/certificates must be regular files of at most 16 MiB;
      * symlinks to regular files remain supported. Failures never include their contents.

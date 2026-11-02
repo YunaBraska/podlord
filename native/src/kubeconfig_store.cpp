@@ -241,6 +241,24 @@ Result<QString> sourceDirectory(const QString& profile, bool create) {
         return Failure{StoreError::WriteFailed, "Cannot create protected kubeconfig directory."};
     return QFileInfo(directory).canonicalFilePath();
 }
+Result<SourceSnapshot> readOwnedContext(const QString& profile, const QString& snapshot, const QString& contextId, QByteArray* original = nullptr) {
+    static const QRegularExpression identity("\\A[0-9a-f]{64}-[0-9a-f]{64}\\z");
+    static const QRegularExpression contextIdentity("\\Actx:[0-9a-f]{64}\\z");
+    if (!identity.match(snapshot).hasMatch() || !contextIdentity.match(contextId).hasMatch())
+        return Failure{StoreError::InvalidInput, "A valid owned snapshot and context are required."};
+    const auto directory=sourceDirectory(profile,false);
+    if (const auto* failure=std::get_if<Failure>(&directory)) return *failure;
+    const auto sessions=SessionStore(profile).list();
+    if (const auto* failure=std::get_if<Failure>(&sessions)) return *failure;
+    if (std::get<SessionCatalog>(sessions).removedContexts.contains(contextId))
+        return Failure{StoreError::NotFound, "The imported context was removed."};
+    const auto loaded=readOwned(QDir(std::get<QString>(directory)).filePath(snapshot+".json"),original);
+    if (const auto* failure=std::get_if<Failure>(&loaded)) return *failure;
+    const auto& source=std::get<SourceSnapshot>(loaded);
+    if (std::none_of(source.contexts.cbegin(),source.contexts.cend(),[&](const auto& context) { return context.id==contextId; }))
+        return Failure{StoreError::NotFound, "The context does not belong to this owned snapshot."};
+    return loaded;
+}
 QString ociCredentialPath(const QString& directory, const QString& contextId) {
     return QDir(directory).filePath("oci-" + contextId.mid(4) + ".cred");
 }
@@ -706,6 +724,19 @@ Result<SourceCatalog> KubeconfigStore::list() const {
         if (!snapshot.contexts.isEmpty()) catalog.sources.append(std::move(snapshot));
     }
     return catalog;
+}
+Result<QString> KubeconfigStore::ownedYaml(const QString& snapshot, const QString& contextId) const {
+    QByteArray original;
+    const auto loaded=readOwnedContext(profile_,snapshot,contextId,&original);
+    if (const auto* failure=std::get_if<Failure>(&loaded)) return *failure;
+    return QString::fromUtf8(original);
+}
+Result<SourceSnapshot> KubeconfigStore::editOwnedYaml(const QString& snapshot, const QString& contextId, const QString& yaml) const {
+    const auto loaded=readOwnedContext(profile_,snapshot,contextId);
+    if (const auto* failure=std::get_if<Failure>(&loaded)) return *failure;
+    if (yaml.size()>maximumKubeconfigBytes)
+        return Failure{StoreError::InvalidData, "Kubeconfig exceeds the 16 MiB import limit."};
+    return importContent(std::get<SourceSnapshot>(loaded).sourcePath,yaml.toUtf8());
 }
 Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) const {
     if (contextId.isEmpty()) return Failure{StoreError::InvalidInput, "A context is required."};

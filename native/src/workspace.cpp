@@ -522,7 +522,10 @@ bool Workspace::yamlEditing() const { return yamlDraft_.has_value(); }
 bool Workspace::yamlDraftCredentialsCurrent() const {
     return yamlDraft_ && client_.credentialRevision(yamlDraft_->session) == std::optional<quint64>{yamlDraft_->revision};
 }
-bool Workspace::yamlDirty() const { return yamlDraft_ && yamlDraft_->text != yamlDraft_->baseline; }
+bool Workspace::yamlDirty() const {
+    return (yamlDraft_ && yamlDraft_->text != yamlDraft_->baseline)
+        || (sourceInspection_ && sourceInspection_->editing && sourceInspection_->draft!=sourceInspection_->yaml);
+}
 QString Workspace::yamlDraftStatus() const {
     if (!yamlDraft_) return canEditYaml() ? "Fresh YAML ready. Start editing explicitly." : "Read-only. A successful fresh detail read with resource identity and version is required.";
     if (inspectorDocument_.isEmpty()) return "Current server detail is unavailable. Your local draft is preserved.";
@@ -535,6 +538,9 @@ QString Workspace::yamlDraftStatus() const {
 }
 bool Workspace::discardPending() const { return pendingLeave_.has_value(); }
 QString Workspace::discardPrompt() const {
+    if (pendingLeave_ && sourceInspection_ && sourceInspection_->editing)
+        return "Discard unapplied kubeconfig edits for "+sourceInspection_->metadata.value("name").toString()
+            +"?\nStay keeps your draft. Discard continues without importing it.";
     if (!pendingLeave_ || !yamlDraft_) return {};
     return "Discard unapplied YAML changes for " + yamlDraft_->document.value("metadata").toObject().value("name").toString()
         + "?\nStay keeps your draft. Discard continues the originally requested action without applying it.";
@@ -555,6 +561,12 @@ bool Workspace::setYamlDraft(const QString& text) {
     emit yamlTextChanged(); if (dirty != yamlDirty()) emit yamlEditChanged(); return true;
 }
 bool Workspace::clearYamlDraft() {
+    if (sourceInspection_ && sourceInspection_->editing) {
+        sourceInspection_->editing=false; sourceInspection_->draft.clear();
+        sourceInspection_->error.clear();
+        emit sourceInspectionChanged();
+        emit sourceDraftChanged(); emit yamlEditChanged();
+    }
     if (yamlApply_) {
         const auto token = yamlApply_->token;
         yamlApply_.reset();
@@ -566,6 +578,7 @@ bool Workspace::clearYamlDraft() {
     yamlDraft_.reset(); emit yamlTextChanged(); emit yamlEditChanged(); return true;
 }
 bool Workspace::allowLeave(Leave action, const QString& target, int historyIndex) {
+    if (sourceInspection_ && busy_) return false;
     if (pendingLeave_) return false;
     cancelPendingDeletion();
     if (!yamlDirty()) return clearYamlDraft();
@@ -593,6 +606,7 @@ bool Workspace::confirmDiscard(bool discard) {
     clearYamlDraft(); emit changed();
     switch (pending.action) {
     case Leave::Resource: return inspectResource(pending.target);
+    case Leave::Source: return inspectSourceContext(pending.target);
     case Leave::Session: return activate(pending.target);
     case Leave::Context: return openContext(pending.target);
     case Leave::Tab: return close(pending.target);
@@ -764,6 +778,7 @@ bool Workspace::setInspectorPage(const QString& page) {
 }
 bool Workspace::closeInspector() {
     if (!allowLeave(Leave::Inspector)) return false;
+    clearSourceInspection();
     client_.dismissInspector(active_); client_.hideLogs(viewId_);
     navigation_[active_].inspected.clear(); navigation_[active_].page = "overview";
     publishInspector(); publishLogs(); emit changed(); return true;
@@ -974,7 +989,8 @@ bool Workspace::publish() {
     prepareSnapshot();
     return true;
 }
-bool Workspace::reload() {
+bool Workspace::reload() { return reloadCatalogs(true); }
+bool Workspace::reloadCatalogs(bool reconnect) {
     if (busy_) return false;
     const auto credentialContext = credentialImportContext_;
     credentialImportContext_.clear();
@@ -982,7 +998,7 @@ bool Workspace::reload() {
     busy_ = true; emit changed();
     using Catalogs = std::tuple<Result<SourceCatalog>, Result<SessionCatalog>, Result<ReadSettings>>;
     auto* watcher = new QFutureWatcher<Catalogs>(this);
-    connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher, credentialContext] {
+    connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher, credentialContext, reconnect] {
         const auto [sources, sessions, settings] = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&settings)) { settingsError_ = failure->message; settingsReady_ = false; client_.enableRequests(false); }
         else {
@@ -1010,7 +1026,7 @@ bool Workspace::reload() {
             const bool closeOnStartup = restore && !settings_.workspaceRestore;
             const auto schemas = tableSchemas(true);
             busy_ = true;
-            connect(order, &QFutureWatcher<OrderedViews>::finished, this, [this, order, restore, credentialContext] {
+            connect(order, &QFutureWatcher<OrderedViews>::finished, this, [this, order, restore, credentialContext, reconnect] {
                 const auto [result, views] = order->result(); order->deleteLater(); busy_ = false;
                 if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; emit changed(); }
                 else {
@@ -1021,7 +1037,7 @@ bool Workspace::reload() {
                     if (restore) {
                         navigation_[active_].workspace="map";
                         emit changed();
-                    } else if (selected && !active_.isEmpty() && (client_.connection(active_)
+                    } else if (reconnect && selected && !active_.isEmpty() && (client_.connection(active_)
                         || (!credentialContext.isEmpty() && sessionConfiguration(active_).value("contextId").toString() == credentialContext))) resolve(active_);
                 }
             });
@@ -1052,6 +1068,7 @@ bool Workspace::select(const SessionCatalog& catalog, bool local) {
             if (session.open && runtime_->owners.value(sessionId(session.id)) == this) { next = sessionId(session.id); break; }
     const bool sessionChanged = next != active_;
     if (sessionChanged && !allowLeave(Leave::Reload)) return false;
+    if (sessionChanged) clearSourceInspection();
     emit logViewChanging();
     catalog_ = catalog;
     active_ = next;
@@ -1150,7 +1167,7 @@ bool Workspace::requestSourceRemoval(const QString& contextId) {
         for (const auto& session : catalog_.sessions) if (session.config.contextId == contextId) {
             ids.append(sessionId(session.id)); names.append(session.displayName());
         }
-        if (yamlDirty() && ids.contains(active_)) {
+        if (yamlDirty() && (ids.contains(active_) || (sourceInspection_ && sourceInspection_->metadata.value("contextId")==contextId))) {
             sourceImportError_ = "Save or discard the YAML draft before removing its context.";
             emit changed(); return false;
         }
@@ -1169,6 +1186,12 @@ bool Workspace::confirmSourceRemoval() {
     if (busy_ || pendingLeave_ || sourceRemoval_.isEmpty()) return false;
     const auto contextId = sourceRemoval_["contextId"].toString();
     const auto ids = sourceRemoval_["sessionIds"].toStringList();
+    for (auto* owner : runtime_->windows)
+        if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId
+            && (owner->busy_ || owner->sourceEditing() || owner->yamlDirty() || owner->pendingLeave_)) {
+            sourceImportError_="Save or discard the source draft in its owning window before removing this context.";
+            emit changed(); return false;
+        }
     for (const auto& id : ids)
         if (const auto* owner = runtime_->owners.value(id); owner && owner != this && (owner->busy_ || owner->yamlDirty() || owner->pendingLeave_)) {
             sourceImportError_ = "Finish the operation or YAML draft in the owning window before removing this context.";
@@ -1179,11 +1202,21 @@ bool Workspace::confirmSourceRemoval() {
         emit changed(); return false;
     }
     sourceImportError_.clear(); busy_ = true; emit changed();
+    for (auto* owner : runtime_->windows)
+        if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
+            emit owner->sourceInspectionChanged();
     auto* watcher = new QFutureWatcher<Result<SessionCatalog>>(this);
     connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, contextId, ids] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         const auto* failure = std::get_if<Failure>(&result);
+        if (failure && failure->code!=StoreError::CleanupFailed)
+            for (auto* owner : runtime_->windows)
+                if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
+                    emit owner->sourceInspectionChanged();
         if (!failure || failure->code == StoreError::CleanupFailed) {
+            for (auto* owner : runtime_->windows)
+                if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
+                    owner->clearSourceInspection();
             credentials_.revoke(importedCredentialId(contextId));
             for (const auto& id : ids) {
                 client_.close(id); alerts_.closeSession(id); navigation_.remove(id);
@@ -1561,6 +1594,7 @@ bool Workspace::inspectResource(const QString& path) {
     return openInspector(path);
 }
 bool Workspace::openInspector(const QString& path, int historyIndex) {
+    clearSourceInspection();
     emit logViewChanging();
     auto& nav = navigation_[active_];
     if (historyIndex >= 0) nav.historyIndex = historyIndex;

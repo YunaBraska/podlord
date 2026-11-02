@@ -229,22 +229,22 @@ Pane {
                         tableModel: workspace.sourceTable; columns: workspace.sourceColumns
                         sortColumn: workspace.sourceSortColumn; sortDirection: workspace.sourceSortDirection
                         rowHeight: settings.width < 650 ? 44 : 32
-                        sortableColumns: 7; actionColumns: [7,8]; accessoryColumns: [7,8]
+                        sortableColumns: 8; actionColumns: [8,9]; accessoryColumns: [8,9]
                         emptyText: "No imported contexts. Open or paste a kubeconfig."
                         onSortRequested: column => workspace.sortSourceColumn(column)
                         onCopyRequested: (row,column) => workspace.copySourceCell(pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copySourceCell(identity,column)
-                        onInspectRequested: identity => { if (!workspace.busy) workspace.openContext(identity) }
+                        onInspectRequested: identity => { if (!workspace.busy) workspace.inspectSourceContext(identity) }
                         onActionRequested: (identity,column) => {
                             if (workspace.busy) return
-                            if (column === 8) workspace.requestSourceRemoval(identity)
+                            if (column === 9) workspace.requestSourceRemoval(identity)
                             else { const context = workspace.contexts.find(context => context.id === identity); if (context) sourceAliasDialog.edit(context) }
                         }
                         cellAccessory: Component {
                             IconButton {
                                 id: sourceAction
                                 readonly property string identity: parent.identity
-                                readonly property bool isRemoval: parent.column === 8
+                                readonly property bool isRemoval: parent.column === 9
                                 objectName: (isRemoval ? "removeSource_" : "renameSource_") + identity
                                 glyph: isRemoval ? "Close" : "Pencil"
                                 text: (isRemoval ? "Remove source context " : "Rename source context ") + parent.resourceName
