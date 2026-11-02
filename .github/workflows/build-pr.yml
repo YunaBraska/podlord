@@ -1,4 +1,4 @@
-name: 🧩 CI · Pull Request
+name: "🔍 CI · Pull Request"
 
 on:
   pull_request:
@@ -6,17 +6,17 @@ on:
       - opened
       - synchronize
       - reopened
-      - ready_for_review
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: podlord-pr-${{ github.event.pull_request.number }}
+  group: podlord-pr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_common.yml@d2ea500ddc9695fefa2b78e5f7b41fd759a47575
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_build_common.yml@0c16fe69a5b69ad9da903c444f855b19d4d555fc
     with:
-      ref: ${{ github.event.pull_request.head.sha }}
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
