@@ -28,6 +28,14 @@ or new mobile Sources-editor proof. The installed Android product journey also
 passes after restoring the resource inspector's accessible identity. The test
 map owns exact results and remaining gates.
 
+The November 3 Sources follow-up reproduces the Linux test failures locally:
+the real action succeeds while its Qt delegate is replaced. Public-outcome
+checks pass 612 repeated Linux and 119 macOS component executions afterward.
+The new Android Sources-only journey passes in landscape, but portrait keyboard
+occlusion needs the explicit pending input-priority decision. The integrated
+local run still records one now-corrected offscreen User-copy test failure, not
+a complete green result. Fresh integrated and hosted closure remain required.
+
 The interview is complete. The steps below are confirmed sequencing, not claims that implementation or verification has run. Each implemented increment must carry real behavior and its tests; unfinished capabilities must remain explicitly unavailable rather than simulated.
 
 | Step | Outcome and requirement references | Dependencies | Exit evidence | Status |

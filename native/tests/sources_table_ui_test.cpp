@@ -3,6 +3,7 @@
 #include <QAbstractItemModel>
 #include <QClipboard>
 #include <QFile>
+#include <QItemSelectionModel>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QTemporaryDir>
@@ -33,7 +34,15 @@ bool run(const QString& scenario) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     require(window != nullptr, "Sources window is not native.");
     if (scenario == "narrow") window->setWidth(360);
-    const auto control = [&](const QString& name) { return test::visibleItem(window->contentItem(), name); };
+    if (scenario == "sort" || scenario == "copy_keyboard") window->setWidth(900);
+    const auto control = [&](const QString& name) {
+        if (name.startsWith("sourceCell_")) {
+            const auto parts=name.split('_');
+            return test::tableCell(test::visibleItem(window->contentItem(),"sourceTable"),parts[1].toInt(),parts[2].toInt());
+        }
+        if (name.startsWith("sourceHeader_")) return test::tableCell(test::visibleItem(window->contentItem(),"sourceHeaderView"),0,name.sliced(13).toInt());
+        return test::visibleItem(window->contentItem(), name);
+    };
     const auto click = [&](const QString& name) {
         if (name == "refreshSourceFilesButton") require(test::clickVisible(window,"sourceActionsMenuButton"), "Cannot open source actions.");
         const bool available=QTest::qWaitFor([&] { auto* target=control(name); return target && target->isEnabled(); });
@@ -43,7 +52,15 @@ bool run(const QString& scenario) {
             if (!capture.isEmpty()) window->grabWindow().save(capture);
         }
         require(available, "Sources action did not become available.");
-        require(test::clickVisible(window,name), "Sources action unavailable.");
+        if (name.startsWith("sourceHeader_")) {
+            require(QTest::qWaitFor([&] {
+                auto* header=control(name);
+                return header && !test::visibleBounds(window,header).isEmpty();
+            }), "Source header has no visible pointer target.");
+            auto* header=control(name);
+            // Sorting can synchronously replace the header; the scenario checks the resulting order.
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,test::visibleBounds(window,header).center().toPoint());
+        } else require(test::clickVisible(window,name), "Sources action unavailable.");
         if (name == "sourceColumnsButton") {
             auto* dialog = window->findChild<QObject*>("sourceColumnsDialog");
             require(dialog && QTest::qWaitFor([&] { return dialog->property("opened").toBool(); }),
@@ -67,6 +84,26 @@ bool run(const QString& scenario) {
             if (window->activeFocusItem() && window->activeFocusItem()->objectName()==name) return;
         }
         require(false, "Sources focus target did not settle.");
+    };
+    const auto navigateColumn = [&](int column) {
+        auto* view=control("sourceTable");
+        auto* selection=view ? view->property("selectionModel").value<QItemSelectionModel*>() : nullptr;
+        require(selection && selection->currentIndex().isValid(), "Sources keyboard selection missing.");
+        QList<int> order;
+        for (const auto& value : workspace.sourceColumns()) {
+            const auto state=value.toMap();
+            if (state["visible"].toBool() && !state["pinned"].toBool()) order.append(state["column"].toInt());
+        }
+        require(order.contains(column), "Sources keyboard target is not a visible scrolling column.");
+        for (int step=0;step<order.size() && selection->currentIndex().column()!=column;++step) {
+            const auto before=selection->currentIndex();
+            require(order.contains(before.column()), "Sources keyboard left the scrolling table.");
+            QTest::keyClick(window,order.indexOf(before.column())<order.indexOf(column) ? Qt::Key_Right : Qt::Key_Left);
+            require(QTest::qWaitFor([&] { return selection->currentIndex()!=before; }), "Sources arrow input did not move selection.");
+        }
+        require(selection->currentIndex().column()==column && QTest::qWaitFor([&] {
+            return test::tableCell(view,selection->currentIndex().row(),column)!=nullptr;
+        }), "Sources keyboard did not reveal its live target cell.");
     };
     click("settingsWorkspaceButton");
     require(test::selectSettingsSection(window, "sources"), "Cannot select Sources.");
@@ -101,6 +138,7 @@ bool run(const QString& scenario) {
         require(model->index(0,0).data() == "zulu" && workspace.property("sourceSortDirection") == "DESC", "Descending source sort failed.");
         click("sourceHeader_0");
         require(workspace.property("sourceSortDirection") == "NONE" && model->index(0,0).data() == firstName, "Unsorted source order failed.");
+        focus("sourceCell_0_0"); navigateColumn(2);
         click("sourceHeader_2");
         require(model->index(0,2).data() == "alpha-user" && model->index(0,0).data() == "zulu" && workspace.sourceSortDirection() == "ASC", "Ascending User sort failed.");
         click("sourceHeader_2");
@@ -109,13 +147,9 @@ bool run(const QString& scenario) {
         require(workspace.sourceSortDirection() == "NONE" && model->index(0,0).data() == firstName, "Unsorted User order failed.");
         require(workspace.sortSourceColumn(7) && workspace.sourceSortColumn() == 7 && workspace.sourceSortDirection() == "ASC", "Shifted Status column is not sortable.");
     } else if (scenario == "copy_keyboard") {
-        require(QTest::qWaitFor([&] {
-            auto* view=control("sourceTable");
-            return test::tableCell(view,0,2) && test::visibleItem(window->contentItem(),"sourceCell_0_2")==test::tableCell(view,0,2);
-        }), "Sources User keyboard target is not the live cell.");
-        focus("sourceCell_0_2"); QTest::keySequence(window, QKeySequence::Copy);
+        focus("sourceCell_0_0"); navigateColumn(2); QTest::keySequence(window, QKeySequence::Copy);
         require(QGuiApplication::clipboard()->text() == firstUser, "Source User clipboard value is not the entry name.");
-        focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Copy);
+        navigateColumn(0); QTest::keySequence(window, QKeySequence::Copy);
         const auto copied = QGuiApplication::clipboard()->text();
         if (copied != firstName) std::fprintf(stderr,"Source copy: expected=%s actual=%s focus=%s\n",qPrintable(firstName),qPrintable(copied),qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}));
         require(copied == firstName, "Source clipboard value incorrect.");

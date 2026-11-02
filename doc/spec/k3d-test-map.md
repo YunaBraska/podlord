@@ -7527,7 +7527,8 @@ under SHL-003, without changing narrow stacking or metric order.
 | Installed Android ARM64 | The existing private signer is preserved, the APK is 16-KiB aligned, and the unchanged 12-step journey passes against 1,843 real Kubernetes resources. It covers fresh resource YAML/editing and dirty dialogs, All-container logs, PTY, keyboard/rotation and map navigation. APK: 98,483,362 bytes. ZIP: 37,541,147 bytes. Installed regular files: 99,973,098 bytes. The unchanged 100-MB installed gate has only 26,902 bytes headroom. Emulator, ADB, AVD, ports and the owned Kubernetes fixture clean up with exit 0. | `source-controller-current-android-runtime-final/{result,journey,cleanup}.json`, `source-controller-current-android-private.apk.zip` |
 | Hosted Sources checkpoint | Run 41523819309 for `c05c8e9` fails Sources pointer readiness on both Linux architectures and log handoff grow/shrink on macOS ARM. Both macOS serial reproductions pass, which does not establish a fix. Intel native, Windows, iOS, real k3d and three Mac packages pass; ARM Store is cancelled. | `source-ci-c05-{macos,linux-x64,linux-arm}/`, hosted run 41523819309 |
 | Log-handoff diagnosis | All ten handoff/style cases pass eight times under eight-way local contention, 80 executions in 50.03 seconds. The test now identifies the failing stage and public list/scroll/focus state if the hosted failure recurs. No timeout or assertion is relaxed and no production fix is inferred from a green repeat. | `log-handoff-contention.log`, subsequent `log-handoff-diagnostics-tests.log` |
-| Sources test readiness | The two Sources drivers now wait for the existing public TableView column mapping and first live delegate, not just the model row count. User-column keyboard copy also waits for its actual live cell. All 102 Source-inspector/table/style cases pass locally. This removes an unproven readiness assumption, but the Linux root cause and hosted closure remain unconfirmed until the new run completes. | `source-readiness-tests.log` |
+| Sources input lifecycle | Column readiness alone does not fix the Linux failures. The exact Ubuntu/Qt 6.10.2 toolchain reproduces them locally: inspection succeeds and sorting changes direction, but the named delegate is replaced and the test waits for the old control's clicked observer. The drivers now resolve the live TableView delegate, send real pointer input and assert the existing public inspection/sort outcome. The 44-pixel narrow row hit area remains checked. All 102 Source-inspector/table/style cases pass six times under six-way Linux contention, 612 executions in 47.22 seconds. The macOS Source/store component selection passes 119 executions in 7.20 seconds. | `source-linux-runtime-diagnostic.log`, `source-linux-runtime-verified.log`, `source-live-delegate-macos-verified-tests.log` |
+| Horizontal keyboard navigation | The integrated `bcdf3d0` local run passes its six preflights and 5,344/5,345 main cases, but User-copy waits for an uninstantiated offscreen cell and fails. The corrected test uses real arrow keys to reveal User and return to Name. User sorting follows the same public route. Four Basic/Fusion sort/copy cases pass twelve times at an explicitly narrow 900-pixel window, 48 executions. That scoped result does not turn the earlier complete run green. | `source-editor-integrated-bcdf3d0-full.log`, `source-keyboard-narrow-tests.log` |
 | Current macOS direct package | The post-accessibility-correction ARM64 Release package passes its existing dependency-path, signature-integrity and size preflight. ZIP: 33,794,336 bytes. Installed regular files: 87,518,524 bytes. This is ad-hoc packaging evidence, not a native interactive run, distribution signing or notarization. | `source-controller-current-macos-package/{package-evidence.txt,runtime-dependencies.txt}`, adjacent build log |
 | Current iOS build | The post-accessibility-correction ARM64 simulator application cross-build succeeds. It is not a new iOS runtime or Sources-editor interaction result. | `source-controller-current-ios-build.log` |
 
@@ -7536,3 +7537,22 @@ startup and remaining live-provider gates are still open. The Mac is explicitly
 locked during this increment, so no fresh foreground result is claimed. Sound
 decoding and device tests are silent. No generated files, signing data or access
 material are included in Git.
+
+On 2026-11-03 the actual Android Sources-only journey passes against 1,845 real
+resources. It opens Sources by touch, verifies read-only YAML, explicitly edits
+in landscape above the real keyboard, imports the edited copy and returns to
+the unchanged session query. Original imported-file bytes are unchanged.
+Installed regular files total 99,947,217 bytes. Cleanup exits 0. Evidence:
+`source-editor-android-runtime-scoped/{journey,result,cleanup}.json` and its
+Overview, read-only, keyboard, draft and applied screenshots. This scoped result
+is not the full Android journey or iOS Sources proof.
+
+The same real-device work exposes portrait keyboard occlusion: the focused
+Source YAML lies below its clipped inspector, behind the keyboard. Extending
+the confirmed temporary input-priority layout to portrait has been asked
+explicitly and is not implemented without that decision. The failure remains
+release-visible rather than being hidden by the passing landscape journey.
+Evidence: `source-editor-android-runtime-final/unreachable-sourceInspectorYaml.png`
+and its public Android hierarchy. Earlier test-only Settings-scroll and
+already-open-inspector navigation mistakes are retained separately, not
+reported as production failures.

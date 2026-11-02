@@ -76,10 +76,22 @@ bool run(const QString& scenario, const QString& liveConfig) {
     const auto active=workspace.currentSession();
     const auto initialRequests=workspace.settingsDiagnostics()["requests"].toList().size();
     if (scenario=="narrow") window->resize(320,640);
-    const auto control=[&](const QString& name) { return test::visibleItem(window->contentItem(),name); };
+    const auto control=[&](const QString& name) {
+        if (name=="sourceCell_0_0") return test::tableCell(test::visibleItem(window->contentItem(),"sourceTable"),0,0);
+        return test::visibleItem(window->contentItem(),name);
+    };
     const auto click=[&](const QString& name) {
         require(QTest::qWaitFor([&] { auto* item=control(name); return item && item->isEnabled(); }), "Source control not ready.");
-        require(test::clickVisible(window,name), "Source action unavailable.");
+        if (name=="sourceCell_0_0") {
+            require(QTest::qWaitFor([&] {
+                auto* cell=control(name);
+                const auto bounds=cell ? test::visibleBounds(window,cell) : QRectF{};
+                return bounds.width()>=44 && bounds.height()>=(scenario=="narrow" ? 44 : 32);
+            }), "Source cell has no complete visible row hit area.");
+            auto* cell=control(name);
+            // Opening the pane can replace this delegate before its clicked observers run.
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,test::visibleBounds(window,cell).center().toPoint());
+        } else require(test::clickVisible(window,name), "Source action unavailable.");
         QCoreApplication::processEvents();
     };
     auto* pool=QThreadPool::globalInstance();
@@ -124,10 +136,7 @@ bool run(const QString& scenario, const QString& liveConfig) {
         require(owned.remove() && QFile::link(path,source.ownedPath), "Cannot replace owned fixture with symlink.");
     }
     if (scenario=="close_loading" || scenario=="loading_actions") holdWorker();
-    if (scenario=="narrow") {
-        require(QTest::qWaitFor([&] { auto* item=control("sourceCell_0_0"); return item && test::visibleBounds(window,item).height()>=44; }), "Narrow source row is not visible.");
-        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,test::visibleBounds(window,control("sourceCell_0_0")).center().toPoint());
-    } else click("sourceCell_0_0");
+    click("sourceCell_0_0");
     require(QTest::qWaitFor([&] { return !workspace.sourceInspection().isEmpty(); }), "Row did not open source inspector.");
     if (scenario=="close_loading" || scenario=="loading_actions") {
         require(workspace.sourceInspectionLoading() && workspace.sourceYaml().isEmpty() && !workspace.canEditSourceYaml()
