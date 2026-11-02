@@ -44,14 +44,26 @@ bool ResourceTable::publishPrepared(const PreparedSnapshot& snapshot, bool repla
     const bool unchanged = cluster_ == snapshot.cluster && rows_ == snapshot.rows;
     if (!replace && !unchanged) return false;
     const int previous = rowCount(), next = int(snapshot.rows.size());
-    if (replace && next > previous) beginInsertRows({}, previous, next - 1);
-    else if (replace && next < previous) beginRemoveRows({}, next, previous - 1);
+    const int retained = std::min(previous, next);
+    if (replace && next != previous) {
+        // Structural observers must see the incoming retained values, while Qt's
+        // before/after checks require them not to change inside begin/end.
+        for (int row = 0; row < retained; ++row) rows_[row] = snapshot.rows[row];
+        cluster_ = snapshot.cluster;
+        sortValues_ = snapshot.sortValues; sortValueColumn_ = snapshot.sortColumn;
+    }
+    if (replace && next > previous) {
+        beginInsertRows({}, previous, next - 1);
+        for (int row = previous; row < next; ++row) rows_.append(snapshot.rows[row]);
+        endInsertRows();
+    } else if (replace && next < previous) {
+        beginRemoveRows({}, next, previous - 1);
+        rows_.resize(next);
+        endRemoveRows();
+    }
     // Every retained display field is complete and immutable. Age is always evaluated live.
     rows_ = snapshot.rows; cluster_ = snapshot.cluster;
     sortValues_ = snapshot.sortValues; sortValueColumn_ = snapshot.sortColumn;
-    if (replace && next > previous) endInsertRows();
-    else if (replace && next < previous) endRemoveRows();
-    const int retained = std::min(previous, next);
     if (replace && !unchanged && retained > 0) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
     return true;
 }

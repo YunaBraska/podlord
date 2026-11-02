@@ -7270,3 +7270,101 @@ benchmark executable uses the original production QML with the verified new
 replay driver. The earlier full native, Kubernetes and simulator results remain
 the evidence for the unchanged production implementation, not a claim that
 those complete suites were repeated for these test-harness-only changes.
+
+### Cached Source Handoffs and Mobile Values, 2026-11-02
+
+`PERF-LOG-HANDOFF-001` permits reusing existing log-list slots, subject to a
+measured CPU benefit and the unchanged memory gate. Disjoint streams reuse
+those slots only when the incoming list is nonempty. Clearing and overlapping
+streams retain the existing incremental owner.
+Outgoing input grabs are cancelled before slot reuse. A removed pressed row
+cannot apply its invalid index to the incoming container. No resource cache,
+request, persistence or polling policy is added.
+
+Five public log-UI scenarios cover equal, growing and shrinking streams,
+held-pointer handoff and overlapping streams in Basic and Fusion. They check
+copying from the incoming container, scroll restoration, live-follow and close.
+The late-pointer regression failed before correction. Five Qt public-model
+scenarios cover raw/prepared grow/shrink and equal-size raw replacement.
+`QAbstractItemModelTester` catches the original structural-notification error.
+Retained data now stays stable across each begin/end boundary, while completed
+table notifications expose the incoming snapshot without a reset or empty gap.
+
+| Evidence | Result |
+|---|---|
+| Logs, snapshots, all window cases, filters and five Inspector cases | 243/243 executions passed in 72.02 s. The additional equal-size raw case passed separately. These are 244 executions, not 244 new features. |
+| Changed handoff branch ranges | 18/18 in `LogRows::publish`, 24/24 in the raw table handoff and 44/44 in prepared publication. This is range-scoped coverage, not whole-application coverage. |
+| Real Kubernetes TLS/CRUD/log route | Passed client certificates, confirmed exec authentication, YAML/draft/Secret handling, multi-container logs, conflict reconciliation, real PTY/vi/interrupts and UID-safe deletion in Basic and Fusion. Its owned cluster was removed. |
+| Large real Kubernetes route | The isolated metadata-audited run passed terminals, window/forward transfer, Pod/Service forwards, source-removal/draft guards, deletion races, Inspector history, cache search, metrics, health and cached field filters. Its owned cluster was removed. |
+| iOS public Inspector cases | Cached YAML and refresh scroll retention passed. Secret copy passed separately after explicitly navigating the virtualized Copy and Value columns. The value remains masked and copying adds no requests. No application layout or column-order change was needed. |
+| Final mobile pass | Android ARM64 application and iOS ARM64 application/UI builds passed after the nonempty-source guard. A fresh iPhone 17 Pro/iOS 26.4 simulator passed all three Inspector cases together and was deleted. |
+| Final non-hardware matrix | Six preflights and 5,151 remaining cases passed: 5,157/5,157 executions. The main run took 1,228.26 s with eight workers. Session/source CLI p95 including process startup is 9.596/15.920 ms. The 116 hardware-audio cases remain excluded from this explicitly partial result, not waived or passed. |
+| Fresh coverage from that matrix | Reported production coverage is 97.76% lines and 85.98% branches. The final handoff ranges remain 18/18, 24/24 and 44/44. LLVM's 44 mismatched-function warnings, and one warning in the selected-range export, are retained in the reports rather than suppressed. This is not unconditional release clearance. |
+| Last complete native suite, before follow-up corrections | Six preflights passed. Main run: 5,174/5,266 passed, with four window handoff failures subsequently corrected and 88 hardware-audio failures still open. Reported coverage: 97.76% lines, 86.02% branches. This is not a clean current full-suite result. |
+
+Two earlier large-cluster attempts remain failures: one timed out while loading
+the transfer fixture, another stopped at the alert `real` stage. The former
+test now checks the loaded cache rather than displayed table rows and reports
+both counts on failure. A succeeding run had 1,854 cached and displayed rows,
+so the first timeout cannot be attributed conclusively to the 256-row limit.
+The test runner now reports nonzero child exit status. No infrastructure timeout
+or release threshold was relaxed.
+
+The iOS failure image showed correctly masked values with action columns outside
+the viewport. The regression uses the existing public TableView navigation to
+bring Copy into view, performs the action, then returns to Value to verify the
+mask. Explicit error-stage diagnostics and opt-in screenshots remain in the
+test driver. Owned simulators were shut down and deleted.
+
+The hardware audio failure also reproduces in isolation: playback stalls at
+68 ms with either muted output or zero local output volume. Two affected assets
+decode completely through Qt/FFmpeg into 11,395 and 44,102 PCM frames without
+opening an output device. This narrows the diagnosis but does not establish a
+root cause or clear real playback. System volume and output devices were not
+changed. Replacing the 116 per-asset device tests requires the pending explicit
+test-scope decision and has not been done.
+
+A separate source audit finds one reusable player/output pair per `Alerts`
+owner, not an unbounded collection. Owner destruction and committed mute stop
+and release it. A stalled `Playing` pair can remain for the owner's lifetime.
+Adopting an externally changed muted catalog through Retry load lacks the same
+explicit cleanup, but that conditional sequence has not been reproduced through
+the current public playback surface. Existing tests observe preferences and
+notifications, not production playback cancellation. This is an open verification
+gap, not a confirmed explanation of the hardware stall. No timeout or new
+playback policy was invented.
+
+The initial atomic-log background Metal trial reports 16.278 ms tab frame-CPU
+p95 versus a fixed-input reference of 18.732 ms, with 304,939,008-byte peak RSS
+and 3,702,784-byte warm growth. Its idle exposure failed and a repeat did not
+complete. These observations do not establish adoption or release clearance.
+The current desktop is locked. Native foreground CPU/memory proof remains open.
+The source change is a working-branch candidate, not a release-ready claim.
+
+The original C4 software reference also lacked the table-notification fixes,
+so that comparison cannot isolate the log optimization. A subsequent control
+keeps the same current table fixes, driver and replay identity, removing only
+the atomic log branch and its QML callbacks. Both variants retain the independent
+invalid-index input fix. Temporary control sources were restored after a hash
+check. The existing driver now additionally records whole-process CPU across
+all 35 complete actions, including five warmups. This diagnostic value does not
+replace the native GUI/render-thread per-frame CPU measurement or its 8-ms gate.
+
+With empty-list publication excluded from the special path, two software trials
+use 561.369/557.495 ms of process CPU for 35 cached session switches. Controls use
+575.963/592.074 ms. The candidate mean is about 4.2% lower. Inspector totals are
+303.867/287.903 ms versus 295.710/297.624 ms, with no consistent regression across
+the two trials. Candidate peak RSS is 216,154,112/208,568,320 bytes and warm growth
+180,224/212,992 bytes. These pass the software diagnostic's memory checks, not
+the pending native foreground memory gate. Clearing an empty incoming source
+no longer invokes slot-reuse callbacks. Its impossible zero-retained-row guard
+was removed before final functional verification.
+
+The isolated process-CPU runs are `atomic-log-cpu-control-1/2` and
+`atomic-log-cpu-candidate-3/4`. Earlier software and candidate-1/2 trials remain
+diagnoses of their respective earlier versions, not final release evidence.
+
+Evidence is under `2026-10-31-app-store/typed-workspace-20261101/atomic-handoff-*`,
+with the earlier complete-run log `atomic-model-full-suite-final.log` and silent
+`audio-*-diagnostic`/`audio-*-playback` probes. No generated profiles, simulator
+data, client keys or screenshots are added to Git.

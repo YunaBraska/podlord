@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "ui_input.h"
+#include <QAbstractItemModelTester>
 #include <QFile>
 #include <QElapsedTimer>
 #include <QClipboard>
@@ -120,6 +121,12 @@ public:
                         if (scenario == "negotiation" && !request->toLower().contains("\r\naccept: application/json\r\n")) status = 406;
                         const auto timestamp = container == "alpha" ? "2026-10-03T10:00:00.000000100Z" : "2026-10-03T10:00:00.000000050Z";
                         bytes = QByteArray(timestamp) + " " + container.toUtf8() + " output\n";
+                        if (scenario.startsWith("handoff")) {
+                            const int count = (scenario == "handoff_grow" && container == "alpha") || (scenario == "handoff_shrink" && container == "beta") ? 30 : 50;
+                            bytes.clear();
+                            for (int index = 0; index < count; ++index)
+                                bytes += "2026-10-03T10:00:00." + QByteArray::number(index + 1).rightJustified(9,'0') + "Z " + container.toUtf8() + '-' + QByteArray::number(index) + '\n';
+                        }
                         if (scenario == "recreate" && coreReads > 1 && path.section('/', -2, -2) == "first") bytes = QByteArray(timestamp) + " " + container.toUtf8() + " new instance\n";
                         if (scenario == "malformed" && container == "beta") bytes = "not-a-timestamp output\n";
                         if (scenario == "invalid_utf8" && container == "beta") bytes = QByteArray(timestamp) + " " + QByteArray(1, '\xff');
@@ -225,6 +232,71 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (!click(window, "logsButton")) return false;
     auto* model = workspace.property("logRows").value<QAbstractItemModel*>();
     if (!model) return false;
+    if (scenario.startsWith("handoff")) {
+        QAbstractItemModelTester checker(model,QAbstractItemModelTester::FailureReportingMode::Fatal);
+        const int alpha = scenario == "handoff_grow" ? 30 : 50, beta = scenario == "handoff_shrink" ? 30 : 50;
+        if (!waitFor([&] { return model->rowCount() == alpha + beta; }) || !workspace.pauseLogs(true)) {
+            std::fprintf(stderr,"Log handoff initialization: rows=%d expected=%d requests=%lld status=%s error=%s\n",model->rowCount(),alpha+beta,static_cast<long long>(server.logs.size()),qPrintable(workspace.property("logStatus").toString()),qPrintable(workspace.error())); return false;
+        }
+        auto* list = item(window,"podLogEntries");
+        if (!list) return false;
+        const auto settle = [&] {
+            for (int drain = 0; drain < 2; ++drain) {
+                QSignalSpy rendered(window,&QQuickWindow::frameSwapped);
+                window->requestUpdate();
+                if (rendered.isEmpty() && !rendered.wait(1000)) return false;
+            }
+            return true;
+        };
+        const auto select = [&](const QString& container, int count) {
+            const bool ready = workspace.selectLogContainer(container) && waitFor([&] {
+                return model->rowCount() == count && model->data(model->index(0,0)).toString().contains('[' + container + ']');
+            });
+            if (!ready) std::fprintf(stderr,"Log handoff selection: requested=%s actual=%s rows=%d expected=%d first=%s status=%s error=%s\n",qPrintable(container),qPrintable(workspace.property("logSelection").toString()),model->rowCount(),count,qPrintable(model->data(model->index(0,0)).toString()),qPrintable(workspace.property("logStatus").toString()),qPrintable(workspace.error()));
+            return ready && settle();
+        };
+        const auto beginning = [&] {
+            list->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
+            const bool ready = waitFor([&] { return list->property("atYBeginning").toBool() && !workspace.property("logFollow").toBool(); });
+            if (!ready) std::fprintf(stderr,"Log handoff beginning: y=%.1f beginning=%d follow=%d anchor=%s\n",list->property("contentY").toDouble(),list->property("atYBeginning").toBool(),workspace.property("logFollow").toBool(),qPrintable(workspace.property("logAnchor").toString()));
+            return ready;
+        };
+        if (scenario == "handoff_overlap_pointer") {
+            if (!settle() || !beginning() || !click(window,"logEntry_2")) return false;
+            auto* first = item(window,"logEntry_0");
+            if (!first) return false;
+            const auto position = first->mapToScene({first->width()/2,first->height()/2}).toPoint();
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,position);
+            const bool switched = select("alpha",alpha);
+            const int selected = list->property("currentIndex").toInt();
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,position);
+            if (!switched || selected < 0 || list->property("currentIndex").toInt() != selected) {
+                std::fprintf(stderr,"Overlapping log scope accepted an old click: selected=%d after=%d\n",selected,list->property("currentIndex").toInt()); return false;
+            }
+            return click(window,"copyLogEntry") && QGuiApplication::clipboard()->text() == workspace.logEntry(selected);
+        }
+        if (!select("beta",beta) || !beginning() || !select("alpha",alpha) || !beginning()) return false;
+        if (!waitFor([&] { return item(window,"logEntry_1") != nullptr; })) return false;
+        auto* row = item(window,"logEntry_1");
+        const auto position = row->mapToScene({row->width()/2,row->height()/2}).toPoint();
+        if (scenario == "handoff_pointer") QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,position);
+        else if (!click(window,"logEntry_1") || list->property("currentIndex").toInt() != 1) return false;
+        const bool switched = select("beta",beta) && waitFor([&] {
+            auto* first = item(window,"logEntry_0");
+            return first && first->property("text").toString().contains("[beta]") && list->property("atYBeginning").toBool()
+                && list->property("currentIndex").toInt() == 0;
+        });
+        if (scenario == "handoff_pointer") QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,position);
+        if (!switched) std::fprintf(stderr,"Log handoff replacement: index=%d rows=%d beginning=%d first=%s follow=%d\n",list->property("currentIndex").toInt(),model->rowCount(),list->property("atYBeginning").toBool(),qPrintable(model->data(model->index(0,0)).toString()),workspace.property("logFollow").toBool());
+        if (list->property("currentIndex").toInt() != 0) {
+            std::fprintf(stderr,"Log handoff late input selected row %d in the new container.\n",list->property("currentIndex").toInt()); return false;
+        }
+        if (!switched || !click(window,"copyLogEntry")
+            || QGuiApplication::clipboard()->text() != workspace.logEntry(0) || !workspace.logEntry(0).contains("[beta]")) return false;
+        if (!select("alpha",alpha) || !waitFor([&] { return !workspace.property("logFollow").toBool() && list->property("atYBeginning").toBool(); })
+            || !click(window,"liveFollow") || !waitFor([&] { return workspace.property("logFollow").toBool() && list->property("atYEnd").toBool(); })) return false;
+        return click(window,"overviewButton") && waitFor([&] { return model->rowCount() == 0 && !workspace.logsVisible(); });
+    }
     if (scenario == "compact_scroll") {
         if (!waitFor([&] { return model->rowCount() >= 2; })) {
             qWarning() << "Compact logs did not arrive:" << model->rowCount() << workspace.property("logStatus");

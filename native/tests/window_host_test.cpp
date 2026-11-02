@@ -631,7 +631,12 @@ bool realTransfer(const QString& configPath) {
     podlord::WindowHost host(primary); REQUIRE(host.open());
     REQUIRE(waitFor([&] { return !primary.busy(); }));
     REQUIRE(primary.openContext(source->contexts.first().id));
-    REQUIRE(waitFor([&] { return !primary.busy() && primary.loadingProgress() == 1 && primary.resourceCount() >= 1000; }, 120000));
+    if (!waitFor([&] { return !primary.busy() && primary.loadingProgress() == 1 && primary.totalResourceCount() >= 1000; }, 120000)) {
+        std::fprintf(stderr, "Kubernetes transfer preparation timed out: cached=%d visible=%d progress=%g busy=%d\n",
+            primary.totalResourceCount(), primary.resourceCount(), primary.loadingProgress(), primary.busy());
+        return false;
+    }
+    std::printf("Kubernetes transfer prepared: cached=%d visible=%d\n", primary.totalResourceCount(), primary.resourceCount());
     const auto a = primary.currentSession();
     const auto echo = QString("/api/v1/namespaces/visual-a/pods/podlord-forward-echo");
     const auto forward = [&] {

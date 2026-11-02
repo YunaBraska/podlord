@@ -199,6 +199,7 @@ run_native_test() {
     NATIVE_PID=$!
     result=0
     wait "$NATIVE_PID" || result=$?
+    if [ "$result" -ne 0 ]; then printf 'Native test failed: executable=%s status=%s\n' "$1" "$result" >&2; fi
     NATIVE_PID=
     return "$result"
 }

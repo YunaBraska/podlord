@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include <QAbstractItemModelTester>
 #include <QCoreApplication>
 #include <QSemaphore>
 #include <QSignalSpy>
@@ -21,6 +22,28 @@ int main(int argc, char** argv) {
     const QJsonObject beta{{"apiVersion", "v1"}, {"kind", "ConfigMap"}, {"path", "/configmaps/b"}, {"name", "beta"},
         {"namespace", "two"}, {"status", "Ready"}, {"createdAt", now.addSecs(60).toString(Qt::ISODateWithMs)}};
     const QJsonArray source{alpha, beta};
+    if (QStringList{"handoff_raw_grow", "handoff_raw_shrink", "handoff_raw_same", "handoff_prepared_grow", "handoff_prepared_shrink"}.contains(scenario)) {
+        Table table;
+        QAbstractItemModelTester checker(&table,QAbstractItemModelTester::FailureReportingMode::Fatal);
+        auto replacement = beta; replacement["name"] = "replacement-beta";
+        const bool grow = scenario.endsWith("grow");
+        const bool same = scenario.endsWith("same");
+        const QJsonArray before = grow ? QJsonArray{beta} : same ? QJsonArray{alpha} : source;
+        const QJsonArray after = grow ? QJsonArray{alpha,replacement} : QJsonArray{replacement};
+        CHECK(table.publish(before,"before",true));
+        QSignalSpy changedRows(&table,&QAbstractItemModel::dataChanged);
+        QSignalSpy inserted(&table,&QAbstractItemModel::rowsInserted), removed(&table,&QAbstractItemModel::rowsRemoved), reset(&table,&QAbstractItemModel::modelReset);
+        if (scenario.startsWith("handoff_prepared")) {
+            auto future = QtConcurrent::run(&Table::prepare,after,QString("after"),0);
+            future.waitForFinished();
+            CHECK(future.resultCount() == 1 && table.publishPrepared(future.result(),true));
+        } else CHECK(table.publish(after,"after",true));
+        CHECK(table.rowCount() == after.size() && changedRows.size() == 1);
+        if (same) CHECK(inserted.isEmpty() && removed.isEmpty() && reset.isEmpty());
+        CHECK(table.data(table.index(0,0)).toString() == "replacement-beta");
+        CHECK(table.data(table.index(0,6)).toString() == "after");
+        return 0;
+    }
     if (scenario == "canceled_entry") {
         QPromise<Table::PreparedSnapshot> promise;
         promise.start();

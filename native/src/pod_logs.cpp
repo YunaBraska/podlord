@@ -146,6 +146,25 @@ int LogRows::findEntry(const QString& id) const {
 bool LogRows::publish(const QList<LogEntry>& entries) {
     QSet<QString> incoming;
     for (const auto& entry : entries) incoming.insert(entry.id);
+    if (!entries.isEmpty() && !entries_.isEmpty() && std::none_of(entries_.cbegin(),entries_.cend(),[&](const auto& entry) { return incoming.contains(entry.id); })) {
+        emit entriesReplacing();
+        const int previous = rowCount(), next = int(entries.size());
+        // Retained values must stay unchanged until structural notifications finish.
+        if (next > previous) {
+            beginInsertRows({},previous,next-1);
+            for (int row = previous; row < next; ++row) entries_.append(entries[row]);
+            endInsertRows();
+        } else if (next < previous) {
+            beginRemoveRows({},next,previous-1);
+            entries_.resize(next);
+            endRemoveRows();
+        }
+        entries_ = entries;
+        const int retained = std::min(previous,next);
+        emit dataChanged(index(0,0),index(retained-1,0));
+        emit entriesReplaced();
+        return true;
+    }
     for (int end = static_cast<int>(entries_.size()) - 1; end >= 0;) {
         if (incoming.contains(entries_[end].id)) { --end; continue; }
         int start = end;

@@ -638,7 +638,11 @@ bool execute(const QString& requestedScenario) {
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
-    if (!window || !waitFor([&] { return window->isVisible() && window->isExposed(); })) return false;
+    if (!window || !waitFor([&] { return window->isVisible() && window->isExposed(); })) {
+        std::fprintf(stderr,"UI render surface unavailable: platform=%s window=%d visible=%d exposed=%d active=%d\n",
+            qPrintable(QGuiApplication::platformName()),bool(window),window && window->isVisible(),window && window->isExposed(),window && window->isActive());
+        return false;
+    }
     QString renameStage = "source import/open";
     bool renamePassed = false;
     const auto renameDiagnostics = qScopeGuard([&] {
@@ -4431,15 +4435,21 @@ bool execute(const QString& requestedScenario) {
             if (!click(window, item(window, "activateSession_" + first)) || !waitFor([&] { return workspace.currentSession() == first && !workspace.busy() && !workspace.loading(); })) return false;
         }
         const bool secret = scenario.startsWith("inspector_secret_") || scenario == "inspector_edit_secret";
-        if (!type(window, item(window, "resourceFilter"), secret ? "Secret" : scenario == "inspector_custom_secret" ? "custom-secret" : "bravo") || !waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); })) return false;
-        if (!click(window, item(window, "cell_0_0")) || !click(window, item(window, "yamlButton"))) return false;
+        if (!type(window, item(window, "resourceFilter"), secret ? "Secret" : scenario == "inspector_custom_secret" ? "custom-secret" : "bravo") || !waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); })) {
+            std::fputs("Inspector resource filter did not expose its expected row.\n",stderr); return false;
+        }
+        if (!click(window, item(window, "cell_0_0")) || !click(window, item(window, "yamlButton"))) {
+            std::fputs("Inspector resource row or YAML tab was not reachable.\n",stderr); return false;
+        }
         auto* yamlView = item(window, "inspectorYaml");
         if (!yamlView || !yamlView->isVisible() || !yamlView->property("readOnly").toBool() || !text(window, "inspectorReadStatus").contains("Refreshing")) {
             std::fprintf(stderr,"Inspector cached YAML: visible=%d readOnly=%d status=%s\n",yamlView && yamlView->isVisible(),yamlView && yamlView->property("readOnly").toBool(),qPrintable(text(window,"inspectorReadStatus")));
             return false;
         }
         const auto expectedName = secret ? "alpha" : scenario == "inspector_custom_secret" ? "custom-secret" : "bravo";
-        if (!text(window, "inspectorResourceName").endsWith("/" + QString(expectedName))) return false;
+        if (!text(window, "inspectorResourceName").endsWith("/" + QString(expectedName))) {
+            std::fputs("Inspector selected a different resource.\n",stderr); return false;
+        }
         if (scenario.startsWith("inspector_edit_")) {
             auto* edit = item(window, "editYaml");
             if (!edit || edit->isEnabled()) return false;
@@ -4790,7 +4800,9 @@ bool execute(const QString& requestedScenario) {
             const auto requests = server.requests.size(); QTest::qWait(100);
             return server.requests.size() == requests && !server.requests.contains("/credential-leak");
         }
-        if (!click(window, item(window, "valuesButton"))) return false;
+        if (!click(window, item(window, "valuesButton"))) {
+            std::fputs("Inspector values tab was not reachable.\n",stderr); return false;
+        }
         if (scenario.startsWith("inspector_secret_table_")) {
             const auto before = server.requests.size();
             const auto action = scenario.mid(QString("inspector_secret_table_").size());
@@ -4935,7 +4947,15 @@ bool execute(const QString& requestedScenario) {
                 window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none", item(window,"valueTable")->property("rows").toInt());
             return visible;
         }
-        if (!noLeak() || !waitFor([&] { return item(window, "reveal_data/alpha"); })) return false;
+        if (!noLeak() || !(scenario == "inspector_secret_copy" ? revealTableCell(window,"valueTable",0,3)
+            : waitFor([&] { return item(window, "reveal_data/alpha"); }))) {
+            auto* values = item(window,"resourceValues");
+            std::fprintf(stderr,"Secret values preparation: masked=%d reveal=%d viewport=%gx%g window=%dx%d\n",noLeak(),bool(item(window,"reveal_data/alpha")),
+                values ? values->width() : 0,values ? values->height() : 0,window->width(),window->height());
+            const auto capture=qEnvironmentVariable("PODLORD_INSPECTOR_FAILURE_FRAME");
+            if (!capture.isEmpty()) window->grabWindow().save(capture);
+            return false;
+        }
         QGuiApplication::clipboard()->setText("clipboard-before-reveal");
         if (scenario == "inspector_secret_hidden") return text(window, "value_data/alpha") == "[hidden]" && text(window, "value_data/beta") == "[hidden]";
         const auto requests = server.requests.size();
@@ -4949,8 +4969,18 @@ bool execute(const QString& requestedScenario) {
                 && !text(window, "inspectorYaml").contains("YWxwaGEtcHJpdmF0ZS12YWx1ZQ==") && server.requests.size() == requests;
         }
         if (scenario == "inspector_secret_copy") {
-            if (!click(window, item(window, "copy_data/alpha"))) return false;
-            return QGuiApplication::clipboard()->text() == "alpha-private-value" && noLeak() && text(window, "value_data/alpha") == "[hidden]" && server.requests.size() == requests;
+            const auto* button = item(window, "copy_data/alpha");
+            const auto bounds = button ? button->mapRectToScene(button->boundingRect()) : QRectF{};
+            const bool copiedByClick = click(window, item(window, "copy_data/alpha"));
+            const bool copied = copiedByClick && waitFor([&] { return QGuiApplication::clipboard()->text() == "alpha-private-value"; });
+            const bool masked = revealTableCell(window,"valueTable",0,2) && noLeak() && text(window, "value_data/alpha") == "[hidden]";
+            const bool quiet = server.requests.size() == requests;
+            if (!copiedByClick || !copied || !masked || !quiet)
+                std::fprintf(stderr, "Secret copy: clicked=%d copied=%d masked=%d quiet=%d button=(%g,%g %gx%g) window=%dx%d\n",
+                    copiedByClick, copied, masked, quiet, bounds.x(), bounds.y(), bounds.width(), bounds.height(), window->width(), window->height());
+            if (!copiedByClick || !copied || !masked || !quiet) return false;
+            const auto capture=qEnvironmentVariable("PODLORD_E2E_SCREENSHOT");
+            return capture.isEmpty() || window->grabWindow().save(capture);
         }
         if (scenario == "inspector_secret_binary") {
             auto* values=item(window,"resourceValues"); values->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);

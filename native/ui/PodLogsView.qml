@@ -42,6 +42,15 @@ ColumnLayout {
         function onLogViewChanging() { panel.remember(); panel.restoring = true }
         function onLogViewChanged() { Qt.callLater(panel.restore) }
     }
+    Connections {
+        target: workspace.logRows
+        function onEntriesReplacing() {
+            // Cancel old grabs before reusing their delegate slots for another entry.
+            lines.enabled = false
+            lines.enabled = true
+        }
+        function onEntriesReplaced() { lines.currentIndex = lines.count > 0 ? 0 : -1 }
+    }
     RowLayout {
         Layout.fillWidth: true
         ComboBox {
@@ -94,6 +103,7 @@ ColumnLayout {
             text: line
             Accessible.name: line
             highlighted: lines.currentIndex === index
+            onIndexChanged: if (index < 0 && pressed) { enabled = false; enabled = true }
             contentItem: Label { text: line; textFormat: Text.PlainText; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
             onClicked: lines.currentIndex = index
             onDoubleClicked: panel.openEntry(index)

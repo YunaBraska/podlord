@@ -349,6 +349,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         if (!report({{"type", "interactionStart"}, {"name", name}})) return false;
         QList<double> samples, actions, afterAction;
         QList<quint64> processing;
+        const auto processCpuBefore = std::clock();
         for (int i = 0; i < 35; ++i) {
             const auto elapsed = frame([&] { return action(i); }, [&] { return visible(i); });
             if (!elapsed) { report({{"type", "failure"}, {"interaction", name}, {"sample", i}, {"error", workspace.error()}}); return false; }
@@ -358,12 +359,17 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
                 processing.append(elapsed->token);
             }
         }
+        const auto processCpuAfter = std::clock();
+        const double diagnosticProcessCpuMs = processCpuBefore == std::clock_t(-1) || processCpuAfter == std::clock_t(-1)
+            ? -1 : 1000.0 * double(processCpuAfter - processCpuBefore) / CLOCKS_PER_SEC;
         std::sort(samples.begin(), samples.end());
         std::sort(actions.begin(), actions.end()); std::sort(afterAction.begin(), afterAction.end());
         const bool passed = samples[28] <= limit && samples.last() <= 100;
         return report({{"type", "interaction"}, {"name", name}, {"samples", samples.size()},
                        {"p50Ms", samples[14]}, {"p95Ms", samples[28]}, {"maxMs", samples.last()},
                        {"publicActionP95Ms", actions[28]}, {"postActionP95Ms", afterAction[28]},
+                       {"diagnosticProcessCpuMs", diagnosticProcessCpuMs}, {"diagnosticProcessCpuIterations", 35},
+                       {"diagnosticProcessCpuScope", "Whole process across 5 warmup and 30 retained complete actions; not native per-frame CPU"},
                        {"p95LimitMs", limit}, {"passed", passed}}) && reportFrameWork(name, processing) && passed;
     };
     accepted = benchmark("filter", 100, [&](int i) { return workspace.filter(i % 2 ? "load-1" : ""); },

@@ -243,16 +243,24 @@ bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool
     if (replace && (rows_.size() != incoming.size() || !std::equal(rows_.cbegin(), rows_.cend(), incoming.keyBegin(),
             [this](const auto& row, const auto& key) { return row.document[identityField_].toString() == key; }))) {
         const int previous = rowCount(), next = static_cast<int>(incoming.size());
-        // Replace the snapshot once. Retain visible slots instead of destroying their delegates.
-        if (next > previous) beginInsertRows({}, previous, next - 1);
-        else if (next < previous) beginRemoveRows({}, next, previous - 1);
         QList<Row> replacement;
         replacement.reserve(next);
         for (const auto& value : incoming) replacement.append(Row{value, {}});
-        rows_ = std::move(replacement);
-        if (next > previous) endInsertRows();
-        else if (next < previous) endRemoveRows();
         const int retained = std::min(previous, next);
+        // Complete retained slots before Qt records either structural boundary.
+        // Their values then stay stable through begin/end and are notified below.
+        if (next != previous) for (int row = 0; row < retained; ++row) rows_[row] = replacement[row];
+        if (next > previous) {
+            beginInsertRows({}, previous, next - 1);
+            for (int row = previous; row < next; ++row) rows_.append(replacement[row]);
+            endInsertRows();
+        } else if (next < previous) {
+            beginRemoveRows({}, next, previous - 1);
+            rows_.resize(next);
+            endRemoveRows();
+        }
+        // Retain visible slots instead of destroying their delegates.
+        rows_ = std::move(replacement);
         if (retained > 0) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
         return true;
     }

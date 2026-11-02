@@ -1648,6 +1648,7 @@ On mobile, `oci ce cluster generate-token` may use a complete imported `exec.env
 | MACSTORE-005 | The app MUST carry sandbox, user-selected read-only file, network client and local listener entitlements. Ad-hoc preflight MUST NOT be described as distribution signing or Store approval. |
 | PRIV-NATIVE-001 | About MUST expose the same public privacy-policy URL as the reference. The policy MUST distinguish native identity-provider connections, private imported keys, RAM caches and persisted map previews. Desktop uninstall MUST NOT be described as guaranteed profile deletion. |
 | PERF-HANDOFF-001 | Switching cached sessions MUST publish each table snapshot atomically, without an intermediate empty model caused by removing the outgoing rows before inserting incoming rows. Existing canonical client snapshots remain the only resource cache. Filters, selection, camera, scroll behavior and fresh-YAML edit protection remain session-owned. Performance limits are unchanged. |
+| PERF-LOG-HANDOFF-001 | Cached log-source changes MAY reuse existing list slots instead of rebuilding all visible rows. Selection, scroll position and live-follow MUST remain owned by the session, Pod identity and container selection. An outgoing pointer gesture MUST NOT select a different incoming entry. The change MUST introduce neither another resource cache nor additional requests. Adoption requires a measured CPU benefit and the unchanged memory gate. |
 
 ### Native Store package architecture
 

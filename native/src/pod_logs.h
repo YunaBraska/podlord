@@ -40,6 +40,9 @@ public:
     bool publish(const QList<LogEntry>& entries);
     Q_INVOKABLE QString entryId(int index) const;
     Q_INVOKABLE int findEntry(const QString& id) const;
+signals:
+    void entriesReplacing();
+    void entriesReplaced();
 private:
     QList<LogEntry> entries_;
 };
