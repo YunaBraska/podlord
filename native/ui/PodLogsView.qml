@@ -13,6 +13,7 @@ ColumnLayout {
         entry.open()
         return true
     }
+    Component.onCompleted: Qt.callLater(restore)
     onVisibleChanged: { if (visible) Qt.callLater(restore); else restoring = false }
     function remember() {
         if (!visible || restoring) return
@@ -22,6 +23,7 @@ ColumnLayout {
     }
     function restore() {
         if (!visible) { restoring = false; return }
+        restoring = true
         following = workspace.logFollow
         if (following) lines.positionViewAtEnd()
         else {

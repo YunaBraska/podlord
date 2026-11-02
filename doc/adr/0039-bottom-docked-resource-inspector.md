@@ -11,6 +11,17 @@ This visible difference is not resolved by passing resource transport tests.
 
 ## Decision
 
+Create heavy Inspector subpages on first use and retain them until the Inspector
+closes. Each page Loader owns its active lifetime, without a separate visited-page
+registry. Existing resource models and session-scoped state remain authoritative.
+This avoids constructing unvisited controls without introducing another cache or
+changing freshness, navigation, masking or request ownership. Keep the existing
+single Terminal owner rather than adding another lazy shell surface.
+
+While restoring log position, the existing restoration guard suppresses position
+capture until restoration completes. Intermediate programmatic positions must not
+replace the user's saved anchor or within-line offset.
+
 Reuse Qt Quick's existing SplitView: the left workspace gets a vertical split
 with the existing inspector underneath it; the right sidebar retains its sole
 owner. The user adjusts height with the native handle. Closing the inspector

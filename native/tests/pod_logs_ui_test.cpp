@@ -456,7 +456,60 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             const auto before = list->property("contentY").toDouble();
             if (!waitFor([&] { return model->rowCount() == 102; }, 5500)) return false;
             QTest::qWait(50);
-            if (std::abs(list->property("contentY").toDouble() - before) > 1 || list->property("atYEnd").toBool() || !click(window, "liveFollow")) return false;
+            if (std::abs(list->property("contentY").toDouble() - before) > 1 || list->property("atYEnd").toBool()
+                || !click(window, "pauseLogs") || !waitFor([&] { return workspace.logsPaused() && !workspace.loading(); })) return false;
+            const auto point = list->mapToScene({list->width()/2, list->height()/2});
+            QElapsedTimer inputClock; inputClock.start();
+            for (const auto phase : {Qt::ScrollBegin, Qt::ScrollUpdate, Qt::ScrollEnd}) {
+                QWheelEvent precise(point, window->mapToGlobal(point.toPoint()), phase == Qt::ScrollUpdate ? QPoint(0, 7) : QPoint{}, {},
+                    Qt::NoButton, Qt::NoModifier, phase, false, Qt::MouseEventSynthesizedBySystem);
+                precise.setTimestamp(static_cast<ulong>(inputClock.msecsSinceReference()+inputClock.elapsed()));
+                QCoreApplication::sendEvent(window, &precise);
+                QTest::qWait(1);
+            }
+            if (!waitFor([&] { return !list->property("moving").toBool() && !workspace.logFollow()
+                && !workspace.logAnchor().isEmpty() && workspace.logOffset() > 1; })) {
+                std::fprintf(stderr,"Log hide/show setup: y=%.3f offset=%.3f anchor=%s follow=%d moving=%d\n",
+                    list->property("contentY").toDouble(),workspace.logOffset(),qPrintable(workspace.logAnchor()),workspace.logFollow(),list->property("moving").toBool());
+                return false;
+            }
+            const auto anchor = workspace.logAnchor(), selection = workspace.logSelection(), inspected = workspace.inspectorPath();
+            const double offset = workspace.logOffset(), contentY = list->property("contentY").toDouble(), originY = list->property("originY").toDouble();
+            const auto requests = server.logs.size();
+            const int detailReads = server.detailReads;
+            const auto failed = [&](const char* stage) {
+                const auto* current = item(window,"podLogEntries");
+                const double actualY = current ? current->property("contentY").toDouble() : -1;
+                const double actualOriginY = current ? current->property("originY").toDouble() : -1;
+                std::fprintf(stderr,"Log hide/show %s: page=%s source=%s/%s path=%s/%s rows=%d y=%.3f/%.3f originY=%.3f/%.3f normalizedY=%.3f/%.3f offset=%.3f/%.3f anchor=%s/%s follow=%d paused=%d requests=%lld/%lld detailReads=%d/%d\n",
+                    stage,qPrintable(workspace.inspectorPage()),qPrintable(workspace.logSelection()),qPrintable(selection),
+                    qPrintable(workspace.inspectorPath()),qPrintable(inspected),model->rowCount(),actualY,contentY,actualOriginY,originY,
+                    actualY-actualOriginY,contentY-originY,
+                    workspace.logOffset(),offset,qPrintable(workspace.logAnchor()),qPrintable(anchor),workspace.logFollow(),workspace.logsPaused(),
+                    static_cast<long long>(server.logs.size()),static_cast<long long>(requests),server.detailReads,detailReads);
+                return false;
+            };
+            for (const auto* page : {"yamlButton", "overviewButton"}) {
+                if (!click(window,page) || !waitFor([&] { return !workspace.logsVisible() && model->rowCount() == 0; })) return failed("hide");
+                if (!click(window,"logsButton") || !waitFor([&] {
+                    const auto* current = item(window,"podLogEntries");
+                    return workspace.logsVisible() && model->rowCount() == 102 && current && current->isVisible();
+                })) return failed("show");
+                for (int drain = 0; drain < 2; ++drain) {
+                    QSignalSpy rendered(window,&QQuickWindow::frameSwapped); window->requestUpdate();
+                    if (rendered.isEmpty() && !rendered.wait(1000)) return failed("render");
+                }
+                const auto* current = item(window,"podLogEntries");
+                const double restoredY = current ? current->property("contentY").toDouble() : -1;
+                const double restoredOriginY = current ? current->property("originY").toDouble() : -1;
+                if (!current || workspace.logFollow() || !workspace.logsPaused() || workspace.logAnchor() != anchor
+                    || std::abs(workspace.logOffset()-offset) > 1 || std::abs((restoredY-restoredOriginY)-(contentY-originY)) > 1
+                    || workspace.logSelection() != selection || workspace.inspectorPath() != inspected
+                    || server.logs.size() != requests || server.detailReads != detailReads) return failed("retention");
+                std::fprintf(stdout,"Log hide/show retained via %s: contentY=%.3f->%.3f originY=%.3f->%.3f normalizedY=%.3f->%.3f offset=%.3f->%.3f\n",
+                    page,contentY,restoredY,originY,restoredOriginY,contentY-originY,restoredY-restoredOriginY,offset,workspace.logOffset());
+            }
+            if (!click(window,"pauseLogs") || !waitFor([&] { return !workspace.logsPaused(); }) || !click(window,"liveFollow")) return false;
             return waitFor([&] { return list->property("atYEnd").toBool() && workspace.property("logFollow").toBool(); });
         }
     }

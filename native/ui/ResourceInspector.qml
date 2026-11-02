@@ -9,6 +9,22 @@ Pane {
     padding: 6
     implicitHeight: inspector.Layout.minimumHeight + topPadding + bottomPadding
     clip: true
+    component InspectorPage: Loader {
+        required property bool selected
+        readonly property bool inspectorOpen: workspace.inspectorPath !== ""
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.minimumHeight: item ? item.implicitHeight : 0
+        active: false
+        visible: selected
+        onSelectedChanged: if (selected && inspectorOpen) active = true
+        onInspectorOpenChanged: {
+            if (!inspectorOpen) active = false
+            else if (selected) active = true
+        }
+        Component.onCompleted: if (selected && inspectorOpen) active = true
+    }
+
     component InspectorTab: TabButton {
         id: tab
         width: visible ? implicitWidth : 0
@@ -49,19 +65,21 @@ Pane {
     onWidthChanged: if (width > 0 && width < 600 && workspace.inspectorPage === "terminal") terminalDialog.open()
     function restorePosition() {
         const same = previousScope === workspace.inspectorScope
-        const yamlPane = yamlScroll.contentItem
-        const overviewPane = overviewScroll
-        yamlPane.contentY = same ? Math.min(yamlPosition, Math.max(0, yamlPane.contentHeight - yamlPane.height)) : 0
-        overviewPane.contentY = same ? Math.min(overviewPosition, Math.max(0, overviewPane.contentHeight - overviewPane.height)) : 0
-        values.contentY = same ? Math.min(valuesPosition, Math.max(0, values.contentHeight - values.viewportHeight)) : 0
+        const yamlPane = yamlPage.item ? yamlPage.item.scrollContent : null
+        if (yamlPane)
+            yamlPane.contentY = same ? Math.min(yamlPosition, Math.max(0, yamlPane.contentHeight - yamlPane.height)) : 0
+        overviewScroll.contentY = same ? Math.min(overviewPosition, Math.max(0, overviewScroll.contentHeight - overviewScroll.height)) : 0
+        const valuesPane = valuesPage.item
+        if (valuesPane)
+            valuesPane.contentY = same ? Math.min(valuesPosition, Math.max(0, valuesPane.contentHeight - valuesPane.viewportHeight)) : 0
     }
     Connections {
         target: workspace
         function onInspectorPresentationChanging() {
             inspector.previousScope = workspace.inspectorScope
-            inspector.yamlPosition = yamlScroll.contentItem.contentY
+            inspector.yamlPosition = (yamlPage.item ? yamlPage.item.scrollContent.contentY : 0)
             inspector.overviewPosition = overviewScroll.contentY
-            inspector.valuesPosition = values.contentY
+            inspector.valuesPosition = (valuesPage.item ? valuesPage.item.contentY : 0)
         }
         function onInspectorPresentationChanged() { Qt.callLater(inspector.restorePosition) }
         function onChanged() {
@@ -183,12 +201,13 @@ Pane {
     }
     ListView {
         id: overviewScroll
+        cacheBuffer: 0
         objectName: "overviewScroll"
         Layout.fillWidth: true
         Layout.fillHeight: true
         visible: workspace.inspectorPage === "overview"
         clip: true
-        reuseItems: true
+        reuseItems: false
         model: visible ? workspace.overviewFieldModel : null
         Accessible.name: "Resource metadata overview"
         Accessible.description: workspace.inspected
@@ -253,74 +272,84 @@ Pane {
             }
         }
     }
-    ResourceGrid {
-        id: events
-        objectName: "inspectorEvents"
+    InspectorPage {
+        id: eventsPage
         Layout.fillWidth: true; Layout.fillHeight: true
-        visible: workspace.inspectorPage === "events"
-        prefix: "inspectorEvent"; tableModel: workspace.inspectorEventTable; columns: workspace.inspectorEventColumns
-        sortColumn: workspace.inspectorEventSortColumn; sortDirection: workspace.inspectorEventSortDirection
-        emptyObjectName: "emptyInspectorEvents"
-        emptyText: "No related Events in this cache. Only Events for this resource UID are included. Check synchronization for unavailable data."
-        onSortRequested: column => workspace.sortInspectorColumn("inspectorEvent", column)
-        onInspectRequested: path => workspace.inspectEventPath(path)
-        onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorEvent", events.pathAt(row), column)
-        onCopyPathRequested: (path, column) => workspace.copyInspectorCell("inspectorEvent", path, column)
+        selected: workspace.inspectorPage === "events"
+        sourceComponent: ResourceGrid {
+            id: events
+            objectName: "inspectorEvents"
+            prefix: "inspectorEvent"; tableModel: workspace.inspectorEventTable; columns: workspace.inspectorEventColumns
+            sortColumn: workspace.inspectorEventSortColumn; sortDirection: workspace.inspectorEventSortDirection
+            emptyObjectName: "emptyInspectorEvents"
+            emptyText: "No related Events in this cache. Only Events for this resource UID are included. Check synchronization for unavailable data."
+            onSortRequested: column => workspace.sortInspectorColumn("inspectorEvent", column)
+            onInspectRequested: path => workspace.inspectEventPath(path)
+            onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorEvent", events.pathAt(row), column)
+            onCopyPathRequested: (path, column) => workspace.copyInspectorCell("inspectorEvent", path, column)
+        }
     }
-    ResourceGrid {
-        id: links
-        objectName: "inspectorLinks"
+    InspectorPage {
+        id: linksPage
         Layout.fillWidth: true; Layout.fillHeight: true
-        visible: workspace.inspectorPage === "links"
-        prefix: "inspectorLink"; tableModel: workspace.inspectorLinkTable; columns: workspace.inspectorLinkColumns
-        sortColumn: workspace.inspectorLinkSortColumn; sortDirection: workspace.inspectorLinkSortDirection
-        emptyObjectName: "emptyInspectorLinks"
-        emptyText: "No related resources in this cache. Owner references are resolved by UID; node and namespace links use their explicit scope."
-        onSortRequested: column => workspace.sortInspectorColumn("inspectorLink", column)
-        onInspectRequested: path => workspace.inspectPath(path)
-        onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorLink", links.pathAt(row), column)
-        onCopyPathRequested: (path, column) => workspace.copyInspectorCell("inspectorLink", path, column)
+        selected: workspace.inspectorPage === "links"
+        sourceComponent: ResourceGrid {
+            id: links
+            objectName: "inspectorLinks"
+            prefix: "inspectorLink"; tableModel: workspace.inspectorLinkTable; columns: workspace.inspectorLinkColumns
+            sortColumn: workspace.inspectorLinkSortColumn; sortDirection: workspace.inspectorLinkSortDirection
+            emptyObjectName: "emptyInspectorLinks"
+            emptyText: "No related resources in this cache. Owner references are resolved by UID; node and namespace links use their explicit scope."
+            onSortRequested: column => workspace.sortInspectorColumn("inspectorLink", column)
+            onInspectRequested: path => workspace.inspectPath(path)
+            onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorLink", links.pathAt(row), column)
+            onCopyPathRequested: (path, column) => workspace.copyInspectorCell("inspectorLink", path, column)
+        }
     }
-        RowLayout {
+        InspectorPage {
+            id: yamlPage
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 44
             Layout.preferredHeight: 44
-            spacing: 0
-            visible: workspace.yamlVisible
-            YamlPresentation {
-                id: yamlLines
-                objectName: "yamlLineNumbers"
-                Layout.preferredWidth: implicitWidth
-                Layout.fillHeight: true
-                editor: yamlEditor
-                document: workspace.yamlVisible ? yamlEditor.textDocument : null
-                font: yamlEditor.font
-                light: workspace.themeVariant === "light"
-                color: workspace.appearanceColors.muted
-                scrollOffset: yamlScroll.contentItem ? yamlScroll.contentItem.contentY : 0
-                Accessible.role: Accessible.StaticText
-                Accessible.name: "YAML line numbers"
-                Accessible.description: "First visible line: " + firstVisibleLine
-            }
-            ScrollView {
-                id: yamlScroll
-                objectName: "yamlScroll"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumHeight: 0
-                visible: workspace.yamlVisible
-                TextArea {
-                    id: yamlEditor
-                    objectName: "inspectorYaml"
-                    readOnly: !workspace.yamlEditing || workspace.yamlApplyLocked
-                    selectByMouse: true
-                    textFormat: TextEdit.PlainText
-                    text: workspace.yamlText
-                    onTextChanged: { if (!readOnly) workspace.setYamlDraft(text) }
-                    font.family: workspace.monospaceFamily
-                    wrapMode: TextArea.NoWrap
-                    Accessible.name: readOnly ? "Resource YAML, read-only" : "Local resource YAML draft"
+            selected: workspace.yamlVisible
+            sourceComponent: RowLayout {
+                property alias scrollContent: yamlScroll.contentItem
+                spacing: 0
+                YamlPresentation {
+                    id: yamlLines
+                    objectName: "yamlLineNumbers"
+                    Layout.preferredWidth: implicitWidth
+                    Layout.fillHeight: true
+                    editor: yamlEditor
+                    document: workspace.yamlVisible ? yamlEditor.textDocument : null
+                    font: yamlEditor.font
+                    light: workspace.themeVariant === "light"
+                    color: workspace.appearanceColors.muted
+                    scrollOffset: yamlScroll.contentItem ? yamlScroll.contentItem.contentY : 0
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: "YAML line numbers"
+                    Accessible.description: "First visible line: " + firstVisibleLine
+                }
+                ScrollView {
+                    id: yamlScroll
+                    objectName: "yamlScroll"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 0
+                    visible: workspace.yamlVisible
+                    TextArea {
+                        id: yamlEditor
+                        objectName: "inspectorYaml"
+                        readOnly: !workspace.yamlEditing || workspace.yamlApplyLocked
+                        selectByMouse: true
+                        textFormat: TextEdit.PlainText
+                        text: workspace.yamlText
+                        onTextChanged: { if (!readOnly) workspace.setYamlDraft(text) }
+                        font.family: workspace.monospaceFamily
+                        wrapMode: TextArea.NoWrap
+                        Accessible.name: readOnly ? "Resource YAML, read-only" : "Local resource YAML draft"
+                    }
                 }
             }
         }
@@ -343,13 +372,20 @@ Pane {
         Button { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
     }
     Label { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-    ResourceValuesView {
-        id: values
+    InspectorPage {
+        id: valuesPage
         Layout.fillWidth: true
         Layout.fillHeight: true
-        visible: workspace.valuesVisible
+        selected: workspace.valuesVisible
+        sourceComponent: ResourceValuesView {
+            id: values
+        }
     }
-    PodLogsView { Layout.fillWidth: true; Layout.fillHeight: true; visible: workspace.logsVisible }
+    InspectorPage {
+        id: logsPage
+        selected: workspace.logsVisible
+        sourceComponent: PodLogsView { Layout.fillWidth: true; Layout.fillHeight: true; visible: workspace.logsVisible }
+    }
     Loader {
         Layout.fillWidth: true; Layout.fillHeight: true
         Layout.minimumHeight: 0

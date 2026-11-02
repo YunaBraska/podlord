@@ -220,6 +220,7 @@ public:
                             }
                             body["items"]=rows;
                         }
+                        if (path=="/api/v1/namespaces/default/pods/alpha") body=pod;
                     }
                     const auto payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
                     if (holdPodResponses && path == "/api/v1/pods") {
@@ -1234,10 +1235,45 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return workspace.dashboardTable()->rowCount()==0 && workspace.dashboardSummary().contains("0 / 1") && server.requests==requests;
     }
     if (scenario.startsWith("metric_")) {
-        if (!workspace.inspectRow(0) || !waitFor([&] { return item(window, "metric_cpu_usage") != nullptr; })) {
-            std::fprintf(stderr,"Inspector open failed: %s / %s\n",qPrintable(workspace.error()),qPrintable(workspace.inspectorStatus())); return false;
-        }
+        const auto failure=[&](const char* stage) {
+            const auto* overview=item(window,"overviewScroll");
+            const auto* usage=item(window,"metric_cpu_usage");
+            const auto* reference=item(window,"metric_cpu_references");
+            std::fprintf(stderr,"Metric Inspector failed at %s: path=%s page=%s fresh=%d error=%s status=%s requests=%d overviewY=%g originY=%g height=%g contentHeight=%g usage=%s references=%s\n",
+                stage,qPrintable(workspace.inspectorPath()),qPrintable(workspace.inspectorPage()),workspace.canEditYaml(),
+                qPrintable(workspace.error()),qPrintable(workspace.inspectorStatus()),server.requests,
+                overview ? overview->property("contentY").toDouble() : 0,overview ? overview->property("originY").toDouble() : 0,
+                overview ? overview->height() : 0,overview ? overview->property("contentHeight").toDouble() : 0,
+                qPrintable(usage ? usage->property("text").toString() : QString("<absent>")),
+                qPrintable(reference ? reference->property("text").toString() : QString("<absent>")));
+            return false;
+        };
+        if (!click(window,"resourcesWorkspaceButton") || !click(window,"cell_0_0") || !click(window,"overviewButton")) return failure("public Inspector entry");
+        auto* overview=item(window,"overviewScroll");
+        if (!overview || !overview->isVisible()) return failure("Overview available");
+        const auto visibleMetric=[&] {
+            for (const auto* name : {"metric_cpu_usage","metric_cpu_references"}) {
+                auto* field=item(window,name);
+                if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
+                    || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) return false;
+            }
+            return true;
+        };
+        overview->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window,Qt::Key_Home);
+        QElapsedTimer inputClock; inputClock.start();
+        if (!waitFor([&] {
+            if (!workspace.canEditYaml() || workspace.inspectorPath()!="/api/v1/namespaces/default/pods/alpha"
+                || overview->property("moving").toBool()) return false;
+            if (visibleMetric()) return true;
+            const auto point=overview->mapToScene(QPointF(qMin(8.0,overview->width()/2),overview->height()/2));
+            QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+            wheel.setTimestamp(static_cast<ulong>(inputClock.msecsSinceReference()+inputClock.elapsed()));
+            QCoreApplication::sendEvent(window,&wheel);
+            return false;
+        })) return failure("fresh detail and visible CPU gauge");
         const bool measured=waitFor([&] {
+            if (!visibleMetric()) return false;
             const auto* measured=item(window, "metric_cpu_usage");
             if (!measured) return false;
             const auto usage=measured->property("text").toString();
@@ -1249,7 +1285,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             const auto* reference=item(window, "metric_cpu_references");
             return usage.contains("25 mCPU") && reference && reference->property("text").toString().contains("250% of request");
         });
-        if (!measured) std::fprintf(stderr, "Visible metric fields: %s\n", QJsonDocument::fromVariant(workspace.overviewFields()).toJson(QJsonDocument::Compact).constData());
+        if (!measured) return failure("metric semantics");
         return measured;
     }
     if (scenario=="real") return workspace.filter("no-resource-matches-this") && workspace.resourceCount()==0 && alphaMatch();

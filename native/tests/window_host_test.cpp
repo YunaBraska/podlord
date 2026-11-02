@@ -300,25 +300,36 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading() && primary.resourceCount() == secondCount; }));
         REQUIRE(primary.setWorkspacePage("resources"));
         if (scenario == "handoff_sort") { REQUIRE(primary.sortColumn(0)); REQUIRE(primary.sortColumn(0)); }
-        // Alpha remains in both projections. Descending beta is deliberately
-        // filtered out by A and Qt may correctly destroy that delegate.
+        // Alpha remains in both projections, but TableView may recycle its delegates.
         const int retainedRow = scenario == "handoff_sort" ? 1 : 0;
-        const auto currentCell = [&] { return podlord::test::tableCell(podlord::test::visibleItem(main->contentItem(), "resourceTable"), retainedRow, 0); };
+        const auto currentCell = [&](int row) { return podlord::test::tableCell(podlord::test::visibleItem(main->contentItem(), "resourceTable"), row, 0); };
         REQUIRE(waitFor([&] {
             return podlord::test::tableColumnsReady(podlord::test::visibleItem(main->contentItem(), "resourceTable"), primary.resourceColumns())
-                && currentCell();
+                && currentCell(retainedRow);
         }));
-        const QPointer<QQuickItem> retainedCell = currentCell();
-        if (scenario == "handoff_sort") REQUIRE(retainedCell->property("text").toString() == "alpha");
-        void* const retainedAddress = static_cast<void*>(retainedCell.data());
+        if (scenario == "handoff_sort") REQUIRE(currentCell(retainedRow)->property("text").toString() == "alpha");
         const int retainedSortColumn = primary.sortColumnIndex();
         const auto retainedSortDirection = primary.sortDirection();
-        QAbstractItemModel* rows = primary.visibleResourceTable();
+        auto* const displayed = primary.visibleResourceTable();
+        QAbstractItemModel* rows = displayed;
         podlord::ResourceFilter* filtered = nullptr;
         while (auto* proxy = qobject_cast<QAbstractProxyModel*>(rows)) {
             if (auto* resourceFilter = qobject_cast<podlord::ResourceFilter*>(rows)) filtered = resourceFilter;
             rows = proxy->sourceModel();
         }
+        const auto visibleCellMatches = [&](int row, const QString& session, const QString& expectedPath) {
+            auto* view = podlord::test::visibleItem(main->contentItem(), "resourceTable");
+            auto* cell = currentCell(row);
+            if (!view || !cell || !cell->isVisible() || cell->width() <= 0 || cell->height() <= 0
+                || primary.currentSession() != session || primary.visibleResourceTable() != displayed
+                || view->property("model").value<QAbstractItemModel*>() != displayed) return false;
+            QAbstractItemModel* source = displayed;
+            while (auto* proxy = qobject_cast<QAbstractProxyModel*>(source)) source = proxy->sourceModel();
+            const auto index = displayed->index(row, 0);
+            return source == rows && index.data(Qt::UserRole).toString() == expectedPath && index.data().toString() == "alpha"
+                && cell->property("resourcePath").toString() == expectedPath && cell->property("text").toString() == index.data().toString()
+                && podlord::test::visibleBounds(main, cell).contains(cell->mapToScene({cell->width()/2, cell->height()/2}));
+        };
         QSignalSpy removed(rows, &QAbstractItemModel::rowsRemoved);
         QSignalSpy inserted(rows, &QAbstractItemModel::rowsInserted);
         QSignalSpy reset(rows, &QAbstractItemModel::modelReset);
@@ -342,12 +353,24 @@ bool run(const QString& scenario) {
         QObject::connect(rows, &QAbstractItemModel::rowsInserted, &observer, observe);
         QObject::connect(rows, &QAbstractItemModel::rowsRemoved, &observer, observe);
         QObject::connect(rows, &QAbstractItemModel::dataChanged, &observer, observe);
+        const int firstRequests = api.requests, secondRequests = other.requests;
         REQUIRE(primary.activate(a));
         REQUIRE(primary.resourceCount() == 1 && primary.totalResourceCount() == firstCount);
         REQUIRE(primary.filterText() == "=alpha" && primary.inspectorPath() == path && primary.radarView() == camera);
         REQUIRE(coherent && reset.isEmpty() && layoutCoherent);
-        if (firstCount == secondCount) REQUIRE(removed.isEmpty() && inserted.isEmpty()
-            && waitFor([&] { return retainedCell && retainedCell == podlord::test::tableCell(podlord::test::visibleItem(main->contentItem(), "resourceTable"), 0, 0); }));
+        if (firstCount == secondCount) {
+            const bool shown = removed.isEmpty() && inserted.isEmpty()
+                && waitFor([&] { return visibleCellMatches(0, a, path); });
+            if (!shown) {
+                auto* current = currentCell(0);
+                std::fprintf(stderr,"Window handoff B-A: modelRetained=%d resets=%d removed=%d inserted=%d currentText=\"%s\" currentPath=%s expectedPath=%s actualSession=%s expectedSession=%s\n",
+                    primary.visibleResourceTable()==displayed,int(reset.size()),int(removed.size()),int(inserted.size()),
+                    qPrintable(current ? current->property("text").toString() : QString("<missing>")),
+                    qPrintable(current ? current->property("resourcePath").toString() : QString("<missing>")),qPrintable(path),
+                    qPrintable(primary.currentSession()),qPrintable(a));
+            }
+            REQUIRE(shown);
+        }
         REQUIRE(waitFor([&] { return !primary.busy(); }));
         REQUIRE(primary.activate(b));
         REQUIRE(primary.resourceCount() == secondCount && primary.filterText().isEmpty());
@@ -356,23 +379,25 @@ bool run(const QString& scenario) {
             bool retentionPassed = false;
             const auto reportRetention = qScopeGuard([&] {
                 if (retentionPassed) return;
-                auto* current = currentCell();
-                const auto actualText = retainedCell ? retainedCell->property("text").toString() : QString("<destroyed>");
+                auto* current = currentCell(retainedRow);
                 const auto expectedText = primary.visibleResourceTable()->index(retainedRow, 0).data().toString();
-                std::fprintf(stderr,"Window handoff comparisons: scenario=%s removedEmpty=%d insertedEmpty=%d cellAlive=%d sameCell=%d textMatch=%d sessionMatch=%d sortMatch=%d\n",
-                    qPrintable(scenario),removed.isEmpty(),inserted.isEmpty(),bool(retainedCell),retainedCell.data()==current,
-                    retainedCell && actualText==expectedText,primary.currentSession()==b,
-                    primary.sortColumnIndex()==retainedSortColumn && primary.sortDirection()==retainedSortDirection);
-                std::fprintf(stderr,"Window handoff B-A-B state: resets=%d removed=%d inserted=%d retainedOriginal=%p retainedLive=%p current=%p actualText=\"%s\" currentText=\"%s\" expectedText=\"%s\" actualSession=%s expectedSession=%s actualSort=%d/%s expectedSort=%d/%s\n",
-                    int(reset.size()),int(removed.size()),int(inserted.size()),retainedAddress,static_cast<void*>(retainedCell.data()),static_cast<void*>(current),
-                    qPrintable(actualText),qPrintable(current ? current->property("text").toString() : QString("<missing>")),qPrintable(expectedText),
+                std::fprintf(stderr,"Window handoff B-A-B: scenario=%s modelRetained=%d resets=%d removed=%d inserted=%d requests=%d/%d expectedRequests=%d/%d\n",
+                    qPrintable(scenario),primary.visibleResourceTable()==displayed,int(reset.size()),int(removed.size()),int(inserted.size()),
+                    api.requests,other.requests,firstRequests,secondRequests);
+                std::fprintf(stderr,"Window handoff target: currentText=\"%s\" expectedText=\"%s\" currentPath=%s expectedPath=%s visible=%d size=%gx%g actualSession=%s expectedSession=%s actualSort=%d/%s expectedSort=%d/%s\n",
+                    qPrintable(current ? current->property("text").toString() : QString("<missing>")),qPrintable(expectedText),
+                    qPrintable(current ? current->property("resourcePath").toString() : QString("<missing>")),"/api/v1/namespaces/second/pods/alpha",
+                    current && current->isVisible(),current ? current->width() : 0,current ? current->height() : 0,
                     qPrintable(primary.currentSession()),qPrintable(b),primary.sortColumnIndex(),qPrintable(primary.sortDirection()),
                     retainedSortColumn,qPrintable(retainedSortDirection));
             });
             REQUIRE(removed.isEmpty() && inserted.isEmpty()
-                && waitFor([&] { return retainedCell && retainedCell == currentCell(); }));
+                && waitFor([&] { return visibleCellMatches(retainedRow, b, "/api/v1/namespaces/second/pods/alpha"); })
+                && primary.sortColumnIndex() == retainedSortColumn && primary.sortDirection() == retainedSortDirection
+                && api.requests == firstRequests && other.requests == secondRequests);
             retentionPassed = true;
         }
+        REQUIRE(api.requests == firstRequests && other.requests == secondRequests);
         return true;
     }
     if (scenario == "alerts_initial") {

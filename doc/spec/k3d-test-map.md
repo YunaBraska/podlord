@@ -7420,3 +7420,37 @@ Evidence remains in the same directory: `lazy-overview-*`,
 `package-boundaries-{control,candidate}*`, `package-fixture-unchanged.log` and
 `package-boundaries-cancel-probe.log`. Rejected sources and binaries are local
 diagnostic evidence only, not production compatibility paths.
+
+### 2026-11-02: first-visit Inspector pages and scoped frame budgets
+
+The approved page lifetime is implemented in UI-INSP-07 and ADR 0039. Unvisited
+YAML, Events, Links, Values and Logs controls are not constructed. Visited pages
+remain until close. Existing models, freshness, masking and Terminal ownership
+remain authoritative. There is no new resource cache or request loop.
+
+| Scope | Evidence and limitation |
+| --- | --- |
+| Public Inspector journey | Existing wide/narrow Basic/Fusion journeys exercise YAML selection, Events, Links, return to Overview, close and fresh reopen. Four initial/returned component pairs retain identical data and geometry; only the expected active-tab focus decoration differs in Fusion. These are C++ before/after images, not new C#/C++ pairs. |
+| Bounded Overview creation | Disabling the offscreen delegate buffer alone exposes genuinely stale visible row data after narrow page switches: model row 0 is Name/alpha while the displayed row contains Storage. Non-pooled virtualized delegates correct that reproduced failure. All 22 related public cases pass. The UID check no longer scrolls UID out of view before reading it; its expected value and request/notification constraints remain. |
+| Matched diagnostic CPU | Two control and two corrected candidate software runs replay the same source origin, hash and three context IDs. Mean process CPU for 35 cached Inspector actions is 317.289 versus 259.369 ms, about 18.3% less. This is not native frame CPU or an 18.3% interaction-latency gain. Runs stop after the existing interaction phase and explicitly are not complete release measurements. |
+| Real log-position regression | The existing real Workspace/Main log-scroll journey drives precise wheel input, pauses polling, then uses Logs/YAML/Overview tabs. Without the guard, the saved within-line offset changes from 18 to 0 pixels; with the guard it remains 18. Source, anchor, selection, follow and GET counts remain unchanged. Both guarded runs pass, the unguarded run fails. Coordinates are normalized by the public ListView origin because raw contentY legitimately rebases. |
+| Confirmed frame gate | On November 2 the owner approved 20 ms for discrete filter, sort, cached-tab and cached-Inspector frame CPU. Scrolling and other cases retain 8 ms. Both per-frame and per-action-maximum p95 use the applicable limit. Response-time, idle, RSS, growth and sampling limits are unchanged. Earlier failed 8-ms results remain historical evidence, not rewritten passes. |
+| Current native foreground | Filter/sort/tab/Inspector frame-CPU p95 is 16.499/15.746/14.907/16.541 ms; per-action maxima p95 is 17.618/15.981/15.504/16.941 ms. All pass 20 ms. Scroll frame/maxima p95 is 2.861/3.545 ms and passes 8 ms. Action-to-visible p95 is 36.229/31.534/16.074/27.395 ms, within existing limits. RSS peaks at 297,451,520 bytes; warm growth is -16,384,000 bytes. The idle phase loses foreground after 52,207 of the required 60,000 quiet ms. The overall protocol fails and does not clear release. |
+| Hosted window handoff | The remaining Linux failures in run 41446745213 assert recycled delegate identity. Current tests reacquire the visible target cell and require correct session/path/text/geometry, stable public model/source, sorting and unchanged requests/notifications. The ten handoff cases pass locally in the 205-case component run. Hosted verification remains pending. |
+| Alert reveal diagnostics | The ARM hosted failure cannot reveal Save after scrolling narrow alert controls. One serial run and 360 executions of 18 existing control variants pass locally. No cause or product fix is claimed. Failure-only focus, ancestor and wheel diagnostics are added without changing routing, iteration limits or deadlines. |
+| Mobile build boundary | Android packaging succeeds with the installed OpenJDK 17 rather than GraalVM 25. The iOS UI-driver build also enabled map-previews-test; its missing existing FFmpeg framework linkage is corrected. After explicit CMake regeneration the full ARM64 simulator build succeeds. Current post-correction rebuild/runtime evidence still needs reconciliation. |
+| Current integrated verification | Six preflights pass; the complete main run passes 5,266/5,272 in 1,176.74 s. All six failures are metric UI cases. Their fixture returns a list for a singular Pod GET and the old test reads unshown gauges. Corrected valid Pod ingress plus actual resource-cell/Home/wheel navigation reproduces red, then passes all six and all 241 AlertUI cases. No metric assertion or deadline is dropped. Reported coverage is 97.75% lines/86.00% branches, with 44 mismatched-function warnings retained. This is a full run plus a corrective component run, not a fresh single green integrated run. Current Android and complete iOS ARM64 simulator builds pass. Hosted integrated verification, real owned-cluster E2E and final device/package evidence remain separate. |
+| Current real Kubernetes lane | The current candidate passes real TLS and exec client certificates, all-container Pod logs, JSON Patch/reconciliation, original and entered Secret handling, PTY/vi/ANSI/resize/interrupts, and deletion/UID replacement protection in Basic/Fusion. The owned cluster exits through cleanup. |
+| Current private Android package | Existing local signing key reused, signature verification passes. APK is 98,417,826 bytes; approved private APK.zip is 37,371,878 bytes and passes the 50-MB download bound. This is not yet current simulated-device runtime or installed-payload proof. |
+
+Local evidence remains under the existing
+`2026-10-31-app-store/typed-workspace-20261101` directory:
+`visible-overview-final-{software-ab,ui-tests}*`,
+`visible-overview-returned-pixel-comparison.json`,
+`lazy-inspector-log-restore/red-green.bKhioB`,
+`lazy-inspector-final-native-20261102`,
+`lazy-inspector-final-full-suite.log`, `alert-reveal-diagnostic`,
+and `lazy-pages-{android-final,ios-complete}-build.log`.
+No generated profiles, screenshots, binaries, credentials or simulator data are
+added to Git. Full reference/menu parity, valid idle proof and current hosted CI
+remain release work, not implied by this Inspector increment.

@@ -173,6 +173,27 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target, bool pointe
     QElapsedTimer clock; clock.start();
     bool wheeled = false;
     QPointF wheelPosition;
+    QPoint wheelDelta;
+    const auto ancestorGeometry = [&] {
+        const auto* focus = window->activeFocusItem();
+        QStringList details{QString("  focus=\"%1\" class=%2 windowFocused=%3")
+            .arg(focus ? focus->objectName() : QString("<none>"),
+                 focus ? QString::fromLatin1(focus->metaObject()->className()) : QString("<none>"))
+            .arg(QGuiApplication::focusWindow() == window)};
+        if (!retained) { details.append("  <target destroyed>"); return details.join('\n'); }
+        for (auto* parent = retained->parentItem(); parent; parent = parent->parentItem()) {
+            const auto contentY = parent->property("contentY");
+            if (!parent->clip() && !contentY.isValid()) continue;
+            const auto area = parent->mapRectToScene(QRectF(QPointF{}, parent->size()));
+            details.append(QString("  %1 name=\"%2\" clip=%3 viewport=(%4,%5,%6,%7) contentY=%8 contentHeight=%9 interactive=%10 moving=%11")
+                .arg(QString::fromLatin1(parent->metaObject()->className()), parent->objectName()).arg(parent->clip())
+                .arg(area.x()).arg(area.y()).arg(area.width()).arg(area.height())
+                .arg(contentY.toString(), parent->property("contentHeight").toString(),
+                     parent->property("interactive").toString(), parent->property("moving").toString()));
+        }
+        return details.join('\n');
+    };
+    QString firstAncestors;
     for (int attempt=0; attempt<48; ++attempt) {
         if (!retained) return false;
         const auto bounds=target->mapRectToScene(QRectF(QPointF{}, target->size()));
@@ -218,10 +239,15 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target, bool pointe
                            required.top()<viewport.top() ? 120 : required.bottom()>viewport.bottom() ? -120 : 0);
         QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},delta,Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
         wheel.setTimestamp(static_cast<ulong>(clock.msecsSinceReference()+clock.elapsed()));
+        if (firstAncestors.isEmpty()) firstAncestors = ancestorGeometry();
         QCoreApplication::sendEvent(window,&wheel);
         wheeled=true; wheelPosition=point;
+        wheelDelta=delta;
         QTest::qWait(20);
     }
+    std::fprintf(stderr,"Exhausted pointer reveal %s: lastWheel=(%g,%g) delta=(%d,%d)\nFirst ancestors:\n%s\nFinal ancestors:\n%s\n",
+        retained ? qPrintable(retained->objectName()) : "<destroyed>",wheelPosition.x(),wheelPosition.y(),wheelDelta.x(),wheelDelta.y(),
+        qPrintable(firstAncestors),qPrintable(ancestorGeometry()));
     return false;
 }
 /** Reacquire a named delegate when wheel/layout work reuses its old item for another row. */

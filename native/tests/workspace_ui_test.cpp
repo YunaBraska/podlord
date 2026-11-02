@@ -4341,14 +4341,108 @@ bool execute(const QString& requestedScenario) {
                     && overview->height() >= (scenario.endsWith("narrow") ? 44 : 32)
                     && field->isVisible() && text(window, "overview_name") == "alpha";
             };
-            return waitFor(compact) && server.requests.size() == calls
-                && click(window, item(window, "yamlButton")) && workspace.inspectorPage() == "yaml"
-                && click(window, item(window, "overviewButton")) && workspace.inspectorPage() == "overview"
-                && click(window, item(window, "closeInspector")) && workspace.inspectorPath().isEmpty();
+            const auto tabFailure = [&] {
+                std::fprintf(stderr, "Inspector tab journey failed: page=%s path=%s calls=%lld/%lld\n",
+                    qPrintable(workspace.inspectorPage()), qPrintable(workspace.inspectorPath()),
+                    static_cast<long long>(server.requests.size()), static_cast<long long>(calls));
+                for (const auto* name : {"yamlButton", "inspectorEventsButton", "inspectorLinksButton", "inspectorEvents", "inspectorLinks", "inspectorYaml"}) {
+                    auto* target = item(window, name);
+                    if (target) std::fprintf(stderr, "  %s visible=%d enabled=%d x=%.1f y=%.1f w=%.1f h=%.1f\n",
+                        name, target->isVisible(), target->isEnabled(), target->mapToScene(QPointF()).x(),
+                        target->mapToScene(QPointF()).y(), target->width(), target->height());
+                }
+                auto* overview = item(window,"overviewScroll");
+                auto* nameField = item(window,"overview_name");
+                std::fprintf(stderr,"  overview_name exists=%d visible=%d text=\"%s\"\n",nameField!=nullptr,nameField && nameField->isVisible(),
+                    qPrintable(nameField ? nameField->property("text").toString() : QString("<missing>")));
+                if (overview) {
+                    const auto scene = overview->mapRectToScene(QRectF(QPointF{},overview->size()));
+                    const auto y = overview->property("contentY").toDouble(), origin = overview->property("originY").toDouble();
+                    auto* fields = overview->property("model").value<QAbstractItemModel*>();
+                    std::fprintf(stderr,"  overviewScroll visible=%d contentY=%.3f originY=%.3f normalizedY=%.3f size=%gx%g scene=(%g,%g,%g,%g) contentHeight=%g count=%d modelRows=%d moving=%d\n",
+                        overview->isVisible(),y,origin,y-origin,overview->width(),overview->height(),scene.x(),scene.y(),scene.width(),scene.height(),
+                        overview->property("contentHeight").toDouble(),overview->property("count").toInt(),fields ? fields->rowCount() : -1,overview->property("moving").toBool());
+                    QQmlExpression top(qmlContext(overview),overview,"indexAt(1, contentY + 1)");
+                    const int topRow = top.evaluate().toInt();
+                    std::fprintf(stderr,"  overview firstVisibleRow=%d lookupError=%s\n",topRow,qPrintable(top.hasError() ? top.error().toString() : QString{}));
+                    for (int row = 0; fields && row < fields->rowCount(); ++row) {
+                        const auto field = fields->data(fields->index(row,0),Qt::UserRole).toMap();
+                        if (row != topRow && field.value("id").toString() != "name") continue;
+                        QQmlExpression loaded(qmlContext(overview),overview,QString("(function() { const row = itemAtIndex(%1); return row ? 'id=' + row.modelData.id + ' value=' + row.modelData.value + ' y=' + row.y + ' height=' + row.height : '<not instantiated>'; })()").arg(row));
+                        const auto loadedState = loaded.evaluate().toString();
+                        std::fprintf(stderr,"  overview row=%d modelId=%s modelValue=\"%s\" delegate=%s lookupError=%s\n",row,
+                            qPrintable(field.value("id").toString()),qPrintable(field.value("value").toString()),qPrintable(loadedState),
+                            qPrintable(loaded.hasError() ? loaded.error().toString() : QString{}));
+                    }
+                }
+                for (auto* ancestor = nameField ? nameField : overview; ancestor; ancestor = ancestor->parentItem()) {
+                    if (!ancestor->clip() && !ancestor->property("contentY").isValid()) continue;
+                    const auto scene = ancestor->mapRectToScene(QRectF(QPointF{},ancestor->size()));
+                    std::fprintf(stderr,"  ancestor class=%s name=%s clip=%d scene=(%g,%g,%g,%g) contentY=%s originY=%s contentHeight=%s moving=%s\n",
+                        ancestor->metaObject()->className(),qPrintable(ancestor->objectName()),ancestor->clip(),scene.x(),scene.y(),scene.width(),scene.height(),
+                        qPrintable(ancestor->property("contentY").toString()),qPrintable(ancestor->property("originY").toString()),
+                        qPrintable(ancestor->property("contentHeight").toString()),qPrintable(ancestor->property("moving").toString()));
+                }
+                auto* inspector = item(window,"workspaceInspector");
+                if (inspector && !saveShellFrame(window,scenario+"-tab-failure",inspector)) std::fputs("Inspector failure component capture failed.\n",stderr);
+                return false;
+            };
+            if (!waitFor(compact) || server.requests.size() != calls
+                || !saveShellFrame(window, scenario, item(window, "workspaceInspector"))
+                || !click(window, item(window, "yamlButton"))) return tabFailure();
+            if (!waitFor([&] {
+                    auto* editor = item(window, "inspectorYaml");
+                    return workspace.inspectorPage() == "yaml" && editor && editor->isVisible()
+                        && !editor->property("text").toString().isEmpty();
+                })) return tabFailure();
+            auto* editor = item(window, "inspectorYaml");
+            if (!QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 0), Q_ARG(int, 8))) return tabFailure();
+            const auto selection = editor->property("selectedText").toString();
+            if (selection.isEmpty()
+                || !click(window, item(window, "inspectorEventsButton"))
+                || !waitFor([&] {
+                    auto* events = item(window, "inspectorEvents");
+                    return workspace.inspectorPage() == "events" && events && events->isVisible()
+                        && events->width() > 0 && events->height() > 0;
+                })
+                || !click(window, item(window, "inspectorLinksButton"))
+                || !waitFor([&] {
+                    auto* links = item(window, "inspectorLinks");
+                    return workspace.inspectorPage() == "links" && links && links->isVisible()
+                        && links->width() > 0 && links->height() > 0;
+                })
+                || !click(window, item(window, "yamlButton"))
+                || !waitFor([&] {
+                    auto* current = item(window, "inspectorYaml");
+                    return current && current->isVisible()
+                        && current->property("selectedText").toString() == selection;
+                })
+                || !click(window, item(window, "overviewButton"))
+                || !waitFor(compact)
+                || !saveShellFrame(window, scenario + "-returned-overview", item(window, "workspaceInspector"))
+                || server.requests.size() != calls
+                || !click(window, item(window, "closeInspector"))
+                || !workspace.inspectorPath().isEmpty()
+                || !waitFor([&] {
+                    auto* cell = item(window, alphaCell.constData());
+                    return cell && cell->isVisible() && cell->width() > 0 && cell->height() > 0;
+                })
+                || !click(window, item(window, alphaCell.constData()))
+                || !waitFor([&] { return workspace.canEditYaml(); })
+                || !click(window, item(window, "yamlButton"))) return tabFailure();
+            const bool reopened = waitFor([&] {
+                auto* current = item(window, "inspectorYaml");
+                return current && current->isVisible()
+                    && !current->property("text").toString().isEmpty()
+                    && current->property("selectedText").toString().isEmpty();
+            });
+            if (!reopened) std::fprintf(stderr, "Inspector tab lifecycle failed: page=%s status=%s\n",
+                qPrintable(workspace.inspectorPage()), qPrintable(workspace.inspectorStatus()));
+            return reopened && click(window, item(window, "closeInspector"))
+                && workspace.inspectorPath().isEmpty();
         }
         if (scenario == "inspector_related_overview") {
             if (text(window, "overview_name") != "alpha" || text(window, "overview_kind") != "Pod" || text(window, "overview_namespace") != "default") return false;
-            item(window,"overviewScroll")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
             if (!waitFor([&] { return text(window,"overview_uid") == "uid-alpha"; }) || relatedChanges.count() != 0) return false;
             if (!click(window, item(window, "inspectorEventsButton"))
                 || !waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled"; })) return false;
@@ -4492,7 +4586,9 @@ bool execute(const QString& requestedScenario) {
         if (scenario == "inspector_close_late") {
             if (!waitFor([&] { return server.detailReads == 1; }) || !click(window, item(window, "closeInspector"))) return false;
             if (!waitFor([&] { return !workspace.loading(); })) return false;
-            return !yamlView->isVisible() && text(window, "inspectorYaml").isEmpty();
+            auto* closedYaml = item(window, "inspectorYaml");
+            return workspace.inspectorPath().isEmpty() && (!closedYaml || !closedYaml->isVisible())
+                && text(window, "inspectorYaml").isEmpty();
         }
         if (!waitFor([&] { return !text(window, "inspectorYaml").isEmpty() && !workspace.loading(); })) return false;
         if (text(window, "inspectorReadStatus").contains("Refreshing")) return false;
@@ -4527,7 +4623,13 @@ bool execute(const QString& requestedScenario) {
             if (!edit->isEnabled()) return false;
             if (scenario == "inspector_edit_cached" || scenario == "inspector_edit_failure" || scenario == "inspector_edit_malformed" || scenario == "inspector_edit_auth" || scenario == "inspector_edit_same_version") {
                 if (scenario == "inspector_edit_cached") {
-                    if (!click(window, item(window, "closeInspector")) || !click(window, item(window, "cell_0_0")) || !click(window, item(window, "yamlButton"))) return false;
+                    if (!click(window, item(window, "closeInspector")) || !click(window, item(window, "cell_0_0"))
+                        || !click(window, item(window, "yamlButton"))
+                        || !waitFor([&] {
+                            auto* current = item(window, "inspectorYaml");
+                            return current && current->isVisible();
+                        })) return false;
+                    yamlView = item(window, "inspectorYaml");
                 } else if (!click(window, item(window, "refreshInspector"))) return false;
                 if (edit->isEnabled() || !yamlView->property("readOnly").toBool() || text(window, "inspectorYaml") != oldYaml) return false;
                 if (!waitFor([&] { return !workspace.loading(); })) return false;
@@ -4541,8 +4643,11 @@ bool execute(const QString& requestedScenario) {
             if (scenario == "inspector_edit_fresh") return text(window, "inspectorYaml") == oldYaml && noWrites();
             if (scenario == "inspector_edit_clean") return click(window, item(window, "closeInspector")) && workspace.inspectorPath().isEmpty() && !item(window, "discardStay")->isVisible() && noWrites();
             if (scenario == "inspector_edit_clean_tab") {
-                if (!click(window, item(window, "closeSession_" + workspace.currentSession())) || !yamlView->property("readOnly").toBool()) return false;
-                return waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); }) && !item(window, "discardStay")->isVisible() && noWrites();
+                if (!click(window, item(window, "closeSession_" + workspace.currentSession()))) return false;
+                return waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); })
+                    && workspace.inspectorPath().isEmpty()
+                    && (!item(window, "inspectorYaml") || !item(window, "inspectorYaml")->isVisible())
+                    && !item(window, "discardStay")->isVisible() && noWrites();
             }
             yamlView->forceActiveFocus(); QTest::keySequence(window, QKeySequence::MoveToEndOfDocument); QTest::keyClick(window, Qt::Key_Return);
             for (const auto ch : QString("# operator draft")) QTest::keyClick(window, ch.toLatin1());
