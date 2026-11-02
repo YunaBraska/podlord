@@ -1442,17 +1442,43 @@ if(BUILD_TESTING AND APPLE AND NOT IOS)
         MACOSX_BUNDLE_BUNDLE_NAME "Podlord Audio Tests"
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/tests/macos-audio-info.plist.in")
     target_link_libraries(audio-playback-test PRIVATE podlord_workspace)
+    qt_add_resources(audio-playback-test "audio_test_fixtures"
+        PREFIX "/podlord/audio-test" BASE tests/data FILES tests/data/invalid-audio.txt)
     get_filename_component(audio_root "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/Assets/Audio" ABSOLUTE)
     foreach(audio_file IN LISTS alert_audio_files)
         get_filename_component(sound "${audio_file}" NAME_WE)
         get_filename_component(audio_absolute "${audio_file}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
         file(RELATIVE_PATH audio_relative "${audio_root}" "${audio_absolute}")
-        add_test(NAME native.audio.${sound}_repeat
-            COMMAND audio-playback-test qrc:/podlord/audio/${audio_relative} 2)
-        set_tests_properties(native.audio.${sound}_repeat PROPERTIES
-            TIMEOUT 30 RESOURCE_LOCK native_audio_output
-            ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
+        add_test(NAME native.audio.${sound}_decode
+            COMMAND audio-playback-test decode qrc:/podlord/audio/${audio_relative})
+        set_tests_properties(native.audio.${sound}_decode PROPERTIES TIMEOUT 30 LABELS audio_decode
+            ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
+        if(sound STREQUAL "maximize_001")
+            set(audio_mono "qrc:/podlord/audio/${audio_relative}")
+        elseif(sound STREQUAL "critical-klaxon")
+            set(audio_stereo "qrc:/podlord/audio/${audio_relative}")
+        endif()
     endforeach()
+    if(NOT audio_mono OR NOT audio_stereo)
+        message(FATAL_ERROR "Representative mono/stereo audio assets are missing")
+    endif()
+    add_test(NAME native.audio.device_mono_repeat COMMAND audio-playback-test repeat ${audio_mono})
+    add_test(NAME native.audio.device_stereo_repeat COMMAND audio-playback-test repeat ${audio_stereo})
+    add_test(NAME native.audio.device_source_switch COMMAND audio-playback-test switch ${audio_mono} ${audio_stereo})
+    set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch
+        PROPERTIES TIMEOUT 30 RESOURCE_LOCK native_audio_output LABELS audio_device
+        ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
+    add_test(NAME native.audio.reject_malformed
+        COMMAND "${CMAKE_COMMAND}" "-DAUDIO_TEST=$<TARGET_FILE:audio-playback-test>"
+            -DMODE=decode -DSOURCE=qrc:/podlord/audio-test/invalid-audio.txt "-DEXPECTED_MESSAGE=Decode failed"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/audio_failure_test.cmake")
+    add_test(NAME native.audio.reject_unavailable_output
+        COMMAND "${CMAKE_COMMAND}" "-DAUDIO_TEST=$<TARGET_FILE:audio-playback-test>"
+            -DMODE=repeat "-DSOURCE=${audio_mono}" "-DEXPECTED_MESSAGE=Selected audio output is unavailable"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/audio_failure_test.cmake")
+    set_tests_properties(native.audio.reject_malformed native.audio.reject_unavailable_output
+        PROPERTIES TIMEOUT 10 LABELS audio_failure
+        ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1;PODLORD_AUDIO_TEST_OUTPUT_ID=podlord-test-missing-output")
 endif()
 
 if(BUILD_TESTING)

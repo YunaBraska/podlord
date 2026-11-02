@@ -1474,7 +1474,7 @@ The native catalog must preserve all 117 existing reference entries, including t
 
 Sound search matches the existing reference metadata case-insensitively and trims surrounding whitespace. Filtering the chooser must not change an alert's chosen sound, including when no options match. Only explicit selection changes the draft. Saving an unrelated edit must retain that chosen sound. Locked built-in definitions remain locked, and muted preferences disable preview. The editor shows the chosen sound's name, purpose, author, license and source as plain text.
 
-Audio release evidence must use real embedded assets and the actual platform backend. An offscreen backend timeout or an advertised codec list alone does not prove whether native playback works. A timed decoding/completion check and repeated-use check are required; silent automated playback is not a claim of human-observed audibility.
+Audio release evidence must use real embedded assets and the actual platform backend. All 116 real assets must decode completely to valid PCM without an audio output device. Separate muted device checks must complete representative mono/stereo repeat playback and a source switch on the same player. A device failure remains a failure, not a skipped check. The device checks retain their existing deadlines. An offscreen backend timeout or an advertised codec list alone does not prove whether native playback works. Silent automated playback is not a claim of human-observed audibility. Confirmed on 2026-11-02 to avoid repeatedly occupying the user's audio device.
 
 ### Can referenced credential files block context resolution?
 

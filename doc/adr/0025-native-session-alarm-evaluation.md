@@ -28,6 +28,17 @@ still account for unmatched resources until expiry. Functional test runs honor
 `PODLORD_DISABLE_AUDIO` at the player boundary without suppressing visual effects
 or notification signals. Actual playback remains a separate device check.
 
+The audio checks separate codec coverage from device lifecycle coverage. Every
+embedded asset decodes completely to valid PCM with no audio output object.
+Three muted device scenarios exercise mono repeat, stereo repeat and a source
+switch on one player. Each first requires a separate zero-volume PCM sink to
+open and process audio on the selected output, which remains pinned during the
+player scenario. Missing or changed outputs fail. This proves separate-sink
+progress, not observation of QMediaPlayer's private sink or human audibility.
+Device failures still fail, and the existing watchdogs remain unchanged. This
+replaces 116 serialized device checks rather than adding a second full-device
+matrix. It reduces audio-device disruption. Confirmed on 2026-11-02.
+
 The current playback boundary accepts catalog IDs, not media paths or URLs.
 The catalog resolves all 116 actual audio assets to embedded `qrc:` OGG data.
 Rule decoding rejects unknown IDs and extra fields; preview also resolves an ID

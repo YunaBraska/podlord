@@ -7368,3 +7368,26 @@ Evidence is under `2026-10-31-app-store/typed-workspace-20261101/atomic-handoff-
 with the earlier complete-run log `atomic-model-full-suite-final.log` and silent
 `audio-*-diagnostic`/`audio-*-playback` probes. No generated profiles, simulator
 data, client keys or screenshots are added to Git.
+
+### 2026-11-02: foreground handoff evidence and quiet audio checks
+
+All foreground comparisons below replay the same source origin, kubeconfig hash
+and three context IDs. They are not comparisons between unrelated island seeds.
+
+| Scope | Evidence and limitation |
+| --- | --- |
+| Atomic log handoff, native foreground | Control/candidate cached-tab frame-CPU p95: 17.139/15.546 ms. Inspector: 15.983/13.912 ms. Both runs retained foreground throughout. Candidate RSS 308,297,728 bytes, warm growth 3,522,560 bytes and idle 1.870% pass their existing gates. The 8-ms frame-CPU gate still fails. This supplies the previously missing native adoption evidence, not release clearance. |
+| Quiet audio strategy | Confirmed: all 116 assets decode completely without an output device. Three separate muted device cases cover mono repeat, stereo repeat and source switch. No per-asset device matrix remains. After correcting the review findings, 242/242 targeted executions pass in 6.27 s. Five CLI negative cases reject malformed media, unavailable output, missing arguments, identical switch sources and non-embedded input with the expected status in 20-178 ms. A separate pinned, zero-volume sink must process at least 100 ms before player checks. This does not observe QMediaPlayer's private sink or prove audibility. |
+| Inspector lifetime experiment | Keeping the metadata model permanently attached reduces whole-process CPU for 35 cached Inspector actions from 775/844 to 610/547 ms across two comparisons. This includes retention after close and is not the approved lifetime. One candidate exceeds the unchanged RSS gate by 67,200 bytes, and its later idle phase loses foreground. That candidate is not accepted. The approved correction and its evaluation are recorded below. |
+| Corrected bounded lifetime | All four Basic/Fusion metadata lifecycle checks pass after detaching at close. The corrected run reports 825 ms process CPU for 35 cached close/reopen actions, within the controls' 775-844 ms range, not a proven gain. RSS is 304,988,160 bytes. Idle loses foreground, so it is not complete foreground proof. The experiment and its trial-only test are removed rather than adopting an unproven optimization. This benchmark does not establish the cost of page changes while the Inspector stays open. |
+| Full trial suite | Six preflights pass. Main suite: 5,270/5,272 pass in 1,181.00 s, with exactly the two metadata lifecycle failures from the rejected trial. The corrected lifetime passed those four targeted checks, but the rejected trial is not a green full-suite result. Reported production coverage: 97.76% lines and 85.99% branches, with 44 LLVM mismatched-function warnings retained. Superseded by the final matrix below. |
+| Final matrix after rejecting the trial | Six preflights and all 5,270 main-suite cases pass. Main time: 1,181.82 s. The two subsequently registered audio failure regressions also pass, completing 5,278/5,278 current cases. Malformed input and unavailable output must exit 1 with their specific error, within a five-second wrapper deadline. Reported production coverage: 97.76% lines and 86.01% branches. The 44 LLVM mismatched-function warnings remain visible. No experimental Inspector code or trial-only test is retained. |
+| Family crash dialogs | Seven local iOS Simulator Family reports correlate with owned simulator boots. The latest crash is before Podlord installation and launch, in Apple framework initialization. The underlying exception reason is unknown. Batch mobile cases within one owned simulator boot, then shut down/delete that device. Do not suppress CrashReporter globally or modify Podlord production behavior to hide this external crash. No owned simulator remains running after the previous batch. |
+
+Local evidence: `atomic-log-foreground-control-20261102`,
+`atomic-log-foreground-candidate-retry-20261102`,
+`retained-inspector-{foreground,control-repeat,candidate-repeat}-20261102`,
+`quiet-audio-inspector-tests.log`, `quiet-audio-full-suite.log`,
+`quiet-audio-final-full-suite.log`, `quiet-audio-final-regressions.log` and
+`quiet-audio-negative-results.json`, under the
+existing `2026-10-31-app-store/typed-workspace-20261101` evidence directory.
