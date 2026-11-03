@@ -439,19 +439,20 @@ waitNode('sourceOverviewTab',n=>n.checked==='true');capture('source-inspector-ov
 click('sourceYamlTab');waitNode('editSourceYaml',n=>n.enabled==='true');
 waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||''));capture('source-yaml-read-only');
 const importedFile=run('shell','cat','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');
-run('shell','settings','put','system','user_rotation','1');state();
 click('editSourceYaml');click('sourceInspectorYaml');
 inputAboveKeyboard(['sourceInspectorYaml'],'source-editor-keyboard');
+if(nodes.some(n=>['sourceOverviewTab','sourceYamlTab','applySourceYaml'].some(id=>n['resource-id']?.endsWith('.'+id))&&n.bounds!=='[0,0][0,0]'))throw Error('Portrait Source editing did not prioritize YAML while the keyboard is visible');
 run('shell','input','keyevent','123','66');run('shell','input','text',"'#%sandroid-owned-source-draft'");
 run('shell','input','keyevent','4');state();
 waitNode('sourceInspectorYaml',n=>(n.text+' '+n['content-desc']).includes('android-owned-source-draft'));
+waitNode('applySourceYaml',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
 capture('source-yaml-local-draft');click('applySourceYaml');
 waitNode('sourceOverviewTab',n=>n.checked==='true');click('sourceYamlTab');
 waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||'')&&(n.text+' '+n['content-desc']).includes('android-owned-source-draft'));
 if(run('shell','cat','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig')!==importedFile)throw Error('Source Apply modified the original imported file');
 capture('source-yaml-applied');click('closeSourceInspector');click('resourcesWorkspaceButton');
 waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
-steps.push({step:'Sources touch inspector, explicit local YAML editing and immutable Apply preserve the original file and existing session query'});
+steps.push({step:'Portrait Sources touch editing keeps YAML above the keyboard, restores actions on dismissal and preserves the original file and existing session on immutable Apply'});
 }
 
 sourceJourney();

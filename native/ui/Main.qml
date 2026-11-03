@@ -30,7 +30,9 @@ ApplicationWindow {
         ? Math.max(0, Math.min(height, Qt.inputMethod.keyboardRectangle.y)) : height
     readonly property rect inputArea: Qt.rect(0, SafeArea.margins.top, width,
         Math.max(0, Math.min(keyboardTop, height - SafeArea.margins.bottom) - SafeArea.margins.top))
-    readonly property bool inputPriority: Qt.inputMethod.visible && width > height && inputArea.height < 300
+    readonly property bool inputPriority: Qt.inputMethod.visible
+        && ((width > height && inputArea.height < 300)
+            || (workspace.sourceEditing && inputArea.height < 480))
     bottomPadding: Math.max(SafeArea.margins.bottom, height - keyboardTop)
     visible: true
     property bool sourcesExpanded: false

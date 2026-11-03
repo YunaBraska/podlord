@@ -7597,3 +7597,58 @@ Evidence: `source-editor-android-runtime-final/unreachable-sourceInspectorYaml.p
 and its public Android hierarchy. Earlier test-only Settings-scroll and
 already-open-inspector navigation mistakes are retained separately, not
 reported as production failures.
+
+### 2026-11-03: Source portrait keyboard and scoped image closure
+
+UI-SRC-08 reuses the existing input-priority layout while editing Source YAML.
+It adds no editor, renderer, model or timer. The existing landscape rule remains
+unchanged for other inspectors. A 300-pixel global-height trial still reproduced
+the portrait failure before the final Source-specific 480-pixel admission.
+
+Evidence remains in the `typed-workspace-20261101` lane under the existing
+2026-10-31 App Store evidence root.
+
+| Boundary | Result and limit | Evidence |
+|---|---|---|
+| Real portrait regression | The first trial fails to expose the editor above the keyboard. Its failure remains recorded, not retried into a pass. | `source-portrait-android-runtime/` |
+| Corrected installed Android | The shared Sources-only journey passes against 1,844 actual Kubernetes resources. Portrait YAML stays above the real keyboard; tabs/actions are hidden during input and restored afterward. Immutable Apply preserves the original file and existing session query. Installed logical bytes: 99,947,691, below 100,000,000. The full 13-step journey from the preceding increment remains separate evidence. | `source-portrait-fit-android-runtime/{journey,result,cleanup}.json`, `source-editor-keyboard.png`, `source-yaml-applied.png` |
+| Qt UI regressions | All 102 Source-inspector/source-table Basic/Fusion executions pass in 9.20 seconds. These are 51 scenarios in two styles, not 102 distinct features. | `source-portrait-fit-ui-tests.log` |
+| iOS build | The shared Source UI driver cross-builds for the ARM64 simulator. This is not a new iOS software-keyboard runtime proof. | `source-portrait-fit-ios-build.log` |
+| Current macOS direct package | Packaging, dependency/signature checks and limits pass: ZIP 33,794,358 bytes, installed 87,518,524. The stable comparison installation reuses its existing bundle ID and approved local signing identity. This is not distribution signing or notarization. | `source-portrait-current-macos-package/package-evidence.txt` |
+| Installed startup | The pre-portrait Source package measures 1,010.7 ms for its first sample and at most 499.2 ms for repeats. The final package's stable test installation measures 499.5 ms for its first of ten post-capture process starts and at most 457.5 ms for repeats. Both meet the 1,500/1,000-ms limits. OS caches were not reset; the post-capture sequence is not a fresh-copy cold-start proof. | `source-current-installed-startup-20261103.log`, `source-portrait-current-installed-startup.log` |
+| Foreground frame/CPU | Attempts remain invalid. The final window is exposed but inactive. Reachable Finder/product windows and valid startup results do not establish a valid benchmark foreground interval, nor imply that the Mac is locked. No frame/CPU gate is waived or passed by these attempts. | `source-portrait-final-foreground-20261103/measurements.jsonl` |
+
+The three new Source pairs use the same synthetic kubeconfig with alpha/beta,
+Sirocco Command/dark and 3,840 x 2,098 captures. Their original JPEGs and
+unresized side-by-side PNGs are retained in `source-current-desktop-pairs/` with
+input/binary hashes and `comparison.json`. Source-table metadata and the normal
+Overview are reviewed. The approved C# reference itself reports `Unsupported
+resource kind: Source` on Source YAML, while native displays its validated owned
+copy. That pair records a reference failure/native spec success, not two
+successful equivalent pages. The separate `/Applications/Podlord.app` captures
+are diagnostic only, not the authoritative reference. Native import deliberately
+does not activate a session, unlike the reference's legacy startup behavior.
+
+There are now 96 pair artifacts, not 96 closed requirements. Of the seven
+previously named capture targets, three Source targets now have current captures.
+Four Resource-inspector comparisons remain unsettled: fresh YAML, Events, Links
+and opened Logs. The 76 historical theme pairs are not repeated.
+
+The remaining existing presentation families are bounded by the capability
+inventory: Source edit/error/dirty/apply states and source-action dialogs;
+session configuration/multiwindow/restart; resource field and preset dialogs;
+table column/copy/find/overflow tools; resource YAML validation/diff/conflict;
+delete confirmation/failure; ConfigMap/Secret Values; log controls; populated
+port-forward preparation; alert matcher/color/sound editing; Diagnostics/About
+tools and notices; remaining Graphics/translation/focus states; and the command
+palette. This is an evidence checklist for existing requirements, not added
+features or a new all-themes/all-devices cross-product gate.
+
+The personal mobile GKE registration remains explicitly paused. The local iOS
+build has no configured `PODLORD_GKE_IOS_CLIENT_ID`. Confirmed Android/iOS Google
+app registrations and real installed authorization/return/consent proof remain
+open under the authentication spec. No Google account or cloud configuration is
+changed in this increment. Standalone service-account support is not proof of
+personal browser authorization. All owned Android/ADB/fixture resources and
+comparison/startup processes are stopped. Disposable comparison profiles and the
+task-created install backup are removed; reusable signing assets are retained.
