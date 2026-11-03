@@ -122,6 +122,8 @@ Pane {
     Label {
         objectName: "inspectorReadStatus"
         Layout.fillWidth: true
+        visible: workspace.inspectorPage === "overview" || workspace.inspectorPage === "yaml"
+            || workspace.inspectorPage === "values"
         text: workspace.inspectorStatus
         textFormat: Text.PlainText
         wrapMode: Text.Wrap

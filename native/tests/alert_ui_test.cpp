@@ -42,6 +42,29 @@ QQuickItem* item(QObject* root, const QString& name) {
     if (auto* found = visualItem(window->contentItem(), name)) return found;
     return window->findChild<QQuickItem*>(name);
 }
+bool revealCpuMetric(QQuickWindow* window, int& navigationKeys) {
+    auto* overview=item(window,"overviewScroll");
+    if (!overview || !overview->isVisible()) return false;
+    bool visible=true;
+    for (const auto* name : {"metric_cpu_usage","metric_cpu_references"}) {
+        auto* field=item(window,name);
+        if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
+            || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) visible=false;
+    }
+    if (visible) return !overview->property("moving").toBool();
+    auto* model=overview->property("model").value<QAbstractItemModel*>();
+    if (!model) return false;
+    // The public row ID guides input, never the hidden metric value.
+    int cpuRow=-1;
+    for (int row=0; row<model->rowCount(); ++row)
+        if (model->data(model->index(row,0),Qt::UserRole).toMap()["id"]=="metric_cpu") { cpuRow=row; break; }
+    const auto current=overview->property("currentIndex").toInt();
+    if (cpuRow<0 || current==cpuRow) return false;
+    overview->forceActiveFocus(Qt::TabFocusReason);
+    QTest::keyClick(window,current<cpuRow ? Qt::Key_Down : Qt::Key_Up);
+    ++navigationKeys;
+    return false;
+}
 bool click(QQuickWindow* window, const QString& name) {
     if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     if (name=="radarWorkspaceButton") {
@@ -1079,11 +1102,16 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         };
         if (!waitFor(measuredTable,60000)) return failure("measured Pod table values");
         if (!workspace.inspectPath("/api/v1/namespaces/visual-a/pods/visual-multi-container")) return failure("open Pod inspector");
+        int navigationKeys=0;
         const bool inspected = waitFor([&] {
+            if (!workspace.canEditYaml() || !revealCpuMetric(window,navigationKeys)) return false;
             const auto* usage=item(window,"metric_cpu_usage");
-            return usage && !usage->property("text").toString().contains("Unavailable") && !usage->property("text").toString().contains("incomplete");
+            return usage && usage->property("text").toString().contains("mCPU") && !usage->property("text").toString().contains("incomplete");
         },60000);
-        if (!inspected || !workspace.closeInspector() || !click(window,"radarWorkspaceButton")) return failure("fresh inspector and Pod radar");
+        if (!inspected) return failure("fresh Inspector and visible CPU gauge");
+        const auto inspectorCapture=qEnvironmentVariable("PODLORD_RADAR_METRIC_FRAME");
+        if (!inspectorCapture.isEmpty() && !window->grabWindow().save(inspectorCapture+"-inspector.png")) return failure("capture measured Inspector");
+        if (!workspace.closeInspector() || !click(window,"radarWorkspaceButton")) return failure("open Pod radar");
         QTest::keyClick(window,Qt::Key_Home);
         if (!waitFor([&] { return podlord::test::radarTarget(window,0)!=nullptr; })) return failure("focus measured Pod in viewport");
         auto* radarTile=podlord::test::radarTarget(window,0); radarTile->forceActiveFocus();
@@ -1282,19 +1310,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         };
         if (!waitFor([&] {
             if (!workspace.canEditYaml() || workspace.inspectorPath()!="/api/v1/namespaces/default/pods/alpha") return false;
-            if (visibleMetric()) return !overview->property("moving").toBool();
-            auto* model=overview->property("model").value<QAbstractItemModel*>();
-            if (!model) return false;
-            // The public row ID guides input, never the hidden metric value.
-            int cpuRow=-1;
-            for (int row=0; row<model->rowCount(); ++row)
-                if (model->data(model->index(row,0),Qt::UserRole).toMap()["id"]=="metric_cpu") { cpuRow=row; break; }
-            const auto current=overview->property("currentIndex").toInt();
-            if (cpuRow<0 || current==cpuRow) return false;
-            overview->forceActiveFocus(Qt::TabFocusReason);
-            QTest::keyClick(window,current<cpuRow ? Qt::Key_Down : Qt::Key_Up);
-            ++navigationKeys;
-            return false;
+            return revealCpuMetric(window,navigationKeys);
         })) return failure("fresh detail and visible CPU gauge");
         const bool measured=waitFor([&] {
             if (!visibleMetric()) return false;

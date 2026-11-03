@@ -233,6 +233,29 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (!click(window, "logsButton")) return false;
     auto* model = workspace.property("logRows").value<QAbstractItemModel*>();
     if (!model) return false;
+    if (scenario == "status_scope") {
+        if (!waitFor([&] { return model->rowCount() == 2; })) return false;
+        const QList<QPair<QString, bool>> pages{{"inspectorEventsButton", false}, {"inspectorLinksButton", false},
+            {"terminalButton", false}, {"overviewButton", true}, {"yamlButton", true}, {"logsButton", false}};
+        for (const auto& [page, visible] : pages) {
+            if (!click(window, page)) return false;
+            const auto* status = item(window, "inspectorReadStatus");
+            if (!status || status->isVisible() != visible) {
+                std::fprintf(stderr, "Document status visibility is wrong on %s: expected=%d actual=%d\n",
+                    qPrintable(page), visible, status && status->isVisible());
+                return false;
+            }
+        }
+        if (!waitFor([&] { return model->rowCount() == 2; })) return false;
+        const auto capture = qEnvironmentVariable("PODLORD_INSPECTOR_STATUS_FRAME");
+        if (!capture.isEmpty()) {
+            QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
+            window->requestUpdate();
+            if (rendered.isEmpty() && !rendered.wait(1000)) return false;
+            return window->grabWindow().save(capture);
+        }
+        return true;
+    }
     if (scenario.startsWith("handoff")) {
         QAbstractItemModelTester checker(model,QAbstractItemModelTester::FailureReportingMode::Fatal);
         const int alpha = scenario == "handoff_grow" ? 30 : 50, beta = scenario == "handoff_shrink" ? 30 : 50;
@@ -534,7 +557,11 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             return waitFor([&] { return list->property("atYEnd").toBool() && workspace.property("logFollow").toBool(); });
         }
     }
-    if (scenario == "partial" || scenario == "malformed" || scenario == "invalid_utf8") return model->rowCount() == 1 && workspace.property("logStatus").toString().contains("beta");
+    if (scenario == "partial" || scenario == "malformed" || scenario == "invalid_utf8") return waitFor([&] {
+        const auto* status = item(window, "logStatus");
+        return model->rowCount() == 1 && status && status->isVisible()
+            && status->property("text").toString().contains("beta");
+    });
     if (scenario.startsWith("invalid_") || scenario == "limit" || scenario == "restore" || scenario == "eviction") {
         if (!click(window, "settingsWorkspaceButton") || !click(window, "settingsSyncSection")) return false;
         auto* input = item(window, "inlineLogLimit");
