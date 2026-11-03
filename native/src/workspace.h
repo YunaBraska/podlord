@@ -711,6 +711,7 @@ signals:
     void yamlApplyChanged();
     void yamlConflictsChanged();
     void windowCloseApproved();
+    void windowCloseCancelled();
     void windowClosed();
 private:
     friend class WorkspaceRuntime;

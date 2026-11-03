@@ -94,12 +94,12 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     };
     const auto probe = std::make_shared<FrameProbeState>();
     probe->lastGuiCpu = threadCpuNs();
-    QObject frameProbe;
+    QObject activationProbe, frameProbe;
     bool activationObserved = backgroundMetal && (window->isActive() || QGuiApplication::applicationState() == Qt::ApplicationActive);
-    QObject::connect(qGuiApp, &QGuiApplication::applicationStateChanged, &frameProbe, [&](Qt::ApplicationState state) {
+    QObject::connect(qGuiApp, &QGuiApplication::applicationStateChanged, &activationProbe, [&](Qt::ApplicationState state) {
         if (backgroundMetal && state == Qt::ApplicationActive) activationObserved = true;
     });
-    QObject::connect(window, &QWindow::activeChanged, &frameProbe, [&] {
+    QObject::connect(window, &QWindow::activeChanged, &activationProbe, [&] {
         if (backgroundMetal && window->isActive()) activationObserved = true;
     });
     const auto validDesktopState = [&] {
@@ -477,6 +477,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
         QTest::qWait(10);
     QObject::disconnect(drain);
     if (workspace.loading() || workspace.busy() || admissionQuiet.elapsed() < 1000) return false;
+    // Frame-only observers must not contribute to the separate idle CPU measurement.
+    probe->requested.store(0);
+    QObject::disconnect(window, nullptr, &frameProbe, nullptr);
     QTimer quiet, timeout, foregroundGuard, settling;
     quiet.setSingleShot(true); timeout.setSingleShot(true); settling.setSingleShot(true);
     quiet.setTimerType(Qt::PreciseTimer);
@@ -545,8 +548,6 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
                  {"activationObserved", activationObserved}, {"excludedRequests", idleRequests},
                  {"wallMilliseconds", double(drainDeadline.elapsed() - idleBegan)}, {"passed", idlePassed}})) return false;
     accepted = idlePassed && accepted;
-    probe->requested.store(0);
-    QObject::disconnect(window, nullptr, &frameProbe, nullptr);
     if (qEnvironmentVariableIsSet("PODLORD_PERFORMANCE_INSPECT")) {
         if (!report({{"type", "phase"}, {"name", "diagnostic-hold"}, {"milliseconds", 30000}, {"scope", "After measured actions and idle; attach process diagnostics here"}})) return false;
         QTest::qWait(30000);

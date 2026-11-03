@@ -104,6 +104,7 @@ bool Workspace::prepareWindowClose() {
     if (windowCloseReady_ || windowClosed_) return true;
     if (!runtime_->host || (!detached_ && runtime_->windows.size() == 1)) return true;
     if (busy_) return false;
+    if (runtime_->host->applicationClosing()) return true;
     QList<QUuid> ids;
     for (const auto& row : tabs()) ids.append(QUuid(row.toMap()["id"].toString()));
     if (ids.isEmpty()) return true;

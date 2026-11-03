@@ -591,13 +591,20 @@ bool Workspace::requestWindowClose() {
     if (viewSaving_ || presetsBusy_ || !pendingViews_.isEmpty() || viewStateFailed()) {
         viewClosePending_ = true; emit changed(); return false;
     }
+    viewClosePending_ = false;
     return prepareWindowClose();
 }
 bool Workspace::confirmDiscard(bool discard) {
     if (!pendingLeave_) return false;
     const auto pending = *pendingLeave_; pendingLeave_.reset();
-    if (!discard) { emit changed(); return true; }
-    if (pending.origin != active_) { error_ = "The originating session changed. Your draft is preserved; request the action again."; emit changed(); return false; }
+    if (!discard) {
+        if (pending.action == Leave::Window) emit windowCloseCancelled();
+        emit changed(); return true;
+    }
+    if (pending.origin != active_) {
+        if (pending.action == Leave::Window) emit windowCloseCancelled();
+        error_ = "The originating session changed. Your draft is preserved; request the action again."; emit changed(); return false;
+    }
     if (pending.action==Leave::MapHistory && (pending.historyIndex<0 || pending.historyIndex>=mapHistory_.size()
         || mapHistory_[pending.historyIndex]!=pending.target
         || std::none_of(catalog_.sessions.cbegin(),catalog_.sessions.cend(),[&](const auto& session) { return session.id==QUuid(pending.target); }))) {

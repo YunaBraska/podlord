@@ -1,6 +1,8 @@
 #include "window_host.h"
 #include "workspace.h"
 #include "workspace_runtime.h"
+#include <QEvent>
+#include <QGuiApplication>
 #include <QQmlContext>
 #include <QTimer>
 
@@ -8,10 +10,12 @@ namespace podlord {
 WindowHost::WindowHost(Workspace& primary, QObject* parent)
     : QObject(parent), primary_(primary), component_(&engine_) {
     primary_.runtime_->host = this;
+    qGuiApp->installEventFilter(this);
     component_.loadUrl(QUrl("qrc:/podlord/Main.qml"));
 }
 
 WindowHost::~WindowHost() {
+    qGuiApp->removeEventFilter(this);
     primary_.runtime_->host = nullptr;
     for (const auto& entry : std::as_const(windows_)) {
         delete entry.window.data(); delete entry.context;
@@ -35,6 +39,7 @@ bool WindowHost::create(Workspace& workspace, bool owned) {
     connect(&workspace, &Workspace::windowClosed, this, [this, &workspace] {
         QTimer::singleShot(0, this, [this, &workspace] { retire(workspace); });
     });
+    connect(&workspace, &Workspace::windowCloseCancelled, this, [this] { closePhase_ = ClosePhase::Idle; });
     emit windowOpened(window); return true;
 }
 
@@ -47,6 +52,41 @@ QList<QQuickWindow*> WindowHost::windows() const {
     QList<QQuickWindow*> result;
     for (const auto& entry : windows_) if (entry.window && !entry.workspace->windowClosed_) result.append(entry.window);
     return result;
+}
+
+bool WindowHost::applicationClosing() const { return closePhase_ != ClosePhase::Idle; }
+
+bool WindowHost::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == qGuiApp && event->type() == QEvent::Quit && !windows().isEmpty()) {
+        // Qt closes individual windows while handling Quit. Keep that operation
+        // distinct from a user closing one window so open tabs survive restart.
+        closePhase_ = ClosePhase::Waiting;
+        for (const auto& entry : std::as_const(windows_)) {
+            if (!entry.window || entry.workspace->windowClosed_) continue;
+            if (entry.workspace->requestWindowClose()) continue;
+            const auto* workspace = entry.workspace;
+            const bool decisionPending = workspace->pendingLeave_ && workspace->pendingLeave_->action == Workspace::Leave::Window;
+            if (!decisionPending && !workspace->viewClosePending_) closePhase_ = ClosePhase::Idle;
+            event->ignore();
+            return true;
+        }
+        closePhase_ = ClosePhase::Closing;
+        QTimer::singleShot(0, this, [this] {
+            if (closePhase_ == ClosePhase::Closing) closePhase_ = ClosePhase::Idle;
+        });
+    } else if (event->type() == QEvent::Close && closePhase_ == ClosePhase::Waiting
+        && std::any_of(windows_.cbegin(), windows_.cend(), [watched](const auto& entry) { return entry.window == watched; })) {
+        // A completed save or accepted draft decision retries the whole quit,
+        // rather than closing just the window that finished first.
+        event->ignore();
+        QTimer::singleShot(0, this, [this] {
+            if (closePhase_ != ClosePhase::Waiting) return;
+            QEvent quit(QEvent::Quit);
+            QCoreApplication::sendEvent(qGuiApp, &quit);
+        });
+        return true;
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 bool WindowHost::focus(Workspace& workspace) {

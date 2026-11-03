@@ -2,6 +2,7 @@
 #include "workspace.h"
 #include "ui_input.h"
 #include <QGuiApplication>
+#include <QEvent>
 #include <QQmlContext>
 #include <QJsonDocument>
 #include <QTcpServer>
@@ -159,6 +160,12 @@ bool run(const QString& scenario) {
         REQUIRE(!unavailable.open() && unavailable.windows().isEmpty()); return true;
     }
     podlord::WindowHost host(primary);
+    if (scenario == "application_quit_empty") {
+        const auto before = store.list();
+        QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+        REQUIRE(quit.isAccepted() && host.windows().isEmpty() && unchanged(store, before) && api.requests == 0);
+        return true;
+    }
     REQUIRE(host.open() && host.windows().size() == 1);
     auto* main = host.windows().first();
     REQUIRE(waitFor([&] { return !primary.busy() && !primary.filterPresetsBusy() && primary.tabs().size()==2; }));
@@ -504,6 +511,96 @@ bool run(const QString& scenario) {
     REQUIRE(detached->tabs().size() == 1 && detached->tabs()[0].toMap()["id"].toString() == a);
     REQUIRE(primary.currentSession() == b && detached->loadingProgress() == 1 && api.authorized);
     REQUIRE(waitFor([&] { return !primary.busy() && primary.resourceCount() == 2; }));
+    if (scenario.startsWith("application_quit")) {
+        REQUIRE(waitFor([&] { return primary.sessionWindowActionsReady() && detached->sessionWindowActionsReady(); }));
+        if (scenario == "application_quit_closed_window") {
+            bool accepted = false;
+            QObject::connect(&primary, &podlord::Workspace::windowClosed, &host, [&] {
+                QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+                accepted = quit.isAccepted();
+            });
+            main->close();
+            REQUIRE(waitFor([&] { return host.windows().isEmpty(); }) && accepted);
+            const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
+            const auto catalog = std::get<podlord::SessionCatalog>(saved);
+            REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open);
+            return true;
+        }
+        if (scenario == "application_quit_tab_prompt" || scenario == "application_quit_cancel_retry"
+            || scenario == "application_quit_other_window") {
+            REQUIRE(detached->beginYamlEdit() && detached->setYamlDraft(detached->yamlText() + "\n# keep this draft\n"));
+            if (scenario == "application_quit_tab_prompt") {
+                detached->close(a);
+                REQUIRE(detached->discardPending());
+            }
+            QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+            REQUIRE(!quit.isAccepted() && detached->discardPending() && host.windows().size() == 2);
+            if (scenario == "application_quit_cancel_retry") {
+                REQUIRE(!main->close());
+                REQUIRE(detached->confirmDiscard(false));
+            } else {
+                if (scenario == "application_quit_other_window") {
+                    QWindow auxiliary;
+                    auxiliary.show();
+                    REQUIRE(auxiliary.close() && !auxiliary.isVisible());
+                    REQUIRE(host.windows().size() == 2 && detached->discardPending());
+                }
+                REQUIRE(podlord::test::clickVisible(window, "discardStay"));
+            }
+            QTest::qWait(10);
+            REQUIRE(host.windows().size() == 2 && detached->yamlDirty() && !detached->discardPending());
+            main->close(); REQUIRE(waitFor([&] { return host.windows().size() == 1; }));
+            const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
+            const auto catalog = std::get<podlord::SessionCatalog>(saved);
+            REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open && detached->yamlDirty());
+            return true;
+        }
+        if (scenario == "application_quit_stay" || scenario == "application_quit_discard") {
+            REQUIRE(detached->beginYamlEdit() && detached->setYamlDraft(detached->yamlText() + "\n# keep this draft\n"));
+            QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+            REQUIRE(!quit.isAccepted() && host.windows().size() == 2 && detached->discardPending());
+            const bool discard = scenario == "application_quit_discard";
+            REQUIRE(podlord::test::clickVisible(window, discard ? "discardAccept" : "discardStay"));
+            if (!discard) {
+                REQUIRE(detached->yamlDirty() && !detached->discardPending() && host.windows().size() == 2);
+                main->close(); REQUIRE(waitFor([&] { return host.windows().size() == 1; }));
+                const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
+                const auto catalog = std::get<podlord::SessionCatalog>(saved);
+                REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open && detached->yamlDirty());
+                return true;
+            }
+        } else if (scenario == "application_quit_wait") {
+            auto* pool = QThreadPool::globalInstance();
+            const int previousMaximum = pool->maxThreadCount();
+            const auto entered = std::make_shared<QSemaphore>(), release = std::make_shared<QSemaphore>();
+            bool blocked = true;
+            const auto restoreWorkers = qScopeGuard([&] {
+                if (blocked) release->release();
+                pool->setMaxThreadCount(previousMaximum);
+            });
+            pool->setMaxThreadCount(1);
+            pool->start([entered, release] { entered->release(); release->acquire(); });
+            REQUIRE(waitFor([&] { return entered->available() == 1; }));
+            REQUIRE(primary.filter("alpha") && !primary.sessionWindowActionsReady());
+            QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+            REQUIRE(!quit.isAccepted() && host.windows().size() == 2);
+            release->release(); blocked = false; pool->setMaxThreadCount(previousMaximum);
+            REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
+        } else {
+            REQUIRE(scenario == "application_quit");
+            QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+            REQUIRE(quit.isAccepted());
+        }
+        REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
+        const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
+        const auto catalog = std::get<podlord::SessionCatalog>(saved);
+        REQUIRE(catalog.sessions[0].open && catalog.sessions[1].open);
+        const int requests = api.requests;
+        podlord::Workspace restored(profile.path());
+        REQUIRE(waitFor([&] { return !restored.busy() && restored.tabs().size() == 2; }));
+        REQUIRE(restored.totalResourceCount() == 0 && restored.mapOverview() && api.requests == requests);
+        return true;
+    }
     if (scenario == "nested") {
         REQUIRE(detached->duplicateSession(a, "Third window"));
         QString third;

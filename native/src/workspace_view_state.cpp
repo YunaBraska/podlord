@@ -136,6 +136,7 @@ bool Workspace::confirmViewClose(bool discard) {
     if (!viewCloseNeedsDecision()) return false;
     viewClosePending_ = false;
     if (discard) { viewCloseDiscardApproved_ = true; emit windowCloseApproved(); }
+    else emit windowCloseCancelled();
     emit changed(); return true;
 }
 }
