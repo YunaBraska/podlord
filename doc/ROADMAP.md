@@ -4,7 +4,7 @@ Podlord is built around a flat, cache-first Kubernetes workspace. The confirmed 
 
 ## Native release closure, 2026-11-02
 
-**Not ready.** The current production candidate is packaged from `7c5c108`, with subsequent test-navigation and diagnostic corrections. Treat a compiled target, a component-test count and an attractive screenshot as separate evidence. Close these gates in order, recording each completed public route and any approved difference in the existing capability inventory and test map. Use targeted checks while closing a package; run the full suite and release measurements after the integrated candidate is stable.
+**Not ready.** The latest backed-up Sources increment is `3fe4dcc`. Older comparison captures and the refreshed Android/macOS packages have their own dated artifact identities in the test map. Treat a compiled target, a component-test count and an attractive screenshot as separate evidence. Close these gates in order, recording each completed public route and any approved difference in the existing capability inventory and test map. Use targeted checks while closing a package; run the full suite and release measurements after the integrated candidate is stable.
 
 | Gate | Current evidence and gap | Exit condition |
 | --- | --- | --- |
@@ -31,10 +31,11 @@ map owns exact results and remaining gates.
 The November 3 Sources follow-up reproduces the Linux test failures locally:
 the real action succeeds while its Qt delegate is replaced. Public-outcome
 checks pass 612 repeated Linux and 119 macOS component executions afterward.
-The new Android Sources-only journey passes in landscape, but portrait keyboard
-occlusion needs the explicit pending input-priority decision. The integrated
-local run still records one now-corrected offscreen User-copy test failure, not
-a complete green result. Fresh integrated and hosted closure remain required.
+The subsequent complete local run passes six preflights and 5,345 main cases,
+with 97.93% line/86.12% branch coverage and 95.37% across the new Source-editor
+families. The default installed Android journey passes all 13 steps. Portrait
+keyboard occlusion still needs the explicit pending input-priority decision.
+Hosted run 41548323450 is the fresh confirmation lane, not a completed gate.
 
 The interview is complete. The steps below are confirmed sequencing, not claims that implementation or verification has run. Each implemented increment must carry real behavior and its tests; unfinished capabilities must remain explicitly unavailable rather than simulated.
 
