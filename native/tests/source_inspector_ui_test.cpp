@@ -58,6 +58,9 @@ bool run(const QString& scenario, const QString& liveConfig) {
     WindowHost host(workspace);
     require(host.open(), "Source window unavailable.");
     auto* window=host.windows().first();
+#ifdef Q_OS_IOS
+    require(test::orientIosTestWindow(window), "Source inspector test orientation unavailable.");
+#endif
     Workspace* peer=nullptr;
     if (windowScenario || live) {
         const auto session=std::get<SessionCatalog>(created).sessions.first().id.toString(QUuid::WithoutBraces);
@@ -81,13 +84,21 @@ bool run(const QString& scenario, const QString& liveConfig) {
         return test::visibleItem(window->contentItem(),name);
     };
     const auto click=[&](const QString& name) {
-        require(QTest::qWaitFor([&] { auto* item=control(name); return item && item->isEnabled(); }), "Source control not ready.");
+        const bool ready=QTest::qWaitFor([&] { auto* item=control(name); return item && item->isEnabled(); });
+        if (!ready) {
+            std::fprintf(stderr,"Source control not ready: %s\n",qPrintable(name));
+            const auto capture=qEnvironmentVariable("PODLORD_SOURCE_INSPECTOR_SCREENSHOT");
+            if (!capture.isEmpty()) window->grabWindow().save(capture+".failure.png");
+        }
+        require(ready, "Source control not ready.");
         if (name=="sourceCell_0_0") {
-            require(QTest::qWaitFor([&] {
+            const auto exposed=[&] {
                 auto* cell=control(name);
                 const auto bounds=cell ? test::visibleBounds(window,cell) : QRectF{};
                 return bounds.width()>=44 && bounds.height()>=(scenario=="narrow" ? 44 : 32);
-            }), "Source cell has no complete visible row hit area.");
+            };
+            if (!exposed()) require(test::scrollIntoView(window,control(name),true), "Cannot reveal source row through its scroll view.");
+            require(QTest::qWaitFor(exposed), "Source cell has no complete visible row hit area.");
             auto* cell=control(name);
             // Opening the pane can replace this delegate before its clicked observers run.
             QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,test::visibleBounds(window,cell).center().toPoint());
@@ -114,7 +125,15 @@ bool run(const QString& scenario, const QString& liveConfig) {
     click("settingsWorkspaceButton");
     require(test::selectSettingsSection(window,"sources"), "Cannot select Sources.");
     auto* rows=workspace.property("sourceTable").value<QAbstractItemModel*>();
-    require(rows && rows->rowCount()==source.contexts.size(), "Source rows missing.");
+    const bool sourceRowsReady=QTest::qWaitFor([&] { return rows && rows->rowCount()==source.contexts.size(); });
+    if (!sourceRowsReady) {
+        std::fprintf(stderr,"Source rows unavailable: model=%d rows=%d expected=%lld contexts=%lld busy=%d page=%s error=%s\n",
+            rows!=nullptr,rows ? rows->rowCount() : -1,static_cast<long long>(source.contexts.size()),
+            static_cast<long long>(workspace.contexts().size()),workspace.busy(),qPrintable(workspace.workspacePage()),qPrintable(workspace.error()));
+        const auto capture=qEnvironmentVariable("PODLORD_SOURCE_INSPECTOR_SCREENSHOT");
+        if (!capture.isEmpty()) window->grabWindow().save(capture+".rows.failure.png");
+    }
+    require(sourceRowsReady, "Source rows missing.");
     require(QTest::qWaitFor([&] {
         auto* view=control("sourceTable");
         return test::tableColumnsReady(view,workspace.sourceColumns()) && test::tableCell(view,0,0);
@@ -306,6 +325,13 @@ bool run(const QString& scenario, const QString& liveConfig) {
                     else {
                         if (scenario=="apply_busy") require(finished.count()==1 && finished.first().first().toBool(), "Queued source Apply did not finish exactly once.");
                         require(!workspace.sourceEditing() && !workspace.yamlDirty() && workspace.sourceYaml()==edited, "Successful source apply left stale draft.");
+                        click("sourceYamlTab");
+                        require(QTest::qWaitFor([&] {
+                            auto* editor=control("sourceInspectorYaml");
+                            return editor && editor->property("readOnly").toBool() && editor->property("text")==edited;
+                        }), "Applied source YAML is not visible and read-only.");
+                        const auto capture=qEnvironmentVariable("PODLORD_SOURCE_INSPECTOR_SCREENSHOT");
+                        if (!capture.isEmpty()) require(window->grabWindow().save(capture+".applied.png"), "Applied source capture failed.");
                         require((workspace.sourceInspection()["snapshotId"].toString()==source.id)==(scenario=="repeat"), "Snapshot identity does not follow content.");
                         const auto catalog=store.list();
                         require(std::holds_alternative<SourceCatalog>(catalog) && std::get<SourceCatalog>(catalog).sources.size()==(scenario=="repeat" ? 1 : 2), "Previous immutable snapshot was lost or duplicated.");
@@ -338,6 +364,10 @@ bool run(const QString& scenario, const QString& liveConfig) {
 }
 int main(int argc,char** argv) {
     const QGuiApplication application(argc,argv);
-    try { return (argc==2 || argc==3) && run(QString::fromLocal8Bit(argv[1]),argc==3 ? QString::fromLocal8Bit(argv[2]) : QString{}) ? 0 : 1; }
+    try {
+        const bool passed=(argc==2 || argc==3) && run(QString::fromLocal8Bit(argv[1]),argc==3 ? QString::fromLocal8Bit(argv[2]) : QString{});
+        if (passed) { std::printf("Source inspector scenario passed: %s\n",argv[1]); std::fflush(stdout); }
+        return passed ? 0 : 1;
+    }
     catch (const std::exception& error) { std::fprintf(stderr,"%s\n",error.what()); return 1; }
 }

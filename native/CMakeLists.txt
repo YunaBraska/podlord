@@ -475,13 +475,19 @@ if(BUILD_TESTING OR (IOS AND PODLORD_BUILD_MOBILE_UI_TEST))
     qt_add_executable(workspace_ui_test tests/workspace_ui_test.cpp)
     target_link_libraries(workspace_ui_test PRIVATE podlord_workspace Qt6::Test)
     if(IOS)
-        target_sources(workspace_ui_test PRIVATE tests/ios_orientation.mm)
-        target_link_libraries(workspace_ui_test PRIVATE "-framework UIKit")
-        set_target_properties(workspace_ui_test PROPERTIES MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
-            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
-            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
-        qt_add_ios_ffmpeg_libraries(workspace_ui_test)
+        if(NOT TARGET source-inspector-ui-test)
+            qt_add_executable(source-inspector-ui-test tests/source_inspector_ui_test.cpp tests/ui_input.h)
+            target_link_libraries(source-inspector-ui-test PRIVATE podlord_workspace Qt6::Test)
+        endif()
+        foreach(ui_test workspace_ui_test source-inspector-ui-test)
+            target_sources(${ui_test} PRIVATE tests/ios_orientation.mm)
+            target_link_libraries(${ui_test} PRIVATE "-framework UIKit")
+            set_target_properties(${ui_test} PROPERTIES MACOSX_BUNDLE TRUE
+                MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
+                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
+                XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+            qt_add_ios_ffmpeg_libraries(${ui_test})
+        endforeach()
     else()
         set_target_properties(workspace_ui_test PROPERTIES MACOSX_BUNDLE FALSE)
     endif()

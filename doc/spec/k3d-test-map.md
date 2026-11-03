@@ -7561,6 +7561,32 @@ and 87,501,020 installed regular-file bytes. It verifies dependencies and ad-hoc
 signature integrity, not a signed Store submission or sandboxed interactive
 runtime. Evidence: `source-editor-current-store-arm64-package/`.
 
+The shared Source UI driver is now an optional iOS test bundle using the same
+existing mobile-test build flag and bundle configuration as the workspace
+driver. Six cases pass on an ARM64 iPhone 17 Pro/iOS 26.4 simulator in landscape:
+view, apply, dirty Stay, dirty Discard, reset after invalid YAML, and missing
+owned copy. Successful Apply additionally reopens the real YAML tab and checks
+that the edited text is visible and read-only. The compact Settings selector
+waits for a rendered frame and selects its visible popup item on iOS; the
+previous keyboard-only route returned while Alerts was still displayed. The
+Source row is revealed through its real scroll view when needed. These are
+native Qt UI scenarios with synthetic configuration input, not a new live
+Kubernetes or software-keyboard-touch claim for iOS. Original files, prior
+snapshots, saved sessions and the zero-request boundary remain asserted.
+Evidence: `source-inspector-ios-live-suite/{view,apply,dirty_stay,dirty_discard,reset_invalid,missing}.log`,
+its screenshots including `apply.png.applied.png`, and `cleanup.json` (exit 0).
+The same final test code passes 119 macOS component executions and 102 Linux
+cases repeated three times, 306 executions. Evidence:
+`source-ios-final-macos-tests.log`, `source-ios-adapter-linux-tests.log`.
+
+The simulator also reproduces Apple's separate `Family` startup crash before
+Podlord runs. Its own log states that Family must not load SpringBoardUI and
+aborts in that framework's load assertion. The final six-case suite reuses one
+owned simulator and deletes it afterward, avoiding repeated boots during
+iteration. No crash-reporting or security settings are disabled. The Apple
+runtime defect itself is not fixed or counted as a Podlord crash. Evidence:
+`source-inspector-ios-live-suite/family-runtime.log` and `cleanup.json`.
+
 The same real-device work exposes portrait keyboard occlusion: the focused
 Source YAML lies below its clipped inspector, behind the keyboard. Extending
 the confirmed temporary input-priority layout to portrait has been asked

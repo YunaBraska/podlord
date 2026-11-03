@@ -289,6 +289,11 @@ inline bool clickVisible(QQuickWindow* window, const QString& name, Qt::MouseBut
 }
 /** Select the visible desktop tab or the compact section picker through input. */
 inline bool selectSettingsSection(QQuickWindow* window, const QString& section) {
+#ifdef Q_OS_IOS
+    QSignalSpy settled(window,&QQuickWindow::frameSwapped);
+    window->update();
+    if (!settled.wait(2000)) return false;
+#endif
     const QString name = section == "alerts" ? "alertsWorkspaceButton" : "settings" + section.left(1).toUpper() + section.mid(1) + "Section";
     auto* control = visibleItem(window->contentItem(), name);
     if (control) {
@@ -301,9 +306,25 @@ inline bool selectSettingsSection(QQuickWindow* window, const QString& section) 
     const int row = order.indexOf(section);
     if (!picker || !picker->isEnabled() || row < 0 || !scrollIntoView(window, picker, true)) return false;
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, picker->mapToScene({picker->width()/2, picker->height()/2}).toPoint());
+#ifdef Q_OS_IOS
+    if (!QTest::qWaitFor([&] {
+        QQmlExpression expression(qmlContext(picker),picker,"popup.visible");
+        return expression.evaluate().toBool() && !expression.hasError();
+    },2000)) return false;
+#endif
     QTest::keyClick(window, Qt::Key_Home);
     for (int i = 0; i < row; ++i) QTest::keyClick(window, Qt::Key_Down);
+#ifdef Q_OS_IOS
+    QQuickItem* option=nullptr;
+    if (!QTest::qWaitFor([&] {
+        QQmlExpression expression(qmlContext(picker),picker,QString("popup.contentItem.itemAtIndex(%1)").arg(row));
+        option=expression.evaluate().value<QQuickItem*>();
+        return !expression.hasError() && option && !visibleBounds(window,option).isEmpty();
+    },2000)) return false;
+    QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,visibleBounds(window,option).center().toPoint());
+#else
     QTest::keyClick(window, Qt::Key_Return);
+#endif
     return QTest::qWaitFor([&] { return picker->property("currentValue").toString() == section; });
 }
 }
