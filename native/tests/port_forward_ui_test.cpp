@@ -467,12 +467,18 @@ bool run(const QString& scenario, const QString& configPath) {
         if (!evidence.isEmpty()) window->grabWindow().save(evidence+".failure.png","PNG");
         return false;
     };
+    QSignalSpy localConnected(&client, &QTcpSocket::connected);
     client.connectToHost(QHostAddress::LocalHost, localPort);
-    if (!waitFor([&] { return client.state() == QAbstractSocket::ConnectedState; })) return failed("local connection");
+    // A rejecting peer can connect and close in the same event-loop turn.
+    // Drain that legitimate ordering rather than depending on scheduler speed.
+    if (scenario == "text" && !waitFor([&] {
+        return upgrades == 1 && client.state() == QAbstractSocket::UnconnectedState && !workspace.error().isEmpty();
+    })) return failed("text stream rejection");
+    if (!waitFor([&] { return localConnected.size() == 1; })) return failed("local connection");
     const QByteArray message = real ? QByteArray("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         : scenario == "bulk" ? QByteArray(2 * 1024 * 1024, 'b')
         : scenario == "large_frame" ? QByteArray(256 * 1024, 'l') : QByteArray::fromHex("00017f80ff010203706f646c6f7264");
-    client.write(message);
+    if (client.state() == QAbstractSocket::ConnectedState) client.write(message);
     QByteArray received;
     if (scenario == "priority") {
         if (!waitFor([&] { return heldUpgrade && upgrades == 1; })) return false;

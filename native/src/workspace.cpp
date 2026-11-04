@@ -1512,7 +1512,8 @@ bool Workspace::publishDashboard() {
     const auto metrics=metricSummary.presentation();
     const bool changed=dashboardSummary_!=summary || pulseMetrics_!=metrics;
     dashboardSummary_=summary; pulseMetrics_=metrics; dashboardDirty_=false;
-    if (changed) emit dashboardChanged(); return true;
+    if (changed) emit dashboardChanged();
+    return true;
 }
 bool Workspace::setWorkspacePage(const QString& page) {
     if (page != "map" && page != "resources" && page != "ports" && page != "settings" && page != "events" && page != "alerts" && page != "dashboard") return false;

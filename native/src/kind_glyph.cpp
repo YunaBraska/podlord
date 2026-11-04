@@ -69,7 +69,8 @@ const QHash<QString, Glyph>& catalog() {
         line(.16,.26,.84,.26); line(.4,.26,.44,.14); line(.44,.14,.56,.14); line(.56,.14,.6,.26);
         polygon({{.24,.3},{.76,.3},{.7,.9},{.3,.9}});
         line(.42,.38,.42,.82); line(.58,.38,.58,.82); finish({"Trash"});
-        for (const auto y : {.25,.5,.75}) line(.15,y,.85,y); finish({"Menu"});
+        for (const auto y : {.25,.5,.75}) line(.15,y,.85,y);
+        finish({"Menu"});
         rect(.15,.15,.7,.7,Fill::None); line(.6,.15,.6,.85); finish({"Sidebar"});
         rect(.15,.15,.7,.7,Fill::None); line(.38,.15,.38,.85); line(.62,.15,.62,.85); finish({"Columns"});
         line(.7,.2,.3,.5); line(.3,.5,.7,.8); finish({"Previous"});
@@ -120,8 +121,9 @@ void KindGlyph::draw(QPainter* painter, const QRectF& rect, const QString& kind,
     painter->scale(scale, scale);
     const QPen pen(stroke, std::max(1., side * .07) / scale, Qt::SolidLine, Qt::FlatCap, Qt::MiterJoin);
     const auto& glyphs = catalog();
-    const auto found = glyphs.constFind(kind);
-    const auto& parts = found == glyphs.cend() ? glyphs.constFind(QString{}).value() : found.value();
+    auto found = glyphs.constFind(kind);
+    if (found == glyphs.cend()) found = glyphs.constFind(QString{});
+    const auto& parts = found.value();
     for (const auto& part : parts) {
         painter->setPen(part.outline ? pen : QPen(Qt::NoPen));
         painter->setBrush(part.fill == Fill::None ? QBrush(Qt::NoBrush) : QBrush(part.fill == Fill::Main ? fill : stroke));

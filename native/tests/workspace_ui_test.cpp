@@ -1709,24 +1709,38 @@ bool execute(const QString& requestedScenario) {
             const auto bindings = QKeySequence::keyBindings(QKeySequence::Find);
             if (bindings.isEmpty()) return failed("platform Find binding");
             bool closeQueued = false;
+            bool focusedBeforeClose = false;
+            QRectF queuedBounds;
             QSignalSpy closedByPointer(toggle, SIGNAL(clicked()));
+            const auto focused = QObject::connect(input, &QQuickItem::activeFocusChanged, window, [&] {
+                if (input->hasActiveFocus() && closedByPointer.isEmpty()) focusedBeforeClose = true;
+            });
             const auto revealed = QObject::connect(input, &QQuickItem::visibleChanged, window, [&] {
                 if (!input->isVisible() || closeQueued) return;
                 closeQueued = true;
-                const auto point = podlord::test::visibleBounds(window, toggle).center();
-                const QPointF global = window->mapToGlobal(point.toPoint());
-                // Deliver real pointer input before the deferred focus, without
-                // reentering the visibility binding or calling a control handler.
-                QCoreApplication::postEvent(window, new QMouseEvent(QEvent::MouseButtonPress, point, point, global,
-                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier), Qt::HighEventPriority);
-                QCoreApplication::postEvent(window, new QMouseEvent(QEvent::MouseButtonRelease, point, point, global,
-                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier), Qt::HighEventPriority);
+                queuedBounds = podlord::test::visibleBounds(window, toggle);
+                const auto point = queuedBounds.center();
+                // Queue one standard QtTest click before deferred focus. QtTest
+                // supplies consistent native device, button and timestamp state.
+                QMetaObject::invokeMethod(window, [window, point] {
+                    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point.toPoint());
+                }, Qt::QueuedConnection);
             });
             QTest::keySequence(window, bindings.first());
             QObject::disconnect(revealed);
             QCoreApplication::sendPostedEvents();
-            if (!closeQueued || closedByPointer.size() != 1 || input->isVisible() || toggle->property("checked").toBool())
+            QObject::disconnect(focused);
+            if (!closeQueued || focusedBeforeClose || closedByPointer.size() != 1 || input->isVisible() || toggle->property("checked").toBool()) {
+                qWarning() << "Queued Map search state: closeQueued=" << closeQueued << "clicked=" << closedByPointer.size()
+                    << "focusedBeforeClose=" << focusedBeforeClose
+                    << "inputVisible=" << input->isVisible() << "inputFocused=" << input->hasActiveFocus()
+                    << "toggleChecked=" << toggle->property("checked").toBool() << "toggleFocused=" << toggle->hasActiveFocus()
+                    << "toggleBounds=" << podlord::test::visibleBounds(window, toggle)
+                    << "queuedBounds=" << queuedBounds << "queuedPointInToggle=" << toggle->mapFromScene(queuedBounds.center())
+                    << "focus=" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{})
+                    << "requests=" << server.requests.size() << "baseline=" << calls;
                 return failed("queued pointer closes Find before focus delivery");
+            }
             return waitFor([&] { return !input->isVisible() && !input->hasActiveFocus() && toggle->hasActiveFocus(); })
                 && workspace.resourceCount() == 3 && server.requests.size() == calls;
         }
