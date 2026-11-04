@@ -89,6 +89,8 @@ jobs:
           cmake --install "$env:RUNNER_TEMP\yaml-cpp-build" --config Release
           if ($LASTEXITCODE -ne 0) { throw 'Could not install yaml-cpp.' }
       - name: Build native Windows application and tests
+        env:
+          PODLORD_TEST_MACHINE_ROOT: '1'
         run: |
           $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
           $yaml = Join-Path $env:RUNNER_TEMP 'yaml-cpp-install'
@@ -121,6 +123,8 @@ jobs:
           ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --output-on-failure -L 'audio_decode|audio_failure'
           if ($LASTEXITCODE -ne 0) { throw 'Native Windows silent audio tests failed.' }
       - name: Deploy and start isolated native Windows package
+        env:
+          PODLORD_TEST_MACHINE_ROOT: '1'
         run: |
           $ErrorActionPreference = 'Stop'
           $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'

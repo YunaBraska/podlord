@@ -995,6 +995,12 @@ CAs and EC client certificates must work without installed authentication or
 TLS tools. The confirmed rationale and test-store safety boundary are recorded
 in [ADR 0052](../adr/0052-embedded-windows-tls-backend.md).
 
+Windows package-smoke checks wait for a completed renderer frame and a live
+public application window instead of sleeping for a fixed startup interval.
+The user approved a 60-second hang watchdog on 2026-11-04. It is not a startup
+performance allowance and does not replace or change the performance gates.
+Every probe must stop its owned process tree and drain its diagnostic streams.
+
 The current .NET/Avalonia application remains the implemented reference until replacement work is authorized and completed. Its existing technology ADRs describe that implementation, not mandatory dependencies of the future C++ application. C++/Qt and all five platform families are accepted for the first complete release; platform-specific differences require explicit approval rather than inference. Authentication integration, deployment obligations, and migration still require evidence. No browser version or browser backend is in scope.
 
 Direct old/new UI comparison applies on platforms where the old application actually runs; it does not pretend an old mobile release exists. Other new targets must exercise the same applicable public behavior against the owning specification and explicit platform capability matrix. A preserved artifact alone is not a reproducible baseline: record required toolchains, dependencies, and build/run commands before relying on it.

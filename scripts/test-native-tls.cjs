@@ -15,20 +15,24 @@ assert.ok(driver && openssl && ['trusted', 'untrusted_ca', 'untrusted_client', '
     && (!storeOnly || (!inputScenario && !bundle)), 'Expected real driver, OpenSSL and TLS scenario, or --check-system-store OPENSSL.');
 const systemTrust = scenario.startsWith('system_');
 assert.ok(!systemTrust || (process.platform === 'win32' && process.env.GITHUB_ACTIONS === 'true'
-    && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && process.env.RUNNER_TEMP && (bundle || storeOnly)),
-    'System-store fixtures require the disposable Windows CI account and extracted package.');
+    && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && process.env.RUNNER_TEMP
+    && process.env.PODLORD_TEST_MACHINE_ROOT === '1' && (bundle || storeOnly)),
+    'System-store fixtures require an explicitly authorized disposable Windows CI account; TLS probes also require an extracted package.');
 async function run() {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-mutual-tls-'));
     let server;
     let importedRoot;
     const certutil = systemTrust ? path.join(process.env.SystemRoot, 'System32', 'certutil.exe') : undefined;
     const powershell = systemTrust ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : undefined;
-    const rootMatches = async fingerprint => {
+    const rootMatches = async (fingerprint, location = 'CurrentUser') => {
         assert.match(fingerprint, /^[0-9A-F]{40}$/i);
+        assert.ok(['CurrentUser', 'LocalMachine'].includes(location));
         const query = "$ErrorActionPreference = 'Stop'; "
+            + 'if (-not ([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole('
+            + "[Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Machine-root fixtures require an elevated CI account.' }; "
             + '$store = [System.Security.Cryptography.X509Certificates.X509Store]::new('
             + '[System.Security.Cryptography.X509Certificates.StoreName]::Root, '
-            + '[System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser); '
+            + `[System.Security.Cryptography.X509Certificates.StoreLocation]::${location}); `
             + 'try { $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly '
             + '-bor [System.Security.Cryptography.X509Certificates.OpenFlags]::OpenExistingOnly); '
             + '[Console]::Write($store.Certificates.Find('
@@ -51,11 +55,12 @@ async function run() {
         }
         if (scenario === 'system_trusted') {
             const fingerprint = new X509Certificate(await read('root.pem')).fingerprint.replaceAll(':', '');
-            assert.match(fingerprint, /^[0-9A-F]{40}$/i);
             // Never replace an existing account certificate, even in this ephemeral runner.
+            assert.equal(await rootMatches(fingerprint, 'LocalMachine'), '0', 'The fixture CA must be absent from the machine store before import.');
             assert.equal(await rootMatches(fingerprint), '0', 'The fixture CA must be absent before import.');
             importedRoot = fingerprint;
-            await execute(certutil, ['-user', '-f', '-addstore', 'Root', path.join(directory, 'root.pem')], { timeout: 15000 });
+            await execute(certutil, ['-f', '-addstore', 'Root', path.join(directory, 'root.pem')], { timeout: 15000 });
+            assert.equal(await rootMatches(fingerprint, 'LocalMachine'), '1', 'The owned fixture CA must be present in the machine store after import.');
             assert.equal(await rootMatches(fingerprint), '1', 'The owned fixture CA must be present after import.');
         }
         if (storeOnly) return;
@@ -156,7 +161,8 @@ async function run() {
         } finally {
             try {
                 if (importedRoot) {
-                    await execute(certutil, ['-user', '-delstore', 'Root', importedRoot], { timeout: 15000 });
+                    await execute(certutil, ['-delstore', 'Root', importedRoot], { timeout: 15000 });
+                    assert.equal(await rootMatches(importedRoot, 'LocalMachine'), '0', 'The fixture CA must be absent from the machine store after cleanup.');
                     assert.equal(await rootMatches(importedRoot), '0', 'The fixture CA must be absent after cleanup.');
                 }
             } finally {

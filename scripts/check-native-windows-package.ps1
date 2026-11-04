@@ -127,29 +127,35 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
     else { $start.ArgumentList.Add('--profile'); $start.ArgumentList.Add($profile) }
     $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
     $stdout = $null; $stderr = $null; $modules = @(); $failure = $null; $started = $false
+    $pendingLine = $null; $stderrPrefix = [Text.StringBuilder]::new(); $readyMilliseconds = $null
     $startup = [Diagnostics.Stopwatch]::StartNew()
     try {
         if (!$process.Start()) { throw 'Could not start the extracted public executable.' }
         $started = $true
-        $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
         if ($Renderer -eq 'help') {
+            $stderr = $process.StandardError.ReadToEndAsync()
             if (!$process.WaitForExit(3000) -or $process.ExitCode -ne 0) { throw 'Packaged command-line startup failed.' }
         } else {
-            # Preserve the existing three-second Windows startup smoke interval.
-            Start-Sleep -Seconds 3
+            # Synchronize on actual rendering. This watchdog is not a startup benchmark.
+            $framePattern = $(if ($Renderer -eq 'software') { "Frame rendered with 'software' renderloop" } else { 'syncAndRender: frame rendered' })
+            $frameReady = $false
+            while (!$frameReady) {
+                $remaining = 60000 - $startup.ElapsedMilliseconds
+                if ($remaining -le 0) { throw 'The 60-second readiness watchdog expired before a completed frame.' }
+                $pendingLine = $process.StandardError.ReadLineAsync()
+                if (!$pendingLine.Wait([int]$remaining)) { throw 'The 60-second readiness watchdog expired before a completed frame.' }
+                $line = $pendingLine.GetAwaiter().GetResult(); $pendingLine = $null
+                if ($null -eq $line) { throw 'The application closed its diagnostic stream before a completed frame.' }
+                [void]$stderrPrefix.AppendLine($line)
+                $frameReady = $line -match $framePattern
+            }
+            $stderr = $process.StandardError.ReadToEndAsync()
             $process.Refresh()
             if ($process.HasExited -or $process.MainWindowHandle -eq [IntPtr]::Zero) {
-                # Observe a failed cold launch without changing its original gate.
-                $observationDeadline = $startup.ElapsedMilliseconds + 12000
-                while (!$process.HasExited -and $process.MainWindowHandle -eq [IntPtr]::Zero -and $startup.ElapsedMilliseconds -lt $observationDeadline) {
-                    Start-Sleep -Milliseconds 50
-                    $process.Refresh()
-                }
-                $observation = $(if ($process.HasExited) { "exited with code $($process.ExitCode)" }
-                    elseif ($process.MainWindowHandle -ne [IntPtr]::Zero) { "first window observed after $($startup.ElapsedMilliseconds) ms" }
-                    else { "still no window after $($startup.ElapsedMilliseconds) ms" })
-                throw "No live public application window within the unchanged 3000-ms gate. Diagnostic: $observation."
+                throw 'A completed frame was reported without a live public application window.'
             }
+            $readyMilliseconds = $startup.ElapsedMilliseconds
             $modules = @($process.Modules | ForEach-Object { [ordered]@{ name = $_.ModuleName; path = $_.FileName } })
             foreach ($module in $modules) {
                 $owned = Test-ContainedPath $module.path $extracted
@@ -166,11 +172,20 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
         }
     } catch { $failure = $_.Exception.Message }
     finally {
-        if ($started -and !$process.HasExited) { $process.Kill(); $process.WaitForExit() }
-        if ($stdout) { $stdout.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.stdout.log") -Encoding utf8 }
-        if ($stderr) { $stderr.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.stderr.log") -Encoding utf8 }
-        $modules | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.modules.json") -Encoding utf8
-        $process.Dispose()
+        try {
+            if ($started -and !$process.HasExited) {
+                $process.Kill($true)
+                if (!$process.WaitForExit(3000)) { throw 'The owned probe process did not stop after termination.' }
+            }
+            if ($pendingLine) {
+                $line = $pendingLine.GetAwaiter().GetResult()
+                if ($null -ne $line) { [void]$stderrPrefix.AppendLine($line) }
+            }
+            if ($started -and !$stderr) { $stderr = $process.StandardError.ReadToEndAsync() }
+            if ($stdout) { $stdout.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.stdout.log") -Encoding utf8 }
+            if ($stderr) { ($stderrPrefix.ToString() + $stderr.GetAwaiter().GetResult()) | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.stderr.log") -Encoding utf8 }
+            $modules | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.modules.json") -Encoding utf8
+        } finally { $process.Dispose() }
     }
     if ($failure) { throw $failure }
     $out = Get-Content -LiteralPath (Join-Path $EvidenceDirectory "$name.stdout.log") -Raw
@@ -195,7 +210,8 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
         if ($Renderer -eq 'warp' -and !$softwareAdapter) { throw 'Explicit WARP probe did not select a software adapter.' }
     }
     return [ordered]@{ style = $Style; renderer = $(if ($Renderer -eq 'd3d11') { 'd3d11/default' } else { $Renderer })
-        actualAdapterKind = $actualAdapterKind; passed = $true; modules = $modules.Count }
+        actualAdapterKind = $actualAdapterKind; passed = $true; modules = $modules.Count
+        readyMilliseconds = $readyMilliseconds; readinessWatchdogMilliseconds = 60000 }
 }
 
 try {
