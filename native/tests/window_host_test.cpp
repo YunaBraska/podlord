@@ -25,8 +25,13 @@
 #include <QThreadPool>
 #include <QUrlQuery>
 #include <QtTest/QTest>
+#include <qpa/qplatformnativeinterface.h>
 #include <cstdio>
 #include <memory>
+
+QT_BEGIN_NAMESPACE
+class QOffscreenPlatformNativeInterface;
+QT_END_NAMESPACE
 
 #define REQUIRE(value) do { if (!(value)) { std::fprintf(stderr, "Failed line %d: %s\n", __LINE__, #value); return false; } } while (false)
 bool unregisterWorkspaceResource() { Q_CLEANUP_RESOURCE(podlord_workspace_raw_qml_0); Q_CLEANUP_RESOURCE(workspace_ui); return true; }
@@ -162,6 +167,97 @@ bool run(const QString& scenario) {
         REQUIRE(!catalog.sessions[0].open && catalog.sessions[1].open && !catalog.activeSession);
         REQUIRE(catalog.sessions[0].usageAt == std::get<podlord::SessionCatalog>(before).sessions[0].usageAt);
         REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.closeSessions(ids))); return true;
+    }
+    if (scenario == "layout_restore_tiny_screen" || scenario == "layout_restore_screen_removed") {
+        REQUIRE(QGuiApplication::platformName() == "offscreen");
+        auto* native = QGuiApplication::platformNativeInterface();
+        REQUIRE(native);
+        // Qt's offscreen plugin exposes these test-only OS configuration entrypoints.
+        // Keep their exact Qt 6.11 signatures. No WindowHost internals are changed.
+        using Offscreen = QT_PREPEND_NAMESPACE(QOffscreenPlatformNativeInterface);
+        const auto configure = reinterpret_cast<void (*)(const QJsonObject&, Offscreen*)>(
+            native->nativeResourceForIntegration("setConfiguration"));
+        const auto configuration = reinterpret_cast<QJsonObject (*)(Offscreen*)>(
+            native->nativeResourceForIntegration("configuration"));
+        REQUIRE(configure && configuration);
+        auto* offscreen = reinterpret_cast<Offscreen*>(native);
+        const auto originalConfiguration = configuration(offscreen);
+        REQUIRE(QGuiApplication::screens().size() == 1);
+        const podlord::WindowLayout layout{{"main", {firstId, secondId}, secondId, QRect(20, 20, 640, 480), false}};
+        REQUIRE(std::holds_alternative<podlord::WindowLayout>(podlord::WindowLayoutStore(profile.path()).save(layout, {})));
+        podlord::Workspace restored(profile.path());
+        REQUIRE(waitFor([&] { return !restored.busy() && !restored.filterPresetsBusy() && restored.tabs().size() == 2; }));
+        const auto before = store.list();
+        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto layoutBytes = fileBytes(profile.filePath("window-layout.json"));
+        const auto sourceBytes = fileBytes(source->ownedPath);
+        auto* pool = QThreadPool::globalInstance();
+        REQUIRE(pool->waitForDone(15000));
+        const int previousMaximum = pool->maxThreadCount();
+        const auto entered = std::make_shared<QSemaphore>(), release = std::make_shared<QSemaphore>();
+        std::unique_ptr<podlord::WindowHost> restoredHost;
+        bool blocked = true;
+        const auto releaseWorkers = qScopeGuard([&] {
+            if (blocked) release->release();
+            pool->setMaxThreadCount(previousMaximum);
+        });
+        const auto restorePlatform = qScopeGuard([&] { configure(originalConfiguration, offscreen); });
+        pool->setMaxThreadCount(1);
+        pool->start([entered, release] { entered->release(); release->acquire(); });
+        REQUIRE(waitFor([&] { return entered->available() == 1; }));
+        restoredHost = std::make_unique<podlord::WindowHost>(restored);
+        QSignalSpy opened(restoredHost.get(), &podlord::WindowHost::windowOpened);
+        REQUIRE(restoredHost->open() && restoredHost->windows().size() == 1 && !restoredHost->restorationReady());
+        auto* window = restoredHost->windows().first();
+        QSignalSpy removed(qGuiApp, &QGuiApplication::screenRemoved);
+        const bool tiny = scenario == "layout_restore_tiny_screen";
+        auto changedConfiguration = originalConfiguration;
+        if (tiny) {
+            auto screens = changedConfiguration["screens"].toArray();
+            REQUIRE(screens.size() == 1);
+            auto screen = screens[0].toObject();
+            screen["width"] = 1; screen["height"] = 1;
+            screens[0] = screen; changedConfiguration["screens"] = screens;
+        } else changedConfiguration["screens"] = QJsonArray{};
+        configure(changedConfiguration, offscreen);
+        REQUIRE(waitFor([&] { return tiny ? window->screen() && window->screen()->availableGeometry().size() == QSize(1, 1)
+            : QGuiApplication::screens().isEmpty() && !window->screen() && removed.size() == 1; }));
+        if (tiny) REQUIRE(window->screen()->availableGeometry().marginsRemoved(window->frameMargins()).isEmpty());
+        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && fileBytes(profile.filePath("window-layout.json")) == layoutBytes && fileBytes(source->ownedPath) == sourceBytes
+            && api.requests == 0 && api.upgrades == 0);
+        release->release(); blocked = false; pool->setMaxThreadCount(previousMaximum);
+        REQUIRE(waitFor([&] { return restoredHost->restorationReady() && !restored.busy(); }));
+        const auto geometry = window->geometry();
+        std::fprintf(stderr, "Platform restore: tiny=%d screens=%d windowScreen=%d geometry=%d,%d %dx%d frame=%d,%d %dx%d opened=%d requests=%d upgrades=%d\n",
+            tiny, int(QGuiApplication::screens().size()), bool(window->screen()), geometry.x(), geometry.y(), geometry.width(), geometry.height(),
+            window->frameGeometry().x(), window->frameGeometry().y(), window->frameGeometry().width(), window->frameGeometry().height(),
+            int(opened.size()), api.requests, api.upgrades);
+        REQUIRE(restoredHost->windows().size() == 1 && opened.size() == 1 && restored.currentSession() == b
+            && restored.tabs().size() == 2 && restored.tabs()[0].toMap()["id"].toString() == a
+            && restored.tabs()[1].toMap()["id"].toString() == b && restored.mapOverview() && restored.totalResourceCount() == 0
+            && restored.error().isEmpty() && !restored.authenticationRequired() && !restored.authenticationRunning()
+            && window->windowState() == Qt::WindowNoState && geometry.isValid());
+        if (tiny) REQUIRE(geometry.size() == QSize(1, 1) && window->frameGeometry().topLeft() == QPoint(0, 0));
+        else REQUIRE(!window->screen() && geometry == layout.first().geometry);
+        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && fileBytes(profile.filePath("window-layout.json")) == layoutBytes && fileBytes(source->ownedPath) == sourceBytes
+            && api.requests == 0 && api.upgrades == 0);
+        configure(originalConfiguration, offscreen);
+        REQUIRE(QGuiApplication::primaryScreen());
+        window->setScreen(QGuiApplication::primaryScreen());
+        REQUIRE(window->screen() == QGuiApplication::primaryScreen());
+        const auto finalGeometry = window->geometry();
+        QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
+        REQUIRE(waitFor([&] { return restoredHost->windows().isEmpty(); }));
+        const auto saved = podlord::WindowLayoutStore(profile.path()).load();
+        REQUIRE(std::holds_alternative<podlord::WindowLayout>(saved));
+        const auto value = std::get<podlord::WindowLayout>(saved);
+        REQUIRE(value.size() == 1 && value.first().id == "main" && value.first().sessions == QSet<QUuid>({firstId, secondId})
+            && value.first().activeSession == secondId && value.first().geometry == finalGeometry && !value.first().maximized
+            && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
+        return true;
     }
     if (scenario == "layout_restore_deferred_open" || scenario == "layout_restore_active_fallback" || scenario == "layout_restore_empty_main"
         || scenario == "layout_restore_view_error" || scenario == "layout_decision_repeat_quit"

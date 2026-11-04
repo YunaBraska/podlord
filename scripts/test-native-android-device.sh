@@ -243,9 +243,14 @@ function target(id){
   const b=bounds(host);if(!b)break;
   const x=settings?Math.floor((b[0]+b[2])/2):inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
   const firstVisible=settings?nodes.findIndex(n=>n['resource-id']?.startsWith(host['resource-id']+'.')&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
-  const reverse=settings&&current&&firstVisible>=0?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
+  const currentBounds=bounds(current);
+  const partialSidebar=!settings&&!inspector&&!nav&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
+  const reverse=settings&&current&&firstVisible>=0?nodes.indexOf(current)<firstVisible:partialSidebar?currentBounds[1]<b[1]:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   const inset=settings?4:12;
-  run('shell','input','swipe',String(x),String(reverse?b[1]+inset:b[3]-inset),String(x),String(reverse?b[3]-inset:b[1]+inset),settings?'150':'350');scrolled=true;state();
+  const start=reverse?b[1]+inset:b[3]-inset;
+  // A full swipe can jump over a short control that misses the viewport by one pixel.
+  const distance=partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
+  run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings?'150':'350');scrolled=true;state();
   if(!settings&&!inspector&&!nav)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
   if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }

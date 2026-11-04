@@ -436,8 +436,9 @@ if(WIN32)
     target_sources(podlord-native PRIVATE windows/podlord.rc)
 endif()
 if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
     add_executable(window-host-test tests/window_host_test.cpp)
-    target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test)
+    target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test Qt6::GuiPrivate)
     foreach(style Basic Fusion)
         foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus cross_focus
             handoff handoff_grow handoff_shrink handoff_events handoff_sort snapshot_latest snapshot_hidden snapshot_detach snapshot_close_window
@@ -448,7 +449,7 @@ if(BUILD_TESTING)
             layout_restore_active_missing layout_restore_without_main layout_quit_load_pending layout_detach_load_pending layout_quit_save_pending
             layout_no_pending_decision layout_peer_view_error layout_close_then_quit
             layout_restore_active_fallback layout_restore_empty_main layout_restore_view_error layout_error_preserves_startup layout_decision_repeat_quit
-            layout_restore_deferred_open layout_settings_rejected focus_minimized_windowed
+            layout_restore_deferred_open layout_restore_tiny_screen layout_restore_screen_removed layout_settings_rejected focus_minimized_windowed
             layout_stay_preserves_import_error layout_session_catalog_rejected
             layout_lock_stay layout_lock_discard layout_conflict layout_invalid layout_closed_main_policy focus_maximized focus_minimized_maximized
             dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
