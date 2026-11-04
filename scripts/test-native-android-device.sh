@@ -3,6 +3,11 @@ set -eu
 umask 077
 [ "$#" -eq 3 ] || { printf 'Usage: %s SIGNED_APK LOCAL_FIXTURE_KUBECONFIG NEW_EVIDENCE_DIRECTORY\n' "$0" >&2; exit 2; }
 sdk=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
+system_image=${PODLORD_ANDROID_SYSTEM_IMAGE:-system-images;android-36;google_apis;arm64-v8a}
+case "$system_image" in
+  'system-images;android-36;google_apis;arm64-v8a'|'system-images;android-36;google_apis_ps16k;arm64-v8a') ;;
+  *) printf 'Unsupported Android test system image: %s\n' "$system_image" >&2; exit 2 ;;
+esac
 for tool in node lsof; do command -v "$tool" >/dev/null 2>&1 || { printf 'Required test tool is missing: %s\n' "$tool" >&2; exit 2; }; done
 apk=$1
 source=$2
@@ -29,6 +34,7 @@ for port in "$adbPort" "$consolePort" "$((consolePort + 1))"; do
   if lsof -n -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then printf 'Private Android test port occupied: %s\n' "$port" >&2; exit 1; fi
 done
 mkdir "$out"
+printf '%s\n' "$system_image" > "$out/system-image.txt"
 "$sdk/build-tools/36.0.0/aapt" dump badging "$apk" > "$out/badging.txt"
 [ "$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$out/badging.txt")" = "berlin.yuna.podlord" ] || { printf 'Unexpected APK identity.\n' >&2; exit 2; }
 mkdir -p "$HOME/.cache/podlord"
@@ -95,7 +101,7 @@ CLEANUP_LOGS
 }
 trap cleanup 0
 trap 'exit 130' INT TERM
-printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k 'system-images;android-36;google_apis;arm64-v8a' -p "$tmp/device" > "$out/avd-create.log" 2>&1
+printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k "$system_image" -p "$tmp/device" > "$out/avd-create.log" 2>&1
 ADB_TRACE="$adbTrace" "$sdk/platform-tools/adb" -P "$adbPort" --one-device "$serial" server nodaemon > "$out/adb-server.log" 2>&1 &
 adbpid=$!
 printf '%s\n' "$adbpid" > "$out/adb-server-pid.txt"
@@ -120,6 +126,22 @@ for attempt in $(seq 1 90); do
   sleep 2
 done
 if [ "$ready" != 1 ]; then adb devices -l; tail -n 12 "$out/emulator.log"; exit 1; fi
+page_size=$(adb shell getconf PAGE_SIZE | tr -d '\r')
+case "$page_size" in 4096|16384) ;; *) printf 'Unexpected Android page size: %s\n' "$page_size" >&2; exit 1 ;; esac
+printf '%s\n' "$page_size" > "$out/page-size.txt"
+case "$system_image" in
+  *google_apis_ps16k*) [ "$page_size" = 16384 ] || { printf 'The 16 KB image did not boot a 16 KB kernel.\n' >&2; exit 1; } ;;
+esac
+if [ "$page_size" = 16384 ]; then
+  adb root > "$out/adb-root-page-size.txt" 2>&1
+  adb wait-for-device
+  adb shell setprop bionic.linker.16kb.app_compat.enabled false
+  adb shell setprop pm.16kb.app_compat.disabled true
+  linker_compat=$(adb shell getprop bionic.linker.16kb.app_compat.enabled | tr -d '\r')
+  package_compat=$(adb shell getprop pm.16kb.app_compat.disabled | tr -d '\r')
+  printf 'linker_compat=%s\npackage_compat_disabled=%s\n' "$linker_compat" "$package_compat" > "$out/page-size-compat.txt"
+  [ "$linker_compat" = false ] && [ "$package_compat" = true ] || { printf 'The private emulator still permits page-size compatibility mode.\n' >&2; exit 1; }
+fi
 adb shell input keyevent 82
 adb install --no-streaming "$apk" > "$out/install.log" 2>&1
 activity=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$out/badging.txt")
@@ -439,11 +461,16 @@ function mapTouchRoundtrip(){
  click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));
  steps.push({step:'Native radar Home reveals the real ConfigMap and touch X closes its details'});
  click('radarZoom');click('radarZoomOut');waitNode('syncStatus',n=>/Synced:/i.test(value(n)));
- const snapshot=name=>{const scene=rect(target('resourceRadar')),navigation=rect(target('radarNavigationOverlay')),matches=value(find('resourceMatchCount')),percent=zoom();const canvas=[scene[0]+2,Math.max(scene[1]+2,navigation[3]+8),scene[2]-2,scene[3]-2];assert.ok(canvas[3]-canvas[1]>=16,'A nonempty terrain area must remain below navigation');capture(name);const pixels=image(name).crop(canvas);return {bounds:scene,canvas,matches,zoomPercent:percent,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
+ const visibleResourceCounts=()=>{
+  const text=value(find('resourceMatchCount')),counts=/(\d+)\s*\/\s*(\d+)/.exec(text);
+  assert.ok(counts,'Visible matching/cache counts must be readable: '+text);
+  return {text,matching:Number(counts[1]),cached:Number(counts[2])};
+ };
+ const snapshot=name=>{const scene=rect(target('resourceRadar')),navigation=rect(target('radarNavigationOverlay')),counts=visibleResourceCounts(),percent=zoom();const canvas=[scene[0]+2,Math.max(scene[1]+2,navigation[3]+8),scene[2]-2,scene[3]-2];assert.ok(canvas[3]-canvas[1]>=16,'A nonempty terrain area must remain below navigation');capture(name);const pixels=image(name).crop(canvas);return {bounds:scene,canvas,matches:counts.text,matching:counts.matching,cached:counts.cached,zoomPercent:percent,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
  const before=snapshot('map-filter-before'),requestBefore=counter('before');
- click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(zoom(),before.zoomPercent,'Opening filters must retain visible zoom');assert.equal(value(find('resourceMatchCount')),before.matches,'Opening filters must retain matches');
+ click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(zoom(),before.zoomPercent,'Opening filters must retain visible zoom');assert.equal(visibleResourceCounts().matching,before.matching,'Opening filters must retain matching resources');
  click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='false');const after=snapshot('map-filter-closed'),requestClosed=counter('closed');
- assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.zoomPercent,before.zoomPercent);assert.equal(after.matches,before.matches);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
+ assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.zoomPercent,before.zoomPercent);assert.equal(after.matching,before.matching);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
  click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)===mapResourceQuery);capture('roundtrip-query-after');run('shell','input','keyevent','4');state();click('workspaceSearchButton');const requestAfterQuery=counter('after-query-verification');assert.equal(requestAfterQuery.nativeWrites,0);
  if(find('radarInfoText')){click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));}
  const finalFrame=image('map-filter-closed');let finalWater=null;
@@ -573,7 +600,7 @@ node - "$out" <<'NODE'
 const fs=require('node:fs'),path=require('node:path');const dir=process.argv[2];
 const files=fs.readFileSync(path.join(dir,'installed-regular-file-bytes.txt'),'utf8').trim().split(/\r?\n/);
 const bytes=files.reduce((sum,line)=>{const n=Number(line.split(' ')[0]);if(!Number.isSafeInteger(n))throw Error('Invalid installed file measurement');return sum+n},0);
-const data={status:bytes<=100000000?'passed':'failed',scope:'Actual signed APK install, initial portrait/OS-rotated landscape capture, installed code and app-private regular-file logical sum on disposable Android 36 ARM64 emulator',installedRegularFileBytes:bytes,installedLimitBytes:100000000,files:files.length,productLaunched:true,device:'headless emulator; not physical hardware',cleanup:'pending trap'};
+const data={status:bytes<=100000000?'passed':'failed',scope:'Actual signed APK install, initial portrait/OS-rotated landscape capture, installed code and app-private regular-file logical sum on disposable Android 36 ARM64 emulator',installedRegularFileBytes:bytes,installedLimitBytes:100000000,files:files.length,productLaunched:true,device:'headless emulator; not physical hardware',systemImage:fs.readFileSync(path.join(dir,'system-image.txt'),'utf8').trim(),pageSizeBytes:Number(fs.readFileSync(path.join(dir,'page-size.txt'),'utf8').trim()),cleanup:'pending trap'};
 fs.writeFileSync(path.join(dir,'result.json'),JSON.stringify(data,null,2)+'\n');console.log(JSON.stringify(data));
 if(data.status!=='passed')process.exitCode=1;
 NODE

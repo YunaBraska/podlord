@@ -46,6 +46,14 @@ trap 'rm -rf "$work"' 0 HUP INT TERM
 tar -xzf "$archive" -C "$work"
 export PATH="$ndk_bin:$PATH"
 cd "$work/openssl-3.5.9"
+set --
+case "$abi" in
+    arm64-v8a|x86_64)
+        LDFLAGS="${LDFLAGS:+$LDFLAGS }-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+        export LDFLAGS
+        set -- --page-size 16384
+        ;;
+esac
 ./Configure "$target" -D__ANDROID_API__=28 shared no-tests no-apps
 make -s -j "${PODLORD_BUILD_JOBS:-4}" SHLIB_VERSION_NUMBER= build_libs
 mkdir -p "$output_root/$abi"
@@ -53,10 +61,20 @@ cp libcrypto.so "$output_root/$abi/libcrypto_3.so"
 cp libssl.so "$output_root/$abi/libssl_3.so"
 mkdir -p "$output_root/$abi/include"
 cp -R include/openssl "$output_root/$abi/include/"
-patchelf --set-soname libcrypto_3.so "$output_root/$abi/libcrypto_3.so"
-patchelf --set-soname libssl_3.so "$output_root/$abi/libssl_3.so"
-patchelf --replace-needed libcrypto.so libcrypto_3.so "$output_root/$abi/libssl_3.so"
+patchelf "$@" --set-soname libcrypto_3.so "$output_root/$abi/libcrypto_3.so"
+patchelf "$@" --set-soname libssl_3.so "$output_root/$abi/libssl_3.so"
+patchelf "$@" --replace-needed libcrypto.so libcrypto_3.so "$output_root/$abi/libssl_3.so"
 "$ndk_bin/llvm-readelf" -d "$output_root/$abi/libcrypto_3.so" | grep -F '[libcrypto_3.so]' >/dev/null
 "$ndk_bin/llvm-readelf" -d "$output_root/$abi/libssl_3.so" | grep -F '[libcrypto_3.so]' >/dev/null
 "$ndk_bin/llvm-readelf" -d "$output_root/$abi/libssl_3.so" | grep -F '[libssl_3.so]' >/dev/null
+case "$abi" in
+    arm64-v8a|x86_64)
+        for library in libcrypto_3.so libssl_3.so; do
+            "$ndk_bin/llvm-objdump" -p "$output_root/$abi/$library" | awk '
+                $1 == "LOAD" { count++; split($NF, alignment, /\*\*/); if (alignment[1] != 2 || alignment[2] < 14) invalid = 1 }
+                END { exit (count == 0 || invalid) }
+            ' || { printf 'Android OpenSSL library is not 16 KB aligned: %s\n' "$library" >&2; exit 1; }
+        done
+        ;;
+esac
 printf 'Android OpenSSL 3.5.9: %s\n' "$output_root/$abi"
