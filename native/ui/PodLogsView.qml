@@ -38,6 +38,13 @@ ColumnLayout {
         }
         restoring = false
     }
+    readonly property string inputScope: workspace.inspectorScope + "\n" + workspace.logSelection
+    onInputScopeChanged: {
+        if (lines) {
+            lines.enabled = false
+            lines.enabled = true
+        }
+    }
     Connections {
         target: workspace
         enabled: panel.visible

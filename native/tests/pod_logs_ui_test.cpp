@@ -302,13 +302,24 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             if (!settle() || !beginning() || !click(window,"logEntry_2")) return false;
             auto* first = item(window,"logEntry_0");
             if (!first) return false;
+            QSignalSpy oldClicked(first, SIGNAL(clicked()));
+            QSignalSpy oldCanceled(first, SIGNAL(canceled()));
+            if (!oldClicked.isValid() || !oldCanceled.isValid()) return false;
             const auto position = first->mapToScene({first->width()/2,first->height()/2}).toPoint();
             QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,position);
-            const bool switched = select("alpha",alpha);
+            const bool pressed = first->property("pressed").toBool();
+            const bool switched = pressed && select("alpha",alpha);
             const int selected = list->property("currentIndex").toInt();
+            const bool canceledWhileHeld = !oldCanceled.isEmpty() && oldClicked.isEmpty();
             QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,position);
-            if (!switched || selected < 0 || list->property("currentIndex").toInt() != selected) {
-                std::fprintf(stderr,"Overlapping log scope accepted an old click: selected=%d after=%d\n",selected,list->property("currentIndex").toInt()); return false;
+            if (!switched || !canceledWhileHeld || !oldClicked.isEmpty()) {
+                std::fprintf(stderr,"Overlapping log gesture: pressed=%d switched=%d canceled=%lld clicked=%lld selected=%d after=%d\n",
+                    pressed,switched,static_cast<long long>(oldCanceled.size()),static_cast<long long>(oldClicked.size()),
+                    selected,list->property("currentIndex").toInt()); return false;
+            }
+            if (selected < 0 || list->property("currentIndex").toInt() != selected) {
+                std::fprintf(stderr,"Log selection changed after a canceled gesture without a click: selected=%d after=%d\n",
+                    selected,list->property("currentIndex").toInt()); return false;
             }
             completed = click(window,"copyLogEntry") && QGuiApplication::clipboard()->text() == workspace.logEntry(selected);
             return completed;

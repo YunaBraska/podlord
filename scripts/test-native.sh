@@ -70,7 +70,7 @@ fi
 "$COV" report "$@" \
     -instr-profile="$BUILD/coverage/native.profdata" "$ROOT"/native/src/*.cpp "$ROOT"/native/src/*.h > "$BUILD/coverage/report.txt"
 cat "$BUILD/coverage/report.txt"
-"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions -dump \
     "$ROOT/native/src/resource_client.cpp" "$ROOT/native/src/workspace.cpp" \
     | awk '/credentialRevision|detailRevision|forgetCredentials|yamlDraftCredentialsCurrent/' \
     > "$BUILD/coverage/authority-functions.txt"

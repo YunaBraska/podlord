@@ -632,7 +632,7 @@ bool run(const QString& scenario, const QString& configPath) {
                 if (!menu("portContextStop") || !waitFor([&] { return workspace.portForwards().isEmpty() && table->rowCount() == 0; })) return false;
                 QTcpServer reusable; return reusable.listen(QHostAddress::LocalHost, localPort) && requests == calls;
             }
-            if (scenario == "ports_table_context_inspect") {
+            if (scenario == "ports_table_context_inspect" || scenario == "ports_table_keyboard") {
                 const QString expectedTarget = "GET " + selected;
                 const auto failed = [&](const char* stage) {
                     std::fprintf(stderr, "Ports context inspect %s: inspector=%s expected=%s freshCanEditYaml=%d workspaceLoading=%d requests=%d expected=%d upgrades=%d/%d targets=[%s] expectedTarget=%s status=%s error=%s\n",
@@ -642,7 +642,12 @@ bool run(const QString& scenario, const QString& configPath) {
                     return false;
                 };
                 if (!workspace.closeInspector()) return failed("close inspector");
-                if (!menu("portMenuInspector")) return failed("context menu action");
+                if (scenario == "ports_table_keyboard") {
+                    auto* cell = named("portCell_0_0");
+                    if (!cell || !podlord::test::scrollIntoView(window, cell)) return failed("keyboard endpoint visibility");
+                    cell->forceActiveFocus();
+                    QTest::keyClick(window, Qt::Key_Return);
+                } else if (!menu("portMenuInspector")) return failed("context menu action");
                 if (!waitFor([&] { return workspace.inspectorPath() == selected; })) return failed("cached inspector path");
                 if (!waitFor([&] { return workspace.canEditYaml(); })) return failed("fresh inspector detail completion");
                 if (!waitFor([&] { return !workspace.loading(); })) return failed("workspace read completion");
@@ -680,17 +685,6 @@ bool run(const QString& scenario, const QString& configPath) {
                 auto* cell = named("portCell_0_0"); if (!cell || !podlord::test::scrollIntoView(window, cell)) return false;
                 QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, cell->mapToScene({cell->width()/2, cell->height()/2}).toPoint());
                 return waitFor([&] { return named("portMenuCopy") && named("portMenuCopy")->isVisible(); }) && click("portMenuCopy") && QGuiApplication::clipboard()->text() == endpoint && requests == calls;
-            }
-            if (scenario == "ports_table_keyboard") {
-                if (!workspace.closeInspector()) { std::fputs("Ports keyboard: inspector did not close.\n", stderr); return false; }
-                auto* cell = named("portCell_0_0");
-                if (!cell || !podlord::test::scrollIntoView(window, cell)) { std::fputs("Ports keyboard: endpoint is not in view.\n", stderr); return false; }
-                cell->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return);
-                const bool opened = waitFor([&] { return workspace.inspectorPath() == selected; });
-                if (!opened || requests != calls) std::fprintf(stderr, "Ports keyboard: inspector=%s expected=%s requests=%d before=%d focus=%s\n",
-                    qPrintable(workspace.inspectorPath()), qPrintable(selected), requests, calls,
-                    qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}));
-                return opened && requests == calls;
             }
             if (scenario == "ports_table_color") return table->data(table->index(0, 2), Qt::ForegroundRole).value<QColor>().alpha() > 0
                 && table->data(table->index(0, 3), Qt::ForegroundRole).value<QColor>().alpha() > 0 && requests == calls;
