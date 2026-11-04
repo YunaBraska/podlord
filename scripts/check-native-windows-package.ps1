@@ -200,7 +200,7 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
 
 try {
     Copy-Item -LiteralPath $app -Destination (Join-Path $PackageDirectory 'podlord-native.exe')
-    & $deploy --release --no-translations --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --force-openssl --openssl-root $sslRoot --qmldir (Join-Path $SourceDirectory 'native\ui') --dir $PackageDirectory (Join-Path $PackageDirectory 'podlord-native.exe') *> (Join-Path $EvidenceDirectory 'windeployqt.log')
+    & $deploy --release --no-translations --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --force-openssl --qmldir (Join-Path $SourceDirectory 'native\ui') --dir $PackageDirectory (Join-Path $PackageDirectory 'podlord-native.exe') *> (Join-Path $EvidenceDirectory 'windeployqt.log')
     if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed.' }
     $crtFiles = @(Get-ChildItem -LiteralPath $crtRoot -Filter '*.dll' -File)
     if (!$crtFiles.Count) { throw 'The official CRT directory is empty.' }
