@@ -239,7 +239,7 @@ try {
         if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Package reparse point rejected: $($file.FullName)" }
         if (!$file.PSIsContainer) {
             if ($file.Extension -in @('.pdb', '.lib', '.exp')) { throw 'Debug/linker files do not belong in the runtime package.' }
-            $manifest += [ordered]@{ path = [IO.Path]::GetRelativePath($PackageDirectory, $file.FullName); bytes = $file.Length; sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+            $manifest += [pscustomobject][ordered]@{ path = [IO.Path]::GetRelativePath($PackageDirectory, $file.FullName); bytes = $file.Length; sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
         }
     }
     $result.installedBytes = [long](($manifest | Measure-Object -Property bytes -Sum).Sum)

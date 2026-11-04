@@ -96,6 +96,10 @@ fi
     printf 'FFmpeg: 7.1.5, shared, GPL/nonfree/autodetected external components disabled\n'
     printf 'yaml-cpp: 0.9.0, static\nArchitecture: '; uname -m
     printf 'Build ABI: '; ldd --version | head -n 1
+    openssl version -a
+    dpkg-query -W -f='${binary:Package} ${Version}\n' libssl3t64 libc6
+    ssl_libdir=$(pkg-config --variable=libdir libcrypto)
+    sha256sum "$ssl_libdir/libcrypto.so.3" "$ssl_libdir/libssl.so.3"
     printf 'Source archive SHA256 values:\n'
     sha256sum "$ROOT/sources/"*
     cmake --version

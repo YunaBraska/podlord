@@ -109,6 +109,8 @@ jobs:
           $env:QT_QUICK_CONTROLS_STYLE = 'Basic'
           ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --parallel 4 --output-on-failure -R '^native\.(metrics\.|window\.(active|close_isolation)_Basic$|ui\.empty_brand_Basic$|sessions\.empty_profile$|sources\.success$)'
           if ($LASTEXITCODE -ne 0) { throw 'Native Windows public smoke tests failed.' }
+          ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --output-on-failure -L 'audio_decode|audio_failure'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows silent audio tests failed.' }
       - name: Deploy and start isolated native Windows package
         run: |
           $ErrorActionPreference = 'Stop'

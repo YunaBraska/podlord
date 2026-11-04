@@ -10,6 +10,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+#include <cstdio>
 #include <memory>
 
 using namespace podlord;
@@ -47,7 +48,10 @@ ClusterConnection connection(const ExecCommand& value) {
 
 bool importedCredential(const QString& scenario, const QByteArray& key) {
     QTemporaryDir root;
-    if (!root.isValid()) return false;
+    if (!root.isValid()) {
+        if (scenario == "import_bad_profile") std::fprintf(stderr, "OCI bad-profile setup: temporary directory: %s\n", qPrintable(root.errorString()));
+        return false;
+    }
     const auto profile = root.filePath("profile");
     KubeconfigStore store(profile);
     QByteArray args = QByteArray("      args:\n      - ce\n      - cluster\n      - ")
@@ -74,7 +78,14 @@ bool importedCredential(const QString& scenario, const QByteArray& key) {
         "users:\n- name: oracle\n  user:\n") + user
         + "contexts:\n- name: oracle\n  context:\n    cluster: oracle\n    user: oracle\n";
     const auto source = store.importText(root.filePath("source.yaml"), QString::fromUtf8(kubeconfig));
-    if (!std::holds_alternative<SourceSnapshot>(source) || std::get<SourceSnapshot>(source).contexts.size() != 1) return false;
+    if (!std::holds_alternative<SourceSnapshot>(source) || std::get<SourceSnapshot>(source).contexts.size() != 1) {
+        if (scenario == "import_bad_profile") {
+            if (const auto* error = std::get_if<Failure>(&source))
+                std::fprintf(stderr, "OCI bad-profile setup: source import: %s: %s\n", qPrintable(errorName(error->code)), qPrintable(error->message));
+            else std::fprintf(stderr, "OCI bad-profile setup: expected one context, got %lld\n", static_cast<long long>(std::get<SourceSnapshot>(source).contexts.size()));
+        }
+        return false;
+    }
     const auto contextId = std::get<SourceSnapshot>(source).contexts.first().id;
     const auto credentialPath = profile + "/kubeconfigs/oci-" + contextId.mid(4) + ".cred";
     const auto configPath = root.filePath("oci-config");
@@ -84,9 +95,17 @@ bool importedCredential(const QString& scenario, const QByteArray& key) {
           "fingerprint=00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff\nregion=eu-frankfurt-1\nkey_file=/unused/path\n";
     QFile configFile(configPath), keyFile(keyPath);
     if (!configFile.open(QIODevice::WriteOnly) || configFile.write(scenario == "import_bad_config" ? QByteArray("[DEFAULT]\nuser=missing\n") : config) != (scenario == "import_bad_config" ? QByteArray("[DEFAULT]\nuser=missing\n").size() : config.size())
-        || !keyFile.open(QIODevice::WriteOnly)) return false;
+        || !keyFile.open(QIODevice::WriteOnly)) {
+        if (scenario == "import_bad_profile") std::fprintf(stderr, "OCI bad-profile setup: config/key files: configOpen=%d configError=%d:%s keyOpen=%d keyError=%d:%s\n",
+            configFile.isOpen(), static_cast<int>(configFile.error()), qPrintable(configFile.errorString()),
+            keyFile.isOpen(), static_cast<int>(keyFile.error()), qPrintable(keyFile.errorString()));
+        return false;
+    }
     const auto selectedKey = scenario == "import_bad_key" ? QByteArray("not a PEM key") : key;
-    if (keyFile.write(selectedKey) != selectedKey.size()) return false;
+    if (keyFile.write(selectedKey) != selectedKey.size()) {
+        if (scenario == "import_bad_profile") std::fprintf(stderr, "OCI bad-profile setup: key write: %d:%s\n", static_cast<int>(keyFile.error()), qPrintable(keyFile.errorString()));
+        return false;
+    }
     configFile.close(); keyFile.close();
     if (scenario == "import_has_invalid_id") return std::holds_alternative<Failure>(store.hasOciCredential("invalid"));
     if (scenario == "import_has_missing") {
@@ -107,9 +126,16 @@ bool importedCredential(const QString& scenario, const QByteArray& key) {
     }
     if (scenario == "import_target_directory" && !QDir().mkdir(credentialPath)) return false;
     if (scenario == "import_bad_profile") {
-        if (!QDir().rename(profile, profile + "-saved")) return false;
+        if (!QDir().rename(profile, profile + "-saved")) {
+            std::fprintf(stderr, "OCI bad-profile setup: profile rename failed: path=%s exists=%d directory=%d readable=%d savedExists=%d\n",
+                qPrintable(profile), QFileInfo::exists(profile), QFileInfo(profile).isDir(), QDir(profile).isReadable(), QFileInfo::exists(profile + "-saved"));
+            return false;
+        }
         QFile blocked(profile);
-        if (!blocked.open(QIODevice::WriteOnly)) return false;
+        if (!blocked.open(QIODevice::WriteOnly)) {
+            std::fprintf(stderr, "OCI bad-profile setup: blocking file open: %d:%s\n", static_cast<int>(blocked.error()), qPrintable(blocked.errorString()));
+            return false;
+        }
         blocked.close();
     }
     std::unique_ptr<QLockFile> lock;
@@ -130,8 +156,12 @@ bool importedCredential(const QString& scenario, const QByteArray& key) {
         || scenario == "import_bad_cluster" || scenario == "import_unknown_option" || scenario == "import_symlink"
         || scenario == "import_target_directory" || scenario == "import_bad_profile" || scenario == "import_locked"
         || scenario == "import_profile_duplicate" || scenario == "import_profile_missing" || scenario == "import_profile_invalid"
-        || scenario == "import_passphrase" || scenario == "import_other_auth")
+        || scenario == "import_passphrase" || scenario == "import_other_auth") {
+        if (scenario == "import_bad_profile" && !std::holds_alternative<Failure>(imported))
+            std::fprintf(stderr, "OCI bad-profile rejection: expected Failure, got SourceSnapshot: profileFile=%d profileDirectory=%d savedExists=%d\n",
+                QFileInfo(profile).isFile(), QFileInfo(profile).isDir(), QFileInfo::exists(profile + "-saved"));
         return std::holds_alternative<Failure>(imported);
+    }
     if (!std::holds_alternative<SourceSnapshot>(imported)) return false;
     const QFileInfo credential(credentialPath);
     if (!credential.isFile() || (credential.permissions() & (QFileDevice::ReadGroup | QFileDevice::WriteGroup
@@ -194,7 +224,10 @@ int main(int argc, char** argv) {
     const QString scenario = QString::fromUtf8(argv[1]);
     const auto key = privateKey(scenario == "parse_weak_key" || scenario == "sign_weak_key" ? 1024 : 2048,
         scenario == "parse_ec_key" || scenario == "sign_ec_key");
-    if (key.isEmpty()) return 1;
+    if (key.isEmpty()) {
+        if (scenario == "import_bad_profile") std::fprintf(stderr, "OCI bad-profile setup: RSA key generation failed.\n");
+        return 1;
+    }
     auto value = command(key);
     const auto time = QDateTime::fromString("2026-10-15T19:00:00Z", Qt::ISODate);
 #ifdef PODLORD_OPENSSL_FAULT_TESTS

@@ -43,6 +43,10 @@ jobs:
           tar -cf - native/tests/linux-package.Dockerfile scripts/build-native-linux-toolchain.sh |
             docker build --tag "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
               --file native/tests/linux-package.Dockerfile - > "$out/toolchain.log" 2>&1
+          docker run --rm "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            cat /opt/podlord-toolchain/build-inputs.txt > "$out/toolchain-inputs.txt"
+          docker image inspect --format 'SDK image: {{.Id}} architecture: {{.Architecture}}' \
+            "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$out/toolchain-inputs.txt"
       - name: Run complete native behavior and coverage checks
         shell: bash
         run: |
@@ -104,6 +108,7 @@ jobs:
           name: native-linux-trial-evidence-${{ matrix.arch }}-${{ github.sha }}
           path: |
             ${{ runner.temp }}/linux-distribution/*.log
+            ${{ runner.temp }}/linux-distribution/toolchain-inputs.txt
             ${{ runner.temp }}/linux-distribution/tests/coverage/
             ${{ runner.temp }}/linux-distribution/tests/Testing/Temporary/
             ${{ runner.temp }}/linux-distribution/package/package-evidence.txt
