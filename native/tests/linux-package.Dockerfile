@@ -29,11 +29,11 @@ COPY --from=toolchain-cache / /opt/podlord-toolchain
 
 FROM ${SDK_STAGE} AS sdk
 ARG SDK_CACHE_KEY=
-RUN set -eu; \
+RUN set -eux; \
     printf '%s\n' "$SDK_CACHE_KEY" | cmp - /opt/podlord-toolchain/cache-key.txt; \
     test "$(/opt/podlord-toolchain/qt/bin/qmake -query QT_VERSION)" = 6.11.2; \
     test "$(/opt/podlord-toolchain/qt/bin/qmake -query QT_INSTALL_PREFIX)" = /opt/podlord-toolchain/qt; \
-    grep -Eq '^#define QT_FEATURE_icu -1[[:space:]]*$' /opt/podlord-toolchain/qt/include/QtCore/qtcore-config.h; \
+    grep -Eq '^#define QT_FEATURE_icu -1[[:space:]]*$' /opt/podlord-toolchain/qt/include/QtCore/6.11.2/QtCore/private/qtcore-config_p.h; \
     readelf -d /opt/podlord-toolchain/qt/lib/libQt6Core.so.6 > /tmp/qtcore-needed.txt; \
     if grep -q 'NEEDED.*libicu' /tmp/qtcore-needed.txt; then exit 1; fi; \
     test -s /opt/podlord-toolchain/yaml/lib/libyaml-cpp.a; \

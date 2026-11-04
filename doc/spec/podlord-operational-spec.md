@@ -984,6 +984,11 @@ The Linux SDK may omit ICU. The user accepted short time-zone labels such as
 resource sorting remain correct. Byte-identical long time-zone wording is not
 required. This does not authorize unrelated behavior or compatibility changes.
 
+Linux standalone packages use Qt/Desktop Portal file dialogs and FFmpeg without
+additional GTK or GStreamer fallback runtimes. File import, audio, themes, X11
+and Wayland remain required. The user approved this dependency boundary on
+2026-11-04 without changing functional or package-size gates.
+
 Windows standalone packages use the embedded OpenSSL 3 TLS backend, retaining
 strict certificate verification and Windows system trust. Explicit Kubernetes
 CAs and EC client certificates must work without installed authentication or
