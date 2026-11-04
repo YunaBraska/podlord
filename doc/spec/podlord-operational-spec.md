@@ -969,6 +969,16 @@ This direction was requested on 2026-10-02. It changes the intended implementati
 | RWT-017 | Every discovered comparison discrepancy MUST be mapped to its owning requirement or inventoried capability, with implementation and verification tracked separately. Missing menus or behavior MUST remain release blockers unless removal is explicitly approved. A partial feature package MUST NOT be described as a release-ready replacement. |
 | RWT-020 | The first complete C++ release MUST include macOS, Windows, Linux, Android, and iOS. A desktop-only package is an intermediate artifact, not the agreed release. Platform-specific omissions require explicit approval and a recorded requirement change; neither implementation difficulty nor a passing desktop suite waives mobile acceptance. |
 
+Linux portable archives target x86_64 and ARM64 with a shared Ubuntu 24.04
+build ABI baseline, not distribution-name checks. They bundle Qt and required
+application runtimes. Ordinary operating-system, display, font and driver
+libraries remain the desktop's responsibility. Each candidate MUST execute
+without installed Qt on current Ubuntu and Debian runtime-only environments.
+The actual ELF symbol requirements and tested OS versions belong to its package
+evidence. Compatibility with an older, untested distribution MUST NOT be inferred
+from a successful build. This records the user's delegated Linux compatibility
+decision of 2026-11-04 without changing package-size or functional gates.
+
 The current .NET/Avalonia application remains the implemented reference until replacement work is authorized and completed. Its existing technology ADRs describe that implementation, not mandatory dependencies of the future C++ application. C++/Qt and all five platform families are accepted for the first complete release; platform-specific differences require explicit approval rather than inference. Authentication integration, deployment obligations, and migration still require evidence. No browser version or browser backend is in scope.
 
 Direct old/new UI comparison applies on platforms where the old application actually runs; it does not pretend an old mobile release exists. Other new targets must exercise the same applicable public behavior against the owning specification and explicit platform capability matrix. A preserved artifact alone is not a reproducible baseline: record required toolchains, dependencies, and build/run commands before relying on it.

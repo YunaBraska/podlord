@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QDateTime>
 #include <QStringListModel>
+#include <QSet>
 #include <QtCore/qtestsupport_core.h>
 #include <algorithm>
 #include <cstdio>
@@ -327,6 +328,43 @@ bool run(const QString& scenario) {
     } else if (scenario == "escaped_slash") {
         rows.publish(QJsonArray{QJsonObject{{"path","a"},{"name","registry/image"}}});
         expression="/registry\\/image/"; expected="a";
+    } else if (scenario == "unicode_properties") {
+        podlord::ResourceTable unicodeRows(nullptr, {"name"}, {"Name"});
+        unicodeRows.publish({
+            QJsonObject{{"path", "a"}, {"name", QString::fromUtf8("\xc3\x85ngstr\xc3\xb6m")}},
+            QJsonObject{{"path", "b"}, {"name", QString::fromUtf8("\xe6\xbc\xa2\xe5\xad\x97")}},
+            QJsonObject{{"path", "c"}, {"name", QString::fromUtf8("\xd0\x96\xd1\x83\xd0\xba")}},
+            QJsonObject{{"path", "d"}, {"name", "123"}},
+            QJsonObject{{"path", "e"}, {"name", QString::fromUtf8("\xd9\xa1\xd9\xa2\xd9\xa3")}},
+            QJsonObject{{"path", "f"}, {"name", QString::fromUtf8("\xe2\x80\x94\xe3\x80\x82")}},
+            QJsonObject{{"path", "g"}, {"name", QString::fromUtf8("\xe6\xbc\xa2" "2!")}},
+            QJsonObject{{"path", "h"}, {"name", QString::fromUtf8("\xe2\x85\xab")}}});
+        podlord::ResourceFilter unicodeFilter;
+        unicodeFilter.setSourceModel(&unicodeRows);
+        const QList<QPair<QString, QSet<QString>>> cases{
+            {"/^\\p{L}+$/", {"a", "b", "c"}},
+            {"/^\\p{N}+$/", {"d", "e", "h"}},
+            {"/^\\p{P}+$/", {"f"}},
+            {"/^\\d+$/", {"d", "e"}},
+            {"/^\\w+$/", {"a", "b", "c", "d", "e", "h"}},
+            {"/^\\p{Han}+$/", {"b"}},
+            {"/^\\p{Cyrillic}+$/", {"c"}}};
+        for (const auto& [pattern, identities] : cases) {
+            if (!unicodeFilter.filter(pattern)) {
+                std::fprintf(stderr, "Unicode property filter rejected %s\n", qPrintable(pattern));
+                return false;
+            }
+            QCoreApplication::processEvents();
+            QSet<QString> actual;
+            for (int row = 0; row < unicodeFilter.rowCount(); ++row)
+                actual.insert(unicodeFilter.data(unicodeFilter.index(row, 0), Qt::UserRole).toString());
+            if (actual != identities || unicodeFilter.rowCount() != identities.size()) {
+                std::fprintf(stderr, "Unicode property filter %s: rows=%d expected=%lld\n", qPrintable(pattern),
+                    unicodeFilter.rowCount(), static_cast<long long>(identities.size()));
+                return false;
+            }
+        }
+        return true;
     } else if (scenario == "unicode") {
         rows.publish(QJsonArray{QJsonObject{{"path","a"},{"name",QString::fromUtf8("\xc3\x85ngstr\xc3\xb6m")}}});
         expression=QString::fromUtf8("\xc3\xa5NGSTR\xc3\xb6m"); expected="a";

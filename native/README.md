@@ -22,4 +22,11 @@ For a filter-only change, run `ctest --test-dir ../podlord-native-build -L behav
 
 The private Android download is `podlord-native-android-arm64.apk.zip`. Extract the complete signed APK before installing it. All runtime dependencies remain embedded. The 50 MB download and 100 MB installed-footprint limits still apply separately.
 
+Linux standalone packaging is being verified separately in the
+[distribution trial](../.github/workflows/native-linux-package.yml). It builds
+the pinned source toolchain, runs native behavior/coverage checks, creates the
+archive, and starts its extracted payload on current Ubuntu and Debian with X11
+and Wayland but no installed Qt. Trial artifacts are not release approval and
+are not collected by the release-candidate workflow yet.
+
 [Contract](../doc/spec/podlord-operational-spec.md) | [Roadmap](../doc/ROADMAP.md) | [Test evidence](../doc/spec/k3d-test-map.md) | [Read workspace](../doc/adr/0018-native-read-workspace.md)

@@ -51,7 +51,30 @@ async function run() {
         await fs.writeFile(input, `apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: https://127.0.0.1:${server.address().port}\n    certificate-authority-data: ${await base64(scenario === 'untrusted_ca' ? 'other.pem' : 'root.pem')}\nusers:\n- name: local\n  user:\n    client-certificate-data: ${await base64('client.pem')}\n    client-key-data: ${await base64('client.key')}\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\ncurrent-context: local\n`, { mode: 0o600 });
         const env = { ...process.env };
         let executable = driver;
-        if (bundle) {
+        if (bundle && process.platform === 'win32') {
+            assert.ok(path.isAbsolute(bundle));
+            const runtime = path.join(directory, 'packaged-runtime');
+            await fs.cp(bundle, runtime, { recursive: true, dereference: false, verbatimSymlinks: true });
+            executable = path.join(runtime, 'tls-connection-test.exe');
+            await fs.copyFile(driver, executable);
+            // Fresh child process, app-local runtime and ordinary OS paths only.
+            for (const key of Object.keys(env)) delete env[key];
+            for (const key of ['SystemRoot', 'WINDIR', 'SystemDrive', 'ProgramData']) {
+                if (process.env[key]) env[key] = process.env[key];
+            }
+            const system = path.join(process.env.SystemRoot, 'System32');
+            env.PATH = [system, process.env.SystemRoot, path.join(system, 'Wbem')].join(path.delimiter);
+            for (const key of ['USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP']) env[key] = directory;
+            env.KUBECONFIG = path.join(directory, 'absent-kubeconfig');
+            env.PODLORD_DISABLE_AUDIO = '1';
+            env.PODLORD_DISABLE_UPDATE_CHECK = '1';
+            env.QT_QPA_PLATFORM = 'windows';
+            env.QT_QUICK_BACKEND = 'software';
+            env.QT_PLUGIN_PATH = runtime;
+            env.QT_QPA_PLATFORM_PLUGIN_PATH = path.join(runtime, 'platforms');
+            env.QML_IMPORT_PATH = path.join(runtime, 'qml');
+            env.QT_FORCE_STDERR_LOGGING = '1';
+        } else if (bundle) {
             assert.equal(process.platform, 'darwin', 'Packaged TLS inspection currently uses a real macOS app.');
             assert.ok(path.isAbsolute(bundle));
             const app = path.join(directory, 'podlord-native.app');
@@ -79,6 +102,7 @@ async function run() {
         } else if (process.platform === 'darwin') env.DYLD_LIBRARY_PATH = path.resolve(path.dirname(openssl), '../lib')
             + (env.DYLD_LIBRARY_PATH ? path.delimiter + env.DYLD_LIBRARY_PATH : '');
         const result = await execute(executable, [input, scenario], { timeout: 25000, env });
+        if (bundle && process.platform === 'win32') assert.match(result.stdout, /backend: schannel\b/, 'The Windows package must use its native TLS backend.');
         if (scenario === 'trusted') {
             assert.ok(requests >= 4, 'The owned cache did not read the real HTTPS boundary.');
             for (const required of ['/api', '/apis', '/api/v1', '/api/v1/pods']) assert.ok(paths.has(required), `Missing public discovery/list request: ${required}`);

@@ -59,3 +59,12 @@ Source: https://www.leonerd.org.uk/code/libvterm/libvterm-0.3.3.tar.gz
 Source SHA-256: 09156f43dd2128bd347cbeebe50d9a571d32c64e0cf18d211197946aff7226e0
 The toolkit-independent terminal emulator is statically linked; no installed
 terminal program, browser frontend or kubectl is required.
+
+Microsoft Visual C++ Runtime (Windows only)
+Copyright Microsoft Corporation. These proprietary redistributable DLLs are
+not covered by Podlord's MIT license. Windows packages use verified app-local
+files from the licensed Visual Studio 2022 VC/Redist distribution directory.
+Their use and redistribution remain subject to Microsoft's applicable terms.
+App-local runtime security updates are delivered through rebuilt Podlord packages.
+Redistribution documentation and linked license-specific file lists:
+https://learn.microsoft.com/cpp/windows/determining-which-dlls-to-redistribute

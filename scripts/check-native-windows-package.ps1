@@ -184,7 +184,7 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
 
 try {
     Copy-Item -LiteralPath $app -Destination (Join-Path $PackageDirectory 'podlord-native.exe')
-    & $deploy --release --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --qmldir (Join-Path $SourceDirectory 'native\ui') --dir $PackageDirectory (Join-Path $PackageDirectory 'podlord-native.exe') *> (Join-Path $EvidenceDirectory 'windeployqt.log')
+    & $deploy --release --no-translations --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --qmldir (Join-Path $SourceDirectory 'native\ui') --dir $PackageDirectory (Join-Path $PackageDirectory 'podlord-native.exe') *> (Join-Path $EvidenceDirectory 'windeployqt.log')
     if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed.' }
     $crtFiles = @(Get-ChildItem -LiteralPath $crtRoot -Filter '*.dll' -File)
     if (!$crtFiles.Count) { throw 'The official CRT directory is empty.' }
@@ -194,11 +194,10 @@ try {
         Copy-Item -LiteralPath $dll.FullName -Destination $PackageDirectory
         if ((Get-FileHash -LiteralPath (Join-Path $PackageDirectory $dll.Name)).Hash -ne (Get-FileHash -LiteralPath $dll.FullName).Hash) { throw 'App-local CRT bytes changed.' }
     }
-    foreach ($pattern in @('libcrypto-3*.dll', 'libssl-3*.dll')) {
-        $runtime = @(Get-ChildItem -LiteralPath (Join-Path $sslRoot 'bin') -Filter $pattern -File)
-        if ($runtime.Count -ne 1) { throw "Expected exactly one $pattern under the actual OpenSSL root." }
-        Copy-Item -LiteralPath $runtime[0].FullName -Destination $PackageDirectory
-    }
+    # Windows TLS uses SChannel. Native cloud signing requires Crypto, not libssl.
+    $crypto = @(Get-ChildItem -LiteralPath (Join-Path $sslRoot 'bin') -Filter 'libcrypto-3*.dll' -File)
+    if ($crypto.Count -ne 1) { throw 'Expected exactly one Crypto DLL under the actual OpenSSL root.' }
+    Copy-Item -LiteralPath $crypto[0].FullName -Destination $PackageDirectory
     Copy-Item -LiteralPath (Join-Path $SourceDirectory 'native\licenses') -Destination (Join-Path $PackageDirectory 'licenses') -Recurse
     Copy-Item -LiteralPath (Join-Path $SourceDirectory 'LICENSE') -Destination (Join-Path $PackageDirectory 'licenses\Podlord-LICENSE.txt')
     Copy-Item -LiteralPath $sslLicense -Destination (Join-Path $PackageDirectory 'licenses\OpenSSL-supplier-LICENSE.txt')
@@ -229,7 +228,7 @@ try {
     foreach ($style in @('Basic', 'Fusion')) {
         if (!(Test-Path -LiteralPath (Join-Path $PackageDirectory "qml\QtQuick\Controls\$style\qmldir"))) { throw "Required style missing: $style" }
     }
-    foreach ($required in @('Qt6Core.dll', 'platforms\qwindows.dll', 'tls\qopensslbackend.dll', 'msvcp140.dll', 'vcruntime140.dll')) {
+    foreach ($required in @('Qt6Core.dll', 'platforms\qwindows.dll', 'tls\qschannelbackend.dll', 'msvcp140.dll', 'vcruntime140.dll')) {
         if (!(Test-Path -LiteralPath (Join-Path $PackageDirectory $required))) { throw "Required packaged runtime missing: $required" }
     }
     if (Test-Path -LiteralPath (Join-Path $PackageDirectory 'opengl32sw.dll')) { throw 'Software OpenGL was not omitted as requested.' }
@@ -244,12 +243,14 @@ try {
         }
     }
     $result.installedBytes = [long](($manifest | Measure-Object -Property bytes -Sum).Sum)
-    if ($result.installedBytes -le 0 -or $result.installedBytes -gt 100000000) { throw "Installed runtime exceeds the unchanged 100000000-byte limit: $($result.installedBytes)" }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'files.json') -Encoding utf8
+    if ($result.installedBytes -le 0) { throw 'The runtime package is empty.' }
+    if ($result.installedBytes -gt 100000000) { $result.errors += "Installed runtime exceeds the unchanged 100000000-byte limit: $($result.installedBytes)" }
     [IO.Compression.ZipFile]::CreateFromDirectory($PackageDirectory, $ArchivePath, [IO.Compression.CompressionLevel]::Optimal, $false)
     $archiveCreated = $true
     $result.zipBytes = (Get-Item -LiteralPath $ArchivePath).Length
-    if ($result.zipBytes -le 0 -or $result.zipBytes -gt 50000000) { throw "Archive exceeds the unchanged 50000000-byte limit: $($result.zipBytes)" }
+    if ($result.zipBytes -le 0) { throw 'The archive is empty.' }
+    if ($result.zipBytes -gt 50000000) { $result.errors += "Archive exceeds the unchanged 50000000-byte limit: $($result.zipBytes)" }
     $extracted = Join-Path $work 'extracted'
     [IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $extracted)
     if (@(Get-ChildItem -LiteralPath $extracted -Recurse -File -Force).Count -ne $manifest.Count) { throw 'Archive extraction changed the payload count.' }
@@ -286,7 +287,21 @@ try {
             }
         }
     }
-    if ($result.errors.Count) { throw 'One or more actual packaged renderer/runtime probes failed. See package-result.json and per-probe logs.' }
+    $result.mutualTls = @()
+    foreach ($scenario in @('trusted', 'untrusted_ca', 'untrusted_client')) {
+        $log = Join-Path $EvidenceDirectory "tls-$scenario.log"
+        try {
+            & node (Join-Path $SourceDirectory 'scripts\test-native-tls.cjs') `
+                (Join-Path $BuildDirectory 'Release\tls-connection-test.exe') `
+                (Join-Path $sslRoot 'bin\openssl.exe') $scenario $extracted *> $log
+            if ($LASTEXITCODE -ne 0) { throw "Packaged mutual TLS failed: $scenario. See tls-$scenario.log." }
+            $result.mutualTls += [ordered]@{ scenario = $scenario; passed = $true }
+        } catch {
+            $result.mutualTls += [ordered]@{ scenario = $scenario; passed = $false; error = $_.Exception.Message }
+            $result.errors += $_.Exception.Message
+        }
+    }
+    if ($result.errors.Count) { throw 'One or more actual packaged renderer/TLS/runtime probes failed. See package-result.json and per-probe logs.' }
     $result.sha256 = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash
     $result.passed = $true
 } catch {

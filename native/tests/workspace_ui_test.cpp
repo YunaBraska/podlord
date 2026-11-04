@@ -1711,6 +1711,17 @@ bool execute(const QString& requestedScenario) {
             bool closeQueued = false;
             bool focusedBeforeClose = false;
             QRectF queuedBounds;
+            class QueuedPointerClick final : public QObject {
+            public:
+                QQuickWindow* target = nullptr;
+                QPoint position;
+                bool event(QEvent* incoming) override {
+                    if (incoming->type() != QEvent::User) return QObject::event(incoming);
+                    QTest::mouseClick(target, Qt::LeftButton, Qt::NoModifier, position);
+                    return true;
+                }
+            } closePointer;
+            closePointer.target = window;
             QSignalSpy closedByPointer(toggle, SIGNAL(clicked()));
             const auto focused = QObject::connect(input, &QQuickItem::activeFocusChanged, window, [&] {
                 if (input->hasActiveFocus() && closedByPointer.isEmpty()) focusedBeforeClose = true;
@@ -1719,12 +1730,10 @@ bool execute(const QString& requestedScenario) {
                 if (!input->isVisible() || closeQueued) return;
                 closeQueued = true;
                 queuedBounds = podlord::test::visibleBounds(window, toggle);
-                const auto point = queuedBounds.center();
-                // Queue one standard QtTest click before deferred focus. QtTest
-                // supplies consistent native device, button and timestamp state.
-                QMetaObject::invokeMethod(window, [window, point] {
-                    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point.toPoint());
-                }, Qt::QueuedConnection);
+                closePointer.position = queuedBounds.center().toPoint();
+                // Schedule the complete public QtTest click ahead of normal
+                // deferred focus, without reentering the visibility binding.
+                QCoreApplication::postEvent(&closePointer, new QEvent(QEvent::User), Qt::HighEventPriority);
             });
             QTest::keySequence(window, bindings.first());
             QObject::disconnect(revealed);

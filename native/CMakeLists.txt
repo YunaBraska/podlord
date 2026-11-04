@@ -480,6 +480,14 @@ if(APPLE AND NOT IOS)
 endif()
 target_compile_definitions(podlord-native PRIVATE PODLORD_APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(podlord-native PRIVATE podlord_workspace)
+
+option(PODLORD_PACKAGE_LINUX "Install a relocatable Linux application with its Qt runtime" OFF)
+if(PODLORD_PACKAGE_LINUX)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR ANDROID)
+        message(FATAL_ERROR "PODLORD_PACKAGE_LINUX requires desktop Linux")
+    endif()
+    include(linux/Deploy.cmake)
+endif()
 if(PODLORD_MAC_APP_STORE AND BUILD_TESTING)
     add_executable(store-boundary-test tests/store_boundary_test.cpp tests/browser_boundary.h tests/ui_input.h)
     target_link_libraries(store-boundary-test PRIVATE podlord_workspace Qt6::Test)
@@ -1387,6 +1395,8 @@ endif()
 if(BUILD_TESTING)
     add_executable(resource_filter_test tests/resource_filter_test.cpp)
     target_link_libraries(resource_filter_test PRIVATE podlord_workspace)
+    add_test(NAME native.filter.unicode_properties COMMAND resource_filter_test unicode_properties)
+    set_tests_properties(native.filter.unicode_properties PROPERTIES TIMEOUT 15 LABELS behavior)
     foreach(scenario contains case exact exact_excludes exact_operator alternatives mixed prefix prefix_excludes suffix suffix_excludes regex regex_case regex_escape regex_empty number greater greater_equal greater_alias less less_equal less_alias number_alternatives negative blank empty invalid_regex unclosed_regex unclosed_quote invalid_mixed regex_budget escaped_quote escaped_slash unicode repeat clear source_update source_update_batch sort sort_refresh sort_insert sort_remove sort_missing sort_ties sort_changed_column sort_manual_update sort_display_role sort_external_model sort_locale sort_numeric sort_none sort_unicode sort_cluster sort_future_age benchmark metadata_benchmark)
         add_test(NAME native.filter.${scenario} COMMAND resource_filter_test ${scenario})
         set_tests_properties(native.filter.${scenario} PROPERTIES TIMEOUT 30)
@@ -1498,12 +1508,14 @@ if(BUILD_TESTING)
     endforeach()
 endif()
 
-if(BUILD_TESTING AND APPLE AND NOT IOS)
+if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(audio-playback-test tests/audio_playback_test.cpp)
-    set_target_properties(audio-playback-test PROPERTIES MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_GUI_IDENTIFIER "dev.podlord.audio-tests"
-        MACOSX_BUNDLE_BUNDLE_NAME "Podlord Audio Tests"
-        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/tests/macos-audio-info.plist.in")
+    if(APPLE)
+        set_target_properties(audio-playback-test PROPERTIES MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "dev.podlord.audio-tests"
+            MACOSX_BUNDLE_BUNDLE_NAME "Podlord Audio Tests"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/tests/macos-audio-info.plist.in")
+    endif()
     target_link_libraries(audio-playback-test PRIVATE podlord_workspace)
     qt_add_resources(audio-playback-test "audio_test_fixtures"
         PREFIX "/podlord/audio-test" BASE tests/data FILES tests/data/invalid-audio.txt)
@@ -1525,12 +1537,14 @@ if(BUILD_TESTING AND APPLE AND NOT IOS)
     if(NOT audio_mono OR NOT audio_stereo)
         message(FATAL_ERROR "Representative mono/stereo audio assets are missing")
     endif()
-    add_test(NAME native.audio.device_mono_repeat COMMAND audio-playback-test repeat ${audio_mono})
-    add_test(NAME native.audio.device_stereo_repeat COMMAND audio-playback-test repeat ${audio_stereo})
-    add_test(NAME native.audio.device_source_switch COMMAND audio-playback-test switch ${audio_mono} ${audio_stereo})
-    set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch
-        PROPERTIES TIMEOUT 30 RESOURCE_LOCK native_audio_output LABELS audio_device
-        ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
+    if(APPLE)
+        add_test(NAME native.audio.device_mono_repeat COMMAND audio-playback-test repeat ${audio_mono})
+        add_test(NAME native.audio.device_stereo_repeat COMMAND audio-playback-test repeat ${audio_stereo})
+        add_test(NAME native.audio.device_source_switch COMMAND audio-playback-test switch ${audio_mono} ${audio_stereo})
+        set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch
+            PROPERTIES TIMEOUT 30 RESOURCE_LOCK native_audio_output LABELS audio_device
+            ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
+    endif()
     add_test(NAME native.audio.reject_malformed
         COMMAND "${CMAKE_COMMAND}" "-DAUDIO_TEST=$<TARGET_FILE:audio-playback-test>"
             -DMODE=decode -DSOURCE=qrc:/podlord/audio-test/invalid-audio.txt "-DEXPECTED_MESSAGE=Decode failed"
@@ -1541,7 +1555,8 @@ if(BUILD_TESTING AND APPLE AND NOT IOS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/audio_failure_test.cmake")
     set_tests_properties(native.audio.reject_malformed native.audio.reject_unavailable_output
         PROPERTIES TIMEOUT 10 LABELS audio_failure
-        ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1;PODLORD_AUDIO_TEST_OUTPUT_ID=podlord-test-missing-output")
+        ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=$<IF:$<PLATFORM_ID:Darwin>,cocoa,offscreen>;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1;PODLORD_AUDIO_TEST_OUTPUT_ID=podlord-test-missing-output")
+    set_tests_properties(native.audio.reject_unavailable_output PROPERTIES RESOURCE_LOCK native_audio_output)
 endif()
 
 if(BUILD_TESTING)
