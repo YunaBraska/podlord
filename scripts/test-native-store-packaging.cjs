@@ -210,9 +210,16 @@ test('native package consumers await the complete workflow and select their own 
     const release = await fs.readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
     for (const workflow of [store, release]) {
         assert.ok(ciJob(workflow, 'native-preflight').includes('uses: ./.github/workflows/native.yml'));
-        assert.match(workflow, /needs: native-preflight/);
         assert.doesNotMatch(workflow, /native-preflight-macos-15/);
     }
+    assert.match(store, /needs: native-preflight/);
+    const releaseNeeds = ciJob(release, 'candidate').match(/^    needs: \[([^\]\r\n]+)\]$/m);
+    assert.ok(releaseNeeds, 'The release collector must declare its complete prerequisite list');
+    const dependencies = new Set(releaseNeeds[1].split(',').map(value => value.trim()));
+    for (const required of ['native-preflight', 'linux-package-preflight']) {
+        assert.ok(dependencies.has(required), `The release collector must await ${required}`);
+    }
+    assert.ok(ciJob(release, 'linux-package-preflight').includes('uses: ./.github/workflows/native-linux-package.yml'));
     for (const runner of ['macos-15', 'macos-15-intel']) {
         assert.ok(store.includes(`name: native-package-store-${runner}-` + '${{ github.sha }}'));
         assert.ok(release.includes(`native-input/native-package-direct-${runner}-$SOURCE_COMMIT/native-package/podlord-native.zip`));
