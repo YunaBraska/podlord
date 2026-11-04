@@ -12,10 +12,35 @@ correctly omit.
 
 ## Decision
 
+On 2026-11-04 the user confirmed that C# remains the function and UI/UX
+comparison reference, while implementation and ordinary CI build the C++
+replacement. Push, pull-request and reusable CI therefore run only the native
+preflight. Native release-candidate and Store packaging workflows already use
+that same native gate. No C++ functional, coverage, package or performance
+requirement is removed or weakened.
+
+The preserved C# tests, their unchanged coverage checks and the C#-to-native
+language-catalog comparison remain available in the manually dispatched
+`csharp-reference.yml` workflow. The catalog export compiles the C# localizer,
+so it belongs to reference comparison rather than the ordinary C++ toolchain.
+Native catalog/runtime tests remain in the native suite. The existing local
+C# startup and rendered comparison paths remain available. A failing C#
+coverage target is reported as a reference failure, not hidden or converted
+to a passing result, but does not require new C# development before a C++
+candidate can pass CI. Required function and visual parity evidence is not
+waived by this separation.
+
+Reference catalog equality compares JSON values rather than serialized bytes.
+Whitespace and object-member order do not change translated text. Language
+option order and actual strings remain significant. The public exporter checks
+both against real reference data, retains native-only strings and does not
+rewrite its input during a check. This fixes a formatting-only false failure,
+not a waiver of translation parity.
+
 CI and release reuse one native preflight workflow. It runs the existing public
 test/benchmark/coverage entrypoint and package inspection on macOS arm64 and
-x86_64 runners. Release's existing test job depends on this gate; legacy assets
-are not silently relabeled as native assets. Hosted execution remains required
+x86_64 runners. Native candidate and Store packaging jobs depend on this gate;
+legacy assets are not silently relabeled as native assets. Hosted execution remains required
 evidence, not inferred from workflow syntax validation.
 
 Production packages are exercised using Cocoa through the existing isolated

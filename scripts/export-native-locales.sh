@@ -30,7 +30,8 @@ using System.Text.RegularExpressions;
 using Podlord.App;
 
 var source = File.ReadAllText(args[0]);
-var native = JsonSerializer.Deserialize(File.ReadAllText(args[2]), CatalogJson.Default.Catalog)
+var nativeJson = File.ReadAllText(args[2]);
+var native = JsonSerializer.Deserialize(nativeJson, CatalogJson.Default.Catalog)
     ?? throw new InvalidDataException("The native language catalog is empty.");
 var retired = new HashSet<string>(["settings.themeIntensity", "settings.themeIntensityHelp"], StringComparer.Ordinal);
 var keys = Regex.Matches(source, "\"(?<key>[a-z]+(?:\\.[a-zA-Z][a-zA-Z0-9]*)+)\"")
@@ -54,6 +55,15 @@ var languages = PodlordLocalizer.SupportedLocales.Select(option => {
 }).ToArray();
 var catalog = new Catalog(1, english, languages);
 File.WriteAllText(args[1], JsonSerializer.Serialize(catalog, CatalogJson.Default.Catalog) + "\n");
+if (args[3] == "--check") {
+    using var expected = JsonDocument.Parse(File.ReadAllText(args[1]));
+    using var actual = JsonDocument.Parse(nativeJson);
+    if (!JsonElement.DeepEquals(expected.RootElement, actual.RootElement)) {
+        Console.Error.WriteLine("The native language catalog differs from its C# reference.");
+        return 1;
+    }
+}
+return 0;
 
 internal sealed record Language(string Code, string Name, SortedDictionary<string, string> Text);
 internal sealed record Catalog(int Version, SortedDictionary<string, string> English, Language[] Languages);
@@ -62,9 +72,7 @@ internal sealed record Catalog(int Version, SortedDictionary<string, string> Eng
 internal partial class CatalogJson : JsonSerializerContext;
 EOF
 "$DOTNET" build "$RUN/export.csproj" -p:ReferenceSource="$ROOT/src/Podlord.App/PodlordLocalizer.cs" --configfile "$RUN/NuGet.Config" --nologo > "$RUN/build.log" 2>&1 || { cat "$RUN/build.log" >&2; exit 1; }
-"$DOTNET" "$RUN/bin/Debug/net10.0/export.dll" "$ROOT/src/Podlord.App/PodlordLocalizer.cs" "$RUN/locales.json" "$ROOT/native/ui/locales.json"
-if [ "$OUT" = '--check' ]; then
-    cmp "$RUN/locales.json" "$ROOT/native/ui/locales.json"
-else
+"$DOTNET" "$RUN/bin/Debug/net10.0/export.dll" "$ROOT/src/Podlord.App/PodlordLocalizer.cs" "$RUN/locales.json" "$ROOT/native/ui/locales.json" "$OUT"
+if [ "$OUT" != '--check' ]; then
     cp "$RUN/locales.json" "$OUT"
 fi
