@@ -104,6 +104,10 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
     $start.Environment['KUBECONFIG'] = Join-Path $profile 'absent-kubeconfig'
     $start.Environment['PODLORD_DISABLE_AUDIO'] = '1'
     $start.Environment['PODLORD_DISABLE_UPDATE_CHECK'] = '1'
+    $opensslConfig = Join-Path $profile 'openssl.cnf'
+    [IO.File]::WriteAllText($opensslConfig, '')
+    $start.Environment['OPENSSL_CONF'] = $opensslConfig
+    $start.Environment['OPENSSL_MODULES'] = Join-Path $profile 'absent-openssl-modules'
     $start.Environment['QT_QPA_PLATFORM'] = 'windows'
     $start.Environment['QT_QUICK_CONTROLS_STYLE'] = $Style
     $start.Environment['QT_QUICK_CONTROLS_FALLBACK_STYLE'] = 'Basic'
@@ -123,6 +127,7 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
     else { $start.ArgumentList.Add('--profile'); $start.ArgumentList.Add($profile) }
     $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
     $stdout = $null; $stderr = $null; $modules = @(); $failure = $null; $started = $false
+    $startup = [Diagnostics.Stopwatch]::StartNew()
     try {
         if (!$process.Start()) { throw 'Could not start the extracted public executable.' }
         $started = $true
@@ -133,7 +138,18 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
             # Preserve the existing three-second Windows startup smoke interval.
             Start-Sleep -Seconds 3
             $process.Refresh()
-            if ($process.HasExited -or $process.MainWindowHandle -eq [IntPtr]::Zero) { throw 'No live public application window after startup.' }
+            if ($process.HasExited -or $process.MainWindowHandle -eq [IntPtr]::Zero) {
+                # Observe a failed cold launch without changing its original gate.
+                $observationDeadline = $startup.ElapsedMilliseconds + 12000
+                while (!$process.HasExited -and $process.MainWindowHandle -eq [IntPtr]::Zero -and $startup.ElapsedMilliseconds -lt $observationDeadline) {
+                    Start-Sleep -Milliseconds 50
+                    $process.Refresh()
+                }
+                $observation = $(if ($process.HasExited) { "exited with code $($process.ExitCode)" }
+                    elseif ($process.MainWindowHandle -ne [IntPtr]::Zero) { "first window observed after $($startup.ElapsedMilliseconds) ms" }
+                    else { "still no window after $($startup.ElapsedMilliseconds) ms" })
+                throw "No live public application window within the unchanged 3000-ms gate. Diagnostic: $observation."
+            }
             $modules = @($process.Modules | ForEach-Object { [ordered]@{ name = $_.ModuleName; path = $_.FileName } })
             foreach ($module in $modules) {
                 $owned = Test-ContainedPath $module.path $extracted
@@ -184,7 +200,7 @@ function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
 
 try {
     Copy-Item -LiteralPath $app -Destination (Join-Path $PackageDirectory 'podlord-native.exe')
-    & $deploy --release --no-translations --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --qmldir (Join-Path $SourceDirectory 'native\ui') --dir $PackageDirectory (Join-Path $PackageDirectory 'podlord-native.exe') *> (Join-Path $EvidenceDirectory 'windeployqt.log')
+    & $deploy --release --no-translations --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --force-openssl --openssl-root $sslRoot --qmldir (Join-Path $SourceDirectory 'native\ui') --dir $PackageDirectory (Join-Path $PackageDirectory 'podlord-native.exe') *> (Join-Path $EvidenceDirectory 'windeployqt.log')
     if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed.' }
     $crtFiles = @(Get-ChildItem -LiteralPath $crtRoot -Filter '*.dll' -File)
     if (!$crtFiles.Count) { throw 'The official CRT directory is empty.' }
@@ -194,10 +210,18 @@ try {
         Copy-Item -LiteralPath $dll.FullName -Destination $PackageDirectory
         if ((Get-FileHash -LiteralPath (Join-Path $PackageDirectory $dll.Name)).Hash -ne (Get-FileHash -LiteralPath $dll.FullName).Hash) { throw 'App-local CRT bytes changed.' }
     }
-    # Windows TLS uses SChannel. Native cloud signing requires Crypto, not libssl.
-    $crypto = @(Get-ChildItem -LiteralPath (Join-Path $sslRoot 'bin') -Filter 'libcrypto-3*.dll' -File)
-    if ($crypto.Count -ne 1) { throw 'Expected exactly one Crypto DLL under the actual OpenSSL root.' }
-    Copy-Item -LiteralPath $crypto[0].FullName -Destination $PackageDirectory
+    foreach ($pattern in @('libcrypto-3*.dll', 'libssl-3*.dll')) {
+        $runtime = @(Get-ChildItem -LiteralPath (Join-Path $sslRoot 'bin') -Filter $pattern -File)
+        if ($runtime.Count -ne 1) { throw "Expected exactly one $pattern under the actual OpenSSL root." }
+        Copy-Item -LiteralPath $runtime[0].FullName -Destination $PackageDirectory
+    }
+    foreach ($unusedBackend in @('qschannelbackend.dll', 'qcertonlybackend.dll')) {
+        $file = Join-Path $PackageDirectory "tls\$unusedBackend"
+        if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
+    }
+    # Runtime packages do not provide a QML debugger or development type database.
+    $qmlTooling = Join-Path $PackageDirectory 'qmltooling'
+    if (Test-Path -LiteralPath $qmlTooling) { Remove-Item -LiteralPath $qmlTooling -Recurse -Force }
     Copy-Item -LiteralPath (Join-Path $SourceDirectory 'native\licenses') -Destination (Join-Path $PackageDirectory 'licenses') -Recurse
     Copy-Item -LiteralPath (Join-Path $SourceDirectory 'LICENSE') -Destination (Join-Path $PackageDirectory 'licenses\Podlord-LICENSE.txt')
     Copy-Item -LiteralPath $sslLicense -Destination (Join-Path $PackageDirectory 'licenses\OpenSSL-supplier-LICENSE.txt')
@@ -225,10 +249,12 @@ try {
             if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
         }
     }
+    # Type descriptions serve Qt Creator and other development tools, not QML execution.
+    Get-ChildItem -LiteralPath (Join-Path $PackageDirectory 'qml') -Recurse -File -Filter '*.qmltypes' | Remove-Item -Force
     foreach ($style in @('Basic', 'Fusion')) {
         if (!(Test-Path -LiteralPath (Join-Path $PackageDirectory "qml\QtQuick\Controls\$style\qmldir"))) { throw "Required style missing: $style" }
     }
-    foreach ($required in @('Qt6Core.dll', 'platforms\qwindows.dll', 'tls\qschannelbackend.dll', 'msvcp140.dll', 'vcruntime140.dll')) {
+    foreach ($required in @('Qt6Core.dll', 'platforms\qwindows.dll', 'tls\qopensslbackend.dll', 'msvcp140.dll', 'vcruntime140.dll')) {
         if (!(Test-Path -LiteralPath (Join-Path $PackageDirectory $required))) { throw "Required packaged runtime missing: $required" }
     }
     if (Test-Path -LiteralPath (Join-Path $PackageDirectory 'opengl32sw.dll')) { throw 'Software OpenGL was not omitted as requested.' }
@@ -288,7 +314,7 @@ try {
         }
     }
     $result.mutualTls = @()
-    foreach ($scenario in @('trusted', 'untrusted_ca', 'untrusted_client')) {
+    foreach ($scenario in @('trusted', 'untrusted_ca', 'untrusted_client', 'untrusted_host', 'system_trusted', 'system_untrusted')) {
         $log = Join-Path $EvidenceDirectory "tls-$scenario.log"
         try {
             & node (Join-Path $SourceDirectory 'scripts\test-native-tls.cjs') `

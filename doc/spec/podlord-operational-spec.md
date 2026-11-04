@@ -979,6 +979,17 @@ evidence. Compatibility with an older, untested distribution MUST NOT be inferre
 from a successful build. This records the user's delegated Linux compatibility
 decision of 2026-11-04 without changing package-size or functional gates.
 
+The Linux SDK may omit ICU. The user accepted short time-zone labels such as
+`UTC` on 2026-11-04, provided dates, times, product languages, Unicode and
+resource sorting remain correct. Byte-identical long time-zone wording is not
+required. This does not authorize unrelated behavior or compatibility changes.
+
+Windows standalone packages use the embedded OpenSSL 3 TLS backend, retaining
+strict certificate verification and Windows system trust. Explicit Kubernetes
+CAs and EC client certificates must work without installed authentication or
+TLS tools. The confirmed rationale and test-store safety boundary are recorded
+in [ADR 0052](../adr/0052-embedded-windows-tls-backend.md).
+
 The current .NET/Avalonia application remains the implemented reference until replacement work is authorized and completed. Its existing technology ADRs describe that implementation, not mandatory dependencies of the future C++ application. C++/Qt and all five platform families are accepted for the first complete release; platform-specific differences require explicit approval rather than inference. Authentication integration, deployment obligations, and migration still require evidence. No browser version or browser backend is in scope.
 
 Direct old/new UI comparison applies on platforms where the old application actually runs; it does not pretend an old mobile release exists. Other new targets must exercise the same applicable public behavior against the owning specification and explicit platform capability matrix. A preserved artifact alone is not a reproducible baseline: record required toolchains, dependencies, and build/run commands before relying on it.

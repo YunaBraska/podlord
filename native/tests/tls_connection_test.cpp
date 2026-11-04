@@ -1,12 +1,17 @@
 #include "workspace.h"
 #include <QGuiApplication>
 #include <QSslSocket>
+#include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QEventLoop>
 #include <QTimer>
 #include <functional>
 #include <cstdio>
 #include <stdexcept>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 
 namespace {
 bool require(bool value, const char* message) {
@@ -29,7 +34,7 @@ int main(int argc, char** argv) {
     try {
         require(argc == 3, "Expected private kubeconfig and TLS scenario.");
         const QString scenario = QString::fromLocal8Bit(argv[2]);
-        require(QStringList{"trusted", "untrusted_ca", "untrusted_client"}.contains(scenario), "Unknown TLS scenario.");
+        require(QStringList{"trusted", "untrusted_ca", "untrusted_client", "untrusted_host", "system_trusted", "system_untrusted"}.contains(scenario), "Unknown TLS scenario.");
         QTemporaryDir directory;
         require(directory.isValid(), "Cannot create private TLS profile.");
         podlord::Workspace workspace(directory.filePath("profile"));
@@ -45,10 +50,32 @@ int main(int argc, char** argv) {
         require(waitFor([&] {
             return !workspace.currentSession().isEmpty() && !workspace.busy() && !workspace.loading();
         }, 15000), "TLS discovery did not complete.");
-        if (scenario == "trusted") require(workspace.resourceCount() == 1, "Trusted mutual TLS did not populate the real session cache.");
+        if (scenario == "trusted" || scenario == "system_trusted") require(workspace.resourceCount() == 1, "Trusted mutual TLS did not populate the real session cache.");
         else require(workspace.resourceCount() == 0 && workspace.status().contains("TLS"), "Untrusted TLS populated the cache or did not report failure.");
-#ifdef Q_OS_MACOS
-        require(QSslSocket::activeBackend() == "openssl", "The macOS app did not use its required OpenSSL runtime.");
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+        require(QSslSocket::activeBackend() == "openssl", "The app did not use its required OpenSSL runtime.");
+#endif
+#ifdef Q_OS_WIN
+        const QDir runtime(QCoreApplication::applicationDirPath());
+        QStringList runtimeFiles;
+        for (const auto& pattern : {"libcrypto-3*.dll", "libssl-3*.dll"}) {
+            const auto files = runtime.entryList({QString::fromLatin1(pattern)}, QDir::Files);
+            require(files.size() == 1, "Expected one packaged OpenSSL library.");
+            runtimeFiles << runtime.filePath(files.first());
+        }
+        runtimeFiles << runtime.filePath("tls/qopensslbackend.dll");
+        for (const auto& file : runtimeFiles) {
+            const QFileInfo expected(file);
+            const auto name = expected.fileName();
+            const auto module = GetModuleHandleW(reinterpret_cast<LPCWSTR>(name.utf16()));
+            require(module != nullptr, "Required packaged TLS module was not loaded.");
+            wchar_t loaded[32768];
+            const auto length = GetModuleFileNameW(module, loaded, 32768);
+            require(length > 0 && length < 32768, "Cannot inspect loaded TLS module.");
+            const auto actual = QFileInfo(QString::fromWCharArray(loaded, static_cast<int>(length))).canonicalFilePath();
+            require(!actual.isEmpty() && actual.compare(expected.canonicalFilePath(), Qt::CaseInsensitive) == 0,
+                "TLS module resolved outside the extracted runtime.");
+        }
 #endif
         std::printf("TLS scenario passed: %s; backend: %s\n", argv[2], qPrintable(QSslSocket::activeBackend()));
         return 0;

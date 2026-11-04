@@ -4,14 +4,21 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const https = require('node:https');
+const { X509Certificate } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execute = promisify(execFile);
 const [driver, openssl, scenario, bundle] = process.argv.slice(2);
-assert.ok(driver && openssl && ['trusted', 'untrusted_ca', 'untrusted_client'].includes(scenario), 'Expected real driver, OpenSSL and TLS scenario.');
+assert.ok(driver && openssl && ['trusted', 'untrusted_ca', 'untrusted_client', 'untrusted_host', 'system_trusted', 'system_untrusted'].includes(scenario), 'Expected real driver, OpenSSL and TLS scenario.');
+const systemTrust = scenario.startsWith('system_');
+assert.ok(!systemTrust || (process.platform === 'win32' && process.env.GITHUB_ACTIONS === 'true'
+    && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && process.env.RUNNER_TEMP && bundle),
+    'System-store fixtures require the disposable Windows CI account and extracted package.');
 async function run() {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-mutual-tls-'));
     let server;
+    let importedRoot;
+    const certutil = systemTrust ? path.join(process.env.SystemRoot, 'System32', 'certutil.exe') : undefined;
     let requests = 0;
     const paths = new Set();
     const config = path.join(directory, 'openssl.cnf');
@@ -23,7 +30,17 @@ async function run() {
             await command(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', `${ca}.key`]);
             await command(['req', '-new', '-x509', '-key', `${ca}.key`, '-out', `${ca}.pem`, '-days', '1', '-subj', `/CN=Podlord TLS ${ca}`, '-extensions', 'ca']);
         }
-        await fs.writeFile(path.join(directory, 'server.ext'), 'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n', { mode: 0o600 });
+        if (scenario === 'system_trusted') {
+            const fingerprint = new X509Certificate(await read('root.pem')).fingerprint.replaceAll(':', '');
+            assert.match(fingerprint, /^[0-9A-F]{40}$/i);
+            // Never replace an existing account certificate, even in this ephemeral runner.
+            await assert.rejects(execute(certutil, ['-user', '-store', 'Root', fingerprint], { timeout: 15000 }),
+                error => typeof error.code === 'number' && (error.code >>> 0) === 0x80092004,
+                'The fixture CA must be absent before import.');
+            importedRoot = fingerprint;
+            await execute(certutil, ['-user', '-f', '-addstore', 'Root', path.join(directory, 'root.pem')], { timeout: 15000 });
+        }
+        await fs.writeFile(path.join(directory, 'server.ext'), `subjectAltName=IP:${scenario === 'untrusted_host' ? '192.0.2.1' : '127.0.0.1'}\nextendedKeyUsage=serverAuth\n`, { mode: 0o600 });
         await fs.writeFile(path.join(directory, 'client.ext'), 'extendedKeyUsage=clientAuth\n', { mode: 0o600 });
         for (const name of ['server', 'client']) {
             await command(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', `${name}.key`]);
@@ -48,7 +65,8 @@ async function run() {
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
         const base64 = async name => (await read(name)).toString('base64');
         const input = path.join(directory, 'kubeconfig');
-        await fs.writeFile(input, `apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: https://127.0.0.1:${server.address().port}\n    certificate-authority-data: ${await base64(scenario === 'untrusted_ca' ? 'other.pem' : 'root.pem')}\nusers:\n- name: local\n  user:\n    client-certificate-data: ${await base64('client.pem')}\n    client-key-data: ${await base64('client.key')}\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\ncurrent-context: local\n`, { mode: 0o600 });
+        const ca = systemTrust ? '' : `    certificate-authority-data: ${await base64(scenario === 'untrusted_ca' ? 'other.pem' : 'root.pem')}\n`;
+        await fs.writeFile(input, `apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: https://127.0.0.1:${server.address().port}\n${ca}users:\n- name: local\n  user:\n    client-certificate-data: ${await base64('client.pem')}\n    client-key-data: ${await base64('client.key')}\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\ncurrent-context: local\n`, { mode: 0o600 });
         const env = { ...process.env };
         let executable = driver;
         if (bundle && process.platform === 'win32') {
@@ -68,6 +86,8 @@ async function run() {
             env.KUBECONFIG = path.join(directory, 'absent-kubeconfig');
             env.PODLORD_DISABLE_AUDIO = '1';
             env.PODLORD_DISABLE_UPDATE_CHECK = '1';
+            env.OPENSSL_CONF = config;
+            env.OPENSSL_MODULES = path.join(directory, 'absent-openssl-modules');
             env.QT_QPA_PLATFORM = 'windows';
             env.QT_QUICK_BACKEND = 'software';
             env.QT_PLUGIN_PATH = runtime;
@@ -102,18 +122,30 @@ async function run() {
         } else if (process.platform === 'darwin') env.DYLD_LIBRARY_PATH = path.resolve(path.dirname(openssl), '../lib')
             + (env.DYLD_LIBRARY_PATH ? path.delimiter + env.DYLD_LIBRARY_PATH : '');
         const result = await execute(executable, [input, scenario], { timeout: 25000, env });
-        if (bundle && process.platform === 'win32') assert.match(result.stdout, /backend: schannel\b/, 'The Windows package must use its native TLS backend.');
-        if (scenario === 'trusted') {
+        if (bundle && process.platform === 'win32') assert.match(result.stdout, /backend: openssl\b/, 'The Windows package must use its embedded OpenSSL backend.');
+        if (scenario === 'trusted' || scenario === 'system_trusted') {
             assert.ok(requests >= 4, 'The owned cache did not read the real HTTPS boundary.');
             for (const required of ['/api', '/apis', '/api/v1', '/api/v1/pods']) assert.ok(paths.has(required), `Missing public discovery/list request: ${required}`);
         } else assert.equal(requests, 0, 'An untrusted TLS peer or client reached the API.');
         process.stdout.write(result.stdout);
     } finally {
-        if (server) {
-            server.closeAllConnections();
-            await new Promise(resolve => server.close(resolve));
+        try {
+            if (server) {
+                server.closeAllConnections();
+                await new Promise(resolve => server.close(resolve));
+            }
+        } finally {
+            try {
+                if (importedRoot) {
+                    await execute(certutil, ['-user', '-delstore', 'Root', importedRoot], { timeout: 15000 });
+                    await assert.rejects(execute(certutil, ['-user', '-store', 'Root', importedRoot], { timeout: 15000 }),
+                        error => typeof error.code === 'number' && (error.code >>> 0) === 0x80092004,
+                        'The fixture CA must be absent after cleanup.');
+                }
+            } finally {
+                await fs.rm(directory, { recursive: true, force: true });
+            }
         }
-        await fs.rm(directory, { recursive: true, force: true });
     }
 }
 run().catch(error => { process.stderr.write(`${error.stderr || error.message}\n`); process.exitCode = 1; });

@@ -29,4 +29,8 @@ archive, and starts its extracted payload on current Ubuntu and Debian with X11
 and Wayland but no installed Qt. Trial artifacts are not release approval and
 are not collected by the release-candidate workflow yet.
 
+The Linux trial reuses only an exact compiler/architecture/recipe-matched public
+SDK prefix. System dependencies, including OpenSSL, are rebuilt fresh. Cache
+restoration does not skip application builds, tests, coverage or package gates.
+
 [Contract](../doc/spec/podlord-operational-spec.md) | [Roadmap](../doc/ROADMAP.md) | [Test evidence](../doc/spec/k3d-test-map.md) | [Read workspace](../doc/adr/0018-native-read-workspace.md)
