@@ -7717,6 +7717,10 @@ remain fixed while details scroll. Closing preserves camera and selection.
 Evidence is under the existing
 `inspector-dialog-review-20261103/awake-review-20261103` directory:
 
+The sparse Radar-reader follow-up is newer than `47e23b8`. Its targeted evidence
+is separate. Earlier full-suite, coverage, SDK, package and foreground checkpoints
+below do not constitute a fresh release-gate run for this presentation change.
+
 | Boundary | Result and evidence | Remaining limit |
 |---|---|---|
 | Complete native suite | `radar-release-full-silent-tests.log`: 5,467/5,467 pass in 1,220.30 seconds with eight workers, including the startup guard, queued-Find correction and strengthened Radar keyboard regression. Includes all 116 silent sound decodes and two audio failure cases. | Three audible device cases are deliberately excluded with `^native\.audio\.device_`. Style executions and focused reruns are not additional product features. |
@@ -7724,6 +7728,7 @@ Evidence is under the existing
 | Coverage | `radar-release-coverage/` replays the maintained gates from the current full run: 97.77% lines and 86.23% branches. Storage reaches 90.74% branches. The four new WindowHost methods remain at 104/118 outcomes, 88.14%. | The executable 90% new-method gate correctly rejects that result. The public-lifecycle audit found no credible missing ordinary desktop scenario. No exception, denominator change or threshold change is approved. |
 | Search focus | `closed-search-focus-green-tests.log` passes 26 affected checks and `closed-search-queued-green-tests.log` four queued-open/close checks. Two additional Map Find/pointer regressions fail in `map-find-queued-ordered-red.log`. A shared guarded focus callback then passes 30 affected checks in `map-find-queued-green.log`. | QtTest drains events after key delivery, so preliminary tests that assumed otherwise are harness failures, not product reproductions. The Android activation correction below is separate from these queued-focus fixes. |
 | Radar keyboard activation | The existing public `radar_keyboard` case fails with release-only Enter delivery in `radar-release-activation-red.log`. Activating on key release passes 44 affected keyboard, accessibility, touch, reader and search checks in 40.47 seconds. `radar-release-ios-keyboard/` passes Basic and Fusion in the actual ARM64 iOS simulator. | No new test registrations, input state, global Enter bridge or Qt fork. The full native suite and installed Android Map journey also exercise this correction. |
+| Sparse Radar metric reader | `radar-sparse-info-20261104/verified-tests.log`: 114/114 targeted metric, Radar, Inspector and Dashboard checks pass in 48.33 seconds. The empty-reader regression fails before the correction. Existing UI scenarios now cover no metric data, observed zero, partially configured references and a configured storage request without measured usage. Component captures include `screens/radar_info_panel_phone-details-Basic.png` and `screens/radar_quick_info-details-Basic.png`. | Native Qt windows with offscreen rendering in Basic/Fusion, not fresh installed-package, mobile-SDK, full-suite or coverage evidence. Existing test registrations are unchanged. |
 | Real Kubernetes | `final-frozen-real-kubernetes-e2e.log` passes shell, vi, control/interrupt, live window transfer, isolated forwards, deletion/race, Inspector history, search, metrics, health and cached field filters. `post-start-race-real-window-e2e.log` repeats the affected live transfer/terminal/forward boundary after the startup guard. | Local disposable TLS K3s only. No production-cluster claims. |
 | Native iOS resource reader | Twelve portrait and twelve actual SDK-landscape executions pass with unique child-success markers and empty stderr in the `ios-overlay-verified-*` evidence. | Simulator evidence, not a physical-device claim. |
 | Native iOS themes | `final-frozen-ios-theme-matrix` contains 798 captures across 19 themes, two variants and 21 views, with an exact child-success marker and no reported QML error. | Captured before the desktop-only startup guard and later keyboard callback changes. These changes do not alter drawing or layout. Terminal captures show its ready form, not live PTY behavior. |
@@ -7759,6 +7764,16 @@ approval and has not been implemented or counted as a saving. No size threshold
 changed. Earlier negative hardware/IME diagnostics remain historical evidence,
 not proof of the owning platform cause. QTBUG-144911 remains a separate known
 Qt runtime risk, not an established explanation for this activation failure.
+
+The sparse-reader formatter exposes observed availability separately from
+present reference labels. Radar creates no gauge for an entirely absent metric,
+hides missing usage and measurement captions, and retains configured markers
+without presenting an observed zero. Detailed Inspector/Dashboard output is
+unchanged. Invalid references remain explicit rather than being treated as
+missing. Two earlier Radar checks expected an unavailable-storage paragraph;
+they now require that absent storage has no gauge. Zero-measurement fixtures
+include the Pod creation timestamp required by the existing attachment guard.
+No new request, persistence, timer or resource cache was introduced.
 
 Owned local Kubernetes fixtures must run serially on this development VM. Two
 concurrent fixtures exhausted file watchers before app startup. These setup

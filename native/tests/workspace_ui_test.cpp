@@ -263,12 +263,29 @@ public:
                             document={{"metadata",QJsonObject{}},{"items",values}};
                         }
                     }
+                    if (scenario == "radar_quick_info") {
+                        if (path == "/apis") {
+                            auto groups=document["groups"].toArray();
+                            groups.append(QJsonObject{{"preferredVersion",QJsonObject{{"groupVersion","metrics.k8s.io/v1beta1"}}}});
+                            document["groups"]=groups;
+                        } else if (path == "/apis/metrics.k8s.io/v1beta1") {
+                            status=200; document={{"resources",QJsonArray{QJsonObject{{"name","pods"},{"kind","PodMetrics"},{"namespaced",true},{"verbs",QJsonArray{"get","list"}}}}}};
+                        } else if (path == "/apis/metrics.k8s.io/v1beta1/pods") {
+                            auto value=pod("alpha","PodMetrics","metrics.k8s.io/v1beta1");
+                            value["timestamp"]=measured.toString(Qt::ISODateWithMs); value["window"]="15s";
+                            value["containers"]=QJsonArray{QJsonObject{{"name","main"},{"usage",QJsonObject{{"cpu","0"},{"memory","0"}}}}};
+                            status=200; document={{"metadata",QJsonObject{}},{"items",QJsonArray{value}}};
+                        }
+                    }
                     if (scenario == "radar_quick_info" && path == "/api/v1/pods") {
                         auto target = pod("alpha");
+                        auto metadata=target["metadata"].toObject();
+                        metadata["creationTimestamp"]=measured.addSecs(-60).toString(Qt::ISODateWithMs);
+                        target["metadata"]=metadata;
                         target["spec"] = QJsonObject{{"nodeName", "worker-a"}, {"containers", QJsonArray{QJsonObject{
                             {"name", "main"}, {"image", "example.test/app:1"}, {"resources", QJsonObject{
-                                {"requests", QJsonObject{{"cpu", "100m"}, {"memory", "32Mi"}}},
-                                {"limits", QJsonObject{{"cpu", "500m"}, {"memory", "64Mi"}}}}}}}}};
+                                {"requests", QJsonObject{{"cpu", "100m"}, {"memory", "32Mi"}, {"ephemeral-storage", "1Gi"}}},
+                                {"limits", QJsonObject{{"cpu", "500m"}}}}}}}}};
                         target["status"] = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{QJsonObject{
                             {"name", "main"}, {"ready", false}, {"restartCount", 12}, {"state", QJsonObject{
                                 {"waiting", QJsonObject{{"reason", "CrashLoopBackOff"}, {"message", "Back-off restarting failed container"}}}}}}}}};
@@ -3333,7 +3350,24 @@ bool execute(const QString& requestedScenario) {
             }
             for (const auto* name : {"metric_cpu_bar", "metric_cpu_marker_request", "metric_cpu_marker_limit", "metric_memory_bar"})
                 if (!item(window, name)) return failed("configured metric reference markers");
-            return server.requests.size() == calls && saveShellFrame(window, requestedScenario);
+            for (const auto* name : {"metric_cpu_usage", "metric_memory_usage"}) {
+                const auto* usage=item(window,name);
+                if (!usage || !usage->isVisible() || !usage->property("text").toString().startsWith('0')) return failed("observed zero remains visible");
+            }
+            const auto* references=item(window,"metric_memory_references");
+            if (!references || !references->isVisible() || !references->property("text").toString().contains("request:")
+                || references->property("text").toString().contains("limit:") || references->property("text").toString().contains("not set"))
+                return failed("only present metric references are displayed");
+            const auto* storage=item(window,"metric_storage_bar");
+            const auto* storageUsage=item(window,"metric_storage_usage");
+            const auto* storageMeasurement=item(window,"metric_storage_measurement");
+            const auto* storageReferences=item(window,"metric_storage_references");
+            if (!storage || !storage->isVisible() || !storageUsage || storageUsage->isVisible()
+                || !storageMeasurement || storageMeasurement->isVisible() || !storageReferences || !storageReferences->isVisible()
+                || !storageReferences->property("text").toString().contains("request:") || storageReferences->property("text").toString().contains("not set"))
+                return failed("configured reference remains without inventing usage");
+            return server.requests.size() == calls && saveShellFrame(window, requestedScenario)
+                && saveShellFrame(window,requestedScenario+"-details",item(window,"radarInfoPanel"));
         }
         if (shortLandscape) {
             auto* water=item(window,"radarWater");
@@ -3619,6 +3653,8 @@ bool execute(const QString& requestedScenario) {
             QTest::qWait(60);
             const auto* retained=item(window,"radarInfoText");
             if (!retained || !retained->isVisible() || !retained->property("text").toString().contains(firstName)) return failed("pointer can cross water to read external details");
+            for (const auto* name : {"metric_cpu_bar","metric_memory_bar","metric_storage_bar"})
+                if (item(window,name)) return failed("missing metrics do not create placeholder gauges");
             radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
             auto* tip=item(window,"radarInfoPanel");
             if (!tip || !waitFor([&] { const auto* text=item(window,"radarInfoText"); return text && text->isVisible() && !text->property("text").toString().isEmpty(); })) return failed("cached info appears outside map");
@@ -3677,7 +3713,7 @@ bool execute(const QString& requestedScenario) {
             const auto nextName=workspace.table()->index(1,0).data(Qt::UserRole+1).toString();
             QTest::mouseMove(window,radar->mapToScene(next->bounds.center()).toPoint());
             if (!waitFor([&] { const auto* text=item(window,"radarInfoText"); return text && text->property("text").toString().contains(nextName); })) return failed("hover remains live after reading info");
-            if (!saveShellFrame(window,requestedScenario)) return failed("info frame capture");
+            if (!saveShellFrame(window,requestedScenario) || !saveShellFrame(window,requestedScenario+"-details",tip)) return failed("info frame capture");
             auto* closeControl=item(window,"closeRadarInfo");
             if (!closeControl || !podlord::test::visibleBounds(window,closeControl).contains(closeControl->mapRectToScene(closeControl->boundingRect())))
                 return failed("details close action must remain visible after scrolling");

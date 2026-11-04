@@ -1157,11 +1157,18 @@ the same presentation owner; background alarm evaluation still covers the whole
 session under ALT-001.
 
 The shared external Radar details reader reuses the inspector/dashboard metric gauge.
-It displays cached CPU, memory and storage presentation, observed units,
-request/limit/capacity markers when available, denominator labels, incomplete or
-stale annotations, and measurement source/time/window. Long usage labels wrap
-within the available width; the bar occupies its own flexible row instead of
-competing with labels. Gauges exist only while cached details are shown.
+As confirmed on 2026-11-04, Radar omits a metric section entirely when neither an
+observed value nor a configured reference or configuration error exists. Missing
+usage, requests, limits and capacity MUST NOT produce `Unavailable`, `not set`,
+empty bars or explanatory missing-measurement paragraphs. Genuine observed and
+configured zero values remain visible. Present request/limit/capacity markers,
+denominator labels, invalid/incomplete references and stale annotations remain.
+Reference-only bars MUST NOT expose a fabricated observed zero to screen readers.
+Measurement source/time/window appear only for observed values and only where
+those metadata exist. Inspector and Dashboard retain their detailed presentation.
+Long usage labels wrap within the available width; the bar occupies its own
+flexible row instead of competing with labels. Gauges exist only while cached
+details are shown and have actual content.
 Placement and dismissal follow the fixed external reader contract above,
 including the confirmed short-landscape exception. The reader MUST NOT cover
 the map, zoom, reset or workspace actions. Its cached details stay available
@@ -1170,7 +1177,8 @@ filtering and hidden-surface dismissal rules remain in force.
 When its full content exceeds the reader, a native vertical scroll surface
 retains all cached details instead of truncating them or covering other controls.
 Hover, focus, scrolling and painting do not request measurements. An absent
-storage usage value remains unavailable. Configured references are not presented
+storage usage value remains unknown, not zero, and has no Radar placeholder.
+Configured references are not presented
 as recommendations; MET-010 and MET-011 still require a substantiated source for
 any recommendation marker.
 

@@ -547,8 +547,8 @@ Pane {
                                     }
                                 }
                                 Repeater {
-                                    model: radarInfo.hasDetails ? radarInfo.target.resourceMetrics : []
-                                    MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData }
+                                    model: radarInfo.hasDetails ? radarInfo.target.resourceMetrics.filter(metric => metric.available || !!metric.presentReferences) : []
+                                    MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData; omitMissing: true }
                                 }
                             }
                         }

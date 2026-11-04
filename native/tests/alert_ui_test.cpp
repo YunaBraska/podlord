@@ -118,8 +118,8 @@ bool radarGaugesFit(const QString& expectedUsage = {}, const QString& expectedRe
         const auto* bar=visualItem(content,"metric_cpu_bar"); const auto* memory=visualItem(content,"metric_memory_bar");
         const auto* request=visualItem(content,"metric_cpu_marker_request"); const auto* limit=visualItem(content,"metric_cpu_marker_limit");
         const auto* usage=visualItem(content,"metric_cpu_usage"); const auto* references=visualItem(content,"metric_cpu_references");
-        const auto* measured=visualItem(content,"metric_cpu_measurement"); const auto* storage=visualItem(content,"metric_storage_measurement");
-        if (!bar || !bar->isVisible() || !memory || !memory->isVisible() || !usage || !usage->isVisible() || !request || !limit || !references || !measured || !storage) continue;
+        const auto* measured=visualItem(content,"metric_cpu_measurement");
+        if (!bar || !bar->isVisible() || !memory || !memory->isVisible() || !usage || !usage->isVisible() || !request || !limit || !references || !measured) continue;
         const auto observed=usage->property("text").toString();
         if (!observed.contains("mCPU") || observed.contains("Unavailable") || !observed.contains(expectedUsage)
             || !references->property("text").toString().contains(expectedReference)) continue;
@@ -128,8 +128,8 @@ bool radarGaugesFit(const QString& expectedUsage = {}, const QString& expectedRe
         return bar->width()>0 && memory->width()>0 && markerFits(request) && markerFits(limit)
             && usageLeft>=0 && usageLeft+usage->width()<=bar->width()+1
             && measured->property("text").toString().contains("Measured ")
-            && storage->property("text").toString().contains("No observed measurement is available.")
-            && !storage->property("text").toString().contains("Measured ");
+            && !visualItem(content,"metric_storage_bar")
+            && !visualItem(content,"metric_storage_measurement");
     }
     return false;
 }
@@ -1219,7 +1219,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     auto* heading=item(quick,"radarInfoText");
                     if (!heading || !heading->isVisible() || !heading->parentItem()) continue;
                     for (const auto& name:QStringList{"metric_cpu_bar","metric_memory_bar","metric_cpu_marker_request","metric_cpu_marker_limit",
-                            "metric_cpu_usage","metric_cpu_references","metric_cpu_measurement","metric_storage_measurement"}) {
+                            "metric_cpu_usage","metric_cpu_references","metric_cpu_measurement"}) {
                         const auto* field=visualItem(item(quick,"radarInfoPanel"),name);
                         if (!field) { qWarning()<<"Radar metric missing:"<<name; continue; }
                         qWarning()<<"Radar metric:"<<name<<"visible:"<<field->isVisible()
