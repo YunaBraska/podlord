@@ -4275,8 +4275,11 @@ bool execute(const QString& requestedScenario) {
             return server.requests.size() == calls;
         }
         if (scenario == "radar_keyboard") {
-            radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Return);
-            return waitFor([&] { return workspace.inspectorName() == "alpha" && workspace.canEditYaml(); });
+            radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
+            // A platform input method may consume key-down before Qt receives it.
+            QTest::keyRelease(window, Qt::Key_Return);
+            return waitFor([&] { const auto* title=item(window,"inspectorResourceName");
+                return title && title->isVisible() && workspace.inspectorName() == "alpha" && workspace.canEditYaml(); });
         }
         if (scenario == "radar_zoom") {
             auto* zoom = item(window, "radarZoom"); if (!zoom) return false;

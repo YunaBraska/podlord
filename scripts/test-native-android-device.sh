@@ -246,6 +246,7 @@ function target(id){
   const reverse=settings&&current&&firstVisible>=0?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   const inset=settings?4:12;
   run('shell','input','swipe',String(x),String(reverse?b[1]+inset:b[3]-inset),String(x),String(reverse?b[3]-inset:b[1]+inset),settings?'150':'350');scrolled=true;state();
+  if(!settings&&!inspector&&!nav)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
   if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
  capture('unreachable-'+id);throw Error('Public UI target unavailable after scrolling: '+id);
@@ -307,6 +308,7 @@ if(mapRoundtrip==='1'){
   journeyFailures.push({step:'Map touch roundtrip',error:String(error)});
   console.error('Map touch roundtrip failed: '+String(error));
   capture('map-roundtrip-failure');
+  if(nodes.some(n=>n['resource-id']?.endsWith('.closeInspector')&&n.enabled==='true'))click('closeInspector');
   const resources=nodes.find(n=>n['resource-id']?.endsWith('.resourcesWorkspaceButton')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
   if(!resources)throw error;
   click('resourcesWorkspaceButton');search('');
@@ -445,7 +447,8 @@ function mapTouchRoundtrip(){
  waitNode('resourceRadar',n=>n.focused==='true');capture('roundtrip-before-enter');
  run('shell','input','keyevent','66');state();
  waitNode('inspectorResourceName',n=>value(n).includes('ConfigMap/visual-config-0001'));click('yamlButton');
- waitNode('inspectorYaml',n=>value(n).split('\n').some(line=>line.trim()==='namespace: '+selection.namespace));
+ target('inspectorYaml');state();
+ waitNode('inspectorYaml',n=>value(n).split(/\r?\n|\u2028|\u2029/).some(line=>[selection.namespace,JSON.stringify(selection.namespace)].some(name=>line.trim()==='namespace: '+name)));
  capture('roundtrip-retained-selection');click('closeInspector');
  const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt 6.11.2 JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},selection:{...selection,verifiedAfter:'Native Enter after water focus opens the same kind/name/namespace, without Home/End reselection'},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:mapResourceQuery,motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Terrain pixels, public zoom/filter and retained selection; no private camera getters. Passive read totals remain diagnostic. Cache-only admission is separately asserted by the real_search/real_map HTTP-boundary scenarios. Inspector is explicitly opened only after the filter audit. Disabled Back/Forward are not activated.'};
  fs.writeFileSync(path.join(out,'touch-roundtrip.json'),JSON.stringify(report,null,2)+'\n');

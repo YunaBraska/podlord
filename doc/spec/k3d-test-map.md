@@ -7719,31 +7719,46 @@ Evidence is under the existing
 
 | Boundary | Result and evidence | Remaining limit |
 |---|---|---|
-| Complete native suite | `final-frozen-silent-tests.log`: 5,463/5,463 pass in 1,213.84 seconds with eight workers before the final startup guard. The 5,465-case `post-start-race-silent-tests.log` rerun is in progress. Includes all 116 silent sound decodes. | Three audible device cases are deliberately excluded with `^native\.audio\.device_`. The later queued-Find correction has separate targeted evidence below. Style executions are not separate product features. |
+| Complete native suite | `radar-release-full-silent-tests.log`: 5,467/5,467 pass in 1,220.30 seconds with eight workers, including the startup guard, queued-Find correction and strengthened Radar keyboard regression. Includes all 116 silent sound decodes and two audio failure cases. | Three audible device cases are deliberately excluded with `^native\.audio\.device_`. Style executions and focused reruns are not additional product features. |
 | Window/storage lifecycle | `window-pending-actions-green.log`: 199 related executions pass, including 86 WindowHost scenarios in Basic/Fusion and 27 storage cases. Four earlier signed Cocoa cases cover restore, offscreen placement, repeat restore and active-tab fallback. | Host recreation is not a fresh installed-app process. Installed restart and actual monitor changes remain open. |
-| Coverage | Before the final startup guard, `final-frozen-coverage.txt` reports 97.90% lines and 86.28% branches. Storage reaches 90.74% branches. The four new WindowHost methods reach 104/118 outcomes, 88.14%. Current-run coverage replay is pending. | The executable 90% new-method gate correctly rejects that result. No exception or threshold change is approved. This method-family audit is not a historical changed-line denominator. |
-| Search focus | `closed-search-focus-green-tests.log` passes 26 affected checks and `closed-search-queued-green-tests.log` four queued-open/close checks. Two additional Map Find/pointer regressions fail in `map-find-queued-ordered-red.log`. A shared guarded focus callback then passes 30 affected checks in `map-find-queued-green.log`. | QtTest drains events after key delivery, so preliminary tests that assumed otherwise are harness failures, not product reproductions. These corrections do not establish the cause of the separate Android Enter failure. |
+| Coverage | `radar-release-coverage/` replays the maintained gates from the current full run: 97.77% lines and 86.23% branches. Storage reaches 90.74% branches. The four new WindowHost methods remain at 104/118 outcomes, 88.14%. | The executable 90% new-method gate correctly rejects that result. The public-lifecycle audit found no credible missing ordinary desktop scenario. No exception, denominator change or threshold change is approved. |
+| Search focus | `closed-search-focus-green-tests.log` passes 26 affected checks and `closed-search-queued-green-tests.log` four queued-open/close checks. Two additional Map Find/pointer regressions fail in `map-find-queued-ordered-red.log`. A shared guarded focus callback then passes 30 affected checks in `map-find-queued-green.log`. | QtTest drains events after key delivery, so preliminary tests that assumed otherwise are harness failures, not product reproductions. The Android activation correction below is separate from these queued-focus fixes. |
+| Radar keyboard activation | The existing public `radar_keyboard` case fails with release-only Enter delivery in `radar-release-activation-red.log`. Activating on key release passes 44 affected keyboard, accessibility, touch, reader and search checks in 40.47 seconds. `radar-release-ios-keyboard/` passes Basic and Fusion in the actual ARM64 iOS simulator. | No new test registrations, input state, global Enter bridge or Qt fork. The full native suite and installed Android Map journey also exercise this correction. |
 | Real Kubernetes | `final-frozen-real-kubernetes-e2e.log` passes shell, vi, control/interrupt, live window transfer, isolated forwards, deletion/race, Inspector history, search, metrics, health and cached field filters. `post-start-race-real-window-e2e.log` repeats the affected live transfer/terminal/forward boundary after the startup guard. | Local disposable TLS K3s only. No production-cluster claims. |
 | Native iOS resource reader | Twelve portrait and twelve actual SDK-landscape executions pass with unique child-success markers and empty stderr in the `ios-overlay-verified-*` evidence. | Simulator evidence, not a physical-device claim. |
-| Native iOS themes | `final-frozen-ios-theme-matrix` contains 798 captures across 19 themes, two variants and 21 views, with an exact child-success marker and no reported QML error. | Captured before the desktop-only startup guard and final queued-Find callback consolidation. Neither changes layout. Terminal captures show its ready form, not live PTY behavior. |
+| Native iOS themes | `final-frozen-ios-theme-matrix` contains 798 captures across 19 themes, two variants and 21 views, with an exact child-success marker and no reported QML error. | Captured before the desktop-only startup guard and later keyboard callback changes. These changes do not alter drawing or layout. Terminal captures show its ready form, not live PTY behavior. |
 | iOS TLS | `final-candidate-ios-trust.log`: 10/10 maintained SDK probes pass HTTPS/WSS rejection, installed system trust, wrong explicit CA, delayed verification and cancellation. | Simulated iOS runtime, not a live cloud login. |
-| Harness integrity | `final-visual-runner-contract-tests.log`: 31/31 checks pass. iOS runners now require an exact unique application success marker and reject explicit failures and QML errors. | `simctl launch` returning zero alone is not application success. |
-| Android installed APK | `android-overlay-runtime/final-frozen-complete-journey/journey.json`: 15 independent real-API steps pass, including PTY, logs, YAML guards and immutable source editing. | The complete journey fails at opening the selected Map resource with Enter after a long search sequence. A short native Enter journey succeeds. Cause remains unproven. |
-| macOS package | `post-start-race-macos-package.log`: dependency/runtime/notices and local package checks pass. ZIP is 33,828,038 bytes, installed app 87,590,188 bytes. | Before the final queued-Find correction. Ad-hoc local preflight only, not Store signing, notarization or submission. |
-| Allocation/idle diagnosis | Same-mode background Metal comparison after removing redundant alert-row copies/deadlines: RSS 305,987,584 to 297,435,136 bytes and idle CPU 2.14702% to 1.417986%. | Diagnostic only. The last valid foreground result still exceeds RSS/idle limits. A current active-window run remains required. |
+| Harness integrity | `radar-release-visual-runner-contracts.log`: 31/31 checks pass. iOS runners require an exact unique application success marker and reject explicit failures and QML errors. | `simctl launch` returning zero alone is not application success. |
+| Android functional journey | `android-overlay-runtime/radar-release-yaml-journey/journey.json` passes all 15 steps with 1,846 real cached resources, including PTY, logs, YAML guards and immutable source editing. `touch-roundtrip.json` passes retained terrain pixels, camera, filters, selection and native Enter opening the same kind/name/namespace. | Functional success is not the outer package result. The installed-size check below still fails. No physical-device or live cloud OAuth claim. |
+| Android package | The exact exercised APK is 98,581,666 bytes. Its single-APK ZIP is 37,434,374 bytes, below the 50,000,000-byte download limit. `android-radar-release-candidate/candidate-result.json` records both passing functionality and the failed footprint gate. | Installed code plus app-private regular files total 100,097,120 bytes, exceeding the unchanged 100,000,000-byte limit by 97,120 bytes. This candidate is not promoted as release-ready. |
+| macOS package | `radar-release-macos-package.log`: dependency/runtime/notices and local package checks pass for the current callback changes. ZIP is 33,828,043 bytes, installed app 87,590,188 bytes. | Ad-hoc local preflight only, not Store signing, notarization or submission. |
+| Optional dependency scan | `radar-release-macos-grype.json` repeats the previously documented 45 FFmpeg 7.1.5 version/CPE matches. The existing bounded-OGG/backport triage and ADR 0025 still apply. | No blanket suppression, claim of vulnerability-free binaries or new scanner gate. Supplier source attribution and exact binary provenance remain distinct. |
+| Allocation/idle diagnosis | Same-mode background Metal comparison after removing redundant alert-row copies/deadlines: RSS 305,987,584 to 297,435,136 bytes and idle CPU 2.14702% to 1.417986%. | Diagnostic only. The last valid `fixed-radar-header-foreground` result reports RSS 317,014,016 bytes and idle CPU 2.05164%, both above their unchanged limits. A current active-window run remains required. |
 
-The Android Home/End bridge retains Qt's input path. An experimental Enter
-bridge and all temporary production input probes were removed after they failed
-to resolve the long journey. Search, camera and terrain checks do not substitute
-for the failing Inspector assertion. The same failure persists with an explicitly
-configured physical-keyboard AVD, separate physical press/release delivery and
-after disabling only that disposable guest's Gboard. Those negative diagnostics
-do not identify the owning cause. The current clean signed APK is 98,581,666 bytes
-and its single-APK private download ZIP is 37,434,463 bytes. A duplicate-APK
-diagnostic archive was rejected and rebuilt, not accepted by raising its limit.
-Qt's independently verified upstream
-QTBUG-144911 accessibility-thread fix is a known runtime risk, not an established
-cause of this Enter failure. No Qt fork or accessibility suppression was added.
+The Android Home/End bridge retains Qt's input path. Earlier experimental Enter
+and accessible-group bridges were removed after they failed the long journey.
+The retained correction activates the existing Radar action on Enter/Return
+release, both on the map and its pooled keyboard target. The installed SDK run
+now opens the selected ConfigMap after the original long search/filter sequence.
+No broader keyboard adapter or extra activation state was introduced.
+
+The newly reached YAML assertion exposed two harness assumptions: it waited
+below the visible scroll area and expected LF-separated, unquoted namespace
+text. The actual Android accessibility text contained the correct fresh YAML,
+Unicode paragraph separators and a valid quoted namespace. The runner now
+scrolls publicly and accepts these representations without weakening the exact
+namespace check. Failed Map recovery closes an opened Inspector before
+continuing independent checks. Sidebar scroll diagnostics share the existing
+input-event log. The final journey has no failed steps, transport recovery,
+reported QML error or crash. Its emulator, private ADB and fixture are cleaned up.
+
+The remaining Android footprint failure is not hidden by the functional result.
+Qt's extracted Android style JSON alone accounts for 185,016 app-private bytes.
+Disabling that optional extraction is proposed for evaluation, but awaits
+approval and has not been implemented or counted as a saving. No size threshold
+changed. Earlier negative hardware/IME diagnostics remain historical evidence,
+not proof of the owning platform cause. QTBUG-144911 remains a separate known
+Qt runtime risk, not an established explanation for this activation failure.
 
 Owned local Kubernetes fixtures must run serially on this development VM. Two
 concurrent fixtures exhausted file watchers before app startup. These setup
@@ -7753,5 +7768,11 @@ layout loading in two styles. `window-detach-load-regression.kCcMUn` records the
 red and green public cases. The host now rejects that transfer, and the existing
 window-action readiness property keeps its controls disabled until restoration
 finishes. No extra readiness state or session registry was added.
+The earlier Family crash reports identify a simulator-owned Apple process from
+an already removed test device. No host Family service, crash-report preference
+or privacy setting was changed. This attribution is not a claim that the Apple
+runtime defect itself is fixed.
+
 Foreground performance and installed-process restart remain blocked by desktop
-availability. Google registration remains paused. Release readiness is not met.
+availability. The new-window coverage gate and Android installed-size gate
+remain unmet. Google registration remains paused. Release readiness is not met.

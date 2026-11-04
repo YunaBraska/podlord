@@ -213,8 +213,12 @@ Pane {
                     rememberPosition()
                     event.accepted = true
                 }
-                Keys.onReturnPressed: if (currentIndex >= 0) workspace.inspectRow(currentIndex)
-                Keys.onEnterPressed: if (currentIndex >= 0) workspace.inspectRow(currentIndex)
+                Keys.onReleased: function(event) {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        if (currentIndex >= 0) workspace.inspectRow(currentIndex)
+                        event.accepted = true
+                    }
+                }
                 Keys.onTabPressed: function(event) {
                     event.accepted = !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier | Qt.ShiftModifier)) && activeFocus && traverseVisible(0)
                     if (event.accepted) focusTarget.forceActiveFocus(Qt.TabFocusReason)
@@ -352,8 +356,12 @@ Pane {
                         event.accepted = !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) && grid.traverseVisible(-1)
                         if (event.accepted) focusTarget.forceActiveFocus(Qt.BacktabFocusReason)
                     }
-                    Keys.onReturnPressed: radarPane.inspectResource(resourcePath)
-                    Keys.onEnterPressed: radarPane.inspectResource(resourcePath)
+                    Keys.onReleased: function(event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            radarPane.inspectResource(resourcePath)
+                            event.accepted = true
+                        }
+                    }
                 }
                 ResourceTarget {
                     id: focusTarget
