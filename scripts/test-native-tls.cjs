@@ -8,11 +8,14 @@ const { X509Certificate } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execute = promisify(execFile);
-const [driver, openssl, scenario, bundle] = process.argv.slice(2);
-assert.ok(driver && openssl && ['trusted', 'untrusted_ca', 'untrusted_client', 'untrusted_host', 'system_trusted', 'system_untrusted'].includes(scenario), 'Expected real driver, OpenSSL and TLS scenario.');
+const [driver, openssl, inputScenario, bundle] = process.argv.slice(2);
+const storeOnly = driver === '--check-system-store';
+const scenario = storeOnly ? 'system_trusted' : inputScenario;
+assert.ok(driver && openssl && ['trusted', 'untrusted_ca', 'untrusted_client', 'untrusted_host', 'system_trusted', 'system_untrusted'].includes(scenario)
+    && (!storeOnly || (!inputScenario && !bundle)), 'Expected real driver, OpenSSL and TLS scenario, or --check-system-store OPENSSL.');
 const systemTrust = scenario.startsWith('system_');
 assert.ok(!systemTrust || (process.platform === 'win32' && process.env.GITHUB_ACTIONS === 'true'
-    && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && process.env.RUNNER_TEMP && bundle),
+    && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && process.env.RUNNER_TEMP && (bundle || storeOnly)),
     'System-store fixtures require the disposable Windows CI account and extracted package.');
 async function run() {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-mutual-tls-'));
@@ -55,6 +58,7 @@ async function run() {
             await execute(certutil, ['-user', '-f', '-addstore', 'Root', path.join(directory, 'root.pem')], { timeout: 15000 });
             assert.equal(await rootMatches(fingerprint), '1', 'The owned fixture CA must be present after import.');
         }
+        if (storeOnly) return;
         await fs.writeFile(path.join(directory, 'server.ext'), `subjectAltName=IP:${scenario === 'untrusted_host' ? '192.0.2.1' : '127.0.0.1'}\nextendedKeyUsage=serverAuth\n`, { mode: 0o600 });
         await fs.writeFile(path.join(directory, 'client.ext'), 'extendedKeyUsage=clientAuth\n', { mode: 0o600 });
         for (const name of ['server', 'client']) {
@@ -161,4 +165,10 @@ async function run() {
         }
     }
 }
-run().catch(error => { process.stderr.write(`${error.stderr || error.message}\n`); process.exitCode = 1; });
+run().then(() => {
+    if (storeOnly) process.stdout.write('Disposable Windows certificate-store fixture passed; native TLS was not exercised.\n');
+}).catch(error => {
+    process.stderr.write(`${[error.message, `exit=${error.code ?? 'unknown'} signal=${error.signal ?? 'none'} killed=${error.killed === true}`,
+        error.stdout, error.stderr].filter(Boolean).join('\n')}\n`);
+    process.exitCode = 1;
+});

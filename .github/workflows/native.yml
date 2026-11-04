@@ -95,6 +95,15 @@ jobs:
           $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
           cmake -S native -B $build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH="$qt;$yaml" -DBUILD_TESTING=ON -DPODLORD_COVERAGE=OFF
           if ($LASTEXITCODE -ne 0) { throw 'Could not configure the native Windows app.' }
+          # Check the same disposable store fixture before spending time compiling.
+          # This does not replace the extracted application's full TLS probes below.
+          $sslEntry = @(Select-String -LiteralPath (Join-Path $build 'CMakeCache.txt') -Pattern '^OPENSSL_INCLUDE_DIR:[^=]+=(.+)$')
+          if ($sslEntry.Count -ne 1) { throw 'Expected one actual OpenSSL include directory.' }
+          $openssl = Join-Path (Split-Path -Parent $sslEntry[0].Matches[0].Groups[1].Value) 'bin\openssl.exe'
+          node scripts/test-native-tls.cjs --check-system-store $openssl *> "$env:RUNNER_TEMP\podlord-windows-certificate-store.log"
+          $storeStatus = $LASTEXITCODE
+          Get-Content -LiteralPath "$env:RUNNER_TEMP\podlord-windows-certificate-store.log"
+          if ($storeStatus -ne 0) { throw 'The disposable Windows certificate-store fixture failed before compilation.' }
           cmake --build $build --config Release --parallel 4
           if ($LASTEXITCODE -ne 0) { throw 'Could not build the native Windows app and tests.' }
           if (!(Test-Path "$build\Release\podlord-native.exe")) { throw 'The native Windows app is missing.' }
@@ -136,6 +145,7 @@ jobs:
           path: |
             ${{ runner.temp }}/podlord-windows-build/Testing/Temporary/LastTest.log
             ${{ runner.temp }}/podlord-windows-package-stderr.log
+            ${{ runner.temp }}/podlord-windows-certificate-store.log
             ${{ runner.temp }}/podlord-windows-package-evidence/
             ${{ runner.temp }}/podlord-windows-x64.zip
   macos:
