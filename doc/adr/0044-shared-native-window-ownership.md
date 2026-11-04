@@ -16,8 +16,8 @@ Use one application-owned `WorkspaceRuntime` for the existing request client,
 credential process and weekly release checker. `WindowHost` owns one QML engine
 and a separate QML context/workspace projection per native window. An in-memory
 placement map assigns every open session to one live window; the existing
-session store remains the durable authority. Do not introduce a second registry,
-new window-placement persistence format or network client per window.
+session store remains the durable authority. Do not introduce a second session
+registry or network client per window.
 
 Detachment transfers the existing view binding and cached navigation, saved
 filter/sort baseline, log positions and alarm holds/deduplication. It neither
@@ -59,7 +59,24 @@ Sharing a single workspace selection between windows would couple navigation,
 filters, logs and secret reveal state; reject it. Independent projections consume
 memory only for windows the user opens and retain the established UI components.
 
-Window geometry and placement are not newly persisted. Existing restoration
-opens the retained sessions through the main workspace. Scope does not establish
-mobile-device, complete visual, performance, accessibility or release readiness.
+The confirmed STR-002 clarification on 2026-11-03 supersedes the original
+main-window-only restoration. A private `window-layout.json` stores only window
+identities, references to existing session UUIDs, the selected tab within each
+window, normal geometry and maximized state. It contains no session configuration,
+credentials or Kubernetes data. The session catalog remains authoritative for
+open sessions and their order. Restoration intersects saved memberships with that
+catalog, keeps unassigned open tabs in the main window, and never reconnects them.
+Existing mobile detached-window restrictions are unchanged.
+
+`WindowHost` owns the cached layout and bounded background load/save. Geometry
+signals update memory only. Manual window transfers remain disabled until initial
+restoration completes, so a delayed load cannot overwrite a live transfer.
+Saving occurs during orderly application termination
+or final main-window closure, using an atomic, private, versioned compare-and-save.
+A failed save uses the existing Stay/Close guard and retains the previous file.
+The host owns that layout error without replacing unrelated workspace errors.
+Malformed metadata is reported without replacing the session catalog. Geometry is
+fitted to a currently available screen where supported. Size, grouping and
+position restoration do not restore shells, forwards, credentials or YAML drafts.
+Scope does not establish complete visual, performance, accessibility or release readiness.
 Public-boundary and real-cluster evidence is maintained in the existing test map.

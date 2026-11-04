@@ -1,12 +1,27 @@
 package berlin.yuna.podlord;
 
 import android.content.Intent;
-import android.os.Bundle;
+import android.view.KeyEvent;
 import org.qtproject.qt.android.bindings.QtActivity;
 
-/** Qt activity that owns Android authorization attempts for their complete lifecycle. */
+/** Qt activity for native input and lifecycle-bound Android authorization. */
 public final class PodlordActivity extends QtActivity {
     private final GkeAuthorization gkeAuthorization = new GkeAuthorization(this);
+
+    /**
+     * Routes Home and End through Qt before the platform input editor consumes them.
+     * @param event original Android event, including modifiers and repeat state
+     * @return whether Qt or the normal Android dispatcher handled the event
+     */
+    @Override
+    public boolean dispatchKeyEvent(final KeyEvent event) {
+        final int key = event.getKeyCode();
+        if (key == KeyEvent.KEYCODE_MOVE_HOME || key == KeyEvent.KEYCODE_MOVE_END) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && super.onKeyDown(key, event)) return true;
+            if (event.getAction() == KeyEvent.ACTION_UP && super.onKeyUp(key, event)) return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
 
     /** Starts one user-confirmed GKE authorization attempt. */
     public boolean startGkeAuthorization(final long requestId) {

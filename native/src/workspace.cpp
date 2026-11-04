@@ -133,6 +133,9 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     case Qt::UserRole + 10: return row["activity"_L1].toBool();
     case Qt::UserRole + 13: return row["value"_L1].toString();
     case Qt::UserRole + 14: return row["base64"_L1].toBool();
+    case Qt::UserRole + 15: return QVariantMap{{"issue", row["issue"_L1].toVariant()}, {"ready", row["ready"_L1].toVariant()},
+        {"restarts", row["restarts"_L1].toVariant()}, {"node", row["node"_L1].toVariant()},
+        {"image", row["image"_L1].toVariant()}, {"owner", row["owner"_L1].toVariant()}};
     default: break;
     }
     const auto& field = fields_[index.column()];
@@ -200,7 +203,7 @@ QVariant ResourceTable::headerData(int section, Qt::Orientation orientation, int
 QHash<int, QByteArray> ResourceTable::roleNames() const {
     return {{Qt::DisplayRole, "display"}, {Qt::ToolTipRole, "tooltip"}, {Qt::ForegroundRole, "identityColor"}, {Qt::UserRole, "resourcePath"},
         {Qt::UserRole + 1, "resourceName"}, {Qt::UserRole + 2, "resourceKind"}, {Qt::UserRole + 3, "resourceNamespace"},
-        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}};
+        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}, {Qt::UserRole + 15, "resourceDetails"}};
 }
 QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index].document : QJsonObject{}; }
 QString ResourceTable::metadata(int row, int role) const {
@@ -487,6 +490,7 @@ QString Workspace::authenticationInstruction() const {
     return connection ? credentials_.instruction(connection->credentialId) : QString{};
 }
 QString Workspace::error() const {
+    if (runtime_->host && runtime_->host->layoutCloseNeedsDecision(*this)) return runtime_->host->layoutCloseError();
     if (!settingsError_.isEmpty()) return settingsError_;
     if (viewStateFailed()) return viewStateError();
     if (const auto connection = client_.connection(active_); connection && connection->exec && !authenticationRunning()) {

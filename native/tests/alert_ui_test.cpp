@@ -113,7 +113,8 @@ bool radarGaugesFit(const QString& expectedUsage = {}, const QString& expectedRe
     for (auto* surface : QGuiApplication::allWindows()) if (auto* quick=qobject_cast<QQuickWindow*>(surface)) {
         auto* heading=item(quick,"radarInfoText");
         if (!heading || !heading->isVisible() || !heading->parentItem()) continue;
-        auto* content=heading->parentItem();
+        auto* content=item(quick,"radarInfoPanel");
+        if (!content) continue;
         const auto* bar=visualItem(content,"metric_cpu_bar"); const auto* memory=visualItem(content,"metric_memory_bar");
         const auto* request=visualItem(content,"metric_cpu_marker_request"); const auto* limit=visualItem(content,"metric_cpu_marker_limit");
         const auto* usage=visualItem(content,"metric_cpu_usage"); const auto* references=visualItem(content,"metric_cpu_references");
@@ -1199,8 +1200,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         QTest::mouseMove(window,cell->mapToScene({cell->width()/2,cell->height()/2}).toPoint());
         const bool shown=waitFor([&] {
             for (auto* surface : QGuiApplication::allWindows()) if (auto* quick=qobject_cast<QQuickWindow*>(surface)) {
-                const auto* tip=item(quick,radar ? "radarInfoText" : "plainTipText");
-                if (quick->isVisible() && tip && tip->isVisible() && tip->property("text").toString().contains("<img src=")) return true;
+                const auto* tip=item(quick,radar ? "radarInfoStatus" : "plainTipText");
+                if (quick->isVisible() && tip && tip->isVisible() && tip->property("text").toString().contains("<img src=")
+                    && (!radar || tip->property("textFormat").toInt()==Qt::PlainText)) return true;
             }
             return false;
         });
@@ -1218,7 +1220,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     if (!heading || !heading->isVisible() || !heading->parentItem()) continue;
                     for (const auto& name:QStringList{"metric_cpu_bar","metric_memory_bar","metric_cpu_marker_request","metric_cpu_marker_limit",
                             "metric_cpu_usage","metric_cpu_references","metric_cpu_measurement","metric_storage_measurement"}) {
-                        const auto* field=visualItem(heading->parentItem(),name);
+                        const auto* field=visualItem(item(quick,"radarInfoPanel"),name);
                         if (!field) { qWarning()<<"Radar metric missing:"<<name; continue; }
                         qWarning()<<"Radar metric:"<<name<<"visible:"<<field->isVisible()
                             <<"scene:"<<field->mapRectToScene(QRectF(QPointF{},field->size()))<<"text:"<<field->property("text").toString();

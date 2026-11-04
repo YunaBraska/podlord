@@ -214,7 +214,7 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME native.ui.compact_toolbar COMMAND workspace_ui_test compact_toolbar)
     set_tests_properties(native.ui.compact_toolbar PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
-    foreach(scenario search_demand search_events footer_narrow tools_menu touch touch_search_tooltip reset_icon)
+    foreach(scenario search_demand search_events search_map_queued footer_narrow tools_menu touch touch_search_tooltip reset_icon)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.shell_${scenario}_${style} COMMAND workspace_ui_test shell_${scenario})
             set_tests_properties(native.ui.shell_${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -239,9 +239,23 @@ if(PODLORD_MAC_APP_STORE AND (NOT APPLE OR IOS))
     message(FATAL_ERROR "PODLORD_MAC_APP_STORE requires a macOS target.")
 endif()
 
-add_library(podlord_sessions STATIC src/session_store.cpp)
+add_library(podlord_sessions STATIC src/session_store.cpp src/window_layout.cpp)
 target_include_directories(podlord_sessions PUBLIC src)
 target_link_libraries(podlord_sessions PUBLIC Qt6::Core)
+if(BUILD_TESTING)
+    add_executable(window-layout-test tests/window_layout_test.cpp)
+    target_link_libraries(window-layout-test PRIVATE podlord_sessions)
+    set(window_layout_scenarios missing roundtrip empty repeat conflict malformed future unknown_field schema geometry
+        geometry_boundary duplicate_window duplicate_session identifiers active read_limit write_limit invalid_input
+        file_directory profile_file profile_invalid held_lock lock_directory)
+    if(UNIX)
+        list(APPEND window_layout_scenarios file_symlink profile_symlink lock_symlink permissions)
+    endif()
+    foreach(scenario IN LISTS window_layout_scenarios)
+        add_test(NAME native.window_layout.${scenario} COMMAND window-layout-test ${scenario})
+        set_tests_properties(native.window_layout.${scenario} PROPERTIES TIMEOUT 15)
+    endforeach()
+endif()
 if(NOT IOS)
     add_executable(podlord-session src/session_main.cpp)
     target_link_libraries(podlord-session PRIVATE podlord_sessions)
@@ -425,7 +439,19 @@ if(BUILD_TESTING)
     add_executable(window-host-test tests/window_host_test.cpp)
     target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test)
     foreach(style Basic Fusion)
-        foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus cross_focus handoff handoff_grow handoff_shrink handoff_events handoff_sort snapshot_latest snapshot_hidden snapshot_detach snapshot_close_window filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal close_isolation main_close root_restore application_quit application_quit_wait application_quit_stay application_quit_discard application_quit_empty application_quit_closed_window application_quit_tab_prompt application_quit_cancel_retry application_quit_other_window dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
+        foreach(scenario active background background_dirty context_window new_context_window menu_window reopen nested focus cross_focus
+            handoff handoff_grow handoff_shrink handoff_events handoff_sort snapshot_latest snapshot_hidden snapshot_detach snapshot_close_window
+            filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal
+            close_isolation main_close root_restore application_quit application_quit_wait application_quit_stay application_quit_discard
+            application_quit_empty application_quit_closed_window application_quit_tab_prompt application_quit_cancel_retry application_quit_other_window
+            layout_restore layout_restore_disabled layout_restore_stale layout_restore_offscreen layout_restore_repeat
+            layout_restore_active_missing layout_restore_without_main layout_quit_load_pending layout_detach_load_pending layout_quit_save_pending
+            layout_no_pending_decision layout_peer_view_error layout_close_then_quit
+            layout_restore_active_fallback layout_restore_empty_main layout_restore_view_error layout_error_preserves_startup layout_decision_repeat_quit
+            layout_restore_deferred_open layout_settings_rejected focus_minimized_windowed
+            layout_stay_preserves_import_error layout_session_catalog_rejected
+            layout_lock_stay layout_lock_discard layout_conflict layout_invalid layout_closed_main_policy focus_maximized focus_minimized_maximized
+            dirty_stay dirty_discard missing missing_resource repeat batch_empty batch_null batch_duplicate batch_missing batch_subset)
             add_test(NAME native.window.${scenario}_${style} COMMAND window-host-test ${scenario})
             set_tests_properties(native.window.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_UPDATE_CHECK=1")
         endforeach()
@@ -622,7 +648,7 @@ if(BUILD_TESTING)
     add_executable(alert-lifecycle-test tests/alert_lifecycle_test.cpp)
     target_link_libraries(alert-lifecycle-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid view_snapshot_pending session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline
-        criterion_text_prefix criterion_text_suffix criterion_text_alternative criterion_text_miss criterion_regex_miss criterion_image criterion_problem_true criterion_problem_false
+        criterion_text_prefix criterion_text_suffix criterion_text_alternative criterion_text_miss criterion_regex_miss criterion_image criterion_problem_true criterion_problem_false criterion_activity_true criterion_activity_false
         criterion_numeric_gt_miss criterion_numeric_gte criterion_numeric_lte criterion_numeric_exact criterion_multi_exact criterion_age_minutes criterion_age_missing criterion_p95 criterion_outlier
         reuse_age_forward reuse_age_backward reuse_freshness_expiry reuse_clock_back reuse_notifications reuse_catalog)
         add_test(NAME native.alert_lifecycle.${scenario} COMMAND alert-lifecycle-test ${scenario})
@@ -1002,6 +1028,7 @@ if(BUILD_TESTING)
     foreach(scenario
         session_tabs_controls
         radar_map_glyph radar_map_glyph_reuse radar_map_theme radar_map_zoom
+        radar_overlay_navigation radar_map_overlay_navigation radar_quick_info radar_map_quick_info
         radar_info_panel radar_map_info_panel radar_label_contrast radar_map_label_contrast
         radar_info_panel_phone radar_info_panel_landscape radar_map_info_panel_phone radar_map_info_panel_landscape
         radar_info_panel_short_landscape radar_map_info_panel_short_landscape
@@ -1014,6 +1041,10 @@ if(BUILD_TESTING)
             string(TOLOWER ${style} style_id)
             add_test(NAME native.ui.${scenario}_${style_id} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style_id} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
+            if(scenario MATCHES "^radar(_map)?_info_panel")
+                set_tests_properties(native.ui.${scenario}_${style_id} PROPERTIES
+                    FAIL_REGULAR_EXPRESSION "Binding loop detected for property \"hasDetails\"")
+            endif()
             if(scenario MATCHES "^(radar_map_theme|radar_label_contrast|radar_map_label_contrast)$")
                 set_tests_properties(native.ui.${scenario}_${style_id} PROPERTIES RUN_SERIAL TRUE)
             endif()

@@ -8,7 +8,8 @@ apk=$1
 source=$2
 out=$3
 adbPort=5039
-consolePort=5584
+# Stay outside another ADB server's default emulator scan (ending at 5585).
+consolePort=5680
 serial="emulator-$consolePort"
 case "${PODLORD_ANDROID_ADB_TRACE:-0}" in
   0) adbTrace="" ;;
@@ -32,7 +33,7 @@ mkdir "$out"
 [ "$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$out/badging.txt")" = "berlin.yuna.podlord" ] || { printf 'Unexpected APK identity.\n' >&2; exit 2; }
 mkdir -p "$HOME/.cache/podlord"
 tmp=$(mktemp -d "$HOME/.cache/podlord/private-android-release.XXXXXX")
-export ANDROID_SDK_ROOT="$sdk" ANDROID_HOME="$sdk" ANDROID_USER_HOME="$tmp/user" ANDROID_EMULATOR_HOME="$tmp/emulator" ANDROID_AVD_HOME="$tmp/avd" ANDROID_ADB_SERVER_PORT="$adbPort" ADB_LOCAL_TRANSPORT_MAX_PORT=0 ADB_MDNS_AUTO_CONNECT=0
+export ANDROID_SDK_ROOT="$sdk" ANDROID_HOME="$sdk" ANDROID_USER_HOME="$tmp/user" ANDROID_EMULATOR_HOME="$tmp/emulator" ANDROID_AVD_HOME="$tmp/avd" ANDROID_ADB_SERVER_PORT="$adbPort" ADB_SERVER_SOCKET="tcp:localhost:$adbPort" ADB_LOCAL_TRANSPORT_MAX_PORT=0 ADB_MDNS_AUTO_CONNECT=0
 if [ -n "${JAVA_HOME:-}" ]; then PATH="$JAVA_HOME/bin:$PATH"; export PATH; fi
 mkdir -p "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME"
 name="podlord-private-$(basename "$tmp" | tr '[:upper:]' '[:lower:]')"
@@ -40,7 +41,13 @@ emupid=""
 adbpid=""
 adb() {
   if [ -z "$adbpid" ] || ! kill -0 "$adbpid" 2>/dev/null; then printf 'Owned private ADB server is not running\n' >&2; return 1; fi
-  ADB_TRACE= "$sdk/platform-tools/adb" -P "$adbPort" -s "$serial" "$@"
+  node - "$sdk/platform-tools/adb" "$adbPort" "$serial" "$@" <<'ADB_COMMAND'
+const cp=require('node:child_process');
+const [adb,port,serial,...args]=process.argv.slice(2);
+const result=cp.spawnSync(adb,['-P',port,'-s',serial,...args],{stdio:'inherit',timeout:30000,killSignal:'SIGKILL',env:{...process.env,ADB_TRACE:''}});
+if(result.error)console.error('ADB command failed: '+result.error.message);
+process.exitCode=result.status??1;
+ADB_COMMAND
 }
 cleanup() {
   result=$?
@@ -48,9 +55,23 @@ cleanup() {
   cleanupFailed=0
   trap - 0
   if [ -n "$emupid" ]; then
-    adb logcat -b crash -d > "$out/crash-logcat.txt" 2>&1 || :
-    adb logcat -d --pid="$(cat "$out/product-pid.txt" 2>/dev/null)" > "$out/product-final-logcat.txt" 2>&1 || :
-    adb emu kill > "$out/emulator-stop.log" 2>&1 || :
+    node - "$out" "$sdk/platform-tools/adb" "$adbPort" "$serial" "$adbpid" <<'CLEANUP_LOGS' || :
+const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');
+const [out,adb,port,serial,serverPid]=process.argv.slice(2);
+const commands=[['crash-logcat.txt',['logcat','-b','crash','-d']]];
+const pidFile=path.join(out,'product-pid.txt');
+const pid=fs.existsSync(pidFile)?fs.readFileSync(pidFile,'utf8').trim():'';
+if(/^\d+$/.test(pid))commands.push(['product-final-logcat.txt',['logcat','-d','--pid='+pid]]);
+commands.push(['emulator-stop.log',['emu','kill']]);
+for(const [name,args] of commands){
+  try{process.kill(Number(serverPid),0);}catch{break;}
+  const log=fs.openSync(path.join(out,name),'w');
+  try{
+    const result=cp.spawnSync(adb,['-P',port,'-s',serial,...args],{stdio:['ignore',log,log],timeout:5000,killSignal:'SIGKILL',env:{...process.env,ADB_TRACE:''}});
+    if(result.error)fs.writeSync(log,'\n'+result.error.message+'\n');
+  }finally{fs.closeSync(log);}
+}
+CLEANUP_LOGS
   fi
   for ownedpid in "$emupid" "$adbpid"; do
     [ -n "$ownedpid" ] || continue
@@ -85,7 +106,11 @@ for attempt in $(seq 1 10); do
   sleep 1
 done
 if [ "$adbready" != 1 ]; then printf 'Owned private ADB server did not listen\n' >&2; exit 1; fi
-"$sdk/emulator/emulator" -avd "$name" -port "$consolePort" -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader -memory 2048 -cores 4 > "$out/emulator.log" 2>&1 &
+set --
+if [ -n "$adbTrace" ]; then
+  set -- -logcat 'adbd:D lmkd:I AndroidRuntime:E ActivityManager:W *:S'
+fi
+"$sdk/emulator/emulator" -avd "$name" -port "$consolePort" -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader -memory 2048 -cores 4 "$@" > "$out/emulator.log" 2>&1 &
 emupid=$!
 ready=0
 for attempt in $(seq 1 90); do
@@ -103,6 +128,10 @@ adb shell am start -W -n "berlin.yuna.podlord/$activity" > "$out/startup.txt"
 adb shell pidof berlin.yuna.podlord > "$out/product-pid.txt"
 adb root > "$out/adb-root-ingress.txt" 2>&1
 adb wait-for-device
+if [ -n "$adbTrace" ]; then
+  adb logcat -G 16M
+  adb logcat -g > "$out/logcat-buffer.txt"
+fi
 [ -f "$source" ]
 node - "$source" "$tmp/emulator-kubeconfig" <<'CONFIG'
 const fs=require('node:fs'),text=fs.readFileSync(process.argv[2],'utf8');
@@ -134,6 +163,8 @@ const sourceOnly=process.env.PODLORD_ANDROID_SOURCE_ONLY||'0';
 if(!['0','1'].includes(sourceOnly)||(sourceOnly==='1'&&(inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single Sources diagnostic mode');
 const mapRoundtrip=process.env.PODLORD_ANDROID_MAP_ROUNDTRIP||'0';
 if(!['0','1'].includes(mapRoundtrip)||(mapRoundtrip==='1'&&(sourceOnly==='1'||inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single map roundtrip diagnostic mode');
+const mapOnly=process.env.PODLORD_ANDROID_MAP_ONLY||'0';
+if(!['0','1'].includes(mapOnly)||(mapOnly==='1'&&mapRoundtrip!=='1'))throw Error('Map-only diagnostics require the map roundtrip mode');
 const fixture=process.env.PODLORD_ANDROID_FIXTURE_CONTAINER||'';
 if(mapRoundtrip==='1'&&(!/^podlord-visual-run-[a-z0-9]+$/.test(fixture)||process.env.PODLORD_KUBERNETES_METADATA_AUDIT!=='1'||!/^unix:\/\//.test(process.env.DOCKER_HOST||'')))throw Error('Map roundtrip requires its owned local Metadata-audited fixture');
 let firstCommandFailure=false,lastSuccessfulUiAt=null;
@@ -145,6 +176,7 @@ const runAdb=(args,encoding='utf8')=>{
   return cp.execFileSync(adb,[...serial,...args],{encoding,timeout:30000,maxBuffer:4000000,env:adbEnvironment,...(adbClientStderr===null?{}:{stdio:['ignore','pipe',adbClientStderr]})});
  }
  catch(error){
+  const observe=(!firstCommandFailure&&error.status===255)&&((args[0]==='shell'&&args[1]==='cat'&&args[2]==='/sdcard/podlord-journey.xml')||(args[0]==='shell'&&args[1]==='uiautomator'&&args[2]==='dump')||(args[0]==='exec-out'&&args[1]==='screencap'));
   if(!firstCommandFailure){
    firstCommandFailure=true;
    try{
@@ -164,6 +196,18 @@ const runAdb=(args,encoding='utf8')=>{
     fs.writeFileSync(path.join(out,'first-adb-failure.json'),JSON.stringify(failure,null,2)+'\n');
    }catch(diagnosticError){console.error('First ADB failure diagnostics unavailable: '+String(diagnosticError));}
   }
+  if(observe){
+   const recovery={status:'failed',command:args,scope:'One read-only observation retry on the owned private ADB server. Input, import, root and write commands are never replayed.'};
+   try{
+    process.kill(Number(emulatorPid),0);process.kill(Number(adbServerPid),0);
+    const options={encoding:'utf8',timeout:10000,maxBuffer:1000000,env:adbEnvironment};
+    const devices=cp.execFileSync(adb,['-P',port,'devices'],options).trim().split('\n').slice(1).filter(Boolean).map(line=>line.trim().split(/\s+/)[0]);
+    if(devices.some(serial=>serial!==device))throw Error('Foreign transport on private server; recovery refused');
+    cp.execFileSync(adb,['-P',port,'reconnect','offline'],options);
+    cp.execFileSync(adb,[...serial,'wait-for-device'],options);
+    const value=runAdb(args,encoding);recovery.status='recovered';fs.writeFileSync(path.join(out,'transport-recovery.json'),JSON.stringify(recovery)+'\n');return value;
+   }catch(retryError){recovery.error=retryError.code||retryError.status||'observation failed';fs.writeFileSync(path.join(out,'transport-recovery.json'),JSON.stringify(recovery)+'\n');}
+  }
   throw error;
  }
 };
@@ -172,7 +216,7 @@ const decode=s=>s.replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('
 const parseNodes=xml=>[...xml.matchAll(/<node\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/g)].map(m=>Object.fromEntries([...m[0].matchAll(/([\w-]+)=(["'])([\s\S]*?)\2/g)].map(a=>[a[1],decode(a[3])])));
 require('node:assert/strict').deepEqual(parseNodes(`<node text='key: "value > other" &amp; &apos;' resource-id="yaml"/><node text="&amp;lt;"/>`),[{text:`key: "value > other" & '`, 'resource-id':'yaml'},{text:'&lt;'}]);
 require('node:assert/strict').equal(decode('&#10;&#13;&#9;&amp;#10;'),'\n\r\t&#10;');
-let xml='',nodes=[];const steps=[];
+let xml='',nodes=[];const steps=[],journeyFailures=[];
 function state(){
  run('wait-for-device');run('shell','uiautomator','dump','/sdcard/podlord-journey.xml');
  xml=run('shell','cat','/sdcard/podlord-journey.xml');
@@ -181,7 +225,7 @@ function state(){
 function target(id){
  let scrolled=false;
  const bounds=n=>n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
- for(let attempt=0;attempt<8;attempt++){
+ for(let attempt=0;attempt<=8;attempt++){
   const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
     const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.ResourceSidebar_');
     const inspector=/\.(workspaceInspector|sourceInspector)\./.test(n['resource-id']||'');
@@ -191,23 +235,27 @@ function target(id){
   })());
   if(n){if(!scrolled)return n;const before=n.bounds;state();const stable=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
   const nav=/WorkspaceButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
+  if(attempt===8)break;
   const current=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
   const inspector=/\.(workspaceInspector|sourceInspector)\./.test(current?.['resource-id']||'');
   const settings=/^inline/.test(id)||current?.['resource-id']?.includes('.settingsContent.');
   const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>/\.(workspaceInspector|sourceInspector)$/.test(n['resource-id']||'')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
   const b=bounds(host);if(!b)break;
-  const x=inspector||settings?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
-  const reverse=id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
-  run('shell','input','swipe',String(x),String(reverse?b[1]+12:b[3]-12),String(x),String(reverse?b[3]-12:b[1]+12),'350');scrolled=true;state();
+  const x=settings?Math.floor((b[0]+b[2])/2):inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
+  const firstVisible=settings?nodes.findIndex(n=>n['resource-id']?.startsWith(host['resource-id']+'.')&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
+  const reverse=settings&&current&&firstVisible>=0?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
+  const inset=settings?4:12;
+  run('shell','input','swipe',String(x),String(reverse?b[1]+inset:b[3]-inset),String(x),String(reverse?b[3]-inset:b[1]+inset),settings?'150':'350');scrolled=true;state();
+  if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
  capture('unreachable-'+id);throw Error('Public UI target unavailable after scrolling: '+id);
 }
 function tap(n){const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);if(b[2]<=b[0]||b[3]<=b[1])throw Error('Target outside viewport');const point=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];run('shell','input','tap',...point.map(String));state();const after=nodes.find(x=>x['resource-id']===n['resource-id']);fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({id:n['resource-id'],bounds:n.bounds,point,beforeChecked:n.checked,afterBounds:after?.bounds,afterChecked:after?.checked,focused:nodes.filter(x=>x.focused==='true').map(x=>({id:x['resource-id'],text:x.text,description:x['content-desc']}))})+'\n');}
 function click(id){tap(target(id));}
 function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
-function completeJourney(){fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',mode:sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; not all mobile features or live cloud OAuth',steps},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:'passed',resources:count,steps:steps.length}));}
+function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; map-only diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
 process.on('uncaughtException',error=>{
- fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,error:String(error)},null,2)+'\n');
+ fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,failures:journeyFailures,error:String(error)},null,2)+'\n');
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
  const pid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
  const diagnostics=[['crash-logcat',['logcat','-b','crash','-d']],['system-logcat',['logcat','-b','all','-d','-t','2000']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
@@ -253,7 +301,18 @@ if(coldInspectorCycles){
  steps.push({step:'First inspector opening after process restart and explicit context loading',cycles:coldInspectorCycles});
  completeJourney();process.exit(0);
 }
-if(mapRoundtrip==='1')mapTouchRoundtrip();
+if(mapRoundtrip==='1'){
+ try{mapTouchRoundtrip();}
+ catch(error){
+  journeyFailures.push({step:'Map touch roundtrip',error:String(error)});
+  console.error('Map touch roundtrip failed: '+String(error));
+  capture('map-roundtrip-failure');
+  const resources=nodes.find(n=>n['resource-id']?.endsWith('.resourcesWorkspaceButton')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
+  if(!resources)throw error;
+  click('resourcesWorkspaceButton');search('');
+ }
+ if(mapOnly==='1'){completeJourney();process.exit(journeyFailures.length?1:0);}
+}
 terminalJourney();
 search('');steps.push({step:'Landscape search remains above the real soft keyboard and restores navigation after dismissal'});
 const miniRadar=target('resourceRadar').bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
@@ -304,7 +363,7 @@ function inputAboveKeyboard(ids,name){
 function search(value){
  state();if(!nodes.some(n=>n['resource-id']?.endsWith('.resourceFilter')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]'))click('workspaceSearchButton');
  click('resourceFilter');inputAboveKeyboard(['resourceFilter'],'search-open');run('shell','input','keyevent','123',...Array(64).fill('67'));
- if(value)run('shell','input','text',value);
+ if(value)run('shell','input','text',"'"+value.replaceAll("'","'\\''")+"'");
  run('shell','input','keyevent','4');state();click('workspaceSearchButton');
 }
 function describe(id){const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));return n?[n.text,n['content-desc']].filter(Boolean).join('\n'):'';}
@@ -317,10 +376,10 @@ function mapTouchRoundtrip(){
  const counter=label=>{
   const owner=cp.execFileSync('docker',['inspect','--type','container',fixture,'--format','{{index .Config.Labels "podlord.native.e2e"}}'],{encoding:'utf8',timeout:10000,maxBuffer:1000000}).trim();
   assert.equal(owner,fixture,'Only the owned fixture audit may be read');
-  const script=`awk '/"stage":"RequestReceived"/ && /"username":"system:admin"/ { n++ } END { print n+0 }' /var/log/podlord-metadata-audit.jsonl`;
-  const count=Number(cp.execFileSync('docker',['exec',fixture,'/bin/sh','-c',script],{encoding:'utf8',timeout:10000,maxBuffer:1000000}).trim());
-  assert.ok(Number.isSafeInteger(count)&&count>0,'Metadata audit must contain actual admin API requests');
-  const result={label,at:new Date().toISOString(),count,scope:'Owned fixture system:admin RequestReceived events; blocking Metadata audit, no request bodies'};
+  const script=`awk '/"stage":"RequestReceived"/ && /"username":"system:admin"/ { n++; if (/"userAgent":"Mozilla/) { qt++; if (/"verb":"(create|update|patch|delete|deletecollection)"/) writes++ } } END { print n+0,qt+0,writes+0 }' /var/log/podlord-metadata-audit.jsonl`;
+  const [count,nativeRequests,nativeWrites]=cp.execFileSync('docker',['exec',fixture,'/bin/sh','-c',script],{encoding:'utf8',timeout:10000,maxBuffer:1000000}).trim().split(/\s+/).map(Number);
+  assert.ok(Number.isSafeInteger(count)&&count>0&&Number.isSafeInteger(nativeRequests)&&nativeRequests>0&&Number.isSafeInteger(nativeWrites)&&nativeWrites>=0,'Metadata audit must identify actual native Qt requests');
+  const result={label,at:new Date().toISOString(),count,nativeRequests,nativeWrites,scope:'Owned system:admin Metadata events; native Qt Mozilla actor identified. Read totals include passive synchronization and are diagnostic, not a causal UI admission count. No request bodies.'};
   fs.appendFileSync(path.join(out,'map-request-counts.jsonl'),JSON.stringify(result)+'\n');return result;
  };
  const image=file=>{
@@ -340,7 +399,17 @@ function mapTouchRoundtrip(){
  waitNode('inlineRadarWaterEnabled',n=>n.checked==='false');
  if(target('inlineReducedMotion').checked!=='true')click('inlineReducedMotion');
  waitNode('inlineReducedMotion',n=>n.checked==='true');capture('roundtrip-frozen-settings');
- click('resourcesWorkspaceButton');search('visual-config-0001');click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)==='visual-config-0001');capture('roundtrip-query-before');click('workspaceSearchButton');
+ const mapResourceQuery='"visual-config-0001"';
+ click('resourcesWorkspaceButton');search(mapResourceQuery);click('workspaceSearchButton');
+ waitNode('resourceFilter',n=>value(n)===mapResourceQuery);
+ run('shell','input','keyevent','122');run('shell','input','text','x');state();
+ waitNode('resourceFilter',n=>value(n)==='x'+mapResourceQuery);
+ run('shell','input','keyevent','123');run('shell','input','text','z');state();
+ waitNode('resourceFilter',n=>value(n)==='x'+mapResourceQuery+'z');
+ run('shell','input','keyevent','123','67','122','112');state();
+ waitNode('resourceFilter',n=>value(n)===mapResourceQuery);
+ steps.push({step:'Native Android Home and End preserve Qt search editing'});capture('roundtrip-query-before');
+ run('shell','input','keyevent','4');state();click('workspaceSearchButton');
  click('mapWorkspaceButton');waitNode('resourceRadar',n=>rect(n)[2]>rect(n)[0]&&rect(n)[3]>rect(n)[1]);
  click('resetRadar');const resetZoom=zoom();
  for(let i=0;i<16&&zoom()<25;i++)click('radarZoom');
@@ -358,14 +427,27 @@ function mapTouchRoundtrip(){
  capture('roundtrip-map-selection-setup');const initial=image('roundtrip-map-selection-setup'),b=rect(target('resourceRadar'));let waterPoint=null;
  for(let y=b[1]+2;y<b[3]-2&&!waterPoint;y++)for(let x=b[0]+2;x<b[2]-2;x++)if(['061621','071621'].includes(initial.rgb(x,y))){waterPoint=[x,y];break;}
  assert.ok(waterPoint,'Focus the real radar through visible water, not a hidden getter');run('shell','input','tap',...waterPoint.map(String));state();run('shell','input','keyevent','122');state();waitNode('radarInfoText',n=>value(n).includes('visual-config-0001'));
+ const selection={title:value(find('radarInfoText')),namespace:value(target('radarInfoNamespace'))};
+ assert.equal(selection.title,'ConfigMap visual-config-0001');assert.ok(selection.namespace&&selection.namespace!=='Cluster-scoped');
+ click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));
+ steps.push({step:'Native radar Home reveals the real ConfigMap and touch X closes its details'});
  click('radarZoom');click('radarZoomOut');waitNode('syncStatus',n=>/Synced:/i.test(value(n)));
- const snapshot=name=>{const scene=rect(target('resourceRadar')),selected=value(find('radarInfoText')),matches=value(find('resourceMatchCount')),percent=zoom();assert.ok(selected.includes('visual-config-0001'),'A real selected resource must remain publicly visible');capture(name);const pixels=image(name).crop(scene);return {bounds:scene,selected,matches,zoomPercent:percent,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
+ const snapshot=name=>{const scene=rect(target('resourceRadar')),navigation=rect(target('radarNavigationOverlay')),matches=value(find('resourceMatchCount')),percent=zoom();const canvas=[scene[0]+2,Math.max(scene[1]+2,navigation[3]+8),scene[2]-2,scene[3]-2];assert.ok(canvas[3]-canvas[1]>=16,'A nonempty terrain area must remain below navigation');capture(name);const pixels=image(name).crop(canvas);return {bounds:scene,canvas,matches,zoomPercent:percent,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
  const before=snapshot('map-filter-before'),requestBefore=counter('before');
  click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(zoom(),before.zoomPercent,'Opening filters must retain visible zoom');assert.equal(value(find('resourceMatchCount')),before.matches,'Opening filters must retain matches');
  click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='false');const after=snapshot('map-filter-closed'),requestClosed=counter('closed');
- assert.deepEqual(after.bounds,before.bounds);assert.equal(after.zoomPercent,before.zoomPercent);assert.equal(after.matches,before.matches);assert.equal(after.selected,before.selected);assert.equal(after.sha256,before.sha256,'Frozen public radar pixels must roundtrip exactly');assert.equal(requestOpen.count,requestBefore.count,'Opening filters must issue zero admin API requests');assert.equal(requestClosed.count,requestBefore.count,'Closing filters must issue zero admin API requests');
- click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)==='visual-config-0001');capture('roundtrip-query-after');click('workspaceSearchButton');const requestAfterQuery=counter('after-query-verification');assert.equal(requestAfterQuery.count,requestBefore.count);
- const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt 6.11.2 JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:'visual-config-0001',motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Public pixels/zoom/filter/selection roundtrip, not inaccessible exact Qt camera getters; disabled Back/Forward are not activated'};
+ assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.zoomPercent,before.zoomPercent);assert.equal(after.matches,before.matches);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
+ click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)===mapResourceQuery);capture('roundtrip-query-after');run('shell','input','keyevent','4');state();click('workspaceSearchButton');const requestAfterQuery=counter('after-query-verification');assert.equal(requestAfterQuery.nativeWrites,0);
+ if(find('radarInfoText')){click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));}
+ const finalFrame=image('map-filter-closed');let finalWater=null;
+ for(let y=after.canvas[1];y<after.canvas[3]&&!finalWater;y++)for(let x=after.canvas[0]+6;x<after.canvas[2]-6;x++)if(['061621','071621'].includes(finalFrame.rgb(x,y))){finalWater=[x,y];break;}
+ assert.ok(finalWater,'Refocus on water without Home/End reselection or recentering');run('shell','input','tap',...finalWater.map(String));state();
+ waitNode('resourceRadar',n=>n.focused==='true');capture('roundtrip-before-enter');
+ run('shell','input','keyevent','66');state();
+ waitNode('inspectorResourceName',n=>value(n).includes('ConfigMap/visual-config-0001'));click('yamlButton');
+ waitNode('inspectorYaml',n=>value(n).split('\n').some(line=>line.trim()==='namespace: '+selection.namespace));
+ capture('roundtrip-retained-selection');click('closeInspector');
+ const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt 6.11.2 JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},selection:{...selection,verifiedAfter:'Native Enter after water focus opens the same kind/name/namespace, without Home/End reselection'},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:mapResourceQuery,motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Terrain pixels, public zoom/filter and retained selection; no private camera getters. Passive read totals remain diagnostic. Cache-only admission is separately asserted by the real_search/real_map HTTP-boundary scenarios. Inspector is explicitly opened only after the filter audit. Disabled Back/Forward are not activated.'};
  fs.writeFileSync(path.join(out,'touch-roundtrip.json'),JSON.stringify(report,null,2)+'\n');
  click('resourcesWorkspaceButton');search('');
 }

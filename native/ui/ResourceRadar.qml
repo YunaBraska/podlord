@@ -12,22 +12,26 @@ Pane {
     property bool expanded: false
     readonly property Item navigationHost: navigationSlot
     readonly property bool shortLandscape: Window.window && Window.window.width > Window.window.height && Window.window.height < 500
-    readonly property bool detailsBeside: shortLandscape || expanded && availableWidth >= 840
-    readonly property real infoPanelHeight: detailsBeside ? 0 : expanded ? Math.min(160, Math.max(44, availableHeight / 3)) : Window.window && Window.window.height < 500 ? 44 : 112
+    property Item detailsHost: null
     readonly property int count: workspace.resourceCount
     readonly property int navigationIndex: grid.currentIndex
     function navigateRows(offset) {
         if (count === 0) return
         const row = offset === 0 ? 0 : navigationIndex < 0 ? (offset < 0 ? count - 1 : 0) : (navigationIndex + offset + count) % count
-        grid.selectResource(row); grid.focusResource(row)
+        if (grid.selectResource(row) && grid.focusResource(row)) radarInfo.showInfo(focusTarget)
     }
     padding: compact ? 4 : 12
     function focusRadar() { grid.forceActiveFocus() }
+    function dismissInfo() {
+        if (radarPane.visible && grid.renderActive) radarNavigation.forceActiveFocus()
+        if (infoPopup) infoPopup.close()
+        if (radarInfo) radarInfo.showInfo(null)
+    }
     function capturePreview(session) {
         if (!workspace.mapPreviewNeeded) return
         Qt.callLater(function() { if (radarPane.visible && workspace.mapPreviewNeeded) workspace.captureMapPreview(session, grid.previewImage()) })
     }
-    onVisibleChanged: if (visible) capturePreview(workspace.currentSession)
+    onVisibleChanged: if (visible) capturePreview(workspace.currentSession); else dismissInfo()
     Connections { target: workspace; function onMapPreviewRequested(session) { radarPane.capturePreview(session) } }
     function focusPath(path, percent) {
         const index = workspace.alertResourceIndex(path)
@@ -39,20 +43,40 @@ Pane {
     }
     background: Rectangle { color: workspace.appearanceColors.radarGlass; border.color: workspace.appearanceColors.border }
     contentItem: ColumnLayout {
-        RowLayout {
-            Layout.fillWidth: true
-            Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
-            RowLayout {
-                id: navigationSlot
-                Layout.fillWidth: true
-                visible: children.length > 0
+        ToolBar {
+            id: radarNavigation
+            objectName: "radarNavigationOverlay"
+            parent: grid
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            z: 4
+            padding: 4
+            background: Rectangle {
+                color: workspace.appearanceColors.radarGlass
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: event => event.accepted = true }
             }
-            IconButton { objectName: "radarWorkspaceButton"; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
-            Item { Layout.fillWidth: true; visible: !navigationSlot.visible }
-            IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
-            Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }
-            IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
-            IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetCamera() }
+            contentItem: GridLayout {
+                columns: navigationSlot.visible && radarNavigation.width >= 480 ? 2 : 1
+                columnSpacing: 4
+                rowSpacing: 4
+                RowLayout {
+                    id: navigationSlot
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    visible: radarPane.expanded && children.length > 0
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
+                    IconButton { objectName: "radarWorkspaceButton"; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
+                    Item { Layout.fillWidth: true }
+                    IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
+                    Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }
+                    IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
+                    IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetCamera() }
+                }
+            }
         }
         RowLayout {
             Layout.fillWidth: true
@@ -90,17 +114,13 @@ Pane {
                 Accessible.name: text
             }
         }
-        GridLayout {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            columns: radarPane.detailsBeside ? 2 : 1
-            columnSpacing: 8
-            rowSpacing: 6
             RadarIsland {
                 id: grid
                 objectName: "resourceRadar"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.fill: parent
                 source: workspace.table
                 alerts: workspace.alerts
                 glyphFill: workspace.appearanceColors.inset
@@ -149,7 +169,7 @@ Pane {
                         selectResource(-1)
                         hoveredResourcePath = ""
                         hoverTarget.resourcePath = ""
-                        radarInfo.target = null
+                        radarInfo.showInfo(null)
                     }
                     shownSession = workspace.currentSession
                     if (workspace.radarView.zoom !== undefined) viewPose = workspace.radarView
@@ -178,6 +198,7 @@ Pane {
                     }
                 }
                 Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Escape && infoPopup.visible) { radarPane.dismissInfo(); event.accepted = true; return }
                     if (event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) return
                     if (event.key === Qt.Key_Left || event.key === Qt.Key_A) pan(24, 0)
                     else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) pan(-24, 0)
@@ -186,8 +207,8 @@ Pane {
                     else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) zoomAt(1.18, width/2, height/2)
                     else if (event.key === Qt.Key_Minus) zoomAt(1/1.18, width/2, height/2)
                     else if (event.key === Qt.Key_0) resetView()
-                    else if (event.key === Qt.Key_Home) focusResource(count > 0 ? 0 : -1)
-                    else if (event.key === Qt.Key_End) focusResource(count - 1)
+                    else if (event.key === Qt.Key_Home) { if (focusResource(count > 0 ? 0 : -1)) radarInfo.showInfo(focusTarget) }
+                    else if (event.key === Qt.Key_End) { if (focusResource(count - 1)) radarInfo.showInfo(focusTarget) }
                     else return
                     rememberPosition()
                     event.accepted = true
@@ -310,11 +331,18 @@ Pane {
                     Accessible.description: detailsNeeded ? (resourcePath === grid.inspectedPath ? "Selected resource" : "Open resource in inspector") : ""
                     readonly property bool wantsInfo: inViewport && (hovered || activeFocus || (keyboardTarget && grid.activeFocus && grid.currentIndex === resourceIndex))
                     onWantsInfoChanged: {
-                        if (wantsInfo) radarInfo.target=tile
+                        // Finish visibility evaluation before the reader observes this target.
+                        if (wantsInfo && radarInfo.target !== tile) {
+                            radarInfo.pendingTarget = tile
+                            Qt.callLater(radarInfo.showPendingInfo)
+                        }
                         if (radarInfo.target===tile) Qt.callLater(radarInfo.syncTarget)
                     }
                     onInViewportChanged: if (radarInfo.target===tile) Qt.callLater(radarInfo.syncTarget)
-                    Component.onDestruction: if (radarInfo.target===tile) radarInfo.target=null
+                    Component.onDestruction: if (radarInfo) {
+                        if (radarInfo.pendingTarget === tile) radarInfo.pendingTarget = null
+                        if (radarInfo.target === tile) radarInfo.target = null
+                    }
                     Keys.onTabPressed: function(event) {
                         const backwards = (event.modifiers & Qt.ShiftModifier) !== 0
                         event.accepted = !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) && grid.traverseVisible(backwards ? -1 : 1)
@@ -336,8 +364,9 @@ Pane {
                 ResourceTarget { id: hoverTarget; objectName: "radarHoverTarget" }
                 Label {
                     objectName: "emptyRadar"
-                    anchors.centerIn: parent
-                    visible: grid.count === 0 && grid.height >= implicitHeight + 8
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: radarNavigation.height + (grid.height - radarNavigation.height - height) / 2
+                    visible: grid.count === 0 && grid.height - radarNavigation.height >= implicitHeight + 8
                     width: Math.min(320, parent.width - 24)
                     text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources. Cached resources appear as they arrive." : "No resources match. Reset the filters to see the available cache."
                     textFormat: Text.PlainText
@@ -345,70 +374,175 @@ Pane {
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
-            Pane {
-                id: radarInfo
-                objectName: "radarInfoPanel"
-                property var target: null
-                readonly property bool hasDetails: !!target && target.visible && target.inViewport
-                function syncTarget() {
-                    if (target && (!target.visible || !target.inViewport)) target = null
+            Popup {
+                id: infoPopup
+                objectName: "radarInfoPopup"
+                parent: radarPane.detailsHost ?? grid
+                popupType: Popup.Item
+                padding: 0
+                margins: 0
+                modal: false
+                dim: false
+                focus: false
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                background: null
+                readonly property point radarPosition: {
+                    radarPane.width; grid.width; grid.height
+                    if (!radarPane.Window.window) return Qt.point(0, 0)
+                    radarPane.Window.window.width; radarPane.Window.window.height
+                    return grid.mapToItem(radarPane.Window.window.contentItem, 0, 0)
                 }
-                onTargetChanged: Qt.callLater(syncTarget)
-                Layout.fillWidth: !radarPane.detailsBeside
-                Layout.minimumWidth: radarPane.detailsBeside && !radarPane.shortLandscape ? 200 : 0
-                Layout.preferredWidth: radarPane.detailsBeside ? Math.min(320, radarPane.availableWidth * (radarPane.shortLandscape ? 0.42 : 0.32)) : -1
-                Layout.fillHeight: radarPane.detailsBeside
-                Layout.preferredHeight: radarPane.detailsBeside ? -1 : radarPane.infoPanelHeight
-                padding: radarPane.shortLandscape ? 4 : 8
-                Accessible.role: Accessible.Grouping
-                Accessible.name: "Cached resource details"
-                background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }
-                contentItem: ScrollView {
-                    id: infoScroll
-                    objectName: "radarInfoScroll"
-                    contentWidth: availableWidth
-                    contentHeight: infoContents.implicitHeight
-                    activeFocusOnTab: radarInfo.hasDetails || activeFocus
-                    clip: true
-                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                    WheelHandler {
-                        target: null
-                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        onWheel: function(event) {
-                            const view = infoScroll.contentItem
-                            const delta = event.pixelDelta.y || event.angleDelta.y / 3
-                            if (view && delta) {
-                                view.cancelFlick()
-                                view.contentY = Math.max(0, Math.min(view.contentHeight - view.height, view.contentY - delta))
-                            }
-                            event.accepted = true
-                        }
+                readonly property real leftSpace: Math.max(0, radarPosition.x - 16)
+                readonly property real rightSpace: radarPane.Window.window ? Math.max(0, radarPane.Window.window.contentItem.width - radarPosition.x - grid.width - 16) : 0
+                readonly property bool adjacent: !radarPane.detailsHost && !radarPane.expanded && Math.max(leftSpace, rightSpace) >= 180
+                readonly property bool onLeft: leftSpace >= rightSpace
+                width: radarPane.detailsHost ? parent.width : adjacent ? Math.min(360, Math.max(leftSpace, rightSpace)) : Math.max(0, Math.min(360, parent.width - 16))
+                height: Math.max(0, Math.min(infoHeader.implicitHeight + infoLayout.spacing + infoContents.implicitHeight + radarInfo.topPadding + radarInfo.bottomPadding,
+                    radarPane.detailsHost ? parent.height : adjacent ? grid.height : Math.min(320,
+                        Math.max(grid.height * 0.45, infoHeader.implicitHeight + infoLayout.spacing + 24 + radarInfo.topPadding + radarInfo.bottomPadding),
+                        grid.height - radarNavigation.height - 8)))
+                x: radarPane.detailsHost ? 0 : adjacent ? (onLeft ? -width - 8 : grid.width + 8) : parent.width - width - 8
+                y: radarPane.detailsHost || adjacent ? 0 : parent.height - height - 8
+                visible: radarPane.visible && grid.renderActive && radarInfo.hasDetails && width > 0 && height > 0
+                onClosed: Qt.callLater(radarInfo.clearClosedTarget)
+                contentItem: Pane {
+                    id: radarInfo
+                    objectName: "radarInfoPanel"
+                    property var target: null
+                    property var pendingTarget: null
+                    readonly property bool hasDetails: !!target && target.visible && target.inViewport
+                    readonly property var resourceDetails: hasDetails && target.model.resourceDetails ? target.model.resourceDetails : ({})
+                    function showInfo(next) {
+                        pendingTarget = null
+                        target = next
                     }
-                    ColumnLayout {
-                        id: infoContents
-                        width: infoScroll.availableWidth
-                        spacing: 10
-                        Label {
-                            objectName: "radarInfoText"
+                    function showPendingInfo() {
+                        const next = pendingTarget
+                        pendingTarget = null
+                        if (next && next.wantsInfo) target = next
+                    }
+                    function syncTarget() {
+                        if (target && (!target.visible || !target.inViewport)) target = null
+                    }
+                    function clearClosedTarget() {
+                        if (infoPopup && !infoPopup.visible) showInfo(null)
+                    }
+                    onTargetChanged: Qt.callLater(syncTarget)
+                    padding: radarPane.shortLandscape ? 4 : 8
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: "Cached resource details"
+                    background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }
+                    contentItem: ColumnLayout {
+                        id: infoLayout
+                        spacing: 6
+                        RowLayout {
+                            id: infoHeader
                             Layout.fillWidth: true
-                            visible: radarInfo.hasDetails
-                            text: radarInfo.target ? radarInfo.target.text : ""
-                            textFormat: Text.PlainText
-                            wrapMode: Text.Wrap
-                            color: workspace.appearanceColors.text
-                            Accessible.name: text
+                            Label {
+                                objectName: "radarInfoText"
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                visible: radarInfo.hasDetails
+                                text: radarInfo.hasDetails ? radarInfo.target.model.resourceKind + " " + radarInfo.target.model.resourceName : ""
+                                font.bold: true
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                                color: workspace.appearanceColors.text
+                                Accessible.name: text
+                            }
+                            IconButton {
+                                objectName: "closeRadarInfo"
+                                glyph: "Close"
+                                text: workspace.uiText["action.close"]
+                                onClicked: radarPane.dismissInfo()
+                            }
                         }
-                        Label {
+                        ScrollView {
+                            id: infoScroll
+                            objectName: "radarInfoScroll"
                             Layout.fillWidth: true
-                            visible: !radarInfo.hasDetails
-                            text: "Hover or focus a resource."
-                            textFormat: Text.PlainText
-                            wrapMode: Text.Wrap
-                            color: workspace.appearanceColors.muted
-                        }
-                        Repeater {
-                            model: radarInfo.hasDetails ? radarInfo.target.resourceMetrics : []
-                            MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData }
+                            Layout.fillHeight: true
+                            Layout.minimumWidth: 0
+                            Layout.minimumHeight: 0
+                            contentWidth: availableWidth
+                            contentHeight: infoContents.implicitHeight
+                            activeFocusOnTab: radarInfo.hasDetails || activeFocus
+                            clip: true
+                            Keys.onEscapePressed: radarPane.dismissInfo()
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            WheelHandler {
+                                target: null
+                                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                                onWheel: function(event) {
+                                    const view = infoScroll.contentItem
+                                    const delta = event.pixelDelta.y || event.angleDelta.y / 3
+                                    if (view && delta) {
+                                        view.cancelFlick()
+                                        view.contentY = Math.max(0, Math.min(view.contentHeight - view.height, view.contentY - delta))
+                                    }
+                                    event.accepted = true
+                                }
+                            }
+                            ColumnLayout {
+                                id: infoContents
+                                width: infoScroll.availableWidth
+                                spacing: 6
+                                Label {
+                                    objectName: "radarInfoNamespace"
+                                    Layout.fillWidth: true
+                                    visible: radarInfo.hasDetails
+                                    text: radarInfo.hasDetails ? radarInfo.target.model.resourceNamespace || "Cluster-scoped" : ""
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                    color: workspace.appearanceColors.muted
+                                }
+                                Label {
+                                    objectName: "radarInfoStatus"
+                                    Layout.fillWidth: true
+                                    visible: radarInfo.hasDetails
+                                    text: radarInfo.hasDetails ? workspace.uiText["alert.field.status"] + ": " + radarInfo.target.model.resourceStatus : ""
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                    font.bold: true
+                                    color: radarInfo.hasDetails && radarInfo.target.model.statusColor ? radarInfo.target.model.statusColor : workspace.appearanceColors.text
+                                }
+                                Label {
+                                    objectName: "radarInfoIssue"
+                                    Layout.fillWidth: true
+                                    visible: radarInfo.hasDetails && !!radarInfo.resourceDetails.issue && radarInfo.resourceDetails.issue !== "-"
+                                    text: workspace.uiText["alert.field.issue"] + ": " + (radarInfo.resourceDetails.issue || "")
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                }
+                                Label {
+                                    objectName: "radarInfoReadiness"
+                                    Layout.fillWidth: true
+                                    visible: radarInfo.hasDetails && text !== ""
+                                    text: [radarInfo.resourceDetails.ready ? workspace.uiText["alert.field.ready"] + ": " + radarInfo.resourceDetails.ready : "",
+                                        radarInfo.resourceDetails.restarts !== undefined && radarInfo.resourceDetails.restarts !== null && radarInfo.resourceDetails.restarts !== ""
+                                            ? workspace.uiText["alert.field.restarts"] + ": " + radarInfo.resourceDetails.restarts : ""].filter(value => value !== "").join(" / ")
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                }
+                                Repeater {
+                                    model: radarInfo.hasDetails ? [{label: workspace.uiText["alert.field.node"], value: radarInfo.resourceDetails.node},
+                                        {label: workspace.uiText["alert.field.image"], value: radarInfo.resourceDetails.image}, {label: workspace.uiText["alert.field.owner"], value: radarInfo.resourceDetails.owner}]
+                                        .filter(entry => !!entry.value && entry.value !== "-") : []
+                                    Label {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        text: modelData.label + ": " + modelData.value
+                                        textFormat: Text.PlainText
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                                Repeater {
+                                    model: radarInfo.hasDetails ? radarInfo.target.resourceMetrics : []
+                                    MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData }
+                                }
+                            }
                         }
                     }
                 }

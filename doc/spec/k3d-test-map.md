@@ -7696,4 +7696,62 @@ The approved measurement-driver cleanup detaches only frame CPU observers before
 
 ### Remaining proof and confirmed next scope
 
-The four requested Inspector comparisons and the native dialog flows above are completed. Unresolved reference popups/tool results remain distinct from their passing automated native checks. Complete separate-window restoration was not delivered by the Quit correction: on 2026-11-03 the user clarified STR-002 to require owning tab groups, size and maximized state for each restored window. That implementation and its desktop/mobile restart evidence are the next package. Personal mobile GKE registration remains paused. None of these open items is covered by a blanket release-readiness claim.
+The four requested Inspector comparisons and the native dialog flows above are completed. Unresolved reference popups/tool results remain distinct from their passing automated native checks. The separate-window restoration and Radar follow-up below supersede the earlier implementation gaps, not their remaining installed-artifact evidence. Personal mobile GKE registration remains paused. None of these open items is covered by a blanket release-readiness claim.
+
+### 2026-11-04 separate-window restoration and Radar presentation follow-up
+
+Window restoration stores identities, existing session references, the active
+tab, normal geometry and maximized state in private, versioned
+`window-layout.json`. It does not duplicate session configuration or Kubernetes
+data. Background load/save uses atomic compare-and-save and the existing
+Stay/Close guard. Geometry signals update memory only. Restored membership is
+intersected with the open-session catalog. Restoration starts no authentication,
+requests, shells or forwards. Invalid or conflicting files are retained.
+
+Map/Radar navigation now overlays the drawing. The resource reader overlays
+filters or uses the approved no-space fallback, without reserving layout space.
+It presents cached type, name, namespace, status, issue, readiness/restarts,
+optional node/image/owner and existing measured/reference gauges. Title and X
+remain fixed while details scroll. Closing preserves camera and selection.
+
+Evidence is under the existing
+`inspector-dialog-review-20261103/awake-review-20261103` directory:
+
+| Boundary | Result and evidence | Remaining limit |
+|---|---|---|
+| Complete native suite | `final-frozen-silent-tests.log`: 5,463/5,463 pass in 1,213.84 seconds with eight workers before the final startup guard. The 5,465-case `post-start-race-silent-tests.log` rerun is in progress. Includes all 116 silent sound decodes. | Three audible device cases are deliberately excluded with `^native\.audio\.device_`. The later queued-Find correction has separate targeted evidence below. Style executions are not separate product features. |
+| Window/storage lifecycle | `window-pending-actions-green.log`: 199 related executions pass, including 86 WindowHost scenarios in Basic/Fusion and 27 storage cases. Four earlier signed Cocoa cases cover restore, offscreen placement, repeat restore and active-tab fallback. | Host recreation is not a fresh installed-app process. Installed restart and actual monitor changes remain open. |
+| Coverage | Before the final startup guard, `final-frozen-coverage.txt` reports 97.90% lines and 86.28% branches. Storage reaches 90.74% branches. The four new WindowHost methods reach 104/118 outcomes, 88.14%. Current-run coverage replay is pending. | The executable 90% new-method gate correctly rejects that result. No exception or threshold change is approved. This method-family audit is not a historical changed-line denominator. |
+| Search focus | `closed-search-focus-green-tests.log` passes 26 affected checks and `closed-search-queued-green-tests.log` four queued-open/close checks. Two additional Map Find/pointer regressions fail in `map-find-queued-ordered-red.log`. A shared guarded focus callback then passes 30 affected checks in `map-find-queued-green.log`. | QtTest drains events after key delivery, so preliminary tests that assumed otherwise are harness failures, not product reproductions. These corrections do not establish the cause of the separate Android Enter failure. |
+| Real Kubernetes | `final-frozen-real-kubernetes-e2e.log` passes shell, vi, control/interrupt, live window transfer, isolated forwards, deletion/race, Inspector history, search, metrics, health and cached field filters. `post-start-race-real-window-e2e.log` repeats the affected live transfer/terminal/forward boundary after the startup guard. | Local disposable TLS K3s only. No production-cluster claims. |
+| Native iOS resource reader | Twelve portrait and twelve actual SDK-landscape executions pass with unique child-success markers and empty stderr in the `ios-overlay-verified-*` evidence. | Simulator evidence, not a physical-device claim. |
+| Native iOS themes | `final-frozen-ios-theme-matrix` contains 798 captures across 19 themes, two variants and 21 views, with an exact child-success marker and no reported QML error. | Captured before the desktop-only startup guard and final queued-Find callback consolidation. Neither changes layout. Terminal captures show its ready form, not live PTY behavior. |
+| iOS TLS | `final-candidate-ios-trust.log`: 10/10 maintained SDK probes pass HTTPS/WSS rejection, installed system trust, wrong explicit CA, delayed verification and cancellation. | Simulated iOS runtime, not a live cloud login. |
+| Harness integrity | `final-visual-runner-contract-tests.log`: 31/31 checks pass. iOS runners now require an exact unique application success marker and reject explicit failures and QML errors. | `simctl launch` returning zero alone is not application success. |
+| Android installed APK | `android-overlay-runtime/final-frozen-complete-journey/journey.json`: 15 independent real-API steps pass, including PTY, logs, YAML guards and immutable source editing. | The complete journey fails at opening the selected Map resource with Enter after a long search sequence. A short native Enter journey succeeds. Cause remains unproven. |
+| macOS package | `post-start-race-macos-package.log`: dependency/runtime/notices and local package checks pass. ZIP is 33,828,038 bytes, installed app 87,590,188 bytes. | Before the final queued-Find correction. Ad-hoc local preflight only, not Store signing, notarization or submission. |
+| Allocation/idle diagnosis | Same-mode background Metal comparison after removing redundant alert-row copies/deadlines: RSS 305,987,584 to 297,435,136 bytes and idle CPU 2.14702% to 1.417986%. | Diagnostic only. The last valid foreground result still exceeds RSS/idle limits. A current active-window run remains required. |
+
+The Android Home/End bridge retains Qt's input path. An experimental Enter
+bridge and all temporary production input probes were removed after they failed
+to resolve the long journey. Search, camera and terrain checks do not substitute
+for the failing Inspector assertion. The same failure persists with an explicitly
+configured physical-keyboard AVD, separate physical press/release delivery and
+after disabling only that disposable guest's Gboard. Those negative diagnostics
+do not identify the owning cause. The current clean signed APK is 98,581,666 bytes
+and its single-APK private download ZIP is 37,434,463 bytes. A duplicate-APK
+diagnostic archive was rejected and rebuilt, not accepted by raising its limit.
+Qt's independently verified upstream
+QTBUG-144911 accessibility-thread fix is a known runtime risk, not an established
+cause of this Enter failure. No Qt fork or accessibility suppression was added.
+
+Owned local Kubernetes fixtures must run serially on this development VM. Two
+concurrent fixtures exhausted file watchers before app startup. These setup
+failures do not count as product results and no global VM limits were changed.
+An independent lifecycle review reproduced premature detachment during delayed
+layout loading in two styles. `window-detach-load-regression.kCcMUn` records the
+red and green public cases. The host now rejects that transfer, and the existing
+window-action readiness property keeps its controls disabled until restoration
+finishes. No extra readiness state or session registry was added.
+Foreground performance and installed-process restart remain blocked by desktop
+availability. Google registration remains paused. Release readiness is not met.

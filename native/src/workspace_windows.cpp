@@ -58,7 +58,7 @@ bool Workspace::windowActionsAvailable() const {
 }
 
 bool Workspace::sessionWindowActionsReady() const {
-    return windowActionsAvailable() && !windowClosed_ && !busy_ && !pendingLeave_ && !viewSaving_
+    return windowActionsAvailable() && runtime_->host->restorationReady() && !windowClosed_ && !busy_ && !pendingLeave_ && !viewSaving_
         && pendingViews_.isEmpty() && !viewStateFailed() && !presetsBusy_ && !tableLayoutSaving_;
 }
 

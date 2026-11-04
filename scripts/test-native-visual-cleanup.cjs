@@ -190,6 +190,92 @@ test('iOS theme review rejects a missing simulator app before Docker access', { 
     assert.doesNotMatch(result.output, /Only a local Docker daemon/);
 });
 
+async function iosCompletion(scenario) {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-ios-completion-'));
+    const app = path.join(directory, 'launcher-input.app');
+    const bin = path.join(directory, 'bin');
+    const data = path.join(directory, 'data');
+    const evidence = path.join(directory, 'evidence');
+    const trace = path.join(directory, 'simctl.jsonl');
+    const device = '00000000-0000-4000-8000-000000000001';
+    try {
+        await fs.mkdir(app);
+        await fs.mkdir(bin);
+        await fs.mkdir(path.join(data, 'Documents'), { recursive: true });
+        // Bundle metadata is CLI input only. No substitute product executable is created or run.
+        await fs.writeFile(path.join(app, 'Info.plist'), '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>berlin.yuna.podlord.tests</string></dict></plist>');
+        await fs.writeFile(path.join(bin, 'xcrun'), `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args.shift() !== 'simctl') process.exit(99);
+fs.appendFileSync(process.env.PODLORD_SIMCTL_TRACE, JSON.stringify(args) + '\\n');
+const action = args[0];
+if (action === 'create') { console.log('${device}'); process.exit(0); }
+if (action === 'get_app_container') { console.log(process.env.PODLORD_SIMCTL_DATA); process.exit(0); }
+if (['boot', 'bootstatus', 'install', 'terminate', 'shutdown', 'delete'].includes(action)) process.exit(0);
+if (action !== 'launch') process.exit(99);
+const launches = fs.readFileSync(process.env.PODLORD_SIMCTL_TRACE, 'utf8').trim().split('\\n').map(JSON.parse).filter(call => call[0] === 'launch').length;
+if (launches > 1) { console.error('Controlled second launch transport failure'); process.exit(9); }
+const name = args[4], expected = 'UI scenario passed: ' + name;
+console.log('System native HTTPS trust expected=0 actual=0 elapsed=0 error=6');
+const scenario = process.env.PODLORD_SIMCTL_COMPLETION_CASE;
+if (scenario === 'launch_only') console.log('berlin.yuna.podlord.tests: 123');
+else if (scenario === 'wrong_scenario') console.log('UI scenario passed: different_case');
+else if (scenario === 'duplicate') { console.log(expected); console.log(expected); }
+else if (scenario === 'extra_marker') { console.log(expected); console.log('UI scenario passed: different_case'); }
+else if (scenario === 'stderr_only') console.error(expected);
+else {
+    console.log(expected);
+    if (scenario === 'explicit_failure') console.error('UI scenario failed: ' + name);
+    if (scenario === 'binding_loop') console.error('qrc:/podlord/ResourceRadar.qml: QML Pane: Binding loop detected for property "hasDetails"');
+    if (scenario === 'reference_error') console.error('ReferenceError: missing value');
+    if (scenario === 'type_error') console.error('TypeError: invalid value');
+    if (scenario === 'transport_failure') { console.error('Controlled first launch transport failure'); process.exit(7); }
+    if (scenario === 'clean') console.error('Benign simulator console output');
+}
+`, { mode: 0o700 });
+        const result = await new Promise((resolve, reject) => {
+            const script = process.env.PODLORD_IOS_COMPLETION_RUNNER || path.join(root, 'scripts/test-native-ios-trust.cjs');
+            const child = spawn(process.execPath, [script, app, 'openssl', evidence], {
+                env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, PODLORD_SIMCTL_TRACE: trace,
+                    PODLORD_SIMCTL_DATA: data, PODLORD_SIMCTL_COMPLETION_CASE: scenario },
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            let output = '';
+            child.stdout.on('data', bytes => { output += bytes; });
+            child.stderr.on('data', bytes => { output += bytes; });
+            const timeout = setTimeout(() => child.kill('SIGTERM'), 15000);
+            child.once('error', error => { clearTimeout(timeout); reject(error); });
+            child.once('close', (code, signal) => { clearTimeout(timeout); resolve({ code, signal, output }); });
+        });
+        assert.equal(result.code, 1, result.output);
+        assert.equal(result.signal, null, result.output);
+        const calls = (await fs.readFile(trace, 'utf8')).trim().split('\n').map(JSON.parse);
+        assert.equal(calls.filter(call => call[0] === 'launch').length, scenario === 'clean' ? 2 : 1,
+            'Reject invalid child evidence before another launch, but accept one clean child before the controlled external failure: ' + result.output);
+        assert.deepEqual(calls.filter(call => ['terminate', 'shutdown', 'delete'].includes(call[0])), [
+            ['terminate', device, 'berlin.yuna.podlord.tests'], ['shutdown', device], ['delete', device]
+        ], 'Every result must clean only its own simulator.');
+        const stdout = await fs.readFile(path.join(evidence, 'untrusted-before-install.stdout.log'), 'utf8');
+        const stderr = await fs.readFile(path.join(evidence, 'untrusted-before-install.stderr.log'), 'utf8');
+        assert.equal(await fs.readFile(path.join(evidence, 'untrusted-before-install.log'), 'utf8'), stdout + stderr);
+        assert.match(stdout, /expected=0 actual=0/);
+        if (scenario === 'clean') {
+            assert.equal(stdout.split('\n').filter(line => line === 'UI scenario passed: system_https_untrusted').length, 1);
+            assert.match(stderr, /Benign simulator console output/);
+            assert.match(result.output, /Controlled second launch transport failure/);
+            assert.match(await fs.readFile(path.join(evidence, 'wss-untrusted-before-install.stderr.log'), 'utf8'), /Controlled second launch transport failure/);
+        }
+        if (scenario === 'transport_failure') assert.match(stderr, /Controlled first launch transport failure/);
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+}
+
+for (const scenario of ['launch_only', 'wrong_scenario', 'duplicate', 'extra_marker', 'stderr_only', 'explicit_failure', 'binding_loop', 'reference_error', 'type_error', 'transport_failure', 'clean']) {
+    test(`iOS trust launch completion: ${scenario}`, { timeout: 20000, skip: process.platform !== 'darwin' }, () => iosCompletion(scenario));
+}
+
 for (const missing of ['metric-filter-ui-test', 'workspace_ui_test']) {
 test(`visual runner rejects missing ${missing} before Docker access`, { timeout: 5000 }, async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-incomplete-build-'));

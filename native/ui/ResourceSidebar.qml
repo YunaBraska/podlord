@@ -77,6 +77,20 @@ Pane {
             contentWidth: availableWidth; contentHeight: sidebarColumn.height
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Connections {
+                target: sidebarViewport.contentItem
+                function onContentYChanged() { radar.dismissInfo() }
+            }
+            Item {
+                id: radarDetailsHost
+                objectName: "radarDetailsOverlayHost"
+                parent: sidebarViewport
+                x: sidebarViewport.leftPadding
+                y: Math.max(sidebarViewport.topPadding, sidebarViewport.topPadding + sidebarColumn.y + sidebarScroll.y - (sidebarViewport.contentItem.contentY || 0))
+                width: sidebarViewport.availableWidth
+                height: Math.max(0, Math.min(sidebarScroll.height, sidebarViewport.availableHeight - y + sidebarViewport.topPadding))
+                visible: sidebar.visible && sidebarScroll.visible && width > 0 && height > 0
+            }
         ColumnLayout {
             id: sidebarColumn
             width: sidebarViewport.availableWidth
@@ -88,13 +102,14 @@ Pane {
                 visible: sidebar.radarVisible && sidebar.expandedRadarHost === null
                 Layout.fillWidth: true
                 Layout.fillHeight: sidebar.collapsibleFilters && !sidebar.filtersExpanded
-                Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45) + radar.infoPanelHeight
+                Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45)
                 ResourceRadar {
                     id: radar
                     parent: sidebar.expandedRadarHost ?? radarSlot
                     anchors.fill: parent
                     compact: true
                     expanded: sidebar.expandedRadarHost !== null
+                    detailsHost: radarDetailsHost.visible ? radarDetailsHost : null
                     visible: sidebar.radarVisible
                 }
             }

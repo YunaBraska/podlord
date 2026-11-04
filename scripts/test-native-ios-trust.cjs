@@ -95,10 +95,21 @@ async function run() {
         const wrongCa = path.join(data, 'Documents', 'other.pem');
         await fs.copyFile(path.join(temporary, 'other.pem'), wrongCa);
         const probe = async (name, mode, id, ca = '', transport = 'https') => {
-            const result = await simctl(['launch', '--console', device, 'berlin.yuna.podlord.tests', `system_${transport}_${mode}`, `${transport}://127.0.0.1:${evaluations.get(id).port}`], { SIMCTL_CHILD_PODLORD_TEST_HTTPS_CA_FILE: ca });
+            const scenario = `system_${transport}_${mode}`;
+            let launchError;
+            const result = await simctl(['launch', '--console', device, 'berlin.yuna.podlord.tests', scenario, `${transport}://127.0.0.1:${evaluations.get(id).port}`], { SIMCTL_CHILD_PODLORD_TEST_HTTPS_CA_FILE: ca }).catch(error => {
+                launchError = error;
+                return { stdout: error.stdout || '', stderr: error.stderr || '' };
+            });
             const output = result.stdout + result.stderr;
             await fs.writeFile(path.join(evidence, `${name}.log`), output);
-            assert.doesNotMatch(output, /UI scenario failed/, output);
+            await fs.writeFile(path.join(evidence, `${name}.stdout.log`), result.stdout, { mode: 0o600 });
+            await fs.writeFile(path.join(evidence, `${name}.stderr.log`), result.stderr, { mode: 0o600 });
+            if (launchError) throw launchError;
+            const expected = `UI scenario passed: ${scenario}`;
+            assert.doesNotMatch(output, /UI scenario failed:|Binding\s+loop|ReferenceError|TypeError/i, output);
+            assert.equal(result.stdout.split(/\r?\n/).filter(line => line === expected).length, 1, `Expected one exact ${scenario} completion marker in stdout.`);
+            assert.deepEqual((result.stdout + '\n' + result.stderr).split(/\r?\n/).filter(line => /UI scenario (?:passed|failed):/.test(line)), [expected], 'Unexpected iOS UI completion markers.');
             assert.match(output, mode === 'trusted' ? /expected=1 actual=1/ : mode === 'canceled' ? /expected=0 actual=0/ : /expected=0 actual=0 .*error=6|expected=0 actual=0 .*error=13/);
             process.stdout.write(`${name}: ${output.split('\n').filter(line => line.startsWith('System ')).join(' | ')}\n`);
         };

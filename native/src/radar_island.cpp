@@ -94,7 +94,7 @@ template<class F> void inBuckets(const QRectF& rect, F consume) {
 int RadarTiles::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : int(entries_.size()); }
 QHash<int,QByteArray> RadarTiles::roleNames() const {
     static const QHash<int,QByteArray> names{{Qt::UserRole,"resourcePath"},{Qt::UserRole+1,"resourceName"},{Qt::UserRole+2,"resourceKind"},
-        {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},
+        {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},{Qt::UserRole+5,"statusColor"},{Qt::UserRole+15,"resourceDetails"},
         {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"}};
     return names;
 }

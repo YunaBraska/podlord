@@ -263,6 +263,17 @@ public:
                             document={{"metadata",QJsonObject{}},{"items",values}};
                         }
                     }
+                    if (scenario == "radar_quick_info" && path == "/api/v1/pods") {
+                        auto target = pod("alpha");
+                        target["spec"] = QJsonObject{{"nodeName", "worker-a"}, {"containers", QJsonArray{QJsonObject{
+                            {"name", "main"}, {"image", "example.test/app:1"}, {"resources", QJsonObject{
+                                {"requests", QJsonObject{{"cpu", "100m"}, {"memory", "32Mi"}}},
+                                {"limits", QJsonObject{{"cpu", "500m"}, {"memory", "64Mi"}}}}}}}}};
+                        target["status"] = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{QJsonObject{
+                            {"name", "main"}, {"ready", false}, {"restartCount", 12}, {"state", QJsonObject{
+                                {"waiting", QJsonObject{{"reason", "CrashLoopBackOff"}, {"message", "Back-off restarting failed container"}}}}}}}}};
+                        document["items"] = QJsonArray{target, pod("bravo")};
+                    }
                     if (scenario.startsWith("radar_water_")) {
                         if (path == "/api/v1/events") {
                             auto event = pod("radar-event", "Event");
@@ -1671,6 +1682,37 @@ bool execute(const QString& requestedScenario) {
                 return failed("Search touch after Resources did not open and focus the filter");
             return server.requests.size() == calls;
         }
+        if (scenario == "shell_search_map_queued") {
+            const auto failed = [](const char* stage) { qWarning() << "Map search stage:" << stage; return false; };
+            if (!click(window, item(window, "mapWorkspaceButton"))
+                || !waitFor([&] { return workspace.workspacePage() == "map" && !workspace.mapOverview(); })) return failed("map search setup");
+            auto* input = item(window, "resourceFilter");
+            auto* toggle = item(window, "workspaceSearchButton");
+            if (!input || input->isVisible() || !toggle) return failed("map search starts hidden");
+            const auto bindings = QKeySequence::keyBindings(QKeySequence::Find);
+            if (bindings.isEmpty()) return failed("platform Find binding");
+            bool closeQueued = false;
+            QSignalSpy closedByPointer(toggle, SIGNAL(clicked()));
+            const auto revealed = QObject::connect(input, &QQuickItem::visibleChanged, window, [&] {
+                if (!input->isVisible() || closeQueued) return;
+                closeQueued = true;
+                const auto point = podlord::test::visibleBounds(window, toggle).center();
+                const QPointF global = window->mapToGlobal(point.toPoint());
+                // Deliver real pointer input before the deferred focus, without
+                // reentering the visibility binding or calling a control handler.
+                QCoreApplication::postEvent(window, new QMouseEvent(QEvent::MouseButtonPress, point, point, global,
+                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier), Qt::HighEventPriority);
+                QCoreApplication::postEvent(window, new QMouseEvent(QEvent::MouseButtonRelease, point, point, global,
+                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier), Qt::HighEventPriority);
+            });
+            QTest::keySequence(window, bindings.first());
+            QObject::disconnect(revealed);
+            QCoreApplication::sendPostedEvents();
+            if (!closeQueued || closedByPointer.size() != 1 || input->isVisible() || toggle->property("checked").toBool())
+                return failed("queued pointer closes Find before focus delivery");
+            return waitFor([&] { return !input->isVisible() && !input->hasActiveFocus() && toggle->hasActiveFocus(); })
+                && workspace.resourceCount() == 3 && server.requests.size() == calls;
+        }
         if (scenario == "shell_search_demand" || scenario == "shell_search_events") {
             auto* input = item(window, "resourceFilter");
             if (input->isVisible() || !click(window, item(window, "workspaceSearchButton"))
@@ -1681,14 +1723,26 @@ bool execute(const QString& requestedScenario) {
                     || !waitFor([&] { return item(window, "eventFilter")->isVisible() && workspace.totalEventCount() == 2; })
                     || !type(window, item(window, "eventFilter"), "Started") || workspace.eventCount() != 1
                     || !click(window, item(window, "workspaceSearchButton"))
-                    || item(window, "eventFilter")->isVisible() || workspace.eventFilterText() != "Started"
+                    || item(window, "eventFilter")->isVisible() || item(window, "eventFilter")->hasActiveFocus() || workspace.eventFilterText() != "Started"
                     || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
             } else if (!click(window, item(window, "workspaceSearchButton"))) return false;
-            if (input->isVisible() || workspace.resourceCount() != 1 || !click(window, item(window, "workspaceSearchButton"))
+            if (input->isVisible() || input->hasActiveFocus() || workspace.resourceCount() != 1 || !click(window, item(window, "workspaceSearchButton"))
                 || !waitFor([&] { return input->hasActiveFocus(); }) || text(window, "resourceFilter") != "\"alpha\"") return false;
             QTest::keyClick(window, Qt::Key_Escape);
-            return !input->isVisible() && workspace.resourceCount() == 1
-                && item(window, "workspaceSearchButton")->hasActiveFocus() && server.requests.size() == calls;
+            auto* toggle = item(window, "workspaceSearchButton");
+            if (input->isVisible() || workspace.resourceCount() != 1 || !toggle->hasActiveFocus()) return false;
+            const auto point = podlord::test::visibleBounds(window, toggle).center();
+            const QPointF global = window->mapToGlobal(point.toPoint());
+            for (int repeat = 0; repeat < 2; ++repeat) {
+                QCoreApplication::postEvent(window, new QMouseEvent(QEvent::MouseButtonPress, point, point, global,
+                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier));
+                QCoreApplication::postEvent(window, new QMouseEvent(QEvent::MouseButtonRelease, point, point, global,
+                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier));
+            }
+            QCoreApplication::sendPostedEvents(window);
+            QCoreApplication::sendPostedEvents();
+            return waitFor([&] { return !input->isVisible() && !input->hasActiveFocus() && !toggle->property("checked").toBool(); })
+                && workspace.resourceCount() == 1 && server.requests.size() == calls;
         }
         if (scenario == "shell_health_refresh") {
             auto* health = item(window, "sessionHealthSegments");
@@ -3229,9 +3283,61 @@ bool execute(const QString& requestedScenario) {
             if (!frame.isEmpty() && !window->grabWindow().save(frame)) return false;
         }
         const auto calls = server.requests.size();
+        if (scenario == "radar_overlay_navigation") {
+            const auto* detail = item(window, "radarInfoPanel");
+            if (detail && detail->isVisible()) return failed("empty resource details must not reserve space");
+            if (radar->boundingRect() != radar->parentItem()->boundingRect()) return failed("drawing area must fill its host");
+            const auto* history = item(window, "mapBack");
+            if (!mapRadar && history && history->isVisible()) return failed("map history leaked into the resource table Radar");
+            const auto viewport = radar->mapRectToScene(radar->boundingRect());
+            for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom", "resetRadar"}) {
+                auto* control = item(window, name);
+                if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
+                    return failed("navigation must overlay the drawing area");
+            }
+            if (mapRadar) for (const auto* name : {"mapBack", "mapForward", "mapOverview", "mapSources"}) {
+                auto* control = item(window, name);
+                if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
+                    return failed("map history must overlay the drawing area");
+            }
+            const auto before = radar->property("viewPose").toMap()["zoom"].toDouble();
+            return click(window, item(window, "radarZoom"))
+                && radar->property("viewPose").toMap()["zoom"].toDouble() > before
+                && server.requests.size() == calls && saveShellFrame(window, requestedScenario);
+        }
+        if (scenario == "radar_quick_info") {
+            int row = -1;
+            for (int index = 0; index < workspace.table()->rowCount(); ++index)
+                if (workspace.table()->index(index, 0).data(Qt::UserRole + 1).toString() == "alpha") row = index;
+            auto* island = qobject_cast<podlord::RadarIsland*>(radar);
+            if (!island || row < 0 || !island->selectResource(row) || !island->focusResource(row)) return failed("problem resource selection");
+            radar->forceActiveFocus();
+            if (!waitFor([&] {
+                const auto* title = item(window, "radarInfoText");
+                const auto* status = item(window, "radarInfoStatus");
+                const auto* issue = item(window, "radarInfoIssue");
+                const auto* readiness = item(window, "radarInfoReadiness");
+                return title && title->isVisible() && title->property("text").toString() == "Pod alpha"
+                    && status && status->isVisible() && status->property("text").toString().contains("CrashLoopBackOff")
+                    && issue && issue->isVisible() && issue->property("text").toString().contains("CrashLoopBackOff")
+                    && readiness && readiness->isVisible() && readiness->property("text").toString().contains("0/1")
+                    && readiness->property("text").toString().contains("12");
+            })) {
+                for (const auto* name : {"radarInfoText", "radarInfoStatus", "radarInfoIssue", "radarInfoReadiness"}) {
+                    const auto* field = item(window, name);
+                    qWarning() << "Radar quick info:" << name << "visible" << (field && field->isVisible())
+                        << "text" << (field ? field->property("text") : QVariant{});
+                }
+                qWarning() << "Radar cached quick details:" << workspace.table()->index(row, 0).data(Qt::UserRole + 15);
+                return failed("structured type, status, problem and readiness");
+            }
+            for (const auto* name : {"metric_cpu_bar", "metric_cpu_marker_request", "metric_cpu_marker_limit", "metric_memory_bar"})
+                if (!item(window, name)) return failed("configured metric reference markers");
+            return server.requests.size() == calls && saveShellFrame(window, requestedScenario);
+        }
         if (shortLandscape) {
             auto* water=item(window,"radarWater");
-            auto* info=item(window,"radarInfoPanel");
+            auto* info=window->findChild<QQuickItem*>("radarInfoPanel");
             auto* pane=radar;
             while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
             const auto renderedFrame=[&] {
@@ -3245,18 +3351,23 @@ bool execute(const QString& requestedScenario) {
             if (!water || !info || !pane || pane->property("expanded").toBool()!=mapRadar)
                 return failed("geometry/radar composition owner");
             const auto scene=[](QQuickItem* entry) { return entry->mapRectToScene(entry->boundingRect()); };
-            const auto geometryValid=[&] {
-                const auto map=scene(radar),background=scene(water),details=scene(info);
+            const auto geometryValid=[&](bool requireDetails) {
+                const auto map=scene(radar),background=scene(water);
                 const QRectF windowBounds(0,0,window->width(),window->height());
-                return radar->isVisible() && water->isVisible() && info->isVisible()
-                    && map.width()>0 && map.height()>0 && details.width()>0 && details.height()>0
-                    && background==map && !map.intersects(details)
-                    && windowBounds.contains(map) && windowBounds.contains(details)
+                if (!(radar->isVisible() && water->isVisible() && map.width()>0 && map.height()>0
+                    && background==map && windowBounds.contains(map)
                     && podlord::test::visibleBounds(window,radar).contains(map)
-                    && podlord::test::visibleBounds(window,water).contains(background)
-                    && podlord::test::visibleBounds(window,info).contains(details);
+                    && podlord::test::visibleBounds(window,water).contains(background))) return false;
+                if (!requireDetails) return !info->isVisible();
+                const auto details=scene(info);
+                const auto* filterHost=item(window,"radarDetailsOverlayHost");
+                const auto* navigation=item(window,"radarNavigationOverlay");
+                return info->isVisible() && details.width()>0 && details.height()>0 && windowBounds.contains(details)
+                    && podlord::test::visibleBounds(window,info).contains(details)
+                    && (filterHost && filterHost->isVisible() ? scene(const_cast<QQuickItem*>(filterHost)).contains(details) && !map.intersects(details)
+                        : !map.intersects(details) || (mapRadar && map.contains(details) && navigation && !scene(const_cast<QQuickItem*>(navigation)).intersects(details)));
             };
-            if (!geometryValid()) return failed("geometry/starved, clipped or overlapping map and fixed info");
+            if (!geometryValid(false)) return failed("geometry/starved, clipped or reserved empty info");
             if (mapRadar) {
                 auto* host=item(window,"workspaceSidebarHost");
                 auto* toggle=item(window,"toggleLandscapeFilters");
@@ -3285,7 +3396,7 @@ bool execute(const QString& requestedScenario) {
                     || server.requests.size()!=calls)
                     return failed("geometry/filter collapse changed camera or requested resources");
             }
-            const auto initialMap=scene(radar),initialInfo=scene(info);
+            const auto initialMap=scene(radar);
             const QColor background("#061621");
             const auto painted=[&](int index) {
                 const auto point=radarPoint(radar,index);
@@ -3320,8 +3431,8 @@ bool execute(const QString& requestedScenario) {
                 if (!point) return failed("geometry/focused resource point missing");
                 QTest::mouseMove(window,radar->mapToScene(point->bounds.center()).toPoint());
                 if (!renderedFrame()) return failed("renderer/hover frame missing");
-                if (!geometryValid() || scene(radar)!=initialMap || scene(info)!=initialInfo)
-                    return failed("geometry/focus or hover resized fixed map/info regions");
+                if (!geometryValid(true) || scene(radar)!=initialMap)
+                    return failed("geometry/focus or hover resized map or misplaced overlay");
                 if (!painted(index)) return false;
             }
             if (server.requests.size()!=calls || workspace.resourceCount()!=expectedRows || !workspace.inspectorPath().isEmpty())
@@ -3516,7 +3627,11 @@ bool execute(const QString& requestedScenario) {
             if (!scroll || !tile) return failed("info public controls");
             const auto popup=tip->mapRectToScene(QRectF(QPointF{},tip->size()));
             const auto viewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
-            if (viewport!=initialViewport || viewport.intersects(popup)
+            const auto* filterHost=item(window,"radarDetailsOverlayHost");
+            const auto* navigation=item(window,"radarNavigationOverlay");
+            const bool outsideMap=filterHost && filterHost->isVisible() ? filterHost->mapRectToScene(filterHost->boundingRect()).contains(popup) && !viewport.intersects(popup)
+                : !viewport.intersects(popup) || (mapRadar && viewport.contains(popup) && navigation && !navigation->mapRectToScene(navigation->boundingRect()).intersects(popup));
+            if (viewport!=initialViewport || !outsideMap
                 || !QRectF(0,0,window->width(),window->height()).contains(popup)) return failed("info keeps the entire map unobscured and stable");
             auto* contents=scroll->property("contentItem").value<QQuickItem*>();
             if (!contents) return failed("info scroll surface");
@@ -3563,6 +3678,35 @@ bool execute(const QString& requestedScenario) {
             QTest::mouseMove(window,radar->mapToScene(next->bounds.center()).toPoint());
             if (!waitFor([&] { const auto* text=item(window,"radarInfoText"); return text && text->property("text").toString().contains(nextName); })) return failed("hover remains live after reading info");
             if (!saveShellFrame(window,requestedScenario)) return failed("info frame capture");
+            auto* closeControl=item(window,"closeRadarInfo");
+            if (!closeControl || !podlord::test::visibleBounds(window,closeControl).contains(closeControl->mapRectToScene(closeControl->boundingRect())))
+                return failed("details close action must remain visible after scrolling");
+            const auto selectedBeforeClose=radar->property("currentIndex");
+            const auto cameraBeforeClose=radar->property("viewPose");
+            QSignalSpy closeActivated(closeControl,SIGNAL(clicked()));
+            const bool closeClicked=click(window,closeControl) && waitFor([&] { return !closeActivated.isEmpty(); },2000);
+            const bool detailsClosed=waitFor([&] { return !tip->isVisible(); });
+            if (!closeClicked || !detailsClosed
+                || radar->property("currentIndex")!=selectedBeforeClose || radar->property("viewPose")!=cameraBeforeClose
+                || radar->mapRectToScene(radar->boundingRect())!=initialViewport) {
+                qWarning() << "Radar details close:" << "clicked" << closeClicked << "closed" << detailsClosed
+                    << "selection" << selectedBeforeClose << radar->property("currentIndex")
+                    << "camera" << cameraBeforeClose << radar->property("viewPose")
+                    << "canvas" << initialViewport << radar->mapRectToScene(radar->boundingRect())
+                    << "focus" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{});
+                saveShellFrame(window,requestedScenario+"-close-failure");
+                return failed("closing details preserves selection and drawing area");
+            }
+            radar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
+            if (!waitFor([&] { return tip->isVisible(); })) return failed("closed details can reopen through keyboard navigation");
+            const auto selectedBeforeEscape=radar->property("currentIndex");
+            QTest::keyClick(window,Qt::Key_Escape);
+            if (!waitFor([&] { return !tip->isVisible(); }) || radar->property("currentIndex")!=selectedBeforeEscape)
+                return failed("Escape closes details without clearing selection");
+            QTest::keyClick(window,Qt::Key_Home);
+            if (!waitFor([&] { return tip->isVisible(); }) || radar->property("currentIndex")!=selectedBeforeEscape
+                || !click(window,item(window,"closeRadarInfo")) || !waitFor([&] { return !tip->isVisible(); }))
+                return failed("explicit focus reopens details after dismissal without changing resource identity");
             auto* control=item(window,"radarZoom"); QSignalSpy activated(control,SIGNAL(clicked()));
             if (!click(window,control) || !waitFor([&] { return !activated.isEmpty(); })) return failed("info leaves zoom operable");
             if (!typeRadarQuery("\"no-matching-resource\"")
@@ -5764,6 +5908,19 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
     if (!click(window,item(window,"resetResourceFilters")) || !waitFor([&] { return workspace.resourceCount()==workspace.totalResourceCount() && workspace.resourceCount()>=1051; })) return false;
     if (!type(window,item(window,"resourceFilter"),"/^visual-config-000[1-3]$/") || !click(window,item(window,"radarWorkspaceButton"))) return false;
     if (!waitFor([&] { return item(window,"resourceRadar")->property("count").toInt()==24; })) return false;
+    auto* filteredRadar=item(window,"resourceRadar");
+    const auto firstResource=workspace.table()->index(0,0);
+    const auto expectedFocus=firstResource.data(Qt::UserRole+2).toString()+" "+firstResource.data(Qt::UserRole+1).toString();
+    filteredRadar->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home);
+    if (!waitFor([&] {
+        auto* details=item(window,"radarInfoText");
+        return details && details->isVisible() && details->property("text").toString()==expectedFocus;
+    })) {
+        const auto first=workspace.table()->index(0,0);
+        qWarning()<<"Real filtered Radar focus:"<<filteredRadar->hasActiveFocus()<<filteredRadar->property("currentIndex")
+            <<first.data(Qt::UserRole)<<first.data(Qt::UserRole+1)<<first.data(Qt::UserRole+2);
+        return failure("filtered ConfigMap keyboard focus");
+    }
     const auto screenshot=qEnvironmentVariable("PODLORD_E2E_SCREENSHOT");
     if (!screenshot.isEmpty()) { QTest::qWait(50); if (!window->grabWindow().save(screenshot,"PNG")) return false; }
     std::printf("Real Kubernetes discovery/search: ConfigMaps, Secrets, workloads, storage, services, accounts, namespaces, error Pods and custom RadarProbes; radar/table agree; regex, alternatives, invalid/empty/reset verified.\n");

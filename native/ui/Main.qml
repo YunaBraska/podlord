@@ -16,6 +16,12 @@ ApplicationWindow {
     font.weight: Font.Normal
     property bool sidebarOpen: true
     property bool searchOpen: false
+    function focusSearchIfOpen() {
+        if (!window.searchOpen || !searchToggle.enabled) return
+        if (workspace.workspacePage === "ports") portsView.item.focusSearch()
+        else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus()
+        else resourceFilterInput.forceActiveFocus()
+    }
     readonly property var mapContexts: workspace.contexts.filter(entry => entry.current)
     readonly property bool wideLayout: width >= 900
     readonly property bool compactLandscape: width >= 600 && height < 600 && width > height
@@ -51,7 +57,7 @@ ApplicationWindow {
     Action { id: problemsCommand; text: "Toggle Problems"; enabled: workspace.currentSession !== ""; onTriggered: workspace.setFilterMode(workspace.problemsOnly ? "" : "problems") }
     CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand] }
     Shortcut { sequences: ["Ctrl+K", "Meta+K"]; onActivated: commands.open() }
-    Shortcut { sequences: [StandardKey.Find]; enabled: workspace.workspacePage === "map" && !workspace.mapOverview; onActivated: { window.searchOpen = true; Qt.callLater(resourceFilterInput.forceActiveFocus) } }
+    Shortcut { sequences: [StandardKey.Find]; enabled: workspace.workspacePage === "map" && !workspace.mapOverview; onActivated: { window.searchOpen = true; Qt.callLater(window.focusSearchIfOpen) } }
     Shortcut { sequences: [StandardKey.Back]; enabled: workspace.workspacePage === "map" ? workspace.canMapBack : workspace.canInspectBack; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(-1) : workspace.navigateInspector(-1) }
     Shortcut { sequences: [StandardKey.Forward]; enabled: workspace.workspacePage === "map" ? workspace.canMapForward : workspace.canInspectForward; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(1) : workspace.navigateInspector(1) }
     onVisibilityChanged: function(visibility) { workspace.setWindowVisible(visibility !== Window.Hidden && visibility !== Window.Minimized) }
@@ -188,14 +194,14 @@ ApplicationWindow {
         sourceComponent: Dialog {
         id: viewCloseFailure
         objectName: "viewCloseFailureDialog"
-        title: "Filters and sort choices could not be saved"
+        title: workspace.uiText["view.closeFailureTitle"]
         width: Math.min(480, window.width - 32)
         parent: Overlay.overlay
         visible: true
         anchors.centerIn: parent
         modal: true
         closePolicy: Popup.CloseOnEscape
-        contentItem: Label { width: viewCloseFailure.availableWidth; text: workspace.error + "\nStay keeps the current view available. Closing retains the last successfully saved filters and sorts, not the unsaved choices."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+        contentItem: Label { width: viewCloseFailure.availableWidth; text: workspace.error + "\n" + workspace.uiText["view.closeFailureBody"]; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         footer: DialogButtonBox {
             Button { id: stayView; objectName: "stayViewClose"; text: "Stay"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "discardViewClose"; text: "Close without saving view"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
@@ -501,11 +507,11 @@ ApplicationWindow {
                         Accessible.description: "Search the current cached view. Hiding search retains its filter."
                         onClicked: {
                             window.searchOpen = !window.searchOpen
-                            if (window.searchOpen) Qt.callLater(function() {
-                                if (workspace.workspacePage === "ports") portsView.item.focusSearch()
-                                else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus()
-                                else resourceFilterInput.forceActiveFocus()
-                            })
+                            if (window.searchOpen) Qt.callLater(window.focusSearchIfOpen)
+                            else {
+                                searchToggle.forceActiveFocus()
+                                Qt.inputMethod.hide()
+                            }
                         }
                     }
                     NavButton { objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; checked: workspace.workspacePage === "map" }
@@ -917,11 +923,12 @@ ApplicationWindow {
                     RowLayout {
                         id: mapNavigationSlot
                         Layout.fillWidth: true
-                        visible: !sidebar.compactMapRail
+                        visible: workspace.mapOverview
                     }
                     RowLayout {
                         id: mapNavigationRow
-                        parent: sidebar.compactMapRail ? sidebar.mapNavigationHost : mapNavigationSlot
+                        visible: workspace.workspacePage === "map"
+                        parent: workspace.mapOverview ? mapNavigationSlot : sidebar.mapNavigationHost
                         Layout.fillWidth: true
                         IconButton { objectName: "mapBack"; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
                         IconButton { objectName: "mapForward"; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }

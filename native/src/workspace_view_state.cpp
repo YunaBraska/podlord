@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "workspace_runtime.h"
+#include "window_host.h"
 #include <QDebug>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
@@ -40,7 +41,10 @@ QString Workspace::viewStateError() const {
     if (viewStateErrors_.contains(active_)) return viewStateErrors_.value(active_);
     return viewStateErrors_.isEmpty() ? QString{} : viewStateErrors_.first();
 }
-bool Workspace::viewCloseNeedsDecision() const { return viewClosePending_ && !viewSaving_ && viewStateFailed(); }
+bool Workspace::viewCloseNeedsDecision() const {
+    return (runtime_->host && runtime_->host->layoutCloseNeedsDecision(*this))
+        || (viewClosePending_ && !viewSaving_ && viewStateFailed());
+}
 bool Workspace::restoreViewStates(const LoadedViewStates& states) {
     viewStateErrors_.clear();
     const auto schemas = tableSchemas(true);
@@ -133,6 +137,7 @@ bool Workspace::reloadSavedViews() {
     return true;
 }
 bool Workspace::confirmViewClose(bool discard) {
+    if (runtime_->host && runtime_->host->layoutCloseNeedsDecision(*this)) return runtime_->host->confirmLayoutClose(*this, discard);
     if (!viewCloseNeedsDecision()) return false;
     viewClosePending_ = false;
     if (discard) { viewCloseDiscardApproved_ = true; emit windowCloseApproved(); }

@@ -96,6 +96,8 @@ bool run(const QString& scenario) {
         {"criterion_image", {"image", "local:test", 1}},
         {"criterion_problem_true", {"problems", "true", 1}},
         {"criterion_problem_false", {"problems", "false", 0}},
+        {"criterion_activity_true", {"activity", "true", 1}},
+        {"criterion_activity_false", {"activity", "false", 0}},
         {"criterion_numeric_gt_miss", {"restarts", ">0", 0}},
         {"criterion_numeric_gte", {"restarts", ">=0", 1}},
         {"criterion_numeric_lte", {"restarts", "<=0", 1}},

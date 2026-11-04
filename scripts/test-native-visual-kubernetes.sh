@@ -169,7 +169,7 @@ AUDIT
             done
         fi
     fi
-    for application in native legacy ios ios-boot; do
+    for application in native legacy ios ios-stderr ios-boot; do
         log="$RUN/$application.log"
         [ -f "$log" ] && [ ! -L "$log" ] || continue
         if ! cp "$log" "$EVIDENCE/$NAME-$application.log"; then
@@ -390,17 +390,22 @@ if [ "$MODE" = ios-themes ]; then
     SIMCTL_CHILD_PODLORD_THEME_EVIDENCE_DIR="$IOS_DATA/Documents/theme-matrix" \
         SIMCTL_CHILD_PODLORD_UI_FAILURE_FRAME="$IOS_DATA/Documents/failure.png" \
         SIMCTL_CHILD_QT_QUICK_CONTROLS_STYLE=Basic SIMCTL_CHILD_QT_QPA_PLATFORM=ios \
-        xcrun simctl launch --console "$IOS_DEVICE" berlin.yuna.podlord.tests real_themes "$IOS_DATA/Documents/kubeconfig" > "$RUN/ios.log" 2>&1 &
+        xcrun simctl launch --console "$IOS_DEVICE" berlin.yuna.podlord.tests real_themes "$IOS_DATA/Documents/kubeconfig" > "$RUN/ios.log" 2> "$RUN/ios-stderr.log" &
     NATIVE_PID=$!
     wait_for_native_process "$DESKTOP_TIMEOUT"
     if [ ! -f "$IOS_DATA/Documents/theme-matrix/matrix.json" ]; then
-        cat "$RUN/ios.log" >&2
+        cat "$RUN/ios.log" "$RUN/ios-stderr.log" >&2
         printf 'iOS view matrix did not complete. Its application log and partial captures are retained.\n' >&2
         exit 1
     fi
-    node - "$IOS_DATA/Documents/theme-matrix/matrix.json" <<'JS'
+    node - "$RUN/ios.log" "$RUN/ios-stderr.log" "$IOS_DATA/Documents/theme-matrix/matrix.json" <<'JS'
 const fs=require('node:fs'),assert=require('node:assert/strict');
-const matrix=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const stdout=fs.readFileSync(process.argv[2],'utf8'),stderr=fs.readFileSync(process.argv[3],'utf8');
+const output=stdout+stderr,expected='UI scenario passed: real_themes';
+assert.doesNotMatch(output,/UI scenario failed:|Binding\s+loop|ReferenceError|TypeError/i,output);
+assert.equal(stdout.split(/\r?\n/).filter(line=>line===expected).length,1,'Expected one exact real_themes completion marker in stdout.');
+assert.deepEqual((stdout+'\n'+stderr).split(/\r?\n/).filter(line=>/UI scenario (?:passed|failed):/.test(line)),[expected],'Unexpected iOS UI completion markers.');
+const matrix=JSON.parse(fs.readFileSync(process.argv[4],'utf8'));
 assert.equal(matrix.platform,'ios');
 const views=[...['alerts','appearance','diagnostics','graphics','privacy','sources','sync','workspace','about'].map(section=>'settings-'+section),
     'map-context','map-overview','resources','radar','events','ports',

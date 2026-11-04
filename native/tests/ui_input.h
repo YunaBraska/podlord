@@ -255,14 +255,18 @@ inline bool clickVisible(QQuickWindow* window, const QString& name, Qt::MouseBut
     for (int attempt=0;attempt<4;++attempt) {
         QSignalSpy frame(window,&QQuickWindow::frameSwapped);
         window->update();
-        if (!frame.wait(2000)) return false;
+        if (!QTest::qWaitFor([&] { return !frame.isEmpty(); }, 2000)) {
+            qWarning() << "Pointer frame unavailable:" << name << "visible" << window->isVisible()
+                << "exposed" << window->isExposed() << "active" << window->isActive();
+            return false;
+        }
         const QPointer<QQuickItem> target(visibleItem(window->contentItem(),name));
         if (!target || !target->isEnabled() || !scrollIntoView(window,target,true)) return false;
         if (!target || target->objectName()!=name) continue;
         const auto bounds = visibleBounds(window, target);
         if (bounds.isEmpty()) continue;
         frame.clear(); window->update();
-        if (!frame.wait(2000)) return false;
+        if (!QTest::qWaitFor([&] { return !frame.isEmpty(); }, 2000)) return false;
         if (!target || target->objectName()!=name || visibleBounds(window, target)!=bounds) continue;
         std::optional<QSignalSpy> activated;
         if (button == Qt::LeftButton) {

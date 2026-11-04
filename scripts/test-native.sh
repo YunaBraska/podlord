@@ -155,4 +155,28 @@ if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($
     printf 'Native coverage gate failed: require 95%% lines, 85%% branches overall, and 90%% branches in background HTTP, native EKS/GKE/OIDC/OCI and macOS-tested Apple trust logic.\n' >&2
     exit 1
 fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/window_host.cpp" \
+    | awk '/_ZNK7podlord10WindowHost6layoutEv[[:space:]]|_ZN7podlord10WindowHost7restoreEv[[:space:]]|_ZN7podlord10WindowHost11cancelCloseEv[[:space:]]|_ZN7podlord10WindowHost18confirmLayoutCloseERNS_9WorkspaceEb[[:space:]]/' \
+    > "$BUILD/coverage/window-layout-functions.txt"
+cat "$BUILD/coverage/window-layout-functions.txt"
+if ! awk '
+/WindowHost6layoutEv/ { layout=1 }
+/WindowHost7restoreEv/ { restore=1 }
+/WindowHost11cancelCloseEv/ { cancel=1 }
+/WindowHost18confirmLayoutCloseE/ { confirm=1 }
+{ total+=$(NF-2); missed+=$(NF-1) }
+END {
+    if (!layout || !restore || !cancel || !confirm || total<=0) exit 1
+    printf "Window restoration new-method branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
+    if (100*(total-missed)/total<90) exit 1
+}' "$BUILD/coverage/window-layout-functions.txt"; then
+    printf 'Native window-restoration coverage gate failed: require 90%% branches across layout, restore, cancelClose and confirmLayoutClose.\n' >&2
+    exit 1
+fi
+if ! awk '$1=="window_layout.cpp" { seen=1; if ($13+0<90) fail=1 }
+          END { if (!seen || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
+    printf 'Native window-layout storage coverage gate failed: require 90%% branches in window_layout.cpp.\n' >&2
+    exit 1
+fi
 [ "$TEST_STATUS" -eq 0 ] || exit "$TEST_STATUS"

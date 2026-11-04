@@ -53,9 +53,16 @@ QString textValue(const QJsonObject& row, const QString& field) {
     if (field == "namespace" && row[field].toString().isEmpty()) return "cluster";
     return row[field].toString();
 }
-bool criterionMatches(const AlertCriterion& criterion, const QJsonObject& row, const QMap<QString, QList<double>>& samples, const QDateTime& now, bool& valid) {
+bool criterionMatches(const AlertCriterion& criterion, const QJsonObject& row, const QMap<QString, QList<double>>& samples,
+                      const QMap<QString, QDateTime>& changes, const QDateTime& now, bool& valid) {
     const auto field = criterion.field, expression = criterion.expression;
-    if (QStringList{"problems", "activity", "recentlyChanged", "newInView"}.contains(field)) return row[field].toBool() == (expression == "true");
+    // View-entry timing is applied to filtered membership after matching the session cache.
+    if (field == "newInView") return expression == "true";
+    if (field == "recentlyChanged") {
+        const auto changed = changes.value(row["path"].toString());
+        return (changed.isValid() && changed.msecsTo(now) < 30000) == (expression == "true");
+    }
+    if (field == "problems" || field == "activity") return row[field].toBool() == (expression == "true");
     if (numeric(field)) {
         const auto value = number(row, field, now); if (!value) return false;
         const auto& sorted = samples[field];
@@ -91,19 +98,23 @@ struct Evaluated final { QMap<QString, QList<QJsonObject>> matches; QMap<QString
 Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, const QMap<QString,QDateTime>& changes, QDateTime now) {
     Evaluated result; QMap<QString, QList<double>> samples;
     QSet<QString> sampleFields;
+    bool changesDeadline = false, activityDeadline = false;
     for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool())
-        for (const auto& group : rule.groups) for (const auto& criterion : group)
+        for (const auto& group : rule.groups) for (const auto& criterion : group) {
             if (numeric(criterion.field) && (criterion.expression == "p95" || criterion.expression == "outlier"))
                 sampleFields.insert(criterion.field);
+            if (criterion.field == "recentlyChanged") changesDeadline = true;
+            if (criterion.field == "activity") activityDeadline = true;
+        }
     const auto deadline = [&](QDateTime at) { if (at > now && (!result.next.isValid() || at < result.next)) result.next = at; };
     for (const auto& value : snapshot) {
-        auto row = value.toObject(); const auto path = row["path"].toString();
-        const auto changed = changes.value(path); const auto created=QDateTime::fromString(row["createdAt"].toString(), Qt::ISODateWithMs);
-        row["recentlyChanged"] = changed.isValid() && changed.msecsTo(now) < 30000;
-        // View-entry timing belongs to filtered membership, not resource freshness.
-        row["newInView"] = true;
-        // Activity is classified once by the session cache, shared with resource filtering.
-        deadline(changed.addSecs(30)); deadline(changed.addSecs(900)); deadline(created.addSecs(900));
+        const auto row = value.toObject(); const auto path = row["path"].toString();
+        if (changesDeadline) deadline(changes.value(path).addSecs(30));
+        if (activityDeadline) {
+            // Activity is classified by the session cache, shared with resource filtering.
+            deadline(changes.value(path).addSecs(900));
+            deadline(QDateTime::fromString(row["createdAt"].toString(), Qt::ISODateWithMs).addSecs(900));
+        }
         result.rows.insert(path, row);
         for (const auto& field : sampleFields) if (const auto sample=number(row, field, now)) samples[field].append(*sample);
     }
@@ -114,7 +125,7 @@ Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, cons
         bool valid=true;
         for (const auto& row : result.rows) {
             const bool matched = std::any_of(rule.groups.begin(), rule.groups.end(), [&](const auto& group) {
-                return std::all_of(group.begin(), group.end(), [&](const auto& criterion) { return criterionMatches(criterion, row, samples, now, valid); });
+                return std::all_of(group.begin(), group.end(), [&](const auto& criterion) { return criterionMatches(criterion, row, samples, changes, now, valid); });
             });
             if (matched) matches.append(row);
             if (!valid) break;

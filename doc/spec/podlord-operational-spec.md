@@ -572,23 +572,37 @@ including dimmed labels. Other terrain and resource colors remain unchanged.
 Labels MUST be outside resource point bounds, have an opaque contrasting backing
 and be drawn after points and alarm effects. Colliding names may be decluttered
 under the existing zoom rules instead of being painted through resource points.
-Hover/focus details MUST occupy a fixed area outside the map: below the small
-Radar, beside a sufficiently wide expanded map and below it otherwise. Showing
-the small or expanded Radar in very short landscape windows MUST instead place
-the fixed reader beside the map so system bars cannot collapse the canvas to
-zero height. This exception applies responsively, not through a separate mobile
-implementation. Portrait and taller windows keep the existing placement. Showing
-details MUST NOT resize the canvas or hide its points. All existing metrics,
-requests, limits and measurement timestamps MUST remain reachable by scrolling.
-In compact landscape, a loaded map with collapsed filters MUST use one shared
-navigation/zoom row and reserve only the filter toggle's icon rail, padding and
-health strip beside the map. Opening filters restores their usable width and
-separate navigation row when necessary. All existing navigation actions MUST
+Hover/focus details MUST present structured quick information, not an
+unstructured text wall: resource type, status, concrete errors/reasons, and
+available measured resource consumption with the existing request/limit reference
+markers. Existing missing, stale and incomplete measurement semantics under
+MET-001 through MET-011 and Secret masking remain unchanged. Requests, limits
+and capacity MUST NOT substitute for measured usage. All existing metrics,
+references and measurement timestamps MUST remain reachable by scrolling.
+On Radar and Map, these details MUST overlay the visible filter area and reserve
+no extra layout space. If filters are hidden, the small Radar MUST prefer a
+floating reader beside it on the available workspace. This reader is an overlay,
+not a reserved column. Where neither a visible filter area nor sufficient adjacent
+space exists, details MAY temporarily overlay the lower map edge. These fallback
+placements were confirmed on 2026-11-03. The overlay MUST include an explicit X
+close action, particularly for touch, and preserve existing keyboard and focus
+access. Closing it restores access to the underlying controls without losing the
+resource selection. The resource title and X MUST remain fixed outside the
+scrollable details so the close action remains reachable on touch devices.
+Only the approved no-space fallback may cover map points.
+This supersedes the fixed readers below or beside the drawing, including the
+short-landscape exception. This remains responsive layout, not a separate mobile
+implementation. Showing details MUST NOT resize the canvas.
+In compact landscape, a loaded map with collapsed filters reserves only the
+filter toggle's icon rail, padding and health strip beside the map. Opening
+filters restores their usable width without adding a reserved navigation row.
+Navigation placement follows RAD-VIEW-01. All existing navigation actions MUST
 remain reachable. Camera, selection and cached data remain unchanged when
-filters open or close. The Resources table and its small Radar remain available. Portrait,
-larger windows and the context overview retain their existing layout.
-Pointer and keyboard interaction with those details MUST NOT freeze later
-resource hover, panning, zooming or inspection. These paths remain cache-only.
+filters open or close. The Resources table and its small Radar remain available.
+Portrait, larger windows and the context overview retain their other layout.
+Pointer, keyboard and touch interaction with those details MUST NOT freeze later
+resource hover, panning, zooming or inspection. These paths read cached data only
+and MUST NOT perform API or storage I/O.
 The last valid details MUST remain available while the pointer travels to the
 external reader. Another hovered/focused resource replaces them. Invalid,
 filtered-out, offscreen, hidden-map or previous-session details MUST be cleared.
@@ -648,6 +662,13 @@ camera interaction. Reduced motion keeps a static water pattern. Water work MUST
 not rebuild resource geometry or keep per-Event timers alive.
 
 ### Which Radar Presentation Has Executable Evidence?
+
+The navigation overlays and cache-only structured resource reader confirmed on
+2026-11-03 are implemented. The test map owns their current functional, installed
+desktop, simulator and theme evidence, including the limits of each capture.
+Those checks do not establish complete release readiness. The close-action
+visibility after scrolling, current native performance and remaining device
+checks must be resolved through the open evidence entries there.
 
 The native radar retains the resource glyph catalog from the existing C# shared
 glyph control: 24 known Kubernetes kinds and a diamond for unknown or empty kinds.
@@ -806,7 +827,7 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | ID | Required observable behavior |
 |---|---|
 | STR-001 | Workspace restoration MUST default to enabled. When enabled, restart MUST restore saved sessions, open session tabs, their order, and the active session. Users MUST be able to disable restoration in Settings for the next launch. Disabling MUST NOT close current tabs or forwards, delete saved sessions or their history/configuration, or discard saved filters and sorts. On the next launch, saved sessions remain available but no session tab is automatically opened. Explicitly reopening a saved session MUST remain possible. |
-| STR-002 | When workspace restoration is enabled, restart MUST restore the saved separate windows with their owning session tabs, each window's saved size, and its maximized state. Restored tabs MUST retain their existing session identities and follow metadata-only startup under STR-005. This user clarification was confirmed on 2026-11-03. |
+| STR-002 | When workspace restoration is enabled, restart MUST restore the saved separate windows with their owning session tabs, each window's saved position and size, and its maximized state. After monitor changes, restored windows MUST remain within a visible workspace insofar as the platform supports it. Restored tabs MUST retain their existing session identities and follow metadata-only startup under STR-005. These user clarifications were confirmed on 2026-11-03. |
 | STR-003 | Session-specific filters MUST persist across restarts and be restored for their owning session. |
 | STR-004 | Session/table-type-specific sort state MUST persist across restarts and be restored for its owning context. |
 | STR-005 | Workspace restoration MUST restore tab metadata without initiating cluster requests, synchronization or authentication. Startup shows the context-card overview. The first explicit opening of a context or resource-facing saved tab MUST use the ordinary loading and authentication flow. Opening Settings or browsing the overview MUST NOT connect restored tabs. If login is needed and supported, it MUST be available through the visible, confirmation-gated action in ERR-013. This user clarification on 2026-10-29 supersedes automatic loading of the restored active session. |
@@ -816,7 +837,7 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | STR-009 | Settings input MUST be validated before adoption. Invalid input MUST leave the previously valid effective value unchanged. |
 | STR-010 | Saved sessions that are no longer reachable MUST remain visible with understandable status rather than be silently deleted. |
 
-Column layout persistence remains owned by TBL-007. These requirements do not introduce disk persistence for resource caches or unapplied YAML drafts; whether usable cached content survives a process restart must be established from the existing cache lifecycle during the later review. Saved window-layout details and behavior when displays change remain for final scope reconciliation. Restoration is not authorization to replay operational side effects.
+Column layout persistence remains owned by TBL-007. These requirements do not introduce disk persistence for resource caches or unapplied YAML drafts; whether usable cached content survives a process restart must be established from the existing cache lifecycle during the later review. Restoration is not authorization to replay operational side effects.
 
 For STR-003 and STR-004, Resources and Events retain independent session-owned
 filters and stable-column sort IDs, including NONE. The native persistence boundary
@@ -831,7 +852,7 @@ restoration nor preference saving authorizes a Kubernetes write or login.
 
 | Requirement | Public scenario | Expected result | Evidence status |
 |---|---|---|---|
-| STR-001, STR-002 | Save a workspace across separate windows with their owning session tabs, a non-default tab order and active session, saved window sizes and maximized states, then restart with restoration enabled. | The saved sessions, open tabs, order and active session are restored, with tabs in their owning separate windows and each window's saved size and maximized state. Existing session identities are retained. Startup remains metadata-only under STR-005, without forward or YAML-write restoration under STR-006 and STR-007. | Native session restoration tests exist. Current native reopens all open tabs in one window, so separate-window restoration is not implemented. Conformance for owning tabs, window size and maximized state, and installed-app restart comparison remain open. |
+| STR-001, STR-002 | Save a workspace across separate windows with their owning session tabs, a non-default tab order and active session, saved window positions, sizes and maximized states, then restart with restoration enabled using unchanged and changed monitor configurations. | The saved sessions, open tabs, order and active session are restored, with tabs in their owning separate windows and each window's saved position, size and maximized state. After monitor changes, restored windows remain within a visible workspace insofar as the platform supports it. Existing session identities are retained. Startup remains metadata-only under STR-005, without forward or YAML-write restoration under STR-006 and STR-007. | Native separate-window restoration is implemented. Public window/storage cases cover offscreen placement, maximized focus, disabled restoration, ownership, failed persistence and repeat use. The test map owns their latest results. Installed-app restart/monitor evidence and the new restoration-logic coverage gate remain open. |
 | STR-001, STR-008, STR-009 | Disable restoration, continue using current tabs, restart, explicitly reopen a retained session, then enable restoration and restart again. Also submit malformed or conflicting saved settings. | Disabling applies only to the next launch; identities/history/configuration and view preferences are retained. Explicit reopen remains possible. Reenabled restoration resumes normal open-tab restoration. Invalid/conflicting settings are not silently overwritten. | `native.workspace_restore.*` covers retained catalog data, next-launch placement, explicit reopen, reenabling, malformed input, locks/conflicts, repeat use, actual checkbox, keyboard and narrow window. Saved view retention and full installed-app restart remain separate checks. |
 | STR-003, STR-004 | Set different filters and table sort states in different sessions, restart, and return to each context. | Each context restores its own saved filters and sort state. | Planned check; implementation review pending. |
 | SYN-001 | Restore a workspace while one cluster is slow or unavailable and another context has usable cached content. | Available cached content appears without waiting for all clusters; absent cache is not fabricated. | Planned check; implementation review pending. |
@@ -1236,7 +1257,7 @@ records presentation ownership and non-duplicated cache summary semantics.
 | SHL-005 | Missing functions are explicitly disabled and explained, not simulated. Settings navigation remains reachable when the inspector narrows the central pane. |
 | SHL-006 | Ports lists only forwards owned by the active session. Search and copying are cache-only. Inspect targets the owned resource; Stop releases the selected forward. Unknown/inactive tokens cannot overwrite the clipboard. Closing the owner still stops its forwards. |
 | SHL-007 | The inspector MUST dock below the primary workspace in sufficiently large windows, preserving its available column width and the right-hand Radar/filter sidebar. Its docked height MUST be adjustable through a native split handle. As approved on 2026-10-27, windows below the existing 600-logical-pixel compact breakpoint and compact landscape windows temporarily give the primary workspace area to the open inspector. Closing it MUST restore the table, retained query and session without resetting cached filters or requesting resources. Resizing between compact and docked layouts MUST preserve the selected resource, draft and Radar pose. Unsaved drafts retain the existing stay/discard confirmation before closing. Narrow windows MUST retain reachable inspector actions through wrapping controls. Moving the dock MUST NOT change authentication, Secret masking, fresh-only YAML editing, write confirmation or port-forward ownership. |
-| SHL-008 | Resource, Event and Port search fields are revealed on demand. Closing search or pressing Escape retains the cached query and its results; the search toggle indicates a retained active query. Queries remain independent across workspaces and sessions. |
+| SHL-008 | Resource, Event and Port search fields are revealed on demand. Closing search or pressing Escape retains the cached query and its results; the search toggle indicates a retained active query. Hidden search fields MUST release input focus. Queued focus work MUST NOT reactivate a search field after it closes. Queries remain independent across workspaces and sessions. |
 | SHL-009 | Routine synchronization remains automatic. Explicit refresh and commands belong in the workspace menu, not a permanent text-button toolbar. Filter/camera reset and table tools use vector icons with accessible names, visible focus and tooltips. Authentication and real error recovery remain explicit and reachable. |
 | SHL-010 | The shell footer is one fixed-height line; long names/statuses elide rather than wrapping or increasing height. At 320/390 logical pixels navigation and primary icon actions have at least 44-by-44 touch targets. The same Radar stays above a scrollable filter surface in the narrow drawer. Phone-sized Qt rendering does not establish an iOS/Android release. |
 | SHL-011 | The tab strip exposes a quick file-open action and an anchored dropdown for usage-ranked saved sessions and imported contexts. File acceptance depends on kubeconfig content, not a suffix. Invalid, missing and unreadable files do not import or change the selected session, cache, filters or notices. Valid import never implicitly activates a context, executes a credential command or opens authentication. Profile/write failures remain visible. Session/context selection retains the existing draft-discard and authentication safeguards. |
@@ -1338,7 +1359,7 @@ UI-TBL-02: Status text follows reference semantics with the selected theme's hea
 - RAD-DET-03: Actual Namespace resources MUST remain selectable at their district anchor. Decorative cluster/district labels MUST NOT become synthetic Kubernetes resources or change resource counts.
 - RAD-DET-04: Input enumeration, table sorting, presentation filters and camera changes MUST NOT change world coordinates. Filtering retains noninteractive grey excluded terrain. Geometry, projection and painting read public cache models and MUST NOT initiate transport.
 - RAD-DET-05: Exact native geometry comparisons MUST use the same recorded cache projection, context identity and camera settings. C#/C++ comparisons retain behavior, colors and controls while recording the newly approved geometry difference. Comparing changing API snapshots or aggregate counts is insufficient. Isolated renderer captures MUST identify their boundary and MUST NOT be presented as full installed-window, water, animation, every-theme or release-parity evidence.
-- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Ports remain available. The small context Radar MUST be hidden only in Map and remain available on the other workspace tabs. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. Map MUST provide backward and forward navigation, retaining the existing dirty-YAML Stay/Discard protection when changing sessions. This replaces the earlier menu-only, Table-default target.
+- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Ports remain available. The small context Radar MUST be hidden only in Map and remain available on the other workspace tabs. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. Map MUST provide backward and forward navigation, retaining the existing dirty-YAML Stay/Discard protection when changing sessions. On both Map and the small Radar, existing navigation, zoom and back/forward controls MUST overlay the drawing area rather than occupy separate reserved rows or sections. Their existing keyboard, touch and focus access MUST remain available. This replaces the earlier menu-only, Table-default target.
 - RAD-VIEW-02: Cluster names MUST be visible at overview scale; namespace labels appear when zooming in; existing resource glyphs and interactive details remain available at closer scales. Label work MUST be viewport-bounded, theme-aware and decluttered. Existing wheel/trackpad zoom, drag, focused arrow keys, selection and alert focus remain unchanged. This increment adds no per-cluster status/age panel. Guidance for selection hidden by filters is lower priority, not part of this increment.
 
 ## What Does The Approved Context Overview Read?
