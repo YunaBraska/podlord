@@ -81,7 +81,7 @@ jobs:
             image="podlord-linux-runtime-$os:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
             docker build --tag "$image" --build-arg "RUNTIME_IMAGE=$base" \
               - < native/tests/linux-runtime.Dockerfile > "$out/runtime-image-$os.log" 2>&1
-            docker run --rm --cidfile "$out/runtime-$os.cid" \
+            docker run --rm --cidfile "$out/runtime-$os.cid" --user "$(id -u):$(id -g)" \
               -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" -v "$out:/output" "$image" \
               sh /scripts/test-native-linux-package.sh \
                 "/output/package/podlord-native-linux-${{ matrix.arch }}.tar.gz" \
