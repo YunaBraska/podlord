@@ -553,7 +553,7 @@ bool Alerts::dispatch() {
     connect(watcher, &QFutureWatcher<Evaluated>::finished, this, [this, watcher, session, generation, catalog, baseline, evaluatedAt = now, reuse] {
         const auto result=watcher->result(); watcher->deleteLater(); evaluating_=false;
         auto found=states_.find(session);
-        if (found==states_.end() || found->generation!=generation || closed_.contains(session)) { dispatch(); return; }
+        if (found==states_.end() || found->generation!=generation || closed_.contains(session) || !owns_(session)) { dispatch(); return; }
         auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> triggered; QSet<QString> alive, visibleMatches;
         state.initialized = true;
         if (!reuse) {

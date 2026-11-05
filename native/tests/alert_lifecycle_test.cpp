@@ -131,7 +131,7 @@ bool run(const QString& scenario) {
     }
     auto rule = alerts.rules().first().toMap();
     rule["id"] = "view-rule"; rule["name"] = "View rule"; rule["builtIn"] = false;
-    rule["sound"] = "none"; rule["zoom"] = scenario.endsWith("animation") ? 125 : 0; rule["color"] = "#123456"; rule["animation"] = "pulse";
+    rule["sound"] = "none"; rule["zoom"] = scenario.endsWith("animation") || scenario == "expiry_unowned" ? 125 : 0; rule["color"] = "#123456"; rule["animation"] = "pulse";
     const bool view = scenario.startsWith("view_") || scenario == "reuse_notifications";
     rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", view ? "newInView" : "name"},
         {"expression", view ? (scenario == "view_false" ? "false" : "true") : "worker"}}})}.toVariantList();
@@ -313,13 +313,28 @@ bool run(const QString& scenario) {
     if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
     if (!waitFor([&] { return effect()["animation"] == "pulse"; })) return false;
     if (scenario == "expiry_unowned") {
+        if (!waitFor([&] { return !focuses.isEmpty() && focuses.last().value(2).toInt() == 125; })) {
+            std::fprintf(stderr, "Ownership setup did not receive the refreshed rule focus\n");
+            return false;
+        }
+        auto* pool = QThreadPool::globalInstance();
+        pool->waitForDone();
+        const int maximum = pool->maxThreadCount();
+        pool->setMaxThreadCount(1);
+        QSemaphore entered, release;
+        auto held = QtConcurrent::run([&] { entered.release(); release.acquire(); });
+        const auto restore = qScopeGuard([&] { release.release(); held.waitForFinished(); pool->setMaxThreadCount(maximum); });
+        if (!entered.tryAcquire(1, 1000)) return false;
         const auto owned = std::make_shared<bool>(true);
         if (!alerts.setSessionOwnership([owned](const QString&) { return *owned; })) return false;
         const auto before = effect();
         const int ownershipRequests = server.requests;
         QSignalSpy updates(&alerts, &Alerts::presentationChanged);
-        *owned = false;
         now = now.addSecs(3);
+        if (!alerts.setVisibleResources("session", {})) return false;
+        *owned = false;
+        release.release();
+        held.waitForFinished();
         QTest::qWait(2100);
         if (effect() != before || !updates.isEmpty() || server.requests != ownershipRequests) {
             std::fprintf(stderr, "Unowned expiry changed effect=%d notifications=%lld requests=%d/%d\n",
@@ -328,9 +343,12 @@ bool run(const QString& scenario) {
         }
         *owned = true;
         const int restoredRequests = server.requests;
-        return alerts.setVisibleResources("session", {})
-            && waitFor([&] { return effect()["color"] != "#123456" && effect()["animation"] != "pulse"; })
-            && server.requests == restoredRequests;
+        if (!alerts.setVisibleResources("session", {path})
+            || !waitFor([&] { return effect()["color"] != "#123456" && effect()["animation"] != "pulse"; })) {
+            std::fprintf(stderr, "Restored ownership did not expire the prior effects\n");
+            return false;
+        }
+        return server.requests == restoredRequests;
     }
     if (scenario == "transfer_hold") {
         Alerts target(profile.path(), &client, nullptr, [&] { return now; });
