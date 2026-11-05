@@ -101,6 +101,6 @@ Secrets are metadata-only by default. Raw secret values, kubeconfig tokens, and 
 
 ## Current Boundaries
 
-The current app uses cache-first list/detail/log requests. Watch supervision and embedded terminal support are planned separately so the existing request queue and source model stay explicit.
+The native app uses cache-first list/detail/log requests and implements an interactive container terminal through the Kubernetes streaming API, without kubectl. Current platform evidence and remaining gaps belong to the test map. Watch supervision remains planned separately so the existing request queue and source model stay explicit.
 
 Animated radar alerts belong in the rule system, where users can enable, disable, and customize them.

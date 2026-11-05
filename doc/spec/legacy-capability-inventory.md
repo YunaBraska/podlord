@@ -39,9 +39,12 @@ Programmatically constructed context menus, keyboard routing, visibility/eligibi
 
 ## Capability Ledger
 
-This table captures C# reference routes. The dated native release assessment
-below owns the current native disposition; historical routing notes are not
-whole-product parity passes.
+This table captures C# reference routes and scoped migration notes. The dated
+assessments below are historical checkpoints, not the current release verdict.
+The operational specification owns behavior, the [roadmap](../ROADMAP.md#native-release-closure-2026-11-05)
+owns current closure status, and the [test map](k3d-test-map.md) owns executable
+evidence and remaining gaps. Historical routing notes are not whole-product
+parity passes.
 
 `Wired` means a matching literal XAML callback was found; it does not mean the callback was exercised. `Route pending` means an implementation/API was found but the complete public route needs evidence. `Catalog pending` means exact options, kinds, or subfeatures still need inventory. Each old/new disposition requires its owning contract and public evidence to be reconciled. Scoped native evidence below does not imply complete paired visual conformance. Requirement prefixes below reference the operational specification rather than define new requirements.
 
@@ -87,7 +90,7 @@ whole-product parity passes.
 
 Rows with incomplete intent are not permission to drop the capability. Add newly discovered capabilities to this ledger, map every concrete control/action, and account for all raw-index entries before claiming completeness. Graph removal is explicitly approved and must not be accidentally reintroduced from old planning documents.
 
-## Next Evidence Gates
+## Next Evidence Gates At Initial Capture
 
 1. Rebuild the captured source using its recorded toolchain/feed; record build outcome and artifact identity without overwriting the installed reference.
 2. Launch the reference in a controlled test profile and prove local-state/port/auth-provider isolation.
