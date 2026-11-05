@@ -900,7 +900,7 @@ if(BUILD_TESTING)
         resolve_sso resolve_region_flag resolve_region_env resolve_region_default_env resolve_mixed resolve_http resolve_userinfo resolve_port resolve_query resolve_fragment resolve_empty_url
         resolve_bad_region resolve_bad_account resolve_bad_role resolve_missing_sso resolve_no_ambient_fallback resolve_missing_profile
         resolve_long_url resolve_long_eks_region resolve_long_sso_region resolve_windows resolve_windows_upper resolve_exe
-        store_success store_sso store_locked store_bad_file store_directory store_bad_id store_missing_context store_missing_file store_corrupt store_replace store_removal store_removal_failure
+        store_success store_sso store_catalog_corrupt store_locked store_bad_file store_directory store_bad_id store_missing_context store_missing_file store_corrupt store_replace store_removal store_removal_failure
         store_other_program store_no_exec store_no_args store_scalar_args store_mapping_arg store_scalar_env store_empty_env store_duplicate_env store_env store_bad_profile store_bad_action store_bad_cluster store_symlink store_missing_credentials
         record_version record_profile record_missing record_fields record_extra record_type record_large record_array record_directory record_symlink
         store_bad_field_type store_bad_storage store_lock_directory)

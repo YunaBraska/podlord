@@ -202,6 +202,15 @@ void run(const QString& scenario) {
     require(!connection.credentialReady && connection.exec && connection.exec->eks && connection.credentialId == importedCredentialId(id), "AWS import authorized or shared the wrong context.");
     require(!QJsonDocument(sourceJson(snapshot)).toJson().contains("private-key-value"), "Source metadata exposed AWS keys.");
     if (scenario == "store_sso") { require(connection.exec->eks->sso.has_value(), "Stored SSO profile was lost."); return; }
+    if (scenario == "store_catalog_corrupt") {
+        const auto retained = read(privatePath);
+        write(keyPath, QByteArray(keys).replace("IMPORTEDKEY", "REPLACEMENT"));
+        write(profile + "/sessions.json", "{invalid session catalog");
+        require(std::holds_alternative<Failure>(store.importAwsProfile(id, cfgPath, keyPath))
+            && !retained.isEmpty() && read(privatePath) == retained,
+            "A corrupt session catalog did not preserve the previously imported AWS identity.");
+        return;
+    }
     if (scenario == "store_env") { require(connection.exec->eks->region == "eu-west-1", "Exec environment did not retain region precedence."); return; }
     if (scenario.startsWith("record_")) {
         auto json = QJsonDocument::fromJson(read(privatePath)).object();
