@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 [ "$#" -eq 0 ] || { printf 'No arguments are supported. Set PODLORD_NATIVE_BUILD_DIR to select the build directory.\n' >&2; exit 2; }
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
 find_tool() {
     if command -v "$1" >/dev/null 2>&1; then command -v "$1"
@@ -95,6 +95,22 @@ if ! awk '{ total+=$(NF-2); missed+=$(NF-1) }
               if (100*(total-missed)/total<90) exit 1
           }' "$BUILD/coverage/display-prefix-functions.txt"; then
     printf 'Native display-prefix coverage gate failed: require 90%% branches across the constructor and its source-change callbacks.\n' >&2
+    exit 1
+fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/alerts.cpp" \
+    | awk '/AlertsC[12]E|Alerts8dispatchE/ { print }' > "$BUILD/coverage/alarm-functions.txt"
+cat "$BUILD/coverage/alarm-functions.txt"
+if ! awk '
+/_ZN7podlord6AlertsC[12]E/ { constructor=1 }
+/_ZN7podlord6Alerts8dispatchEv/ { dispatch=1 }
+{ total+=$(NF-2); missed+=$(NF-1) }
+END {
+    if (!constructor || !dispatch || total<=0) exit 1
+    printf "Alarm constructor/dispatch-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
+    if (100*(total-missed)/total<90) exit 1
+}' "$BUILD/coverage/alarm-functions.txt"; then
+    printf 'Native alarm coverage gate failed: require 90%% branches across construction, expiry callbacks and dispatch result/reuse projection.\n' >&2
     exit 1
 fi
 "$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \

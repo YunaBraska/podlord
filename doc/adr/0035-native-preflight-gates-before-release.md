@@ -82,6 +82,12 @@ broader UI/runtime code has many independently verified public behaviors but
 does not yet meet the former 90% aggregate branch threshold. This decision
 does not waive missing behavior, package, device, image, or performance evidence.
 
+Alarm construction and dispatch have a combined 90% function-family branch gate.
+It includes expiry admission, asynchronous result ownership checks, valid-result
+reuse and effect projection, including their nested callbacks. Required family
+entrypoints must be present. A partial real test profile must fail this gate
+even when its selected behavioral test passes.
+
 The capped display model's source-change optimization has a separate 90% branch
 gate across its complete constructor family, including the insertion, removal
 and layout callbacks. The existing overall and Radar/Map gates remain unchanged.
