@@ -4975,6 +4975,18 @@ bool execute(const QString& requestedScenario) {
                     std::fprintf(stderr, "Discard keyboard focus: window=%d active=%d visual=%d current=%s\n", window->isActive(), item(window,"discardStay")->hasActiveFocus(), item(window,"discardStay")->property("visualFocus").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
                     return false;
                 }
+                QTest::keyClick(window, Qt::Key_Tab);
+                if (!waitFor([&] { return QGuiApplication::focusObject() == item(window, "discardAccept")
+                        && item(window, "discardAccept")->hasActiveFocus() && item(window, "discardAccept")->property("visualFocus").toBool(); })) {
+                    std::fputs("Discard prompt Tab did not focus Discard changes.\n", stderr);
+                    return false;
+                }
+                QTest::keyClick(window, Qt::Key_Backtab);
+                if (!waitFor([&] { return QGuiApplication::focusObject() == item(window, "discardStay")
+                        && item(window, "discardStay")->hasActiveFocus() && item(window, "discardStay")->property("visualFocus").toBool(); })) {
+                    std::fputs("Discard prompt Backtab did not restore Stay focus.\n", stderr);
+                    return false;
+                }
                 const auto key = scenario.endsWith("_keypad") ? Qt::Key_Enter : scenario.endsWith("_space") ? Qt::Key_Space : Qt::Key_Return;
                 keyFocusBefore = window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{};
                 QTest::keyPress(window, key);

@@ -253,6 +253,19 @@ void run(const QString& scenario) {
             "A corrupt session catalog did not preserve the previously imported AWS identity.");
         return;
     }
+    if (scenario == "store_record_limit") {
+        const auto retained = read(privatePath);
+        QByteArray chain;
+        for (int n = 0; n < 400; ++n) {
+            const auto name = n == 0 ? QByteArray("prod") : "role" + QByteArray::number(n);
+            const auto next = n == 399 ? QByteArray("root") : "role" + QByteArray::number(n + 1);
+            chain += "[profile " + name + "]\nregion=eu-central-1\nrole_arn=arn:aws:iam::123456789012:role/Target\nsource_profile=" + next + "\n";
+        }
+        write(cfgPath, chain); write(keyPath, QByteArray(keys).replace("[prod]", "[root]"));
+        require(std::holds_alternative<Failure>(store.importAwsProfile(id, cfgPath, keyPath)) && read(privatePath) == retained
+            && std::get<ClusterConnection>(store.connection(id)).exec->eks->accessKey == "IMPORTEDKEY", "Oversized resolved role chain replaced the prior identity.");
+        return;
+    }
     if (scenario == "store_env") { require(connection.exec->eks->region == "eu-west-1", "Exec environment did not retain region precedence."); return; }
     if (scenario.startsWith("record_")) {
         auto json = QJsonDocument::fromJson(read(privatePath)).object();
@@ -275,6 +288,12 @@ void run(const QString& scenario) {
         if (mode == "role_invalid" || mode == "role_fractional") json["roles"] = QJsonArray{QJsonObject{
             {"arn", "arn:aws:iam::123456789012:role/Target"}, {"sessionName", "test-session"}, {"externalId", ""}, {"mfaSerial", ""},
             {"durationSeconds", mode == "role_invalid" ? 1.0 : 900.5}}};
+        if (mode.startsWith("role_field_")) {
+            QJsonObject role{{"arn", "arn:aws:iam::123456789012:role/Target"}, {"sessionName", "test-session"},
+                {"externalId", "external-id"}, {"mfaSerial", "arn:aws:iam::123456789012:mfa/user"}, {"durationSeconds", 900}};
+            role[mode.mid(11)] = mode == "role_field_durationSeconds" ? QJsonValue("900") : QJsonValue(1);
+            json["roles"] = QJsonArray{role};
+        }
         if (mode == "extra") json["fields"] = QJsonObject{{"unexpected", "private-content"}};
         if (mode == "type") json["fields"] = QJsonObject{{"region", 7}};
         write(privatePath, mode == "large" ? QByteArray(65537, 'x') : mode == "array" ? QByteArray("[]") : QJsonDocument(json).toJson());

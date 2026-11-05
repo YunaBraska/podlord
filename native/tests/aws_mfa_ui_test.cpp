@@ -46,8 +46,13 @@ void run(const QString& scenario) {
     require(!engine.rootObjects().isEmpty(), "Production MFA window cannot load.");
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     require(window, "Production window is missing.");
+#ifdef Q_OS_IOS
+    qputenv("PODLORD_TEST_ORIENTATION", scenario == "landscape" ? "landscape" : "portrait");
+    require(test::orientIosTestWindow(window), "iOS did not confirm the requested MFA orientation.");
+#else
     if (scenario == "narrow") window->resize(320, 640);
     if (scenario == "landscape") window->resize(640, 320);
+#endif
     require(workspace.openContext(contexts.first().id)
         && QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); }, 5000), "Opening context did not await explicit login.");
     require(test::clickVisible(window, "resourcesWorkspaceButton"), "Cannot select the resource view before authentication.");

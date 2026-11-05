@@ -531,17 +531,16 @@ if(BUILD_TESTING OR (IOS AND PODLORD_BUILD_MOBILE_UI_TEST))
             qt_add_executable(aws-mfa-ui-test tests/aws_mfa_ui_test.cpp tests/aws_boundary.h tests/kubernetes_auth_boundary.h tests/browser_boundary.h tests/ui_input.h)
             target_link_libraries(aws-mfa-ui-test PRIVATE podlord_workspace Qt6::Test)
             target_include_directories(aws-mfa-ui-test PRIVATE "${OPENSSL_ROOT_DIR}/include")
-            qt_add_ios_ffmpeg_libraries(aws-mfa-ui-test)
-            set_target_properties(aws-mfa-ui-test PROPERTIES MACOSX_BUNDLE TRUE
-                MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
-                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
-                XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
         endif()
         if(NOT TARGET source-inspector-ui-test)
             qt_add_executable(source-inspector-ui-test tests/source_inspector_ui_test.cpp tests/ui_input.h)
             target_link_libraries(source-inspector-ui-test PRIVATE podlord_workspace Qt6::Test)
         endif()
-        foreach(ui_test workspace_ui_test source-inspector-ui-test)
+        if(NOT TARGET container-terminal-ui-test)
+            qt_add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp tests/ui_input.h)
+            target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
+        endif()
+        foreach(ui_test workspace_ui_test source-inspector-ui-test aws-mfa-ui-test container-terminal-ui-test)
             target_sources(${ui_test} PRIVATE tests/ios_orientation.mm)
             target_link_libraries(${ui_test} PRIVATE "-framework UIKit")
             set_target_properties(${ui_test} PROPERTIES MACOSX_BUNDLE TRUE
@@ -576,8 +575,10 @@ endforeach()
 
 if(BUILD_TESTING)
     add_executable(port-forward-ui-test tests/port_forward_ui_test.cpp)
-    add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
-    target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
+    if(NOT TARGET container-terminal-ui-test)
+        add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
+        target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
+    endif()
     foreach(scenario connect input ime_query ime_commit ime_empty wheel_history wheel_pixel wheel_shift_tracking wheel_tracking_up wheel_tracking_down wheel_follow shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
         status_success status_empty status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
         status_invalid_exit_reason status_invalid_exit_text status_invalid_exit_zero status_invalid_exit_large status_invalid_exit_fraction status_invalid_exit_missing
@@ -938,7 +939,8 @@ if(BUILD_TESTING)
         resolve_long_url resolve_long_eks_region resolve_long_sso_region resolve_windows resolve_windows_upper resolve_exe
         store_success store_sso store_catalog_corrupt store_locked store_bad_file store_directory store_bad_id store_missing_context store_missing_file store_corrupt store_replace store_removal store_removal_failure
         store_other_program store_no_exec store_no_args store_scalar_args store_mapping_arg store_scalar_env store_empty_env store_duplicate_env store_env store_bad_profile store_bad_action store_bad_cluster store_symlink store_missing_credentials
-        store_role record_roles_type record_role_type record_role_missing record_role_invalid record_role_fractional
+        store_role store_record_limit record_roles_type record_role_type record_role_missing record_role_invalid record_role_fractional
+        record_role_field_arn record_role_field_sessionName record_role_field_externalId record_role_field_mfaSerial record_role_field_durationSeconds
         record_version record_legacy_v1 record_profile record_missing record_fields record_extra record_type record_large record_array record_directory record_symlink
         store_bad_field_type store_bad_storage store_lock_directory)
         # QFile::link creates .lnk shortcuts on Windows, not the symbolic links

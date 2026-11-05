@@ -147,7 +147,13 @@ ApplicationWindow {
                 Keys.onEnterPressed: discardChanges.accept()
             }
         }
-        onOpened: discardStayButton.forceActiveFocus(Qt.TabFocusReason)
+        onOpened: {
+            // Finish platform button ordering before the view can replace the safe focus.
+            footer.ensurePolished()
+            const buttons = footer.contentItem as ListView
+            if (buttons) buttons.forceLayout()
+            discardStayButton.forceActiveFocus(Qt.TabFocusReason)
+        }
         onAccepted: workspace.confirmDiscard(true)
         onRejected: workspace.confirmDiscard(false)
     }

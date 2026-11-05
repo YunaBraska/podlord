@@ -17,6 +17,7 @@
 #include <QtTest/QTest>
 #include <cstdio>
 #include <functional>
+#include <memory>
 
 namespace {
 bool waitFor(const std::function<bool()>& test, int timeout = 15000) { return QTest::qWaitFor(test, timeout); }
@@ -89,11 +90,32 @@ bool run(const QString& scenario, const QString& configPath) {
     podlord::Workspace workspace(profile.path()); QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace); engine.load(QUrl("qrc:/podlord/Main.qml")); REQUIRE(!engine.rootObjects().isEmpty());
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first()); REQUIRE(window);
+#ifdef Q_OS_IOS
+    REQUIRE(podlord::test::orientIosTestWindow(window));
+#endif
     REQUIRE(waitFor([&] { return !workspace.busy(); }) && workspace.openContext(source->contexts.first().id));
     REQUIRE(waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.table()->rowCount() > 0; }, real ? 120000 : 15000));
     REQUIRE(workspace.inspectPath(path)); REQUIRE(waitFor([&] { return !workspace.loading(); }, real ? 60000 : 15000));
     const auto click = [&](const char* object) {
         auto* item = podlord::test::visibleItem(window->contentItem(), QString::fromLatin1(object));
+#ifdef Q_OS_IOS
+        if (item && QByteArray(object) == "terminalButton") {
+            const auto visible = podlord::test::visibleBounds(window, item);
+            const auto full = item->mapRectToScene(QRectF(QPointF{}, item->size()));
+            if (!visible.isEmpty() && !visible.contains(full)) {
+                std::unique_ptr<QPointingDevice> device(QTest::createTouchDevice());
+                const auto from = visible.center().toPoint();
+                const auto to = QPoint(qMax(24, from.x() - 220), from.y());
+                QTest::touchEvent(window, device.get()).press(0, from, window).commit();
+                for (int step = 1; step <= 4; ++step) {
+                    QTest::touchEvent(window, device.get()).move(0, from + (to - from) * step / 4, window).commit();
+                    QTest::qWait(20);
+                }
+                QTest::touchEvent(window, device.get()).release(0, to, window).commit();
+                REQUIRE(waitFor([&] { return podlord::test::visibleBounds(window, item).contains(item->mapRectToScene(QRectF(QPointF{}, item->size()))); }));
+            }
+        }
+#endif
         if (!item || !item->isEnabled() || !podlord::test::scrollIntoView(window, item)) {
             const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FAILURE_FRAME"); if (!frame.isEmpty()) window->grabWindow().save(frame);
             return false;
