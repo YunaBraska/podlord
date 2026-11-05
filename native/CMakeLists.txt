@@ -891,7 +891,8 @@ if(BUILD_TESTING)
     target_link_libraries(native-eks-test PRIVATE podlord_sources)
     add_executable(aws-profile-test tests/aws_profile_test.cpp)
     target_link_libraries(aws-profile-test PRIVATE podlord_sources Qt6::Test)
-    foreach(scenario name_default name_env name_precedence name_equals name_duplicate name_missing name_option name_blank name_invalid name_control name_long name_trim
+    foreach(scenario name_default name_env name_precedence name_default_env name_default_env_precedence name_default_env_argument name_default_env_blank
+        resolve_default_env_without_import name_equals name_duplicate name_missing name_option name_blank name_invalid name_control name_long name_trim
         parse_credentials_only parse_config_only parse_default parse_bom parse_comments parse_precedence parse_sso parse_legacy_sso parse_empty parse_large_config parse_large_credentials
         parse_utf8 parse_null parse_section parse_empty_section parse_duplicate_section parse_no_section parse_no_equal parse_duplicate_field parse_missing parse_no_inherit
         parse_unsupported_role_arn parse_unsupported_source_profile parse_unsupported_credential_source parse_unsupported_credential_process parse_unsupported_web_identity_token_file parse_unsupported_endpoint_url

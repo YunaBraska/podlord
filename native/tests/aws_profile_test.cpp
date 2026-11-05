@@ -34,12 +34,24 @@ const QByteArray ssoConfig = "[profile prod]\nregion=eu-central-1\nsso_session=c
 void run(const QString& scenario) {
     auto exec = command();
     QByteArray cfg = config, creds = keys;
+    if (scenario == "resolve_default_env_without_import") {
+        exec.arguments = {"eks", "get-token", "--cluster-name", "example", "--region", "eu-central-1"};
+        exec.environment = {{"AWS_DEFAULT_PROFILE", "personal"}, {"AWS_ACCESS_KEY_ID", "OTHERKEY"}, {"AWS_SECRET_ACCESS_KEY", "OTHERSECRET"}};
+        const auto result = nativeEksConfig(exec);
+        require(std::holds_alternative<Failure>(result) && std::get<Failure>(result).message.contains("import"),
+            "AWS_DEFAULT_PROFILE silently fell back to a different identity without an explicit import.");
+        return;
+    }
     if (scenario.startsWith("name_")) {
         QString expected = "prod";
         bool invalid = false;
         if (scenario == "name_default") { exec.arguments = {}; expected = "default"; }
         if (scenario == "name_env") { exec.arguments = {}; exec.environment.insert("AWS_PROFILE", "personal"); expected = "personal"; }
         if (scenario == "name_precedence") exec.environment.insert("AWS_PROFILE", "ignored");
+        if (scenario == "name_default_env") { exec.arguments = {}; exec.environment.insert("AWS_DEFAULT_PROFILE", "personal"); expected = "personal"; }
+        if (scenario == "name_default_env_precedence") { exec.arguments = {}; exec.environment = {{"AWS_DEFAULT_PROFILE", "personal"}, {"AWS_PROFILE", "ignored"}}; expected = "personal"; }
+        if (scenario == "name_default_env_argument") exec.environment = {{"AWS_DEFAULT_PROFILE", "ignored"}, {"AWS_PROFILE", "also-ignored"}};
+        if (scenario == "name_default_env_blank") { exec.arguments = {}; exec.environment.insert("AWS_DEFAULT_PROFILE", ""); invalid = true; }
         if (scenario == "name_equals") exec.arguments = {"--profile=prod"};
         if (scenario == "name_duplicate") { exec.arguments.append("--profile=other"); invalid = true; }
         if (scenario == "name_missing") { exec.arguments = {"--profile"}; invalid = true; }

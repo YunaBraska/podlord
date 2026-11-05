@@ -29,7 +29,7 @@ Result<QString> awsProfileName(const ExecCommand& command) {
         selected = arg == "--profile" ? (++i < command.arguments.size() ? command.arguments[i] : QString{}) : arg.mid(10);
         if (selected.isEmpty() || selected.startsWith("--")) return Failure{StoreError::InvalidData, "AWS profile name is missing."};
     }
-    if (selected.isEmpty()) selected = command.environment.value("AWS_PROFILE", "default");
+    if (selected.isEmpty()) selected = command.environment.value("AWS_DEFAULT_PROFILE", command.environment.value("AWS_PROFILE", "default"));
     if (selected.isEmpty() || selected.size() > 128 || selected != selected.trimmed()
         || std::any_of(selected.cbegin(), selected.cend(), [](QChar c) { return c.category() == QChar::Other_Control || c == '[' || c == ']'; }))
         return Failure{StoreError::InvalidData, "AWS profile name is invalid."};
@@ -120,7 +120,7 @@ Result<std::optional<EksLogin>> nativeEksConfig(const ExecCommand& command, cons
     if (!action) return std::optional<EksLogin>{};
     const auto profileName = awsProfileName(command);
     if (const auto* failure = std::get_if<Failure>(&profileName)) return *failure;
-    if (!importedProfile && (options.contains("--profile") || command.environment.contains("AWS_PROFILE")))
+    if (!importedProfile && (options.contains("--profile") || command.environment.contains("AWS_DEFAULT_PROFILE") || command.environment.contains("AWS_PROFILE")))
         return Failure{StoreError::InvalidData, "Explicitly import this AWS profile through Sources before native sign-in. No CLI was run."};
     if (options.contains("--output") && options.value("--output") != "json")
         return Failure{StoreError::UnsupportedVersion, "Native EKS only supports JSON credential output."};
