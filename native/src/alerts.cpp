@@ -291,7 +291,15 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
     : QObject(parent), profile_(std::move(profile)), client_(client), now_(std::move(now)) {
     presentationText_ = uiText("en");
     expiry_.setSingleShot(true);
-    connect(&expiry_, &QTimer::timeout, this, [this] { for (auto it=states_.cbegin(); it!=states_.cend(); ++it) queue(it.key()); });
+    connect(&expiry_, &QTimer::timeout, this, [this] {
+        // Expiry changes the clock, not the resource snapshot. Dispatch still checks rule deadlines.
+        for (auto it = states_.begin(); it != states_.end(); ++it) {
+            if (!owns_(it.key())) continue;
+            ++it->generation;
+            pending_.insert(it.key());
+        }
+        dispatch();
+    });
     connect(client_, &ResourceClient::rowsChanged, this, [this](const QString& session) { queue(session); });
     connect(client_, &ResourceClient::changed, this, [this](const QString& session) {
         if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return;
@@ -628,6 +636,7 @@ bool Alerts::dispatch() {
     watcher->setFuture(QtConcurrent::run([previous, catalog, changes, now, reuse, triggered, evaluateBefore] {
         if (reuse) {
             Evaluated result; result.rows = previous; result.next = evaluateBefore;
+            if (triggered.isEmpty()) return result;
             // Reconstruct only transient rule projections from the existing match identities.
             for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool()) {
                 const auto id = rule.value["id"].toString();

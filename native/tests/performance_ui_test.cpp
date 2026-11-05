@@ -141,8 +141,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     }, Qt::DirectConnection);
     quint64 actionToken = 0;
     if (!window || !waitFor([&] { return window->isVisible() && !workspace.busy(); })) return false;
+    const double constructionMilliseconds = startup.nsecsElapsed() / 1000000.0;
     if (!backgroundMetal) { window->raise(); window->requestActivate(); }
-    if (desktop && (!waitFor([&] { return validDesktopState() || activationObserved; }) || !validDesktopState())) {
+    if (desktop && (!waitFor([&] { return validDesktopState() || activationObserved; }, 60000) || !validDesktopState())) {
         report({{"type", "failure"}, {"reason", backgroundMetal ? "background Metal window unavailable or activated" : "foreground desktop unavailable"}, {"visible", window->isVisible()},
                 {"exposed", window->isExposed()}, {"active", window->isActive()}});
         return false;
@@ -158,7 +159,8 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     if (!settings || (backgroundMetal
             ? !waitFor([&] { return settings->isVisible() && settings->width()>0 && settings->height()>0; })
             : !podlord::test::scrollIntoView(window, settings))) return false;
-    if (!report({{"type", "construction"}, {"milliseconds", startup.nsecsElapsed() / 1000000.0},
+    if (!report({{"type", "construction"}, {"milliseconds", constructionMilliseconds},
+                  {"desktopReadinessMilliseconds", startup.nsecsElapsed() / 1000000.0 - constructionMilliseconds},
                  {"windowWidth", window->width()}, {"windowHeight", window->height()}, {"devicePixelRatio", window->devicePixelRatio()},
                  {"scope", "Workspace/QML construction, not installed-process startup"}})) return false;
     const auto frame = [&](const std::function<bool()>& action, const std::function<bool()>& visible) -> std::optional<FrameTiming> {

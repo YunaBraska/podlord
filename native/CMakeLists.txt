@@ -659,7 +659,7 @@ if(BUILD_TESTING)
     foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid view_snapshot_pending session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline
         criterion_text_prefix criterion_text_suffix criterion_text_alternative criterion_text_miss criterion_regex_miss criterion_image criterion_problem_true criterion_problem_false criterion_activity_true criterion_activity_false
         criterion_numeric_gt_miss criterion_numeric_gte criterion_numeric_lte criterion_numeric_exact criterion_multi_exact criterion_age_minutes criterion_age_missing criterion_p95 criterion_outlier
-        reuse_age_forward reuse_age_backward reuse_freshness_expiry reuse_clock_back reuse_notifications reuse_catalog)
+        reuse_age_forward reuse_age_backward reuse_freshness_expiry reuse_clock_back reuse_notifications reuse_catalog expiry_unowned)
         add_test(NAME native.alert_lifecycle.${scenario} COMMAND alert-lifecycle-test ${scenario})
         set_tests_properties(native.alert_lifecycle.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
