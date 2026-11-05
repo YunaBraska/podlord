@@ -4934,6 +4934,10 @@ bool execute(const QString& requestedScenario) {
                 const auto status = text(window, "yamlDraftStatus");
                 return noWrites() && (scenario == "inspector_edit_refresh" ? status.contains("version changed") : scenario == "inspector_edit_same_version" ? !status.contains("version changed") : status.contains("unavailable"));
             }
+            if (scenario == "inspector_edit_close_keyboard" || scenario == "inspector_edit_close_keypad" || scenario == "inspector_edit_close_space") {
+                window->requestActivate();
+                if (!waitFor([&] { return window->isActive(); })) { std::fputs("Discard prompt window did not activate before interaction.\n", stderr); return false; }
+            }
             const auto originalSession = workspace.currentSession();
             if (scenario.startsWith("inspector_edit_resource_")) {
                 if (!type(window, item(window, "resourceFilter"), "charlie") || !waitFor([&] { return workspace.table()->rowCount() == 1; }) || !click(window, item(window, "cell_0_0"))) return false;

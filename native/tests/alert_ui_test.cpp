@@ -784,7 +784,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (mode=="empty" && (!item(window,"alertSoundNoResults")->isVisible()
                 || !item(window,"alertSoundAttribution")->property("text").toString().contains("Warning ping"))) return false;
             if (mode=="clear") {
-                if (!type(window,"alertSoundSearch","") || !waitFor([&] { return item(window,"alertSound")->property("count").toInt()==117; })) return false;
+                if (!type(window,"alertSoundSearch","") || !waitFor([&] { return item(window,"alertSound")->property("count").toInt()==123; })) return false;
             }
             const auto expected=mode=="select" ? "metal-impact" : "warning-ping";
             if (mode=="select") {

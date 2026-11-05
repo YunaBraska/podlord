@@ -2,7 +2,7 @@
 #include "kubeconfig_store.h"
 #include "native_oidc.h"
 #include "native_eks.h"
-#include "native_aws_sso.h"
+#include "native_aws_login.h"
 #include "native_gke.h"
 #include <QProcess>
 
@@ -21,6 +21,8 @@ public:
     bool revoke(const QString& credential);
     bool running(const QString& credential) const;
     QString instruction(const QString& credential) const;
+    std::optional<AwsMfaChallenge> challenge(const QString& credential) const;
+    bool submitMfa(const QString& credential, const QString& challengeId, const QString& code);
     std::optional<ClusterConnection> cached(const QString& credential) const;
     Result<ClusterConnection> result(const QString& credential) const;
 signals:
@@ -32,7 +34,7 @@ private:
     QMap<QString, Job> jobs_;
     QMap<QString, NativeOidcLogin*> nativeJobs_;
     QMap<QString, NativeGkeLogin*> gkeJobs_;
-    QMap<QString, NativeAwsSso*> awsJobs_;
+    QMap<QString, NativeAwsLogin*> awsJobs_;
     QMap<QString, Result<ClusterConnection>> results_;
     void finish(const ClusterConnection& connection, const QString& session, QProcess* process);
 };

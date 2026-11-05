@@ -857,7 +857,54 @@ ApplicationWindow {
             Button { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             Button { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
-        Label { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        Label { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== "" && !workspace.authenticationChallenge.id; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        Loader {
+            id: mfaForm
+            Layout.fillWidth: true
+            readonly property var challenge: workspace.authenticationChallenge
+            active: !!challenge.id
+            visible: active
+            sourceComponent: ColumnLayout {
+                spacing: 4
+                Label {
+                    Layout.fillWidth: true
+                    visible: !window.inputPriority
+                    text: "AWS MFA: " + mfaForm.challenge.role + " / " + mfaForm.challenge.device
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                    Accessible.name: text
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextField {
+                        id: mfaCode
+                        objectName: "authenticationMfaCode"
+                        readonly property string challengeId: mfaForm.challenge.id || ""
+                        property string errorText: ""
+                        onChallengeIdChanged: { text = ""; errorText = "" }
+                        Layout.fillWidth: true
+                        echoMode: TextInput.Password
+                        maximumLength: 6
+                        inputMethodHints: Qt.ImhDigitsOnly | Qt.ImhHiddenText | Qt.ImhNoPredictiveText
+                        validator: RegularExpressionValidator { regularExpression: /^[0-9]{0,6}$/ }
+                        placeholderText: "Six-digit MFA code"
+                        Accessible.name: "AWS MFA code for " + mfaForm.challenge.role
+                        function submit() {
+                            const id = mfaForm.challenge.id
+                            const value = text
+                            text = ""
+                            const accepted = workspace.submitAuthenticationCode(id, value)
+                            if (!accepted && mfaForm.challenge.id === id) errorText = "Enter the current six-digit code."
+                        }
+                        onAccepted: if (acceptableInput && text.length === 6) submit()
+                        Component.onCompleted: if (window.active) forceActiveFocus()
+                    }
+                    Button { objectName: "submitAuthenticationMfa"; text: "Continue"; enabled: mfaCode.acceptableInput && mfaCode.text.length === 6; onClicked: mfaCode.submit() }
+                    Button { objectName: "cancelAuthenticationMfa"; text: "Cancel"; onClicked: workspace.cancelAuthentication() }
+                }
+                Label { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+            }
+        }
         Label { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
         RowLayout {
             Layout.fillWidth: true

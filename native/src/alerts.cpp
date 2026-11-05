@@ -145,9 +145,9 @@ QJsonObject draft(QString id, QString name, QString field, QString expression, Q
 QVariantList soundCatalog() {
     static const QVariantList catalog = [] {
         const auto sound = [](const QString& id, const QString& name, const QString& purpose,
-                              const QString& source, const QString& asset, bool music, const QString& author) {
+                              const QString& source, const QString& asset, bool music, const QString& author, const QString& license = "CC0-1.0") {
             return QVariantMap{{"id", id}, {"name", name}, {"purpose", purpose}, {"author", author},
-                {"license", "CC0-1.0"}, {"source", source}, {"asset", asset}, {"isMusic", music}};
+                {"license", license}, {"source", source}, {"asset", asset}, {"isMusic", music}};
         };
         QVariantList result{
             sound("none", "No sound", "Silent alert action.", "https://github.com/YunaBraska/podlord", "", false, "Podlord project"),
@@ -176,6 +176,18 @@ QVariantList soundCatalog() {
                 "Interface command sound from Kenney Interface Sounds.", "https://kenney.nl/assets/interface-sounds",
                 "qrc:/podlord/audio/interface/" + file, false, "Kenney"));
         }
+        result.append(sound("modern-soft-confirm", "Soft confirm", "A restrained two-note confirmation cue.",
+            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/soft-confirm.mp3", false, "Podlord project", "MIT"));
+        result.append(sound("modern-gentle-change", "Gentle change", "A quiet rising cue for routine resource changes.",
+            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/gentle-change.mp3", false, "Podlord project", "MIT"));
+        result.append(sound("modern-attention", "Gentle attention", "A soft, brief cue for items that need attention.",
+            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/attention.mp3", false, "Podlord project", "MIT"));
+        result.append(sound("modern-complete", "Quiet complete", "A short calm cue when an operation completes.",
+            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/complete.mp3", false, "Podlord project", "MIT"));
+        result.append(sound("modern-soft-warning", "Soft warning", "A low-intensity descending cue for a warning.",
+            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/soft-warning.mp3", false, "Podlord project", "MIT"));
+        result.append(sound("modern-new-activity", "New activity", "A subtle short cue for newly observed activity.",
+            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/new-activity.mp3", false, "Podlord project", "MIT"));
         return result;
     }();
     return catalog;

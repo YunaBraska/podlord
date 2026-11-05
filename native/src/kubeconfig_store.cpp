@@ -394,12 +394,12 @@ Result<std::optional<GkeServiceAccount>> importedGkeAccount(const QString& profi
     if (const auto* failure = std::get_if<Failure>(&parsed)) return *failure;
     return std::optional<GkeServiceAccount>{std::get<GkeServiceAccount>(parsed)};
 }
-Result<std::optional<QMap<QString, QString>>> importedAwsProfile(const QString& profile, const QString& contextId, const ExecCommand& command) {
+Result<std::optional<AwsProfile>> importedAwsProfile(const QString& profile, const QString& contextId, const ExecCommand& command) {
     const auto directory = sourceDirectory(profile, false);
     if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
     const auto path = awsCredentialPath(std::get<QString>(directory), contextId);
     if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Protected AWS profile cannot be a symlink."};
-    if (!QFileInfo(path).exists()) return std::optional<QMap<QString, QString>>{};
+    if (!QFileInfo(path).exists()) return std::optional<AwsProfile>{};
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read protected AWS profile."};
     const auto bytes = file.read(65537);
@@ -409,7 +409,9 @@ Result<std::optional<QMap<QString, QString>>> importedAwsProfile(const QString& 
     const auto selected = awsProfileName(command);
     if (const auto* failure = std::get_if<Failure>(&selected)) return *failure;
     if (file.error() != QFileDevice::NoError || bytes.size() > 65536 || error.error != QJsonParseError::NoError || !document.isObject()
-        || record.size() != 3 || record.value("version").toDouble() != 1 || record.value("profile").toString() != std::get<QString>(selected)
+        || !((record.value("version").toDouble() == 1 && record.size() == 3)
+            || (record.value("version").toDouble() == 2 && record.size() == 4 && record.value("roles").isArray()))
+        || record.value("profile").toString() != std::get<QString>(selected)
         || !record.value("fields").isObject()) return Failure{StoreError::InvalidData, "Protected AWS profile is invalid."};
     QMap<QString, QString> fields;
     const QSet<QString> allowed{"region", "aws_access_key_id", "aws_secret_access_key", "aws_session_token",
@@ -419,7 +421,17 @@ Result<std::optional<QMap<QString, QString>>> importedAwsProfile(const QString& 
         if (!allowed.contains(it.key()) || !it.value().isString()) return Failure{StoreError::InvalidData, "Protected AWS profile is invalid."};
         fields.insert(it.key(), it.value().toString());
     }
-    return std::optional<QMap<QString, QString>>{std::move(fields)};
+    AwsProfile result{std::move(fields), {}};
+    for (const auto& value : record.value("roles").toArray()) {
+        const auto role = value.toObject();
+        if (!value.isObject() || role.size() != 5 || !role.value("arn").isString() || !role.value("sessionName").isString()
+            || !role.value("externalId").isString() || !role.value("mfaSerial").isString() || !role.value("durationSeconds").isDouble()
+            || role.value("durationSeconds").toDouble() != role.value("durationSeconds").toInt())
+            return Failure{StoreError::InvalidData, "Protected AWS role settings are invalid."};
+        result.roles.append(AwsRole{role.value("arn").toString(), role.value("sessionName").toString(), role.value("externalId").toString(),
+            role.value("mfaSerial").toString(), role.value("durationSeconds").toInt()});
+    }
+    return std::optional<AwsProfile>{std::move(result)};
 }
 } // namespace
 
@@ -559,15 +571,20 @@ Result<SourceSnapshot> KubeconfigStore::importAwsProfile(const QString& contextI
             if (const auto* failure = std::get_if<Failure>(&name)) return *failure;
             const auto selected = readAwsProfile(config, credentials, std::get<QString>(name));
             if (const auto* failure = std::get_if<Failure>(&selected)) return *failure;
-            const auto& fields = std::get<QMap<QString, QString>>(selected);
-            const auto parsed = nativeEksConfig(command, fields);
+            const auto& selectedProfile = std::get<AwsProfile>(selected);
+            const auto& fields = selectedProfile.fields;
+            const auto parsed = nativeEksConfig(command, selectedProfile);
             if (const auto* failure = std::get_if<Failure>(&parsed)) return *failure;
             if (!std::get<std::optional<EksLogin>>(parsed)) return Failure{StoreError::InvalidInput, "Select an AWS EKS exec context."};
             const auto path = awsCredentialPath(std::get<QString>(directory), contextId);
             if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Protected AWS profile cannot be a symlink."};
             QJsonObject values;
             for (auto field = fields.cbegin(); field != fields.cend(); ++field) values.insert(field.key(), field.value());
-            const auto bytes = QJsonDocument(QJsonObject{{"version", 1}, {"profile", std::get<QString>(name)}, {"fields", values}}).toJson();
+            QJsonArray roles;
+            for (const auto& role : selectedProfile.roles) roles.append(QJsonObject{{"arn", role.arn}, {"sessionName", role.sessionName},
+                {"externalId", role.externalId}, {"mfaSerial", role.mfaSerial}, {"durationSeconds", role.durationSeconds}});
+            const auto bytes = QJsonDocument(QJsonObject{{"version", 2}, {"profile", std::get<QString>(name)}, {"fields", values}, {"roles", roles}}).toJson();
+            if (bytes.size() > 65536) return Failure{StoreError::InvalidData, "Resolved AWS profile exceeds the 64 KiB protected-record limit; previous data retained."};
             QSaveFile saved(path);
             if (!saved.open(QIODevice::WriteOnly) || !saved.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
                 || saved.write(bytes) != bytes.size() || !saved.commit())
@@ -1027,7 +1044,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     const auto& account = std::get<std::optional<GkeServiceAccount>>(importedGke);
                     const auto importedAws = importedAwsProfile(profile_, contextId, command);
                     if (const auto* failure = std::get_if<Failure>(&importedAws)) return *failure;
-                    const auto& aws = std::get<std::optional<QMap<QString, QString>>>(importedAws);
+                    const auto& aws = std::get<std::optional<AwsProfile>>(importedAws);
                     if (aws) {
                         const auto eks = nativeEksConfig(command, aws);
                         if (const auto* failure = std::get_if<Failure>(&eks)) return *failure;

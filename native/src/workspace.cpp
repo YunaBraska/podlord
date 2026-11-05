@@ -479,7 +479,7 @@ QString Workspace::authenticationPrompt() const {
     if (!connection) return {};
     return "Session: " + title() + "\nCluster: " + connection->server.toString()
         + (connection->exec && connection->exec->oidc ? "\nOpenID Connect will open the system browser. No imported command runs."
-            : connection->exec && connection->exec->eks ? "\nAmazon EKS will sign a short-lived token locally using the imported AWS credentials. No imported command runs. Only trust configurations you know."
+            : connection->exec && connection->exec->eks ? "\nAmazon EKS uses native AWS authentication. SSO may open the system browser; configured roles use AWS STS and may request an MFA code here. No imported command runs. Only trust configurations you know."
             : connection->exec && connection->exec->oci ? "\nOracle OKE will sign a short-lived token locally using the imported OCI API key. No imported command runs. Only trust configurations you know."
             : connection->exec && connection->exec->gke ? "\nGoogle GKE will use native Google authorization or the service-account key explicitly imported for this context. No imported command runs. Personal sign-in may open the system browser or a Google account dialog."
             : connection->exec ? "\nCommand: " + connection->exec->program + "\nThis runs the imported configuration's command and arguments with your permissions. Only trust configurations you know. Login may open a browser."
@@ -488,6 +488,15 @@ QString Workspace::authenticationPrompt() const {
 QString Workspace::authenticationInstruction() const {
     const auto connection = client_.connection(active_);
     return connection ? credentials_.instruction(connection->credentialId) : QString{};
+}
+QVariantMap Workspace::authenticationChallenge() const {
+    const auto connection = client_.connection(active_);
+    const auto challenge = connection ? credentials_.challenge(connection->credentialId) : std::optional<AwsMfaChallenge>{};
+    return challenge ? QVariantMap{{"id", challenge->id}, {"role", challenge->role}, {"device", challenge->device}} : QVariantMap{};
+}
+bool Workspace::submitAuthenticationCode(const QString& id, const QString& code) {
+    const auto connection = client_.connection(active_);
+    return connection && credentials_.submitMfa(connection->credentialId, id, code);
 }
 QString Workspace::error() const {
     if (runtime_->host && runtime_->host->layoutCloseNeedsDecision(*this)) return runtime_->host->layoutCloseError();

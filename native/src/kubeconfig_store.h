@@ -48,11 +48,20 @@ struct AwsSso final {
     QUrl startUrl;
     QString region, accountId, roleName;
 };
+struct AwsRole final {
+    QString arn, sessionName, externalId, mfaSerial;
+    int durationSeconds = 3600;
+};
+struct AwsProfile final {
+    QMap<QString, QString> fields;
+    QList<AwsRole> roles;
+};
 struct EksLogin final {
     QString cluster, region;
     QByteArray accessKey, secretKey, sessionToken;
     std::optional<AwsSso> sso;
     QDateTime credentialExpiresAt;
+    QList<AwsRole> roles;
 };
 struct OciLogin final {
     QString cluster, region, user, tenancy, fingerprint;

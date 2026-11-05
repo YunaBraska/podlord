@@ -53,6 +53,14 @@ QString CredentialProcess::instruction(const QString& credential) const {
     const auto* job = nativeJobs_.value(credential, nullptr);
     return job ? job->instruction() : QString{};
 }
+std::optional<AwsMfaChallenge> CredentialProcess::challenge(const QString& credential) const {
+    const auto* login = awsJobs_.value(credential, nullptr);
+    return login ? login->challenge() : std::optional<AwsMfaChallenge>{};
+}
+bool CredentialProcess::submitMfa(const QString& credential, const QString& id, const QString& code) {
+    auto* login = awsJobs_.value(credential, nullptr);
+    return login && login->submitMfa(id, code);
+}
 std::optional<ClusterConnection> CredentialProcess::cached(const QString& credential) const {
     const auto found = results_.constFind(credential);
     if (found == results_.cend()) return {};
@@ -123,13 +131,13 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
         login->start(); emit changed(); return true;
     }
     if (connection.exec->eks) {
-        if (connection.exec->eks->sso) {
+        if (connection.exec->eks->sso || !connection.exec->eks->roles.isEmpty()) {
             if (awsJobs_.contains(id)) return true;
             results_.remove(id);
-            auto* login = new NativeAwsSso(std::move(connection), this);
+            auto* login = new NativeAwsLogin(std::move(connection), this);
             awsJobs_.insert(id, login);
-            connect(login, &NativeAwsSso::instructionChanged, this, &CredentialProcess::changed);
-            connect(login, &NativeAwsSso::completed, this, [this, id, session, guard = QPointer<NativeAwsSso>(login)](Result<ClusterConnection> result) {
+            connect(login, &NativeAwsLogin::instructionChanged, this, &CredentialProcess::changed);
+            connect(login, &NativeAwsLogin::completed, this, [this, id, session, guard = QPointer<NativeAwsLogin>(login)](Result<ClusterConnection> result) {
                 auto* login = guard.data();
                 if (!login || awsJobs_.value(id) != login) return;
                 awsJobs_.remove(id); results_.insert(id, std::move(result)); login->deleteLater();

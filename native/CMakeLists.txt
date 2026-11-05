@@ -260,7 +260,7 @@ if(NOT IOS)
     add_executable(podlord-session src/session_main.cpp)
     target_link_libraries(podlord-session PRIVATE podlord_sessions)
 endif()
-add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_process.cpp src/native_oidc.cpp src/native_eks.cpp src/native_aws_sso.cpp src/native_oci.cpp src/native_gke.cpp)
+add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_process.cpp src/native_oidc.cpp src/native_eks.cpp src/native_aws_login.cpp src/native_oci.cpp src/native_gke.cpp)
 if(PODLORD_MAC_APP_STORE)
     target_compile_definitions(podlord_sources PUBLIC PODLORD_MAC_APP_STORE)
 endif()
@@ -430,7 +430,15 @@ set(alert_audio_files
 )
 file(GLOB interface_audio_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/Assets/Audio/interface/*.ogg")
 list(APPEND alert_audio_files ${interface_audio_files})
-qt_add_resources(podlord_workspace "alert_audio" PREFIX "/podlord/audio" BASE ../src/Podlord.App/Assets/Audio FILES ${alert_audio_files})
+set(modern_audio_files
+    assets/audio/modern/soft-confirm.mp3 assets/audio/modern/gentle-change.mp3
+    assets/audio/modern/attention.mp3 assets/audio/modern/complete.mp3
+    assets/audio/modern/soft-warning.mp3 assets/audio/modern/new-activity.mp3)
+foreach(audio_file IN LISTS modern_audio_files)
+    get_filename_component(audio_name "${audio_file}" NAME)
+    set_source_files_properties("${audio_file}" PROPERTIES QT_RESOURCE_ALIAS "modern/${audio_name}")
+endforeach()
+qt_add_resources(podlord_workspace "alert_audio" PREFIX "/podlord/audio" BASE ../src/Podlord.App/Assets/Audio FILES ${alert_audio_files} ${modern_audio_files})
 qt_add_executable(podlord-native MACOSX_BUNDLE src/app_main.cpp)
 if(WIN32)
     target_sources(podlord-native PRIVATE windows/podlord.rc)
@@ -515,6 +523,16 @@ if(BUILD_TESTING OR (IOS AND PODLORD_BUILD_MOBILE_UI_TEST))
             target_link_libraries(native-aws-sso-test PRIVATE podlord_sources Qt6::Test)
             target_include_directories(native-aws-sso-test PRIVATE "${OPENSSL_ROOT_DIR}/include")
             set_target_properties(native-aws-sso-test PROPERTIES MACOSX_BUNDLE TRUE
+                MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
+                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
+                XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+        endif()
+        if(NOT TARGET aws-mfa-ui-test)
+            qt_add_executable(aws-mfa-ui-test tests/aws_mfa_ui_test.cpp tests/aws_boundary.h tests/kubernetes_auth_boundary.h tests/browser_boundary.h tests/ui_input.h)
+            target_link_libraries(aws-mfa-ui-test PRIVATE podlord_workspace Qt6::Test)
+            target_include_directories(aws-mfa-ui-test PRIVATE "${OPENSSL_ROOT_DIR}/include")
+            qt_add_ios_ffmpeg_libraries(aws-mfa-ui-test)
+            set_target_properties(aws-mfa-ui-test PROPERTIES MACOSX_BUNDLE TRUE
                 MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
                 MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
                 XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
@@ -889,10 +907,28 @@ if(BUILD_TESTING)
     target_link_libraries(native-oidc-test PRIVATE podlord_sources Qt6::Test)
     add_executable(native-eks-test tests/native_eks_test.cpp)
     target_link_libraries(native-eks-test PRIVATE podlord_sources)
+    add_executable(aws-role-test tests/aws_role_test.cpp)
+    target_link_libraries(aws-role-test PRIVATE podlord_sources)
+    foreach(scenario xml_valid xml_unicode xml_expired xml_far_future xml_no_timezone xml_missing xml_duplicate xml_nested xml_wrong_namespace
+        xml_wrong_root xml_malformed xml_oversized xml_dtd xml_entity xml_empty_token xml_control xml_long_key xml_invalid_time
+        sign_valid sign_mfa sign_bad_mfa sign_unicode_mfa sign_unrequested_mfa sign_bad_role sign_bad_session sign_bad_duration
+        sign_expired_source sign_missing_key sign_session_token sign_china sign_external sign_invalid_time
+        xml_empty xml_no_result xml_two_results xml_two_credentials xml_unknown_field xml_depth xml_unicode_secret xml_unicode_token
+        xml_empty_key xml_empty_secret xml_long_secret xml_long_token xml_invalid_expiry
+        sign_invalid_region sign_invalid_long_region sign_invalid_secret sign_invalid_key_control sign_invalid_key_length sign_invalid_secret_control
+        sign_invalid_secret_length sign_invalid_token_control sign_invalid_token_length sign_invalid_empty_session sign_invalid_long_arn
+        sign_invalid_external sign_invalid_serial sign_invalid_long_duration)
+        add_test(NAME native.authentication.aws_role_${scenario} COMMAND aws-role-test ${scenario})
+        set_tests_properties(native.authentication.aws_role_${scenario} PROPERTIES TIMEOUT 10)
+    endforeach()
     add_executable(aws-profile-test tests/aws_profile_test.cpp)
     target_link_libraries(aws-profile-test PRIVATE podlord_sources Qt6::Test)
     foreach(scenario name_default name_env name_precedence name_default_env name_default_env_precedence name_default_env_argument name_default_env_blank
         resolve_default_env_without_import name_equals name_duplicate name_missing name_option name_blank name_invalid name_control name_long name_trim
+        role_profile_keys role_profile_mfa role_profile_chain role_profile_sso
+        role_profile_options role_profile_invalid_missing_source role_profile_invalid_no_source role_profile_invalid_source_name
+        role_profile_invalid_cycle role_profile_invalid_self role_profile_invalid_arn role_profile_invalid_duration role_profile_invalid_short_duration
+        role_profile_invalid_long_duration role_profile_invalid_session role_profile_invalid_external role_profile_invalid_mfa role_profile_invalid_mixed
         parse_credentials_only parse_config_only parse_default parse_bom parse_comments parse_precedence parse_sso parse_legacy_sso parse_empty parse_large_config parse_large_credentials
         parse_utf8 parse_null parse_section parse_empty_section parse_duplicate_section parse_no_section parse_no_equal parse_duplicate_field parse_missing parse_no_inherit
         parse_unsupported_role_arn parse_unsupported_source_profile parse_unsupported_credential_source parse_unsupported_credential_process parse_unsupported_web_identity_token_file parse_unsupported_endpoint_url
@@ -902,7 +938,8 @@ if(BUILD_TESTING)
         resolve_long_url resolve_long_eks_region resolve_long_sso_region resolve_windows resolve_windows_upper resolve_exe
         store_success store_sso store_catalog_corrupt store_locked store_bad_file store_directory store_bad_id store_missing_context store_missing_file store_corrupt store_replace store_removal store_removal_failure
         store_other_program store_no_exec store_no_args store_scalar_args store_mapping_arg store_scalar_env store_empty_env store_duplicate_env store_env store_bad_profile store_bad_action store_bad_cluster store_symlink store_missing_credentials
-        record_version record_profile record_missing record_fields record_extra record_type record_large record_array record_directory record_symlink
+        store_role record_roles_type record_role_type record_role_missing record_role_invalid record_role_fractional
+        record_version record_legacy_v1 record_profile record_missing record_fields record_extra record_type record_large record_array record_directory record_symlink
         store_bad_field_type store_bad_storage store_lock_directory)
         # QFile::link creates .lnk shortcuts on Windows, not the symbolic links
         # these two protected-file scenarios require.
@@ -920,7 +957,10 @@ if(BUILD_TESTING)
         device_negative_interval device_long_interval device_denied device_bad_json device_array device_oversized
         token_empty token_space token_short token_long token_denied token_bad_json token_array token_oversized token_server denied
         credentials_empty_key credentials_bad_secret credentials_empty_session credentials_expired credentials_long credentials_missing credentials_denied credentials_bad_json credentials_array credentials_oversized
-        cancel_instruction cancel_pending cancel_before shutdown owner_success owner_revoke owner_cancel tls_untrusted)
+        cancel_instruction cancel_pending cancel_before shutdown owner_success owner_revoke owner_cancel tls_untrusted
+        role_keys role_chain role_sso role_china role_denied role_redirect role_server role_invalid_xml role_oversized role_timeout
+        role_cancel_dispatch role_expired_source role_shutdown
+        mfa_success mfa_chain mfa_cancel mfa_revoke mfa_denied)
         add_test(NAME native.authentication.aws_sso_${scenario} COMMAND native-aws-sso-test ${scenario})
         set_tests_properties(native.authentication.aws_sso_${scenario} PROPERTIES TIMEOUT 40 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
         if(APPLE AND NOT IOS)
@@ -937,6 +977,19 @@ if(BUILD_TESTING)
             add_test(NAME native.source_import.aws_${scenario}_${style} COMMAND aws-import-ui-test ${scenario})
             set_tests_properties(native.source_import.aws_${scenario}_${style} PROPERTIES TIMEOUT 30
                 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_AUDIO=1")
+        endforeach()
+    endforeach()
+    add_executable(aws-mfa-ui-test tests/aws_mfa_ui_test.cpp tests/aws_boundary.h tests/browser_boundary.h tests/ui_input.h)
+    target_link_libraries(aws-mfa-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario success narrow landscape cancel context_switch second_challenge replacement denied)
+        foreach(style Basic Fusion)
+            add_test(NAME native.authentication.aws_mfa_ui_${scenario}_${style} COMMAND aws-mfa-ui-test ${scenario})
+            set_tests_properties(native.authentication.aws_mfa_ui_${scenario}_${style} PROPERTIES TIMEOUT 30
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_AUDIO=1")
+            if(APPLE AND NOT IOS)
+                set_tests_properties(native.authentication.aws_mfa_ui_${scenario}_${style} PROPERTIES
+                    ENVIRONMENT_MODIFICATION "DYLD_LIBRARY_PATH=path_list_prepend:$<TARGET_FILE_DIR:OpenSSL::SSL>")
+            endif()
         endforeach()
     endforeach()
     add_executable(native-oci-test tests/native_oci_test.cpp)
@@ -1584,10 +1637,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     qt_add_resources(audio-playback-test "audio_test_fixtures"
         PREFIX "/podlord/audio-test" BASE tests/data FILES tests/data/invalid-audio.txt)
     get_filename_component(audio_root "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/Assets/Audio" ABSOLUTE)
-    foreach(audio_file IN LISTS alert_audio_files)
+    foreach(audio_file IN LISTS alert_audio_files modern_audio_files)
         get_filename_component(sound "${audio_file}" NAME_WE)
         get_filename_component(audio_absolute "${audio_file}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-        file(RELATIVE_PATH audio_relative "${audio_root}" "${audio_absolute}")
+        if(audio_file IN_LIST modern_audio_files)
+            file(RELATIVE_PATH audio_relative "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio" "${audio_absolute}")
+        else()
+            file(RELATIVE_PATH audio_relative "${audio_root}" "${audio_absolute}")
+        endif()
         add_test(NAME native.audio.${sound}_decode
             COMMAND audio-playback-test decode qrc:/podlord/audio/${audio_relative})
         set_tests_properties(native.audio.${sound}_decode PROPERTIES TIMEOUT 30 LABELS audio_decode
@@ -1636,6 +1693,7 @@ if(BUILD_TESTING)
         string(REPLACE "_" "-" sound "${sound}")
         list(APPEND alert_sound_ids "kenney-interface-${sound}")
     endforeach()
+    list(APPEND alert_sound_ids modern-soft-confirm modern-gentle-change modern-attention modern-complete modern-soft-warning modern-new-activity)
     foreach(sound IN LISTS alert_sound_ids)
         add_test(NAME native.sound_catalog.roundtrip_${sound} COMMAND sound-catalog-test roundtrip ${sound})
         set_tests_properties(native.sound_catalog.roundtrip_${sound} PROPERTIES

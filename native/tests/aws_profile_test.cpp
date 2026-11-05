@@ -34,6 +34,42 @@ const QByteArray ssoConfig = "[profile prod]\nregion=eu-central-1\nsso_session=c
 void run(const QString& scenario) {
     auto exec = command();
     QByteArray cfg = config, creds = keys;
+    if (scenario.startsWith("role_profile_")) {
+        QByteArray roleConfig = "[profile target]\nregion=eu-central-1\nrole_arn=arn:aws:iam::123456789012:role/Target\nsource_profile=prod\n";
+        const bool invalid = scenario.startsWith("role_profile_invalid_");
+        if (scenario == "role_profile_invalid_missing_source") roleConfig.replace("source_profile=prod", "source_profile=missing");
+        if (scenario == "role_profile_invalid_no_source") roleConfig.replace("source_profile=prod\n", "");
+        if (scenario == "role_profile_invalid_source_name") roleConfig.replace("source_profile=prod", "source_profile=bad[profile");
+        if (scenario == "role_profile_invalid_cycle") {
+            roleConfig.replace("source_profile=prod", "source_profile=middle");
+            roleConfig += "[profile middle]\nrole_arn=arn:aws:iam::123456789012:role/Middle\nsource_profile=target\n";
+        }
+        if (scenario == "role_profile_invalid_self") roleConfig.replace("source_profile=prod", "source_profile=target");
+        if (scenario == "role_profile_invalid_arn") roleConfig.replace("role/Target", "user/Target");
+        if (scenario == "role_profile_invalid_duration") roleConfig += "duration_seconds=invalid\n";
+        if (scenario == "role_profile_invalid_short_duration") roleConfig += "duration_seconds=899\n";
+        if (scenario == "role_profile_invalid_long_duration") roleConfig += "duration_seconds=43201\n";
+        if (scenario == "role_profile_invalid_session") roleConfig += "role_session_name=not valid\n";
+        if (scenario == "role_profile_invalid_external") roleConfig += "external_id=not valid\n";
+        if (scenario == "role_profile_invalid_mfa") roleConfig += "mfa_serial=not valid\n";
+        if (scenario == "role_profile_invalid_mixed") roleConfig += "aws_access_key_id=OTHER\naws_secret_access_key=OTHERSECRET\n";
+        if (scenario == "role_profile_options") roleConfig += "role_session_name=chosen-name\nexternal_id=chosen/id\nduration_seconds=900\n";
+        if (scenario == "role_profile_mfa") roleConfig += "mfa_serial=arn:aws:iam::123456789012:mfa/user\n";
+        if (scenario == "role_profile_chain") {
+            roleConfig.replace("source_profile=prod", "source_profile=middle");
+            roleConfig += "[profile middle]\nrole_arn=arn:aws:iam::123456789012:role/Middle\nsource_profile=prod\n";
+        }
+        roleConfig += scenario == "role_profile_sso" ? ssoConfig : config;
+        const auto result = readAwsProfile(roleConfig, scenario == "role_profile_sso" ? QByteArray{} : keys, "target");
+        require(invalid == std::holds_alternative<Failure>(result), "Wrong AWS role dependency validation.");
+        if (invalid) return;
+        const auto& selected = std::get<AwsProfile>(result);
+        require(selected.roles.size() == (scenario == "role_profile_chain" ? 2 : 1)
+            && selected.roles.last().arn.endsWith("/Target") && selected.fields.value("region") == "eu-central-1", "Role identity/order/region was lost.");
+        if (scenario == "role_profile_options") require(selected.roles.first().sessionName == "chosen-name"
+            && selected.roles.first().externalId == "chosen/id" && selected.roles.first().durationSeconds == 900, "Role options changed.");
+        return;
+    }
     if (scenario == "resolve_default_env_without_import") {
         exec.arguments = {"eks", "get-token", "--cluster-name", "example", "--region", "eu-central-1"};
         exec.environment = {{"AWS_DEFAULT_PROFILE", "personal"}, {"AWS_ACCESS_KEY_ID", "OTHERKEY"}, {"AWS_SECRET_ACCESS_KEY", "OTHERSECRET"}};
@@ -100,8 +136,8 @@ void run(const QString& scenario) {
             require(std::holds_alternative<Failure>(result), "Invalid AWS profile was accepted.");
             require(!std::get<Failure>(result).message.contains("secret-must-not-leak"), "AWS parser exposed input contents.");
         } else {
-            require(std::holds_alternative<QMap<QString, QString>>(result), "Valid AWS profile was rejected.");
-            const auto& fields = std::get<QMap<QString, QString>>(result);
+            require(std::holds_alternative<AwsProfile>(result), "Valid AWS profile was rejected.");
+            const auto& fields = std::get<AwsProfile>(result).fields;
             require(!fields.contains("output") && !fields.contains("sso_session"), "Unneeded profile fields were retained.");
             if (scenario == "parse_precedence") require(fields.value("aws_access_key_id") == "IMPORTEDKEY", "Credentials file did not override config.");
             if (scenario == "parse_no_inherit") require(!fields.contains("region"), "Default leaked into a named profile.");
@@ -110,7 +146,7 @@ void run(const QString& scenario) {
     }
     if (scenario.startsWith("resolve_")) {
         const auto selected = readAwsProfile(ssoConfig, {}, "prod");
-        auto fields = std::get<QMap<QString, QString>>(selected);
+        auto fields = std::get<AwsProfile>(selected).fields;
         const auto key = scenario.mid(8);
         bool invalid = true;
         if (key == "sso") invalid = false;
@@ -136,7 +172,7 @@ void run(const QString& scenario) {
         else if (key == "missing_sso") fields.remove("sso_account_id");
         else if (key == "no_ambient_fallback") { fields.clear(); fields.insert("region", "eu-central-1"); qputenv("AWS_ACCESS_KEY_ID", "AMBIENT"); qputenv("AWS_SECRET_ACCESS_KEY", "SECRET"); }
         else if (key == "missing_profile") { require(std::holds_alternative<Failure>(nativeEksConfig(exec)), "Native resolver used an unimported profile."); return; }
-        const auto result = nativeEksConfig(exec, fields);
+        const auto result = nativeEksConfig(exec, AwsProfile{fields, {}});
         if (invalid) require(std::holds_alternative<Failure>(result), "Invalid native AWS profile configuration was accepted.");
         else {
             require(std::holds_alternative<std::optional<EksLogin>>(result) && std::get<std::optional<EksLogin>>(result).has_value(), "SSO configuration was not resolved.");
@@ -170,6 +206,8 @@ void run(const QString& scenario) {
     const auto snapshot = std::get<SourceSnapshot>(source);
     const auto id = snapshot.contexts.first().id, second = snapshot.contexts.last().id;
     const auto cfgPath = root.filePath("config"), keyPath = root.filePath("credentials");
+    if (scenario == "store_role") cfg = "[profile prod]\nregion=eu-central-1\nrole_arn=arn:aws:iam::123456789012:role/Target\nsource_profile=root\nmfa_serial=arn:aws:iam::123456789012:mfa/user\n";
+    if (scenario == "store_role") creds.replace("[prod]", "[root]");
     write(cfgPath, scenario == "store_sso" ? ssoConfig : cfg); write(keyPath, creds);
     const auto privatePath = profile + "/kubeconfigs/aws-" + id.mid(4) + ".cred";
     std::unique_ptr<QLockFile> lock;
@@ -202,6 +240,10 @@ void run(const QString& scenario) {
     require(!connection.credentialReady && connection.exec && connection.exec->eks && connection.credentialId == importedCredentialId(id), "AWS import authorized or shared the wrong context.");
     require(!QJsonDocument(sourceJson(snapshot)).toJson().contains("private-key-value"), "Source metadata exposed AWS keys.");
     if (scenario == "store_sso") { require(connection.exec->eks->sso.has_value(), "Stored SSO profile was lost."); return; }
+    if (scenario == "store_role") {
+        require(connection.exec->eks->roles.size() == 1 && connection.exec->eks->roles.first().mfaSerial.endsWith("/user")
+            && !read(privatePath).contains("TokenCode"), "Private import lost its role/MFA settings or persisted a code."); return;
+    }
     if (scenario == "store_catalog_corrupt") {
         const auto retained = read(privatePath);
         write(keyPath, QByteArray(keys).replace("IMPORTEDKEY", "REPLACEMENT"));
@@ -215,10 +257,24 @@ void run(const QString& scenario) {
     if (scenario.startsWith("record_")) {
         auto json = QJsonDocument::fromJson(read(privatePath)).object();
         const auto mode = scenario.mid(7);
-        if (mode == "version") json["version"] = 2;
+        if (mode == "version") json["version"] = 3;
+        if (mode == "legacy_v1") {
+            json["version"] = 1; json.remove("roles");
+            write(privatePath, QJsonDocument(json).toJson());
+            const auto legacy = store.connection(id);
+            require(std::holds_alternative<ClusterConnection>(legacy)
+                && std::get<ClusterConnection>(legacy).exec->eks->accessKey == "IMPORTEDKEY", "Version-1 AWS imports stopped resolving.");
+            return;
+        }
         if (mode == "profile") json["profile"] = "other";
         if (mode == "missing") json.remove("profile");
         if (mode == "fields") json["fields"] = QJsonArray{};
+        if (mode == "roles_type") json["roles"] = QJsonObject{};
+        if (mode == "role_type") json["roles"] = QJsonArray{1};
+        if (mode == "role_missing") json["roles"] = QJsonArray{QJsonObject{{"arn", "arn:aws:iam::123456789012:role/Target"}}};
+        if (mode == "role_invalid" || mode == "role_fractional") json["roles"] = QJsonArray{QJsonObject{
+            {"arn", "arn:aws:iam::123456789012:role/Target"}, {"sessionName", "test-session"}, {"externalId", ""}, {"mfaSerial", ""},
+            {"durationSeconds", mode == "role_invalid" ? 1.0 : 900.5}}};
         if (mode == "extra") json["fields"] = QJsonObject{{"unexpected", "private-content"}};
         if (mode == "type") json["fields"] = QJsonObject{{"region", 7}};
         write(privatePath, mode == "large" ? QByteArray(65537, 'x') : mode == "array" ? QByteArray("[]") : QJsonDocument(json).toJson());

@@ -1,5 +1,6 @@
+#include "aws_boundary.h"
 #include "credential_process.h"
-#include "native_aws_sso.h"
+#include "native_aws_login.h"
 #include "browser_boundary.h"
 #include <QGuiApplication>
 #include <QElapsedTimer>
@@ -21,187 +22,98 @@
 #include <openssl/x509v3.h>
 
 using namespace podlord;
+using podlord::test::AwsBoundary;
 namespace {
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
-// This TLS proxy replaces only AWS's external boundary. Production URL construction,
-// transport, credential ownership, token signing and browser handoff remain real.
-class AwsBoundary final : public QTcpServer {
-public:
-    explicit AwsBoundary(QString mode) : mode(std::move(mode)), originalTls(QSslConfiguration::defaultConfiguration()), originalProxy(QNetworkProxy::applicationProxy()) {
-        std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> context(EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr), EVP_PKEY_CTX_free);
-        EVP_PKEY* raw = nullptr;
-        require(context && EVP_PKEY_keygen_init(context.get()) == 1 && EVP_PKEY_CTX_set_rsa_keygen_bits(context.get(), 2048) == 1
-            && EVP_PKEY_keygen(context.get(), &raw) == 1, "Cannot generate external AWS fixture key.");
-        std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(raw, EVP_PKEY_free);
-        std::unique_ptr<X509, decltype(&X509_free)> certificate(X509_new(), X509_free);
-        require(certificate && X509_set_version(certificate.get(), 2) == 1 && ASN1_INTEGER_set(X509_get_serialNumber(certificate.get()), 1) == 1
-            && X509_gmtime_adj(X509_getm_notBefore(certificate.get()), -60) && X509_gmtime_adj(X509_getm_notAfter(certificate.get()), 86400)
-            && X509_set_pubkey(certificate.get(), key.get()) == 1, "Cannot create AWS fixture certificate.");
-        auto* name = X509_get_subject_name(certificate.get());
-        require(X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("Podlord local AWS boundary"), -1, -1, 0) == 1
-            && X509_set_issuer_name(certificate.get(), name) == 1, "Cannot name AWS fixture certificate.");
-        for (const auto& extension : {qMakePair(NID_basic_constraints, "critical,CA:TRUE"), qMakePair(NID_subject_alt_name,
-            "DNS:oidc.eu-west-1.amazonaws.com,DNS:portal.sso.eu-west-1.amazonaws.com,DNS:oidc.cn-north-1.amazonaws.com.cn,DNS:portal.sso.cn-north-1.amazonaws.com.cn")}) {
-            auto* value = X509V3_EXT_conf_nid(nullptr, nullptr, extension.first, extension.second);
-            require(value && X509_add_ext(certificate.get(), value, -1) == 1, "Cannot extend AWS fixture certificate.");
-            X509_EXTENSION_free(value);
-        }
-        require(X509_sign(certificate.get(), key.get(), EVP_sha256()) > 0, "Cannot sign AWS fixture certificate.");
-        std::unique_ptr<BIO, decltype(&BIO_free)> pemKey(BIO_new(BIO_s_mem()), BIO_free), pemCert(BIO_new(BIO_s_mem()), BIO_free);
-        require(pemKey && pemCert && PEM_write_bio_PrivateKey(pemKey.get(), key.get(), nullptr, nullptr, 0, nullptr, nullptr) == 1
-            && PEM_write_bio_X509(pemCert.get(), certificate.get()) == 1, "Cannot encode AWS fixture TLS material.");
-        BUF_MEM* data = nullptr;
-        BIO_get_mem_ptr(pemKey.get(), &data); privateKey = QSslKey(QByteArray(data->data, data->length), QSsl::Rsa);
-        BIO_get_mem_ptr(pemCert.get(), &data); ca = QSslCertificate(QByteArray(data->data, data->length));
-        require(!privateKey.isNull() && !ca.isNull() && listen(QHostAddress::LocalHost, 0), "Cannot listen for external AWS requests.");
-        auto tls = originalTls;
-        if (this->mode != "tls_untrusted") tls.addCaCertificate(ca);
-        QSslConfiguration::setDefaultConfiguration(tls);
-        QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1", serverPort()));
-        clock.start();
-    }
-    ~AwsBoundary() override {
-        for (auto* socket : findChildren<QSslSocket*>()) socket->abort();
-        close();
-        QSslConfiguration::setDefaultConfiguration(originalTls);
-        QNetworkProxy::setApplicationProxy(originalProxy);
-    }
-    QString mode;
-    int registrations = 0, devices = 0, tokens = 0, credentials = 0;
-    int connections = 0, socketError = 0;
-    qint64 deviceAt = 0;
-    QList<qint64> pollTimes;
-    bool valid = true;
-private:
-    QSslConfiguration originalTls;
-    QNetworkProxy originalProxy;
-    QSslKey privateKey;
-    QSslCertificate ca;
-    QElapsedTimer clock;
-    void incomingConnection(qintptr descriptor) override {
-        ++connections;
-        auto* socket = new QSslSocket(this);
-        connect(socket, &QSslSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) { socketError = int(error); });
-        if (!socket->setSocketDescriptor(descriptor)) { valid = false; socket->deleteLater(); return; }
-        socket->setLocalCertificate(ca); socket->setPrivateKey(privateKey); socket->setPeerVerifyMode(QSslSocket::VerifyNone);
-        auto bytes = std::make_shared<QByteArray>();
-        connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
-        connect(socket, &QSslSocket::readyRead, this, [this, socket, bytes] {
-            bytes->append(socket->readAll());
-            const auto split = bytes->indexOf("\r\n\r\n");
-            if (split < 0) return;
-            if (!socket->isEncrypted()) {
-                const auto target = bytes->split(' ').value(1);
-                if (!bytes->startsWith("CONNECT ") || (target != "oidc.eu-west-1.amazonaws.com:443" && target != "portal.sso.eu-west-1.amazonaws.com:443"
-                    && target != "oidc.cn-north-1.amazonaws.com.cn:443" && target != "portal.sso.cn-north-1.amazonaws.com.cn:443")) {
-                    valid = false; socket->abort(); return;
-                }
-                bytes->clear();
-                socket->write("HTTP/1.1 200 Connection Established\r\n\r\n"); socket->flush(); socket->startServerEncryption(); return;
-            }
-            const auto header = bytes->left(split);
-            qsizetype length = 0;
-            for (const auto& line : header.split('\n')) if (line.trimmed().toLower().startsWith("content-length:")) length = line.trimmed().mid(15).trimmed().toLongLong();
-            if (bytes->size() < split + 4 + length) return;
-            const auto method = header.split(' ').value(0), path = header.split(' ').value(1);
-            const auto request = QJsonDocument::fromJson(bytes->mid(split + 4, length)).object();
-            QJsonObject response;
-            QString stage;
-            int status = 200;
-            if (path == "/client/register") {
-                stage = "register"; ++registrations;
-                valid = valid && method == "POST" && request.value("clientName") == "Podlord" && request.value("clientType") == "public"
-                    && request.value("scopes").toArray() == QJsonArray{"sso:account:access"}
-                    && request.value("grantTypes").toArray() == QJsonArray{"urn:ietf:params:oauth:grant-type:device_code"};
-                response = {{"clientId", "public-client"}, {"clientSecret", "private-client-secret"}, {"clientSecretExpiresAt", QDateTime::currentSecsSinceEpoch() + 86400}};
-                if (mode == "register_empty_id") response["clientId"] = "";
-                if (mode == "register_bad_secret") response["clientSecret"] = "bad secret";
-                if (mode == "register_expired") response["clientSecretExpiresAt"] = 1;
-            } else if (path == "/device_authorization") {
-                stage = "device"; ++devices;
-                deviceAt = clock.elapsed();
-                valid = valid && method == "POST" && request.value("clientId") == "public-client" && request.value("clientSecret") == "private-client-secret"
-                    && request.value("startUrl") == "https://company.awsapps.com/start";
-                response = {{"deviceCode", "private-device-code"}, {"userCode", "ABCD-EFGH"}, {"verificationUri", "https://device.sso.example/verify"},
-                    {"verificationUriComplete", "https://device.sso.example/verify?user_code=ABCD-EFGH"}, {"expiresIn", 300}, {"interval", 0}};
-                if (mode == "device_no_complete") response.remove("verificationUriComplete");
-                if (mode == "device_empty_code") response["deviceCode"] = "";
-                if (mode == "device_empty_user") response["userCode"] = "";
-                if (mode == "device_http") response["verificationUri"] = "http://device.sso.example/verify";
-                if (mode == "device_bad_complete") response["verificationUriComplete"] = "https://wrong.example/verify";
-                if (mode == "device_bad_uri") response["verificationUri"] = "https://user:secret@device.sso.example/verify";
-                if (mode == "device_bad_fragment") response["verificationUri"] = "https://device.sso.example/verify#fragment";
-                if (mode == "device_zero") response["expiresIn"] = 0;
-                if (mode == "device_long") response["expiresIn"] = 3601;
-                if (mode == "device_expired") response["expiresIn"] = 1;
-                if (mode == "device_negative_interval") response["interval"] = -1;
-                if (mode == "device_long_interval") response["interval"] = 601;
-            } else if (path == "/token") {
-                stage = "token"; ++tokens;
-                pollTimes.append(clock.elapsed());
-                valid = valid && method == "POST" && request.value("clientId") == "public-client" && request.value("clientSecret") == "private-client-secret"
-                    && request.value("deviceCode") == "private-device-code" && request.value("grantType") == "urn:ietf:params:oauth:grant-type:device_code";
-                response = {{"accessToken", "private-access-token"}, {"expiresIn", 3600}};
-                if (tokens == 1 && (mode == "pending" || mode == "slow_down" || mode == "pending_type" || mode == "slow_type")) {
-                    status = 400;
-                    response = mode == "pending_type" || mode == "slow_type"
-                        ? QJsonObject{{"__type", mode == "pending_type" ? "aws#AuthorizationPendingException" : "aws#SlowDownException"}}
-                        : QJsonObject{{"error", mode == "pending" ? "authorization_pending" : "slow_down"}};
-                }
-                if (mode == "denied") { status = 400; response = {{"error", "access_denied"}, {"message", "private-error-must-not-leak"}}; }
-                if (mode == "token_empty") response["accessToken"] = "";
-                if (mode == "token_space") response["accessToken"] = "bad token";
-                if (mode == "token_short") response["expiresIn"] = 30;
-                if (mode == "token_long") response["expiresIn"] = 86401;
-            } else if (path.startsWith("/federation/credentials?")) {
-                stage = "credentials"; ++credentials;
-                const QUrlQuery query(QUrl::fromEncoded(path));
-                valid = valid && method == "GET" && query.queryItemValue("account_id") == "123456789012"
-                    && query.queryItemValue("role_name") == "Developer" && header.toLower().contains("x-amz-sso_bearer_token: private-access-token");
-                QJsonObject fields{{"accessKeyId", "SSOKEY"}, {"secretAccessKey", "private-signing-secret"}, {"sessionToken", "private-session-token"},
-                    {"expiration", QDateTime::currentMSecsSinceEpoch() + (mode == "short_role" ? 120000 : 3600000)}};
-                if (mode == "credentials_empty_key") fields["accessKeyId"] = "";
-                if (mode == "credentials_bad_secret") fields["secretAccessKey"] = "bad secret";
-                if (mode == "credentials_empty_session") fields["sessionToken"] = "";
-                if (mode == "credentials_expired") fields["expiration"] = 1;
-                if (mode == "credentials_long") fields["expiration"] = QDateTime::currentMSecsSinceEpoch() + qint64(172800000);
-                response = {{"roleCredentials", fields}};
-                if (mode == "credentials_missing") response.remove("roleCredentials");
-            } else { valid = false; status = 404; }
-            if (!valid) std::fprintf(stderr, "External AWS contract mismatch at %s, method %s.\n", qPrintable(stage), method.constData());
-            if (mode == stage + "_pending" || mode == stage + "_timeout") return;
-            if (mode == stage + "_denied") status = 403;
-            if (mode == stage + "_redirect") status = 302;
-            if (mode == stage + "_server") status = 503;
-            QByteArray body = QJsonDocument(response).toJson(QJsonDocument::Compact);
-            if (mode == stage + "_bad_json") body = "private-error-must-not-leak";
-            if (mode == stage + "_array") body = "[]";
-            if (mode == stage + "_oversized") body = QByteArray(65537, 'x');
-            socket->write("HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
-                + QByteArray::number(body.size()) + "\r\n\r\n" + body);
-            socket->disconnectFromHost(); bytes->clear();
-        });
-    }
-};
+
 ClusterConnection connection() {
     ClusterConnection value;
     value.contextId = "test-context"; value.credentialId = "imported:test-context"; value.credentialReady = false;
     value.exec.emplace(); value.exec->program = "aws"; value.exec->arguments = {"eks", "get-token", "--cluster-name", "example", "--profile", "prod"};
     const QMap<QString, QString> fields{{"region", "eu-central-1"}, {"sso_start_url", "https://company.awsapps.com/start"},
         {"sso_region", "eu-west-1"}, {"sso_account_id", "123456789012"}, {"sso_role_name", "Developer"}};
-    value.exec->eks = std::get<std::optional<EksLogin>>(nativeEksConfig(*value.exec, fields));
+    value.exec->eks = std::get<std::optional<EksLogin>>(nativeEksConfig(*value.exec, AwsProfile{fields, {}}));
     return value;
 }
 void run(const QString& scenario) {
     BrowserBoundary browser;
     AwsBoundary boundary(scenario);
     auto initial = connection();
+    if (scenario == "role_cancel_dispatch" || scenario == "role_expired_source" || scenario == "role_shutdown") {
+        initial.exec->eks->sso.reset(); initial.exec->eks->accessKey = "ROOTKEY"; initial.exec->eks->secretKey = "private-signing-secret";
+        initial.exec->eks->roles.append(AwsRole{"arn:aws:iam::123456789012:role/Target", {}, {}, {}, 900});
+        if (scenario == "role_expired_source") initial.exec->eks->credentialExpiresAt = QDateTime::currentDateTimeUtc().addSecs(-1);
+        auto login = std::make_unique<NativeAwsLogin>(initial);
+        int completions = 0;
+        QObject::connect(login.get(), &NativeAwsLogin::completed, &browser, [&] { ++completions; });
+        if (scenario == "role_cancel_dispatch") QObject::connect(login.get(), &NativeAwsLogin::instructionChanged, &browser, [&] { login->cancel(); });
+        if (scenario == "role_shutdown") boundary.mode = "role_pending";
+        login->start();
+        if (scenario == "role_shutdown") {
+            require(QTest::qWaitFor([&] { return boundary.roles == 1; }, 5000), "Role request did not arrive before shutdown.");
+            login.reset(); QTest::qWait(30);
+            require(completions == 0, "Destroyed role owner published a result.");
+        } else require(completions == 1 && boundary.connections == 0, "Cancelled or expired source sent an STS request.");
+        return;
+    }
+    if (scenario.startsWith("role_") || scenario.startsWith("mfa_")) {
+        const bool sso = scenario == "role_sso";
+        auto& eks = *initial.exec->eks;
+        if (!sso) { eks.sso.reset(); eks.accessKey = "ROOTKEY"; eks.secretKey = "private-signing-secret"; eks.sessionToken = "root-session-token"; }
+        eks.roles.append(AwsRole{"arn:aws:iam::123456789012:role/Target", "test-session", "external/value", {}, 900});
+        if (scenario.startsWith("mfa_")) eks.roles.first().mfaSerial = "arn:aws:iam::123456789012:mfa/user";
+        if (scenario == "role_chain" || scenario == "mfa_chain") {
+            auto next = eks.roles.first(); next.arn = "arn:aws:iam::123456789012:role/Final"; next.sessionName.clear(); eks.roles.append(next);
+        }
+        if (scenario == "role_china") eks.region = "cn-north-1";
+        CredentialProcess owner;
+        QSignalSpy completed(&owner, &CredentialProcess::completed);
+        require(owner.start(initial, "session"), "Native AWS role owner did not start.");
+        const auto first = owner.challenge(initial.credentialId);
+        if (scenario.startsWith("mfa_")) {
+            require(first && first->device == eks.roles.first().mfaSerial && boundary.connections == 0, "MFA challenge contacted AWS before code submission.");
+            require(!owner.submitMfa(initial.credentialId, first->id + "-stale", "123456")
+                && !owner.submitMfa(initial.credentialId, first->id, "12345")
+                && !owner.submitMfa(initial.credentialId, first->id, QString(6, QChar(0xFF11)))
+                && !owner.submitMfa("another-context", first->id, "123456") && boundary.connections == 0, "Invalid or foreign MFA code sent a request.");
+            if (scenario == "mfa_cancel" || scenario == "mfa_revoke") {
+                require(scenario == "mfa_cancel" ? owner.cancel(initial.credentialId) : owner.revoke(initial.credentialId), "MFA cannot cancel or revoke.");
+                require(!owner.challenge(initial.credentialId) && !owner.submitMfa(initial.credentialId, first->id, "123456")
+                    && boundary.connections == 0 && !owner.cached(initial.credentialId), "Cancelled MFA retained authority."); return;
+            }
+            require(owner.submitMfa(initial.credentialId, first->id, "123456") && !owner.submitMfa(initial.credentialId, first->id, "123456"), "MFA code was lost or submitted twice.");
+            if (scenario == "mfa_chain") {
+                require(QTest::qWaitFor([&] { const auto next = owner.challenge(initial.credentialId); return next && next->id != first->id; }, 5000), "Chained MFA did not produce a fresh challenge.");
+                const auto next = owner.challenge(initial.credentialId);
+                require(!owner.submitMfa(initial.credentialId, first->id, "123456") && owner.submitMfa(initial.credentialId, next->id, "654321"), "Chained MFA accepted a stale challenge.");
+            }
+        }
+        require(QTest::qWaitFor([&] { return completed.count() == 1; }, scenario.endsWith("timeout") ? 25000 : 15000), "Native role owner did not finish.");
+        const bool failure = QStringList{"role_denied", "role_redirect", "role_server", "role_invalid_xml", "role_oversized", "role_timeout", "mfa_denied"}.contains(scenario);
+        if (failure) require(!owner.cached(initial.credentialId) && std::holds_alternative<Failure>(owner.result(initial.credentialId))
+            && !std::get<Failure>(owner.result(initial.credentialId)).message.contains("private-"), "Failed role authentication retained authority or leaked an AWS response.");
+        else {
+            const auto ready = owner.cached(initial.credentialId);
+            const int count = scenario == "role_chain" || scenario == "mfa_chain" ? 2 : 1;
+            require(ready && ready->credentialReady && ready->exec && !ready->exec->eks && boundary.roles == count && boundary.valid, "Native role chain did not yield a sanitized EKS token.");
+            const auto url = QUrl::fromEncoded(QByteArray::fromBase64(ready->authorization.mid(18), QByteArray::Base64UrlEncoding));
+            require(QUrlQuery(url).queryItemValue("X-Amz-Security-Token") == "private-role-token-" + QString::number(count), "EKS token used the source instead of final role identity.");
+            require(boundary.roleForms.first().value("ExternalId") == "external/value" && boundary.roleForms.first().value("DurationSeconds") == "900", "Role options were not preserved.");
+            if (count == 2) require(boundary.roleHeaders.last().contains("Credential=ROLEKEY1/"), "Chained role did not use intermediate credentials.");
+            if (first) require(boundary.roleForms.first().value("TokenCode") == "123456" && !owner.challenge(initial.credentialId), "MFA code or challenge lifecycle was incorrect.");
+        }
+        require(browser.urls.size() == (sso ? 1 : 0) && boundary.valid, "Native role unexpectedly opened a browser or violated AWS transport.");
+        const int calls = boundary.roles;
+        QTest::qWait(50);
+        require(calls == boundary.roles && completed.count() == 1, "Native role automatically retried.");
+        return;
+    }
     if (scenario == "china") initial.exec->eks->sso->region = "cn-north-1";
     if (scenario == "shutdown") {
         boundary.mode = "register_pending";
-        auto* login = new NativeAwsSso(initial);
+        auto* login = new NativeAwsLogin(initial);
         int completions = 0;
-        QObject::connect(login, &NativeAwsSso::completed, &browser, [&] { ++completions; });
+        QObject::connect(login, &NativeAwsLogin::completed, &browser, [&] { ++completions; });
         login->start();
         require(QTest::qWaitFor([&] { return boundary.registrations == 1; }, 5000), "AWS request did not arrive before shutdown.");
         delete login;
@@ -231,12 +143,12 @@ void run(const QString& scenario) {
     if (scenario == "missing_eks") initial.exec->eks.reset();
     if (scenario == "missing_sso") initial.exec->eks->sso.reset();
     if (scenario == "invalid_sso") initial.exec->eks->sso->region = "bad region";
-    NativeAwsSso login(initial);
-    QSignalSpy completed(&login, &NativeAwsSso::completed);
+    NativeAwsLogin login(initial);
+    QSignalSpy completed(&login, &NativeAwsLogin::completed);
     std::optional<Result<ClusterConnection>> result;
-    QObject::connect(&login, &NativeAwsSso::completed, &login, [&](Result<ClusterConnection> value) { result = std::move(value); });
+    QObject::connect(&login, &NativeAwsLogin::completed, &login, [&](Result<ClusterConnection> value) { result = std::move(value); });
     bool sawInstruction = false;
-    QObject::connect(&login, &NativeAwsSso::instructionChanged, &login, [&] {
+    QObject::connect(&login, &NativeAwsLogin::instructionChanged, &login, [&] {
         sawInstruction = login.instruction().contains("ABCD-EFGH") && !login.instruction().contains("private-");
         if (scenario == "cancel_instruction") login.cancel();
     });

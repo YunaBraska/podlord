@@ -172,10 +172,24 @@ if ! awk '/importAwsProfile/ { import=1 }
     printf 'Native AWS import coverage gate failed: require 90%% branches across protected profile import, read and context-owned path functions.\n' >&2
     exit 1
 fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/workspace.cpp" "$ROOT/native/src/credential_process.cpp" \
+    | awk '/Workspace[0-9]+(authenticationChallenge|submitAuthenticationCode)|CredentialProcess[0-9]+(challenge|submitMfa)/ { print }' \
+    > "$BUILD/coverage/aws-mfa-functions.txt"
+cat "$BUILD/coverage/aws-mfa-functions.txt"
+if ! awk '/Workspace[0-9]+authenticationChallenge/ { view=1 }
+          /Workspace[0-9]+submitAuthenticationCode/ { submit=1 }
+          /CredentialProcess[0-9]+challenge/ { owner=1 }
+          /CredentialProcess[0-9]+submitMfa/ { route=1 }
+          { total+=$(NF-2); missed+=$(NF-1) }
+          END { if (!view || !submit || !owner || !route || !total || 100*(total-missed)/total<90) exit 1 }' "$BUILD/coverage/aws-mfa-functions.txt"; then
+    printf 'Native AWS MFA coverage gate failed: require 90%% branches across context-bound challenge presentation and submission.\n' >&2
+    exit 1
+fi
 if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($13+0<90) fail=1 }
           $1=="platform_tls_apple.mm" { apple=1; if ($13+0<90) fail=1 }
           $1=="native_eks.cpp" { eks=1; if ($13+0<90) fail=1 }
-          $1=="native_aws_sso.cpp" { aws=1; if ($13+0<90) fail=1 }
+          $1=="native_aws_login.cpp" { aws=1; if ($13+0<90) fail=1 }
           $1=="native_gke.cpp" { gke=1; if ($13+0<90) fail=1 }
           $1=="native_oidc.cpp" { oidc=1; if ($13+0<90) fail=1 }
           $1=="native_oci.cpp" { oci=1; if ($13+0<90) fail=1 }

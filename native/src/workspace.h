@@ -159,6 +159,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool authenticationRunning READ authenticationRunning NOTIFY changed)
     Q_PROPERTY(QString authenticationPrompt READ authenticationPrompt NOTIFY changed)
     Q_PROPERTY(QString authenticationInstruction READ authenticationInstruction NOTIFY changed)
+    Q_PROPERTY(QVariantMap authenticationChallenge READ authenticationChallenge NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(bool viewStateFailed READ viewStateFailed NOTIFY changed)
     Q_PROPERTY(bool viewCloseNeedsDecision READ viewCloseNeedsDecision NOTIFY changed)
@@ -391,6 +392,8 @@ public:
     bool authenticationRunning() const;
     QString authenticationPrompt() const;
     QString authenticationInstruction() const;
+    QVariantMap authenticationChallenge() const;
+    Q_INVOKABLE bool submitAuthenticationCode(const QString& challengeId, const QString& code);
     QString error() const;
     QString status() const;
     QString syncSummary() const { return client_.syncSummary(active_); }

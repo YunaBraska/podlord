@@ -14,7 +14,7 @@ An alert is built from a guided top-to-bottom inspector flow:
 | Color | Optional radar block color with `none`, `once`, `no-match`, duration or `new-in-view` hold behavior. |
 | Animation | Optional radar animation with the same hold modes. |
 | Zoom | Optional radar zoom percentage when the rule fires. |
-| Sound | Select a bundled or imported sound with visible author, license, and source link. |
+| Sound | Select a bundled sound with visible author, license, and source link. User-file import is deferred beyond the first release. |
 
 Default alerts are built in, enabled by default, and locked against editing. Users can enable, disable, duplicate, or add custom alerts. Duplicating a built-in alert creates an editable custom copy.
 
