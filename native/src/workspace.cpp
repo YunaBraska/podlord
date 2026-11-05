@@ -906,6 +906,7 @@ bool Workspace::rememberLogPosition(const QString& anchor, double offset, bool f
 }
 bool Workspace::followLogs() {
     if (logScope_.isEmpty()) return false;
+    emit logViewChanging();
     logPositions_[logScope_] = LogPosition{}; emit logViewChanged(); return true;
 }
 bool Workspace::reportLogEviction() {

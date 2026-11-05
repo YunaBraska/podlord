@@ -21,6 +21,12 @@ ColumnLayout {
         let entry = lines.itemAtIndex(index)
         workspace.rememberLogPosition(workspace.logRows.entryId(index), entry ? Math.max(0, lines.contentY - entry.y) : 0, following)
     }
+    function stopFollowing() {
+        // User navigation takes priority over a deferred restore of incoming log data.
+        restoring = false
+        following = false
+        remember()
+    }
     function restore() {
         if (!visible) { restoring = false; return }
         restoring = true
@@ -93,16 +99,16 @@ ColumnLayout {
         reuseItems: true
         model: workspace.logRows
         focus: true
-        onMovementStarted: { panel.following = false; panel.remember() }
+        onMovementStarted: panel.stopFollowing()
         onMovementEnded: panel.remember()
         onContentYChanged: { if (!panel.following) panel.remember() }
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Home) { panel.following = false; positionViewAtBeginning(); currentIndex = 0; Qt.callLater(panel.remember); event.accepted = true; return }
-            if ([Qt.Key_Up, Qt.Key_PageUp].indexOf(event.key) >= 0) { panel.following = false; Qt.callLater(panel.remember) }
+            if (event.key === Qt.Key_Home) { panel.stopFollowing(); positionViewAtBeginning(); currentIndex = 0; Qt.callLater(panel.remember); event.accepted = true; return }
+            if ([Qt.Key_Up, Qt.Key_PageUp].indexOf(event.key) >= 0) { panel.stopFollowing(); Qt.callLater(panel.remember) }
             if (event.matches(StandardKey.Copy)) { workspace.copyLogEntry(currentIndex); event.accepted = true }
         }
-        WheelHandler { target: null; onWheel: function(event) { panel.following = false; Qt.callLater(panel.remember); event.accepted = false } }
-        ScrollBar.vertical: ScrollBar { onPressedChanged: { if (pressed) { panel.following = false; panel.remember() } } }
+        WheelHandler { target: null; onWheel: function(event) { panel.stopFollowing(); Qt.callLater(panel.remember); event.accepted = false } }
+        ScrollBar.vertical: ScrollBar { onPressedChanged: if (pressed) panel.stopFollowing() }
         delegate: ItemDelegate {
             required property int index
             required property string line

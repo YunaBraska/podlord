@@ -6,6 +6,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QKeyEvent>
 #include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -298,6 +299,22 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             if (!ready) std::fprintf(stderr,"Log handoff beginning: y=%.1f beginning=%d follow=%d anchor=%s\n",list->property("contentY").toDouble(),list->property("atYBeginning").toBool(),workspace.property("logFollow").toBool(),qPrintable(workspace.property("logAnchor").toString()));
             return ready;
         };
+        if (scenario == "handoff_follow_pending_home" || scenario == "handoff_home_pending_switch") {
+            const bool follow = scenario == "handoff_follow_pending_home";
+            stage = follow ? "follow after queued Home position" : "Home during queued scope restoration";
+            if (!select("alpha",alpha)) return false;
+            if (!follow && !workspace.selectLogContainer("beta")) return false;
+            list->forceActiveFocus();
+            QKeyEvent press(QEvent::KeyPress,Qt::Key_Home,Qt::NoModifier);
+            QKeyEvent release(QEvent::KeyRelease,Qt::Key_Home,Qt::NoModifier);
+            QCoreApplication::sendEvent(window,&press);
+            QCoreApplication::sendEvent(window,&release);
+            if (!list->property("atYBeginning").toBool() || workspace.property("logFollow").toBool()) return false;
+            if (follow && !workspace.followLogs()) return false;
+            completed = waitFor([&] { return workspace.property("logFollow").toBool() == follow
+                && list->property(follow ? "atYEnd" : "atYBeginning").toBool(); });
+            return completed;
+        }
         if (scenario == "handoff_overlap_pointer") {
             if (!settle() || !beginning() || !click(window,"logEntry_2")) return false;
             auto* first = item(window,"logEntry_0");
