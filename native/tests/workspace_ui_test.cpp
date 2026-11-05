@@ -3644,8 +3644,9 @@ bool execute(const QString& requestedScenario) {
                     const auto foreground=dimmed ? QColor("#DDE7EC").darker(140) : QColor("#DDE7EC");
                     const auto contrast=(luminance(foreground)+.05)/(luminance(QColor("#061621"))+.05);
                     if (contrast<4.5) return failed("label contrast ratio");
+                    QImage image;
                     const bool rendered=waitFor([&] {
-                        const auto image=window->grabWindow();
+                        image=window->grabWindow();
                         if (image.isNull()) return false;
                         const double scale=double(image.width())/window->width();
                         const auto area=QRectF(radar->mapToScene(QPointF{})*scale,radar->size()*scale).toAlignedRect().intersected(image.rect());
@@ -3655,7 +3656,7 @@ bool execute(const QString& requestedScenario) {
                         return ink>5;
                     });
                     if (!rendered) { qWarning()<<"Missing rendered radar label"<<theme<<variant<<dimmed; return false; }
-                    if (!output.isEmpty() && !window->grabWindow().save(output+"/"+requestedScenario+"-"+QString(theme).replace(' ','-')+"-"+variant
+                    if (!output.isEmpty() && !image.save(output+"/"+requestedScenario+"-"+QString(theme).replace(' ','-')+"-"+variant
                         +(dimmed ? "-dimmed-" : "-active-")+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png")) return false;
                 }
             }

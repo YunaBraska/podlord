@@ -240,30 +240,45 @@ require('node:assert/strict').deepEqual(parseNodes(`<node text='key: "value > ot
 require('node:assert/strict').equal(decode('&#10;&#13;&#9;&amp;#10;'),'\n\r\t&#10;');
 let xml='',nodes=[];const steps=[],journeyFailures=[];
 function state(){
- run('wait-for-device');run('shell','uiautomator','dump','/sdcard/podlord-journey.xml');
- xml=run('shell','cat','/sdcard/podlord-journey.xml');
- nodes=parseNodes(xml);lastSuccessfulUiAt=new Date().toISOString();return nodes;
+ const deadline=Date.now()+30000;
+ xml='';nodes=[];
+ do{
+  run('wait-for-device');
+  // UIAutomator may return success without writing a hierarchy when the UI is busy.
+  run('shell','rm','-f','/sdcard/podlord-journey.xml');
+  const dumped=run('shell','uiautomator','dump','/sdcard/podlord-journey.xml');
+  if(/dumped to:\s*\/sdcard\/podlord-journey\.xml/.test(dumped)){
+   const fresh=run('shell','cat','/sdcard/podlord-journey.xml');
+   if(fresh.trimEnd().endsWith('</hierarchy>')){
+    xml=fresh;nodes=parseNodes(xml);lastSuccessfulUiAt=new Date().toISOString();return nodes;
+   }
+  }
+  fs.appendFileSync(path.join(out,'ui-hierarchy-retries.jsonl'),JSON.stringify({at:new Date().toISOString(),reason:'No fresh hierarchy produced; no previous coordinates reused'})+'\n');
+ }while(Date.now()<deadline);
+ throw Error('Android did not produce a fresh accessibility hierarchy within the command watchdog');
 }
 function target(id){
  let scrolled=false;
+ const sourceRow=id==='sourceRow_0',limit=sourceRow?20:8;
+ const matches=n=>sourceRow?/^sourceCell_0_[0-7]$/.test(n['resource-id']?.split('.').at(-1)||''):n['resource-id']?.endsWith('.'+id);
  const bounds=n=>n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
- for(let attempt=0;attempt<=8;attempt++){
-  const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
+ for(let attempt=0;attempt<=limit;attempt++){
+  const n=nodes.find(n=>matches(n)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
     const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.ResourceSidebar_');
     const inspector=/\.(workspaceInspector|sourceInspector)\./.test(n['resource-id']||'');
-    const settings=/^inline/.test(id)||n['resource-id']?.includes('.settingsContent.');
+    const settings=sourceRow||/^inline/.test(id)||n['resource-id']?.includes('.settingsContent.');
     const host=settings?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>/\.(workspaceInspector|sourceInspector)$/.test(x['resource-id']||'')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
     const clip=bounds(host);return !clip||(b[1]>=clip[1]&&b[3]<=clip[3]);
   })());
-  if(n){if(!scrolled)return n;const before=n.bounds;state();const stable=nodes.find(n=>n['resource-id']?.endsWith('.'+id)&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
+  if(n){if(!scrolled)return n;const before=n.bounds,identity=n['resource-id'];state();const stable=nodes.find(n=>n['resource-id']===identity&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
   const nav=/WorkspaceButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
-  if(attempt===8)break;
-  const current=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
+  if(attempt===limit)break;
+  const current=nodes.find(matches);
   const inspector=/\.(workspaceInspector|sourceInspector)\./.test(current?.['resource-id']||'');
-  const settings=/^inline/.test(id)||current?.['resource-id']?.includes('.settingsContent.');
+  const settings=sourceRow||/^inline/.test(id)||current?.['resource-id']?.includes('.settingsContent.');
   const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>/\.(workspaceInspector|sourceInspector)$/.test(n['resource-id']||'')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
   const b=bounds(host);if(!b)break;
-  const x=settings?Math.floor((b[0]+b[2])/2):inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
+  const x=settings||inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
   const firstVisible=settings?nodes.findIndex(n=>n['resource-id']?.startsWith(host['resource-id']+'.')&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
   const currentBounds=bounds(current);
   const partialSidebar=!settings&&!inspector&&!nav&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
@@ -271,8 +286,8 @@ function target(id){
   const inset=settings?4:12;
   const start=reverse?b[1]+inset:b[3]-inset;
   // A full swipe can jump over a short control that misses the viewport by one pixel.
-  const distance=partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
-  run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings?'150':'350');scrolled=true;state();
+  const distance=sourceRow?Math.max(24,Math.floor((b[3]-b[1])/4)):partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
+  run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings&&!sourceRow?'150':'350');scrolled=true;state();
   if(!settings&&!inspector&&!nav)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
   if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
@@ -551,7 +566,7 @@ run('shell','settings','put','system','user_rotation','0');state();
 click('settingsWorkspaceButton');click('settingsSectionPicker');
 const sourceSection=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
 if(!sourceSection)throw Error('Sources is unavailable in the public Settings picker');
-tap(sourceSection);waitNode('sourceCell_0_0',n=>n.enabled==='true');click('sourceCell_0_0');
+tap(sourceSection);click('sourceRow_0');
 waitNode('sourceOverviewTab',n=>n.checked==='true');capture('source-inspector-overview');
 click('sourceYamlTab');waitNode('editSourceYaml',n=>n.enabled==='true');
 waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||''));capture('source-yaml-read-only');
