@@ -4959,7 +4959,13 @@ bool execute(const QString& requestedScenario) {
             if (scenario == "inspector_edit_resource_bound") workspace.filter("bravo");
             if (scenario == "inspector_edit_close_escape") QTest::keyClick(window, Qt::Key_Escape);
             else if (scenario == "inspector_edit_close_keyboard" || scenario == "inspector_edit_close_keypad" || scenario == "inspector_edit_close_space") {
+                QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
                 window->requestActivate();
+                window->update();
+                if (!waitFor([&] { return !rendered.isEmpty(); })) {
+                    std::fputs("Discard keyboard surface did not produce a frame.\n", stderr);
+                    return false;
+                }
                 if (!waitFor([&] { return window->isActive() && QGuiApplication::focusObject() == item(window, "discardStay")
                         && item(window, "discardStay")->hasActiveFocus() && item(window, "discardStay")->property("visualFocus").toBool(); })) {
                     std::fprintf(stderr, "Discard keyboard focus: window=%d active=%d visual=%d current=%s\n", window->isActive(), item(window,"discardStay")->hasActiveFocus(), item(window,"discardStay")->property("visualFocus").toBool(), window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
