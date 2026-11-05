@@ -271,6 +271,7 @@ ApplicationWindow {
     }
     FileDialog {
         id: gkeKeyChooser
+        objectName: "gkeKeyChooser"
         title: "Select Google service-account JSON key"
         onAccepted: gkeImportDialog.importing = workspace.importGkeServiceAccount(gkeImportContext.currentValue, selectedFile.toString())
     }
@@ -687,7 +688,7 @@ ApplicationWindow {
                     }
                     Button { objectName: "openContext"; text: "Open context"; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { if (workspace.openContext(contexts.currentValue)) window.sourcesExpanded = false } }
                     Button { objectName: "importOciKey"; text: "OCI key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { ociImportContext.currentIndex = contexts.currentIndex; ociImportDialog.open() } }
-                    Button { objectName: "importGkeKey"; text: "GKE key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; visible: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { gkeImportContext.currentIndex = contexts.currentIndex; gkeImportDialog.open() } }
+                    Button { objectName: "importGkeKey"; text: "GKE key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { gkeImportContext.currentIndex = contexts.currentIndex; gkeImportDialog.open() } }
                     RowLayout {
                         Layout.fillWidth: parent.columns === 2
                         Button { objectName: "reloadSources"; visible: !workspace.appStore; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.refreshSources() }

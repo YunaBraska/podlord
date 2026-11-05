@@ -1744,3 +1744,19 @@ Authentication confirmation preserves its captured session and explicit-consent 
 ### Radar water exposure lifecycle
 
 An unexposed window does not advance or repaint the water animation, including before its first display and after a view moves to an unexposed window. Requested playback, speed and camera settings remain intact. Animation resumes automatically when the current window is exposed again. Detaching or destroying the view stops its animation work and releases the former window binding. This specializes the existing hidden-surface work rule and does not change visible animation speed or the foreground performance gates.
+
+## AWS selected-profile import and Device Code
+
+AWS selected-file profile import and native IAM Identity Center/SSO Device Code have the following required behavior. Explicit unsupported paths below describe candidate limits, not approved scope exclusions.
+
+- The public Sources Settings dialog imports explicitly selected AWS config/credentials files only. There are no home-directory scans. Selected credentials override matching keys from the selected config.
+- Modern `sso_session` references and legacy direct SSO fields are supported. `role_arn`/`source_profile`, `credential_source`, `credential_process`, `web_identity_token_file`, and `endpoint_url` remain explicit unsupported import paths. Arbitrary AWS profile compatibility is not claimed.
+- Selected imported static AWS access-key IDs, secret access keys and optional session tokens are persisted privately, like OCI/GKE material, at `kubeconfigs/aws-<context-hash>.cred` with mode `0600`. Imported identities use the existing identity/revocation framework. Replacement/removal follows the existing context-scoped revocation and stream-closure policy.
+- Native Device Code uses the system default browser with shared desktop/Android/iOS behavior. The exchange covers RegisterClient, DeviceAuthorization, Token and GetRoleCredentials, followed by the existing EKS SigV4 path. RegisterClient performs dynamic public-client registration through the official AWS endpoint. There is no AWS CLI, embedded browser, broker, or manual publisher-console registration.
+- Native EKS executable recognition covers Windows `aws.exe` and backslash paths. This recognition does not add an AWS CLI execution dependency.
+- SSO registration secrets, device codes, SSO access tokens and exchanged role credentials remain memory-only. This does not prohibit the private persistence of selected static AWS keys and session tokens described above. Ready EKS connections have signing fields scrubbed.
+- The Sources import dialog shows the context caption and sizes to its content. The source-actions popup has bounded, scrollable content on narrow layouts.
+
+Desktop GKE service-account import and native selection are available through both public Main and Settings click routes. They are not limited to mobile/store builds.
+
+The [roadmap](../ROADMAP.md) owns status and unresolved scope decisions. The [test map](k3d-test-map.md) owns exact proofs and source boundaries.

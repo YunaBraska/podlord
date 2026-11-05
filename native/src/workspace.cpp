@@ -1125,6 +1125,17 @@ bool Workspace::importGkeServiceAccount(const QString& contextId, const QString&
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
     }, "Google service-account key imported into private app storage. The original selected file is unchanged; key contents are not shown in Sources.", false, contextId);
 }
+bool Workspace::importAwsProfile(const QString& contextId, const QString& configPath, const QString& credentialsPath) {
+    for (const auto& path : {configPath, credentialsPath}) if (!path.isEmpty() && !retainDocumentReadAccess(path)) {
+        sourceImportError_ = error_ = "Cannot read the selected AWS profile document. Select it again from the system file picker.";
+        emit changed(); return false;
+    }
+    return importSource([contextId, configPath, credentialsPath](const KubeconfigStore& store) -> Result<SourceImportReport> {
+        const auto imported = store.importAwsProfile(contextId, configPath, credentialsPath);
+        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+        return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
+    }, "Selected AWS profile imported privately for this context. Confirm sign-in to connect. Original files are unchanged.", false, contextId);
+}
 bool Workspace::quickImportFile(const QString& path) {
     if (!retainDocumentReadAccess(path)) {
         sourceImportError_ = error_ = "Android cannot retain access to this document. Select it again from the system file picker.";

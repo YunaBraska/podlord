@@ -260,7 +260,7 @@ if(NOT IOS)
     add_executable(podlord-session src/session_main.cpp)
     target_link_libraries(podlord-session PRIVATE podlord_sessions)
 endif()
-add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_process.cpp src/native_oidc.cpp src/native_eks.cpp src/native_oci.cpp src/native_gke.cpp)
+add_library(podlord_sources STATIC src/kubeconfig_store.cpp src/credential_process.cpp src/native_oidc.cpp src/native_eks.cpp src/native_aws_sso.cpp src/native_oci.cpp src/native_gke.cpp)
 if(PODLORD_MAC_APP_STORE)
     target_compile_definitions(podlord_sources PUBLIC PODLORD_MAC_APP_STORE)
 endif()
@@ -391,7 +391,7 @@ endforeach()
 set(workspace_qml_files
     ui/Main.qml ui/IconButton.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
     ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml
-    ui/PasteSourceDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml
+    ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml
     ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
     ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
     ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
@@ -510,6 +510,15 @@ if(BUILD_TESTING OR (IOS AND PODLORD_BUILD_MOBILE_UI_TEST))
     qt_add_executable(workspace_ui_test tests/workspace_ui_test.cpp)
     target_link_libraries(workspace_ui_test PRIVATE podlord_workspace Qt6::Test)
     if(IOS)
+        if(NOT TARGET native-aws-sso-test)
+            qt_add_executable(native-aws-sso-test tests/native_aws_sso_test.cpp tests/browser_boundary.h)
+            target_link_libraries(native-aws-sso-test PRIVATE podlord_sources Qt6::Test)
+            target_include_directories(native-aws-sso-test PRIVATE "${OPENSSL_ROOT_DIR}/include")
+            set_target_properties(native-aws-sso-test PROPERTIES MACOSX_BUNDLE TRUE
+                MACOSX_BUNDLE_GUI_IDENTIFIER "berlin.yuna.podlord.tests"
+                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
+                XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+        endif()
         if(NOT TARGET source-inspector-ui-test)
             qt_add_executable(source-inspector-ui-test tests/source_inspector_ui_test.cpp tests/ui_input.h)
             target_link_libraries(source-inspector-ui-test PRIVATE podlord_workspace Qt6::Test)
@@ -880,6 +889,55 @@ if(BUILD_TESTING)
     target_link_libraries(native-oidc-test PRIVATE podlord_sources Qt6::Test)
     add_executable(native-eks-test tests/native_eks_test.cpp)
     target_link_libraries(native-eks-test PRIVATE podlord_sources)
+    add_executable(aws-profile-test tests/aws_profile_test.cpp)
+    target_link_libraries(aws-profile-test PRIVATE podlord_sources Qt6::Test)
+    foreach(scenario name_default name_env name_precedence name_equals name_duplicate name_missing name_option name_blank name_invalid name_control name_long name_trim
+        parse_credentials_only parse_config_only parse_default parse_bom parse_comments parse_precedence parse_sso parse_legacy_sso parse_empty parse_large_config parse_large_credentials
+        parse_utf8 parse_null parse_section parse_empty_section parse_duplicate_section parse_no_section parse_no_equal parse_duplicate_field parse_missing parse_no_inherit
+        parse_unsupported_role_arn parse_unsupported_source_profile parse_unsupported_credential_source parse_unsupported_credential_process parse_unsupported_web_identity_token_file parse_unsupported_endpoint_url
+        parse_session_missing parse_session_conflict parse_scope parse_bad_credentials
+        resolve_sso resolve_region_flag resolve_region_env resolve_region_default_env resolve_mixed resolve_http resolve_userinfo resolve_port resolve_query resolve_fragment resolve_empty_url
+        resolve_bad_region resolve_bad_account resolve_bad_role resolve_missing_sso resolve_no_ambient_fallback resolve_missing_profile
+        resolve_long_url resolve_long_eks_region resolve_long_sso_region resolve_windows resolve_windows_upper resolve_exe
+        store_success store_sso store_locked store_bad_file store_directory store_bad_id store_missing_context store_missing_file store_corrupt store_replace store_removal store_removal_failure
+        store_other_program store_no_exec store_no_args store_scalar_args store_mapping_arg store_scalar_env store_empty_env store_duplicate_env store_env store_bad_profile store_bad_action store_bad_cluster store_symlink store_missing_credentials
+        record_version record_profile record_missing record_fields record_extra record_type record_large record_array record_directory record_symlink
+        store_bad_field_type store_bad_storage store_lock_directory)
+        # QFile::link creates .lnk shortcuts on Windows, not the symbolic links
+        # these two protected-file scenarios require.
+        if(WIN32 AND (scenario STREQUAL "store_symlink" OR scenario STREQUAL "record_symlink"))
+            continue()
+        endif()
+        add_test(NAME native.authentication.aws_profile_${scenario} COMMAND aws-profile-test ${scenario})
+        set_tests_properties(native.authentication.aws_profile_${scenario} PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
+    endforeach()
+    add_executable(native-aws-sso-test tests/native_aws_sso_test.cpp tests/browser_boundary.h)
+    target_link_libraries(native-aws-sso-test PRIVATE podlord_sources Qt6::Test)
+    foreach(scenario success pending slow_down pending_type slow_type short_role china missing_exec missing_eks missing_sso invalid_sso
+        register_empty_id register_bad_secret register_expired register_bad_json register_array register_oversized register_denied register_redirect register_server register_timeout
+        device_no_complete device_empty_code device_empty_user device_http device_bad_complete device_bad_uri device_bad_fragment device_zero device_long device_expired
+        device_negative_interval device_long_interval device_denied device_bad_json device_array device_oversized
+        token_empty token_space token_short token_long token_denied token_bad_json token_array token_oversized token_server denied
+        credentials_empty_key credentials_bad_secret credentials_empty_session credentials_expired credentials_long credentials_missing credentials_denied credentials_bad_json credentials_array credentials_oversized
+        cancel_instruction cancel_pending cancel_before shutdown owner_success owner_revoke owner_cancel tls_untrusted)
+        add_test(NAME native.authentication.aws_sso_${scenario} COMMAND native-aws-sso-test ${scenario})
+        set_tests_properties(native.authentication.aws_sso_${scenario} PROPERTIES TIMEOUT 40 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
+        if(APPLE AND NOT IOS)
+            # SIP removes DYLD_* when the suite enters /bin/sh. CTest supplies the
+            # actual SDK runtime directly to the unbundled TLS test process.
+            set_tests_properties(native.authentication.aws_sso_${scenario} PROPERTIES
+                ENVIRONMENT_MODIFICATION "DYLD_LIBRARY_PATH=path_list_prepend:$<TARGET_FILE_DIR:OpenSSL::SSL>")
+        endif()
+    endforeach()
+    add_executable(aws-import-ui-test tests/aws_import_ui_test.cpp tests/ui_input.h)
+    target_link_libraries(aws-import-ui-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario success invalid cancel narrow)
+        foreach(style Basic Fusion)
+            add_test(NAME native.source_import.aws_${scenario}_${style} COMMAND aws-import-ui-test ${scenario})
+            set_tests_properties(native.source_import.aws_${scenario}_${style} PROPERTIES TIMEOUT 30
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_AUDIO=1")
+        endforeach()
+    endforeach()
     add_executable(native-oci-test tests/native_oci_test.cpp)
     target_link_libraries(native-oci-test PRIVATE podlord_sources)
     add_executable(native-gke-test tests/native_gke_test.cpp)
@@ -911,10 +969,15 @@ if(BUILD_TESTING)
     endforeach()
     add_executable(gke-import-ui-test tests/gke_import_ui_test.cpp)
     target_link_libraries(gke-import-ui-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario success invalid wrong_context removal removal_failure)
+    foreach(scenario success invalid wrong_context removal removal_failure desktop_main desktop_settings)
         add_test(NAME native.source_import.gke_${scenario} COMMAND gke-import-ui-test ${scenario})
         set_tests_properties(native.source_import.gke_${scenario} PROPERTIES TIMEOUT 30
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    endforeach()
+    foreach(scenario desktop_main desktop_settings)
+        add_test(NAME native.source_import.gke_${scenario}_Fusion COMMAND gke-import-ui-test ${scenario})
+        set_tests_properties(native.source_import.gke_${scenario}_Fusion PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")
     endforeach()
     add_executable(oci-import-ui-test tests/oci_import_ui_test.cpp tests/ui_input.h)
     target_link_libraries(oci-import-ui-test PRIVATE podlord_workspace Qt6::Test)

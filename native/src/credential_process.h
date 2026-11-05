@@ -2,6 +2,7 @@
 #include "kubeconfig_store.h"
 #include "native_oidc.h"
 #include "native_eks.h"
+#include "native_aws_sso.h"
 #include "native_gke.h"
 #include <QProcess>
 
@@ -31,6 +32,7 @@ private:
     QMap<QString, Job> jobs_;
     QMap<QString, NativeOidcLogin*> nativeJobs_;
     QMap<QString, NativeGkeLogin*> gkeJobs_;
+    QMap<QString, NativeAwsSso*> awsJobs_;
     QMap<QString, Result<ClusterConnection>> results_;
     void finish(const ClusterConnection& connection, const QString& session, QProcess* process);
 };

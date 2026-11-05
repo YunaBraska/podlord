@@ -42,7 +42,7 @@ LLVM_PROFILE_FILE="$RUN/%p-%m.profraw"
 export LLVM_PROFILE_FILE
 TEST_STATUS=0
 # Reject broken defaults or application startup before spending a full suite on the same failure.
-PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default|settings\.read_denied|read_overlap\.snapshot_fields|forward\.form_refresh_(Basic|Fusion))$'
+PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default|settings\.read_denied|read_overlap\.snapshot_fields|forward\.form_refresh_(Basic|Fusion)|authentication\.aws_sso_(success|device_expired))$'
 "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
 if [ "$TEST_STATUS" -eq 0 ]; then
     "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?
@@ -160,15 +160,28 @@ END {
     printf 'Native source-editor coverage gate failed: require 90%% branches across the new controller, getters and protected owned-snapshot read/write function families.\n' >&2
     exit 1
 fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/kubeconfig_store.cpp" \
+    | awk '/importAwsProfile|importedAwsProfile|awsCredentialPath/ { print }' > "$BUILD/coverage/aws-import-functions.txt"
+cat "$BUILD/coverage/aws-import-functions.txt"
+if ! awk '/importAwsProfile/ { import=1 }
+          /importedAwsProfile/ { read=1 }
+          /awsCredentialPath/ { path=1 }
+          { total+=$(NF-2); missed+=$(NF-1) }
+          END { if (!import || !read || !path || !total || 100*(total-missed)/total<90) exit 1 }' "$BUILD/coverage/aws-import-functions.txt"; then
+    printf 'Native AWS import coverage gate failed: require 90%% branches across protected profile import, read and context-owned path functions.\n' >&2
+    exit 1
+fi
 if ! awk -v requireApple="$APPLE_TLS" '$1=="background_http.cpp" { http=1; if ($13+0<90) fail=1 }
           $1=="platform_tls_apple.mm" { apple=1; if ($13+0<90) fail=1 }
           $1=="native_eks.cpp" { eks=1; if ($13+0<90) fail=1 }
+          $1=="native_aws_sso.cpp" { aws=1; if ($13+0<90) fail=1 }
           $1=="native_gke.cpp" { gke=1; if ($13+0<90) fail=1 }
           $1=="native_oidc.cpp" { oidc=1; if ($13+0<90) fail=1 }
           $1=="native_oci.cpp" { oci=1; if ($13+0<90) fail=1 }
           /^TOTAL/ { seen=1; if ($10+0<95 || $13+0<85) fail=1 }
-          END { if (!seen || !http || !eks || !gke || !oidc || !oci || (requireApple && !apple) || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
-    printf 'Native coverage gate failed: require 95%% lines, 85%% branches overall, and 90%% branches in background HTTP, native EKS/GKE/OIDC/OCI and macOS-tested Apple trust logic.\n' >&2
+          END { if (!seen || !http || !eks || !aws || !gke || !oidc || !oci || (requireApple && !apple) || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
+    printf 'Native coverage gate failed: require 95%% lines, 85%% branches overall, and 90%% branches in background HTTP, native AWS-SSO/EKS/GKE/OIDC/OCI and macOS-tested Apple trust logic.\n' >&2
     exit 1
 fi
 "$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \

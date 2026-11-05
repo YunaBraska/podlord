@@ -1,10 +1,15 @@
 #include "kubeconfig_store.h"
 #include "workspace.h"
+#include "ui_input.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickWindow>
+#include <QUrl>
 #include <QTemporaryDir>
 #include <QTest>
 #include <openssl/evp.h>
@@ -57,8 +62,52 @@ bool run(const QString& scenario) {
 
     Workspace workspace(profile);
     if (!QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; }, 5000)) return false;
+    const bool desktopUi = scenario == "desktop_main" || scenario == "desktop_settings";
+    std::unique_ptr<QQmlApplicationEngine> engine;
+    QQuickWindow* window = nullptr;
     const auto target = scenario == "wrong_context" ? QString("ctx:") + QString(64, '0') : contextId;
-    if (!workspace.importGkeServiceAccount(target, keyPath)
+    if (desktopUi) {
+        engine = std::make_unique<QQmlApplicationEngine>();
+        engine->rootContext()->setContextProperty("workspace", &workspace);
+        engine->load(QUrl("qrc:/podlord/Main.qml"));
+        if (engine->rootObjects().isEmpty()) return false;
+        window = qobject_cast<QQuickWindow*>(engine->rootObjects().first());
+        if (!window || !QTest::qWaitFor([&] { return window->isVisible(); }, 5000)) return false;
+        if (scenario == "desktop_main") {
+            if (!podlord::test::clickVisible(window, "mapSources")
+                || !podlord::test::clickVisible(window, "importGkeKey")) {
+                std::fputs("Desktop source controls cannot open GKE key import.\n", stderr);
+                return false;
+            }
+        } else if (!podlord::test::clickVisible(window, "settingsWorkspaceButton")
+            || !podlord::test::selectSettingsSection(window, "sources")
+            || !podlord::test::clickVisible(window, "sourceActionsMenuButton")
+            || !podlord::test::clickVisible(window, "importGkeKeyFromSettings")) {
+            std::fputs("Desktop Sources settings cannot open GKE key import.\n", stderr);
+            return false;
+        }
+        auto* dialog = engine->rootObjects().first()->findChild<QObject*>("gkeImportDialog");
+        auto* picker = engine->rootObjects().first()->findChild<QObject*>("gkeImportContext");
+        if (!dialog || !picker || !QTest::qWaitFor([&] { return dialog->property("opened").toBool(); }, 2000)
+            || picker->property("currentValue").toString() != contextId) return false;
+        const auto frames = qEnvironmentVariable("PODLORD_GKE_IMPORT_FRAMES");
+        if (!frames.isEmpty() && !window->grabWindow().save(QDir(frames).filePath(
+            scenario + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png"))) return false;
+        if (!podlord::test::clickVisible(window, "chooseGkeKey")) return false;
+        auto* chooser = engine->rootObjects().first()->findChild<QObject*>("gkeKeyChooser");
+        // Only the external system chooser is simulated. Its accepted URL enters the real QML import handler.
+        if (!chooser || !QTest::qWaitFor([&] { return chooser->property("visible").toBool(); }, 2000)
+            || !chooser->setProperty("selectedFile", QUrl::fromLocalFile(keyPath))
+            || !QMetaObject::invokeMethod(chooser, "accepted")
+            || !QMetaObject::invokeMethod(chooser, "close")) return false;
+        if (!QTest::qWaitFor([&] { return !workspace.busy() && !dialog->property("visible").toBool(); }, 5000)) {
+            qWarning() << "GKE chooser completion failed:" << "busy" << workspace.busy()
+                << "dialog visible" << dialog->property("visible") << "importing" << dialog->property("importing")
+                << "error" << workspace.sourceImportError() << "notice" << workspace.sourceImportNotice();
+            return false;
+        }
+        window->close();
+    } else if (!workspace.importGkeServiceAccount(target, keyPath)
         || !QTest::qWaitFor([&] { return !workspace.busy(); }, 5000)) return false;
     const auto stored = store.hasGkeServiceAccount(contextId);
     if (!std::holds_alternative<bool>(stored)) return false;
@@ -78,7 +127,7 @@ bool run(const QString& scenario) {
         std::fputs("Imported GKE key did not select context-isolated native authentication.\n", stderr);
         return false;
     }
-    if (scenario == "success") return true;
+    if (scenario == "success" || desktopUi) return true;
     if (scenario == "removal_failure") {
         if (!QFile::remove(privateCopy.filePath()) || !QDir().mkdir(privateCopy.filePath())) return false;
         const auto removed = store.removeContext(contextId, {});
@@ -97,6 +146,7 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     if (argc != 2) return 2;
     const auto scenario = QString::fromUtf8(argv[1]);
-    if (scenario != "success" && scenario != "invalid" && scenario != "wrong_context" && scenario != "removal" && scenario != "removal_failure") return 2;
+    if (scenario != "success" && scenario != "invalid" && scenario != "wrong_context" && scenario != "removal" && scenario != "removal_failure"
+        && scenario != "desktop_main" && scenario != "desktop_settings") return 2;
     return run(scenario) ? 0 : 1;
 }

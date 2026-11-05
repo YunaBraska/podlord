@@ -663,6 +663,7 @@ public:
     Q_INVOKABLE bool importFile(const QString& path);
     Q_INVOKABLE bool importOciCredentials(const QString& contextId, const QString& configPath, const QString& keyPath);
     Q_INVOKABLE bool importGkeServiceAccount(const QString& contextId, const QString& keyPath);
+    Q_INVOKABLE bool importAwsProfile(const QString& contextId, const QString& configPath, const QString& credentialsPath);
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false);

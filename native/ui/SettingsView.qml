@@ -8,6 +8,7 @@ Pane {
     LayoutMirroring.childrenInherit: true
     PasteSourceDialog { id: pasteSourceDialog }
     SessionManager { id: sessionManager }
+    AwsProfileDialog { id: awsProfileDialog }
     Dialog {
         id: sourceRemovalDialog
         objectName: "sourceRemovalDialog"
@@ -197,14 +198,21 @@ Pane {
                     Popup {
                         id: sourceActions
                         objectName: "sourceActionsMenu"
-                        parent: sourceActionsButton
-                        x: 0; y: sourceActionsButton.height
+                        parent: Overlay.overlay
+                        x: Math.max(12, Math.min(sourceActionsButton.mapToItem(parent, 0, 0).x, parent.width - width - 12))
+                        y: Math.max(12, Math.min(sourceActionsButton.mapToItem(parent, 0, sourceActionsButton.height).y, parent.height - height - 12))
                         width: Math.min(320, settings.width - 28)
+                        height: Math.min(sourceActionItems.implicitHeight + 2 * padding, parent.height - 24)
                         padding: 8; focus: true
                         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                         onOpened: browseSourceFile.forceActiveFocus()
                         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
-                        contentItem: ColumnLayout {
+                        contentItem: ScrollView {
+                            clip: true
+                            contentWidth: availableWidth
+                            ColumnLayout {
+                            id: sourceActionItems
+                            width: parent.width
                             spacing: 4
                             IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: "Browse kubeconfig file"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
                             IconButton { objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Browse kubeconfig folder"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
@@ -212,8 +220,10 @@ Pane {
                             IconButton { objectName: "importHomeButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Import ~/.kube/config"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
                             IconButton { objectName: "refreshSourceFilesButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Reimport changed source files"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
                             IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: "Import OCI API key"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
-                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: "Import GKE service-account key"; Layout.fillWidth: true; visible: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
+                            IconButton { objectName: "importAwsProfileFromSettings"; glyph: ""; showText: true; text: "Import AWS profile"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); awsProfileDialog.open() } }
+                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: "Import GKE service-account key"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
                             IconButton { glyph: ""; showText: true; text: "Reload imported metadata"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.reload() } }
+                            }
                         }
                     }
                     Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }

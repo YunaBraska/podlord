@@ -44,9 +44,15 @@ struct OidcLogin final {
     bool useAccessToken = false;
     bool deviceCodeGrant = false;
 };
+struct AwsSso final {
+    QUrl startUrl;
+    QString region, accountId, roleName;
+};
 struct EksLogin final {
     QString cluster, region;
     QByteArray accessKey, secretKey, sessionToken;
+    std::optional<AwsSso> sso;
+    QDateTime credentialExpiresAt;
 };
 struct OciLogin final {
     QString cluster, region, user, tenancy, fingerprint;
@@ -105,6 +111,8 @@ public:
     Result<SourceSnapshot> importOciCredentials(const QString& contextId, QString configPath, QString keyPath) const;
     /** Imports one Google service-account JSON key into protected profile storage for a GKE context. */
     Result<SourceSnapshot> importGkeServiceAccount(const QString& contextId, QString keyPath) const;
+    /** Imports only the selected AWS profile and its SSO session, without connecting or executing tools. */
+    Result<SourceSnapshot> importAwsProfile(const QString& contextId, QString configPath, QString credentialsPath) const;
     /** Reports whether a protected OCI key still exists after context removal. */
     Result<bool> hasOciCredential(const QString& contextId) const;
     /** Reports whether a protected Google service-account key exists after context removal. */

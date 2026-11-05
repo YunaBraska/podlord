@@ -47,8 +47,9 @@ CredentialProcess::~CredentialProcess() {
     for (const auto& job : jobs_) { disconnect(job.process, nullptr, this, nullptr); job.process->kill(); job.process->waitForFinished(1000); }
 #endif
 }
-bool CredentialProcess::running(const QString& credential) const { return jobs_.contains(credential) || nativeJobs_.contains(credential) || gkeJobs_.contains(credential); }
+bool CredentialProcess::running(const QString& credential) const { return jobs_.contains(credential) || nativeJobs_.contains(credential) || gkeJobs_.contains(credential) || awsJobs_.contains(credential); }
 QString CredentialProcess::instruction(const QString& credential) const {
+    if (const auto* aws = awsJobs_.value(credential, nullptr)) return aws->instruction();
     const auto* job = nativeJobs_.value(credential, nullptr);
     return job ? job->instruction() : QString{};
 }
@@ -75,6 +76,7 @@ bool CredentialProcess::revoke(const QString& credential) {
     };
     discard(nativeJobs_.take(credential));
     discard(gkeJobs_.take(credential));
+    discard(awsJobs_.take(credential));
 #if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
     auto job = jobs_.find(credential);
     if (job != jobs_.end()) {
@@ -93,6 +95,7 @@ bool CredentialProcess::revoke(const QString& credential) {
 bool CredentialProcess::cancel(const QString& credential) {
     if (auto* native = nativeJobs_.value(credential, nullptr)) { native->cancel(); return true; }
     if (auto* gke = gkeJobs_.value(credential, nullptr)) { gke->cancel(); return true; }
+    if (auto* aws = awsJobs_.value(credential, nullptr)) { aws->cancel(); return true; }
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
     Q_UNUSED(credential);
     return false;
@@ -120,6 +123,20 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
         login->start(); emit changed(); return true;
     }
     if (connection.exec->eks) {
+        if (connection.exec->eks->sso) {
+            if (awsJobs_.contains(id)) return true;
+            results_.remove(id);
+            auto* login = new NativeAwsSso(std::move(connection), this);
+            awsJobs_.insert(id, login);
+            connect(login, &NativeAwsSso::instructionChanged, this, &CredentialProcess::changed);
+            connect(login, &NativeAwsSso::completed, this, [this, id, session, guard = QPointer<NativeAwsSso>(login)](Result<ClusterConnection> result) {
+                auto* login = guard.data();
+                if (!login || awsJobs_.value(id) != login) return;
+                awsJobs_.remove(id); results_.insert(id, std::move(result)); login->deleteLater();
+                emit changed(); emit completed(id, session);
+            });
+            login->start(); emit changed(); return true;
+        }
         results_.insert(id, nativeEksToken(std::move(connection)));
         emit changed(); emit completed(id, session);
         return true;

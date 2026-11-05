@@ -55,3 +55,11 @@ and its [native OAuth redirect contract](https://developers.google.com/identity/
 The existing test map owns actual QML confirmation, a real external credential process, actual stores/HTTP/queue/cache behavior, expiry, failed reauthentication, shared tabs, shutdown and real local Kubernetes TLS/client-certificate evidence. The identity provider is the explicit external simulated boundary; no owned authentication implementation is replaced. Terminal interaction, cluster configuration extensions, legacy providers, unrelated-credential isolation, provider descendants, real browser OAuth, certificate rotation races and broader failure/validation/platform checks remain open evidence, not removed requirements.
 
 No legacy code, profile or launcher is changed. Removing this native increment leaves the isolated legacy lane usable. No disk resource cache or persisted credential cache is introduced.
+
+## AWS decision and consequences
+
+The approved direction uses explicit AWS profile imports and native IAM Identity Center/SSO Device Code through the system default browser across desktop and mobile. It does not require an AWS CLI, embedded browser, broker or manual publisher-console registration. Dynamic public-client registration through the official RegisterClient endpoint remains part of the decision.
+
+The consequence is a separation between privately persisted selected static AWS keys/session tokens and memory-only SSO exchange material, while reusing the existing context-scoped identity/revocation lifecycle. Desktop GKE service-account access through Main and Settings belongs to already-approved parity, not a mobile/store-only restriction.
+
+The [operational specification](../spec/podlord-operational-spec.md) owns behavior and candidate limits, the [roadmap](../ROADMAP.md) owns status and open decisions, and the [test map](../spec/k3d-test-map.md) owns exact proofs. Candidate limits do not authorize scope exclusions or gate waivers.

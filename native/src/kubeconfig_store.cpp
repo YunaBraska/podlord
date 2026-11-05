@@ -265,6 +265,9 @@ QString ociCredentialPath(const QString& directory, const QString& contextId) {
 QString gkeCredentialPath(const QString& directory, const QString& contextId) {
     return QDir(directory).filePath("gke-" + contextId.mid(4) + ".cred");
 }
+QString awsCredentialPath(const QString& directory, const QString& contextId) {
+    return QDir(directory).filePath("aws-" + contextId.mid(4) + ".cred");
+}
 Result<QByteArray> readGkeImport(QString path) {
     const auto normalized = sourcePath(std::move(path));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return *failure;
@@ -278,17 +281,17 @@ Result<QByteArray> readGkeImport(QString path) {
         return Failure{StoreError::InvalidData, "The selected Google service-account key is empty or exceeds 64 KiB."};
     return bytes;
 }
-Result<QByteArray> readOciImport(QString path, qint64 limit) {
+Result<QByteArray> readCredentialImport(QString path, qint64 limit) {
     const auto normalized = sourcePath(std::move(path));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return *failure;
     path = std::get<QString>(normalized);
     if (!contentSource(path) && !QFileInfo(path).isFile())
-        return Failure{StoreError::ReadFailed, "Select a readable regular OCI config or PEM file."};
+        return Failure{StoreError::ReadFailed, "Select a readable regular credential file."};
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read the selected OCI file."};
+    if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read the selected credential file."};
     const auto bytes = file.read(limit + 1);
-    if (file.error() != QFileDevice::NoError) return Failure{StoreError::ReadFailed, "Cannot read the selected OCI file."};
-    if (bytes.isEmpty() || bytes.size() > limit) return Failure{StoreError::InvalidData, "The selected OCI file is empty or exceeds its size limit."};
+    if (file.error() != QFileDevice::NoError) return Failure{StoreError::ReadFailed, "Cannot read the selected credential file."};
+    if (bytes.isEmpty() || bytes.size() > limit) return Failure{StoreError::InvalidData, "The selected credential file is empty or exceeds its size limit."};
     return bytes;
 }
 Result<QString> prepareImportedOci(ExecCommand& command) {
@@ -391,6 +394,33 @@ Result<std::optional<GkeServiceAccount>> importedGkeAccount(const QString& profi
     if (const auto* failure = std::get_if<Failure>(&parsed)) return *failure;
     return std::optional<GkeServiceAccount>{std::get<GkeServiceAccount>(parsed)};
 }
+Result<std::optional<QMap<QString, QString>>> importedAwsProfile(const QString& profile, const QString& contextId, const ExecCommand& command) {
+    const auto directory = sourceDirectory(profile, false);
+    if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
+    const auto path = awsCredentialPath(std::get<QString>(directory), contextId);
+    if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Protected AWS profile cannot be a symlink."};
+    if (!QFileInfo(path).exists()) return std::optional<QMap<QString, QString>>{};
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read protected AWS profile."};
+    const auto bytes = file.read(65537);
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(bytes, &error);
+    const auto record = document.object();
+    const auto selected = awsProfileName(command);
+    if (const auto* failure = std::get_if<Failure>(&selected)) return *failure;
+    if (file.error() != QFileDevice::NoError || bytes.size() > 65536 || error.error != QJsonParseError::NoError || !document.isObject()
+        || record.size() != 3 || record.value("version").toDouble() != 1 || record.value("profile").toString() != std::get<QString>(selected)
+        || !record.value("fields").isObject()) return Failure{StoreError::InvalidData, "Protected AWS profile is invalid."};
+    QMap<QString, QString> fields;
+    const QSet<QString> allowed{"region", "aws_access_key_id", "aws_secret_access_key", "aws_session_token",
+        "sso_start_url", "sso_region", "sso_account_id", "sso_role_name"};
+    const auto object = record.value("fields").toObject();
+    for (auto it = object.begin(); it != object.end(); ++it) {
+        if (!allowed.contains(it.key()) || !it.value().isString()) return Failure{StoreError::InvalidData, "Protected AWS profile is invalid."};
+        fields.insert(it.key(), it.value().toString());
+    }
+    return std::optional<QMap<QString, QString>>{std::move(fields)};
+}
 } // namespace
 
 KubeconfigStore::KubeconfigStore(QString profile) : profile_(std::move(profile)) {}
@@ -418,9 +448,9 @@ Result<SourceSnapshot> KubeconfigStore::importText(QString originPath, const QSt
 Result<SourceSnapshot> KubeconfigStore::importOciCredentials(const QString& contextId, QString configPath, QString keyPath) const {
     static const QRegularExpression identifier("\\Actx:[0-9a-f]{64}\\z");
     if (!identifier.match(contextId).hasMatch()) return Failure{StoreError::InvalidInput, "Select a valid imported context."};
-    const auto config = readOciImport(std::move(configPath), 65536);
+    const auto config = readCredentialImport(std::move(configPath), 65536);
     if (const auto* failure = std::get_if<Failure>(&config)) return *failure;
-    const auto key = readOciImport(std::move(keyPath), 32768);
+    const auto key = readCredentialImport(std::move(keyPath), 32768);
     if (const auto* failure = std::get_if<Failure>(&key)) return *failure;
     if (QSslKey(std::get<QByteArray>(key), QSsl::Rsa).length() < 2048)
         return Failure{StoreError::InvalidData, "Select an unencrypted OCI RSA PEM key of at least 2048 bits."};
@@ -479,6 +509,72 @@ Result<SourceSnapshot> KubeconfigStore::importOciCredentials(const QString& cont
             return source;
         } catch (const YAML::Exception&) {
             return Failure{StoreError::InvalidData, "OCI exec configuration is invalid."};
+        }
+    }
+    return Failure{StoreError::NotFound, "Imported context is unavailable."};
+}
+Result<SourceSnapshot> KubeconfigStore::importAwsProfile(const QString& contextId, QString configPath, QString credentialsPath) const {
+    static const QRegularExpression identifier("\\Actx:[0-9a-f]{64}\\z");
+    if (!identifier.match(contextId).hasMatch()) return Failure{StoreError::InvalidInput, "Select a valid imported context."};
+    QByteArray config, credentials;
+    for (const auto& input : {qMakePair(configPath, &config), qMakePair(credentialsPath, &credentials)}) {
+        if (input.first.isEmpty()) continue;
+        const auto bytes = readCredentialImport(input.first, 1024 * 1024);
+        if (const auto* failure = std::get_if<Failure>(&bytes)) return *failure;
+        *input.second = std::get<QByteArray>(bytes);
+    }
+    const auto directory = sourceDirectory(profile_, true);
+    if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
+    QLockFile lock(QDir(std::get<QString>(directory)).filePath("sources.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(0)) return Failure{lock.error() == QLockFile::LockFailedError ? StoreError::Busy : StoreError::WriteFailed,
+        "Cannot lock owned kubeconfigs; AWS profile was not imported."};
+    const auto catalog = list();
+    if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
+    for (const auto& source : std::get<SourceCatalog>(catalog).sources) for (const auto& context : source.contexts) {
+        if (context.id != contextId) continue;
+        QByteArray original;
+        const auto owned = readOwned(source.ownedPath, &original);
+        if (const auto* failure = std::get_if<Failure>(&owned)) return *failure;
+        try {
+            const auto root = YAML::Load(original.toStdString());
+            QStringList warnings;
+            const auto users = entries(root, "users", "user", warnings);
+            const auto exec = users.values.value(context.user)["exec"];
+            if (!exec || !exec.IsMap()) return Failure{StoreError::InvalidInput, "Select an AWS EKS exec context."};
+            ExecCommand command;
+            command.program = text(exec, "command");
+            const auto args = exec["args"], env = exec["env"];
+            if (!args || !args.IsSequence() || (env && !env.IsSequence())) return Failure{StoreError::InvalidData, "AWS exec configuration is invalid."};
+            for (const auto& arg : args) {
+                if (!arg.IsScalar()) return Failure{StoreError::InvalidData, "AWS exec arguments are invalid."};
+                command.arguments.append(QString::fromStdString(arg.as<std::string>()));
+            }
+            if (env) for (const auto& item : env) {
+                const auto name = text(item, "name");
+                if (name.isEmpty() || command.environment.contains(name)) return Failure{StoreError::InvalidData, "AWS exec environment is invalid."};
+                command.environment.insert(name, text(item, "value"));
+            }
+            const auto name = awsProfileName(command);
+            if (const auto* failure = std::get_if<Failure>(&name)) return *failure;
+            const auto selected = readAwsProfile(config, credentials, std::get<QString>(name));
+            if (const auto* failure = std::get_if<Failure>(&selected)) return *failure;
+            const auto& fields = std::get<QMap<QString, QString>>(selected);
+            const auto parsed = nativeEksConfig(command, fields);
+            if (const auto* failure = std::get_if<Failure>(&parsed)) return *failure;
+            if (!std::get<std::optional<EksLogin>>(parsed)) return Failure{StoreError::InvalidInput, "Select an AWS EKS exec context."};
+            const auto path = awsCredentialPath(std::get<QString>(directory), contextId);
+            if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Protected AWS profile cannot be a symlink."};
+            QJsonObject values;
+            for (auto field = fields.cbegin(); field != fields.cend(); ++field) values.insert(field.key(), field.value());
+            const auto bytes = QJsonDocument(QJsonObject{{"version", 1}, {"profile", std::get<QString>(name)}, {"fields", values}}).toJson();
+            QSaveFile saved(path);
+            if (!saved.open(QIODevice::WriteOnly) || !saved.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+                || saved.write(bytes) != bytes.size() || !saved.commit())
+                return Failure{StoreError::WriteFailed, "Cannot publish protected AWS profile; previous data retained."};
+            return source;
+        } catch (const YAML::Exception&) {
+            return Failure{StoreError::InvalidData, "AWS exec configuration is invalid."};
         }
     }
     return Failure{StoreError::NotFound, "Imported context is unavailable."};
@@ -642,7 +738,8 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
             if (std::holds_alternative<SessionCatalog>(removed)) {
                 bool deleted = true;
                 for (const auto& path : {ociCredentialPath(std::get<QString>(directory), contextId),
-                                         gkeCredentialPath(std::get<QString>(directory), contextId)}) {
+                                         gkeCredentialPath(std::get<QString>(directory), contextId),
+                                         awsCredentialPath(std::get<QString>(directory), contextId)}) {
                     const QFileInfo credential(path);
                     if ((credential.exists() || credential.isSymLink()) && !QFile::remove(path)) deleted = false;
                 }
@@ -928,6 +1025,15 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     const auto importedGke = importedGkeAccount(profile_, contextId);
                     if (const auto* failure = std::get_if<Failure>(&importedGke)) return *failure;
                     const auto& account = std::get<std::optional<GkeServiceAccount>>(importedGke);
+                    const auto importedAws = importedAwsProfile(profile_, contextId, command);
+                    if (const auto* failure = std::get_if<Failure>(&importedAws)) return *failure;
+                    const auto& aws = std::get<std::optional<QMap<QString, QString>>>(importedAws);
+                    if (aws) {
+                        const auto eks = nativeEksConfig(command, aws);
+                        if (const auto* failure = std::get_if<Failure>(&eks)) return *failure;
+                        command.eks = std::get<std::optional<EksLogin>>(eks);
+                        if (!command.eks) return Failure{StoreError::InvalidData, "Imported AWS profile no longer matches this EKS context."};
+                    }
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
                     const bool useNativeGke = true;
 #else
@@ -944,7 +1050,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         }
                     }
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(PODLORD_MAC_APP_STORE)
-                    if (!command.oidc && !command.gke) {
+                    if (!command.oidc && !command.gke && !command.eks) {
                         const auto eks = nativeEksConfig(command);
                         if (const auto* failure = std::get_if<Failure>(&eks)) return *failure;
                         command.eks = std::get<std::optional<EksLogin>>(eks);
@@ -968,7 +1074,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     if (!command.oidc && !command.gke && !command.eks && !command.oci)
                         return Failure{StoreError::UnsupportedVersion, "This kubeconfig uses an environment-bound or external credential command. On mobile, sign in with a supported browser identity or import a personal token or certificate; VM and CI identities cannot be moved to this device."};
 #endif
-                    if (hasImportedOci || account.has_value()) result.credentialId = importedCredentialId(contextId);
+                    if (hasImportedOci || account.has_value() || aws.has_value()) result.credentialId = importedCredentialId(contextId);
                     result.exec = std::move(command); result.credentialReady = false;
                 }
                 return result;
