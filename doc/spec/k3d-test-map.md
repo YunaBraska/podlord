@@ -8099,3 +8099,31 @@ tests or evidence required to qualify changed production code.
 paused. The four paired popup comparisons and live cloud-provider evidence
 remain open. These results do not establish full visual parity or release
 readiness.
+
+### Isolated reference popup diagnostics, 2026-11-06
+
+The user approved an isolated C# copy with input/popup observation only. No
+maintained C# or C++ product source was changed. The copy exports commit
+`1292c0e`, matching the reference assembly's embedded informational version.
+That metadata identifies a source candidate, not proof that the preserved
+assembly was built from a clean checkout. The new helper and observer hooks
+record normal input and existing popup transitions without opening menus
+artificially, changing routed-event handling or implementing substitute UI.
+
+Evidence directory: `R/reference-popup-diagnostics.UONcYc`.
+
+| Boundary | Result and remaining uncertainty |
+| --- | --- |
+| Build and identity | The self-contained Release build passes with the captured .NET 10.0.301 SDK. The initial metadata-preserving signing attempt fails on nested seals and remains in `logs/signature.log`; normal existing-identity signing and strict verification subsequently pass. Bundle identifier and temporary installed test path remain unchanged. No certificate, permission or security setting is created or reset. |
+| Real interactions | `runtime-check.json` validates 33 ordered records, including a normal right-click opening the fifteen-item header menu, a normal right-click opening the three-item cell menu, Namespace and Color flyout transitions, Meta+K opening the inline command palette, and clean window closure. `logs/popup-input-*.jsonl` contains only event metadata, control types, geometry/counts and whitelisted navigation keys. Known fixture resource/credential values are checked absent. Logging is opt-in and its bounded writer runs off the UI thread. This is observer validation, not new product-test coverage. |
+| Capture diagnosis | The framework reports each context menu open and visible while the main-window capture and AX tree omit it. Namespace and Color also open through real controls as separate popup surfaces. This narrows the failure to popup observation/capture rather than a missing input event. Framework visibility alone does not prove OS-composited pixels or establish a C# product defect. Permission to use macOS-native capture of only the owned test windows has been requested; no alternative capture API was used. |
+| Original palette and native comparison | After restoring the unmodified reference, normal Meta+K produces `logs/palette-reference-original.png`. The native counterpart is captured only after the public health strip changes from Loading session to Session health, in `logs/palette-native-settled.png`. The earlier native loading image is retained but excluded from `logs/palette-reference-vs-native.png`. The collage places the two actual captures side by side without resizing or synthesized controls. Both use the same owned cluster and default theme, but capture times, discovery sets and window sizes differ. This is an illustrative comparison, not the equal-size image gate. |
+| Observed action scope | Both implementations route the Port Forwards command to preparation for the current selection. Native explicitly disables it without an eligible selection, as specified. Native includes the approved Map route and omits the intentionally removed production K3D import. No new command or behavior change was implemented during this diagnosis. |
+| Image metadata limitation | The capture tool returns JPEG bytes despite the chosen `.png` filenames. The one-off PNG-only size reader therefore writes invalid geometry into `cleanup-final.json`; those fields are not evidence. Independent `file` identification reports 3840x2098 for the original reference and 4096x2242 for native. ImageIO produces the real 7936x2306 PNG collage. The invalid size output is retained, not treated as a successful metadata check. |
+| Current hosted CI | [CI 42235934259](https://github.com/YunaBraska/podlord/actions/runs/42235934259) completes all ten jobs successfully at `a334cbe`. Its metadata is retained in `logs/current-ci.json`. The evidence-only `b7be528` push creates no new push workflow and does not cancel this run, as recorded separately in `R/evidence-only-ci-live-check.json`. No native production change is implied by the workflow/test/ADR change. |
+| Cleanup and restoration | The diagnostic app exits normally and the original reference is restored, with its assembly SHA-256 matching the saved `b190b7a3...` identity. Both subsequent unmodified-reference/native apps close, and the real Kubernetes fixture exits 0 with owned cleanup. Disposable credential profiles and duplicate publish/installed-diagnostic copies are removed. One signed diagnostic bundle, isolated source, manifest, logs and useful negative evidence remain. Unrelated processes and the four unknown root files are untouched. |
+
+The outstanding paired popup gate is not cleared by observer logs or the
+illustrative palette collage. Equal-window-size capture and separate-popup
+pixels remain required. Google registration remains paused. No full UI parity,
+live-provider login or release clearance is claimed.
