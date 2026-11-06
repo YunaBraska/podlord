@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
+import QtQuick.Layouts
 import Podlord.Graphics 1.0
 
 ToolButton {
@@ -21,20 +22,17 @@ ToolButton {
         border.color: control.checked || control.activeIndicator || control.activeFocus
             ? workspace.appearanceColors.accent : workspace.appearanceColors.border
     }
-    contentItem: Item {
-        implicitWidth: control.showText ? caption.implicitWidth : 18
-        implicitHeight: 18
+    contentItem: RowLayout {
+        spacing: control.glyph !== "" && control.showText ? 6 : 0
         KindGlyph {
-            anchors.centerIn: parent
-            width: 18; height: 18
-            visible: !control.showText
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 18; Layout.preferredHeight: 18
+            visible: control.glyph !== ""
             kind: control.glyph
             fill: workspace.appearanceColors.inset
             stroke: control.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
         }
         Label {
-            id: caption
-            anchors.centerIn: parent
             visible: control.showText
             text: control.text
             textFormat: Text.PlainText

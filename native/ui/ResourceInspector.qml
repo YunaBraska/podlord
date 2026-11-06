@@ -25,22 +25,8 @@ Pane {
         Component.onCompleted: if (selected && inspectorOpen) active = true
     }
 
-    component InspectorTab: TabButton {
-        id: tab
+    component InspectorTab: WorkspaceTab {
         width: visible ? implicitWidth : 0
-        implicitHeight: inspector.width < 600 ? 44 : 32
-        padding: 8
-        font.bold: true
-        contentItem: Label {
-            text: tab.text; textFormat: Text.PlainText; font: tab.font
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-            color: tab.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
-        }
-        background: Rectangle {
-            color: tab.checked || tab.down ? workspace.appearanceColors.selection
-                : tab.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-            border.color: tab.checked || tab.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
-        }
     }
     background: Rectangle {
         color: workspace.appearanceColors.panel
@@ -101,6 +87,7 @@ Pane {
         IconButton { objectName: "closeInspector"; glyph: "Close"; text: "Close inspector"; onClicked: workspace.closeInspector() }
     }
     TabBar {
+        spacing: 0
         Layout.fillWidth: true
         currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
         InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }

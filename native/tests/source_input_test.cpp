@@ -61,6 +61,7 @@ bool ui(const QString& profile, const QString& directory, bool partial, int widt
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     require(window, "Source UI has no window");
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Initial catalogs did not settle");
+    require(click(window, window->findChild<QQuickItem*>("resourcesWorkspaceButton")), "Cannot open the resource import view");
     auto* input = window->findChild<QQuickItem*>("sourcePath");
     if (width > 0) {
         window->setWidth(width);
@@ -204,7 +205,8 @@ bool management(const QString& scenario, const QString& root, const QString& pro
     const auto settle = [&] { require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Management operation did not settle"); };
     if (mode == "refresh_quick_controls_changed") {
         write(origin, yaml + "- name: third\n  context:\n    cluster: local\n    user: local\n");
-        press("mapSources");
+        press("resourcesWorkspaceButton");
+        press("sourcesButton");
         require(click(window, item("reloadSources")), "Cannot activate public Reload sources button");
         settle();
         require(sourceCount() == 2, "Reload sources did not import changed original content");

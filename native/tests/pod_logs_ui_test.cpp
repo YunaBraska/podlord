@@ -193,6 +193,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (!waitFor([&] { return !workspace.busy(); })) return false;
     // Log/UI repetitions do not exercise speakers. The playback test uses volume zero.
     if (!podlord::test::muteAlerts(workspace.alerts())) return false;
+    if (!click(window, "resourcesWorkspaceButton")) return false;
     item(window, "sourcePath")->setProperty("text", source);
     if (!click(window, "importButton") || !waitFor([&] { return workspace.contexts().size() == 1 && !workspace.busy(); }) || !click(window, "openContext")) return false;
     if (!realFile.isEmpty()) {

@@ -137,6 +137,7 @@ bool execute(const QString& scenario) {
     // Wait for the scheduled startup scan before issuing the import action.
     QTest::qWait(20);
     if (!waitFor([&] { return !workspace->busy(); })) return false;
+    if (!click(window, "resourcesWorkspaceButton")) return false;
     auto* field = item(window, "sourcePath");
     if (!field) return false;
     field->forceActiveFocus(); QTest::keySequence(window, QKeySequence::SelectAll);
@@ -287,7 +288,8 @@ bool realCluster(const QString& original) {
     if (!window) return false;
     QTest::qWait(20);
     if (!waitFor([&] { return !workspace.busy(); })) return false;
-    if (!click(window, "mapSources")) return false;
+    if (!click(window, "resourcesWorkspaceButton")) return false;
+    if (!item(window,"sourcePath")->isVisible() && !click(window,"sourcesButton")) return false;
     auto* field = item(window, "sourcePath");
     if (!field) return false;
     field->forceActiveFocus(); for (const auto c : input) QTest::keyClick(window, c.toLatin1());

@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
                 const auto bounds = emptyRadar->mapRectToScene(emptyRadar->boundingRect());
                 const auto container = emptyRadar->parentItem()->mapRectToScene(emptyRadar->parentItem()->boundingRect());
                 if (!container.adjusted(-0.5, -0.5, 0.5, 0.5).contains(bounds)) return false;
-                for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom", "resetRadar"}) {
+                for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom"}) {
                     auto* control = findItem(window->contentItem(), name);
                     if (!control || !control->isVisible() || bounds.intersects(control->mapRectToScene(control->boundingRect()))) return false;
                 }

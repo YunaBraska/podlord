@@ -33,12 +33,31 @@ and table membership remain unchanged; session switching does not replay alarms.
 This avoids letting a navigation filter silently disable operational detection.
 It does not authorize cross-session evaluation or invent rule/matcher defaults.
 
-The native radar reads the same filtered Qt model as the table. Qt's standard
-virtualized [GridView](https://doc.qt.io/qt-6/qml-qtquick-gridview.html) provides
-cached item presentation, scrolling and keyboard navigation without a second
-resource index, animation owner or network path. C++ owns the resource and
-session state. This implementation choice is not evidence of full legacy camera,
-effects, alert behavior, accessibility or performance equivalence.
+The native radar reads the same filtered Qt model as the table. Rendering and
+input ownership follow [ADR 0032](0032-native-deterministic-radar-island.md).
+C++ owns the resource and session state. This implementation choice is not
+evidence of full legacy camera, effects, alert behavior, accessibility or
+performance equivalence.
+
+### Why Are Resource Filters Inline Disclosures?
+
+Confirmed on 2026-11-06. Resource fields and saved-filter selection expand beneath
+their controls instead of opening a second filtering surface. Opening a field
+rebuilds its options from the existing cache. Options stay stable until the next
+opening, so selecting values does not reorder the list under the pointer.
+Manual Reload values and periodic option-refresh timers are unnecessary.
+
+The existing parser, per-session filter state and saved-filter store remain the
+only authorities. No second resource model, persistence format or request path
+is introduced. Session configuration remains in Settings / Workspace rather
+than adding another responsibility to the resource filters. Inline controls
+still support keyboard interaction, accessible state, validation and value copying.
+
+This uses the progressive disclosure and contextual-command principles in
+Apple's [disclosure guidance](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls)
+and [toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars).
+It does not assert platform-wide accessibility or visual conformance from source
+changes alone. Executed states and remaining evidence belong in the test map.
 
 ### How Are Duplicate Event API Representations Handled?
 

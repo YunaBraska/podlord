@@ -22,8 +22,8 @@ Pane {
     }
     padding: compact ? 4 : 12
     function focusRadar() { grid.forceActiveFocus() }
-    function dismissInfo() {
-        if (radarPane.visible && grid.renderActive) radarNavigation.forceActiveFocus()
+    function dismissInfo(restoreFocus = false) {
+        if (restoreFocus && radarPane.visible && grid.renderActive) radarNavigation.forceActiveFocus()
         if (infoPopup) infoPopup.close()
         if (radarInfo) radarInfo.showInfo(null)
     }
@@ -52,14 +52,9 @@ Pane {
             anchors.top: parent.top
             z: 4
             padding: 4
-            background: Rectangle {
-                color: workspace.appearanceColors.radarGlass
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: event => event.accepted = true }
-            }
-            contentItem: GridLayout {
-                columns: navigationSlot.visible && radarNavigation.width >= 480 ? 2 : 1
-                columnSpacing: 4
-                rowSpacing: 4
+            background: null
+            contentItem: RowLayout {
+                spacing: 4
                 RowLayout {
                     id: navigationSlot
                     Layout.fillWidth: true
@@ -67,14 +62,13 @@ Pane {
                     visible: radarPane.expanded && children.length > 0
                 }
                 RowLayout {
-                    Layout.fillWidth: true
+                    Layout.fillWidth: !radarPane.expanded
                     Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
-                    IconButton { objectName: "radarWorkspaceButton"; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
+                    IconButton { objectName: "radarWorkspaceButton"; visible: !radarPane.expanded; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
                     Item { Layout.fillWidth: true }
                     IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
                     Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }
                     IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
-                    IconButton { objectName: "resetRadar"; glyph: "Reset"; text: "Reset radar view"; onClicked: grid.resetCamera() }
                 }
             }
         }
@@ -153,7 +147,6 @@ Pane {
                 function rememberPosition() {
                     if (visible && !restoring && shownSession === workspace.currentSession) workspace.rememberRadarView(viewPose)
                 }
-                function resetCamera() { resetView(); rememberPosition() }
                 function fitInitialView() {
                     if (!visible || restoring || workspace.loading || workspace.currentSession === ""
                         || shownSession !== workspace.currentSession || workspace.radarView.zoom !== undefined) return
@@ -198,7 +191,7 @@ Pane {
                     }
                 }
                 Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Escape && infoPopup.visible) { radarPane.dismissInfo(); event.accepted = true; return }
+                    if (event.key === Qt.Key_Escape && infoPopup.visible) { radarPane.dismissInfo(true); event.accepted = true; return }
                     if (event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) return
                     if (event.key === Qt.Key_Left || event.key === Qt.Key_A) pan(24, 0)
                     else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) pan(-24, 0)
@@ -207,8 +200,8 @@ Pane {
                     else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) zoomAt(1.18, width/2, height/2)
                     else if (event.key === Qt.Key_Minus) zoomAt(1/1.18, width/2, height/2)
                     else if (event.key === Qt.Key_0) resetView()
-                    else if (event.key === Qt.Key_Home) { if (focusResource(count > 0 ? 0 : -1)) radarInfo.showInfo(focusTarget) }
-                    else if (event.key === Qt.Key_End) { if (focusResource(count - 1)) radarInfo.showInfo(focusTarget) }
+                    else if (event.key === Qt.Key_Home) { grid.forceActiveFocus(); if (focusResource(count > 0 ? 0 : -1)) radarInfo.showInfo(focusTarget) }
+                    else if (event.key === Qt.Key_End) { grid.forceActiveFocus(); if (focusResource(count - 1)) radarInfo.showInfo(focusTarget) }
                     else return
                     rememberPosition()
                     event.accepted = true
@@ -244,7 +237,10 @@ Pane {
                 HoverHandler {
                     id: radarHover
                     onPointChanged: grid.updateHover()
-                    onHoveredChanged: grid.updateHover()
+                    onHoveredChanged: {
+                        grid.updateHover()
+                        if (!hovered) radarInfo.syncTarget()
+                    }
                 }
                 TapHandler {
                     gesturePolicy: TapHandler.DragThreshold
@@ -430,12 +426,16 @@ Pane {
                         if (next && next.wantsInfo) target = next
                     }
                     function syncTarget() {
-                        if (target && (!target.visible || !target.inViewport)) target = null
+                        if (target && (!target.visible || !target.inViewport || (!target.wantsInfo && !radarHover.hovered && !infoPopup.activeFocus))) target = null
                     }
                     function clearClosedTarget() {
                         if (infoPopup && !infoPopup.visible) showInfo(null)
                     }
                     onTargetChanged: Qt.callLater(syncTarget)
+                    Connections {
+                        target: infoPopup
+                        function onActiveFocusChanged() { Qt.callLater(radarInfo.syncTarget) }
+                    }
                     padding: radarPane.shortLandscape ? 4 : 8
                     Accessible.role: Accessible.Grouping
                     Accessible.name: "Cached resource details"
@@ -464,7 +464,7 @@ Pane {
                                 objectName: "closeRadarInfo"
                                 glyph: "Close"
                                 text: workspace.uiText["action.close"]
-                                onClicked: radarPane.dismissInfo()
+                                onClicked: radarPane.dismissInfo(true)
                             }
                         }
                         ScrollView {
@@ -478,7 +478,7 @@ Pane {
                             contentHeight: infoContents.implicitHeight
                             activeFocusOnTab: radarInfo.hasDetails || activeFocus
                             clip: true
-                            Keys.onEscapePressed: radarPane.dismissInfo()
+                            Keys.onEscapePressed: radarPane.dismissInfo(true)
                             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                             WheelHandler {
                                 target: null

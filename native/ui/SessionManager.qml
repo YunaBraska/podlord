@@ -9,6 +9,7 @@ Dialog {
     anchors.centerIn: parent
     modal: true
     title: "Session configuration"
+    header: DialogHeader { dialog: dialog; closeObjectName: "cancelSessionManagement"; closeEnabled: !workspace.busy }
     width: Math.min(580, parent ? parent.width - 24 : 580)
     height: Math.min(560, parent ? parent.height - 24 : 560)
     property string selectedSession: ""
@@ -41,7 +42,7 @@ Dialog {
             spacing: 10
             Label {
                 Layout.fillWidth: true
-                text: "Saving a changed configuration creates a closed snapshot. The active session, editor and port-forwards remain unchanged. Open saved results explicitly from Saved sessions."
+                text: "Creates a saved snapshot. Your open session stays unchanged."
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
             }
@@ -57,7 +58,7 @@ Dialog {
                 Accessible.name: "Session to configure, not activate"
                 onActivated: dialog.loadSession(currentValue)
             }
-            Label { text: "Imported context" }
+            Label { text: "Context" }
             ComboBox {
                 id: contexts
                 objectName: "sessionManageContext"
@@ -69,23 +70,26 @@ Dialog {
                 Accessible.name: "Snapshot context"
                 onActivated: dialog.selectedContext = currentValue
             }
-            Label { Layout.fillWidth: true; text: "Namespaces, comma-separated; empty means all"; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; text: "Namespaces"; wrapMode: Text.Wrap }
             TextField {
                 id: namespaces
                 objectName: "sessionManageNamespaces"
                 Layout.fillWidth: true
                 selectByMouse: true
                 enabled: !workspace.busy
+                placeholderText: "All namespaces"
                 Accessible.name: "Namespace scope"
+                Accessible.description: "Comma-separated namespace names; empty includes all namespaces."
             }
-            Button {
+            IconButton {
+                glyph: "Save"; showText: true
                 objectName: "saveSessionConfiguration"
                 Layout.fillWidth: true
-                text: "Save configuration snapshot"
+                text: "Save snapshot"
                 enabled: !workspace.busy && dialog.selectedSession.length > 0
                 onClicked: { dialog.submitted = true; workspace.saveSessionConfiguration(dialog.selectedSession, dialog.selectedContext, namespaces.text) }
             }
-            Label { Layout.fillWidth: true; text: "Independent copy name; empty means unnamed"; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; text: "Copy name (optional)"; wrapMode: Text.Wrap }
             TextField {
                 id: copyName
                 objectName: "sessionCopyName"
@@ -94,10 +98,12 @@ Dialog {
                 enabled: !workspace.busy
                 Accessible.name: "Independent session copy name"
             }
-            Button {
+            IconButton {
+                glyph: "Save"; showText: true
                 objectName: "duplicateSessionConfiguration"
                 Layout.fillWidth: true
-                text: "Save independent copy of original session"
+                text: "Save a copy"
+                Accessible.description: "Copy the original session, not the unsaved context or namespace changes above."
                 enabled: !workspace.busy && dialog.selectedSession.length > 0
                 onClicked: { dialog.submitted = true; workspace.duplicateSession(dialog.selectedSession, copyName.text) }
             }
@@ -118,14 +124,5 @@ Dialog {
                 textFormat: Text.PlainText
             }
         }
-    }
-    footer: DialogButtonBox {
-        Button {
-            objectName: "cancelSessionManagement"
-            text: "Close"
-            enabled: !workspace.busy
-            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
-        }
-        onRejected: dialog.close()
     }
 }

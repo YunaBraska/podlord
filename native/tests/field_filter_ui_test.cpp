@@ -56,15 +56,20 @@ bool click(QQuickWindow* window, const QString& name) {
     if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
     if (!frames.wait(1000)) return false;
-    if (name=="resourceFieldFilters" || name=="radarWorkspaceButton") {
+    if (name=="sidebarField_name" || name=="radarWorkspaceButton") {
         auto* target=item(window,name);
         if (target && !target->isVisible()) {
             const auto* expander=item(window,"toggleLandscapeFilters");
-            const auto action=name=="resourceFieldFilters" && expander && expander->isVisible()
+            const auto action=name=="sidebarField_name" && expander && expander->isVisible()
                 ? "toggleLandscapeFilters" : "toggleSidebar";
             if (!click(window,action) || !waitFor([&] { return target->isVisible(); })) return false;
         }
     }
+    const auto drawerSettled = [&] {
+        auto* drawer = window->findChild<QObject*>("sidebarDrawer");
+        return !drawer || !drawer->property("visible").toBool() || drawer->property("opened").toBool();
+    };
+    if (!waitFor(drawerSettled)) return false;
     auto* target = item(window, name);
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
     QList<QQuickItem*> ancestors;
@@ -436,7 +441,9 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
                 podlord::Workspace restored(profile);
             if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
-                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
+                || restored.totalResourceCount()!=0 || !restored.activate(session)) {
+                qWarning() << "Field restart restoration failed" << restored.currentSession() << session << restored.totalResourceCount() << restored.resourceFieldFilters() << restored.error(); return false;
+            }
                 return waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 301; })
                     && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
             }
@@ -526,75 +533,51 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 && !after.isNull() && before.copy(pixels)!=after.copy(pixels)
                 && (capture.isEmpty() || after.save(capture));
         }
-        if (scenario.startsWith("flyout_")) {
-            if (scenario == "flyout_narrow") {
+        if (scenario.startsWith("inline_")) {
+            if (scenario == "inline_narrow") {
                 window->resize(640, 650);
                 if (!click(window, "toggleSidebar")) return false;
             }
             if (!click(window, "sidebarField_name")) return false;
+            QPointer<QQuickItem> editor = item(window, "fieldFiltersInline");
             auto* button = item(window, "sidebarField_name");
-            auto* popup = window->findChild<QObject*>("fieldFiltersPopup");
-            if (!popup || !waitFor([&] { return popup->property("visible").toBool(); })
-                || popup->property("modal").toBool() != (scenario == "flyout_narrow")) return false;
+            if (!editor || !waitFor([&] { return editor && editor->isVisible() && editor->width() > 0 && editor->height() > 0
+                && editor->mapToScene(QPointF{}).y() >= button->mapToScene(QPointF(0,button->height())).y(); })
+                || window->findChild<QObject*>("fieldFiltersPopup")) return false;
             bool passed = false;
-            if (scenario == "flyout_open") {
-                const auto expected = std::max(12.0, std::min(window->width() - popup->property("width").toReal() - 12,
-                    button->mapToScene(QPointF()).x()));
-                passed = qAbs(popup->property("x").toReal() - expected) < 2 && workspace.resourceCount() == 3;
-            } else if (scenario == "flyout_edit") {
-                passed = type(window, "fieldFilterExpression", "alpha") && waitFor([&] { return workspace.resourceCount() == 1; })
-                    && popup->property("visible").toBool() && !popup->property("modal").toBool();
-            } else if (scenario == "flyout_escape") {
+            if (scenario == "inline_open") {
+                passed = editor->mapToScene(QPointF{}).y() >= button->mapToScene(QPointF(0,button->height())).y()
+                    && click(window, "sidebarField_name") && waitFor([&] { return !editor; })
+                    && click(window, "sidebarField_name") && workspace.resourceCount() == 3;
+            } else if (scenario == "inline_edit") {
+                passed = type(window, "fieldFilterExpression", "alpha") && waitFor([&] { return workspace.resourceCount() == 1; }) && editor && editor->isVisible();
+            } else if (scenario == "inline_escape") {
                 QTest::keyClick(window, Qt::Key_Escape);
-                passed = waitFor([&] { return !popup->property("visible").toBool(); });
-            } else if (scenario == "flyout_navigation") {
-                passed = click(window, "eventsWorkspaceButton") && waitFor([&] {
-                    return workspace.property("workspacePage").toString() == "events" && !popup->property("visible").toBool(); });
-            } else if (scenario == "flyout_keyboard") {
+                passed = waitFor([&] { return !editor; }) && button->hasActiveFocus();
+            } else if (scenario == "inline_navigation") {
+                passed = click(window, "eventsWorkspaceButton") && waitFor([&] { return workspace.workspacePage() == "events" && !editor; });
+            } else if (scenario == "inline_keyboard") {
                 auto* value = item(window, "fieldFilterValue_0");
                 if (!value) return false;
                 value->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
                 passed = waitFor([&] { return workspace.resourceCount() == 1; }) && value->property("checked").toBool();
-            } else if (scenario == "flyout_anchor_scroll") {
-                if (!waitFor([&] { return popup->property("opened").toBool(); })) return false;
-                auto* scroll = item(window,"sidebarFilterScroll");
-                if (!scroll) return false;
-                QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
-                if (!frames.wait(1000)) return false;
-                const auto viewport=scroll->mapRectToScene(QRectF(QPointF{},scroll->size())).toAlignedRect().adjusted(1,1,-1,-1);
-                const QRectF popupBounds(popup->property("x").toReal(),popup->property("y").toReal(),
-                    popup->property("width").toReal(),popup->property("height").toReal());
-                // Scroll the visible parent, not the picker covering most of it.
-                const auto exposed=QRegion(viewport)-QRegion(popupBounds.toAlignedRect().adjusted(-2,-2,2,2));
-                QRect wheelArea;
-                for (const auto& area:exposed)
-                    if (qint64(area.width())*area.height()>qint64(wheelArea.width())*wheelArea.height()) wheelArea=area;
-                if (wheelArea.isEmpty()) { std::fputs("No unobscured filter viewport for the wheel gesture.\n",stderr); return false; }
-                const auto point=QPointF(wheelArea.center());
-                QTest::mouseMove(window,point.toPoint());
-                QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
-                QCoreApplication::sendEvent(window,&wheel);
-                passed = waitFor([&] { return !popup->property("visible").toBool(); });
-                if (!passed) std::fprintf(stderr,"Filter viewport wheel at (%g,%g), accepted=%d; viewport y=%g height=%g; popup y=%g height=%g\n",point.x(),point.y(),wheel.isAccepted(),scroll->mapToScene({0,0}).y(),scroll->height(),popup->property("y").toReal(),popup->property("height").toReal());
-            } else if (scenario == "flyout_edge" || scenario == "flyout_narrow") {
-                if (scenario == "flyout_edge") {
+            } else if (scenario == "inline_scroll") {
+                auto* last = item(window,"sidebarField_uid");
+                passed = last && podlord::test::scrollIntoView(window,last) && editor && workspace.resourceCount() == 3;
+            } else if (scenario == "inline_edge" || scenario == "inline_narrow") {
+                if (scenario == "inline_edge") {
                     QTest::keyClick(window, Qt::Key_Escape);
-                    auto* list = item(window, "sidebarFilters");
-                    if (!list || !QMetaObject::invokeMethod(list, "positionViewAtEnd")
-                        || !waitFor([&] { return item(window, "sidebarField_uid") != nullptr; })
-                        || !click(window, "sidebarField_uid")) return false;
+                    if (!click(window, "sidebarField_uid")) return false;
+                    editor = item(window,"fieldFiltersInline");
                 }
-                passed = popup->property("x").toReal() >= 0 && popup->property("y").toReal() >= 0
-                    && popup->property("x").toReal() + popup->property("width").toReal() <= window->width()
-                    && popup->property("y").toReal() + popup->property("height").toReal() <= window->height();
-            } else if (scenario == "flyout_session") {
+                passed = editor && editor->width() > 0 && editor->mapToScene(QPointF{}).x() >= 0
+                    && editor->mapToScene(QPointF(editor->width(),0)).x() <= window->width();
+            } else if (scenario == "inline_session") {
                 if (!type(window, "fieldFilterExpression", "alpha") || workspace.resourceCount() != 1) return false;
                 const auto other = workspace.contexts().last().toMap().value("id").toString();
-                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })
-                    || popup->property("visible").toBool()) return false;
+                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; }) || editor) return false;
                 const int beforeSwitch = server.requests;
-                return workspace.activate(session) && waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; })
-                    && !popup->property("visible").toBool() && server.requests == beforeSwitch;
+                return workspace.activate(session) && waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; }) && !editor && server.requests == beforeSwitch;
             }
             const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
             return passed && server.requests == requests && (screenshot.isEmpty() || window->grabWindow().save(screenshot));
@@ -842,25 +825,27 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })) return false;
             }
             if (!click(window, "resetResourceFilters") || workspace.resourceCount() != 3 || !click(window, "filterPreset")) return false;
-            const auto* preset = item(window, "filterPreset");
-            const auto* popup = preset->property("popup").value<QObject*>();
-            const auto textWidth = QFontMetricsF(preset->property("font").value<QFont>()).horizontalAdvance("Broken pods");
-            if (!popup || !waitFor([&] { return popup->property("visible").toBool()
-                && popup->property("width").toDouble() >= textWidth + 24; })) return false;
+            const auto* options = item(window, "savedFilterOptions");
+            if (!options || !waitFor([&] { return options->isVisible() && options->width() > 0; })) return false;
             QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Return);
             const auto expected = scenario == "preset_overwrite" ? 2 : 1;
             return waitFor([&] { return workspace.resourceCount() == expected; }) && server.requests == requests;
         }
         if (scenario == "narrow") { window->setWidth(680); window->setHeight(480); }
-        if (!click(window, "resourceFieldFilters") || !waitFor([&] { return item(window, "fieldFilterExpression") && item(window, "fieldFilterExpression")->isVisible(); })) return false;
+        if (!click(window, "sidebarField_name") || !waitFor([&] { return item(window, "fieldFilterExpression") && item(window, "fieldFilterExpression")->isVisible(); })) return false;
         auto select = [&](const QString& field) {
-            auto* combo = item(window, "fieldFilterColumn"); if (!combo || !click(window, "fieldFilterColumn")) return false;
-            QTest::keyClick(window, Qt::Key_Home);
-            for (int index = 0; index < fields.indexOf(field); ++index) QTest::keyClick(window, Qt::Key_Down);
-            QTest::keyClick(window, Qt::Key_Return);
-            return waitFor([&] { return workspace.property("filterPickerField").toString() == field; });
+            return (workspace.filterPickerField() == field && item(window,"fieldFilterExpression")
+                || click(window, "sidebarField_" + field))
+                && waitFor([&] { return workspace.filterPickerField() == field && item(window,"fieldFilterExpression"); });
         };
-        auto expression = [&](const QString& field, const QString& value) { return select(field) && type(window, "fieldFilterExpression", value); };
+        auto expression = [&](const QString& field, const QString& value) {
+            const bool result = select(field) && type(window, "fieldFilterExpression", value);
+            if (!result)
+                qWarning() << "Field input" << scenario << field << result << "stored" << workspace.resourceFieldFilters()
+                    << "input" << (item(window,"fieldFilterExpression") ? item(window,"fieldFilterExpression")->property("text") : QVariant{})
+                    << "count" << workspace.resourceCount() << "error" << workspace.filterError();
+            return result;
+        };
         auto count = [&](int expected) { return waitFor([&] { return workspace.resourceCount() == expected; }) && workspace.filterError().isEmpty(); };
         bool passed = false;
         if (scenario.startsWith("age_") || scenario.startsWith("uid_")) {
@@ -924,7 +909,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
             passed = waitFor([&] { return item(window, "copyFieldFilterValue_0") && item(window, "copyFieldFilterValue_0")->isVisible(); })
                 && click(window, "copyFieldFilterValue_0") && QGuiApplication::clipboard()->text() == "alpha" && count(3);
         } else if (scenario == "narrow") {
-            const auto* editor = item(window, "fieldFilterExpression"), *reset = item(window, "clearFieldFilters");
+            const auto* editor = item(window, "fieldFilterExpression"), *reset = item(window, "resetResourceFilters");
             const auto bounds = reset ? reset->mapRectToScene(QRectF(0, 0, reset->width(), reset->height())) : QRectF{};
             passed = editor && reset && bounds.top() >= 0 && bounds.bottom() <= window->height() && expression("name", "alpha") && count(1);
         } else if (scenario == "selection") passed = expression("name", "bravo") && count(1) && workspace.inspectorName() == "alpha"
@@ -938,10 +923,10 @@ bool run(const QString& scenario, const QString& referencePresets) {
             return (!first || !first->isVisible()) && second && second->isVisible(); }) && click(window, "fieldFilterValue_1") && count(1);
         else if (scenario == "reset") {
             if (!expression("kind", "Pod") || !expression("name", "alpha") || !count(1)) return false;
-            auto* reset = item(window, "clearFieldFilters");
+            auto* reset = item(window, "resetResourceFilters");
             const auto* accessible = reset ? QAccessible::queryAccessibleInterface(reset) : nullptr;
             if (!reset || reset->width() > 44 || !accessible
-                || accessible->text(QAccessible::Name) != "Reset all resource filters") return false;
+                || accessible->text(QAccessible::Name) != "Reset filters") return false;
             reset->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Space);
             passed = count(3);
         }
@@ -952,7 +937,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!workspace.refresh() || !waitFor([&] { return !workspace.loading() && server.requests > requests && workspace.resourceCount() == 0; })) return false;
             if (workspace.property("filterPickerValues").toStringList() != before) return false;
             if (scenario == "stable_picker") passed = count(0);
-            else passed = click(window, "refreshFieldFilterValues") && waitFor([&] {
+            else passed = click(window, "sidebarField_name") && click(window, "sidebarField_name") && waitFor([&] {
                 const auto values = workspace.property("filterPickerValues").toStringList();
                 return values.contains("alpha") && values.contains("charlie"); }) && count(0);
             return passed;
@@ -961,8 +946,12 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!expression("name", "alpha") || !count(1)) return false;
             QTest::keyClick(window, Qt::Key_Escape);
             const auto other = workspace.contexts().last().toMap().value("id").toString();
-            if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })) return false;
-            if (!workspace.activate(session) || !waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; })) return false;
+            if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.resourceCount() == 3; })) {
+                qWarning() << "Session open failed" << workspace.currentSession() << workspace.resourceCount() << workspace.resourceFieldFilters() << workspace.error(); return false;
+            }
+            if (!workspace.activate(session) || !waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; })) {
+                qWarning() << "Session return failed" << workspace.currentSession() << workspace.resourceCount() << workspace.resourceFieldFilters() << workspace.error(); return false;
+            }
             return workspace.property("resourceFieldFilters").toMap().value("name").toString() == "alpha";
         } else if (scenario == "radar") {
             if (!expression("namespace", "team-a") || !count(1)) return false;

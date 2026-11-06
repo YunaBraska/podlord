@@ -74,7 +74,8 @@ bool run(const QString& scenario) {
         window = qobject_cast<QQuickWindow*>(engine->rootObjects().first());
         if (!window || !QTest::qWaitFor([&] { return window->isVisible(); }, 5000)) return false;
         if (scenario == "desktop_main") {
-            if (!podlord::test::clickVisible(window, "mapSources")
+            if (!podlord::test::clickVisible(window, "resourcesWorkspaceButton")
+                || !podlord::test::clickVisible(window, "sourcesButton")
                 || !podlord::test::clickVisible(window, "importGkeKey")) {
                 std::fputs("Desktop source controls cannot open GKE key import.\n", stderr);
                 return false;

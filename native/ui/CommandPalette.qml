@@ -18,6 +18,7 @@ Dialog {
     modal: true
     focus: true
     title: "Commands"
+    header: DialogHeader { dialog: commandPopup; closeObjectName: "commandPaletteClose" }
     width: Math.min(560, parent.width - 24)
     x: (parent.width - width) / 2
     y: Math.max(12, (parent.height - height) / 2)
@@ -68,9 +69,5 @@ Dialog {
                 onClicked: commandPopup.execute(index)
             }
         }
-    }
-    footer: DialogButtonBox {
-        Button { objectName: "commandPaletteClose"; text: workspace.uiText["action.close"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-        onRejected: commandPopup.reject()
     }
 }

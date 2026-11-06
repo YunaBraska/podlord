@@ -81,17 +81,10 @@ Pane {
     }
     padding: 14
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
-    component SectionButton: IconButton { glyph: ""; showText: true;
+    component SectionButton: WorkspaceTab {
         required property string destination
-        readonly property bool selected: settings.section === destination
-        font.bold: true; implicitHeight: 32; padding: 8
+        checked: settings.section === destination
         onClicked: { settings.section = destination; if (destination === "alerts") workspace.setWorkspacePage("alerts") }
-        contentItem: Label { text: parent.text; color: parent.selected ? parent.palette.buttonText : workspace.appearanceColors.muted; font: parent.font; verticalAlignment: Text.AlignVCenter }
-        background: Rectangle {
-            color: parent.down || parent.hovered ? workspace.appearanceColors.inset : "transparent"
-            border.width: parent.activeFocus ? 1 : 0; border.color: workspace.appearanceColors.accent
-            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 2; visible: parent.parent.selected; color: workspace.appearanceColors.accent }
-        }
     }
     component SettingRow: GridLayout {
         required property string label
@@ -112,8 +105,16 @@ Pane {
     contentItem: ColumnLayout {
         spacing: 12
         Label { text: workspace.uiText["settings.title"]; font.pixelSize: 16; font.bold: true; color: workspace.appearanceColors.accent }
-        Flow {
-            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: childrenRect.height; spacing: 4
+        TabBar {
+            id: settingsTabs
+            Layout.fillWidth: true; Layout.minimumWidth: 0
+            spacing: 0
+            clip: true
+            currentIndex: settings.sections.findIndex(entry => entry.id === settings.section)
+            onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < settings.sections.length) {
+                const destination = settings.sections[currentIndex].id
+                if (settings.section !== destination) settings.section = destination
+            }
             visible: settings.width >= 650
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
@@ -166,13 +167,13 @@ Pane {
                     SettingRow { label: "Resource cache TTL"; help: "Hours. Default 24. Longer retention can use more memory. Retains resource collections, including closed sessions. Does not extend credential or detail freshness."; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: "Resource cache TTL in hours" } }
                     Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: "Cached payload (estimate): " + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: "Captured on opening or saving Sync settings. JSON and log text across sessions, excluding object overhead and shared UI projections." }
                     SettingRow { label: "Retained logs per Pod"; help: "Positive whole MB. Default 5 MB."; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Retained logs per Pod in MB" } }
-                    IconButton { glyph: ""; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value) }
+                    IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value) }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "privacy"
                     SettingRow { label: "Telemetry"; help: "No product telemetry is sent. Kubernetes and explicitly confirmed authentication contact the configured endpoints."; Label { objectName: "privacyTelemetry"; text: "Off"; font.bold: true } }
                     SettingRow { label: "Secret values"; help: "Loaded Secret values and diff previews are masked. Explicitly revealed values and self-entered local YAML drafts may be visible."; Label { text: "Masked by default" } }
-                    SettingRow { label: "YAML document / patch limit"; help: "Positive whole MiB. Default 3 MiB. Checked before sending, not by interrupting running requests."; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "YAML document and patch limit in MiB" } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "inlineSaveYamlLimit"; text: "Save"; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
+                    SettingRow { label: "YAML document / patch limit"; help: "Positive whole MiB. Default 3 MiB. Checked before sending, not by interrupting running requests."; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "YAML document and patch limit in MiB" } IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveYamlLimit"; text: "Save"; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
                     SettingRow { label: "Request audit retention"; help: "At most 200 completed requests in memory. No authorization headers, response bodies, log contents or query parameters are retained. Diagnostics refresh explicitly."; Label { text: "In memory only" } }
                 }
                 ColumnLayout {

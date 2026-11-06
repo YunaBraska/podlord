@@ -11,20 +11,8 @@ Pane {
     readonly property string scope: (workspace.sourceInspection.snapshotId || "") + ":" + (workspace.sourceInspection.contextId || "")
     padding: 6
     clip: true
-    component SourceTab: TabButton {
-        id: tab
-        implicitHeight: root.width < 600 ? 44 : 32
-        font.bold: true
-        contentItem: Label {
-            text: tab.text; textFormat: Text.PlainText; font: tab.font
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-            color: tab.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
-        }
-        background: Rectangle {
-            color: tab.checked || tab.down ? workspace.appearanceColors.selection
-                : tab.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-            border.color: tab.checked || tab.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
-        }
+    component SourceTab: WorkspaceTab {
+        width: visible ? implicitWidth : 0
     }
     onScopeChanged: {
         if (tabs) tabs.currentIndex = 0
@@ -67,6 +55,7 @@ Pane {
         TabBar {
             id: tabs
             objectName: "sourceInspectorTabs"
+            spacing: 0
             Layout.fillWidth: true
             visible: !root.inputPriority
             SourceTab { objectName: "sourceOverviewTab"; text: "Overview" }

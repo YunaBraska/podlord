@@ -206,7 +206,7 @@ Pane {
             ActionButton { objectName: "addAlert"; text: workspace.uiText["action.add"]; enabled: !workspace.alerts.busy; onClicked: view.add() }
             ActionButton { objectName: "duplicateAlert"; text: workspace.uiText["action.duplicate"]; enabled: !workspace.alerts.busy && view.draft !== null && view.draft.id !== ""; onClicked: view.changeSelection("duplicate") }
             ActionButton { objectName: "deleteAlert"; text: workspace.uiText["action.delete"]; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
-            ActionButton { objectName: "saveAlert"; text: workspace.uiText["action.save"]; enabled: !workspace.alerts.busy && view.draft !== null; onClicked: view.save() }
+            ActionButton { objectName: "saveAlert"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.alerts.busy && view.draft !== null; onClicked: view.save() }
             ActionButton { objectName: "reloadAlerts"; text: workspace.uiText["alert.retryLoad"]; visible: workspace.alerts.error !== ""; enabled: !workspace.alerts.busy; onClicked: view.changeSelection("reload") }
             CheckBox { id: ruleEnabled; objectName: "alertEnabled"; text: workspace.uiText["alert.active"]; enabled: !workspace.alerts.busy && view.draft !== null }
             CheckBox { objectName: "muteAlerts"; text: workspace.uiText["audio.mute"]; checked: workspace.alerts.muted; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(checked, workspace.alerts.reducedMotion) }

@@ -8156,3 +8156,28 @@ cell action. The Mac locks before another capture can be made. Current-source
 mobile presentation, final hosted verdicts, dependency security disposition and
 live cloud-provider evidence remain separate qualification. Google registration
 remains paused. No complete UI/function parity or release clearance is claimed.
+
+### Inline controls and Qt security patch qualification, 2026-11-06
+
+Evidence root `U` is
+`$HOME/.cache/podlord/native-official-test-20261016/coverage/ui-density-20261106.SR5Bq3`.
+The following targeted runs overlap and must not be summed as unique scenarios.
+
+| Boundary | Result and remaining uncertainty |
+| --- | --- |
+| Confirmed presentation | Map navigation and zoom share an overlay row. Filter and saved-preset selectors expand inline, with cached options refreshed on opening and no polling timer. Ordinary Close actions use a top-right X and Save actions use the shared glyph. Shared TabButtons retain selected-state and touch geometry; the session strip hides when only one session exists. Its close action remains available through quick-open. Session management is removed from the filter pane and shortened in Settings. The duplicate empty-Map import form and redundant map actions are removed. Destructive confirmation choices remain explicitly labelled. |
+| Fail-first and focused UI | `red.log` records the three new presentation scenarios failing before implementation. Their Basic/Fusion variants pass subsequently. `final-targeted.log` passes 33 executions, `caption-final.log` passes 12, `entrypoints-final.log` passes 763 and `alert-entrypoints-current.log` passes nine Radar/health scenarios. These retain cache-only filtering, keyboard, touch, selection, alarm focus and contrast checks. Actual images are under `frames/`. |
+| Test-entrypoint migration | Earlier attempts in `public-entrypoints*.log`, `full-suite-initial.log`, `full-suite-current.log` and the first real-Kubernetes runs fail on controls intentionally removed or hidden by this change. Drivers now use Resources for the import form, Map for context cards, quick-open for a single session and the existing keyboard camera reset. No removed product control is restored to satisfy those tests. The interrupted old-Qt complete run is superseded by the new-runtime qualification, not reported as passing. |
+| Qt patch decision and inputs | The user approves Qt 6.11.3 without feature or gate changes. Official module checksums are retained in `qt6113-source-checksums.txt` and pinned in the source toolchains. `qt6113-red.log` observes both cache-version regressions before the pin changes; `qt6113-contracts.log` then passes all 28 toolchain cases. Shell parsing and workflow actionlint pass. ADR 0035 owns the runtime decision. |
+| New-runtime build and public smoke | macOS and Android Release builds pass with Qt 6.11.3 in separate directories. `qt6113-native-smoke.log` passes 83 executions, including the new UI scenarios, metrics, window and startup boundaries. The real search/Map lane passes in `qt6113-real-search.log`: the API populates the owned cache, while search and filters remain local. This does not substitute for the complete suite or foreground measurements. |
+| Android identity | The current APK verifies its v3 signature with the same certificate as the preceding adopted package. No new signing key is generated. `qt6113-android-signature.txt` retains public certificate and verification evidence. Native 4-KB/16-KB emulator journeys remain pending at this checkpoint. |
+| Qualification in progress | `qt6113-full-suite.log`, the current macOS package check and the combined real-Kubernetes/Android lane are running. The stock ARM64 iOS-simulator SDK is being rebuilt for 6.11.3 before its app and image checks. The first old-runtime iPhone attempt fails in Kubernetes/containerd startup before launching the app; it is diagnostic evidence, not an iPhone product failure or pass. No current-source full-suite, mobile-image or package pass is claimed here yet. |
+| Reference and delivery limits | Hosted baseline CI 42261101691 finishes all ten jobs successfully, but predates this UI/runtime change. Existing C# captures remain the functional/design reference, not current-source pixel proof for deliberately changed controls. No new foreground-performance or same-UID paired cell capture is claimed. Google registration remains paused. Existing coverage, security, standalone, licensing and platform gates remain applicable. |
+
+The retained controls follow the approved RTS presentation with contextual
+[toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars),
+inline [disclosure](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls)
+and shared [tab views](https://developer.apple.com/design/human-interface-guidelines/tab-views).
+This is a scoped implementation/checkpoint, not Apple certification, complete
+UI/function parity or release clearance. Owned fixtures use the existing cleanup
+traps. No production cluster, unknown root file or user signing asset is changed.

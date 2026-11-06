@@ -47,7 +47,6 @@ ApplicationWindow {
         .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
             [{name: "Imported contexts", header: true}],
             workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
-    FieldFiltersDialog { id: fieldFiltersDialog; controller: workspace }
     Action { id: mapCommand; text: "Open Map"; onTriggered: workspace.setWorkspacePage("map") }
     Action { id: resourcesCommand; text: "Open Resources"; onTriggered: workspace.setWorkspacePage("resources") }
     Action { id: eventsCommand; text: "Open Events"; onTriggered: workspace.setWorkspacePage("events") }
@@ -301,7 +300,7 @@ ApplicationWindow {
         height: Math.min(420, window.height - 32)
         anchors.centerIn: parent
         modal: true
-        standardButtons: Dialog.Close
+        header: DialogHeader { dialog: sourceImportDetails }
         contentItem: ListView {
             clip: true
             reuseItems: true
@@ -521,6 +520,8 @@ ApplicationWindow {
                             }
                         }
                     }
+                    IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; visible: workspace.contexts.length > 0 || workspace.sessions.length > 0; enabled: !workspace.busy; onClicked: quickChooser.open() }
+                    IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; visible: quickOpenFile.visible; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
                     NavButton { objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; checked: workspace.workspacePage === "map" }
                     NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
                     NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
@@ -571,6 +572,7 @@ ApplicationWindow {
         width: Math.min(360, window.width - 24)
         height: Math.min(implicitHeight, window.height - 48)
         MenuItem { text: "Open kubeconfig file..."; implicitHeight: window.touchLayout ? 44 : 32; enabled: !workspace.busy; onTriggered: quickChooser.open() }
+        MenuItem { objectName: "closeCurrentSession"; text: "Close session"; enabled: workspace.currentSession !== "" && !workspace.busy; onTriggered: workspace.close(workspace.currentSession) }
         MenuSeparator {}
         Instantiator {
             active: quickOpenMenu.visible
@@ -586,7 +588,7 @@ ApplicationWindow {
                 Accessible.name: modelData.header ? text : (modelData.context ? "Open context " : "Open session ") + text
                 onTriggered: modelData.context ? workspace.openContext(modelData.id) : workspace.activate(modelData.id)
             }
-            onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + (workspace.windowActionsAvailable ? 3 : 2), object)
+            onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + (workspace.windowActionsAvailable ? 4 : 3), object)
             onObjectRemoved: (index, object) => quickOpenMenu.removeItem(object)
         }
     }
@@ -650,7 +652,7 @@ ApplicationWindow {
             id: sourcePanel
             objectName: "sourceManagementPanel"
             Layout.fillWidth: true
-            visible: !settingsLoader.visible && (window.sourcesExpanded || (workspace.currentSession === "" && workspace.contexts.length === 0 && (!window.compactLandscape || workspace.sessions.length === 0)))
+            visible: !settingsLoader.visible && (window.sourcesExpanded || (workspace.workspacePage !== "map" && workspace.currentSession === "" && workspace.contexts.length === 0 && (!window.compactLandscape || workspace.sessions.length === 0)))
             contentItem: ColumnLayout {
                 GridLayout {
                     Layout.fillWidth: true
@@ -708,12 +710,11 @@ ApplicationWindow {
             Layout.minimumWidth: 0
             Layout.preferredHeight: sessionTabs.implicitHeight
             spacing: 2
-            visible: !window.inputPriority && !window.compactInspector && (workspace.tabs.length > 0 || workspace.sessions.length > 0)
-            IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; enabled: !workspace.busy; onClicked: quickChooser.open() }
-            IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
+            visible: !window.inputPriority && !window.compactInspector && workspace.tabs.length > 1
             TabBar {
                 id: sessionTabs
                 objectName: "sessionTabs"
+                visible: workspace.tabs.length > 1
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 clip: true
@@ -738,7 +739,7 @@ ApplicationWindow {
                     }
                     Repeater {
                         model: workspace.tabs
-                        TabButton {
+                        WorkspaceTab {
                             id: sessionTab
                             required property var modelData
                             objectName: "activateSession_" + modelData.id
@@ -762,6 +763,7 @@ ApplicationWindow {
                                     width: Math.max(0, sessionTab.availableWidth - tabActions.implicitWidth - 4)
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData.name
+                                    font: sessionTab.font
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                 }
@@ -971,12 +973,13 @@ ApplicationWindow {
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
                 }
-                ColumnLayout {
+                Item {
                     anchors.fill: parent
                     visible: workspace.workspacePage === "map"
                     RowLayout {
                         id: mapNavigationSlot
-                        Layout.fillWidth: true
+                        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                        z: 4
                         visible: workspace.mapOverview
                     }
                     RowLayout {
@@ -987,11 +990,30 @@ ApplicationWindow {
                         IconButton { objectName: "mapBack"; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
                         IconButton { objectName: "mapForward"; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }
                         IconButton { objectName: "mapOverview"; glyph: "Cluster"; text: "All contexts"; enabled: !workspace.mapOverview && !workspace.busy; onClicked: workspace.showMapOverview() }
-                        Label { objectName: "mapTitle"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: workspace.mapOverview ? (workspace.mapCatalogWarning || "Contexts") : workspace.mapContextCaption; color: workspace.mapCatalogWarning ? workspace.appearanceColors.warning : window.palette.windowText; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; Accessible.description: workspace.mapCatalogWarning; ToolTip.visible: mapTitleHover.hovered && workspace.mapCatalogWarning !== ""; ToolTip.text: workspace.mapCatalogWarning; HoverHandler { id: mapTitleHover } }
-                        IconButton { objectName: "mapSources"; glyph: "ConfigMap"; text: "Open kubeconfig sources"; onClicked: window.sourcesExpanded = !window.sourcesExpanded }
+                        Label {
+                            id: mapCaption
+                            objectName: "mapTitle"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: workspace.mapOverview ? (workspace.mapCatalogWarning || "Contexts") : workspace.mapContextCaption
+                            color: workspace.mapCatalogWarning ? "#FFE866" : "#DDE7EC"
+                            leftPadding: 4; rightPadding: 4
+                            background: Rectangle {
+                                width: Math.min(mapCaption.width, mapCaption.contentWidth + 8)
+                                color: "#061621"
+                            }
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            wrapMode: Text.NoWrap
+                            Accessible.description: workspace.mapCatalogWarning
+                            ToolTip.visible: mapTitleHover.hovered && workspace.mapCatalogWarning !== ""
+                            ToolTip.text: workspace.mapCatalogWarning
+                            HoverHandler { id: mapTitleHover }
+                        }
                     }
                     Item {
-                        Layout.fillWidth: true; Layout.fillHeight: true
+                        anchors.fill: parent
                         Loader { anchors.fill: parent; active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview; visible: active; sourceComponent: MapOverview { contexts: window.mapContexts; onSourcesRequested: chooser.open() } }
                         Item { id: resourceMapHost; objectName: "resourceMapHost"; anchors.fill: parent; visible: !workspace.mapOverview }
                     }
@@ -1091,10 +1113,7 @@ ApplicationWindow {
         collapsibleFilters: window.compactLandscape
         anchors.fill: parent
         visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible
-        onFieldRequested: function(field, anchor) { fieldFiltersDialog.openField(field, window.sidebarDocked ? anchor : null); if (!window.sidebarDocked) sidebarDrawer.close() }
         onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.sidebarDocked) sidebarDrawer.close() }
         onRenameRequested: renameSessionDialog.openFor(workspace.currentSession, workspace.title)
-        onFiltersRequested: { fieldFiltersDialog.openFilters(); if (!window.sidebarDocked) sidebarDrawer.close() }
-        onFiltersScrolled: if (fieldFiltersDialog.anchorItem) fieldFiltersDialog.close()
     }
 }

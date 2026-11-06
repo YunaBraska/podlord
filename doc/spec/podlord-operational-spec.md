@@ -474,6 +474,34 @@ and offscreen UI checks do not establish parity for every table, theme or device
 
 ## Confirmed Filter And Session Presentation Requirements
 
+Presentation refinement, confirmed on 2026-11-06:
+
+- Map history and camera controls MUST overlay the drawing surface, not occupy
+  an extra layout section or column. The visible Reset radar view button is
+  removed. Existing keyboard camera navigation remains available.
+- Pointer-hover resource details MUST disappear when the pointer leaves the
+  radar/map. Keyboard focus and touch dismissal remain usable. Dismissing an
+  overlay because its owner scrolls MUST NOT steal focus from another control.
+- Resource-field selectors and saved-filter selection MUST expand inline beneath
+  their controls and toggle closed on repeat activation. Opening a field takes
+  a fresh snapshot from the existing cache, without Kubernetes requests. The
+  snapshot remains stable while open. There is no Reload values button or
+  periodic refresh timer. Existing expressions, selection, presets, validation,
+  accessibility, copying and session isolation remain supported.
+- Normal Close actions MUST use a top-right X with an accessible name and
+  tooltip. Destructive decisions such as closing without saving MUST retain
+  explicit labels. Save actions MUST show the shared floppy-disk symbol.
+- Session, inspector and wide Settings tab controls MUST share a consistent
+  tab appearance and spacing. A session tab strip MUST be hidden when it has
+  fewer than two tabs. Opening, closing, renaming and separate-window actions
+  remain reachable without that strip.
+- Session configuration management belongs in Settings / Workspace, not in the
+  resource filters. Its editor MUST prioritize fields and concise actions while
+  preserving immutable snapshots, independent copies and explicit error feedback.
+- The empty Map overview MUST have one primary kubeconfig-opening action, not
+  simultaneous duplicate import controls. Existing file, paste, folder and
+  provider-import capabilities remain available through their owning surfaces.
+
 Namespace scope choice, confirmed on 2026-11-06: the Namespace picker MUST expose
 an independently labelled `Cluster-wide` option (`Clusterweit` in German) for
 cached resources without a namespace. It MUST remain distinct from any real

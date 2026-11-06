@@ -34,6 +34,15 @@ set_target_properties(podlord_vterm PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED
 target_include_directories(podlord_vterm PUBLIC ${libvterm_SOURCE_DIR}/include)
 include(CTest)
 if(BUILD_TESTING)
+    foreach(style Basic Fusion)
+        foreach(scenario ui_density_filters ui_density_single_tab ui_density_close)
+            add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
+            set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_AUDIO=1")
+        endforeach()
+    endforeach()
+endif()
+if(BUILD_TESTING)
     add_executable(owned-source-editor-test tests/owned_source_editor_test.cpp)
     target_link_libraries(owned-source-editor-test PRIVATE podlord_workspace)
     set(owned_source_editor_scenarios content local repeat invalid empty limit byte_limit at_limit missing removed mismatch snapshot_identity context_identity invalid_profile invalid_session_catalog tampered)
@@ -180,7 +189,7 @@ endif()
 if(BUILD_TESTING)
     add_executable(metric-filter-ui-test tests/metric_filter_ui_test.cpp)
     target_link_libraries(metric-filter-ui-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario cpu_milli cpu_millicores cpu_alias_c cpu_upper_m cpu_fraction cpu_limit cpu_operator_alias cpu_core cpu_display cpu_core_label cpu_range cpu_range_reverse cpu_conflict cpu_alternatives cpu_range_alternatives cpu_less cpu_less_equal cpu_greater cpu_greater_equal cpu_zero cpu_missing cpu_exponent cpu_spaced_operator cpu_quoted memory_binary memory_lowercase memory_lowercase_range memory_fraction memory_limit memory_display memory_bytes memory_decimal memory_kilo memory_range memory_missing memory_zero storage_capacity storage_limit storage_zero negative overflow underflow bad_unit bad_operator missing_operand regex empty clear stale incomplete and radar display_regex display_prefix display_suffix display_contains display_unavailable display_regex_unavailable display_stale display_stale_exact display_incomplete display_mixed center narrow_center ready_exact ready_unready ready_regex ready_prefix ready_suffix ready_alternatives ready_unavailable ready_numeric ready_picker ready_invalid restart_zero restart_greater restart_alias restart_alternatives restart_text restart_missing restart_no_match restart_or restart_and restart_radar restart_picker)
+    foreach(scenario cpu_milli cpu_millicores cpu_alias_c cpu_upper_m cpu_fraction cpu_limit cpu_operator_alias cpu_core cpu_display cpu_core_label cpu_range cpu_range_reverse cpu_conflict cpu_alternatives cpu_range_alternatives cpu_less cpu_less_equal cpu_greater cpu_greater_equal cpu_zero cpu_missing cpu_exponent cpu_spaced_operator cpu_quoted memory_binary memory_lowercase memory_lowercase_range memory_fraction memory_limit memory_display memory_bytes memory_decimal memory_kilo memory_range memory_missing memory_zero storage_capacity storage_limit storage_zero negative overflow underflow bad_unit bad_operator missing_operand regex empty clear stale incomplete and radar display_regex display_prefix display_suffix display_contains display_unavailable display_regex_unavailable display_stale display_stale_exact display_incomplete display_mixed inline narrow_inline ready_exact ready_unready ready_regex ready_prefix ready_suffix ready_alternatives ready_unavailable ready_numeric ready_picker ready_invalid restart_zero restart_greater restart_alias restart_alternatives restart_text restart_missing restart_no_match restart_or restart_and restart_radar restart_picker)
         foreach(style Basic Fusion)
             add_test(NAME native.metric_filter.${scenario}_${style} COMMAND metric-filter-ui-test ${scenario})
             set_tests_properties(native.metric_filter.${scenario}_${style} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -389,9 +398,9 @@ foreach(file IN LISTS dependency_notice_files)
     set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
 endforeach()
 set(workspace_qml_files
-    ui/Main.qml ui/IconButton.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
+    ui/Main.qml ui/IconButton.qml ui/DialogHeader.qml ui/WorkspaceTab.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
     ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml
-    ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/SessionManager.qml ui/FieldFiltersDialog.qml
+    ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/SessionManager.qml ui/FieldFilterEditor.qml
     ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
     ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
     ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
@@ -1756,12 +1765,12 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
-    foreach(scenario flyout_open flyout_edit flyout_escape flyout_navigation flyout_keyboard flyout_edge flyout_narrow flyout_session flyout_anchor_scroll contract_cluster_rebind contract_metadata_activity_update contract_cluster_filter_rebind)
+    foreach(scenario inline_open inline_edit inline_escape inline_navigation inline_keyboard inline_edge inline_narrow inline_session inline_scroll contract_cluster_rebind contract_metadata_activity_update contract_cluster_filter_rebind)
         add_test(NAME native.field_filter.${scenario}_Basic COMMAND field-filter-ui-test ${scenario})
         set_tests_properties(native.field_filter.${scenario}_Basic PROPERTIES TIMEOUT 45
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
-    foreach(scenario flyout_keyboard flyout_narrow)
+    foreach(scenario inline_keyboard inline_narrow)
         add_test(NAME native.field_filter.${scenario}_Fusion COMMAND field-filter-ui-test ${scenario})
         set_tests_properties(native.field_filter.${scenario}_Fusion PROPERTIES TIMEOUT 45
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")

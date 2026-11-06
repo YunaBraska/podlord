@@ -165,7 +165,7 @@ ColumnLayout {
         height: Math.min(420, parent ? parent.height - 24 : 420)
         x: parent ? Math.round((parent.width - width) / 2) : 0
         y: parent ? Math.round((parent.height - height) / 2) : 0
-        standardButtons: Dialog.Close
+        header: DialogHeader { dialog: licenseDialog }
         onClosed: licenseText.clear()
         contentItem: ScrollView {
             objectName: "aboutLicenseScroll"

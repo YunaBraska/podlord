@@ -22,7 +22,7 @@ Dialog {
     }
     footer: DialogButtonBox {
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceAlias"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceAliasDialog.close() }
-        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "saveSourceAlias"; text: workspace.busy ? "Saving..." : "Save"; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }
+        IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "saveSourceAlias"; text: workspace.busy ? "Saving..." : "Save"; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }
     }
     function edit(context) {
         contextId = context.id; canonicalName = context.context; failure = ""

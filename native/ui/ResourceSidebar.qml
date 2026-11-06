@@ -19,9 +19,27 @@ Pane {
     function navigateRows(offset) { radar.navigateRows(offset) }
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
-    SessionManager { id: sessionManager }
+    property string expandedField: ""
+    property bool presetsExpanded: false
+    readonly property string page: workspace.workspacePage
+    onPageChanged: expandedField = ""
+    onVisibleChanged: if (!visible) { expandedField = ""; presetsExpanded = false }
+    function openField(field) {
+        if (!workspace.prepareFilterPicker(field)) return
+        filtersExpanded = true
+        expandedField = field
+    }
+    function toggleField(field) {
+        if (expandedField === field) expandedField = ""
+        else openField(field)
+    }
+    Connections {
+        target: workspace
+        function onFilterPickerChanged() {
+            if (workspace.filterPickerField !== sidebar.expandedField) sidebar.expandedField = ""
+        }
+    }
     readonly property var filterOrder: ["cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"]
-    signal fieldRequested(string field, var anchor)
     component ScopeCheckBox: CheckBox {
         id: scopeControl
         indicator: Rectangle {
@@ -35,8 +53,6 @@ Pane {
     }
     signal sourcesRequested()
     signal renameRequested()
-    signal filtersRequested()
-    signal filtersScrolled()
     function focusPath(path, percent) { return radar.focusPath(path, percent) }
     padding: 6
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
@@ -138,10 +154,6 @@ Pane {
                     property: "interactive"
                     value: !sidebar.collapsibleFilters || !sidebar.filtersExpanded
                 }
-                Connections {
-                    target: sidebarScroll.contentItem
-                    function onContentYChanged() { sidebar.filtersScrolled() }
-                }
                 ColumnLayout {
                     id: sidebarControls
                     width: sidebarScroll.availableWidth
@@ -158,12 +170,12 @@ Pane {
                     Accessible.name: "Show or hide kubeconfig sources"
                     onClicked: sourcesRequested()
                 }
+                IconButton { objectName: "renameCurrentSession"; glyph: "Pencil"; text: "Rename session"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: renameRequested() }
                 IconButton { objectName: "masterAudioMute"; glyph: workspace.alerts.muted ? "Mute" : "Volume"; text: workspace.alerts.muted ? "Unmute" : "Mute"; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(!workspace.alerts.muted, workspace.alerts.reducedMotion) }
             }
             RowLayout {
                 Layout.fillWidth: true
                 Label { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
-                IconButton { objectName: "resourceFieldFilters"; glyph: "Filters"; text: "Resource field filters"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: filtersRequested() }
                 IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0 || workspace.resourceLimit !== 256; onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
             }
             GridLayout {
@@ -188,27 +200,55 @@ Pane {
             RowLayout {
                 Layout.fillWidth: true
                 TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text) }
-                ComboBox {
+                IconButton {
                     id: preset; objectName: "filterPreset"
-                    Layout.preferredWidth: 32; Layout.minimumWidth: 32
-                    model: workspace.filterPresets
-                    currentIndex: model.indexOf(workspace.selectedFilterPreset)
-                    displayText: ""
-                    popup.width: sidebarControls.width
-                    popup.x: -x
-                    Accessible.name: "Load saved filter"
-                    ToolTip.visible: hovered || activeFocus
-                    ToolTip.text: currentIndex < 0 ? "Custom filter" : currentText
+                    glyph: "Menu"; text: "Load saved filter"
+                    checkable: true; checked: sidebar.presetsExpanded
                     enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""
-                    onActivated: { workspace.loadFilterPreset(currentText); presetName.text = currentText === "default" ? "" : currentText }
+                    onClicked: {
+                        sidebar.presetsExpanded = !sidebar.presetsExpanded
+                        if (sidebar.presetsExpanded) Qt.callLater(function() { savedFilters.forceActiveFocus() })
+                    }
                 }
-                Button { objectName: "saveFilterPreset"; text: workspace.uiText["action.save"]; implicitHeight: 28; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
+                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
                 IconButton { id: filterPresetActions; objectName: "filterPresetActions"; glyph: "Menu"; text: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.popup(filterPresetActions, 0, filterPresetActions.height) }
                 Menu { id: presetActions
                     MenuItem { objectName: "reloadFilterPresets"; text: "Reload saved filters"; enabled: !workspace.filterPresetsBusy; onTriggered: workspace.reloadFilterPresets() }
                     MenuItem { objectName: "importFilterPresets"; text: "Import saved filters..."; onTriggered: importPresets.open() }
                     MenuItem { objectName: "renameFilterPreset"; text: "Rename"; enabled: presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onTriggered: { renamePreset.original = presetName.text; renameText.text = presetName.text; renamePreset.open() } }
                     MenuItem { objectName: "deleteFilterPreset"; text: "Delete"; enabled: presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onTriggered: workspace.deleteFilterPreset(presetName.text) }
+                }
+            }
+            ListView {
+                id: savedFilters
+                objectName: "savedFilterOptions"
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? Math.min(180, count * 44) : 0
+                visible: sidebar.presetsExpanded
+                clip: true
+                model: visible ? workspace.filterPresets : []
+                currentIndex: workspace.filterPresets.indexOf(workspace.selectedFilterPreset)
+                ScrollBar.vertical: ScrollBar {}
+                function activate(index) {
+                    if (index < 0 || index >= count) return
+                    const name = workspace.filterPresets[index]
+                    if (workspace.loadFilterPreset(name)) {
+                        presetName.text = name === "default" ? "" : name
+                        sidebar.presetsExpanded = false
+                        preset.forceActiveFocus()
+                    }
+                }
+                Keys.onReturnPressed: activate(currentIndex)
+                Keys.onEnterPressed: activate(currentIndex)
+                delegate: ItemDelegate {
+                    required property string modelData
+                    required property int index
+                    objectName: "filterPresetOption_" + index
+                    width: savedFilters.width
+                    height: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32
+                    text: modelData
+                    highlighted: modelData === workspace.selectedFilterPreset
+                    onClicked: savedFilters.activate(index)
                 }
             }
             Label { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
@@ -219,21 +259,29 @@ Pane {
                 fileMode: FileDialog.OpenFile
                 onAccepted: workspace.importFilterPresets(selectedFile)
             }
-            ListView {
+            ColumnLayout {
                 id: filters
                 objectName: "sidebarFilters"
-                Layout.fillWidth: true; Layout.preferredHeight: count * (sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 30)
+                Layout.fillWidth: true
+                spacing: 0
+                Repeater {
                 model: { const fields = workspace.filterFields; return sidebar.filterOrder.map(function(id) { return fields.find(function(field) { return field.id === id }) }).filter(function(field) { return field !== undefined }) }
-                clip: true; reuseItems: true; cacheBuffer: 0
-                interactive: false
-                delegate: Button {
-                    id: fieldButton
+                delegate: ColumnLayout {
+                    id: fieldGroup
                     required property var modelData
+                    Layout.fillWidth: true
+                    spacing: 0
+                    Button {
+                    id: fieldButton
+                    readonly property var modelData: fieldGroup.modelData
                     objectName: "sidebarField_" + modelData.id
-                    width: filters.width; height: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 30
+                    Layout.fillWidth: true; implicitHeight: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 30
                     text: modelData.name + (workspace.resourceFieldFilters[modelData.id] ? ": " + workspace.resourceFieldFilters[modelData.id] : "")
                     leftPadding: 10; rightPadding: 10
                     font.bold: true
+                    checkable: true
+                    checked: sidebar.expandedField === modelData.id
+                    Accessible.description: checked ? "Expanded cached filter values" : "Collapsed cached filter values"
                     background: Rectangle {
                         color: fieldButton.down || fieldButton.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.panel
                         border.color: fieldButton.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
@@ -246,19 +294,24 @@ Pane {
                             fill: workspace.appearanceColors.accent
                         }
                         Label { Layout.fillWidth: true; text: fieldButton.text; textFormat: Text.PlainText; font: fieldButton.font; elide: Text.ElideRight }
-                        Label { text: "▾"; color: workspace.appearanceColors.accent }
+                        Label { text: fieldButton.checked ? "▾" : "▸"; color: workspace.appearanceColors.accent }
                     }
                     enabled: workspace.currentSession !== "" && !workspace.busy
                     Accessible.name: "Filter " + modelData.name
                     ToolTip.visible: hovered; ToolTip.text: text
-                    onClicked: fieldRequested(modelData.id, fieldButton)
+                    onClicked: sidebar.toggleField(modelData.id)
+                    }
+                    Loader {
+                        Layout.fillWidth: true
+                        active: sidebar.expandedField === fieldGroup.modelData.id
+                        visible: active
+                        sourceComponent: FieldFilterEditor {
+                            controller: workspace
+                            onDismissed: { sidebar.expandedField = ""; fieldButton.forceActiveFocus() }
+                        }
+                    }
                 }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                ComboBox { Layout.fillWidth: true; Layout.minimumWidth: 0; model: workspace.sessions; textRole: "name"; valueRole: "id"; displayText: count > 0 ? currentText : "No saved sessions"; Accessible.name: "Saved sessions, ordered by usage"; onActivated: workspace.activate(currentValue) }
-                IconButton { objectName: "renameCurrentSession"; glyph: "Pencil"; text: "Rename session"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: renameRequested() }
-                IconButton { objectName: "manageSidebarSessions"; glyph: "Menu"; text: "Manage sessions"; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() }
+                }
             }
                 }
             }

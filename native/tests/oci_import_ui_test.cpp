@@ -195,7 +195,8 @@ bool run(const QString& scenario) {
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == (scenario == "identity" ? 2 : 1); }, 5000)) return false;
-    if (!test::clickVisible(window,"mapSources") || !test::clickVisible(window, "importOciKey")) return false;
+    if (!test::clickVisible(window,"resourcesWorkspaceButton") || !test::clickVisible(window,"sourcesButton")
+        || !test::clickVisible(window, "importOciKey")) return false;
     auto* dialog = window->findChild<QObject*>("ociImportDialog");
     auto* context = window->findChild<QQuickItem*>("ociImportContext");
     if (!dialog || !dialog->property("visible").toBool() || !context || context->property("currentValue").toString() != contextId)

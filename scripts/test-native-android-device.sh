@@ -364,7 +364,7 @@ click('mapWorkspaceButton');
 waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]>miniRadar[2]-miniRadar[0]+50;});
 for(let i=0;i<4;i++)click('radarZoomOut');capture('map-cluster-overview');
 for(let i=0;i<7;i++)click('radarZoom');capture('map-namespace-details');
-click('resetRadar');click('mapOverview');waitNode(contextCard,n=>n.enabled==='true');
+click('mapOverview');waitNode(contextCard,n=>n.enabled==='true');
 const cardViewport=target(contextCard).bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
 for(const prefix of ['contextMapName_','contextMapCluster_','renameMapContext_']){
  const control=waitNode(prefix+contextCard.slice('contextMapCard_'.length),n=>{
@@ -455,19 +455,18 @@ function mapTouchRoundtrip(){
  steps.push({step:'Native Android Home and End preserve Qt search editing'});capture('roundtrip-query-before');
  run('shell','input','keyevent','4');state();click('workspaceSearchButton');
  click('mapWorkspaceButton');waitNode('resourceRadar',n=>rect(n)[2]>rect(n)[0]&&rect(n)[3]>rect(n)[1]);
- click('resetRadar');const resetZoom=zoom();
  for(let i=0;i<16&&zoom()<25;i++)click('radarZoom');
  for(let i=0;i<16&&zoom()>100;i++)click('radarZoomOut');
  assert.ok(zoom()>=20&&zoom()<=100,'Prepare an observable, unclamped public zoom range');
- const ids=['mapBack','mapForward','mapOverview','mapSources','radarWorkspaceButton','radarZoomOut','radarZoom','resetRadar','toggleLandscapeFilters'];
+ const ids=['mapBack','mapForward','mapOverview','radarZoomOut','radarZoom','toggleLandscapeFilters'];
  const controls=ids.map(id=>{const matches=nodes.filter(n=>n['resource-id']?.endsWith('.'+id));assert.equal(matches.length,1,id+' must have one public instance');const n=matches[0],b=rect(n);assert.deepEqual([b[2]-b[0]+1,b[3]-b[1]+1],[44,44],id+' must retain the Qt inclusive 44px rectangle');return {id,bounds:b,androidDelta:[b[2]-b[0],b[3]-b[1]],qtInclusiveSize:[44,44],enabled:n.enabled};});
  const edge=(id,position,expect)=>{
   const n=target(id),b=rect(n),before=zoom(),center=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];assert.equal(n.enabled,'true');
   const point=position==='right'?[b[2],center[1]]:position==='bottom'?[center[0],b[3]]:position==='corner'?[b[2],b[3]]:position==='outside-right'?[b[2]+1,center[1]]:[center[0],b[3]+1];
   run('shell','input','tap',...point.map(String));state();const after=zoom(),result={at:new Date().toISOString(),id,position,bounds:b,point,beforeZoomPercent:before,afterZoomPercent:after,expected:expect};fs.appendFileSync(path.join(out,'native-edge-touches.jsonl'),JSON.stringify(result)+'\n');capture('edge-'+id+'-'+position);
-  if(expect==='increase')assert.ok(after>before,'Native last-pixel zoom-in touch must change visible zoom');else if(expect==='decrease')assert.ok(after<before,'Native last-pixel zoom-out touch must change visible zoom');else if(expect==='reset'){assert.notEqual(before,resetZoom);assert.equal(after,resetZoom);}else assert.equal(after,before,'The next coordinate beyond the 44px target must not activate zoom');
+  if(expect==='increase')assert.ok(after>before,'Native last-pixel zoom-in touch must change visible zoom');else if(expect==='decrease')assert.ok(after<before,'Native last-pixel zoom-out touch must change visible zoom');else assert.equal(after,before,'The next coordinate beyond the 44px target must not activate zoom');
  };
- edge('radarZoom','right','increase');edge('radarZoomOut','bottom','decrease');edge('radarZoom','corner','increase');edge('radarZoom','outside-right','unchanged');edge('radarZoom','outside-bottom','unchanged');edge('resetRadar','corner','reset');
+ edge('radarZoom','right','increase');edge('radarZoomOut','bottom','decrease');edge('radarZoom','corner','increase');edge('radarZoom','outside-right','unchanged');edge('radarZoom','outside-bottom','unchanged');
  capture('roundtrip-map-selection-setup');const initial=image('roundtrip-map-selection-setup'),b=rect(target('resourceRadar'));let waterPoint=null;
  for(let y=b[1]+2;y<b[3]-2&&!waterPoint;y++)for(let x=b[0]+2;x<b[2]-2;x++)if(['061621','071621'].includes(initial.rgb(x,y))){waterPoint=[x,y];break;}
  assert.ok(waterPoint,'Focus the real radar through visible water, not a hidden getter');run('shell','input','tap',...waterPoint.map(String));state();run('shell','input','keyevent','122');state();waitNode('radarInfoText',n=>value(n).includes('visual-config-0001'));
@@ -497,7 +496,7 @@ function mapTouchRoundtrip(){
  target('inspectorYaml');state();
  waitNode('inspectorYaml',n=>value(n).split(/\r?\n|\u2028|\u2029/).some(line=>[selection.namespace,JSON.stringify(selection.namespace)].some(name=>line.trim()==='namespace: '+name)));
  capture('roundtrip-retained-selection');click('closeInspector');
- const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt 6.11.2 JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},selection:{...selection,verifiedAfter:'Native Enter after water focus opens the same kind/name/namespace, without Home/End reselection'},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:mapResourceQuery,motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Terrain pixels, public zoom/filter and retained selection; no private camera getters. Passive read totals remain diagnostic. Cache-only admission is separately asserted by the real_search/real_map HTTP-boundary scenarios. Inspector is explicitly opened only after the filter audit. Disabled Back/Forward are not activated.'};
+ const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},selection:{...selection,verifiedAfter:'Native Enter after water focus opens the same kind/name/namespace, without Home/End reselection'},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:mapResourceQuery,motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Terrain pixels, public zoom/filter and retained selection; no private camera getters. Passive read totals remain diagnostic. Cache-only admission is separately asserted by the real_search/real_map HTTP-boundary scenarios. Inspector is explicitly opened only after the filter audit. Disabled Back/Forward are not activated.'};
  fs.writeFileSync(path.join(out,'touch-roundtrip.json'),JSON.stringify(report,null,2)+'\n');
  click('resourcesWorkspaceButton');search('');
 }

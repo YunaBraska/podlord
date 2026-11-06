@@ -125,9 +125,9 @@ QString text(QObject* root, const QString& name) {
     auto* value = item(root, name); return value ? value->property("text").toString() : QString{};
 }
 bool click(QQuickWindow* window, QPointer<QQuickItem> target, Qt::MouseButton button = Qt::LeftButton) {
-    if (target && !target->isVisible() && (target->objectName()=="radarWorkspaceButton" || target->objectName()=="resourceFieldFilters")) {
+    if (target && !target->isVisible() && (target->objectName()=="radarWorkspaceButton" || target->objectName()=="sidebarField_name")) {
         const auto* expander=item(window,"toggleLandscapeFilters");
-        const auto action=target->objectName()=="resourceFieldFilters" && expander && expander->isVisible()
+        const auto action=target->objectName()=="sidebarField_name" && expander && expander->isVisible()
             ? "toggleLandscapeFilters" : "toggleSidebar";
         if (!click(window,item(window,action)) || !waitFor([&] { return target && target->isVisible(); })) return false;
     }
@@ -225,8 +225,8 @@ std::optional<Case> testcase(const QString& scenario) {
         {"display_stale_exact", {"cpu", "\"500 mCPU (stale)\"", {"half"}}},
         {"display_incomplete", {"cpu", "incomplete", {"half"}}},
         {"display_mixed", {"cpu", ">=.5 /no-match/", {"half", "one"}}},
-        {"center", {"cpu", "500m", {"half"}}},
-        {"narrow_center", {"cpu", "500m", {"half"}}},
+        {"inline", {"cpu", "500m", {"half"}}},
+        {"narrow_inline", {"cpu", "500m", {"half"}}},
         {"empty", {"cpu", "", {"half", "one", "zero", "missing", "capacity-only"}}},
         {"clear", {"cpu", "500m", {"half"}}},
         {"stale", {"cpu", "500m", {"half"}}},
@@ -253,6 +253,8 @@ bool execute(const QString& scenario) {
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if (!window || !waitFor([&] { return window->isVisible() && window->isExposed() && !workspace.busy(); })
+        || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
     if (!window || !waitFor([&] { auto* control = item(window, "importButton"); return control && control->isEnabled(); }) ||
         !type(window, item(window, "sourcePath"), source.fileName()) || !click(window, item(window, "importButton")) ||
         !waitFor([&] { auto* control = item(window, "openContext"); return control && control->isEnabled() && !workspace.busy(); }) ||
@@ -301,32 +303,26 @@ bool execute(const QString& scenario) {
             }
         }
     }
-    if (scenario == "narrow_center") { window->resize(QSize(680, 480)); QTest::qWait(10); }
-    auto* fieldsButton = item(window, "resourceFieldFilters");
+    if (scenario == "narrow_inline") { window->resize(QSize(680, 480)); QTest::qWait(10); }
+    auto* fieldsButton = item(window, "sidebarField_name");
     if (!click(window, fieldsButton)) return false;
-    if (scenario == "center" || scenario == "narrow_center") {
-        QObject* dialog = nullptr;
-        for (auto* control : window->findChildren<QObject*>())
-            if (control->property("title").toString() == "Resource field filters") { dialog = control; break; }
-        if (!dialog || !waitFor([&] {
-            return qAbs(dialog->property("x").toDouble() - (window->width() - dialog->property("width").toDouble()) / 2) <= 2 &&
-                qAbs(dialog->property("y").toDouble() - (window->height() - dialog->property("height").toDouble()) / 2) <= 2;
-        })) { std::fprintf(stderr, "Field dialog is not centered in the visible window.\n"); return false; }
-    }
-    auto* choice = item(window, "fieldFilterColumn");
-    if (!choice) { std::fprintf(stderr, "Quantity fields are absent from the public picker.\n"); return false; }
     const auto choose = [&](const QString& field) {
-        const auto options = choice->property("model").toList();
-        int index = -1;
-        for (int number = 0; number < options.size(); ++number) if (options[number].toMap().value("id") == field) index = number;
-        if (index < 0 || !click(window, choice)) return false;
-        QTest::keyClick(window, Qt::Key_Home);
-        for (int number = 0; number < index; ++number) QTest::keyClick(window, Qt::Key_Down);
-        QTest::keyClick(window, Qt::Key_Return);
-        return waitFor([&] { return workspace.filterPickerField() == field; });
+        auto* target = item(window, "sidebarField_" + field);
+        if (workspace.filterPickerField() != field || !item(window,"fieldFilterExpression")) {
+            if (!target || !podlord::test::scrollIntoView(window,target) || !click(window,target)) return false;
+        }
+        return waitFor([&] { return workspace.filterPickerField() == field && item(window,"fieldFilterExpression"); });
     };
     const auto expressionControl = [&] { return item(window, "fieldFilterExpression"); };
     if (!choose(test->field) || !type(window, expressionControl(), test->expression)) return false;
+    if (scenario == "inline" || scenario == "narrow_inline") {
+        const auto* editor = item(window,"fieldFiltersInline");
+        const auto* field = item(window,"sidebarField_" + test->field);
+        if (!editor || !field || !waitFor([&] { return editor->width() > 0 && editor->height() > 0
+            && editor->mapToScene(QPointF{}).y() >= field->mapToScene(QPointF(0,field->height())).y()
+            && editor->mapToScene(QPointF{}).x() >= 0
+            && editor->mapToScene(QPointF(editor->width(),0)).x() <= window->width(); })) return false;
+    }
     if (scenario == "restart_and" && (!choose("ready") || !type(window, expressionControl(), "\"1/1\""))) return false;
     if (scenario == "ready_picker" && workspace.filterPickerValues() != QStringList{"0/1", "1/1"}) return false;
     if (scenario == "restart_picker" && workspace.filterPickerValues() != QStringList{"0", "4"}) return false;
@@ -369,6 +365,8 @@ bool realCluster(const QString& source) {
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if (!window || !waitFor([&] { return window->isVisible() && window->isExposed() && !workspace.busy(); })
+        || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
     const auto fail = [&](const char* stage) {
         std::fprintf(stderr, "Real cached field filter failed: %s; rows=%d/%d; error=%s; status=%s\n",
             stage, workspace.resourceCount(), workspace.totalResourceCount(), qPrintable(workspace.filterError()), qPrintable(workspace.status()));
@@ -408,20 +406,15 @@ bool realCluster(const QString& source) {
     }
     if (ownedConfigMaps != 128) return fail("owned ConfigMap inventory");
     expectedConfigMaps.sort(); expectedClusterScoped.sort();
-    auto* fieldsButton = item(window,"resourceFieldFilters");
+    auto* fieldsButton = item(window,"sidebarField_name");
     if (!click(window, fieldsButton)) return fail("open field dialog");
     const auto setField = [&](const QString& field, const QString& expression) {
-        auto* choice = item(window, "fieldFilterColumn");
-        if (!choice) return false;
-        const auto options = choice->property("model").toList();
-        int index = -1;
-        for (int number = 0; number < options.size(); ++number) if (options[number].toMap().value("id") == field) index = number;
-        if (index < 0 || !click(window, choice)) return false;
-        QTest::keyClick(window, Qt::Key_Home);
-        for (int number = 0; number < index; ++number) QTest::keyClick(window, Qt::Key_Down);
-        QTest::keyClick(window, Qt::Key_Return);
-        return waitFor([&] { return workspace.filterPickerField() == field; }) &&
-            type(window, item(window, "fieldFilterExpression"), expression);
+        auto* target = item(window, "sidebarField_" + field);
+        if (workspace.filterPickerField() != field || !item(window,"fieldFilterExpression")) {
+            if (!target || !podlord::test::scrollIntoView(window,target) || !click(window,target)) return false;
+        }
+        return waitFor([&] { return workspace.filterPickerField() == field && item(window,"fieldFilterExpression"); })
+            && type(window, item(window,"fieldFilterExpression"), expression);
     };
     const auto evidence = qEnvironmentVariable("PODLORD_REAL_FIELD_FILTER_EVIDENCE");
     if (expectedClusterScoped.isEmpty() || !setField("namespace", QString{})) return fail("cluster-wide inventory");
@@ -435,7 +428,7 @@ bool realCluster(const QString& source) {
         actual.sort(); return actual == expectedClusterScoped;
     })) return fail("cluster-wide picker selection");
     if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "-cluster-wide.png", "PNG")) return fail("cluster-wide screenshot");
-    if (!click(window, item(window, "clearFieldFilters"))) return fail("reset cluster-wide");
+    if (!click(window, item(window, "resetResourceFilters"))) return fail("reset cluster-wide");
     std::printf("Real cluster-wide Namespace picker passed: %lld resources without namespaces.\n", static_cast<long long>(expectedClusterScoped.size()));
     if (!setField("kind", "\"ConfigMap\"") || !setField("namespace", "\"visual-a\" \"visual-b\"") ||
         !waitFor([&] {
@@ -452,7 +445,7 @@ bool realCluster(const QString& source) {
         QTest::qWait(50);
         if (!window->grabWindow().save(evidence + "-text.png", "PNG")) return fail("text screenshot");
     }
-    if (!click(window, item(window, "clearFieldFilters")) || !waitFor([&] { return workspace.resourceCount() == workspace.totalResourceCount(); })) return fail("reset text");
+    if (!click(window, item(window, "resetResourceFilters")) || !waitFor([&] { return workspace.resourceCount() == workspace.totalResourceCount(); })) return fail("reset text");
     const auto expectedCpu = measuredIdentities("cpu");
     if (!setField("cpu", ">=0") || !waitFor([&] { return workspace.filterError().isEmpty() && measuredIdentities("cpu") == expectedCpu &&
         workspace.resourceCount() == expectedCpu.size(); })) return fail("CPU measured-only");
@@ -481,25 +474,25 @@ bool realCluster(const QString& source) {
         {"backend", qEnvironmentVariable("QT_QUICK_BACKEND")}, {"qt_version", qVersion()},
         {"p50_ms", (frameTimes[9] + frameTimes[10]) / 2}, {"p95_ms", frameTimes[18]}, {"max_ms", frameTimes.last()}};
     std::printf("%s\n", QJsonDocument(benchmark).toJson(QJsonDocument::Compact).constData());
-    if (!click(window, item(window, "clearFieldFilters")) || !waitFor([&] { return workspace.resourceCount() == workspace.totalResourceCount(); })) return fail("reset CPU");
+    if (!click(window, item(window, "resetResourceFilters")) || !waitFor([&] { return workspace.resourceCount() == workspace.totalResourceCount(); })) return fail("reset CPU");
     const auto expectedMemory = measuredIdentities("memory");
     if (!setField("memory", ">=0") || !waitFor([&] { return workspace.filterError().isEmpty() && measuredIdentities("memory") == expectedMemory &&
         workspace.resourceCount() == expectedMemory.size(); })) return fail("memory measured-only");
-    if (!click(window, item(window, "clearFieldFilters")) || !setField("storage", ">=0") ||
+    if (!click(window, item(window, "resetResourceFilters")) || !setField("storage", ">=0") ||
         !waitFor([&] { return workspace.filterError().isEmpty() && workspace.resourceCount() == 0; }) || !workspace.filterPickerValues().isEmpty())
         return fail("storage request is not usage");
-    if (!click(window, item(window, "clearFieldFilters")) || !setField("kind", "\"Pod\"") || !setField("ready", "\"2/2\"") || !waitFor([&] {
+    if (!click(window, item(window, "resetResourceFilters")) || !setField("kind", "\"Pod\"") || !setField("ready", "\"2/2\"") || !waitFor([&] {
         return workspace.filterError().isEmpty() && workspace.resourceCount() == 1 &&
             workspace.table()->data(workspace.table()->index(0, 0), Qt::UserRole) == "/api/v1/namespaces/visual-a/pods/visual-multi-container";
     }) || !workspace.filterPickerValues().contains("2/2")) return fail("real Ready fraction and cached options");
     if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "-ready.png", "PNG")) return fail("Ready screenshot");
-    if (!click(window, item(window, "clearFieldFilters"))) return fail("reset Ready");
+    if (!click(window, item(window, "resetResourceFilters"))) return fail("reset Ready");
     const auto expectedRestarts = measuredIdentities("restarts");
     if (expectedRestarts.isEmpty() || !setField("restarts", ">=0") || !waitFor([&] {
         return workspace.filterError().isEmpty() && workspace.resourceCount() == expectedRestarts.size() && measuredIdentities("restarts") == expectedRestarts;
     }) || workspace.filterPickerValues().isEmpty()) return fail("real observed restart counts");
     if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "-restarts.png", "PNG")) return fail("Restarts screenshot");
-    if (!click(window, item(window, "clearFieldFilters")) || !setField("kind", "\"ConfigMap\"") ||
+    if (!click(window, item(window, "resetResourceFilters")) || !setField("kind", "\"ConfigMap\"") ||
         !setField("namespace", "\"visual-a\" \"visual-b\"") || !setField("name", "~visual-config-") ||
         !waitFor([&] { return workspace.resourceCount() == 128; })) return fail("Radar filter setup");
     QTest::keyClick(window, Qt::Key_Escape);

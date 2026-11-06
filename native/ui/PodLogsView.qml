@@ -133,7 +133,7 @@ ColumnLayout {
         anchors.centerIn: Overlay.overlay
         width: Math.min(600, Overlay.overlay.width - 24)
         height: Math.min(420, Overlay.overlay.height - 24)
-        standardButtons: Dialog.Close
+        header: DialogHeader { dialog: entry }
         onClosed: entryText.clear()
         ScrollView {
             anchors.fill: parent
