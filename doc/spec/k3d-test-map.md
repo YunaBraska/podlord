@@ -8058,7 +8058,22 @@ provider behavior, package contents, watchdogs or numerical targets.
 | Crash investigation | The compact-alerts scenario passes 200 normal launches and 600 ASan baseline launches locally. The guarded version passes 200 further ASan launches. With the final shared helper, four scenarios each pass twenty ASan launches in `compact-alert-crash/asan-final-repeat.log`. These are repeated diagnostics, not additional unique product test cases. ASan leak detection is disabled for these crash probes only; they are not a leak or performance gate. The original CI crash has not been reproduced or attributed. |
 | Future crash evidence | The macOS workflow retains only new `workspace_ui_test`/`alert_ui_test` OS reports created during its own failed run. Other processes, older reports and symlinks are excluded. The real-filesystem regression fails before this collection exists and passes afterward. The expanded Node cohort passes 89 cases with ten local Windows skips, already separately covered by the successful real Windows job at `13a2d12`. Actionlint passes. No local user crash-report directory is read by that regression. |
 
-The follow-up canonical full suite is running. Header/cell menus, namespace
-picker and paired color/palette images still require an unlocked desktop.
-Google registration remains paused. No release clearance is inferred from
-an isolated retry or an unreproduced crash.
+| Boundary | Completed evidence |
+| --- | --- |
+| Complete follow-up source | At `c24d7fb`, `scroll-helper-final-canonical-suite.log` passes nine preflights and 5,799 remaining CTest executions. The main cohort takes 1,656.82 seconds. Local line coverage is 97.85%, branch coverage 86.55%; every critical-family gate passes, including Radar/Map 91.45% and WindowHost 90.68%. `scroll-helper-final-coverage/` retains the raw profile, report, source commit and CLI benchmarks. |
+| Complete hosted follow-up | [CI 42201309550](https://github.com/YunaBraska/podlord/actions/runs/42201309550) passes all ten jobs at `c24d7fb`. `hosted-macos-arm64-c24d7fb/native-tests.log` records all 5,808 executions passing, including both original failed cases and both new motion regressions. Its platform-specific coverage is 97.99% lines / 86.64% branches. The original crash has not recurred, but its absent original stack cannot establish a causal fix. |
+| Standalone Linux and SDK reuse | [Linux trial 42201309429](https://github.com/YunaBraska/podlord/actions/runs/42201309429) passes both architectures, including clean Ubuntu/Debian runtime checks and owned cleanup. The x64 job takes 38m19s and ARM64 43m16s. The validated cached-SDK construction step takes 10s and 9s respectively; both are exact cache hits, not unverified fallback reuse. The prior x64 ninety-minute cancellation remains a failed/incomplete record. No watchdog was raised and no behavior, coverage or package check removed. |
+
+The final follow-up changes only tests, CI diagnostics and documentation.
+Production UI, runtime/provider source, assets and Android export configuration
+are unchanged from the qualified package boundary above. `scroll-helper-hosted-ci.json`
+and `scroll-helper-hosted-linux-trial.json` retain completed workflow metadata.
+Diagnostic raw profiles are consolidated; logs and sanitizer configuration are
+retained. The redundant task-owned sanitizer build is moved to Trash, not silently
+deleted. No test application, owned emulator, private ADB server or local fixture
+is left running.
+
+Header/cell menus, namespace picker and paired color/palette images still require
+an unlocked desktop. Google registration remains paused and live cloud-provider
+evidence remains open. No full visual-parity or release clearance is inferred
+from an isolated retry, a historical unexplained crash or these completed code gates.
