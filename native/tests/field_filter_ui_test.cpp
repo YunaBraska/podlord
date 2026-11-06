@@ -111,6 +111,7 @@ public:
     bool delayed = false;
     bool events = false;
     bool valueCopies = false, secretValues = false;
+    bool clusterScopes = false;
     int active = 0, maximumActive = 0;
     QJsonObject configuration() const {
         auto value = resource("team-a", "team-b", false, true);
@@ -137,6 +138,8 @@ public:
                         QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
                         QJsonObject{{"name", secretValues ? "secrets" : "configmaps"}, {"kind", secretValues ? "Secret" : "ConfigMap"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}};
                         if (events) resources.append(QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}});
+                        if (clusterScopes) for (const auto& type : QList<QPair<QString, QString>>{{"nodes", "Node"}, {"namespaces", "Namespace"}})
+                            resources.append(QJsonObject{{"name", type.first}, {"kind", type.second}, {"namespaced", false}, {"verbs", QJsonArray{"get", "list"}}});
                         document = {{"resources", resources}};
                     }
                     else if (path == "/api/v1/events") document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{QJsonObject{
@@ -144,8 +147,18 @@ public:
                         {"type", "Normal"}, {"reason", "Scheduled"}, {"message", "Assigned alpha"}, {"count", 1},
                         {"lastTimestamp", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
                         {"involvedObject", QJsonObject{{"apiVersion", "v1"}, {"kind", "Pod"}, {"name", "alpha"}, {"namespace", "team-a"}, {"uid", "uid-alpha"}}}}}}};
-                    else if (path == "/api/v1/pods") document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{
-                        resource(changed ? "charlie" : "alpha", "team-a"), resource("bravo", "team-b", true)}}};
+                    else if (path == "/api/v1/pods") {
+                        QJsonArray pods{resource(changed ? "charlie" : "alpha", "team-a"), resource("bravo", "team-b", true)};
+                        if (clusterScopes) pods.append(resource("cluster-pod", "cluster"));
+                        document = {{"metadata", QJsonObject{}}, {"items", pods}};
+                    }
+                    else if (clusterScopes && (path == "/api/v1/nodes" || path == "/api/v1/namespaces")) {
+                        const bool node = path.endsWith("/nodes");
+                        document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{QJsonObject{
+                            {"apiVersion", "v1"}, {"kind", node ? "Node" : "Namespace"},
+                            {"metadata", QJsonObject{{"name", node ? "scope-node" : "cluster"},
+                                {"uid", node ? "scope-node-uid" : "scope-namespace-uid"}, {"resourceVersion", "1"}}}}}}};
+                    }
                     else if (path == "/api/v1/configmaps" || path == "/api/v1/secrets") {
                         QJsonArray configurations{configuration()};
                         for (int index = 0; index < extraConfigurations; ++index)
@@ -176,6 +189,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
     server.events = scenario.startsWith("table_keyboard_event_");
     server.valueCopies = scenario.startsWith("value_copy_");
     server.secretValues = scenario.startsWith("value_copy_secret_");
+    server.clusterScopes = scenario.startsWith("namespace_cluster_") && scenario != "namespace_cluster_unavailable";
     if (!temporary.isValid() || !server.listen(QHostAddress::LocalHost, 0)) return false;
     const auto source = temporary.filePath("source.config"), profile = temporary.filePath("profile");
     QFile file(source); if (!file.open(QIODevice::WriteOnly)) return false;
@@ -186,7 +200,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
     {
         podlord::Workspace workspace(profile);
         if ((scenario == "cache_tab_reuse" || scenario.startsWith("cache_cell_") || scenario.startsWith("value_copy_")
-            || scenario.startsWith("table_keyboard_")) && !podlord::test::muteAlerts(workspace.alerts())) return false;
+            || scenario.startsWith("table_keyboard_") || scenario.startsWith("namespace_cluster_")) && !podlord::test::muteAlerts(workspace.alerts())) return false;
         if (scenario == "cache_cell_accessibility") QAccessible::setActive(true);
         QQmlApplicationEngine engine;
         QQuickWindow* window = nullptr;
@@ -216,12 +230,52 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (workspace.property("syncLoading").toBool()) progress.append(workspace.property("loadingProgress").toDouble());
         });
         if (!workspace.openContext(context) || !waitFor([&] { return !workspace.busy() && !workspace.loading()
-            && (server.events ? workspace.totalResourceCount() >= 3 : workspace.totalResourceCount() == 3 + server.extraConfigurations); })) return false;
+            && (server.events ? workspace.totalResourceCount() >= 3 : workspace.totalResourceCount() == 3 + server.extraConfigurations + (server.clusterScopes ? 3 : 0)); })) return false;
         session = workspace.currentSession();
         if (!workspace.setWorkspacePage("resources")) return false;
         if (scenario == "selection" && (!workspace.inspectPath("/api/v1/namespaces/team-a/pods/alpha")
             || !waitFor([&] { return workspace.canEditYaml(); }))) return false;
         const int requests = server.requests;
+        if (scenario.startsWith("namespace_cluster_")) {
+            const bool german = scenario == "namespace_cluster_german";
+            if (!workspace.saveUiLanguage(german ? "de" : "en") || !waitFor([&] { return !workspace.busy(); })
+                || !click(window, "sidebarField_namespace")) return false;
+            const auto options = workspace.filterPickerValues();
+            if (scenario == "namespace_cluster_unavailable")
+                return !options.contains(QString{}) && !workspace.selectFilterValue(QString{}, true)
+                    && workspace.resourceCount() == 3 && server.requests == requests;
+            const int empty = options.indexOf(QString{}), named = options.indexOf("cluster");
+            if (empty < 0 || named < 0 || empty == named) {
+                std::fprintf(stderr, "Namespace picker must distinguish cluster-wide resources from namespace cluster.\n");
+                return false;
+            }
+            const auto emptyName = QString("fieldFilterValue_%1").arg(empty);
+            auto* control = item(window, emptyName);
+            auto* accessible = control ? QAccessible::queryAccessibleInterface(control) : nullptr;
+            if (!accessible || accessible->text(QAccessible::Name) != (german ? "Clusterweit" : "Cluster-wide")) return false;
+            if (german && !type(window, "fieldFilterOptionSearch", "Clusterweit")) return false;
+            if (!click(window, emptyName) || !waitFor([&] { return workspace.resourceCount() == 2; })) return false;
+            QStringList names;
+            for (int row = 0; row < workspace.table()->rowCount(); ++row)
+                names.append(workspace.table()->index(row, 0).data(Qt::UserRole + 1).toString());
+            names.sort();
+            if (names != QStringList{"cluster", "scope-node"} || !workspace.filterValueSelected(QString{})) return false;
+            if (scenario == "namespace_cluster_union") {
+                if (!click(window, QString("fieldFilterValue_%1").arg(named)) || !waitFor([&] { return workspace.resourceCount() == 3; })
+                    || !click(window, emptyName) || !waitFor([&] { return workspace.resourceCount() == 1; })
+                    || workspace.table()->index(0, 0).data(Qt::UserRole + 1) != "cluster-pod") return false;
+            } else if (scenario == "namespace_cluster_preset") {
+                if (!workspace.saveFilterPreset("Cluster scoped") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
+                    || !workspace.resetResourceFilters() || workspace.resourceCount() != 6
+                    || !workspace.loadFilterPreset("Cluster scoped") || workspace.resourceCount() != 2
+                    || !workspace.filterValueSelected(QString{})) return false;
+                podlord::Workspace reopened(profile);
+                if (!waitFor([&] { return !reopened.busy() && !reopened.filterPresetsBusy(); })
+                    || !reopened.filterPresets().contains("Cluster scoped")) return false;
+            }
+            const auto frame = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+            return server.requests == requests && (frame.isEmpty() || window->grabWindow().save(frame, "PNG"));
+        }
         if (scenario.startsWith("cache_cell_")) {
             int row = -1;
             for (int candidate = 0; candidate < workspace.table()->rowCount(); ++candidate)

@@ -474,6 +474,17 @@ and offscreen UI checks do not establish parity for every table, theme or device
 
 ## Confirmed Filter And Session Presentation Requirements
 
+Namespace scope choice, confirmed on 2026-11-06: the Namespace picker MUST expose
+an independently labelled `Cluster-wide` option (`Clusterweit` in German) for
+cached resources without a namespace. It MUST remain distinct from any real
+namespace named `cluster`. Selecting both is an OR within the Namespace field.
+The option uses the existing exact empty-string filter, not a fabricated
+namespace or a new expression syntax. Ordinary picker snapshot, selected-value
+retention, per-session state and saved-filter behavior apply unchanged. The
+option MUST be searchable and accessible through its translated label. It is
+not invented for a cache that contains neither such resources nor a retained
+explicit selection. Opening or selecting it MUST NOT issue Kubernetes requests.
+
 These requirements were confirmed on 2026-10-02. Implementation conformance has not yet been reviewed. Per-table-type column layout remains owned by TBL-007; filter and sort state below is session-specific. Decision rationale is owned by [ADR 0011](../adr/0011-session-scoped-filtered-resource-presentation.md).
 
 | ID | Required observable behavior |

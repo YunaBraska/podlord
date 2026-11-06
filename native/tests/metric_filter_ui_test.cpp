@@ -396,17 +396,18 @@ bool realCluster(const QString& source) {
     if (!waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() > 1000 &&
         !measuredIdentities("cpu").isEmpty() && !measuredIdentities("memory").isEmpty(); }, 120000)) return fail("real resource and metric cache");
     if (!workspace.setWorkspacePage("resources")) return fail("resource tab");
-    QStringList expectedConfigMaps;
+    QStringList expectedConfigMaps, expectedClusterScoped;
     int ownedConfigMaps = 0;
     for (int row = 0; row < workspace.table()->rowCount(); ++row) {
         auto* model = workspace.table();
         const auto ns = model->data(model->index(row, 2)).toString();
+        if (ns.isEmpty()) expectedClusterScoped.append(model->data(model->index(row, 0), Qt::UserRole).toString());
         if (model->data(model->index(row, 1)) != "ConfigMap" || (ns != "visual-a" && ns != "visual-b")) continue;
         expectedConfigMaps.append(model->data(model->index(row, 0), Qt::UserRole).toString());
         if (model->data(model->index(row, 0)).toString().startsWith("visual-config-")) ++ownedConfigMaps;
     }
     if (ownedConfigMaps != 128) return fail("owned ConfigMap inventory");
-    expectedConfigMaps.sort();
+    expectedConfigMaps.sort(); expectedClusterScoped.sort();
     auto* fieldsButton = item(window,"resourceFieldFilters");
     if (!click(window, fieldsButton)) return fail("open field dialog");
     const auto setField = [&](const QString& field, const QString& expression) {
@@ -422,6 +423,20 @@ bool realCluster(const QString& source) {
         return waitFor([&] { return workspace.filterPickerField() == field; }) &&
             type(window, item(window, "fieldFilterExpression"), expression);
     };
+    const auto evidence = qEnvironmentVariable("PODLORD_REAL_FIELD_FILTER_EVIDENCE");
+    if (expectedClusterScoped.isEmpty() || !setField("namespace", QString{})) return fail("cluster-wide inventory");
+    const int clusterOption = workspace.filterPickerValues().indexOf(QString{});
+    if (clusterOption < 0 || !click(window, item(window, QString("fieldFilterValue_%1").arg(clusterOption))) || !waitFor([&] {
+        QStringList actual;
+        for (int row = 0; row < workspace.table()->rowCount(); ++row) {
+            if (!workspace.table()->data(workspace.table()->index(row, 2)).toString().isEmpty()) return false;
+            actual.append(workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole).toString());
+        }
+        actual.sort(); return actual == expectedClusterScoped;
+    })) return fail("cluster-wide picker selection");
+    if (!evidence.isEmpty() && !window->grabWindow().save(evidence + "-cluster-wide.png", "PNG")) return fail("cluster-wide screenshot");
+    if (!click(window, item(window, "clearFieldFilters"))) return fail("reset cluster-wide");
+    std::printf("Real cluster-wide Namespace picker passed: %lld resources without namespaces.\n", static_cast<long long>(expectedClusterScoped.size()));
     if (!setField("kind", "\"ConfigMap\"") || !setField("namespace", "\"visual-a\" \"visual-b\"") ||
         !waitFor([&] {
             QStringList actual;
@@ -433,7 +448,6 @@ bool realCluster(const QString& source) {
     if (!setField("name", "\"visual-config-0017\"") || !setField("namespace", "\"visual-a\"") ||
         !waitFor([&] { return workspace.resourceCount() == 1 && workspace.table()->data(workspace.table()->index(0, 0)) == "visual-config-0017"; }))
         return fail("exact text fields");
-    const auto evidence = qEnvironmentVariable("PODLORD_REAL_FIELD_FILTER_EVIDENCE");
     if (!evidence.isEmpty()) {
         QTest::qWait(50);
         if (!window->grabWindow().save(evidence + "-text.png", "PNG")) return fail("text screenshot");

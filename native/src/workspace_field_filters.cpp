@@ -87,7 +87,7 @@ bool Workspace::prepareFilterPicker(const QString& field) {
         const auto measurement = quantity ? rows_.data(index, Qt::UserRole + 6) : QVariant{};
         if (quantity && !measurement.isValid()) continue;
         const auto value = quantity ? formatMetricQuantity(measurement.toDouble(), field == "cpu") : rows_.data(index).toString();
-        if (!value.isEmpty() && value != "-") values.append(value);
+        if ((field == "namespace" && value.isEmpty()) || (!value.isEmpty() && value != "-")) values.append(value);
     }
     values.removeDuplicates();
     std::sort(values.begin(), values.end(), [](const auto& left, const auto& right) { return left < right; });

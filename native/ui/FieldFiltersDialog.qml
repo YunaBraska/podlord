@@ -122,15 +122,17 @@ Dialog {
                 id: valueControl
                 required property string modelData
                 required property int index
+                readonly property string displayValue: modelData === "" && dialog.controller.filterPickerField === "namespace"
+                    ? dialog.controller.uiText["filters.clusterWide"] : modelData
                 objectName: "fieldFilterValue_" + index
                 width: values.width
                 height: visible ? implicitHeight : 0
-                visible: modelData.toLowerCase().indexOf(optionSearch.text.toLowerCase()) >= 0
+                visible: displayValue.toLowerCase().indexOf(optionSearch.text.toLowerCase()) >= 0
                 checked: {
                     const filters = dialog.controller.resourceFieldFilters
                     return dialog.controller.filterValueSelected(modelData)
                 }
-                Accessible.name: modelData
+                Accessible.name: displayValue
                 indicator: Rectangle {
                     x: valueControl.mirrored ? valueControl.width - width - valueControl.rightPadding : valueControl.leftPadding
                     y: (valueControl.height - height) / 2
@@ -140,7 +142,7 @@ Dialog {
                     Label { anchors.centerIn: parent; text: valueControl.checked ? "✓" : ""; color: dialog.controller.appearanceColors.inset }
                 }
                 contentItem: Label {
-                    text: valueControl.modelData
+                    text: valueControl.displayValue
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                     verticalAlignment: Text.AlignVCenter
@@ -151,7 +153,7 @@ Dialog {
                 ToolTip {
                     visible: valueControl.hovered || valueControl.activeFocus
                     contentItem: Label {
-                        text: valueControl.modelData
+                        text: valueControl.displayValue
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
                     }
