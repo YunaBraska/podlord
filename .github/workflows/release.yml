@@ -34,9 +34,20 @@ jobs:
           for arch in x64 arm64; do
             cp "native-input/native-linux-trial-$arch-$SOURCE_COMMIT/package/podlord-native-linux-$arch.tar.gz" "native-candidate/podlord-native-linux-$arch.tar.gz"
           done
+          : > native-candidate/size-evidence.txt
           for archive in native-candidate/*.zip native-candidate/*.tar.gz; do
-            bytes=$(wc -c < "$archive")
-            [ "$bytes" -gt 0 ] && [ "$bytes" -le 50000000 ] || { printf 'Candidate exceeds the existing download gate: %s\n' "$archive" >&2; exit 1; }
+            bytes=$(wc -c < "$archive") || {
+              result=$?
+              printf 'Candidate download measurement failed: %s (exit %s)\n' "$archive" "$result" >&2
+              exit "$result"
+            }
+            bytes=$(printf '%s' "$bytes" | tr -d '[:space:]')
+            case "$bytes" in ''|*[!0-9]*) printf 'Invalid candidate download measurement: %s\n' "$archive" >&2; exit 1 ;; esac
+            [ "$bytes" -gt 0 ] || { printf 'Invalid candidate download measurement: %s\n' "$archive" >&2; exit 1; }
+            printf 'Archive: %s; download bytes: %s; advisory target: 50000000\n' "$archive" "$bytes" >> native-candidate/size-evidence.txt
+            if [ "$bytes" -gt 50000000 ]; then
+              printf 'WARNING: package-size advisory: archive=%s metric=download measured_bytes=%s target_bytes=50000000\n' "$archive" "$bytes" | tee -a native-candidate/size-evidence.txt >&2
+            fi
           done
           (cd native-candidate && sha256sum ./*.zip ./*.tar.gz > SHA256SUMS)
           printf '%s\n' "$SOURCE_COMMIT" > native-candidate/SOURCE_COMMIT

@@ -42,12 +42,15 @@ The native Mac App Store application contains both `arm64` and `x86_64` slices. 
 
 `scripts/merge-native-macos-apps.sh` verifies the signed thin input bundles, their identifiers, contained symlinks and matching resource files before merging their Mach-O binaries. The result is unsigned and must pass the existing signing and packaging boundary before distribution.
 
-The approved combined Universal2 Store limits are 200,000,000 installed bytes
-and 80,000,000 bytes for the signed PKG. The installed measurement includes the
-provisioning profile and final signatures. This exception counts both native
+The combined Universal2 Store reference targets are 200,000,000 installed bytes
+and 80,000,000 bytes for the signed PKG. On 2026-11-06 the user clarified that
+these and the thin-package figures are guidelines, not hard release limits.
+[ADR 0014](0014-separate-ui-performance-budgets-from-infrastructure-latency.md)
+owns the current policy. The installed measurement includes the
+provisioning profile and final signatures. This profile counts both native
 runtimes without hiding dependencies or requiring a separate download. Direct
 downloads and each thin architecture retain their existing 100,000,000 installed
-and 50,000,000 download limits. The exception neither authorizes publication
-nor clears signing, platform or performance gates.
+and 50,000,000 download targets. The distinction neither authorizes publication
+nor clears signing, platform or outstanding measurement evidence.
 
 The native publication workflows prepare C++ candidates. The C# application remains an independently runnable comparison reference, not the implementation shipped by those workflows. Preparing or checking a candidate does not authorize a release, tag or Store upload.

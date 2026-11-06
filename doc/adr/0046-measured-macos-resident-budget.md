@@ -2,7 +2,12 @@
 
 Status: Accepted
 Date: 2026-10-10
-Amended: 2026-10-11
+Amended: 2026-10-11; numerical enforcement superseded on 2026-11-06
+
+Current policy: [ADR 0014](0014-separate-ui-performance-budgets-from-infrastructure-latency.md)
+treats the numbers below as profile-specific optimization guidelines, not
+universal hard release limits. Raw historical failures remain unchanged.
+Continuing leaks and invalid or absent measurements are not waived.
 
 ## Context
 

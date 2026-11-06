@@ -476,6 +476,11 @@ if(ANDROID)
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
         QT_ANDROID_EXTRA_LIBS "${android_openssl_dir}/libcrypto_3.so;${android_openssl_dir}/libssl_3.so"
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+    # These static libraries are internal to the application module.
+    target_link_options(podlord-native PRIVATE
+        "LINKER:--exclude-libs,libpodlord_sources.a"
+        "LINKER:--exclude-libs,libpodlord_sessions.a"
+        "LINKER:--exclude-libs,libpodlord_workspace.a")
 endif()
 if(APPLE AND NOT IOS)
     set_target_properties(podlord-native PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in")
@@ -1628,6 +1633,10 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    find_program(PODLORD_REPORT_NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+    add_test(NAME native.performance.report_policy
+        COMMAND "${PODLORD_REPORT_NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/tests/performance_report_test.mjs")
+    set_tests_properties(native.performance.report_policy PROPERTIES TIMEOUT 20)
     add_executable(audio-playback-test tests/audio_playback_test.cpp)
     if(APPLE)
         set_target_properties(audio-playback-test PROPERTIES MACOSX_BUNDLE TRUE

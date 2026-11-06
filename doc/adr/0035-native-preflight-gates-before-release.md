@@ -1,6 +1,6 @@
 # Why Must Native Preflight Gate CI And Release?
 
-Status: accepted implementation gate, 2026-10-05; CI reporting clarified 2026-10-09.
+Status: accepted implementation gate, 2026-10-05; size/performance enforcement amended 2026-11-06.
 
 ## Context
 
@@ -11,6 +11,17 @@ startup tests also assumed an offscreen plugin that production packages
 correctly omit.
 
 ## Decision
+
+The user clarified on 2026-11-06 that our own size and performance limits are
+guidelines, not identical hard release ceilings across OS/architecture targets.
+[ADR 0014](0014-separate-ui-performance-budgets-from-infrastructure-latency.md)
+owns that current policy and supersedes numerical gate wording below. Package
+checks retain exact measurements, targets and explicit warnings, but do not
+discard an otherwise valid artifact solely for exceeding those targets.
+Performance reports separate valid measurement completion from target attainment.
+Missing evidence and correctness, dependency, architecture, signing, security
+and coverage failures remain failures. Coverage remains 95% lines, 85% branches
+overall and 90% branches for new logic. Private-distribution deferrals are unchanged.
 
 On 2026-11-04 the user confirmed that C# remains the function and UI/UX
 comparison reference, while implementation and ordinary CI build the C++

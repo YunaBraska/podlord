@@ -614,8 +614,10 @@ adb shell am force-stop berlin.yuna.podlord
 node - "$out" <<'NODE'
 const fs=require('node:fs'),path=require('node:path');const dir=process.argv[2];
 const files=fs.readFileSync(path.join(dir,'installed-regular-file-bytes.txt'),'utf8').trim().split(/\r?\n/);
-const bytes=files.reduce((sum,line)=>{const n=Number(line.split(' ')[0]);if(!Number.isSafeInteger(n))throw Error('Invalid installed file measurement');return sum+n},0);
-const data={status:bytes<=100000000?'passed':'failed',scope:'Actual signed APK install, initial portrait/OS-rotated landscape capture, installed code and app-private regular-file logical sum on disposable Android 36 ARM64 emulator',installedRegularFileBytes:bytes,installedLimitBytes:100000000,files:files.length,productLaunched:true,device:'headless emulator; not physical hardware',systemImage:fs.readFileSync(path.join(dir,'system-image.txt'),'utf8').trim(),pageSizeBytes:Number(fs.readFileSync(path.join(dir,'page-size.txt'),'utf8').trim()),cleanup:'pending trap'};
+const bytes=files.reduce((sum,line)=>{if(!/^[0-9]+ .+$/.test(line))throw Error('Invalid installed file measurement');const n=Number(line.slice(0,line.indexOf(' ')));if(!Number.isSafeInteger(n)||n<0||!Number.isSafeInteger(sum+n))throw Error('Invalid installed file measurement');return sum+n},0);
+if(bytes<=0)throw Error('Invalid installed file measurement');
+const warnings=bytes>100000000?[`WARNING: package-size advisory: platform=android architecture=arm64-v8a metric=installed measured_bytes=${bytes} target_bytes=100000000`]:[];
+const data={status:'passed',sizePolicy:'advisory',sizeStatus:warnings.length?'advisory-exceeded':'within-target',warnings,scope:'Actual signed APK install, initial portrait/OS-rotated landscape capture, installed code and app-private regular-file logical sum on disposable Android 36 ARM64 emulator',installedRegularFileBytes:bytes,installedLimitBytes:100000000,files:files.length,productLaunched:true,device:'headless emulator; not physical hardware',systemImage:fs.readFileSync(path.join(dir,'system-image.txt'),'utf8').trim(),pageSizeBytes:Number(fs.readFileSync(path.join(dir,'page-size.txt'),'utf8').trim()),cleanup:'pending trap'};
 fs.writeFileSync(path.join(dir,'result.json'),JSON.stringify(data,null,2)+'\n');console.log(JSON.stringify(data));
-if(data.status!=='passed')process.exitCode=1;
+for(const warning of warnings)console.warn(warning);
 NODE

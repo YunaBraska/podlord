@@ -146,13 +146,21 @@ DEPENDENCIES=pass
 if ! /bin/sh "$ROOT/scripts/check-native-macos-dependencies.sh" "$APP" > "$WORK/evidence/runtime-dependencies.txt"; then DEPENDENCIES=fail; fi
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$WORK/evidence/podlord-native.zip"
 DOWNLOAD=$(/usr/bin/stat -f '%z' "$WORK/evidence/podlord-native.zip")
-INSTALLED=$(find "$APP" -type f -exec /usr/bin/stat -f '%z' '{}' + | awk '{total+=$1} END {printf "%.0f\n",total}')
+find "$APP" -type f -exec /usr/bin/stat -f '%z' '{}' + > "$WORK/installed-bytes.txt"
+INSTALLED=$(awk 'NF != 1 || $1 !~ /^[0-9]+$/ {bad=1} {total+=$1}
+    END {if (bad || NR == 0 || total > 9007199254740991) exit 1; printf "%.0f\n",total}' "$WORK/installed-bytes.txt") || {
+    printf 'Invalid installed package measurement.\n' >&2; exit 1;
+}
+for bytes in "$DOWNLOAD" "$INSTALLED"; do
+    case "$bytes" in ''|*[!0-9]*) printf 'Invalid package size measurement.\n' >&2; exit 1 ;; esac
+    [ "$bytes" -gt 0 ] || { printf 'Invalid package size measurement.\n' >&2; exit 1; }
+done
 {
     printf 'Platform: %s; build host: %s\n' "$ARCH" "$(uname -m)"
     /usr/bin/sw_vers
     printf 'Build: Release; BUILD_TESTING=OFF; PODLORD_COVERAGE=OFF\n'
     printf 'Dependency paths: %s\nDownload bytes (ZIP): %s\nInstalled bytes (regular-file logical sum): %s\n' "$DEPENDENCIES" "$DOWNLOAD" "$INSTALLED"
-    printf 'Limits: download 50000000 bytes; installed 100000000 bytes.\n'
+    printf 'Advisory targets: download 50000000 bytes; installed 100000000 bytes.\n'
     printf 'Signing: ad-hoc local verification, not Developer ID/notarization.\n'
     printf 'Mac App Store channel: %s; publishing requires distribution signing and provisioning.\n' "$STORE"
     printf 'Scope: packaging preflight only; clean-device startup, runtime-loaded plugins, licenses, functional parity and other targets remain separate gates.\n'
@@ -163,7 +171,13 @@ mkdir "$OUTPUT"
 mv "$WORK/evidence/podlord-native.app" "$WORK/evidence/podlord-native.zip" \
     "$WORK/evidence/libraries.txt" "$WORK/evidence/runtime-dependencies.txt" \
     "$WORK/evidence/package-evidence.txt" "$OUTPUT/"
-if [ "$DEPENDENCIES" != pass ] || [ "$DOWNLOAD" -gt 50000000 ] || [ "$INSTALLED" -gt 100000000 ]; then
+if [ "$DOWNLOAD" -gt 50000000 ]; then
+    printf 'WARNING: package-size advisory: platform=macos architecture=%s metric=download measured_bytes=%s target_bytes=50000000\n' "$ARCH" "$DOWNLOAD" | tee -a "$OUTPUT/package-evidence.txt" >&2
+fi
+if [ "$INSTALLED" -gt 100000000 ]; then
+    printf 'WARNING: package-size advisory: platform=macos architecture=%s metric=installed measured_bytes=%s target_bytes=100000000\n' "$ARCH" "$INSTALLED" | tee -a "$OUTPUT/package-evidence.txt" >&2
+fi
+if [ "$DEPENDENCIES" != pass ]; then
     printf 'Package gate failed; measurements retained in %s.\n' "$OUTPUT" >&2
     exit 1
 fi

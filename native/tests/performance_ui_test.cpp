@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <cstdio>
@@ -281,6 +282,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
                  {"boundary", "external local HTTP API; real Workspace, caches, QML and render loop"},
                  {"protocol", "5 warmups, 30 retained action-to-frame samples per class; 10 steady batches; RSS tolerance 5 MB; 60 seconds nonsync idle"}})) return false;
     bool accepted = true;
+    bool targetsMet = true;
     if (desktop) {
         QObject calibration;
         bool injected = false;
@@ -353,14 +355,15 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
             || name == "cached-session-tab" || name == "cached-inspector";
         const double limit = discreteAction ? 20 : 8;
         const bool passed = valid && samples[p95] <= limit && maxima[28] <= limit;
+        targetsMet = passed && targetsMet;
         return report({{"type", "frameWork"}, {"name", name}, {"samples", samples.size()},
                        {"distinctActions", tokens.size()}, {"p95Ms", valid ? samples[p95] : -1},
                        {"actionMaximumP95Ms", valid ? maxima[28] : -1}, {"maxMs", valid ? samples.last() : -1},
                        {"guiP95Ms", valid ? guiSamples[p95] : -1}, {"renderP95Ms", valid ? renderSamples[p95] : -1},
                        {"actionMaxima", actionMaxima},
                        {"componentPercentilesAreNotAdditive", true},
-                       {"p95LimitMs", limit}, {"passed", passed},
-                       {"method", "30 distinct post-action synchronization tokens; all frames through expected public state plus two synchronized drain frames; both frame and per-action maximum p95; GUI and render thread CPU excludes sleeping/GPU/display waiting"}}) && passed;
+                       {"p95LimitMs", limit}, {"passed", passed}, {"measurementValid", valid}, {"targetPolicy", "advisory"},
+                       {"method", "30 distinct post-action synchronization tokens; all frames through expected public state plus two synchronized drain frames; both frame and per-action maximum p95; GUI and render thread CPU excludes sleeping/GPU/display waiting"}}) && valid;
     };
     const auto benchmark = [&](const QString& name, double limit, const std::function<bool(int)>& action, const std::function<bool(int)>& visible) {
         if (!report({{"type", "interactionStart"}, {"name", name}})) return false;
@@ -381,13 +384,16 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
             ? -1 : 1000.0 * double(processCpuAfter - processCpuBefore) / CLOCKS_PER_SEC;
         std::sort(samples.begin(), samples.end());
         std::sort(actions.begin(), actions.end()); std::sort(afterAction.begin(), afterAction.end());
-        const bool passed = samples[28] <= limit && samples.last() <= 100;
+        constexpr double maximumDelayTarget = 100;
+        const bool passed = samples[28] <= limit && samples.last() <= maximumDelayTarget;
+        targetsMet = passed && targetsMet;
         return report({{"type", "interaction"}, {"name", name}, {"samples", samples.size()},
                        {"p50Ms", samples[14]}, {"p95Ms", samples[28]}, {"maxMs", samples.last()},
                        {"publicActionP95Ms", actions[28]}, {"postActionP95Ms", afterAction[28]},
                        {"diagnosticProcessCpuMs", diagnosticProcessCpuMs}, {"diagnosticProcessCpuIterations", 35},
                        {"diagnosticProcessCpuScope", "Whole process across 5 warmup and 30 retained complete actions; not native per-frame CPU"},
-                       {"p95LimitMs", limit}, {"passed", passed}}) && reportFrameWork(name, processing) && passed;
+                       {"p95LimitMs", limit}, {"maxLimitMs", maximumDelayTarget}, {"passed", passed},
+                       {"measurementValid", true}, {"targetPolicy", "advisory"}}) && reportFrameWork(name, processing);
     };
     accepted = benchmark("filter", 100, [&](int i) { return workspace.filter(i % 2 ? "load-1" : ""); },
         [&](int i) { return workspace.filterText() == (i % 2 ? "load-1" : "") && workspace.resourceCount() > 0; }) && accepted;
@@ -465,8 +471,9 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     const bool memoryPassed = maximum <= residentLimit && final <= baseline + warmGrowthLimit;
     if (!report({{"type", "memory"}, {"maxResidentBytes", double(maximum)}, {"residentLimitBytes", double(residentLimit)},
                  {"optimizationTargetBytes", double(residentOptimizationTarget)},
-                 {"warmGrowthBytes", double(final - baseline)}, {"warmGrowthLimitBytes", double(warmGrowthLimit)}, {"passed", memoryPassed}})) return false;
-    accepted = memoryPassed && accepted;
+                 {"warmGrowthBytes", double(final - baseline)}, {"warmGrowthLimitBytes", double(warmGrowthLimit)},
+                 {"passed", memoryPassed}, {"measurementValid", true}, {"targetPolicy", "advisory"}})) return false;
+    targetsMet = memoryPassed && targetsMet;
     if (!workspace.filter("") || !workspace.pauseLogs(true)) return false;
     QEventLoop idle;
     // Cached views can be ready while their explicit refresh is still queued.
@@ -544,17 +551,22 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     });
     timeout.start(120000); if (desktop) foregroundGuard.start(1000); idle.exec(); accumulate(); QObject::disconnect(sync);
     const double percent = idleMilliseconds > 0 ? cpuSeconds / (idleMilliseconds / 1000.0) * 100 : 100;
-    const bool idlePassed = idleEvidenceValid && !timedOut && !foregroundLost && idleMilliseconds >= 60000 && percent <= 2
+    const bool idleValid = idleEvidenceValid && !timedOut && !foregroundLost && idleMilliseconds >= 60000
+        && std::isfinite(percent) && percent >= 0
         && (!forcedRefresh || idleRequests > 0);
+    constexpr double idleCpuTarget = 2;
+    const bool idlePassed = idleValid && percent <= idleCpuTarget;
     if (!report({{"type", "idle"}, {"milliseconds", double(idleMilliseconds)}, {"cpuPercentOneCore", percent}, {"foregroundLost", foregroundLost},
                  {"activationObserved", activationObserved}, {"excludedRequests", idleRequests},
-                 {"wallMilliseconds", double(drainDeadline.elapsed() - idleBegan)}, {"passed", idlePassed}})) return false;
-    accepted = idlePassed && accepted;
+                 {"wallMilliseconds", double(drainDeadline.elapsed() - idleBegan)}, {"passed", idlePassed},
+                 {"measurementValid", idleValid}, {"timedOut", timedOut}, {"cpuTargetPercentOneCore", idleCpuTarget}, {"targetPolicy", "advisory"}})) return false;
+    accepted = idleValid && accepted;
+    targetsMet = idlePassed && targetsMet;
     if (qEnvironmentVariableIsSet("PODLORD_PERFORMANCE_INSPECT")) {
         if (!report({{"type", "phase"}, {"name", "diagnostic-hold"}, {"milliseconds", 30000}, {"scope", "After measured actions and idle; attach process diagnostics here"}})) return false;
         QTest::qWait(30000);
     }
-    return report({{"type", "result"}, {"passed", accepted},
+    return report({{"type", "result"}, {"passed", accepted}, {"targetsMet", targetsMet}, {"targetPolicy", "advisory"},
                    {"scope", backgroundMetal ? "background Metal diagnosis only; not foreground, startup or release evidence"
                         : desktop ? "foreground runtime and conservative per-frame thread CPU, not installed startup, license or signing clearance"
                                       : "headless runtime regression, not foreground frames, installed startup, license or signing clearance"}}) && accepted;

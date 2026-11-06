@@ -2,13 +2,32 @@
 
 ## Status
 
-Accepted on 2026-10-02. The interaction-specific frame gate was confirmed on 2026-11-02. Current implementation conformance is tracked in the test map.
+Accepted on 2026-10-02. The interaction-specific frame budget was confirmed on 2026-11-02. Numerical enforcement was superseded by the user's 2026-11-06 guideline decision below. Current implementation conformance is tracked in the test map.
 
 ## Context
 
 Cached desktop interactions should remain responsive even when Kubernetes, custom resources, or authentication are slow. Enforcing local UI targets as network deadlines would conceal rendering problems and interrupt legitimate infrastructure work.
 
 ## Decision
+
+On 2026-11-06, treat our self-imposed package size, startup, response-time,
+frame-CPU, RSS and idle-CPU figures as optimization guidelines rather than
+universal hard release gates. Different operating systems and architectures
+need their own recorded profiles. Keep measuring the existing targets and
+report target misses explicitly, without silently labeling them met. A numeric
+miss alone does not fail CI or prevent release. It is not necessary to enlarge
+a number merely to turn an otherwise valid report green.
+
+This does not waive correctness, lifecycle leaks, authentication/TLS safeguards,
+coverage, missing image/device evidence, actual platform requirements or invalid
+measurements. Sampling, frame-clock calibration, foreground validity, fixture
+identity and bounded hang watchdogs remain mandatory. The 60-second idle window
+still excludes active synchronization without hiding its observed requests.
+User-configured log/cache/YAML caps are product safeguards, not benchmark budgets.
+Historical failures retain their then-current verdict and raw evidence.
+
+The following earlier numerical decisions retain their values as reference
+targets; this amendment supersedes their hard-gate wording.
 
 Use PER-001 through PER-013 and the measurement profile in the [operational specification](../spec/podlord-operational-spec.md#confirmed-performance-acceptance-requirements) as the owning performance contract. The accepted numeric budgets provide falsifiable targets for cached interaction, frame work, startup, idle CPU, process memory, and release size rather than relying on subjective impressions of speed.
 

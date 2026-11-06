@@ -86,13 +86,13 @@ bool run(const QString& scenario) {
     else if (scenario == "bad_version") metadata["tag_name"] = "v0.2.0/../evil";
     else if (scenario == "overflow_version") metadata["tag_name"] = "v999999999999999999999.2.0";
     else if (scenario == "bad_release_url") metadata["html_url"] = "https://example.org/credentials";
-    else if (scenario.startsWith("asset_")) {
+    else if (scenario.startsWith("asset_") || scenario.startsWith("ui_")) {
         auto asset = metadata["assets"].toArray().first().toObject();
         if (scenario == "asset_url") asset["browser_download_url"] = "https://example.org/package.zip";
         if (scenario == "asset_state") asset["state"] = "new";
         if (scenario == "asset_size_zero") asset["size"] = 0;
         if (scenario == "asset_size_fraction") asset["size"] = 1.5;
-        if (scenario == "asset_size_large") asset["size"] = 50000001;
+        if (scenario == "asset_size_large" || scenario.startsWith("ui_")) asset["size"] = 50000001;
         metadata["assets"] = scenario == "asset_duplicate" ? QJsonArray{asset, asset} : QJsonArray{asset};
     }
     server.body = QJsonDocument(metadata).toJson(QJsonDocument::Compact);
@@ -155,6 +155,35 @@ bool run(const QString& scenario) {
         if (!podlord::test::clickVisible(window, "aboutReleasePage")) return false;
         return browser.urls.size() == 2 && server.requests.size() == 1
             && browser.urls.last() == QUrl(workspace.releaseUpdates()->state()["releaseUrl"].toString());
+    }
+    if (scenario == "asset_size_large") {
+        BrowserBoundary browser;
+        const QList<QJsonValue> sizes{50000001, 200000001, 0, -1, 1.5, QString("50000001"),
+            QJsonValue(QJsonValue::Undefined), QJsonValue(QJsonValue::Null), true};
+        for (qsizetype index = 0; index < sizes.size(); ++index) {
+            auto asset = metadata["assets"].toArray().first().toObject();
+            if (sizes[index].isUndefined()) asset.remove("size");
+            else asset["size"] = sizes[index];
+            auto response = metadata;
+            response["assets"] = QJsonArray{asset};
+            server.body = QJsonDocument(response).toJson(QJsonDocument::Compact);
+            podlord::Workspace workspace(temporary.filePath("asset-size-" + QString::number(index)), nullptr, clock, server.endpoint());
+            auto* updates = workspace.releaseUpdates();
+            if (!updates->checkNow() || !QTest::qWaitFor([&] { return !updates->state()["busy"].toBool(); }, 15000)) return false;
+            const auto state = updates->state();
+            const bool valid = index < 2;
+            if (state["available"].toBool() != valid || state["error"].toString().isEmpty() != valid
+                || state["downloadUrl"].toString() != (valid ? asset["browser_download_url"].toString() : QString{})) {
+                std::fprintf(stderr, "Workspace release asset size case %d: available=%d error=%s\n",
+                    static_cast<int>(index), state["available"].toBool(), qPrintable(state["error"].toString()));
+                return false;
+            }
+            if (server.requests.size() != index + 1 || !browser.urls.isEmpty()) return false;
+            const auto headers = server.requests.last().toLower();
+            if (headers.contains("authorization:") || headers.contains("cookie:")
+                || !headers.contains("x-github-api-version: 2026-03-10")) return false;
+        }
+        return true;
     }
     const auto endpoint = scenario == "bad_endpoint" ? QUrl("https://example.org/latest") : server.endpoint();
     podlord::ReleaseUpdates updates(profile, nullptr, clock, endpoint);

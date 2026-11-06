@@ -19,7 +19,11 @@ for ARCH in arm64 x86_64; do
     summary=$(/usr/bin/zipinfo -t "$ARCHIVE")
     bytes=$(printf '%s\n' "$summary" | awk '{print $3}')
     case "$bytes" in ''|*[!0-9]*) printf 'Invalid archive size metadata.\n' >&2; exit 1 ;; esac
-    [ "$bytes" -le 100000000 ] || { printf 'Input exceeds the existing thin-app installed-size limit.\n' >&2; exit 1; }
+    [ "$bytes" -gt 0 ] || { printf 'Invalid archive size metadata.\n' >&2; exit 1; }
+    printf 'Thin input installed bytes: %s; advisory target: 100000000; architecture: %s; archive: %s\n' "$bytes" "$ARCH" "$ARCHIVE"
+    if [ "$bytes" -gt 100000000 ]; then
+        printf 'WARNING: package-size advisory: platform=macos architecture=%s metric=installed measured_bytes=%s target_bytes=100000000\n' "$ARCH" "$bytes" >&2
+    fi
     /usr/bin/zipinfo -1 "$ARCHIVE" > "$RUN/entries"
     if /usr/bin/grep -E '(^/|(^|/)\.\.(/|$))' "$RUN/entries" >/dev/null; then
         printf 'Unsafe archive entry.\n' >&2; exit 1

@@ -10,6 +10,43 @@ const root = path.resolve(__dirname, '..');
 const pwsh = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.Major'], {encoding: 'utf8', timeout: 5000});
 const missingPowerShell = pwsh.error?.code === 'ENOENT';
 
+for (const [scenario, bytes, valid] of [['over installed target', 100000001, true], ['empty payload', 0, false]]) {
+    test(`Windows public package report: ${scenario}`, {skip: missingPowerShell ? 'PowerShell is not installed on this host' : false}, t => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'podlord-windows-size-'));
+        t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+        const source = fs.readFileSync(script, 'utf8');
+        const declaration = source.slice(source.indexOf('$result = [ordered]@{'), source.indexOf('\n$archiveCreated ='));
+        const phase = source.slice(source.indexOf('    $result.installedBytes ='), source.indexOf('    $extracted = Join-Path'));
+        assert.ok(declaration && phase);
+        const payload = path.join(directory, 'package'); fs.mkdirSync(payload);
+        fs.writeFileSync(path.join(payload, 'payload.bin'), ''); fs.truncateSync(path.join(payload, 'payload.bin'), bytes);
+        const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', `
+Set-StrictMode -Version Latest; $ErrorActionPreference = 'Stop'
+$PackageDirectory = $env:TEST_PACKAGE; $ArchivePath = $env:TEST_ARCHIVE; $EvidenceDirectory = $env:TEST_EVIDENCE
+$crtRoot = ''; $sslRoot = ''; $d3dCompiler = ''
+${declaration}
+$manifest = @(Get-ChildItem -LiteralPath $PackageDirectory -File | ForEach-Object { [pscustomobject]@{ bytes = $_.Length } })
+${phase}
+if ($result.errors.Count) { throw 'Size advisories were recorded as package failures.' }
+Write-Output ('RESULT_JSON=' + ($result | ConvertTo-Json -Depth 8 -Compress))
+`], {encoding: 'utf8', timeout: 15000, env: {...process.env, TEST_PACKAGE: payload,
+            TEST_ARCHIVE: path.join(directory, 'package.zip'), TEST_EVIDENCE: directory}});
+        assert.ifError(result.error);
+        assert.equal(result.status === 0, valid, result.stdout + result.stderr);
+        if (valid) {
+            const data = JSON.parse(result.stdout.match(/^RESULT_JSON=(.+)$/m)[1]);
+            assert.equal(data.installedBytes, bytes);
+            assert.equal(data.installedTargetBytes, 100000000);
+            assert.equal(data.downloadTargetBytes, 50000000);
+            assert.equal(data.sizePolicy, 'advisory');
+            assert.equal(data.sizeStatus, 'advisory-exceeded');
+            assert.equal(data.errors.length, 0);
+            assert.match(data.warnings[0], /metric=installed measured_bytes=100000001 target_bytes=100000000/);
+            assert.ok(fs.statSync(path.join(directory, 'package.zip')).size > 0);
+        } else assert.match(result.stdout + result.stderr, /runtime package is empty/);
+    });
+}
+
 // Parse the real script on any host with PowerShell. This is not Windows execution proof.
 test('PowerShell parser accepts the actual Windows package checker', {skip: missingPowerShell ? 'PowerShell is not installed on this host' : false}, () => {
     assert.ifError(pwsh.error);

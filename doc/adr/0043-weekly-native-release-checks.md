@@ -32,8 +32,11 @@ packages are incompatible and never offered. These native asset names must
 exist before publishing an update; the current private package's filename alone
 does not constitute a compatible published asset.
 
-Metadata is limited to 1 MiB; a compatible uploaded package must satisfy the
-existing 50 MB distribution budget. The metadata GET has a 10-second deadline,
+Metadata is limited to 1 MiB. The 50 MB distribution figure is an advisory
+package target under the user's 2026-11-06 decision in
+[ADR 0014](0014-separate-ui-performance-budgets-from-infrastructure-latency.md),
+not a reason to hide an otherwise compatible native release link. Asset sizes
+must remain valid; the metadata-body security cap is unchanged. The metadata GET has a 10-second deadline,
 unlike Kubernetes requests, which follow their independent completion policy.
 Errors and HTTP rate limits never cause immediate retries. No response body,
 credentials, kubeconfig, resource data or machine identifier is sent to or

@@ -233,9 +233,9 @@ bool ReleaseUpdates::complete(const QString& failure) {
                 const auto asset = value.toObject();
                 if (compatibleAssetName().isEmpty() || asset["name"].toString() != compatibleAssetName()) continue;
                 const double size = asset["size"].toDouble(-1);
-                if (found || asset["state"] != "uploaded" || size <= 0 || size > 50000000 || std::floor(size) != size
+                if (found || asset["state"] != "uploaded" || size <= 0 || !std::isfinite(size) || std::floor(size) != size
                     || asset["browser_download_url"].toString() != downloadUrl(tag)) {
-                    error = "The compatible native release asset is invalid or exceeds the 50 MB package limit. Retry explicitly."; break;
+                    error = "The compatible native release asset is invalid. Retry explicitly."; break;
                 }
                 found = true; next.downloadUrl = downloadUrl(tag);
             }

@@ -55,7 +55,7 @@ trap 'exit 143' TERM
 if [ "$MODE" = --background-metal-diagnostic ]; then
     printf '%s\n' 'Background Metal diagnostic only. Not release evidence. Audio muted in a disposable profile.' > "$OUT/diagnostic-only.txt"
 fi
-"$NODE" --test "$ROOT/native/tests/performance_fixture_test.mjs" > "$OUT/fixture-checks.log" 2>&1
+"$NODE" --test "$ROOT/native/tests/performance_fixture_test.mjs" "$ROOT/native/tests/performance_report_test.mjs" > "$OUT/fixture-checks.log" 2>&1
 "$NODE" "$ROOT/native/tests/performance_api.mjs" "$RUN" "${PODLORD_PERFORMANCE_REPLAY_FIXTURE:-}" > "$OUT/api.log" 2>&1 &
 SERVER=$!
 attempt=0
@@ -122,15 +122,10 @@ LAUNCHER=
 ' "$OUT/fixture.json" "$OUT/measurements.jsonl" || STATUS=1
 # LaunchServices can return success even when the application reports failure.
 if [ "$STATUS" -eq 0 ]; then
-    "$NODE" -e '
-        const fs = require("node:fs");
-        const records = fs.readFileSync(process.argv[1], "utf8").trim().split("\n").map(JSON.parse);
-        const diagnostic = process.argv[2] === "--background-metal-diagnostic";
-        if (records.some(r => r.diagnosticOnly !== diagnostic || (diagnostic && r.renderingBoundary !== "background-cocoa-metal-diagnostic"))) process.exit(1);
-        if (!records.some(r => r.type === "result" && r.passed === true) || records.some(r => r.type === "failure")) process.exit(1);
-    ' "$OUT/measurements.jsonl" "$MODE" || STATUS=$?
+    "$NODE" "$ROOT/native/tests/performance_report.mjs" "$OUT/measurements.jsonl" "$MODE" > "$OUT/assessment.json" || STATUS=$?
 fi
 printf '%s\n' "$STATUS" > "$OUT/exit-status.txt"
 cat "$OUT/measurements.jsonl"
+[ ! -f "$OUT/assessment.json" ] || cat "$OUT/assessment.json"
 [ "$STATUS" -eq 0 ] || cat "$OUT/ui.log" >&2
 exit "$STATUS"

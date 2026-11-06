@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+Numerical enforcement amended on 2026-11-06: [ADR 0014](0014-separate-ui-performance-budgets-from-infrastructure-latency.md)
+retains these reference values as guidelines. A measured target miss is advisory;
+missing readiness, invalid measurements and owned-process cleanup still fail.
+
 ## Context
 
 The installed macOS bundle reached interactive Settings in 1.31 seconds on its first measured launch and 0.59-0.62 seconds on subsequent launches. The single 1.0-second maximum conflated first-use platform loading with repeat startup. The first-launch target was explicitly revised without relaxing the repeat target.

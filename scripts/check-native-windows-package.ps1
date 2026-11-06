@@ -82,7 +82,8 @@ New-Item -ItemType Directory -Path $EvidenceDirectory | Out-Null
 $work = Join-Path $EvidenceDirectory 'work'
 New-Item -ItemType Directory -Path $work, $PackageDirectory | Out-Null
 $result = [ordered]@{ passed = $false; architecture = 'x64'; package = $PackageDirectory; archive = $ArchivePath
-    crtSource = $crtRoot; opensslSource = $sslRoot; osD3DCompiler = $d3dCompiler; probes = @(); errors = @() }
+    crtSource = $crtRoot; opensslSource = $sslRoot; osD3DCompiler = $d3dCompiler; probes = @(); errors = @()
+    sizePolicy = 'advisory'; sizeStatus = 'unmeasured'; installedTargetBytes = 100000000; downloadTargetBytes = 50000000; warnings = @() }
 $archiveCreated = $false
 
 function Invoke-PackageProbe([string]$Style, [string]$Renderer) {
@@ -287,12 +288,19 @@ try {
     $result.installedBytes = [long](($manifest | Measure-Object -Property bytes -Sum).Sum)
     $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'files.json') -Encoding utf8
     if ($result.installedBytes -le 0) { throw 'The runtime package is empty.' }
-    if ($result.installedBytes -gt 100000000) { $result.errors += "Installed runtime exceeds the unchanged 100000000-byte limit: $($result.installedBytes)" }
+    if ($result.installedBytes -gt $result.installedTargetBytes) {
+        $result.warnings += "WARNING: package-size advisory: platform=windows architecture=x64 metric=installed measured_bytes=$($result.installedBytes) target_bytes=$($result.installedTargetBytes)"
+        Write-Warning -WarningAction Continue -Message $result.warnings[-1]
+    }
     [IO.Compression.ZipFile]::CreateFromDirectory($PackageDirectory, $ArchivePath, [IO.Compression.CompressionLevel]::Optimal, $false)
     $archiveCreated = $true
     $result.zipBytes = (Get-Item -LiteralPath $ArchivePath).Length
     if ($result.zipBytes -le 0) { throw 'The archive is empty.' }
-    if ($result.zipBytes -gt 50000000) { $result.errors += "Archive exceeds the unchanged 50000000-byte limit: $($result.zipBytes)" }
+    if ($result.zipBytes -gt $result.downloadTargetBytes) {
+        $result.warnings += "WARNING: package-size advisory: platform=windows architecture=x64 metric=download measured_bytes=$($result.zipBytes) target_bytes=$($result.downloadTargetBytes)"
+        Write-Warning -WarningAction Continue -Message $result.warnings[-1]
+    }
+    $result.sizeStatus = $(if ($result.warnings.Count) { 'advisory-exceeded' } else { 'within-target' })
     $extracted = Join-Path $work 'extracted'
     [IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $extracted)
     if (@(Get-ChildItem -LiteralPath $extracted -Recurse -File -Force).Count -ne $manifest.Count) { throw 'Archive extraction changed the payload count.' }

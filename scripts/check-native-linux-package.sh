@@ -53,19 +53,29 @@ find "$OUTPUT/podlord" -type f -exec sh -c '
         fi
     done
 ' sh {} + > "$OUTPUT/elf-dependencies.txt"
-INSTALLED=$(find "$OUTPUT/podlord" -type f -printf '%s\n' | awk '{total+=$1} END {printf "%.0f\n", total}')
+find "$OUTPUT/podlord" -type f -printf '%s\n' > "$WORK/installed-bytes.txt"
+INSTALLED=$(awk 'NF != 1 || $1 !~ /^[0-9]+$/ {bad=1} {total+=$1}
+    END {if (bad || NR == 0 || total > 9007199254740991) exit 1; printf "%.0f\n",total}' "$WORK/installed-bytes.txt") || {
+    printf 'Invalid installed package measurement.\n' >&2; exit 1;
+}
 ARCHIVE="podlord-native-linux-$ARCH.tar.gz"
 tar -czf "$OUTPUT/$ARCHIVE" -C "$OUTPUT" podlord
 DOWNLOAD=$(stat -c '%s' "$OUTPUT/$ARCHIVE")
+for bytes in "$DOWNLOAD" "$INSTALLED"; do
+    case "$bytes" in ''|*[!0-9]*) printf 'Invalid package size measurement.\n' >&2; exit 1 ;; esac
+    [ "$bytes" -gt 0 ] || { printf 'Invalid package size measurement.\n' >&2; exit 1; }
+done
 {
     printf 'Platform: Linux %s\nInstalled bytes: %s\nDownload bytes: %s\n' "$ARCH" "$INSTALLED" "$DOWNLOAD"
-    printf 'Limits: installed 100000000 bytes; download 50000000 bytes.\n'
+    printf 'Advisory targets: installed 100000000 bytes; download 50000000 bytes.\n'
     printf 'Build baseline: '; ldd --version | head -n 1
     printf 'Scope: package construction and size, not clean-runtime execution or full release approval.\n'
     (cd "$OUTPUT" && sha256sum "$ARCHIVE")
 } > "$OUTPUT/package-evidence.txt"
 cat "$OUTPUT/package-evidence.txt"
-if [ "$INSTALLED" -gt 100000000 ] || [ "$DOWNLOAD" -gt 50000000 ]; then
-    printf 'Package size gate failed. Evidence retained at %s\n' "$OUTPUT" >&2
-    exit 1
+if [ "$INSTALLED" -gt 100000000 ]; then
+    printf 'WARNING: package-size advisory: platform=linux architecture=%s metric=installed measured_bytes=%s target_bytes=100000000\n' "$ARCH" "$INSTALLED" | tee -a "$OUTPUT/package-evidence.txt" >&2
+fi
+if [ "$DOWNLOAD" -gt 50000000 ]; then
+    printf 'WARNING: package-size advisory: platform=linux architecture=%s metric=download measured_bytes=%s target_bytes=50000000\n' "$ARCH" "$DOWNLOAD" | tee -a "$OUTPUT/package-evidence.txt" >&2
 fi
