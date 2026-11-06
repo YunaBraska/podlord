@@ -1663,8 +1663,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     if(APPLE)
         add_test(NAME native.audio.device_mono_repeat COMMAND audio-playback-test repeat ${audio_mono})
         add_test(NAME native.audio.device_stereo_repeat COMMAND audio-playback-test repeat ${audio_stereo})
+        add_test(NAME native.audio.device_modern_repeat COMMAND audio-playback-test repeat qrc:/podlord/audio/modern/soft-warning.mp3)
         add_test(NAME native.audio.device_source_switch COMMAND audio-playback-test switch ${audio_mono} ${audio_stereo})
-        set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch
+        set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch native.audio.device_modern_repeat
             PROPERTIES TIMEOUT 30 RESOURCE_LOCK native_audio_output LABELS audio_device
             ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
     endif()
