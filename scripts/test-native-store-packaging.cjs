@@ -350,6 +350,39 @@ function ciJob(workflow, name) {
     return workflow.split(heading)[1].split(/\n  [a-z][a-z0-9-]*:\n/)[0];
 }
 
+test('macOS failure diagnostics retain only new owned crash reports', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-macos-crash-evidence-'));
+    t.after(() => fs.rm(directory, {recursive: true, force: true}));
+    const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
+    const step = ciJob(workflow, 'macos').split('      - name: Native tests, benchmarks and coverage report\n')[1]
+        .split('\n      - name:')[0];
+    const marker = 'reports="$HOME/Library/Logs/DiagnosticReports"';
+    assert.ok(step.includes(marker), 'The failing run must retain its original owned crash reports');
+    const script = step.slice(step.indexOf(marker)).split('\n          fi')[0]
+        .split('\n').map(line => line.replace(/^ {12}/, '')).join('\n');
+    const reports = path.join(directory, 'home/Library/Logs/DiagnosticReports');
+    const output = path.join(directory, 'run');
+    await fs.mkdir(reports, {recursive: true});
+    await fs.mkdir(output);
+    const stamp = path.join(output, 'native-tests.started');
+    await fs.writeFile(stamp, ''); await fs.utimes(stamp, 2, 2);
+    const expected = ['workspace_ui_test-new.ips', 'workspace_ui_test-new.crash', 'alert_ui_test-new.ips'];
+    for (const name of [...expected, 'workspace_ui_test-old.ips', 'Family-new.ips', 'workspace_ui_test-new.txt']) {
+        const file = path.join(reports, name);
+        await fs.writeFile(file, name);
+        await fs.utimes(file, name.includes('-old.') ? 1 : 3, name.includes('-old.') ? 1 : 3);
+    }
+    await fs.symlink(path.join(reports, 'Family-new.ips'), path.join(reports, 'workspace_ui_test-link.ips'));
+    const result = spawnSync('/bin/sh', ['-eu', '-c', script], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: path.join(directory, 'home'), RUNNER_TEMP: output}});
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const copied = path.join(output, 'native-crash-reports');
+    assert.deepEqual((await fs.readdir(copied)).sort(), expected.sort());
+    for (const name of expected) assert.equal(await fs.readFile(path.join(copied, name), 'utf8'), name);
+    assert.equal((await fs.readdir(reports)).length, 7, 'Original reports must remain untouched');
+});
+
 test('macOS package matrix is independent of the complete native test job', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
     const native = ciJob(workflow, 'macos');

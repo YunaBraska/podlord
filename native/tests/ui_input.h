@@ -195,7 +195,12 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target, bool pointe
     };
     QString firstAncestors;
     for (int attempt=0; attempt<48; ++attempt) {
-        if (!retained) return false;
+        if (!QTest::qWaitFor([&] {
+            if (!retained) return true;
+            for (auto* parent=target->parentItem(); parent; parent=parent->parentItem())
+                if (parent->property("moving").toBool()) return false;
+            return true;
+        },2000) || !retained) return false;
         const auto bounds=target->mapRectToScene(QRectF(QPointF{}, target->size()));
         auto* clipped = clippedBy();
         if (!clipped) {
@@ -240,10 +245,12 @@ inline bool scrollIntoView(QQuickWindow* window, QQuickItem* target, bool pointe
         QWheelEvent wheel(point,window->mapToGlobal(point.toPoint()),{},delta,Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
         wheel.setTimestamp(static_cast<ulong>(clock.msecsSinceReference()+clock.elapsed()));
         if (firstAncestors.isEmpty()) firstAncestors = ancestorGeometry();
+        frame.clear();
         QCoreApplication::sendEvent(window,&wheel);
         wheeled=true; wheelPosition=point;
         wheelDelta=delta;
-        QTest::qWait(20);
+        window->update();
+        if (!QTest::qWaitFor([&] { return !retained || !frame.isEmpty(); },2000) || !retained) return false;
     }
     std::fprintf(stderr,"Exhausted pointer reveal %s: lastWheel=(%g,%g) delta=(%d,%d)\nFirst ancestors:\n%s\nFinal ancestors:\n%s\n",
         retained ? qPrintable(retained->objectName()) : "<destroyed>",wheelPosition.x(),wheelPosition.y(),wheelDelta.x(),wheelDelta.y(),

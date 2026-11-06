@@ -173,6 +173,7 @@ jobs:
         id: tests
         run: |
           status=0
+          touch "$RUNNER_TEMP/native-tests.started"
           /bin/sh scripts/test-native.sh > "$RUNNER_TEMP/native-tests.log" 2>&1 || status=$?
           tail -n 45 "$RUNNER_TEMP/native-tests.log"
           if [ "$status" -ne 0 ]; then
@@ -188,6 +189,15 @@ jobs:
                 --tests-regex "^($failed)$" --parallel 1 --output-on-failure > "$RUNNER_TEMP/native-failure-reproduction.log" 2>&1 || :
               tail -n 45 "$RUNNER_TEMP/native-failure-reproduction.log"
             fi
+            reports="$HOME/Library/Logs/DiagnosticReports"
+            if [ -d "$reports" ]; then
+              mkdir -p "$RUNNER_TEMP/native-crash-reports"
+              find "$reports" -maxdepth 1 -type f -newer "$RUNNER_TEMP/native-tests.started" \
+                \( -name 'workspace_ui_test-*.ips' -o -name 'workspace_ui_test-*.crash' \
+                   -o -name 'alert_ui_test-*.ips' -o -name 'alert_ui_test-*.crash' \) \
+                -exec sh -c 'destination=$1; shift; cp "$@" "$destination"' sh "$RUNNER_TEMP/native-crash-reports" {} + \
+                || printf 'Warning: owned crash-report collection was incomplete.\n' >&2
+            fi
           fi
           exit "$status"
       - name: Retain native preflight evidence, not release binaries
@@ -200,6 +210,7 @@ jobs:
           path: |
             ${{ runner.temp }}/native-tests.log
             ${{ runner.temp }}/native-failure-reproduction.log
+            ${{ runner.temp }}/native-crash-reports
             ${{ runner.temp }}/native-radar-failures
             ${{ runner.temp }}/native-toolchain.log
             ${{ runner.temp }}/native-toolchain/build-inputs.txt

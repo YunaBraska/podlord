@@ -703,7 +703,10 @@ bool execute(const QString& requestedScenario) {
             && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty() && server.requests.isEmpty() && saveShellFrame(window,scenario);
     }
     if (!scenario.startsWith("map_") && !click(window,item(window,"resourcesWorkspaceButton"))) return false;
-    if (!waitFor([&] { return item(window, "importButton")->isEnabled(); })) return false;
+    if (!waitFor([&] {
+        auto* control = item(window, "importButton");
+        return control && control->isEnabled();
+    })) return false;
     if (scenario == "accessibility_empty") return accessibleName(window, "Workspace actions")
         && accessibleName(window, "Kubeconfig file or folder path") && server.requests.isEmpty();
     if (scenario == "empty_brand") {

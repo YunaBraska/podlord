@@ -22,9 +22,23 @@
 #include <QJsonDocument>
 #include <QLockFile>
 #include <algorithm>
+#include <optional>
 #include <cstdio>
 
 namespace {
+class WheelMotion final : public QObject {
+public:
+    QPointer<QQuickItem> viewport;
+    bool overlapped = false;
+    explicit WheelMotion(QQuickItem* item) : viewport(item) {}
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Wheel && viewport
+            && !static_cast<QWheelEvent*>(event)->angleDelta().isNull()
+            && viewport->property("moving").toBool()) overlapped = true;
+        return false;
+    }
+};
+
 bool waitFor(const std::function<bool()>& ready, int timeout=9000) {
     QElapsedTimer timer; timer.start();
     while (!ready() && timer.elapsed() < timeout) QTest::qWait(10);
@@ -70,7 +84,10 @@ bool click(QQuickWindow* window, const QString& name) {
     if (name=="radarWorkspaceButton") {
         auto* target=item(window,name);
         if (target && !target->isVisible()) {
-            if (!click(window,"toggleSidebar") || !waitFor([&] { return target->isVisible(); })) return false;
+            if (!click(window,"toggleSidebar") || !waitFor([&] {
+                auto* current=item(window,name);
+                return current && current->isVisible();
+            })) return false;
         }
     }
     if (name=="alertsWorkspaceButton") {
@@ -80,14 +97,15 @@ bool click(QQuickWindow* window, const QString& name) {
     if (!waitFor([&] { auto* target=item(window,name); return target && target->isVisible() && target->isEnabled() && target->width()>0 && target->height()>0; })) {
         std::fprintf(stderr,"Unavailable click target: %s\n",qPrintable(name)); return false;
     }
-    auto* target = item(window, name);
+    const QPointer<QQuickItem> target(item(window, name));
     if (!target || !target->isVisible() || !target->isEnabled() || target->width()<=0 || target->height()<=0) { std::fprintf(stderr, "Unavailable click target: %s\n", qPrintable(name)); return false; }
     if (!podlord::test::scrollIntoView(window,target)) return false;
     if (!waitFor([&] {
+        if (!target) return true;
         for (auto* parent=target->parentItem(); parent; parent=parent->parentItem())
             if (parent->property("moving").toBool()) return false;
         return true;
-    })) return false;
+    }) || !target) return false;
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width()/2, target->height()/2)).toPoint());
     return true;
 }
@@ -323,7 +341,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         const auto baseline = rules();
         if (selected() != baseline.first().toMap()["name"].toString()) return false;
         if (scenario.startsWith("reference_controls_")) {
-            const auto mode = scenario.mid(QString("reference_controls_").size());
+            const auto requested = scenario.mid(QString("reference_controls_").size());
+            const auto mode = requested == "narrow_motion" ? QStringLiteral("narrow") : requested;
+            std::optional<WheelMotion> motion;
             const auto choose = [&](const QString& control, int index) {
                 if (!click(window, control)) return false;
                 QTest::keyClick(window, Qt::Key_Home);
@@ -383,7 +403,28 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     || item(window, "alertColorSeconds")->isVisible() || item(window, "alertAnimationSeconds")->isVisible()) return false;
                 expectedMode = "once";
             } else return false;
+            if (requested == "narrow_motion") {
+                auto* save = item(window, "saveAlert");
+                QPointer<QQuickItem> viewport;
+                for (auto* parent = save ? save->parentItem() : nullptr; parent; parent = parent->parentItem()) {
+                    if (parent->property("moving").isValid()) { viewport = parent; break; }
+                }
+                if (!viewport) return false;
+                const auto area = viewport->mapRectToScene(viewport->boundingRect());
+                const QPointF point(area.left() + 8, area.center().y());
+                QWheelEvent wheel(point, window->mapToGlobal(point.toPoint()), {},
+                    QPoint(0, viewport->property("contentY").toDouble() > 0 ? 120 : -120),
+                    Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                QCoreApplication::sendEvent(window, &wheel);
+                if (!QTest::qWaitFor([&] { return viewport && viewport->property("moving").toBool(); }, 2000)) return false;
+                motion.emplace(viewport);
+                window->installEventFilter(&*motion);
+            }
             if (!click(window, "saveAlert") || !settle() || rules().size() != baseline.size() + 1) return false;
+            if (motion && motion->overlapped) {
+                std::fprintf(stderr, "Pointer reveal sent another wheel before scrolling settled.\n");
+                return false;
+            }
             const auto rule = rules().last().toMap();
             const auto criterion = rule["groups"].toList().first().toList().first().toMap();
             if (rule["color"] != expectedColor || rule["colorMode"] != expectedMode || criterion["field"] != expectedField

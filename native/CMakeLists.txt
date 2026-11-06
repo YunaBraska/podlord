@@ -134,7 +134,7 @@ if(BUILD_TESTING)
             set_tests_properties(native.ui.settings_inline_${scenario}_${style} PROPERTIES TIMEOUT 45
                 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
-        foreach(scenario boolean boolean_invalid color_status color_custom color_cancel hold once narrow locked)
+        foreach(scenario boolean boolean_invalid color_status color_custom color_cancel hold once narrow locked narrow_motion)
             add_test(NAME native.alert_ui.reference_controls_${scenario}_${style} COMMAND alert_ui_test reference_controls_${scenario})
             set_tests_properties(native.alert_ui.reference_controls_${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
