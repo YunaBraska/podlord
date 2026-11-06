@@ -8077,3 +8077,25 @@ Header/cell menus, namespace picker and paired color/palette images still requir
 an unlocked desktop. Google registration remains paused and live cloud-provider
 evidence remains open. No full visual-parity or release clearance is inferred
 from an isolated retry, a historical unexplained crash or these completed code gates.
+
+### Evidence-only CI pushes and unlocked popup retry, 2026-11-06
+
+The user approved excluding only pushes whose changed paths are entirely
+`doc/ROADMAP.md` and/or this test map. The root CI push filter now names those
+two exact files. Any other changed path still triggers the complete workflow.
+Pull-request, manual and reusable entrypoints remain unfiltered. The decision
+is recorded in ADR 0035. This is a build-trigger optimization, not a waiver of
+tests or evidence required to qualify changed production code.
+
+| Boundary | Result and remaining uncertainty |
+| --- | --- |
+| Trigger regression | The configuration regression fails before the filter exists and passes afterward. `R/evidence-only-ci-tests.log` records 90 passing Node checks, no failures and ten Windows-specific local skips. Actionlint passes. This is configuration-contract evidence, not a live GitHub event check or a rerun of the complete native suite. |
+| Implementation publication | `a334cbe` changes only the root workflow, its regression test and ADR 0035. It starts [CI 42235934259](https://github.com/YunaBraska/podlord/actions/runs/42235934259). The previously completed `c24d7fb` qualification remains the production-code boundary. This new workflow result is not yet known. |
+| Unlocked desktop retry | A new owned local Kubernetes fixture and isolated C#/C++ profiles were used while the desktop was unlocked. C++ Columns and Namespace dialogs were captured in `R/popup-retry-images/native-header.png` and `native-namespace.png`. Matching C# popup states were not reliably observed despite the reference rendering Resources, Settings and an Inspector. Reference attempt images are diagnostics, not paired popup proof. The cause remains unknown and is not attributed to locking or declared a reference product defect. |
+| Comparison boundary | No new paired header, cell, namespace or color/palette pass is claimed. The captured native header is from initial loading, not proof of identical settled resource sets. The preserved C# reference was not modified. No screenshots were synthesized or substituted for visible application states. |
+| Owned cleanup | Both task-launched apps were terminated only after validating their executable paths and isolated-profile ownership. The fixture exits 0 in `R/popup-retry-fixture.log`, removing its cluster and temporary profiles. The limited activity assertion expires without changing security settings. No test app is left open. |
+
+`R` remains the AWS roles evidence directory above. Google registration stays
+paused. The four paired popup comparisons and live cloud-provider evidence
+remain open. These results do not establish full visual parity or release
+readiness.
