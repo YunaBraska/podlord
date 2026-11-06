@@ -3784,13 +3784,15 @@ bool execute(const QString& requestedScenario) {
             return server.requests.size()==calls;
         }
         if (scenario.startsWith("radar_info_panel")) {
-            if (mapRadar) {
-                for (int frame=0;frame<2;++frame) {
-                    QSignalSpy rendered(window,&QQuickWindow::frameSwapped);
-                    window->requestUpdate();
-                    if (rendered.isEmpty() && !rendered.wait(1000)) return failed("expanded map frame ready");
-                }
-            }
+            if (mapRadar && !waitFor([&] {
+                const auto* host=item(window,"resourceMapHost");
+                if (!host || !host->isVisible()) return false;
+                const auto expected=host->mapRectToScene(QRectF(QPointF{},host->size())).adjusted(4,4,-4,-4);
+                const auto actual=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
+                return qAbs(actual.x()-expected.x())<=1 && qAbs(actual.y()-expected.y())<=1
+                    && qAbs(actual.width()-expected.width())<=1 && qAbs(actual.height()-expected.height())<=1
+                    && !window->grabWindow().isNull();
+            })) return failed("expanded map renders at its full visible size");
             const auto initialViewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
             const auto first=radarPoint(radar,0);
             if (!first) return failed("first resource hover target");
