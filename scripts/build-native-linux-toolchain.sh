@@ -54,7 +54,7 @@ cd "$ROOT"
 rm -r "$ROOT/ffmpeg-build" "$ROOT/ffmpeg"
 
 while read -r module checksum; do
-    fetch "$module" "$checksum" "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/$module-everywhere-src-6.11.2.tar.xz"
+    fetch "$module" "$checksum" "https://download.qt.io/archive/qt/6.11/6.11.3/submodules/$module-everywhere-src-6.11.3.tar.xz"
     mkdir "$ROOT/$module-build"
     cd "$ROOT/$module-build"
     CURRENT_LOG="$ROOT/logs/$module.log"
@@ -78,21 +78,21 @@ while read -r module checksum; do
     rm -r "${ROOT:?}/${module:?}-build" "${ROOT:?}/${module:?}"
     printf 'Installed Qt module: %s\n' "$module"
 done <<'EOF'
-qtbase 5b2e00eccaf5a4d8c14134ffa0ea8dfd0a35ae1ffc7f8d87fa4305a1ed23cf22
-qtshadertools 805046b8b7757665586890b375940047e874ae3ab00adb6d3f2b38fc6b200b1c
-qtdeclarative 215b7b70517e380123eabc6b92243f3c47b6f016a91d126057dbe53551c6b430
-qtsvg d594337feca84c26fb67fe87b85e6a5c12fda404b611d905f9d138210c311876
-qtwebsockets 2bfe25c383c37f7690e3c59b02c9907d2744cf8527b1f3f1fc2c785b2ff3c9a3
-qtwayland 8eb7615e39332a10f506e8dd70f02d5954bb5949ff54f6dcbf8bd6168222f9df
-qtmultimedia 967b5e02ec6b793cdb360622cd6e703132836af983208d678dae4b50f109cd9f
+qtbase 46de0710b594945a5d446ae44354daa386141c6903c53781b2ca547bc62f8f8f
+qtshadertools d86079425ec71eecbb05f4d20623b0a403a7d21a5cfa7efb9734ea3d538d801b
+qtdeclarative 6d6db328a02ae3bb0b1e6944aeef8dfe44cd6b55ab59b1708bbf0400f5759cb5
+qtsvg 9bdf6fa4b5a2d91c3eaa2edd12263fdff0ae19d0ac25d3c99946cd4189a07123
+qtwebsockets 19b39acc37ec67a344fe0f080201c2c64d04d2a3d0c7dfa84955033f1016983b
+qtwayland 7f6185eb6e7d75202c42dfaf18dc54ae96f2d9a7a265358d061a6f85366f6c97
+qtmultimedia 3d172de9bdd137686c3871762a4adff988a1ec0faec15df0c4560cfc417288e6
 EOF
-test "$("$ROOT/qt/bin/qmake" -query QT_VERSION)" = 6.11.2
+test "$("$ROOT/qt/bin/qmake" -query QT_VERSION)" = 6.11.3
 if readelf -d "$ROOT/qt/lib/libQt6Core.so.6" | grep 'NEEDED.*libicu'; then
     printf 'Unexpected ICU runtime dependency.\n' >&2
     exit 1
 fi
 {
-    printf 'Qt: 6.11.2, shared, ICU and unused Widgets disabled, no source patches\n'
+    printf 'Qt: 6.11.3, shared, ICU and unused Widgets disabled, no source patches\n'
     printf 'FFmpeg: 7.1.5, shared, GPL/nonfree/autodetected external components disabled\n'
     printf 'yaml-cpp: 0.9.0, static\nArchitecture: '; uname -m
     printf 'Build ABI: '; ldd --version | head -n 1

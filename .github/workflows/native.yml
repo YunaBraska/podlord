@@ -70,8 +70,8 @@ jobs:
           # aqtinstall 3.3.0 assumes the pre-6.11 Qt archive layout.
           python -m pip install git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
           if ($LASTEXITCODE -ne 0) { throw 'Could not install the Qt installer.' }
-          aqt install-qt windows desktop 6.11.2 win64_msvc2022_64 -m qtmultimedia qtwebsockets -O "$env:RUNNER_TEMP\qt"
-          if ($LASTEXITCODE -ne 0) { throw 'Could not install Qt 6.11.2 for MSVC 2022.' }
+          aqt install-qt windows desktop 6.11.3 win64_msvc2022_64 -m qtmultimedia qtwebsockets -O "$env:RUNNER_TEMP\qt"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Qt 6.11.3 for MSVC 2022.' }
           $archive = Join-Path $env:RUNNER_TEMP 'yaml-cpp-0.9.0.tar.gz'
           Invoke-WebRequest 'https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz' -OutFile $archive
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a') {
@@ -92,7 +92,7 @@ jobs:
         env:
           PODLORD_TEST_MACHINE_ROOT: '1'
         run: |
-          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.3\msvc2022_64'
           $yaml = Join-Path $env:RUNNER_TEMP 'yaml-cpp-install'
           $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
           cmake -S native -B $build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH="$qt;$yaml" -DBUILD_TESTING=ON -DPODLORD_COVERAGE=OFF
@@ -111,7 +111,7 @@ jobs:
           if (!(Test-Path "$build\Release\podlord-native.exe")) { throw 'The native Windows app is missing.' }
       - name: Exercise public Windows smoke paths
         run: |
-          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.3\msvc2022_64'
           $env:PATH = "$qt\bin;$env:PATH"
           $env:QT_PLUGIN_PATH = "$qt\plugins"
           $env:QML_IMPORT_PATH = "$qt\qml"
@@ -127,7 +127,7 @@ jobs:
           PODLORD_TEST_MACHINE_ROOT: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.2\msvc2022_64'
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.3\msvc2022_64'
           $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
           $package = Join-Path $env:RUNNER_TEMP 'podlord-windows-package'
           $evidence = Join-Path $env:RUNNER_TEMP 'podlord-windows-package-evidence'
@@ -386,7 +386,7 @@ jobs:
           test -f "$target/qt/plugins/tls/libqopensslbackend.a"
           test ! -e "$target/qt/plugins/tls/libqsecuretransportbackend.a"
           test -x "$target/qt/bin/qt-cmake"
-          test "$("$target/qt/bin/qmake" -query QT_VERSION)" = 6.11.2
+          test "$("$target/qt/bin/qmake" -query QT_VERSION)" = 6.11.3
           test -f "$target/ssl/lib/libssl.a"
           test -f "$target/ssl/lib/libcrypto.a"
           test -f "$target/yaml/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
@@ -395,7 +395,7 @@ jobs:
             test -f "$target/media/frameworks/lib$library.framework/lib$library"
             test -d "$target/media/lib/lib$library.xcframework"
           done
-          grep -F 'Qt: 6.11.2' "$target/build-inputs.txt"
+          grep -F 'Qt: 6.11.3' "$target/build-inputs.txt"
           grep -F 'OpenSSL: 3.5.9' "$target/build-inputs.txt"
           grep -F 'FFmpeg: 7.1.5' "$target/build-inputs.txt"
           grep -F 'yaml-cpp: 0.9.0' "$target/build-inputs.txt"

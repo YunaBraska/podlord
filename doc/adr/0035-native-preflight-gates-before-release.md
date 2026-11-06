@@ -189,7 +189,7 @@ architecture and minimum-OS inspection; production gates are not weakened for
 test artifacts.
 
 The local Homebrew build was arm64-only and included macOS-27 dependencies.
-Use the pinned official Qt 6.11.2 desktop SDK and checksum-verified yaml-cpp
+Use the pinned official Qt 6.11.3 desktop SDK and checksum-verified yaml-cpp
 0.9.0 source through `scripts/install-native-macos-toolchain.sh`. The macOS-13
 build floor is a candidate artifact boundary, not a declaration that old-device
 installation, Intel, Windows, Linux, Android or iOS has been verified.
@@ -315,10 +315,33 @@ The native test runner includes the Objective-C++ trust source in macOS coverage
 
 `scripts/test-native-ios-trust.cjs APP_BUNDLE OPENSSL NEW_EVIDENCE_DIRECTORY` verifies actual HTTPS and WSS using isolated local certificates and a disposable ARM64 simulator. It proves rejection before root installation, acceptance after installation, explicit wrong-CA rejection, a slow intermediate-certificate fetch while GUI heartbeats continue, and cancellation without a later application request. Test roots are installed only in the disposable simulator, never the Mac keychain. All owned servers, private keys and the simulator are removed. The complete populated iOS Kubernetes theme matrix then verifies EC-client-certificate mutual TLS and shared UI behavior through this transport.
 
-`scripts/build-native-ios-toolchain.sh iphoneos HOST_QT NEW_OUTPUT_DIRECTORY` builds the ARM64 device SDK. Replace `iphoneos` with `iphonesimulator` for a simulator SDK matching the host architecture. On Apple Silicon that is ARM64 and does not require Rosetta. The host Qt must be version 6.11.2 with `qtshadertools`. Each output directory is new and separate from the existing official SDK. Downloads are SHA256-pinned. FFmpeg 7.1.5 remains embedded as frameworks and yaml-cpp 0.9.0 remains static. Failed builds retain their own logs for diagnosis and never overwrite an existing toolchain.
+`scripts/build-native-ios-toolchain.sh iphoneos HOST_QT NEW_OUTPUT_DIRECTORY` builds the ARM64 device SDK. Replace `iphoneos` with `iphonesimulator` for a simulator SDK matching the host architecture. On Apple Silicon that is ARM64 and does not require Rosetta. The host Qt must be version 6.11.3 with `qtshadertools`. Each output directory is new and separate from the existing official SDK. Downloads are SHA256-pinned. FFmpeg 7.1.5 remains embedded as frameworks and yaml-cpp 0.9.0 remains static. Failed builds retain their own logs for diagnosis and never overwrite an existing toolchain.
 
 The required regression boundary is the running iOS application importing a real local Kubernetes kubeconfig, negotiating EC-certificate mutual TLS and loading the resource cache. A successful toolchain build alone does not satisfy that gate. The populated theme matrix must then run against the same local API. Qt still warns that the installed Xcode SDK 27.1 is newer than its tested SDK 26. This warning is not suppressed and does not constitute a supported-platform certification.
 
 Sources: [Qt SecureTransport client identity import](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/tls/securetransport/qtls_st.cpp), [Qt PKCS#12 key encoder](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/tls/shared/qsslsocket_qt.cpp#L126), [Qt OpenSSL linkage and Apple CA integration](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/tls/openssl/CMakeLists.txt), [Qt iOS source builds](https://doc.qt.io/qt-6.11/ios-building-from-source.html).
 
 Google account and registration work is paused at the user's request. No account creation is a prerequisite for continuing implementation or local release checks. This does not claim that an unregistered personal Google login has passed a live-provider gate.
+
+### 2026-11-06: Qt security patch runtime
+
+The approved release toolchains move from Qt 6.11.2 to the published 6.11.3
+security patch. Windows and macOS use official SDK archives. Linux and iOS
+keep their existing stock-source configurations with the new official module
+SHA256 values. Android uses the corresponding official ARM64 SDK. No Qt fork,
+new runtime dependency, feature change or release-gate adjustment is introduced.
+
+Existing toolchains remain separate for reproducible comparisons. Their old
+results do not qualify new packages. Script hashes invalidate the existing
+version-checked CI caches. The macOS cache validator must reject 6.11.2 and
+accept a complete 6.11.3 toolchain without modifying either input. Host tools
+and iOS target libraries must use the same patch version. The general source
+build API minimum is unchanged, not a promise to ship older runtime versions.
+
+Rebuild and verify the affected application packages, TLS and Kubernetes flows,
+UI states and supported platform boundaries before release. Installation or a
+successful link alone is not security or release clearance. Preserve the
+existing licensing, native trust, embedded-library and standalone requirements.
+
+Sources: [Qt 6.11.3 release](https://www.qt.io/blog/qt-6.11.3-released),
+[Qt security advisories](https://wiki.qt.io/List_of_known_vulnerabilities_in_Qt_products).

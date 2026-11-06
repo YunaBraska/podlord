@@ -9,6 +9,38 @@ const { test } = require('node:test');
 const http = require('node:http');
 const execute = promisify(execFile);
 const installer = path.join(__dirname, 'install-native-macos-toolchain.sh');
+for (const version of ['6.11.2', '6.11.3']) {
+    test(`toolchain cache accepts only the pinned Qt patch: ${version}`, async () => {
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-qt-patch-'));
+        const target = path.join(directory, 'toolchain');
+        try {
+            const files = [
+                'qt/plugins/platforms/libqcocoa.dylib', 'qt/plugins/tls/libqopensslbackend.dylib',
+                'qt/qml/QtQuick/Controls/qmldir', 'yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake',
+                'yaml-cpp/lib/libyaml-cpp.dylib',
+                ...['Multimedia', 'WebSockets', 'ShaderTools'].map(module => `qt/lib/cmake/Qt6${module}/Qt6${module}Config.cmake`)
+            ];
+            for (const file of files) {
+                await fs.mkdir(path.dirname(path.join(target, file)), { recursive: true });
+                await fs.writeFile(path.join(target, file), '');
+            }
+            for (const [file, output] of [['qt/bin/qmake', version], ['qt/bin/qsb', ''], ['openssl/bin/openssl', 'OpenSSL 3.5.9 LTS']]) {
+                await fs.mkdir(path.dirname(path.join(target, file)), { recursive: true });
+                await fs.writeFile(path.join(target, file), `#!/bin/sh\nprintf '%s\\n' '${output}'\n`, { mode: 0o755 });
+            }
+            await fs.symlink('qt', path.join(target, 'qt-sdk'));
+            await fs.writeFile(path.join(target, 'build-inputs.txt'),
+                `Qt: ${version} official\nyaml-cpp: 0.9.0\nOpenSSL: 3.5.9 LTS\nBuild architecture: ${process.arch === 'x64' ? 'x86_64' : process.arch}\nCandidate deployment floor: macOS 13.0\n`);
+            if (version === '6.11.3') {
+                const result = await execute('/bin/sh', [installer, '--check', target]);
+                assert.match(result.stdout, /Pinned public macOS toolchain validated/);
+            } else {
+                await assert.rejects(execute('/bin/sh', [installer, '--check', target]), error => error.code === 1);
+            }
+            assert.equal(await fs.readlink(path.join(target, 'qt-sdk')), 'qt');
+        } finally { await fs.rm(directory, { recursive: true, force: true }); }
+    });
+}
 async function reject(args, pattern, env = process.env) {
     await assert.rejects(execute('/bin/sh', [installer, ...args], { env }), error => error.code === 2 && pattern.test(error.stderr));
 }

@@ -8,7 +8,7 @@ if [ "$#" -ne 1 ]; then
     exit 2
 fi
 case "$1" in /*) TARGET=$1 ;; *) printf 'Toolchain directory must be absolute.\n' >&2; exit 2 ;; esac
-QT_VERSION=6.11.2
+QT_VERSION=6.11.3
 YAML_VERSION=0.9.0
 YAML_SHA=25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a
 SSL_VERSION=3.5.9
