@@ -35,7 +35,7 @@ target_include_directories(podlord_vterm PUBLIC ${libvterm_SOURCE_DIR}/include)
 include(CTest)
 if(BUILD_TESTING)
     foreach(style Basic Fusion)
-        foreach(scenario ui_density_filters ui_density_single_tab ui_density_close)
+        foreach(scenario ui_density_filters ui_density_single_tab ui_density_close ui_density_tabs)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45
                 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_AUDIO=1")

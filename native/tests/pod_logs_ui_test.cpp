@@ -48,7 +48,7 @@ bool click(QQuickWindow* window, const QString& name) {
     }
     auto* target = item(window, name);
     if (!target || !target->isVisible() || !target->isEnabled()) { std::fprintf(stderr, "Unavailable control: %s\n", qPrintable(name)); return false; }
-    if (!podlord::test::scrollIntoView(window, target)) return false;
+    if (!podlord::test::scrollIntoView(window, target, true)) return false;
     target = item(window,name);
     if (!target || !target->isVisible() || !target->isEnabled() || target->objectName()!=name) {
         std::fprintf(stderr,"Pointer target changed during layout: requested=%s actual=%s\n",qPrintable(name),target ? qPrintable(target->objectName()) : "missing");

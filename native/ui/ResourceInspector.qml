@@ -25,9 +25,7 @@ Pane {
         Component.onCompleted: if (selected && inspectorOpen) active = true
     }
 
-    component InspectorTab: WorkspaceTab {
-        width: visible ? implicitWidth : 0
-    }
+    component InspectorTab: WorkspaceTab {}
     background: Rectangle {
         color: workspace.appearanceColors.panel
         border.width: 1

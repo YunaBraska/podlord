@@ -306,8 +306,9 @@ process.on('uncaughtException',error=>{
  for(const [name,args] of diagnostics){try{fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),run(...args))}catch(diagnosticError){fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),String(diagnosticError)+'\n'+(diagnosticError.stdout||'')+(diagnosticError.stderr||''))}}
  console.error(error);process.exitCode=1;
 });
+waitNode('resourcesWorkspaceButton',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');click('resourcesWorkspaceButton');
 waitNode('sourcePath',n=>n.enabled==='true'&&!/\[0,0\]\[0,0\]/.test(n.bounds));click('sourcePath');run('shell','input','text','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');state();run('shell','input','keyevent','4');state();waitNode('sourcePath',n=>n.text==='/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');click('importButton');state();
-waitNode('closeSourceControls',n=>n.enabled==='true');click('closeSourceControls');
+waitNode('closeSourceControls',n=>n.enabled==='true');click('closeSourceControls');click('mapWorkspaceButton');
 const cardDeadline=Date.now()+30000;let contextCard='';
 do{state();const card=nodes.find(n=>n['resource-id']?.split('.').at(-1).startsWith('contextMapCard_')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');if(card){contextCard=card['resource-id'].split('.').at(-1);break;}}while(Date.now()<cardDeadline);
 if(!contextCard){capture('missing-context-card');throw Error('Imported context card did not appear');}
@@ -374,7 +375,7 @@ for(const prefix of ['contextMapName_','contextMapCluster_','renameMapContext_']
  if(!control)throw Error('Context card caption/action clipped in landscape');
 }
 capture('contexts-after-loading');click(contextCard);
-waitNode('resourceRadar',n=>n.enabled==='true');click('radarWorkspaceButton');
+waitNode('resourceRadar',n=>n.enabled==='true');click('resourcesWorkspaceButton');
 waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]<=miniRadar[2]-miniRadar[0]+1;});
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('radar-and-filters');

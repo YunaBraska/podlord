@@ -1157,7 +1157,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         if (!inspected) return failure("fresh Inspector and visible CPU gauge");
         const auto inspectorCapture=qEnvironmentVariable("PODLORD_RADAR_METRIC_FRAME");
         if (!inspectorCapture.isEmpty() && !window->grabWindow().save(inspectorCapture+"-inspector.png")) return failure("capture measured Inspector");
-        if (!workspace.closeInspector() || !click(window,"resourcesWorkspaceButton")) return failure("open Pod radar");
+        if (!workspace.closeInspector() || !click(window,"resourcesWorkspaceButton")
+            || !click(window,"radarWorkspaceButton")) return failure("open Pod radar");
         QTest::keyClick(window,Qt::Key_Home);
         if (!waitFor([&] { return podlord::test::radarTarget(window,0)!=nullptr; })) return failure("focus measured Pod in viewport");
         auto* radarTile=podlord::test::radarTarget(window,0); radarTile->forceActiveFocus();
@@ -1237,7 +1238,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             QQmlExpression position(qmlContext(table),table,QString("positionViewAtColumn(%1, TableView.Contain)").arg(visual)); position.evaluate();
             if (position.hasError()) return false;
         }
-        if (!workspace.setWorkspacePage("resources") || (radar && !click(window,"resourcesWorkspaceButton"))) return false;
+        if (!workspace.setWorkspacePage("resources") || (radar && !click(window,"radarWorkspaceButton"))) return false;
         if (radar) { item(window,"resourceRadar")->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Home); }
         if (!waitFor([&] { return radar ? podlord::test::radarTarget(window,0)!=nullptr : item(window,"cell_0_5")!=nullptr; })) { std::fprintf(stderr,"Radar resource surface did not become operable.\n"); return false; }
         const auto requests=server.requests; auto* cell=radar ? podlord::test::radarTarget(window,0) : item(window,"cell_0_5");

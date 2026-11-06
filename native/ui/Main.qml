@@ -520,8 +520,7 @@ ApplicationWindow {
                             }
                         }
                     }
-                    IconButton { id: quickOpenFile; objectName: "quickOpenFile"; glyph: "ConfigMap"; text: "Open kubeconfig file"; visible: workspace.contexts.length > 0 || workspace.sessions.length > 0; enabled: !workspace.busy; onClicked: quickChooser.open() }
-                    IconButton { objectName: "quickOpenDropdown"; glyph: "Menu"; text: "Open saved session or imported context"; visible: quickOpenFile.visible; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenFile, 0, quickOpenFile.height) }
+                    IconButton { id: quickOpenControl; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; text: "Open kubeconfig, session or context"; visible: workspace.contexts.length > 0 || workspace.sessions.length > 0; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenControl, 0, quickOpenControl.height) }
                     NavButton { objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; checked: workspace.workspacePage === "map" }
                     NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
                     NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
@@ -571,7 +570,7 @@ ApplicationWindow {
         objectName: "quickOpenMenu"
         width: Math.min(360, window.width - 24)
         height: Math.min(implicitHeight, window.height - 48)
-        MenuItem { text: "Open kubeconfig file..."; implicitHeight: window.touchLayout ? 44 : 32; enabled: !workspace.busy; onTriggered: quickChooser.open() }
+        MenuItem { objectName: "quickOpenFile"; text: "Open kubeconfig file..."; implicitHeight: window.touchLayout ? 44 : 32; enabled: !workspace.busy; onTriggered: quickChooser.open() }
         MenuItem { objectName: "closeCurrentSession"; text: "Close session"; enabled: workspace.currentSession !== "" && !workspace.busy; onTriggered: workspace.close(workspace.currentSession) }
         MenuSeparator {}
         Instantiator {

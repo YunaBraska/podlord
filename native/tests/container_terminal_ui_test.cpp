@@ -135,7 +135,7 @@ bool run(const QString& scenario, const QString& configPath) {
     armed = true; REQUIRE(click("terminalConnect"));
     if (scenario == "close_pending_target") {
         REQUIRE(waitFor([&] { return freshReads == 1 && heldTarget; }));
-        REQUIRE(click(qPrintable("closeSession_" + workspace.currentSession())));
+        REQUIRE(click("quickOpenDropdown") && click("closeCurrentSession"));
         REQUIRE(waitFor([&] { return workspace.currentSession().isEmpty(); }));
         REQUIRE(heldTarget && heldTarget->state() == QAbstractSocket::ConnectedState);
         const auto payload = QJsonDocument(pod).toJson(QJsonDocument::Compact);
@@ -526,7 +526,7 @@ bool run(const QString& scenario, const QString& configPath) {
         if (scenario == "disconnect") REQUIRE(terminal->status() == "Connection closed without an exit status. No shell was restarted.");
     } else if (scenario == "repeat") { REQUIRE(!workspace.startContainerTerminal("alpha", "/bin/sh")); REQUIRE(upgrades == 1); }
     else if (scenario == "session_close") {
-        REQUIRE(click(qPrintable("closeSession_" + workspace.currentSession())));
+        REQUIRE(click("quickOpenDropdown") && click("closeCurrentSession"));
         REQUIRE(waitFor([&] { return !workspace.busy() && (!peer || peer->state() == QAbstractSocket::UnconnectedState); }));
         REQUIRE(workspace.currentSession().isEmpty() && !workspace.containerTerminal()); return true;
     } else if (scenario == "session_switch") {

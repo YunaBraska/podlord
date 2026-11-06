@@ -1593,6 +1593,20 @@ bool run(const QString& scenario) {
         REQUIRE(primary.saveRadarWater(false, 77));
         REQUIRE(waitFor([&] { return !primary.busy() && !detached->radarWaterEnabled() && detached->radarWaterSpeedPercent() == 77; })); return true;
     }
+    if (scenario == "preset" || scenario == "columns") {
+        REQUIRE(detached->duplicateSession(a,"Transfer guard"));
+        QString extra;
+        REQUIRE(waitFor([&] {
+            if (detached->busy()) return false;
+            for (const auto& entry:detached->sessions()) {
+                const auto session=entry.toMap();
+                if (session["name"]=="Transfer guard") extra=session["id"].toString();
+            }
+            return !extra.isEmpty();
+        }));
+        REQUIRE(detached->activate(extra) && waitFor([&] { return !detached->busy() && detached->tabs().size()==2; }));
+        REQUIRE(detached->activate(a) && waitFor([&] { return detached->currentSession()==a && detached->sessionWindowActionsReady(); }));
+    }
     if (scenario == "preset") {
         REQUIRE(detached->filter("=alpha") && detached->saveFilterPreset("Shared filter"));
         auto* moving = podlord::test::visibleItem(window->contentItem(), "detachSession_" + a);

@@ -11,9 +11,7 @@ Pane {
     readonly property string scope: (workspace.sourceInspection.snapshotId || "") + ":" + (workspace.sourceInspection.contextId || "")
     padding: 6
     clip: true
-    component SourceTab: WorkspaceTab {
-        width: visible ? implicitWidth : 0
-    }
+    component SourceTab: WorkspaceTab {}
     onScopeChanged: {
         if (tabs) tabs.currentIndex = 0
         if (yamlPage) yamlPage.active = false
