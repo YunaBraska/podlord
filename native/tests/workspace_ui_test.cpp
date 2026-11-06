@@ -3784,10 +3784,12 @@ bool execute(const QString& requestedScenario) {
             return server.requests.size()==calls;
         }
         if (scenario.startsWith("radar_info_panel")) {
-            for (int frame=0;frame<2;++frame) {
-                QSignalSpy rendered(window,&QQuickWindow::frameSwapped);
-                window->requestUpdate();
-                if (rendered.isEmpty() && !rendered.wait(1000)) return failed("expanded map frame ready");
+            if (mapRadar) {
+                for (int frame=0;frame<2;++frame) {
+                    QSignalSpy rendered(window,&QQuickWindow::frameSwapped);
+                    window->requestUpdate();
+                    if (rendered.isEmpty() && !rendered.wait(1000)) return failed("expanded map frame ready");
+                }
             }
             const auto initialViewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
             const auto first=radarPoint(radar,0);
