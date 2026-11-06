@@ -12,6 +12,17 @@ correctly omit.
 
 ## Decision
 
+On 2026-11-06 the user approved excluding evidence-only pushes from the root
+build workflow. Its push filter names exactly `doc/ROADMAP.md` and
+`doc/spec/k3d-test-map.md`, not their directories or all Markdown files.
+Any other changed path, including code, build configuration, specifications and
+ADRs, still triggers the complete workflow. Pull-request, manual and reusable
+workflow entrypoints remain unfiltered. This avoids restarting and cancelling
+an active qualification merely to record its results. It does not qualify a
+new implementation or remove release checks. GitHub evaluates an ignored push
+only when all changed paths match the exclusion list. See the
+[official event-filter rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#using-filters-to-target-specific-paths-for-pull-request-or-push-events).
+
 The user clarified on 2026-11-06 that our own size and performance limits are
 guidelines, not identical hard release ceilings across OS/architecture targets.
 [ADR 0014](0014-separate-ui-performance-budgets-from-infrastructure-latency.md)

@@ -350,6 +350,23 @@ function ciJob(workflow, name) {
     return workflow.split(heading)[1].split(/\n  [a-z][a-z0-9-]*:\n/)[0];
 }
 
+test('CI excludes only exact evidence-only pushes and keeps pull-request checks', async () => {
+    const workflow = await fs.readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+    const push = workflow.split('  push:\n')[1].split('\n  pull_request:')[0];
+    const ignore = push.match(/    paths-ignore:\n((?:      - [^\n]+\n?)+)/);
+    assert.ok(ignore, 'Evidence-only pushes must not restart the complete build matrix');
+    const paths = ignore[1].trim().split('\n').map(line => line.trim().slice(2).replace(/^['"]|['"]$/g, ''));
+    assert.deepEqual(paths, ['doc/ROADMAP.md', 'doc/spec/k3d-test-map.md']);
+    assert.doesNotMatch(push, /^    paths:/m);
+    assert.match(push, /      - dev\n      - 'feat\/\*\*'/);
+    const pullRequest = workflow.split('  pull_request:\n')[1].split('\n  workflow_dispatch:')[0];
+    assert.doesNotMatch(pullRequest, /paths|branches|if:/);
+    for (const event of ['opened', 'synchronize', 'reopened', 'ready_for_review'])
+        assert.ok(pullRequest.includes(`      - ${event}`));
+    assert.match(workflow, /  workflow_dispatch:\n  workflow_call:/);
+    assert.match(ciJob(workflow, 'native-preflight'), /uses: \.\/\.github\/workflows\/native\.yml/);
+});
+
 test('macOS failure diagnostics retain only new owned crash reports', async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-macos-crash-evidence-'));
     t.after(() => fs.rm(directory, {recursive: true, force: true}));

@@ -5,6 +5,9 @@ on:
     branches:
       - dev
       - 'feat/**'
+    paths-ignore:
+      - 'doc/ROADMAP.md'
+      - 'doc/spec/k3d-test-map.md'
   pull_request:
     types:
       - opened
