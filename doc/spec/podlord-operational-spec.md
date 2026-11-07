@@ -639,6 +639,10 @@ Navigation placement follows RAD-VIEW-01. The redundant Radar focus-reticle butt
 remain reachable. Camera, selection and cached data remain unchanged when
 filters open or close. The Resources table and its small Radar remain available.
 Portrait, larger windows and the context overview retain their other layout.
+
+As confirmed on 2026-11-07, Map and the small Radar omit the numerical zoom
+percentage. Existing zoom buttons, wheel/trackpad and keyboard interaction,
+and the retained camera remain unchanged.
 Pointer, keyboard and touch interaction with those details MUST NOT freeze later
 resource hover, panning, zooming or inspection. These paths read cached data only
 and MUST NOT perform API or storage I/O.

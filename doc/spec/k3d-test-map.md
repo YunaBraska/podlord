@@ -121,10 +121,16 @@ focus-reticle action. No new breakpoint, resource cache or setting is added.
   simulator was removed. The shared Kubernetes fixture was also removed after
   both Android journeys. All these checks were silent and headless.
 
+As approved on 2026-11-07, the numerical zoom readout is removed from both Map
+and the small Radar. The four existing overlay-navigation tests (both views,
+Basic/Fusion) now reject this readout and retain the zoom-button, overlay and
+cache-only interaction assertions. All four fail before removal and pass
+afterward. Evidence: `zoom-removal-red.log` and `zoom-removal-green.log` in the
+same local evidence directory. No new test case or control is introduced.
+
 Review follow-ups, not approved or implemented in this increment: Settings
 and filters currently share a glyph; saved-filter loading and actions use two
-similar menu glyphs; the zoom percentage on dark water lacks contrast in the
-light theme. These findings prevent a blanket claim that every visual issue
+similar menu glyphs. These findings prevent a blanket claim that every visual issue
 is resolved. They do not authorize action removal or a new filter workflow.
 
 Design constraints follow [Apple layout guidance](https://developer.apple.com/design/human-interface-guidelines/layout)

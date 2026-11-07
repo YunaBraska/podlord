@@ -3535,6 +3535,11 @@ bool execute(const QString& requestedScenario) {
         const auto calls = server.requests.size();
         if (scenario == "radar_overlay_navigation") {
             if (item(window,"resetRadar")) return failed("removed reset control must not exist");
+            const auto* navigation=item(window,"radarNavigationOverlay");
+            if (!navigation) return failed("radar navigation remains available");
+            for (const auto* control : navigation->findChildren<QQuickItem*>())
+                if (control->isVisible() && control->property("text").toString().trimmed().endsWith('%'))
+                    return failed("zoom percentage must not occupy navigation space");
             const auto* detail = item(window, "radarInfoPanel");
             if (detail && detail->isVisible()) return failed("empty resource details must not reserve space");
             if (radar->boundingRect() != radar->parentItem()->boundingRect()) return failed("drawing area must fill its host");
