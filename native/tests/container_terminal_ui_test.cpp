@@ -122,7 +122,11 @@ bool run(const QString& scenario, const QString& configPath) {
     REQUIRE(workspace.inspectPath(path)); REQUIRE(waitFor([&] { return !workspace.loading(); }, real ? 60000 : 15000));
     const auto click = [&](const char* object, Qt::MouseButton button = Qt::LeftButton) {
         const QString objectName = QString::fromLatin1(object);
-        auto* item = podlord::test::visibleItem(window->contentItem(), objectName);
+        QQuickItem* item = nullptr;
+        if (objectName.startsWith("portCell_")) {
+            const auto parts = objectName.split('_');
+            item = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"), parts.value(1).toInt(), parts.value(2).toInt());
+        } else item = podlord::test::visibleItem(window->contentItem(), objectName);
         if (!item && (objectName == "terminalCopy" || objectName == "terminalPaste" || objectName == "terminalFollow"
             || objectName == "terminalKeys" || objectName == "terminalDisconnect" || objectName == "terminalHelp")) {
             auto* menu = podlord::test::visibleItem(window->contentItem(), "terminalActions");
@@ -130,10 +134,6 @@ bool run(const QString& scenario, const QString& configPath) {
             QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, menu->mapToScene({menu->width()/2, menu->height()/2}).toPoint());
             if (!waitFor([&] { return podlord::test::visibleItem(window->contentItem(), objectName) != nullptr; })) return false;
             item = podlord::test::visibleItem(window->contentItem(), objectName);
-        }
-        if (!item && objectName.startsWith("portCell_")) {
-            const auto parts = objectName.split('_');
-            item = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"), parts.value(1).toInt(), parts.value(2).toInt());
         }
 #ifdef Q_OS_IOS
         if (item && QByteArray(object) == "terminalButton") {
@@ -363,8 +363,10 @@ bool run(const QString& scenario, const QString& configPath) {
             for (int row=0;row<workspace.portTable()->rowCount();++row)
                 if (workspace.portTable()->index(row,0).data(Qt::UserRole).toString()==connection["id"]) shellRow=row;
             REQUIRE(shellRow>=0 && click(qPrintable("portCell_"+QString::number(shellRow)+"_0"), Qt::RightButton));
-            REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "portMenuInspector") != nullptr; }));
-            REQUIRE(podlord::test::visibleItem(window->contentItem(), "portMenuInspector")->property("text").toString() == "Open terminal");
+            REQUIRE(waitFor([&] {
+                const auto* action = podlord::test::visibleItem(window->contentItem(), "portMenuInspector");
+                return action && action->property("text").toString() == "Open terminal";
+            }));
             REQUIRE(!podlord::test::visibleItem(window->contentItem(), "connectionOpenTerminal"));
             QTest::keyClick(window,Qt::Key_Escape);
             REQUIRE(click("stopPortForwardTask"));

@@ -390,7 +390,6 @@ bool run(const QString& scenario, const QString& configPath) {
     QTcpServer reserve;
     if (!reserve.listen(QHostAddress::LocalHost)) return false;
     const auto localPort = reserve.serverPort();
-    if (scenario != "busy") reserve.close();
     if (!click("preparePortForward")) { std::fputs("Forward prepare control could not be clicked.\n",stderr); return false; }
     auto* local = named("portForwardLocal"); auto* remote = named("portForwardRemote");
     if (!local || !remote) { std::fputs("Forward port controls are missing.\n",stderr); return false; }
@@ -443,7 +442,15 @@ bool run(const QString& scenario, const QString& configPath) {
         if (!click("startPortForward")) return false;
         return workspace.portForwards().isEmpty() && requests == afterSelection && !workspace.error().isEmpty();
     }
-    if (!click("startPortForward")) { std::fputs("Forward start control could not be clicked.\n",stderr); return false; }
+    auto* start = named("startPortForward");
+    if (!start || !start->isEnabled() || !podlord::test::scrollIntoView(window, start, true)) {
+        std::fputs("Forward start control could not be clicked.\n",stderr); return false;
+    }
+    const auto startPoint = start->mapToScene({start->width() / 2, start->height() / 2}).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, startPoint);
+    // Retain the listener through form entry and layout, then hand it to the real action.
+    if (scenario != "busy") reserve.close();
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, startPoint);
     if (scenario.startsWith("invalid") || scenario == "busy") return requests == before && upgrades == 0 && !workspace.error().isEmpty();
     if (scenario == "selector" || scenario == "no_pod" || scenario == "udp" || scenario == "auth" || scenario == "forbidden" || scenario == "rate" || scenario == "redirect" || scenario == "malformed" || scenario == "recreated"
         || scenario == "service_wrong_list" || scenario == "service_wrong_item" || scenario.startsWith("service_reject_")) {
