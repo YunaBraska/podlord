@@ -5775,8 +5775,12 @@ bool realCluster(const QString& source) {
         if (!evidence.isEmpty()) { QTest::qWait(50); window->grabWindow().save(QFileInfo(evidence).absolutePath() + "/native-inspector-failure.png", "PNG"); }
         return false;
     };
-    QTest::qWait(10);
-    if (!waitFor([&] { return item(window, "importButton")->isEnabled(); })) return failed("import readiness");
+    if (!waitFor([&] {
+        auto* action = item(window, "resourcesWorkspaceButton");
+        return action && action->isVisible() && action->isEnabled();
+    }) || !podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return failed("source import entry");
+    if (!waitFor([&] { return item(window, "sourcePath")->isVisible() && item(window, "importButton")->isVisible()
+        && item(window, "importButton")->isEnabled(); })) return failed("import readiness");
 #ifdef Q_OS_IOS
     if (!podlord::test::orientIosTestWindow(window)) return failed("system orientation");
 #endif

@@ -249,6 +249,7 @@ Pane {
                 visible: sidebar.presetsExpanded
                 clip: true
                 interactive: contentHeight > height
+                keyNavigationEnabled: true
                 model: visible ? workspace.filterPresets : []
                 currentIndex: workspace.filterPresets.indexOf(workspace.selectedFilterPreset)
                 ScrollBar.vertical: ScrollBar {}

@@ -445,7 +445,10 @@ function filterPresetJourney(){
  const saved=nodes.find(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&value(n)==='Android-preset');
  if(!saved)throw Error('Saved filter must appear in the inline selection');
  const choice=target(saved['resource-id'].split('.').at(-1));capture('saved-filter-choice-target');
- tap(choice);waitNode('problemsOnly',n=>n.checked==='true');click('filterPreset');capture('saved-filter-inline-controls');
+ tap(choice);waitNode('problemsOnly',n=>n.checked==='true');
+ click('resetResourceFilters');waitNode('problemsOnly',n=>n.checked==='false');
+ click('filterPreset');run('shell','input','keyevent','122','20','66');state();
+ waitNode('problemsOnly',n=>n.checked==='true');click('filterPreset');capture('saved-filter-inline-controls');
  click('renameFilterPreset');write('renameFilterPresetName','Android-renamed');
  const ok=nodes.find(n=>value(n)==='OK'&&n.enabled==='true');if(!ok)throw Error('Rename confirmation must be reachable');tap(ok);
  waitNode('renameFilterPreset',n=>n.enabled==='true');click('reloadFilterPresets');waitNode('renameFilterPreset',n=>n.enabled==='true');
@@ -456,7 +459,7 @@ function filterPresetJourney(){
  if(target('problemsOnly').checked!=='true')throw Error('Deleting a preset must not clear active cached filters');
  click('resetResourceFilters');if(target('filterPreset').checked==='true')click('filterPreset');
  if(!filtersWereExpanded)click('toggleLandscapeFilters');
- steps.push({step:'Inline saved-filter save, load, rename, reload, import cancellation and delete retain current filters and protected default'});
+ steps.push({step:'Inline saved-filter save, touch and keyboard load, rename, reload, import cancellation and delete retain current filters and protected default'});
 }
 function mapTouchRoundtrip(){
  const assert=require('node:assert/strict'),crypto=require('node:crypto'),zlib=require('node:zlib');
