@@ -7,6 +7,8 @@ on:
       - '.github/workflows/native-linux-package.yml'
       - 'native/**'
       - 'scripts/build-native-linux-toolchain.sh'
+      - 'scripts/qt-quick-shutdown.cmake'
+      - 'scripts/patches/**'
       - 'scripts/check-native-linux-package.sh'
       - 'scripts/test-native-linux-package.sh'
   workflow_dispatch:
@@ -41,7 +43,7 @@ jobs:
           set -eu
           out="$RUNNER_TEMP/linux-distribution"
           mkdir "$out"
-          tar -cf - native/tests/linux-package.Dockerfile scripts/build-native-linux-toolchain.sh |
+          tar -cf - native/tests/linux-package.Dockerfile native/tests/qt_shutdown scripts/build-native-linux-toolchain.sh scripts/qt-quick-shutdown.cmake scripts/patches/qtdeclarative-6.11.3-shutdown.diff |
             docker build --pull --no-cache --target toolchain-dependencies \
               --tag "podlord-linux-sdk-dependencies:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
               --file native/tests/linux-package.Dockerfile - > "$out/toolchain-dependencies.log" 2>&1
@@ -59,7 +61,7 @@ jobs:
           /opt/sbom/bin/pip freeze | LC_ALL=C sort
           ABI
           abi=$(sha256sum "$out/toolchain-abi.txt" | cut -d ' ' -f 1)
-          recipe=${{ hashFiles('native/tests/linux-package.Dockerfile', 'scripts/build-native-linux-toolchain.sh') }}
+          recipe=${{ hashFiles('native/tests/linux-package.Dockerfile', 'scripts/build-native-linux-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/**', 'native/tests/qt_shutdown/**') }}
           key="linux-sdk-v1-${{ matrix.arch }}-$abi-$recipe"
           printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$key" > "$out/toolchain-cache-key.txt"
@@ -85,7 +87,7 @@ jobs:
             [ -d "$cache" ] && [ ! -L "$cache" ]
             set -- "$@" --build-arg SDK_STAGE=cached-sdk --build-context "toolchain-cache=$cache"
           fi
-          tar -cf - native/tests/linux-package.Dockerfile scripts/build-native-linux-toolchain.sh |
+          tar -cf - native/tests/linux-package.Dockerfile native/tests/qt_shutdown scripts/build-native-linux-toolchain.sh scripts/qt-quick-shutdown.cmake scripts/patches/qtdeclarative-6.11.3-shutdown.diff |
             docker build --tag "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$@" \
               --file native/tests/linux-package.Dockerfile - > "$out/toolchain.log" 2>&1
           docker image inspect --format '{{join .RootFS.Layers "\n"}}' \

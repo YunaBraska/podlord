@@ -11,6 +11,7 @@ if [ "$(uname -s)" != Linux ] || [ -e "$ROOT" ] || [ -L "$ROOT" ]; then
     exit 2
 fi
 JOBS=${PODLORD_BUILD_JOBS:-4}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 mkdir -p "$ROOT/sources" "$ROOT/logs"
 CURRENT_LOG=
 report_failure() {
@@ -55,6 +56,9 @@ rm -r "$ROOT/ffmpeg-build" "$ROOT/ffmpeg"
 
 while read -r module checksum; do
     fetch "$module" "$checksum" "https://download.qt.io/archive/qt/6.11/6.11.3/submodules/$module-everywhere-src-6.11.3.tar.xz"
+    if [ "$module" = qtdeclarative ]; then
+        cmake "-DQT_SOURCE_DIR=$ROOT/$module" -P "$SCRIPT_DIR/qt-quick-shutdown.cmake"
+    fi
     mkdir "$ROOT/$module-build"
     cd "$ROOT/$module-build"
     CURRENT_LOG="$ROOT/logs/$module.log"
@@ -74,6 +78,9 @@ while read -r module checksum; do
     fi
     cmake --build . --parallel "$JOBS" >> "$ROOT/logs/$module.log" 2>&1
     cmake --install . >> "$ROOT/logs/$module.log" 2>&1
+    if [ "$module" = qtdeclarative ]; then
+        cp "$ROOT/$module/podlord-qtquick-patch.txt" "$ROOT/qt/podlord-qtquick-patch.txt"
+    fi
     cd "$ROOT"
     rm -r "${ROOT:?}/${module:?}-build" "${ROOT:?}/${module:?}"
     printf 'Installed Qt module: %s\n' "$module"
@@ -92,7 +99,8 @@ if readelf -d "$ROOT/qt/lib/libQt6Core.so.6" | grep 'NEEDED.*libicu'; then
     exit 1
 fi
 {
-    printf 'Qt: 6.11.3, shared, ICU and unused Widgets disabled, no source patches\n'
+    printf 'Qt: 6.11.3, shared, ICU and unused Widgets disabled, pinned upstream Quick shutdown fix\n'
+    cat "$ROOT/qt/podlord-qtquick-patch.txt"
     printf 'FFmpeg: 7.1.5, shared, GPL/nonfree/autodetected external components disabled\n'
     printf 'yaml-cpp: 0.9.0, static\nArchitecture: '; uname -m
     printf 'Build ABI: '; ldd --version | head -n 1
@@ -105,3 +113,9 @@ fi
     cmake --version
     "${CXX:-c++}" --version
 } > "$ROOT/build-inputs.txt"
+CURRENT_LOG="$ROOT/logs/qt-shutdown-check.log"
+cmake -S "$SCRIPT_DIR/../native/tests/qt_shutdown" -B "$ROOT/shutdown-check" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$ROOT/qt" > "$CURRENT_LOG" 2>&1
+cmake --build "$ROOT/shutdown-check" --parallel "$JOBS" >> "$CURRENT_LOG" 2>&1
+ctest --test-dir "$ROOT/shutdown-check" --output-on-failure >> "$CURRENT_LOG" 2>&1
+rm -r "$ROOT/shutdown-check"

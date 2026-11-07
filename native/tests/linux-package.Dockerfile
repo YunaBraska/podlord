@@ -3,7 +3,7 @@ ARG SDK_STAGE=source-sdk
 FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS node-tools
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS toolchain-dependencies
 RUN apt-get update && apt-get install --yes --no-install-recommends \
-    ca-certificates curl build-essential clang llvm libclang-rt-dev cmake ninja-build pkg-config nasm fonts-dejavu-core \
+    ca-certificates curl git build-essential clang llvm libclang-rt-dev cmake ninja-build pkg-config nasm fonts-dejavu-core \
     python3 python3-venv xz-utils libssl-dev libgl-dev libegl-dev libopengl-dev \
     libdbus-1-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev libgtk-3-dev \
     libxcb1-dev libxcb-glx0-dev libxcb-keysyms1-dev libxcb-image0-dev libxcb-shm0-dev \
@@ -16,10 +16,12 @@ RUN apt-get update && apt-get install --yes --no-install-recommends \
 RUN python3 -m venv /opt/sbom && /opt/sbom/bin/pip install --no-cache-dir spdx-tools==0.8.3
 COPY --from=node-tools /usr/local/bin/node /usr/local/bin/node
 ENV CC=clang CXX=clang++ LANG=C.UTF-8
+COPY scripts/patches/qtdeclarative-6.11.3-shutdown.diff /opt/scripts/patches/
 FROM toolchain-dependencies AS source-sdk
-COPY scripts/build-native-linux-toolchain.sh /opt/build-native-linux-toolchain.sh
+COPY scripts/build-native-linux-toolchain.sh scripts/qt-quick-shutdown.cmake /opt/scripts/
+COPY native/tests/qt_shutdown /opt/native/tests/qt_shutdown
 ARG SDK_CACHE_KEY=
-RUN sh /opt/build-native-linux-toolchain.sh /opt/podlord-toolchain \
+RUN sh /opt/scripts/build-native-linux-toolchain.sh /opt/podlord-toolchain \
     && printf '%s\n' "$SDK_CACHE_KEY" > /opt/podlord-toolchain/cache-key.txt
 
 FROM toolchain-dependencies AS cached-sdk
@@ -33,6 +35,8 @@ RUN set -eux; \
     printf '%s\n' "$SDK_CACHE_KEY" | cmp - /opt/podlord-toolchain/cache-key.txt; \
     test "$(/opt/podlord-toolchain/qt/bin/qmake -query QT_VERSION)" = 6.11.3; \
     test "$(/opt/podlord-toolchain/qt/bin/qmake -query QT_INSTALL_PREFIX)" = /opt/podlord-toolchain/qt; \
+    patch_sha=$(sha256sum /opt/scripts/patches/qtdeclarative-6.11.3-shutdown.diff | cut -d ' ' -f 1); \
+    grep -Fx "Qt Quick patch SHA256: $patch_sha" /opt/podlord-toolchain/qt/podlord-qtquick-patch.txt; \
     grep -Eq '^#define QT_FEATURE_icu -1[[:space:]]*$' /opt/podlord-toolchain/qt/include/QtCore/6.11.3/QtCore/private/qtcore-config_p.h; \
     readelf -d /opt/podlord-toolchain/qt/lib/libQt6Core.so.6 > /tmp/qtcore-needed.txt; \
     if grep -q 'NEEDED.*libicu' /tmp/qtcore-needed.txt; then exit 1; fi; \

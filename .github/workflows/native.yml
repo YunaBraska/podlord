@@ -70,7 +70,7 @@ jobs:
           # aqtinstall 3.3.0 assumes the pre-6.11 Qt archive layout.
           python -m pip install git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
           if ($LASTEXITCODE -ne 0) { throw 'Could not install the Qt installer.' }
-          aqt install-qt windows desktop 6.11.3 win64_msvc2022_64 -m qtmultimedia qtwebsockets -O "$env:RUNNER_TEMP\qt"
+          aqt install-qt windows desktop 6.11.3 win64_msvc2022_64 -m qtmultimedia qtwebsockets qtshadertools -O "$env:RUNNER_TEMP\qt"
           if ($LASTEXITCODE -ne 0) { throw 'Could not install Qt 6.11.3 for MSVC 2022.' }
           $archive = Join-Path $env:RUNNER_TEMP 'yaml-cpp-0.9.0.tar.gz'
           Invoke-WebRequest 'https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz' -OutFile $archive
@@ -88,6 +88,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not build yaml-cpp.' }
           cmake --install "$env:RUNNER_TEMP\yaml-cpp-build" --config Release
           if ($LASTEXITCODE -ne 0) { throw 'Could not install yaml-cpp.' }
+      - name: Install and exercise the upstream Qt Quick shutdown correction
+        run: |
+          $qt = Join-Path $env:RUNNER_TEMP 'qt/6.11.3/msvc2022_64'
+          cmake "-DQT_SDK_PREFIX=$qt" "-DWORK_ROOT=$env:RUNNER_TEMP/qt-quick-fix" '-DQT_GENERATOR=Visual Studio 17 2022' -P scripts/qt-quick-shutdown.cmake
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the pinned Qt Quick shutdown correction.' }
+          cmake -S native/tests/qt_shutdown -B "$env:RUNNER_TEMP/qt-shutdown-check" -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_PREFIX_PATH=$qt"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure the Qt shutdown regression.' }
+          cmake --build "$env:RUNNER_TEMP/qt-shutdown-check" --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the Qt shutdown regression.' }
+          ctest --test-dir "$env:RUNNER_TEMP/qt-shutdown-check" -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'The Qt image-thread shutdown regression failed.' }
       - name: Build native Windows application and tests
         env:
           PODLORD_TEST_MACHINE_ROOT: '1'
@@ -364,7 +375,7 @@ jobs:
         id: ios-toolchain-cache
         uses: actions/cache@v6
         with:
-          key: native-ios-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/build-native-ios-toolchain.sh') }}
+          key: native-ios-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/build-native-ios-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/**', 'native/tests/qt_shutdown/**') }}
           path: |
             ${{ runner.temp }}/native-toolchain/qt
             ${{ runner.temp }}/native-toolchain/qt-sdk
@@ -399,6 +410,8 @@ jobs:
           grep -F 'OpenSSL: 3.5.9' "$target/build-inputs.txt"
           grep -F 'FFmpeg: 7.1.5' "$target/build-inputs.txt"
           grep -F 'yaml-cpp: 0.9.0' "$target/build-inputs.txt"
+          patch_sha=$(shasum -a 256 scripts/patches/qtdeclarative-6.11.3-shutdown.diff | awk '{print $1}')
+          grep -Fx "Qt Quick patch SHA256: $patch_sha" "$target/qt/podlord-qtquick-patch.txt"
           printf 'Exact public toolchain cache validated.\n' | tee "$RUNNER_TEMP/native-toolchain.log" "$RUNNER_TEMP/native-ios-toolchain.log"
       - name: Install native host toolchain on cache miss
         if: steps.ios-toolchain-cache.outputs.cache-hit != 'true'

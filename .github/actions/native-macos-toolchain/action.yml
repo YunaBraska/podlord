@@ -36,7 +36,7 @@ runs:
       id: macos-toolchain-cache
       uses: actions/cache/restore@v6
       with:
-        key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh') }}
+        key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/**', 'native/tests/qt_shutdown/**') }}
         path: |
           ${{ runner.temp }}/native-toolchain/qt
           ${{ runner.temp }}/native-toolchain/qt-sdk
@@ -53,6 +53,9 @@ runs:
       run: |
         /bin/sh scripts/install-native-macos-toolchain.sh --check "$RUNNER_TEMP/native-toolchain" >> "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 35 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
         cat "$RUNNER_TEMP/native-toolchain/build-inputs.txt"
+        cmake -S native/tests/qt_shutdown -B "$RUNNER_TEMP/qt-shutdown-check" -G Ninja -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk"
+        cmake --build "$RUNNER_TEMP/qt-shutdown-check" --parallel 2
+        ctest --test-dir "$RUNNER_TEMP/qt-shutdown-check" --output-on-failure
     - name: Retain validated public macOS toolchain
       if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6

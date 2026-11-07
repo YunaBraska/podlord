@@ -13,6 +13,8 @@ YAML_VERSION=0.9.0
 YAML_SHA=25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a
 SSL_VERSION=3.5.9
 SSL_SHA=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PATCH_SHA=$(shasum -a 256 "$SCRIPT_DIR/patches/qtdeclarative-6.11.3-shutdown.diff" | awk '{print $1}')
 if [ "$MODE" = check ]; then
     [ "$(uname -s)" = Darwin ] && [ -d "$TARGET" ]
     test -L "$TARGET/qt-sdk"
@@ -37,6 +39,8 @@ if [ "$MODE" = check ]; then
     grep -Fx "OpenSSL: $SSL_VERSION LTS" "$TARGET/build-inputs.txt"
     grep -Fx "Build architecture: $(uname -m)" "$TARGET/build-inputs.txt"
     grep -Fx 'Candidate deployment floor: macOS 13.0' "$TARGET/build-inputs.txt"
+    test -f "$TARGET/qt-sdk/podlord-qtquick-patch.txt"
+    grep -Fx "Qt Quick patch SHA256: $PATCH_SHA" "$TARGET/qt-sdk/podlord-qtquick-patch.txt"
     printf 'Pinned public macOS toolchain validated.\n'
     exit 0
 fi
@@ -44,7 +48,7 @@ if [ "$(uname -s)" != Darwin ] || [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
     printf 'Requires macOS and a new toolchain directory.\n' >&2
     exit 2
 fi
-for tool in python3 cmake ninja curl shasum tar perl make; do
+for tool in python3 cmake ninja curl shasum tar perl make git; do
     command -v "$tool" >/dev/null 2>&1 || { printf 'Required tool is missing: %s\n' "$tool" >&2; exit 2; }
 done
 mkdir -p "$(dirname -- "$TARGET")"
@@ -65,6 +69,8 @@ python3 -m venv "$TARGET/installer"
 "$TARGET/installer/bin/pip" install --disable-pip-version-check aqtinstall==3.3.0
 "$TARGET/installer/bin/aqt" install-qt mac desktop "$QT_VERSION" clang_64 -m qtmultimedia qtwebsockets qtshadertools -O "$TARGET/qt"
 ln -s "qt/$QT_VERSION/macos" "$TARGET/qt-sdk"
+cmake "-DQT_SDK_PREFIX=$TARGET/qt-sdk" "-DWORK_ROOT=$TARGET/quick-fix" \
+    "-DQT_BUILD_JOBS=${PODLORD_BUILD_JOBS:-4}" -P "$SCRIPT_DIR/qt-quick-shutdown.cmake"
 curl --fail --location --silent --show-error "https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-$YAML_VERSION.tar.gz" -o "$TARGET/yaml-cpp-source.tar.gz"
 printf '%s  %s\n' "$YAML_SHA" "$TARGET/yaml-cpp-source.tar.gz" | shasum -a 256 -c -
 mkdir "$TARGET/yaml-cpp-source"
@@ -91,6 +97,7 @@ tar -xzf "$TARGET/openssl-source.tar.gz" --strip-components=1 -C "$TARGET/openss
     printf 'Installer: aqtinstall 3.3.0\nyaml-cpp: %s\nyaml-cpp source SHA256: %s\n' "$YAML_VERSION" "$YAML_SHA"
     printf 'OpenSSL: %s LTS\nOpenSSL source SHA256: %s\n' "$SSL_VERSION" "$SSL_SHA"
     printf 'Build architecture: %s\nCandidate deployment floor: macOS 13.0\n' "$(uname -m)"
+    cat "$TARGET/quick-fix/qt-quick-fix.txt"
     cmake --version
     xcrun clang --version
 } > "$TARGET/build-inputs.txt"

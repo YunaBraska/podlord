@@ -1,6 +1,6 @@
 # Roadmap
 
-> Current native qualification (2026-11-07): [test evidence and remaining release decisions](spec/k3d-test-map.md#native-release-qualification-2026-11-07). Earlier dated status entries are historical checkpoints. Confirmed specifications remain authoritative.
+> Current native release status (2026-11-07): [Qt correction and release qualification](spec/k3d-test-map.md#upstream-qt-quick-shutdown-correction-2026-11-07). Earlier dated status entries are historical checkpoints. Confirmed specifications remain authoritative.
 
 Podlord is built around a flat, cache-first Kubernetes workspace. The confirmed implementation direction is a C++/Qt Quick rewrite for desktop and mobile, with continuous comparison against the existing application. The [operational specification](spec/podlord-operational-spec.md) owns behavior; [ADR 0015](adr/0015-cpp-rewrite-for-performance-and-device-coverage.md) owns rewrite rationale; the [existing test map](spec/k3d-test-map.md) owns comparison scenarios and evidence.
 

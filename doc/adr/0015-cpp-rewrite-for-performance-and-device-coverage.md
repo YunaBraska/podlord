@@ -35,6 +35,28 @@ All 14 interview blocks are confirmed. Existing accepted behavior remains author
 
 Android uses Qt's OpenSSL TLS backend, but the official Qt Android kit does not include the OpenSSL runtime libraries. Android packages therefore bundle verified OpenSSL 3 libraries for each shipped ABI; configuration fails if they are missing. The pinned source build and `_3` library names are owned by `scripts/build-native-android-openssl.sh`. The existing OpenSSL notice covers this dependency. Package inspection proves inclusion, not an installed-device HTTPS connection.
 
+## Upstream Qt Quick Shutdown Correction
+
+On 2026-11-07 the user delegated the release-blocking Qt dependency decision.
+Retain the pinned 6.11.3 baseline and apply the unmodified upstream correction
+`bbcaf3f39143b9add9722f4e31b51fc1dd102892`, rather than jump to a larger Qt release
+that does not yet contain it. This is a bounded supplier backport, not a new
+application renderer, a behavior change or a maintained alternative Qt fork.
+
+The official source archive and exact diff are checksum-pinned. Source-built
+SDKs apply the same diff before compilation. Prebuilt kits rebuild only Quick
+and its two related plugins, including required Android Java runtime assets.
+Android app configuration validates the patch identity at the SDK resolved from
+the actual Qt Quick package, so an old kit cannot silently bypass preparation.
+SDK cache identities include the patch and build
+recipe, and restored metadata must identify the same patch. A public Qt
+application-owned asynchronous image/engine shutdown regression must finish,
+not merely load the image. The unmodified 6.11.3 kit demonstrably hangs there.
+
+Requalify installed applications, packages and affected platforms. Disclose the
+modified library and preserve corresponding-source obligations. Remove this
+backport once a qualified unmodified Qt release contains the correction.
+
 ## What Licensing Evidence Is Required Before Platform Releases?
 
 Verify the licenses of the exact shipped Qt modules, source and relinking obligations, signing, and distribution terms before each desktop or mobile release. No commercial Qt purchase, project-license change, or App Store compatibility is assumed. The native development toolchain currently uses Qt Core and Qt Quick components, without WebEngine. Installation of development tools is not evidence that the shipped application meets platform distribution requirements. References: [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt open-source obligations](https://www.qt.io/development/open-source-lgpl-obligations).
