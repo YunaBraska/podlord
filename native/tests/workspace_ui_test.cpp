@@ -544,7 +544,7 @@ bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt
     if (!name.isEmpty()) target = item(window, name);
     if (target && !target->isVisible()) {
         const auto name=target->objectName();
-        if (name=="sourcesButton" || name=="radarWorkspaceButton" || name=="renameCurrentSession")
+        if (name=="sourcesButton" || name=="renameCurrentSession")
             if (!click(window,item(window,"toggleSidebar"))) return false;
     }
     if (!target || !target->isVisible() || !target->isEnabled()) return false;
@@ -618,7 +618,7 @@ bool showEventColumn(QQuickWindow* window, podlord::Workspace& workspace, const 
         && workspace.tableLayoutError().isEmpty();
 }
 bool execute(const QString& requestedScenario) {
-    const bool mapRadar=requestedScenario.startsWith("radar_map_");
+    bool mapRadar=requestedScenario.startsWith("radar_map_");
     const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
     const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
     const bool twoContexts = scenario == "session_tabs_controls" || scenario == "session_rename_context_menu" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
@@ -1502,7 +1502,7 @@ bool execute(const QString& requestedScenario) {
                 window->setMinimumHeight(0); window->resize(640,320);
                 QTest::keyClick(window,Qt::Key_Return);
                 if (!waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml()
-                    && radar->isVisible() && displayedWithin(item(window,"workspaceSidebarHost"),radar); })) return false;
+                    && !radar->isVisible() && !radar->hasActiveFocus(); })) return false;
                 if (!click(window,item(window,"closeInspector"))) return false;
                 return waitFor([&] { return workspace.inspectorPath().isEmpty() && (workspace.workspacePage()=="map" && !workspace.mapOverview())
                     && radar->isVisible() && !displayedWithin(item(window,"workspaceSidebarHost"),radar)
@@ -1586,8 +1586,11 @@ bool execute(const QString& requestedScenario) {
             return text(window, "syncStatus") == QString("API: %1/min  Synced: 0s ago").arg(calls) && server.requests.size() == calls;
         }
         if (scenario == "shell_landscape" || scenario == "shell_landscape_filters" || scenario == "shell_landscape_rotate") {
+            if (scenario != "shell_landscape_filters"
+                && (!workspace.filter("alpha") || !click(window, item(window, "radarZoom")))) return false;
+            const auto pose = radar->property("viewPose").toMap();
             window->resize(800,390);
-            if (!waitFor([&] { return item(window, "landscapeNavigation")->isVisible() && radar->isVisible()
+            if (!waitFor([&] { return item(window, "landscapeNavigation")->isVisible() && !radar->isVisible()
                 && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
             if (scenario == "shell_landscape_filters") {
                 const auto failed = [&](const char* stage, QQuickItem* control) {
@@ -1619,8 +1622,6 @@ bool execute(const QString& requestedScenario) {
                 }
                 return true;
             }
-            if (!workspace.filter("alpha") || !click(window, item(window, "radarZoom"))) return false;
-            const auto pose = radar->property("viewPose").toMap();
             const auto evidence = qEnvironmentVariable("PODLORD_SHELL_EVIDENCE");
             const QList<QSize> sizes = scenario == "shell_landscape_rotate" ? QList<QSize>{QSize(800,390),QSize(390,720),QSize(800,390),QSize(1440,920)}
                 : QList<QSize>{QSize(600,360),QSize(640,360),QSize(800,390),QSize(896,414),QSize(1080,480)};
@@ -1630,7 +1631,7 @@ bool execute(const QString& requestedScenario) {
                 if (!waitFor([&] {
                     auto* rail = item(window, "landscapeNavigation");
                     auto* host = item(window, "workspaceSidebarHost");
-                    return rail->isVisible() == landscape && (landscape ? host->isVisible() && host->width() <= 320 : true)
+                    return rail->isVisible() == landscape && (landscape ? host->isVisible() && host->width() <= 80 && !radar->isVisible() : true)
                         && item(window, "resourceTable")->height() >= 32;
                 })) return false;
                 if (scenario == "shell_landscape_rotate") {
@@ -2374,6 +2375,104 @@ bool execute(const QString& requestedScenario) {
     }
     if (scenario.startsWith("ui_density_")) {
         const auto calls = server.requests.size();
+        if (scenario == "ui_density_alignment") {
+            window->setMinimumSize(QSize(200,200));
+            bool aligned = true;
+            for (const auto& mode : {QString("dark"),QString("light")}) {
+                if (!workspace.saveAppearance("Imperial Ledger",mode) || !waitFor([&] { return !workspace.busy(); })) return false;
+                for (const auto size : {QSize(1440,920),QSize(640,320),QSize(320,640)}) {
+                    window->resize(size);
+                    const bool drawer = size.width() < 600;
+                    if (drawer && !click(window,item(window,"toggleSidebar"))) return false;
+                    QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
+                    if (!waitFor([&] { return !frames.isEmpty(); })) return false;
+                    int checked = 0;
+                    for (const auto* name : {"workspaceSearchButton","quickOpenDropdown","workspaceActionsButton","toggleSidebar",
+                        "renameCurrentSession","masterAudioMute","resetResourceFilters","filterPreset","saveFilterPreset",
+                        "filterPresetActions","radarZoomOut","radarZoom","toggleLandscapeFilters"}) {
+                        auto* control = item(window,name);
+                        if (!control || !control->isVisible() || control->property("showText").toBool()) continue;
+                        auto* content = control->property("contentItem").value<QQuickItem*>();
+                        QQuickItem* glyph = nullptr;
+                        if (content) for (auto* child : content->childItems())
+                            if (child->isVisible() && child->property("kind") == control->property("glyph")) glyph = child;
+                        if (!glyph) return false;
+                        const auto center = glyph->mapToItem(control,QPointF(glyph->width()/2,glyph->height()/2));
+                        const auto offset = center-QPointF(control->width()/2,control->height()/2);
+                        if (qAbs(offset.x())>1 || qAbs(offset.y())>1) {
+                            std::fprintf(stderr,"Uncentered icon %s: offset=(%.2f,%.2f), target=%.1fx%.1f, window=%dx%d\n",
+                                name,offset.x(),offset.y(),control->width(),control->height(),size.width(),size.height());
+                            aligned = false;
+                        }
+                        ++checked;
+                    }
+                    if (checked < 3) return false;
+                    auto* source = item(window,"sourcesButton");
+                    if (source && source->isVisible()) {
+                        auto* label = source->property("contentItem").value<QQuickItem*>();
+                        if (!label) return false;
+                        const auto w = qMin(label->width(),label->property("contentWidth").toDouble());
+                        const auto h = qMin(label->height(),label->property("contentHeight").toDouble());
+                        const auto horizontal = label->property("horizontalAlignment").toInt();
+                        const auto vertical = label->property("verticalAlignment").toInt();
+                        const auto x = horizontal==Qt::AlignHCenter ? (label->width()-w)/2 : horizontal==Qt::AlignRight ? label->width()-w : 0;
+                        const auto y = vertical==Qt::AlignVCenter ? (label->height()-h)/2 : vertical==Qt::AlignBottom ? label->height()-h : 0;
+                        const auto center = label->mapToItem(source,QPointF(x+w/2,y+h/2));
+                        if (qAbs(center.x()-source->width()/2)>1 || qAbs(center.y()-source->height()/2)>1) {
+                            std::fprintf(stderr,"Uncentered source-button text at %dx%d: center=(%.2f,%.2f), target=%.1fx%.1f\n",
+                                size.width(),size.height(),center.x(),center.y(),source->width(),source->height());
+                            aligned = false;
+                        }
+                    }
+                    if (!saveShellFrame(window,scenario+"-"+mode+"-"+QString::number(size.width())+"x"+QString::number(size.height()))) return false;
+                    if (drawer) QTest::keyClick(window,Qt::Key_Escape);
+                }
+            }
+            return aligned && server.requests.size()==calls;
+        }
+        if (scenario == "ui_density_radar_adaptive") {
+            window->setMinimumSize(QSize(200,200));
+            if (!window->property("searchOpen").toBool() && !click(window,item(window,"workspaceSearchButton"))) return false;
+            if (!type(window,item(window,"resourceFilter"),"alpha") || !click(window,item(window,"workspaceSearchButton"))) return false;
+            auto* radar = item(window,"resourceRadar");
+            if (!radar || !radar->isVisible()) return false;
+            radar->forceActiveFocus(Qt::TabFocusReason);
+            QTest::keyClick(window,Qt::Key_Plus); QTest::keyClick(window,Qt::Key_Right);
+            if (!waitFor([&] { return !workspace.property("radarView").toMap().isEmpty(); })) return false;
+            const auto pose = workspace.property("radarView").toMap();
+            const auto session = workspace.currentSession();
+            const auto total = workspace.totalResourceCount();
+            window->resize(640,320);
+            const bool compact = waitFor([&] {
+                auto* host = item(window,"workspaceSidebarHost");
+                auto* sidebar = item(window,"workspaceSidebar");
+                return host && sidebar && !radar->isVisible()
+                    && qAbs(host->width()-sidebar->property("collapsedFilterWidth").toDouble())<1
+                    && item(window,"toggleLandscapeFilters")->isVisible();
+            });
+            auto* host = item(window,"workspaceSidebarHost");
+            auto* primary = item(window,"workspaceInspectorSplit");
+            std::fprintf(stderr,"Compact workspace: table=%.1f sidebar=%.1f radarVisible=%d\n",
+                primary ? primary->width() : -1,host ? host->width() : -1,radar->isVisible());
+            if (!saveShellFrame(window,scenario+"-compact") || !compact) return false;
+            QTest::keyClick(window,Qt::Key_Right);
+            if (radar->hasActiveFocus() || radar->property("viewPose").toMap()!=pose) {
+                std::fputs("Hidden Radar must not retain keyboard input.\n",stderr); return false;
+            }
+            if (window->findChild<QObject*>("radarWorkspaceButton")) return false;
+            if (!click(window,item(window,"toggleLandscapeFilters")) || !waitFor([&] {
+                return !radar->isVisible() && item(window,"sourcesButton")->isVisible() && host->width()>100;
+            }) || !saveShellFrame(window,scenario+"-filters")) return false;
+            if (!click(window,item(window,"toggleLandscapeFilters")) || !click(window,item(window,"mapWorkspaceButton"))) return false;
+            if (!waitFor([&] { return radar->isVisible() && radar->height()>44 && radar->property("viewPose").toMap()==pose; })
+                || !saveShellFrame(window,scenario+"-map")) return false;
+            if (!click(window,item(window,"resourcesWorkspaceButton")) || !waitFor([&] { return !radar->isVisible(); })) return false;
+            window->resize(1440,920);
+            return waitFor([&] { return radar->isVisible() && item(window,"resourceRadar")==radar
+                && radar->property("viewPose").toMap()==pose && workspace.currentSession()==session
+                && workspace.totalResourceCount()==total && workspace.filterText()=="alpha"; })
+                && server.requests.size()==calls && saveShellFrame(window,scenario+"-restored");
+        }
         if (scenario == "ui_density_single_tab") {
             const auto* tabs = item(window, "sessionTabs");
             if (!(workspace.tabs().size() == 1 && tabs && !tabs->isVisible()
@@ -2701,7 +2800,7 @@ bool execute(const QString& requestedScenario) {
             if (!window->activeFocusItem() || window->activeFocusItem() == input) return false;
         }
         if (scenario == "filter_search_radar") {
-            if (!click(window,item(window,"radarWorkspaceButton")) || !waitFor([&] { return workspace.workspacePage()=="resources"; })) return false;
+            if (!podlord::test::focusResourceRadar(window) || !waitFor([&] { return workspace.workspacePage()=="resources"; })) return false;
             if (workspace.resourceCount()!=1 || workspace.totalResourceCount()!=3 || workspace.table()->data(workspace.table()->index(0,0)).toString()!="alpha") return false;
         }
         if (scenario == "filter_search_restore") {
@@ -3417,9 +3516,11 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario.startsWith("radar_info_panel_")) {
             window->resize(scenario.endsWith("_phone") ? QSize(390,844) : shortLandscape ? landscapeSurface : QSize(640,320));
-            if (!shortLandscape) QTest::qWait(30);
+            QSignalSpy resizedFrame(window,&QQuickWindow::frameSwapped); window->update();
+            if (!waitFor([&] { return !resizedFrame.isEmpty(); })) return failed("resized radar layout");
         }
-        if (!click(window, item(window, mapRadar ? "mapWorkspaceButton" : "radarWorkspaceButton"))) return failed("open radar");
+        mapRadar = mapRadar || window->property("compactLandscape").toBool();
+        if (!podlord::test::focusResourceRadar(window,mapRadar)) return failed("open radar");
         auto* radar = item(window, "resourceRadar");
         if (!radar || !waitFor([&] { return radar->isVisible() && radar->width() > 0 && radar->height() > 0 && radar->property("count").toInt() == expectedRows; })) return failed("populate radar");
         // Existing input/paint scenarios deliberately start from the public 100% reset.
@@ -3440,8 +3541,7 @@ bool execute(const QString& requestedScenario) {
             const auto* history = item(window, "mapBack");
             if (!mapRadar && history && history->isVisible()) return failed("map history leaked into the resource table Radar");
             const auto viewport = radar->mapRectToScene(radar->boundingRect());
-            for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom"}) {
-                if (mapRadar && QString::fromLatin1(name) == "radarWorkspaceButton") continue;
+            for (const auto* name : {"radarZoomOut", "radarZoom"}) {
                 auto* control = item(window, name);
                 if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
                     return failed("navigation must overlay the drawing area");
@@ -4151,7 +4251,7 @@ bool execute(const QString& requestedScenario) {
                 if (!saveShellFrame(window,requestedScenario+"-before-sort")) return false;
                 QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,area.center().toPoint());
                 QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,area.center().toPoint());
-                if (!click(window,item(window,"radarWorkspaceButton"))) return false;
+                if (!podlord::test::focusResourceRadar(window,mapRadar)) return false;
                 const bool retained=waitFor([&] { const auto tile=radarPoint(radar,2); const auto expected=workspace.table()->index(2,0); return tile && expected.data(Qt::UserRole+1)=="alpha" && tile->path==expected.data(Qt::UserRole) && QLineF(initial,tile->bounds.center()).length()<1; });
                 if (!retained) {
                     saveShellFrame(window,requestedScenario+"-sort-failure");
@@ -4275,7 +4375,7 @@ bool execute(const QString& requestedScenario) {
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
             if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); })) return false;
             if (!click(window, item(window, "toggleSidebar")) || !waitFor([&] { return !radar->isVisible(); })) return false;
-            if (!click(window, item(window, "radarWorkspaceButton"))) return false;
+            if (!podlord::test::focusResourceRadar(window,mapRadar)) return false;
             return waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); }) && server.requests.size() == calls;
         }
         if ((scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_navigation_water") {
@@ -4385,7 +4485,7 @@ bool execute(const QString& requestedScenario) {
             return server.requests.size() == calls;
         }
         if (scenario == "radar_refresh_layout") {
-            auto* navigation = item(window, "radarWorkspaceButton");
+            auto* navigation = item(window, "radarZoomOut");
             QSignalSpy presented(window,&QQuickWindow::frameSwapped); window->update();
             if (!presented.wait(2000)) return false;
             const auto position = navigation->mapToScene({0, 0});
@@ -4487,7 +4587,7 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "radar_sort") {
             if (!click(window, item(window, "resourcesWorkspaceButton")) || !click(window, item(window, "header_0")) || !click(window, item(window, "header_0"))
-                || !click(window, item(window, "radarWorkspaceButton"))) return false;
+                || !podlord::test::focusResourceRadar(window,mapRadar)) return false;
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Return);
             return waitFor([&] { return workspace.inspectorName() == "custom-widget"; });
         }
@@ -4533,7 +4633,7 @@ bool execute(const QString& requestedScenario) {
             const int expectedEvents = scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 2 : 1;
             if (workspace.totalEventCount() != expectedEvents || workspace.totalResourceCount() != expectedRows) return false;
             stage = "radar";
-            if (!click(window, item(window, "radarWorkspaceButton")) || !waitFor([&] { return item(window, "resourceRadar")->property("count").toInt() == expectedRows; })) return false;
+            if (!podlord::test::focusResourceRadar(window,mapRadar) || !waitFor([&] { return item(window, "resourceRadar")->property("count").toInt() == expectedRows; })) return false;
             stage = "event columns";
             if (!click(window, item(window, "eventsWorkspaceButton")) || !waitFor([&] { return item(window, "eventTable")->property("rows").toInt() == expectedEvents; })
                 || !showEventColumn(window, workspace, "eventCount")) return false;
@@ -6061,8 +6161,8 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
                 }) || !capture("map-overview",themeIndex,variant)) return failure("theme persisted overview capture");
                 if (!workspace.navigateMap(-1) || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })) return failure("theme map history back");
                 for (const auto& view : QList<QPair<QString, QString>>{{"resources", "resourcesWorkspaceButton"},
-                    {"radar", "radarWorkspaceButton"}, {"events", "eventsWorkspaceButton"}, {"ports", "portForwardTasksButton"}}) {
-                    if (!click(window, item(window, view.second))) return failure("theme workspace navigation");
+                    {"radar", ""}, {"events", "eventsWorkspaceButton"}, {"ports", "portForwardTasksButton"}}) {
+                    if (view.first=="radar" ? !podlord::test::focusResourceRadar(window) : !click(window,item(window,view.second))) return failure("theme workspace navigation");
                     if (view.first != "radar" && !waitFor([&] { return workspace.workspacePage() == view.first; })) return failure("theme workspace selection");
                     if (!capture(view.first, themeIndex, variant) || !dismissSidebar()) return failure("theme workspace capture");
                 }
@@ -6131,11 +6231,11 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
             std::fprintf(stderr,"Real search %s: count=%d expected=%d; %s\n",qPrintable(query.first),workspace.resourceCount(),query.second,qPrintable(workspace.filterError())); return false;
         }
         if ((query.first=="/[/") != item(window,"filterErrorMessage")->isVisible()) return false;
-        if (!click(window,item(window,"radarWorkspaceButton")) || !waitFor([&] { return item(window,"resourceRadar")->property("count").toInt()==query.second; })) return false;
+        if (!podlord::test::focusResourceRadar(window) || !waitFor([&] { return item(window,"resourceRadar")->property("count").toInt()==query.second; })) return false;
         if (!click(window,item(window,"resourcesWorkspaceButton"))) return false;
     }
     if (!click(window,item(window,"resetResourceFilters")) || !waitFor([&] { return workspace.resourceCount()==workspace.totalResourceCount() && workspace.resourceCount()>=1051; })) return false;
-    if (!type(window,item(window,"resourceFilter"),"/^visual-config-000[1-3]$/") || !click(window,item(window,"radarWorkspaceButton"))) return false;
+    if (!type(window,item(window,"resourceFilter"),"/^visual-config-000[1-3]$/") || !podlord::test::focusResourceRadar(window)) return false;
     if (!waitFor([&] { return item(window,"resourceRadar")->property("count").toInt()==24; })) return false;
     auto* filteredRadar=item(window,"resourceRadar");
     const auto firstResource=workspace.table()->index(0,0);

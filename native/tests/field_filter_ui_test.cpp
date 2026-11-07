@@ -56,11 +56,11 @@ bool click(QQuickWindow* window, const QString& name) {
     if (!podlord::test::revealWorkspaceAction(window, name)) return false;
     QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
     if (!frames.wait(1000)) return false;
-    if (name=="sidebarField_name" || name=="radarWorkspaceButton") {
+    if (name=="sidebarField_name") {
         auto* target=item(window,name);
         if (target && !target->isVisible()) {
             const auto* expander=item(window,"toggleLandscapeFilters");
-            const auto action=name=="sidebarField_name" && expander && expander->isVisible()
+            const auto action=expander && expander->isVisible()
                 ? "toggleLandscapeFilters" : "toggleSidebar";
             if (!click(window,action) || !waitFor([&] { return target->isVisible(); })) return false;
         }
@@ -956,7 +956,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
         } else if (scenario == "radar") {
             if (!expression("namespace", "team-a") || !count(1)) return false;
             QTest::keyClick(window, Qt::Key_Escape);
-            passed = click(window, "radarWorkspaceButton") && workspace.resourceCount() == 1 && workspace.totalResourceCount() == 3;
+            passed = podlord::test::focusResourceRadar(window) && workspace.resourceCount() == 1 && workspace.totalResourceCount() == 3;
         } else if (scenario == "global_and") {
             if (!expression("kind", "Pod")) return false;
             QTest::keyClick(window, Qt::Key_Escape);

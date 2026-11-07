@@ -362,9 +362,10 @@ if(mapRoundtrip==='1'){
 terminalJourney();
 if(terminalOnly==='1'){completeJourney();process.exit(0);}
 search('');steps.push({step:'Landscape search remains above the real soft keyboard and restores navigation after dismissal'});
-const miniRadar=target('resourceRadar').bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
+if(nodes.some(n=>n['resource-id']?.endsWith('.resourceRadar')&&n.bounds!=='[0,0][0,0]'))throw Error('Small Radar must not consume the compact table workspace');
+capture('compact-table-filter-rail');
 click('mapWorkspaceButton');
-waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]>miniRadar[2]-miniRadar[0]+50;});
+waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]>b[0]&&b[3]>b[1]+44;});
 for(let i=0;i<4;i++)click('radarZoomOut');capture('map-cluster-overview');
 for(let i=0;i<7;i++)click('radarZoom');capture('map-namespace-details');
 click('mapOverview');waitNode(contextCard,n=>n.enabled==='true');
@@ -378,9 +379,9 @@ for(const prefix of ['contextMapName_','contextMapCluster_','renameMapContext_']
 }
 capture('contexts-after-loading');click(contextCard);
 waitNode('resourceRadar',n=>n.enabled==='true');click('resourcesWorkspaceButton');
-waitNode('resourceRadar',n=>{const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);return b[2]-b[0]<=miniRadar[2]-miniRadar[0]+1;});
+state();if(nodes.some(n=>n['resource-id']?.endsWith('.resourceRadar')&&n.bounds!=='[0,0][0,0]'))throw Error('Returning to the compact table must hide only the small Radar');
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
-click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('radar-and-filters');
+click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
 click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');const filtered=nodes.map(n=>n['content-desc']||'').join('\n').match(/(\d+) matching resources/);if(!filtered||Number(filtered[1])<=0||Number(filtered[1])>=count)throw Error('Problems filter did not reduce cached matches');click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');steps.push({step:'Problems filter enables, reduces cached matches and disables',matches:Number(filtered[1])});
 click('toggleLandscapeFilters');
 for(const id of ['eventsWorkspaceButton','portForwardTasksButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}

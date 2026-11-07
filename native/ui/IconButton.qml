@@ -25,7 +25,7 @@ ToolButton {
     contentItem: RowLayout {
         spacing: control.glyph !== "" && control.showText ? 6 : 0
         KindGlyph {
-            Layout.alignment: Qt.AlignVCenter
+            Layout.alignment: Qt.AlignCenter
             Layout.preferredWidth: 18; Layout.preferredHeight: 18
             visible: control.glyph !== ""
             kind: control.glyph

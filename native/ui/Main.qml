@@ -1110,9 +1110,9 @@ ApplicationWindow {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
                 visible: window.sidebarDocked && window.sidebarOpen && !window.inputPriority && !(workspace.workspacePage === "map" && workspace.mapOverview)
-                SplitView.preferredWidth: sidebar.compactMapRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 240 : 392
-                SplitView.minimumWidth: sidebar.compactMapRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 228 : 300
-                SplitView.maximumWidth: sidebar.compactMapRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 320 : 720
+                SplitView.preferredWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 240 : 392
+                SplitView.minimumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 228 : 300
+                SplitView.maximumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 320 : 720
             }
         }
         RowLayout {
@@ -1131,6 +1131,7 @@ ApplicationWindow {
         expandedRadarHost: workspace.workspacePage === "map" && !workspace.mapOverview && !window.compactInspector ? resourceMapHost : null
         radarVisible: workspace.workspacePage !== "map" || !workspace.mapOverview
         collapsibleFilters: window.compactLandscape
+        suppressSmallRadar: window.compactLandscape
         anchors.fill: parent
         visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible
         onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.sidebarDocked) sidebarDrawer.close() }

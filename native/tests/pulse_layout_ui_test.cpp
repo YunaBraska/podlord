@@ -82,15 +82,15 @@ int main(int argc, char** argv) {
             window->resize(844, 390);
             require(QTest::qWaitFor([&] {
                 auto* radar = findItem(window->contentItem(), "resourceRadar");
-                return radar && radar->isVisible();
-            }, 3000), "Landscape radar is unavailable.");
+                return radar && !radar->isVisible();
+            }, 3000), "Compact landscape must leave space for content instead of the small Radar.");
             auto* emptyRadar = findItem(window->contentItem(), "emptyRadar");
             require(emptyRadar && QTest::qWaitFor([&] {
                 if (!emptyRadar->isVisible()) return true;
                 const auto bounds = emptyRadar->mapRectToScene(emptyRadar->boundingRect());
                 const auto container = emptyRadar->parentItem()->mapRectToScene(emptyRadar->parentItem()->boundingRect());
                 if (!container.adjusted(-0.5, -0.5, 0.5, 0.5).contains(bounds)) return false;
-                for (const auto* name : {"radarWorkspaceButton", "radarZoomOut", "radarZoom"}) {
+                for (const auto* name : {"radarZoomOut", "radarZoom"}) {
                     auto* control = findItem(window->contentItem(), name);
                     if (!control || !control->isVisible() || bounds.intersects(control->mapRectToScene(control->boundingRect()))) return false;
                 }

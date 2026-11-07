@@ -125,9 +125,9 @@ QString text(QObject* root, const QString& name) {
     auto* value = item(root, name); return value ? value->property("text").toString() : QString{};
 }
 bool click(QQuickWindow* window, QPointer<QQuickItem> target, Qt::MouseButton button = Qt::LeftButton) {
-    if (target && !target->isVisible() && (target->objectName()=="radarWorkspaceButton" || target->objectName()=="sidebarField_name")) {
+    if (target && !target->isVisible() && target->objectName()=="sidebarField_name") {
         const auto* expander=item(window,"toggleLandscapeFilters");
-        const auto action=target->objectName()=="sidebarField_name" && expander && expander->isVisible()
+        const auto action=expander && expander->isVisible()
             ? "toggleLandscapeFilters" : "toggleSidebar";
         if (!click(window,item(window,action)) || !waitFor([&] { return target && target->isVisible(); })) return false;
     }
@@ -345,8 +345,7 @@ bool execute(const QString& scenario) {
     }
     if (scenario == "radar" || scenario == "restart_radar") {
         QTest::keyClick(window, Qt::Key_Escape);
-        auto* radarButton = item(window,"radarWorkspaceButton");
-        if (!click(window, radarButton) || !waitFor([&] {
+        if (!podlord::test::focusResourceRadar(window) || !waitFor([&] {
             auto* radar = item(window, "resourceRadar"); return radar && radar->isVisible() && radar->property("count").toInt() == 1;
         })) return false;
     }
@@ -496,7 +495,7 @@ bool realCluster(const QString& source) {
         !setField("namespace", "\"visual-a\" \"visual-b\"") || !setField("name", "~visual-config-") ||
         !waitFor([&] { return workspace.resourceCount() == 128; })) return fail("Radar filter setup");
     QTest::keyClick(window, Qt::Key_Escape);
-    if (!click(window, item(window, "radarWorkspaceButton")) || !waitFor([&] {
+    if (!podlord::test::focusResourceRadar(window) || !waitFor([&] {
         auto* radar = item(window, "resourceRadar");
         return radar && radar->isVisible() && radar->property("count").toInt() == 128;
     })) return fail("shared filtered Radar");

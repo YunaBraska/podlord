@@ -298,6 +298,32 @@ inline bool clickVisible(QQuickWindow* window, const QString& name, Qt::MouseBut
     }
     return false;
 }
+/** Open the retained Radar through the actual workspace controls, using Map when space is compact. */
+inline bool focusResourceRadar(QQuickWindow* window, bool expanded = false) {
+    if (!window) return false;
+    const bool map = expanded || window->property("compactLandscape").toBool();
+    const auto navigation = map ? "mapWorkspaceButton" : "resourcesWorkspaceButton";
+    auto* button = visibleItem(window->contentItem(),navigation);
+    if (!button || !button->property("checked").toBool()) {
+        auto* drawer = window->findChild<QObject*>("sidebarDrawer");
+        if (drawer && drawer->property("visible").toBool()) {
+            QTest::keyClick(window,Qt::Key_Escape);
+            if (!QTest::qWaitFor([&] { return !drawer->property("visible").toBool(); },2000)) return false;
+        }
+        if (!clickVisible(window,navigation)) return false;
+    }
+    if (!map && !visibleItem(window->contentItem(),"resourceRadar") && !clickVisible(window,"toggleSidebar")) return false;
+    auto* drawer=window->findChild<QObject*>("sidebarDrawer");
+    if (drawer && drawer->property("visible").toBool()
+        && !QTest::qWaitFor([&] { return drawer->property("opened").toBool(); },2000)) return false;
+    if (!QTest::qWaitFor([&] { auto* radar=visibleItem(window->contentItem(),"resourceRadar");
+        if (!radar || radar->width()<=0 || radar->height()<=0) return false;
+        const auto bounds=radar->mapRectToScene(radar->boundingRect());
+        return QRectF(0,0,window->width(),window->height()).contains(bounds)
+            && visibleBounds(window,radar).contains(bounds); },2000)) return false;
+    visibleItem(window->contentItem(),"resourceRadar")->forceActiveFocus(Qt::TabFocusReason);
+    return true;
+}
 /** Select the visible desktop tab or the compact section picker through input. */
 inline bool selectSettingsSection(QQuickWindow* window, const QString& section) {
 #ifdef Q_OS_IOS

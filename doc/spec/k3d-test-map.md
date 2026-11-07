@@ -74,6 +74,65 @@ The script starts Colima when available, ensures k3d/kubectl exist, creates the 
 
 ## C++ Rewrite Comparison Evidence
 
+### Compact Radar And Shared Control Alignment, 2026-11-07
+
+Approved scope: center shared icon controls and the session/source label; hide
+the small Radar in the existing compact-landscape layout; retain the full Map
+and collapse closed filters to their icon rail; remove the redundant Radar
+focus-reticle action. No new breakpoint, resource cache or setting is added.
+
+- `native.ui.ui_density_alignment_{Basic,Fusion}` checks public glyph and text
+  geometry in dark/light themes at 1440x920, 640x320 and 320x640. Both style
+  variants failed before the fix: 44-pixel icon controls were 7 logical pixels
+  off-center, the expanded filter toggle was 93 pixels off-center, and the
+  source label lacked horizontal/vertical centering. Both pass after the fix.
+- `native.ui.ui_density_radar_adaptive_{Basic,Fusion}` drives zoom, pan, resize,
+  filter disclosure and Map/Resources navigation. At 640x320 the closed filter
+  rail is 68 logical pixels rather than a 240-pixel sidebar, returning 172
+  pixels to the primary workspace. The same renderer, camera, cached resources
+  and query survive. These actions issue no resource requests.
+- The adaptive regression also proves that a hidden Radar cannot retain
+  keyboard focus or react to arrow keys. The
+  keyboard assertion failed before disabling the hidden item. Map navigation
+  and restoring the larger layout re-enable the existing drawing surface.
+- Existing landscape, rotation, Radar-info, field/metric-filter, alert and
+  touch journeys use retained public navigation rather than the removed
+  reticle. Drawer journeys wait for its actual `opened` state, not a fixed
+  delay or the beginning of its visibility animation.
+- Before/after screenshots, red/green logs and platform evidence are retained
+  locally under `~/.cache/podlord/ui-spacing-radar-20261107.JpaUaf`. Desktop
+  captures establish the stated Qt layouts, not new C#/C++ or device-wide
+  release parity. Timing-sensitive benchmarks and audio playback are not
+  requalified by the parallel functional checks.
+- The broad functional run passed 2,043 of 2,049 CTest executions. Its six
+  failures were obsolete compact-Inspector visibility expectations and a
+  resize-readiness assumption. After test-only corrections, all 272 selected
+  Radar/shell/density and narrow/Radar field/metric-filter executions passed.
+  Production code was unchanged between these two runs. Counts include
+  Basic/Fusion variants, not thousands of distinct product features.
+- Both signed-APK Android 36 ARM64 journeys passed against the disposable
+  Kubernetes cluster: 4-KB and 16-KB page sizes, portrait/landscape, terminal,
+  session connections, filters and Map/Resources navigation. Both cleanup
+  manifests report completed with test exit 0. Android's idle-state diagnostic
+  appeared once in the 16-KB run; the public journey and final assertions
+  completed successfully. These are emulator, not physical-device results.
+- The iPhone 17 Pro/iOS 26.4 simulator completed the real-Kubernetes matrix:
+  19 themes, two variants and 21 views, totaling 798 captures. Its owned
+  simulator was removed. The shared Kubernetes fixture was also removed after
+  both Android journeys. All these checks were silent and headless.
+
+Review follow-ups, not approved or implemented in this increment: Settings
+and filters currently share a glyph; saved-filter loading and actions use two
+similar menu glyphs; the zoom percentage on dark water lacks contrast in the
+light theme. These findings prevent a blanket claim that every visual issue
+is resolved. They do not authorize action removal or a new filter workflow.
+
+Design constraints follow [Apple layout guidance](https://developer.apple.com/design/human-interface-guidelines/layout)
+and [toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars):
+consistent alignment and touch targets, fewer redundant controls, and primary
+content taking precedence when space is limited. This is not an Apple review
+or certification.
+
 The specification interview is complete. Continuous old/new comparison is required by RWT-009 through RWT-015 in `podlord-operational-spec.md`; sequencing is owned by `../roadmap.md`. This section seeds comparison work, not a completed feature inventory or executed test report. Existing testcase mappings remain in force until reconciled against actual shipped behavior and the accepted contract.
 
 Before changing replacement-sensitive code, record an immutable old baseline identity, runnable artifact identity, required toolchain/dependencies, and independently repeatable build/run commands. Record the new build identity alongside every comparison. Old/new runs must use isolated local state and listening ports. Mutations need equivalent isolated test-owned resources or reset initial conditions; running both deletes against one object is not a valid parity check.

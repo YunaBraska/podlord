@@ -8,6 +8,7 @@ import Podlord.Graphics 1.0
 
 Pane {
     id: radarPane
+    enabled: visible
     property bool compact: false
     property bool expanded: false
     readonly property Item navigationHost: navigationSlot
@@ -21,7 +22,6 @@ Pane {
         if (grid.selectResource(row) && grid.focusResource(row)) radarInfo.showInfo(focusTarget)
     }
     padding: compact ? 4 : 12
-    function focusRadar() { grid.forceActiveFocus() }
     function dismissInfo(restoreFocus = false) {
         if (restoreFocus && radarPane.visible && grid.renderActive) radarNavigation.forceActiveFocus()
         if (infoPopup) infoPopup.close()
@@ -64,7 +64,6 @@ Pane {
                 RowLayout {
                     Layout.fillWidth: !radarPane.expanded
                     Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
-                    IconButton { objectName: "radarWorkspaceButton"; visible: !radarPane.expanded; glyph: radarPane.expanded ? "Pod" : "Cluster"; text: radarPane.expanded ? "Show resource table" : "Focus resource radar"; onClicked: { workspace.setWorkspacePage("resources"); radarPane.focusRadar() } }
                     Item { Layout.fillWidth: true }
                     IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
                     Label { text: Math.round(grid.viewPose.zoom * 100) + "%"; visible: !radarPane.compact || radarPane.width >= 250 }

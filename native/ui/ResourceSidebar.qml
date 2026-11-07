@@ -7,11 +7,14 @@ import Podlord.Graphics 1.0
 
 Pane {
     id: sidebar
+    objectName: "workspaceSidebar"
     property bool collapsibleFilters: false
     property bool filtersExpanded: false
     property Item expandedRadarHost: null
     property bool radarVisible: true
-    readonly property bool compactMapRail: collapsibleFilters && expandedRadarHost !== null && !filtersExpanded
+    property bool suppressSmallRadar: false
+    readonly property bool radarShown: radarVisible && (!suppressSmallRadar || expandedRadarHost !== null)
+    readonly property bool compactFilterRail: collapsibleFilters && !filtersExpanded && (expandedRadarHost !== null || suppressSmallRadar)
     readonly property real collapsedFilterWidth: leftPadding + rightPadding + sidebarLayout.spacing + healthStrip.Layout.preferredWidth + filterToggle.implicitWidth
     readonly property Item mapNavigationHost: radar.navigationHost
     readonly property int count: radar.count
@@ -115,7 +118,7 @@ Pane {
             spacing: 4
             Item {
                 id: radarSlot
-                visible: sidebar.radarVisible && sidebar.expandedRadarHost === null
+                visible: sidebar.radarShown && sidebar.expandedRadarHost === null
                 Layout.fillWidth: true
                 Layout.fillHeight: sidebar.collapsibleFilters && !sidebar.filtersExpanded
                 Layout.preferredHeight: Math.min(sidebar.collapsibleFilters ? 110 : 190, sidebar.height * 0.45)
@@ -126,7 +129,7 @@ Pane {
                     compact: true
                     expanded: sidebar.expandedRadarHost !== null
                     detailsHost: radarDetailsHost.visible ? radarDetailsHost : null
-                    visible: sidebar.radarVisible
+                    visible: sidebar.radarShown
                 }
             }
             IconButton {
@@ -166,7 +169,7 @@ Pane {
                     text: workspace.title || "Sources"
                     Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0
                     implicitHeight: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32
-                    contentItem: Label { text: sourceAction.text; textFormat: Text.PlainText; elide: Text.ElideRight }
+                    contentItem: Label { text: sourceAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                     Accessible.name: "Show or hide kubeconfig sources"
                     onClicked: sourcesRequested()
                 }
