@@ -269,6 +269,7 @@ Pane {
                     objectName: "filterPresetOption_" + index
                     width: savedFilters.width
                     height: savedFilters.rowHeight
+                    focusPolicy: Qt.StrongFocus
                     text: modelData
                     highlighted: modelData === workspace.selectedFilterPreset
                     Accessible.role: Accessible.Button

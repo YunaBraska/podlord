@@ -6032,6 +6032,44 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
         input->show();
         if (!waitFor([&] { return aboveKeyboard("resourceFilter",32); },10000) || !capture("search-keyboard")) return failure("search keyboard geometry");
         input->hide();
+        if (!waitFor([&] { return !input->isVisible(); })) return failure("search keyboard closure");
+        auto* filterToggle=item(window,window->width()<600 ? "toggleSidebar" : "toggleLandscapeFilters");
+        if (!filterToggle || !click(window,filterToggle)
+            || !waitFor([&] { auto* field=item(window,"filterPresetName"); return field && field->isVisible(); })) return failure("preset filters disclosure");
+        if (!type(window,item(window,"filterPresetName"),"iOS-preset")) return failure("preset name entry");
+        input->show();
+        if (!waitFor([&] { return aboveKeyboard("filterPresetName",16); },10000)
+            || !capture("preset-save-keyboard")) return failure("preset keyboard geometry");
+        input->hide();
+        if (!waitFor([&] { return !input->isVisible(); }) || !click(window,item(window,"saveFilterPreset"))
+            || !waitFor([&] { return !workspace.filterPresetsBusy() && workspace.filterPresets().contains("iOS-preset"); })) return failure("preset save");
+        if (!click(window,item(window,"resetResourceFilters")) || !waitFor([&] { return workspace.filterText().isEmpty(); })
+            || !click(window,item(window,"filterPreset"))) return failure("preset reset and disclosure");
+        const auto choice="filterPresetOption_"+QString::number(workspace.filterPresets().indexOf("iOS-preset"));
+        if (!waitFor([&] { auto* option=item(window,choice); return option && option->isVisible(); })
+            || !click(window,item(window,choice)) || !waitFor([&] { return workspace.filterText()=="visual-multi-container"; })) return failure("preset restores search");
+        if (!click(window,item(window,"filterPreset")) || !click(window,item(window,"renameFilterPreset"))
+            || !type(window,item(window,"renameFilterPresetName"),"iOS-renamed")) return failure("preset rename entry");
+        input->show();
+        if (!waitFor([&] { return aboveKeyboard("renameFilterPresetName",16); },10000)
+            || !capture("preset-rename-keyboard")) return failure("preset rename keyboard geometry");
+        input->hide();
+        if (!waitFor([&] { return !input->isVisible(); })) return failure("preset rename keyboard closure");
+        auto* rename=window->findChild<QObject*>("renameFilterPresetDialog");
+        if (!rename) return failure("preset rename dialog");
+        QQmlExpression confirmation(qmlContext(rename),rename,"standardButton(Dialog.Ok)");
+        auto* confirm=confirmation.evaluate().value<QQuickItem*>();
+        if (confirmation.hasError() || !confirm || !click(window,confirm)
+            || !waitFor([&] { return !workspace.filterPresetsBusy() && workspace.filterPresets().contains("iOS-renamed")
+                && !workspace.filterPresets().contains("iOS-preset"); })) return failure("preset rename confirmation");
+        if (!click(window,item(window,"deleteFilterPreset"))
+            || !waitFor([&] { return !workspace.filterPresetsBusy() && workspace.filterPresets()==QStringList{"default"}; })
+            || workspace.filterText()!="visual-multi-container" || !capture("preset-deleted-search-retained")) return failure("preset delete retains search");
+        auto* drawer=window->findChild<QObject*>("sidebarDrawer");
+        if (drawer && drawer->property("visible").toBool()) {
+            QTest::keyClick(window,Qt::Key_Escape);
+            if (!waitFor([&] { return !drawer->property("visible").toBool(); })) return failure("preset drawer closure");
+        } else if (filterToggle->property("checked").toBool() && !click(window,filterToggle)) return failure("preset filters closure");
         if (!waitFor([&] { return !input->isVisible(); })
             || !workspace.inspectPath("/api/v1/namespaces/visual-a/pods/visual-multi-container")
             || !waitFor([&] { return workspace.canStartTerminal(); },30000)) return failure("input terminal readiness");

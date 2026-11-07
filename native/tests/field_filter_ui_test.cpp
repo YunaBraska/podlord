@@ -899,7 +899,6 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 auto* accessible=QAccessible::queryAccessibleInterface(choice);
                 if (!accessible || accessible->role()!=QAccessible::Button || !accessible->actionInterface()
                     || !accessible->actionInterface()->actionNames().contains(QAccessibleActionInterface::pressAction())) return false;
-                choice->setFocusPolicy(Qt::StrongFocus);
                 const auto point=choice->mapToScene(QPointF(choice->width()/2,choice->height()/2)).toPoint();
                 std::unique_ptr<QPointingDevice> touch(QTest::createTouchDevice());
                 QTest::touchEvent(window,touch.get()).press(0,point,window);
