@@ -18,6 +18,17 @@ func children(_ element: AXUIElement) -> [AXUIElement] {
     (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? []
 }
 
+func descendant(_ element: AXUIElement, identifierSuffix: String) -> AXUIElement? {
+    var pending = [element]
+    while let candidate = pending.popLast() {
+        if (attribute(candidate, kAXIdentifierAttribute) as? String)?.hasSuffix(identifierSuffix) == true {
+            return candidate
+        }
+        pending.append(contentsOf: children(candidate))
+    }
+    return nil
+}
+
 @MainActor
 func measure(_ bundle: URL) async throws -> (total: Double, launch: Double, settingsVisible: Double) {
     let profile = FileManager.default.temporaryDirectory.appendingPathComponent("podlord-startup-\(UUID().uuidString)")
@@ -55,7 +66,7 @@ func measure(_ bundle: URL) async throws -> (total: Double, launch: Double, sett
     var settings: AXUIElement?
     while settings == nil && !process.isTerminated && ProcessInfo.processInfo.systemUptime < deadline {
         for window in windows() {
-            settings = children(window).first { (attribute($0, kAXIdentifierAttribute) as? String)?.hasSuffix("settingsWorkspaceButton") == true }
+            settings = descendant(window, identifierSuffix: "settingsWorkspaceButton")
             if settings != nil { break }
         }
         if settings == nil { try await Task.sleep(nanoseconds: 10_000_000) }
@@ -66,7 +77,7 @@ func measure(_ bundle: URL) async throws -> (total: Double, launch: Double, sett
         throw MeasurementFailure("Settings did not accept an accessibility press.")
     }
     while !process.isTerminated && ProcessInfo.processInfo.systemUptime < deadline {
-        if windows().flatMap(children).contains(where: { (attribute($0, kAXIdentifierAttribute) as? String)?.hasSuffix("settingsAppearanceSection") == true }) {
+        if windows().contains(where: { descendant($0, identifierSuffix: "settingsAppearanceSection") != nil }) {
             return ((ProcessInfo.processInfo.systemUptime - start) * 1000,
                     (launched - start) * 1000, (settingsVisible - start) * 1000)
         }

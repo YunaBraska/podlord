@@ -363,10 +363,22 @@ bool run(const QString& scenario, const QString& configPath) {
             for (int row=0;row<workspace.portTable()->rowCount();++row)
                 if (workspace.portTable()->index(row,0).data(Qt::UserRole).toString()==connection["id"]) shellRow=row;
             REQUIRE(shellRow>=0 && click(qPrintable("portCell_"+QString::number(shellRow)+"_0"), Qt::RightButton));
-            REQUIRE(waitFor([&] {
+            const bool terminalMenuReady = waitFor([&] {
                 const auto* action = podlord::test::visibleItem(window->contentItem(), "portMenuInspector");
                 return action && action->property("text").toString() == "Open terminal";
-            }));
+            });
+            if (!terminalMenuReady) {
+                for (auto* candidate : QGuiApplication::allWindows()) {
+                    auto* quick = qobject_cast<QQuickWindow*>(candidate);
+                    const auto* action = quick ? podlord::test::visibleItem(quick->contentItem(), "portMenuInspector") : nullptr;
+                    std::fprintf(stderr, "Connections menu window: title=%s size=%dx%d visible=%d main=%d action=%s\n",
+                        qPrintable(candidate->title()), candidate->width(), candidate->height(), candidate->isVisible(), candidate == window,
+                        action ? qPrintable(action->property("text").toString()) : "missing");
+                }
+                const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FAILURE_FRAME");
+                if (!frame.isEmpty()) window->grabWindow().save(frame);
+            }
+            REQUIRE(terminalMenuReady);
             REQUIRE(!podlord::test::visibleItem(window->contentItem(), "connectionOpenTerminal"));
             QTest::keyClick(window,Qt::Key_Escape);
             REQUIRE(click("stopPortForwardTask"));
