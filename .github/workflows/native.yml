@@ -95,6 +95,17 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vs)) { throw 'MSVC 2022 development tools are required.' }
           & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
           $null = Get-Command cl, ninja -ErrorAction Stop
+          # Preserve the official SDK's Vulkan-enabled RHI during the source rebuild.
+          $archive = Join-Path $env:RUNNER_TEMP 'vulkan-headers-1.4.363.0.tar.gz'
+          Invoke-WebRequest 'https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4a078be12bef21cfebc09d878b77a63cff9d68f899254a0b00d0e37ef73e7f7e') {
+            throw 'Vulkan headers archive checksum mismatch.'
+          }
+          $headers = Join-Path $env:RUNNER_TEMP 'vulkan-headers'
+          New-Item -ItemType Directory -Path $headers | Out-Null
+          tar -xzf $archive --strip-components=1 -C $headers
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract Vulkan development headers.' }
+          $env:INCLUDE = "$headers/include;$env:INCLUDE"
           $qt = Join-Path $env:RUNNER_TEMP 'qt/6.11.3/msvc2022_64'
           cmake "-DQT_SDK_PREFIX=$qt" "-DWORK_ROOT=$env:RUNNER_TEMP/qt-quick-fix" -P scripts/qt-quick-shutdown.cmake
           if ($LASTEXITCODE -ne 0) { throw 'Could not build the pinned Qt Quick shutdown correction.' }
