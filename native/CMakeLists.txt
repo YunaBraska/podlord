@@ -683,7 +683,7 @@ if(BUILD_TESTING)
         table_keyboard_event_copy_menu table_keyboard_event_copy_f10 table_keyboard_event_inspect_menu table_keyboard_event_inspect_f10
         limit_default limit_ui limit_narrow limit_sort limit_filter limit_picker limit_reset limit_preset limit_session limit_refresh limit_radar limit_restart
         limit_normalize_empty limit_normalize_zero limit_normalize_negative limit_normalize_invalid limit_normalize_overflow limit_normalize_upper limit_normalize_spaces limit_normalize_one limit_normalize_max
-        filter_render_frame mode_problems mode_activity mode_reset mode_field mode_session preset_load preset_overwrite preset_delete preset_restart loading_silent loading_parallel name kind namespace status node image cluster owner issue and or exact prefix suffix regex empty missing invalid unclosed invalid_picker clear_expression keyboard copy narrow selection picker custom_picker picker_search reset stable_picker refresh_picker restart session radar global_and)
+        filter_render_frame mode_problems mode_activity mode_reset mode_field mode_session preset_controls preset_load preset_overwrite preset_delete preset_restart loading_silent loading_parallel name kind namespace status node image cluster owner issue and or exact prefix suffix regex empty missing invalid unclosed invalid_picker clear_expression keyboard copy narrow selection picker custom_picker picker_search reset stable_picker refresh_picker restart session radar global_and)
         foreach(style Basic Fusion)
             add_test(NAME native.field_filter.${scenario}_${style} COMMAND field-filter-ui-test ${scenario})
             set_tests_properties(native.field_filter.${scenario}_${style} PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -1220,7 +1220,7 @@ if(BUILD_TESTING)
         add_test(NAME native.glyph.${kind} COMMAND kind_glyph_ui_test render ${kind})
         set_tests_properties(native.glyph.${kind} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     endforeach()
-    foreach(scenario kind visibility fill stroke repeat invalid_color hidden zero wide tall resize)
+    foreach(scenario navigation kind visibility fill stroke repeat invalid_color hidden zero wide tall resize)
         foreach(scale 1 2)
             add_test(NAME native.glyph.${scenario}_scale${scale} COMMAND kind_glyph_ui_test ${scenario})
             set_tests_properties(native.glyph.${scenario}_scale${scale} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=${scale}")

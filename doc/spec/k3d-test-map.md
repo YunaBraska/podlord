@@ -128,10 +128,84 @@ cache-only interaction assertions. All four fail before removal and pass
 afterward. Evidence: `zoom-removal-red.log` and `zoom-removal-green.log` in the
 same local evidence directory. No new test case or control is introduced.
 
-Review follow-ups, not approved or implemented in this increment: Settings
-and filters currently share a glyph; saved-filter loading and actions use two
-similar menu glyphs. These findings prevent a blanket claim that every visual issue
-is resolved. They do not authorize action removal or a new filter workflow.
+### Settings Symbols And Unified Saved Filters, 2026-11-07
+
+The follow-up is now approved: Settings uses a gear, filter disclosure a
+funnel. The shared vector catalog renders these distinctly from the fallback
+resource glyph at both tested display scales. The zoom readout remains removed.
+
+Saved filters have one inline disclosure. Name and Save remain directly
+available. Reload, local-file import, rename, delete and the bounded selection
+list share the expanded area. The old actions Menu and its extra entry button
+are removed, not hidden. Primary preset buttons decrease from three to two.
+No persistence format, filter operator, request scheduling or default-preset
+protection is changed. Closed content releases focus and its list model;
+Escape returns focus to disclosure and guarded queued focus cannot reopen it.
+
+- Six focused checks failed before implementation and pass afterward. New
+  coverage is one public preset-management journey per Qt style and one
+  distinct-symbol rendering scenario per display scale, not a collection of
+  private-helper tests.
+- `native.field_filter.preset_controls_{Basic,Fusion}` exercises disclosure,
+  repeated close/open, Escape/focus, theme changes, actual rename confirmation,
+  reload, file-picker open/cancel and deletion without clearing active filters.
+  Geometry and captures cover 1440x920, 320x640 and 640x320 in dark/light.
+- Native Android exposed a keyboard-priority bug that hid the focused preset
+  name together with its sidebar. The sidebar now retains its own focus scope
+  or rename dialog, and its existing scroll surface reveals the name as height
+  shrinks. A 640x150 public-window regression failed in Fusion before the
+  scroll fix. All 36 selected preset/compact/density checks pass afterward.
+  The retained rename dialog also uses the existing keyboard-free window area
+  rather than centering behind Android's keyboard. Both input fields have
+  native screenshots proving visibility above the keyboard.
+- Preset load also receives actual Qt touch events with Android-style strong
+  focus. Its interactive choice must expose the public accessible Button role
+  and Press action. Both role regressions failed before correction; all 22
+  selected preset/density checks pass after it. No extra visible control is
+  added for accessibility.
+- All 482 selected field-filter, saved-view, glyph, density and retained Radar
+  navigation CTest executions pass. The saved-view executable was additionally
+  rebuilt and its 111 persistence/import cases pass. Counts include style
+  variants and repeated checks, not distinct product features.
+- The iPhone 17 Pro/iOS 26.4 real-Kubernetes theme matrix passes: 798 captures
+  across 19 themes, two variants and 21 existing views. This captures the new
+  symbols and collapsed preset row, not native preset-management gestures.
+- Logs and raw captures are retained locally under
+  `~/.cache/podlord/filter-menus-20261107.Nltzb4`. No renewed whole-product
+  release, performance or C#/C++ pixel-parity claim follows from this change.
+
+The optional Android map journey previously read the removed zoom label.
+It now compares frozen terrain pixels for native edge touches and inverse
+plus/minus operations. Explicit zoom direction remains covered by the public
+Qt Radar tests. Filter roundtrip pixels, resource selection, 44-pixel native
+targets and the owned cluster's Metadata audit remain checked without private
+camera getters or a hidden replacement label. Running local Kubernetes
+fixtures serially avoids the Linux VM's exhausted filesystem-watch quota seen
+with two concurrent clusters. No operating-system limits were changed.
+
+The Android driver also uses the stable sidebar identity for clipping, waits
+for actual keyboard closure and stable target geometry, and avoids starting
+scroll drags inside editable inputs. The former generated-class-name match
+missed the sidebar and let taps fall under system bars. Its assertions now
+wait for public preset choices, not a ListView wrapper absent from Android's
+accessibility tree. These are driver corrections, not skipped product paths.
+
+The updated native Android map proof passes in `android-dialog-placement`:
+frozen terrain is pixel-identical after filter disclosure/closure, retained
+selection opens the same ConfigMap, and all four owned Metadata checkpoints
+report zero native Kubernetes writes. Native zoom edge touches, inverse zoom
+pixels and outside-target nonactivation pass without a percentage label.
+This does not turn passive read totals into a no-request admission assertion.
+
+The same signed Android 36/4-KB APK completes all 17 full-journey steps,
+including two saved-filter management passes, actual keyboard entry/rename,
+native file-picker cancellation, Map, terminal, inspector and source editing.
+The final driver reports passed; installed app-private regular files total
+99,694,624 bytes. The iOS matrix above predates the keyboard-only corrections;
+the final iOS app/test bundles are rebuilt, but this increment does not claim
+a renewed iOS keyboard/touch journey or a new 16-KB Android run.
+The final owned emulator/ADB cleanup manifest reports completed with exit 0;
+the simulator and all task-owned Kubernetes fixtures are also removed.
 
 Design constraints follow [Apple layout guidance](https://developer.apple.com/design/human-interface-guidelines/layout)
 and [toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars):

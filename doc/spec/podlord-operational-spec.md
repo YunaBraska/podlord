@@ -488,6 +488,19 @@ Presentation refinement, confirmed on 2026-11-06:
   snapshot remains stable while open. There is no Reload values button or
   periodic refresh timer. Existing expressions, selection, presets, validation,
   accessibility, copying and session isolation remain supported.
+- As confirmed on 2026-11-07, Settings uses a gear and filter disclosure a funnel.
+  Saved filters have one inline disclosure, not a separate actions popup.
+  Name entry and Save remain directly reachable. The expanded area retains
+  preset selection, reload, local-file import, rename and delete. Collapsing it
+  reserves no action/list space and releases hidden keyboard focus. Escape
+  returns focus to disclosure. The protected default, validation, existing
+  persistence and active-session-only application rules remain unchanged.
+  Keyboard-priority layout MUST NOT hide its own active filter input or preset
+  rename dialog. The existing scroll surface reveals the focused name field
+  when available height shrinks, without creating another editor or screen.
+  The retained rename dialog positions its input above the software keyboard
+  using the window's existing keyboard-free area. Its confirmation actions
+  remain available after keyboard dismissal.
 - Normal Close actions MUST use a top-right X with an accessible name and
   tooltip. Destructive decisions such as closing without saving MUST retain
   explicit labels. Save actions MUST show the shared floppy-disk symbol.

@@ -52,7 +52,16 @@ Window {
     } else {
         const auto original = frame(window);
         if (original.isNull() || coloredPixels(original, true) < 30) return false;
-        if (scenario == "trash") {
+        if (scenario == "navigation") {
+            glyph->setProperty("stroke", QColor(Qt::red));
+            QList<QImage> variants;
+            for (const auto* name : {"Settings", "Filters", "Expand", "UnknownResource"}) {
+                glyph->setProperty("kind", name);
+                const auto image=frame(window);
+                if (image.isNull() || coloredPixels(image,true)<30 || variants.contains(image)) return false;
+                variants.append(image);
+            }
+        } else if (scenario == "trash") {
             glyph->setProperty("kind", "Close");
             const auto close = frame(window);
             glyph->setProperty("kind", "UnknownResource");

@@ -2376,6 +2376,8 @@ bool execute(const QString& requestedScenario) {
     if (scenario.startsWith("ui_density_")) {
         const auto calls = server.requests.size();
         if (scenario == "ui_density_alignment") {
+            if (item(window,"settingsWorkspaceButton")->property("glyph")!="Settings"
+                || item(window,"toggleLandscapeFilters")->property("glyph")!="Filters") return false;
             window->setMinimumSize(QSize(200,200));
             bool aligned = true;
             for (const auto& mode : {QString("dark"),QString("light")}) {
@@ -2389,7 +2391,8 @@ bool execute(const QString& requestedScenario) {
                     int checked = 0;
                     for (const auto* name : {"workspaceSearchButton","quickOpenDropdown","workspaceActionsButton","toggleSidebar",
                         "renameCurrentSession","masterAudioMute","resetResourceFilters","filterPreset","saveFilterPreset",
-                        "filterPresetActions","radarZoomOut","radarZoom","toggleLandscapeFilters"}) {
+                        "reloadFilterPresets","importFilterPresets","renameFilterPreset","deleteFilterPreset",
+                        "radarZoomOut","radarZoom","toggleLandscapeFilters"}) {
                         auto* control = item(window,name);
                         if (!control || !control->isVisible() || control->property("showText").toBool()) continue;
                         auto* content = control->property("contentItem").value<QQuickItem*>();

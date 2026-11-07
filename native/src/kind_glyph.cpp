@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
+#include <cmath>
 
 namespace podlord {
 namespace {
@@ -82,8 +83,17 @@ const QHash<QString, Glyph>& catalog() {
         line(.2,.5,.8,.5); line(.5,.2,.5,.8); finish({"ZoomIn"});
         QPainterPath reset; reset.arcMoveTo(.18,.18,.64,.64,135); reset.arcTo(.18,.18,.64,.64,135,-290);
         parts.append({reset,Fill::None,true}); line(.15,.12,.15,.42); line(.15,.42,.45,.42); finish({"Reset"});
-        for (const auto y : {.25,.5,.75}) line(.15,y,.85,y);
-        ellipse(.35,.25,.07,.07); ellipse(.65,.5,.07,.07); ellipse(.4,.75,.07,.07); finish({"Filters"});
+        QPainterPath gear;
+        for (int point=0;point<32;++point) {
+            const auto angle=point*6.283185307179586/32;
+            const auto radius=point%4==0 || point%4==3 ? .46 : .35;
+            const QPointF vertex(.5+radius*std::cos(angle),.5+radius*std::sin(angle));
+            if (point==0) gear.moveTo(vertex); else gear.lineTo(vertex);
+        }
+        gear.closeSubpath(); parts.append({gear,Fill::None,true});
+        ellipse(.5,.5,.14,.14,Fill::None); finish({"Settings"});
+        polygon({{.1,.15},{.9,.15},{.57,.56},{.57,.9},{.43,.9},{.43,.56}},Fill::None); finish({"Filters"});
+        line(.2,.35,.5,.65); line(.5,.65,.8,.35); finish({"Expand"});
         polygon({{.14,.36},{.35,.36},{.62,.15},{.62,.85},{.35,.64},{.14,.64}},Fill::None);
         line(.75,.35,.9,.5); line(.9,.5,.75,.65); finish({"Volume"});
         polygon({{.14,.36},{.35,.36},{.62,.15},{.62,.85},{.35,.64},{.14,.64}},Fill::None);

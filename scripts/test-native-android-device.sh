@@ -259,19 +259,18 @@ function state(){
  throw Error('Android did not produce a fresh accessibility hierarchy within the command watchdog');
 }
 function target(id){
- let scrolled=false;
  const sourceRow=id==='sourceRow_0',limit=sourceRow?20:8;
  const matches=n=>sourceRow?/^sourceCell_0_[0-7]$/.test(n['resource-id']?.split('.').at(-1)||''):n['resource-id']?.endsWith('.'+id);
  const bounds=n=>n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
  for(let attempt=0;attempt<=limit;attempt++){
   const n=nodes.find(n=>matches(n)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
-    const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.ResourceSidebar_');
+    const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.workspaceSidebar.');
     const inspector=/\.(workspaceInspector|sourceInspector)\./.test(n['resource-id']||'');
     const settings=sourceRow||/^inline/.test(id)||n['resource-id']?.includes('.settingsContent.');
     const host=settings?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>/\.(workspaceInspector|sourceInspector)$/.test(x['resource-id']||'')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
     const clip=bounds(host);return !clip||(b[1]>=clip[1]&&b[3]<=clip[3]);
   })());
-  if(n){if(!scrolled)return n;const before=n.bounds,identity=n['resource-id'];state();const stable=nodes.find(n=>n['resource-id']===identity&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
+  if(n){const before=n.bounds,identity=n['resource-id'];state();const stable=nodes.find(n=>n['resource-id']===identity&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
   const nav=/WorkspaceButton|workspaceSearchButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
   if(attempt===limit)break;
   const current=nodes.find(matches);
@@ -285,10 +284,17 @@ function target(id){
   const partialSidebar=!settings&&!inspector&&!nav&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
   const reverse=settings&&current&&firstVisible>=0?nodes.indexOf(current)<firstVisible:partialSidebar?currentBounds[1]<b[1]:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   const inset=settings?4:12;
-  const start=reverse?b[1]+inset:b[3]-inset;
+  let start=reverse?b[1]+inset:b[3]-inset;
+  if(!settings&&!inspector&&!nav){
+   const editors=nodes.filter(n=>/EditText/.test(n.class||'')||/\.resourceLimit(?:\.|$)/.test(n['resource-id']||''));
+   const direction=reverse?1:-1;
+   while(editors.some(n=>{const area=bounds(n);return area&&x>=area[0]&&x<=area[2]&&start>=area[1]&&start<=area[3];})
+    && start+direction*8>b[1]+inset&&start+direction*8<b[3]-inset)start+=direction*8;
+  }
   // A full swipe can jump over a short control that misses the viewport by one pixel.
-  const distance=sourceRow?Math.max(24,Math.floor((b[3]-b[1])/4)):partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
-  run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings&&!sourceRow?'150':'350');scrolled=true;state();
+  const desiredDistance=sourceRow?Math.max(24,Math.floor((b[3]-b[1])/4)):partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
+  const distance=!settings&&!inspector&&!nav?Math.min(reverse?b[3]-inset-start:start-b[1]-inset,desiredDistance):desiredDistance;
+  run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings&&!sourceRow?'150':'350');state();
   if(!settings&&!inspector&&!nav)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
   if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
@@ -347,6 +353,7 @@ if(coldInspectorCycles){
  completeJourney();process.exit(0);
 }
 if(mapRoundtrip==='1'){
+ filterPresetJourney();
  try{mapTouchRoundtrip();}
  catch(error){
   journeyFailures.push({step:'Map touch roundtrip',error:String(error)});
@@ -383,6 +390,7 @@ state();if(nodes.some(n=>n['resource-id']?.endsWith('.resourceRadar')&&n.bounds!
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
 click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');const filtered=nodes.map(n=>n['content-desc']||'').join('\n').match(/(\d+) matching resources/);if(!filtered||Number(filtered[1])<=0||Number(filtered[1])>=count)throw Error('Problems filter did not reduce cached matches');click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');steps.push({step:'Problems filter enables, reduces cached matches and disables',matches:Number(filtered[1])});
+filterPresetJourney();
 click('toggleLandscapeFilters');
 for(const id of ['eventsWorkspaceButton','portForwardTasksButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}
 
@@ -415,12 +423,46 @@ function search(value){
  run('shell','input','keyevent','4');state();click('workspaceSearchButton');
 }
 function describe(id){const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));return n?[n.text,n['content-desc']].filter(Boolean).join('\n'):'';}
+function filterPresetJourney(){
+ const value=n=>n?.text||n?.['content-desc']||'';
+ const keyboardVisible=()=>/(?:mType|type)=ime\b[^\n]*?(?:mVisible|visible)=true/.test(run('shell','dumpsys','window'));
+ const write=(id,text)=>{
+  click(id);inputAboveKeyboard([id],'preset-input-'+id);
+  run('shell','input','keyevent','123',...Array(64).fill('67'));run('shell','input','text',text);
+  waitNode(id,n=>(n.text+' '+n['content-desc']).includes(text));
+  if(keyboardVisible())run('shell','input','keyevent','4');
+  const deadline=Date.now()+10000;
+  do{state();if(!keyboardVisible())return;}while(Date.now()<deadline);
+  throw Error('Keyboard did not close after preset input');
+ };
+ click('resourcesWorkspaceButton');search('');
+ const filtersWereExpanded=target('toggleLandscapeFilters').checked==='true';
+ if(!filtersWereExpanded)click('toggleLandscapeFilters');
+ if(target('problemsOnly').checked!=='true')click('problemsOnly');
+ write('filterPresetName','Android-preset');click('saveFilterPreset');waitNode('filterPreset',n=>n.enabled==='true');
+ click('problemsOnly');waitNode('problemsOnly',n=>n.checked==='false');click('filterPreset');waitNode('filterPresetOption_1',n=>value(n)==='Android-preset');
+ if(nodes.some(n=>n['resource-id']?.endsWith('.filterPresetActions')))throw Error('Saved filters must have one inline entry, not a second actions menu');
+ const saved=nodes.find(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&value(n)==='Android-preset');
+ if(!saved)throw Error('Saved filter must appear in the inline selection');
+ const choice=target(saved['resource-id'].split('.').at(-1));capture('saved-filter-choice-target');
+ tap(choice);waitNode('problemsOnly',n=>n.checked==='true');click('filterPreset');capture('saved-filter-inline-controls');
+ click('renameFilterPreset');write('renameFilterPresetName','Android-renamed');
+ const ok=nodes.find(n=>value(n)==='OK'&&n.enabled==='true');if(!ok)throw Error('Rename confirmation must be reachable');tap(ok);
+ waitNode('renameFilterPreset',n=>n.enabled==='true');click('reloadFilterPresets');waitNode('renameFilterPreset',n=>n.enabled==='true');
+ if(!nodes.some(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&value(n)==='Android-renamed'))throw Error('Renamed preset must survive reload');
+ click('importFilterPresets');run('shell','input','keyevent','4');state();waitNode('deleteFilterPreset',n=>n.enabled==='true');
+ click('deleteFilterPreset');waitNode('filterPresetOption_0',n=>value(n)==='default');
+ if(nodes.some(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&/Android-(preset|renamed)/.test(value(n))))throw Error('Deleted preset remains in the inline list');
+ if(target('problemsOnly').checked!=='true')throw Error('Deleting a preset must not clear active cached filters');
+ click('resetResourceFilters');if(target('filterPreset').checked==='true')click('filterPreset');
+ if(!filtersWereExpanded)click('toggleLandscapeFilters');
+ steps.push({step:'Inline saved-filter save, load, rename, reload, import cancellation and delete retain current filters and protected default'});
+}
 function mapTouchRoundtrip(){
  const assert=require('node:assert/strict'),crypto=require('node:crypto'),zlib=require('node:zlib');
  const value=n=>n?.text||n?.['content-desc']||'';
  const find=id=>nodes.find(n=>n['resource-id']?.endsWith('.'+id));
  const rect=n=>n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
- const zoom=()=>{const left=rect(target('radarZoomOut')),right=rect(target('radarZoom'));const n=nodes.find(n=>/^\d+%$/.test(value(n))&&n.bounds&&rect(n)[0]>left[2]&&rect(n)[2]<right[0]&&rect(n)[1]>=left[1]&&rect(n)[3]<=left[3]);assert.ok(n,'Visible public zoom percentage is required');return Number(value(n).slice(0,-1));};
  const counter=label=>{
   const owner=cp.execFileSync('docker',['inspect','--type','container',fixture,'--format','{{index .Config.Labels "podlord.native.e2e"}}'],{encoding:'utf8',timeout:10000,maxBuffer:1000000}).trim();
   assert.equal(owner,fixture,'Only the owned fixture audit may be read');
@@ -459,18 +501,19 @@ function mapTouchRoundtrip(){
  steps.push({step:'Native Android Home and End preserve Qt search editing'});capture('roundtrip-query-before');
  run('shell','input','keyevent','4');state();click('workspaceSearchButton');
  click('mapWorkspaceButton');waitNode('resourceRadar',n=>rect(n)[2]>rect(n)[0]&&rect(n)[3]>rect(n)[1]);
- for(let i=0;i<16&&zoom()<25;i++)click('radarZoom');
- for(let i=0;i<16&&zoom()>100;i++)click('radarZoomOut');
- assert.ok(zoom()>=20&&zoom()<=100,'Prepare an observable, unclamped public zoom range');
+ for(let i=0;i<4;i++)click('radarZoom');
+ const terrain=name=>{const scene=rect(target('resourceRadar')),navigation=rect(target('radarNavigationOverlay'));const canvas=[scene[0]+2,Math.max(scene[1]+2,navigation[3]+8),scene[2]-2,scene[3]-2];assert.ok(canvas[3]-canvas[1]>=16,'A nonempty terrain area must remain below navigation');capture(name);const pixels=image(name).crop(canvas);return {bounds:scene,canvas,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
  const ids=['mapBack','mapForward','mapOverview','radarZoomOut','radarZoom','toggleLandscapeFilters'];
  const controls=ids.map(id=>{const matches=nodes.filter(n=>n['resource-id']?.endsWith('.'+id));assert.equal(matches.length,1,id+' must have one public instance');const n=matches[0],b=rect(n);assert.deepEqual([b[2]-b[0]+1,b[3]-b[1]+1],[44,44],id+' must retain the Qt inclusive 44px rectangle');return {id,bounds:b,androidDelta:[b[2]-b[0],b[3]-b[1]],qtInclusiveSize:[44,44],enabled:n.enabled};});
  const edge=(id,position,expect)=>{
-  const n=target(id),b=rect(n),before=zoom(),center=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];assert.equal(n.enabled,'true');
+  const n=target(id),b=rect(n),before=terrain('edge-'+id+'-'+position+'-before'),center=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];assert.equal(n.enabled,'true');
   const point=position==='right'?[b[2],center[1]]:position==='bottom'?[center[0],b[3]]:position==='corner'?[b[2],b[3]]:position==='outside-right'?[b[2]+1,center[1]]:[center[0],b[3]+1];
-  run('shell','input','tap',...point.map(String));state();const after=zoom(),result={at:new Date().toISOString(),id,position,bounds:b,point,beforeZoomPercent:before,afterZoomPercent:after,expected:expect};fs.appendFileSync(path.join(out,'native-edge-touches.jsonl'),JSON.stringify(result)+'\n');capture('edge-'+id+'-'+position);
-  if(expect==='increase')assert.ok(after>before,'Native last-pixel zoom-in touch must change visible zoom');else if(expect==='decrease')assert.ok(after<before,'Native last-pixel zoom-out touch must change visible zoom');else assert.equal(after,before,'The next coordinate beyond the 44px target must not activate zoom');
+  run('shell','input','tap',...point.map(String));state();const after=terrain('edge-'+id+'-'+position),result={at:new Date().toISOString(),id,position,bounds:b,point,beforeTerrainSha256:before.sha256,afterTerrainSha256:after.sha256,expected:expect};fs.appendFileSync(path.join(out,'native-edge-touches.jsonl'),JSON.stringify(result)+'\n');
+  if(expect==='unchanged')assert.equal(after.sha256,before.sha256,'The next coordinate beyond the 44px target must not change the camera');else assert.notEqual(after.sha256,before.sha256,'Native last-pixel zoom touch must change visible terrain');
  };
- edge('radarZoom','right','increase');edge('radarZoomOut','bottom','decrease');edge('radarZoom','corner','increase');edge('radarZoom','outside-right','unchanged');edge('radarZoom','outside-bottom','unchanged');
+ const edgeBaseline=terrain('edge-baseline');
+ edge('radarZoom','right','changed');edge('radarZoomOut','bottom','changed');assert.equal(terrain('edge-inverse').sha256,edgeBaseline.sha256,'Native plus and minus edge touches must restore identical terrain');
+ edge('radarZoom','corner','changed');edge('radarZoom','outside-right','unchanged');edge('radarZoom','outside-bottom','unchanged');
  capture('roundtrip-map-selection-setup');const initial=image('roundtrip-map-selection-setup'),b=rect(target('resourceRadar'));let waterPoint=null;
  for(let y=b[1]+2;y<b[3]-2&&!waterPoint;y++)for(let x=b[0]+2;x<b[2]-2;x++)if(['061621','071621'].includes(initial.rgb(x,y))){waterPoint=[x,y];break;}
  assert.ok(waterPoint,'Focus the real radar through visible water, not a hidden getter');run('shell','input','tap',...waterPoint.map(String));state();run('shell','input','keyevent','122');state();waitNode('radarInfoText',n=>value(n).includes('visual-config-0001'));
@@ -484,11 +527,11 @@ function mapTouchRoundtrip(){
   assert.ok(counts,'Visible matching/cache counts must be readable: '+text);
   return {text,matching:Number(counts[1]),cached:Number(counts[2])};
  };
- const snapshot=name=>{const scene=rect(target('resourceRadar')),navigation=rect(target('radarNavigationOverlay')),counts=visibleResourceCounts(),percent=zoom();const canvas=[scene[0]+2,Math.max(scene[1]+2,navigation[3]+8),scene[2]-2,scene[3]-2];assert.ok(canvas[3]-canvas[1]>=16,'A nonempty terrain area must remain below navigation');capture(name);const pixels=image(name).crop(canvas);return {bounds:scene,canvas,matches:counts.text,matching:counts.matching,cached:counts.cached,zoomPercent:percent,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
+ const snapshot=name=>{const counts=visibleResourceCounts();return {...terrain(name),matches:counts.text,matching:counts.matching,cached:counts.cached};};
  const before=snapshot('map-filter-before'),requestBefore=counter('before');
- click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(zoom(),before.zoomPercent,'Opening filters must retain visible zoom');assert.equal(visibleResourceCounts().matching,before.matching,'Opening filters must retain matching resources');
+ click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(visibleResourceCounts().matching,before.matching,'Opening filters must retain matching resources');
  click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='false');const after=snapshot('map-filter-closed'),requestClosed=counter('closed');
- assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.zoomPercent,before.zoomPercent);assert.equal(after.matching,before.matching);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
+ assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.matching,before.matching);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
  click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)===mapResourceQuery);capture('roundtrip-query-after');run('shell','input','keyevent','4');state();click('workspaceSearchButton');const requestAfterQuery=counter('after-query-verification');assert.equal(requestAfterQuery.nativeWrites,0);
  if(find('radarInfoText')){click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));}
  const finalFrame=image('map-filter-closed');let finalWater=null;

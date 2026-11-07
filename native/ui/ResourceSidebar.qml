@@ -24,6 +24,15 @@ Pane {
     LayoutMirroring.childrenInherit: true
     property string expandedField: ""
     property bool presetsExpanded: false
+    readonly property bool ownsInputFocus: activeFocus || renamePreset.visible
+    function revealPresetInput() {
+        const viewport=sidebarViewport.contentItem
+        if (!presetName.activeFocus || !sidebar.visible || !viewport) return
+        const top=presetName.mapToItem(viewport,0,0).y
+        const delta=top<0 ? top : Math.max(0,top+presetName.height-viewport.height)
+        if (delta!==0) viewport.contentY=Math.max(0,Math.min(viewport.contentHeight-viewport.height,viewport.contentY+delta))
+    }
+    onHeightChanged: if (presetName.activeFocus) Qt.callLater(revealPresetInput)
     readonly property string page: workspace.workspacePage
     onPageChanged: expandedField = ""
     onVisibleChanged: if (!visible) { expandedField = ""; presetsExpanded = false }
@@ -202,31 +211,41 @@ Pane {
             }
             RowLayout {
                 Layout.fillWidth: true
-                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text) }
+                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text); onActiveFocusChanged: if (activeFocus) Qt.callLater(sidebar.revealPresetInput) }
+                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
                 IconButton {
                     id: preset; objectName: "filterPreset"
-                    glyph: "Menu"; text: "Load saved filter"
+                    glyph: sidebar.presetsExpanded ? "Expand" : "Next"; text: "Saved filters"
                     checkable: true; checked: sidebar.presetsExpanded
+                    Accessible.description: checked ? "Expanded saved filters" : "Collapsed saved filters"
                     enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""
                     onClicked: {
                         sidebar.presetsExpanded = !sidebar.presetsExpanded
-                        if (sidebar.presetsExpanded) Qt.callLater(function() { savedFilters.forceActiveFocus() })
+                        if (sidebar.presetsExpanded) Qt.callLater(function() { if (sidebar.presetsExpanded && savedFilters.visible) savedFilters.forceActiveFocus() })
                     }
                 }
-                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
-                IconButton { id: filterPresetActions; objectName: "filterPresetActions"; glyph: "Menu"; text: "Saved filter actions"; enabled: !workspace.filterPresetsBusy; onClicked: presetActions.popup(filterPresetActions, 0, filterPresetActions.height) }
-                Menu { id: presetActions
-                    MenuItem { objectName: "reloadFilterPresets"; text: "Reload saved filters"; enabled: !workspace.filterPresetsBusy; onTriggered: workspace.reloadFilterPresets() }
-                    MenuItem { objectName: "importFilterPresets"; text: "Import saved filters..."; onTriggered: importPresets.open() }
-                    MenuItem { objectName: "renameFilterPreset"; text: "Rename"; enabled: presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onTriggered: { renamePreset.original = presetName.text; renameText.text = presetName.text; renamePreset.open() } }
-                    MenuItem { objectName: "deleteFilterPreset"; text: "Delete"; enabled: presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onTriggered: workspace.deleteFilterPreset(presetName.text) }
-                }
             }
+            ColumnLayout {
+                objectName: "savedFilterPanel"
+                Layout.fillWidth: true
+                spacing: 4
+                visible: sidebar.presetsExpanded
+                enabled: visible
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    IconButton { objectName: "reloadFilterPresets"; glyph: "Reset"; text: "Reload saved filters"; enabled: !workspace.filterPresetsBusy; onClicked: workspace.reloadFilterPresets() }
+                    IconButton { objectName: "importFilterPresets"; glyph: "ConfigMap"; text: "Import saved filters..."; enabled: !workspace.filterPresetsBusy; onClicked: importPresets.open() }
+                    Item { Layout.fillWidth: true }
+                    IconButton { objectName: "renameFilterPreset"; glyph: "Pencil"; text: "Rename saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: { renamePreset.original = presetName.text; renameText.text = presetName.text; renamePreset.open() } }
+                    IconButton { objectName: "deleteFilterPreset"; glyph: "Trash"; text: "Delete saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: workspace.deleteFilterPreset(presetName.text) }
+                }
             ListView {
                 id: savedFilters
                 objectName: "savedFilterOptions"
+                readonly property int rowHeight: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible ? Math.min(180, count * 44) : 0
+                Layout.preferredHeight: visible ? Math.min(180, count * rowHeight) : 0
                 visible: sidebar.presetsExpanded
                 clip: true
                 model: visible ? workspace.filterPresets : []
@@ -243,20 +262,25 @@ Pane {
                 }
                 Keys.onReturnPressed: activate(currentIndex)
                 Keys.onEnterPressed: activate(currentIndex)
+                Keys.onEscapePressed: { sidebar.presetsExpanded = false; preset.forceActiveFocus() }
                 delegate: ItemDelegate {
                     required property string modelData
                     required property int index
                     objectName: "filterPresetOption_" + index
                     width: savedFilters.width
-                    height: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32
+                    height: savedFilters.rowHeight
                     text: modelData
                     highlighted: modelData === workspace.selectedFilterPreset
+                    Accessible.role: Accessible.Button
+                    Accessible.name: text
                     onClicked: savedFilters.activate(index)
                 }
+            }
             }
             Label { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
             FileDialog {
                 id: importPresets
+                objectName: "importFilterPresetsDialog"
                 title: "Import saved filters"
                 nameFilters: ["Saved filters (*.json)"]
                 fileMode: FileDialog.OpenFile
@@ -321,7 +345,18 @@ Pane {
         }
     }
         }
-    Dialog { id: renamePreset; property string original; title: "Rename filter"; modal: true; anchors.centerIn: Overlay.overlay; width: sidebar.Window.window ? Math.min(360, sidebar.Window.window.width - 24) : 360; standardButtons: Dialog.Ok | Dialog.Cancel
+    Dialog {
+        id: renamePreset
+        objectName: "renameFilterPresetDialog"
+        property string original
+        title: "Rename filter"
+        modal: true
+        parent: Overlay.overlay
+        width: sidebar.Window.window ? Math.min(360, sidebar.Window.window.width - 24) : 360
+        x: parent ? (parent.width-width)/2 : 0
+        y: Math.max(sidebar.Window.window ? sidebar.Window.window.topPadding : 0,
+            ((sidebar.Window.window ? sidebar.Window.window.keyboardTop : parent.height)-height)/2)
+        standardButtons: Dialog.Ok | Dialog.Cancel
         TextField { id: renameText; objectName: "renameFilterPresetName"; width: parent.width; maximumLength: 128; Accessible.name: "New saved filter name" }
         onAccepted: { if (workspace.renameFilterPreset(original, renameText.text)) presetName.text = renameText.text.trim() }
     }

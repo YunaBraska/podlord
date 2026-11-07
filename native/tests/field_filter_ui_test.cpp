@@ -25,6 +25,7 @@
 #include <QTest>
 #include <cstdio>
 #include <functional>
+#include <memory>
 
 namespace {
 bool waitFor(const std::function<bool()>& ready) {
@@ -808,6 +809,71 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!type(window, "filterPresetName", "Broken pods") || !click(window, "saveFilterPreset")
                 || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })
                 || !workspace.property("filterPresetsError").toString().isEmpty()) return false;
+            if (scenario == "preset_controls") {
+                const auto failed=[&](const char* stage) { qWarning() << "Saved-filter controls:" << stage << window->size() << workspace.filterPresetsError(); return false; };
+                if (window->findChild<QObject*>("filterPresetActions") || !item(window,"savedFilterPanel")) return failed("single inline entry");
+                window->setMinimumSize(QSize(200,200));
+                for (const auto& mode : {QString("dark"),QString("light")}) {
+                    if (!workspace.saveAppearance("Imperial Ledger",mode) || !waitFor([&] { return !workspace.busy(); })) return failed("theme");
+                    for (const auto size : {QSize(1440,920),QSize(320,640),QSize(640,320)}) {
+                        window->resize(size);
+                        QSignalSpy frames(window,&QQuickWindow::frameSwapped); window->update();
+                        if (!waitFor([&] { return !frames.isEmpty(); })) return failed("resize");
+                        auto* expand=item(window,"toggleLandscapeFilters");
+                        if (!item(window,"filterPreset")->isVisible()) {
+                            if (expand && expand->isVisible()) {
+                                if (!click(window,"toggleLandscapeFilters")) return failed("expand landscape filters");
+                            } else if (!click(window,"toggleSidebar")) return failed("open filter drawer");
+                        }
+                        if (!click(window,"filterPreset") || !waitFor([&] { return item(window,"savedFilterPanel")->isVisible(); })) return failed("disclose presets");
+                        for (const auto* name : {"reloadFilterPresets","importFilterPresets","renameFilterPreset","deleteFilterPreset"}) {
+                            auto* action=item(window,name);
+                            if (!action || !action->isVisible() || !action->isEnabled()
+                                || action->width()<(size.width()<900?44:32) || action->height()<(size.width()<900?44:32)
+                                || !podlord::test::scrollIntoView(window,action)
+                                || !podlord::test::visibleBounds(window,action).contains(action->mapRectToScene(action->boundingRect()))) return failed(name);
+                        }
+                        const auto evidence=qEnvironmentVariable("PODLORD_FILTER_MENU_EVIDENCE");
+                        if (!evidence.isEmpty() && !window->grabWindow().save(evidence+"/presets-"+mode+"-"+QString::number(size.width())+"x"+QString::number(size.height())+"-"+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png")) return failed("capture");
+                        auto* options=item(window,"savedFilterOptions"); options->forceActiveFocus();
+                        QTest::keyClick(window,Qt::Key_Escape);
+                        if (!waitFor([&] { return !item(window,"savedFilterPanel")->isVisible() && item(window,"filterPreset")->hasActiveFocus(); })) return failed("escape returns focus");
+                        if (!click(window,"filterPreset") || !click(window,"filterPreset")
+                            || item(window,"savedFilterPanel")->isVisible()) return failed("repeat disclosure");
+                        auto* drawer=window->findChild<QObject*>("sidebarDrawer");
+                        if (drawer && drawer->property("visible").toBool()) {
+                            QTest::keyClick(window,Qt::Key_Escape);
+                            if (!waitFor([&] { return !drawer->property("visible").toBool(); })) return failed("close drawer");
+                        }
+                    }
+                }
+                auto* presetInput=item(window,"filterPresetName"); presetInput->forceActiveFocus();
+                if (!item(window,"workspaceSidebar")->hasActiveFocus()) return failed("sidebar owns input focus");
+                window->setMinimumHeight(80); window->resize(640,150);
+                if (!waitFor([&] { return presetInput->isVisible()
+                    && podlord::test::visibleBounds(window,presetInput).contains(presetInput->mapRectToScene(presetInput->boundingRect())); })) return failed("short viewport keeps focused input visible");
+                window->resize(640,320);
+                if (!click(window,"filterPreset") || !click(window,"renameFilterPreset")
+                    || !type(window,"renameFilterPresetName","Renamed pods")) return failed("rename input");
+                auto* renameDialog=window->findChild<QObject*>("renameFilterPresetDialog");
+                if (!renameDialog) return failed("rename dialog");
+                QQmlExpression confirmation(qmlContext(renameDialog),renameDialog,"standardButton(Dialog.Ok)");
+                auto* confirm=confirmation.evaluate().value<QQuickItem*>();
+                if (confirmation.hasError() || !confirm || !podlord::test::scrollIntoView(window,confirm)) return failed("rename confirmation");
+                QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,confirm->mapToScene(QPointF(confirm->width()/2,confirm->height()/2)).toPoint());
+                if (!waitFor([&] { return !workspace.filterPresetsBusy() && workspace.filterPresets().contains("Renamed pods")
+                    && !workspace.filterPresets().contains("Broken pods"); })) return failed("rename persists");
+                if (!click(window,"reloadFilterPresets") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
+                    || !workspace.filterPresets().contains("Renamed pods")) return failed("reload retains preset");
+                if (!click(window,"importFilterPresets")) return failed("open import");
+                auto* dialog=window->findChild<QObject*>("importFilterPresetsDialog");
+                if (!dialog || !waitFor([&] { return dialog->property("visible").toBool(); })
+                    || !QMetaObject::invokeMethod(dialog,"close") || !waitFor([&] { return !dialog->property("visible").toBool(); })) return failed("cancel external file picker");
+                if (!click(window,"deleteFilterPreset") || !waitFor([&] { return !workspace.filterPresetsBusy()
+                    && workspace.filterPresets()==QStringList{"default"}; })) return failed("delete preserves default");
+                return !item(window,"deleteFilterPreset")->isEnabled() && !item(window,"renameFilterPreset")->isEnabled()
+                    && workspace.resourceCount()==1 && server.requests==requests;
+            }
             if (scenario == "preset_restart") {
                 if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
                 podlord::Workspace restored(profile);
@@ -817,7 +883,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     && restored.totalResourceCount() == 3 && restored.resourceCount() == 1; })
                     && restored.property("selectedFilterPreset").toString() == "Broken pods" && restored.property("problemsOnly").toBool();
             }
-            if (scenario == "preset_delete") return click(window, "filterPresetActions") && click(window, "deleteFilterPreset")
+            if (scenario == "preset_delete") return click(window, "filterPreset") && click(window, "deleteFilterPreset")
                 && waitFor([&] { return !workspace.property("filterPresetsBusy").toBool() && workspace.property("filterPresets").toStringList() == QStringList{"default"}; })
                 && workspace.resourceCount() == 1 && server.requests == requests;
             if (scenario == "preset_overwrite") {
@@ -827,6 +893,19 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!click(window, "resetResourceFilters") || workspace.resourceCount() != 3 || !click(window, "filterPreset")) return false;
             const auto* options = item(window, "savedFilterOptions");
             if (!options || !waitFor([&] { return options->isVisible() && options->width() > 0; })) return false;
+            if (scenario == "preset_load") {
+                auto* choice=item(window,"filterPresetOption_1");
+                if (!choice || !podlord::test::scrollIntoView(window,choice)) return false;
+                auto* accessible=QAccessible::queryAccessibleInterface(choice);
+                if (!accessible || accessible->role()!=QAccessible::Button || !accessible->actionInterface()
+                    || !accessible->actionInterface()->actionNames().contains(QAccessibleActionInterface::pressAction())) return false;
+                choice->setFocusPolicy(Qt::StrongFocus);
+                const auto point=choice->mapToScene(QPointF(choice->width()/2,choice->height()/2)).toPoint();
+                std::unique_ptr<QPointingDevice> touch(QTest::createTouchDevice());
+                QTest::touchEvent(window,touch.get()).press(0,point,window);
+                QTest::touchEvent(window,touch.get()).release(0,point,window);
+                return waitFor([&] { return workspace.resourceCount()==1 && !item(window,"savedFilterPanel")->isVisible(); }) && server.requests==requests;
+            }
             QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Return);
             const auto expected = scenario == "preset_overwrite" ? 2 : 1;
             return waitFor([&] { return workspace.resourceCount() == expected; }) && server.requests == requests;

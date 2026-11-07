@@ -532,7 +532,7 @@ ApplicationWindow {
                     NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
                     NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
                     NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Connections in this session"; onClicked: workspace.setWorkspacePage("ports") }
-                    NavButton { objectName: "settingsWorkspaceButton"; glyph: "Filters"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
+                    NavButton { objectName: "settingsWorkspaceButton"; glyph: "Settings"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
                 }
@@ -1109,7 +1109,7 @@ ApplicationWindow {
             Item {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
-                visible: window.sidebarDocked && window.sidebarOpen && !window.inputPriority && !(workspace.workspacePage === "map" && workspace.mapOverview)
+                visible: window.sidebarDocked && window.sidebarOpen && (!window.inputPriority || sidebar.ownsInputFocus) && !(workspace.workspacePage === "map" && workspace.mapOverview)
                 SplitView.preferredWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 240 : 392
                 SplitView.minimumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 228 : 300
                 SplitView.maximumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 320 : 720
