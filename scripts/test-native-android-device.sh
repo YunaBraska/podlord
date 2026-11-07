@@ -268,7 +268,8 @@ function target(id){
     const inspector=/\.(workspaceInspector|sourceInspector)\./.test(n['resource-id']||'');
     const settings=sourceRow||/^inline/.test(id)||n['resource-id']?.includes('.settingsContent.');
     const host=settings?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>/\.(workspaceInspector|sourceInspector)$/.test(x['resource-id']||'')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
-    const clip=bounds(host);return !clip||(b[1]>=clip[1]&&b[3]<=clip[3]);
+    const clip=bounds(host),center=(b[1]+b[3])/2;
+    return !clip||(center>=clip[1]&&center<=clip[3]&&Math.min(b[3],clip[3])-Math.max(b[1],clip[1])>=18);
   })());
   if(n){const before=n.bounds,identity=n['resource-id'];state();const stable=nodes.find(n=>n['resource-id']===identity&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
   const nav=/WorkspaceButton|workspaceSearchButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
@@ -279,10 +280,12 @@ function target(id){
   const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>/\.(workspaceInspector|sourceInspector)$/.test(n['resource-id']||'')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
   const b=bounds(host);if(!b)break;
   const x=settings||inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
-  const firstVisible=settings?nodes.findIndex(n=>n['resource-id']?.startsWith(host['resource-id']+'.')&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
+  const orderedHost=settings?host:!inspector&&!nav?nodes.find(n=>n['resource-id']?.endsWith('.sidebarFilterScroll')):null;
+  const orderedPrefix=orderedHost?orderedHost['resource-id']+'.':'';
+  const firstVisible=orderedHost?nodes.findIndex(n=>n['resource-id']?.startsWith(orderedPrefix)&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
   const currentBounds=bounds(current);
   const partialSidebar=!settings&&!inspector&&!nav&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
-  const reverse=settings&&current&&firstVisible>=0?nodes.indexOf(current)<firstVisible:partialSidebar?currentBounds[1]<b[1]:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
+  const reverse=partialSidebar?currentBounds[1]<b[1]:current&&firstVisible>=0&&(settings||current['resource-id']?.startsWith(orderedPrefix))?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   const inset=settings?4:12;
   let start=reverse?b[1]+inset:b[3]-inset;
   if(!settings&&!inspector&&!nav){

@@ -8346,3 +8346,52 @@ Qualification boundaries: this is incremental terminal/connection evidence after
 Final menu/input follow-up: a failing `connections_mixed` regression in `menu-regression-red.log` caught the Inspector label and duplicate shell-opening action. The shared table now accepts the correct primary-action label, with one shell-opening entry. `menu-accepted-tests.log` passes 92/92 affected connection/table tests. `final-input-tests.log` passes 46/46 input, window, target and compact-layout executions. The final iPhone driver uses one touchscreen per journey, the existing visible-bounds helper and the observable opened/focused shell instead of an internal pressed-state precondition. `ios-visible-bounds-real.log` plus two successive `ios-visible-bounds-touch-*.log` runs pass after a real exec on the same owned simulator. Earlier failed pressed-state/relaunch attempts are not counted as passes.
 
 The last caption-only build is `podlord-connections-menu.apk`. `android-menu-4k` and `android-menu-16k` pass the two-step real TLS import/terminal journey and installed-size checks, with completed exit-0 cleanup. Measured files: 99,682,996 and 99,683,025 bytes respectively. These explicitly scoped runs supplement, not replace, the earlier 13-step full journeys. `PODLORD_ANDROID_TERMINAL_ONLY=1` selects this existing-journey subset for focused iteration; default CI still runs the full journey. Both final runs use an immutable runner snapshot. `qualification.json`, `final-apk.sha256` and runner hashes identify the accepted artifacts and distinguish full from scoped evidence.
+
+
+## Native release qualification 2026-11-07
+
+**Status: not release-approved.** Product qualification is complete for the checks below, but the observed Qt image-thread teardown crash and the paused personal Google/GKE registration still require explicit release decisions. No scope, dependency or release-gate change was made to bypass either issue.
+
+Qualified product commit: `338443b7df77a95c1a314b25be0a4c17e7f0b9b8`.
+Qualified `native/` tree: `93929e4218ffb60b34aa37c92c2a48ea0d34dd68`.
+Subsequent Android-driver and documentation changes do not change this product tree. They are qualified by the device journeys below, not silently presented as a new application build.
+Local evidence root: `~/.cache/podlord/release-closure-20261107.oIH4Nk`.
+
+### Behavior corrections and evidence
+
+| Public behavior | Correction and executable evidence |
+| --- | --- |
+| Opening forwarded connections from Connections | Keep the local test port reserved until the actual mouse-release action. Resolve visible connection cells through the shared public scene lookup. 140 macOS repetitions and 40 exact Ubuntu 26.04 / Qt 6.10.2 repetitions pass. |
+| Loading short saved-filter lists by touch | An unscrollable short ListView no longer intercepts the subsequent tap as a flick gesture. Long lists retain scrolling. |
+| Loading and overwriting saved filters by keyboard | Explicit ListView key navigation preserves the original keyboard behavior when short-list scrolling is disabled. Both overwrite cases failed before the correction. All ten preset cases then pass on Qt 6.11.3 and the exact Linux Qt 6.10.2 toolchain. |
+| Android public UI targeting | Use a visible target center with at least 18 pixels of visible vertical extent. Scroll direction uses actual partial geometry before document order. This avoids rejecting a visible button whose accessibility bounds protrude one pixel. Dedicated 44-pixel map-control and last-pixel edge assertions remain unchanged. No input or write action is replayed. |
+| Real Kubernetes startup | Enter the visible Resources import surface and wait for actual control readiness. The test no longer types into a hidden form or mistakes a native file picker for the inline import form. |
+| Native macOS file import | A separately signed deployed copy opens the real native file chooser from Map and imports a context card. The loopback observer records zero implicit connections. Own app and observer are closed. Evidence: `native-picker/imported/application.png`, `native-picker/network.json`, `native-picker/cleanup.json`. |
+
+### Qualification results
+
+| Check | Result and evidence |
+| --- | --- |
+| Complete local native suite | 34 preflights plus 5,818 remaining executions pass. This is 5,852 executions, including style variants, not 5,852 separate features. `complete-current-suite.log`. |
+| Coverage | 97.87% lines and 86.57% branches overall. Window restoration new-method family: 107/118 branches, 90.68%. Existing overall and critical/new-logic checks pass without threshold changes. |
+| Coverage diagnostic | All 47 mismatch entries name only `TrustCancellation::isCanceled` with zero hash. Its actual profile has hash `0x18`, count 52. Export reports both header functions and all eight executable header lines covered. The diagnostic is retained, not suppressed or described as 47 missing implementations. `profile-mismatch.txt`, `trust-cancellation-profile.txt`, `trust-cancellation-coverage.json`. |
+| Hosted native CI | All ten jobs pass for the qualified product commit: Linux x86_64/ARM64, macOS Intel/ARM64, four direct/store package checks, Windows, and iOS build/bundle. [CI run](https://github.com/YunaBraska/podlord/actions/runs/42406962237). |
+| Standalone Linux | Both x86_64 and ARM64 shipping-toolchain trials pass. [Linux trial](https://github.com/YunaBraska/podlord/actions/runs/42406962198). |
+| Android 16-KB pages | Installed signed APK completes all 17 real-cluster UI steps, including touch and hardware-key preset loading, Map edge/camera checks, real retained PTY, multi-container logs, fresh YAML editing and immutable Sources editing. 1,847 resources. `android-16k-input-verified/journey.json`. |
+| Android 4-KB pages | All 14 full-journey steps pass with 1,851 resources. One read-only ADB hierarchy observation required reconnecting the private transport. No user action was replayed. `android-4k-input-verified/journey.json`, `transport-recovery.json`. |
+| iPhone | Installed simulator input journeys pass in portrait and landscape. The owned simulator is deleted. `ios-input-verified/runner.log`, `ios-input-cleanup.json`. These are simulator results, not physical-device claims. |
+| Real Kubernetes | Entire local TLS K3s journey passes, including confirmed JSON Patch, concurrent-change reconciliation, Secret write/read-back/remasking, PTY/vi/ANSI/resize/interrupts, forwarding, deletion and UID-replacement protection in Basic and Fusion. `real-e2e-input-verified.log`. Owned fixture cleanup succeeds: `input-mobile-cleanup-verified.json`. |
+| UI comparison | Current paired captures use the same 1440x948-point outer windows. Context-menu comparison identifies the same ConfigMap UID. The clean namespace-picker comparison has no search or inspector on either side. `namespace-clean/paired/context.png`, `namespace-clean/paired/namespace.png`. Native Cluster-wide selection and expanded discovery are confirmed differences, not pixel-identical C# claims. |
+| Previous theme matrix | The existing 19-theme, two-variant, 21-view iPhone matrix remains the visual evidence for unchanged layout/colors. The corrections in this checkpoint affect input and test readiness, not a new theme design. No fresh full matrix is claimed. |
+| Fresh installed macOS start | Ten launches with no competing build/device run. First fresh-copy Settings interaction: 1,008.5 ms. Repeat maximum: 495.0 ms. Approved 1,500/1,000-ms targets met. `startup-current-uncontended.log`. |
+| Foreground CPU and latency | Both native foreground measurements are valid and pass the discrete-action 20-ms and scrolling 8-ms frame-CPU targets. Worst measured discrete per-action-maximum p95: 19.32 ms. Scroll p95: 3.55/3.39 ms. Interaction p95 across the four action groups: 18.60-29.45 ms, within their existing targets. `performance-current`, `performance-confirmation-current`. |
+| Memory | Peak RSS: 303,497,216 / 301,727,744 bytes. Warm growth: 2,752,512 / 4,161,536 bytes. Both within existing 310-MB / 5-MB targets. |
+| Idle advisory | Valid 60-second nonsync windows measure 2.0368% / 2.0499% of one CPU core against a 2% advisory. Both records explicitly retain `targetsMet:false`. Neither was discarded, converted into an all-targets pass, or fixed by changing a threshold. |
+| macOS direct package | Dependency/minimum-OS and ad-hoc local package checks pass. Installed: 87,898,729 bytes. ZIP: 33,956,286 bytes. This is not Developer ID/notarization or Store submission clearance. `macos-package-current`. |
+| Android private package | Signed APK verifies. ZIP extraction matches the tested APK byte-for-byte. ZIP: 37,467,005 bytes. Installed logical bytes: 99,695,114 (16-KB) / 99,692,210 (4-KB). `Podlord-android-arm64-338443b.apk.zip`, `android-current-package-verification.txt`. |
+
+### Remaining decisions, not implicit scope changes
+
+- **Qt teardown:** one earlier hosted macOS ARM test crashed while Qt's image-reader destructor called `QObject::deleteLater`. The current CI passes, 200 focused repetitions and 835 AddressSanitizer UI scenarios pass, but those successes do not erase the observed crash. The official [Qt teardown fix](https://github.com/qt/qtdeclarative/commit/bbcaf3f39143) replaces that exact shutdown sequence. Backporting it to the pinned 6.11.3 SDK versus retaining unmodified releases awaits approval. No supplier patch or Qt upgrade has been applied.
+- **Personal Google/GKE login:** publisher OAuth registration remains paused at the user's request. Native imported service-account access is a separate implemented path. Whether the first private release may exclude personal Google login is still an explicit scope decision. No account work was resumed and no live Google-login proof is claimed.
+- Distribution signing, notarization and Store upload remain separate, deferred publication work. No tag or release was published. The C# application remains a comparison reference, not a second release target or coverage gate.
