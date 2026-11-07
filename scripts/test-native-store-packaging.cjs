@@ -436,7 +436,7 @@ test('macOS package jobs share pinned setup and retain every package scenario', 
         '/bin/sh scripts/install-native-macos-toolchain.sh --check "$RUNNER_TEMP/native-toolchain"']) {
         assert.ok(action.includes(command), `Shared setup lost: ${command}`);
     }
-    assert.ok(action.includes("native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh') }}"));
+    assert.ok(action.includes("native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/**', 'native/tests/qt_shutdown/**') }}"));
     const publicCache = ['qt', 'qt-sdk', 'yaml-cpp', 'openssl', 'build-inputs.txt']
         .map(part => '${{ runner.temp }}/native-toolchain/' + part);
     for (const name of ['Restore exact public macOS toolchain', 'Retain validated public macOS toolchain']) {
