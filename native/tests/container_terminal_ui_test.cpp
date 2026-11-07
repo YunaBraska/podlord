@@ -122,11 +122,8 @@ bool run(const QString& scenario, const QString& configPath) {
     REQUIRE(workspace.inspectPath(path)); REQUIRE(waitFor([&] { return !workspace.loading(); }, real ? 60000 : 15000));
     const auto click = [&](const char* object, Qt::MouseButton button = Qt::LeftButton) {
         const QString objectName = QString::fromLatin1(object);
-        QQuickItem* item = nullptr;
-        if (objectName.startsWith("portCell_")) {
-            const auto parts = objectName.split('_');
-            item = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"), parts.value(1).toInt(), parts.value(2).toInt());
-        } else item = podlord::test::visibleItem(window->contentItem(), objectName);
+        if (objectName.startsWith("portCell_")) return podlord::test::clickVisible(window, objectName, button);
+        auto* item = podlord::test::visibleItem(window->contentItem(), objectName);
         if (!item && (objectName == "terminalCopy" || objectName == "terminalPaste" || objectName == "terminalFollow"
             || objectName == "terminalKeys" || objectName == "terminalDisconnect" || objectName == "terminalHelp")) {
             auto* menu = podlord::test::visibleItem(window->contentItem(), "terminalActions");
