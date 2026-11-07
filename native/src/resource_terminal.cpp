@@ -7,6 +7,22 @@ ContainerTerminal* ResourceClient::terminal(const QString& id) const {
     for (const auto& terminal : terminals_) if (terminal.session == id) return terminal.screen;
     return nullptr;
 }
+QVariantMap ResourceClient::terminalConnection(const QString& id) const {
+    for (auto it = terminals_.cbegin(); it != terminals_.cend(); ++it) {
+        if (it->session != id) continue;
+        const auto parts = it->path.split('/', Qt::SkipEmptyParts);
+        const auto namespaceIndex = parts.indexOf("namespaces");
+        return {{"id", it.key()}, {"path", it->path}, {"uid", it->uid}, {"kind", "Terminal"},
+            {"name", parts.value(parts.size() - 1)}, {"namespace", namespaceIndex >= 0 ? parts.value(namespaceIndex + 1) : QString{}},
+            {"container", it->container}, {"shell", it->shell}, {"endpoint", it->screen->target()},
+            {"status", it->screen->status()}, {"active", it->screen->active()}, {"connected", it->screen->connected()}};
+    }
+    return {};
+}
+int ResourceClient::connectionCount(const QString& id) const {
+    const auto* shell = terminal(id);
+    return static_cast<int>(portForwards(id).size()) + (shell && shell->active() ? 1 : 0);
+}
 Result<QString> ResourceClient::startTerminal(const QString& id, const QString& path, const QString& container, const QString& shell) {
     expire();
     const auto state = states_.constFind(id); const auto row = resource(id, path);

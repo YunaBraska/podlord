@@ -5946,8 +5946,8 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
         QTest::keyClick(window,Qt::Key_Return);
         if (!waitFor([&] { return surface->property("visibleText").toString().split('\n').contains("PODLORD_IOS_IME_OK"); },15000)) return failure("input terminal echo");
         input->hide();
-        if (!waitFor([&] { auto* disconnect=item(window,"terminalDisconnect"); return !input->isVisible()
-            && workspace.containerTerminal()==connected && connected->connected() && disconnect && disconnect->isVisible(); })
+        if (!waitFor([&] { auto* actions=item(window,"terminalActions"); return !input->isVisible()
+            && workspace.containerTerminal()==connected && connected->connected() && actions && actions->isVisible(); })
             || !capture("terminal-restored")) return failure("input controls restored");
         if (!click(window,surface)) return failure("terminal exit focus");
         QInputMethodEvent exit; exit.setCommitString("exit"); QCoreApplication::sendEvent(surface,&exit); QTest::keyClick(window,Qt::Key_Return);

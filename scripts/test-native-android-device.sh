@@ -180,6 +180,7 @@ const coldInspectorCycles=Number(process.env.PODLORD_ANDROID_COLD_INSPECTOR_CYCL
 if(!Number.isInteger(coldInspectorCycles)||coldInspectorCycles<0||coldInspectorCycles>10)throw Error('Cold inspector diagnostic cycles must be an integer from 0 to 10');
 if(inspectorCycles&&coldInspectorCycles)throw Error('Choose warm or cold inspector diagnostics, not both');
 const inspectorOnly=process.env.PODLORD_ANDROID_INSPECTOR_ONLY||'0';
+const terminalOnly=process.env.PODLORD_ANDROID_TERMINAL_ONLY||'0';
 if(!['0','1'].includes(inspectorOnly)||(inspectorOnly==='1'&&(inspectorCycles||coldInspectorCycles)))throw Error('Choose a single inspector diagnostic mode');
 const sourceOnly=process.env.PODLORD_ANDROID_SOURCE_ONLY||'0';
 if(!['0','1'].includes(sourceOnly)||(sourceOnly==='1'&&(inspectorOnly==='1'||inspectorCycles||coldInspectorCycles)))throw Error('Choose a single Sources diagnostic mode');
@@ -271,7 +272,7 @@ function target(id){
     const clip=bounds(host);return !clip||(b[1]>=clip[1]&&b[3]<=clip[3]);
   })());
   if(n){if(!scrolled)return n;const before=n.bounds,identity=n['resource-id'];state();const stable=nodes.find(n=>n['resource-id']===identity&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
-  const nav=/WorkspaceButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
+  const nav=/WorkspaceButton|workspaceSearchButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
   if(attempt===limit)break;
   const current=nodes.find(matches);
   const inspector=/\.(workspaceInspector|sourceInspector)\./.test(current?.['resource-id']||'');
@@ -296,7 +297,7 @@ function target(id){
 function tap(n){const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);if(b[2]<=b[0]||b[3]<=b[1])throw Error('Target outside viewport');const point=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];run('shell','input','tap',...point.map(String));state();const after=nodes.find(x=>x['resource-id']===n['resource-id']);fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({id:n['resource-id'],bounds:n.bounds,point,beforeChecked:n.checked,afterBounds:after?.bounds,afterChecked:after?.checked,focused:nodes.filter(x=>x.focused==='true').map(x=>({id:x['resource-id'],text:x.text,description:x['content-desc']}))})+'\n');}
 function click(id){tap(target(id));}
 function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
-function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; map-only diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
+function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:terminalOnly==='1'?'terminal-only':mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; scoped diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,failures:journeyFailures,error:String(error)},null,2)+'\n');
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
@@ -359,6 +360,7 @@ if(mapRoundtrip==='1'){
  if(mapOnly==='1'){completeJourney();process.exit(journeyFailures.length?1:0);}
 }
 terminalJourney();
+if(terminalOnly==='1'){completeJourney();process.exit(0);}
 search('');steps.push({step:'Landscape search remains above the real soft keyboard and restores navigation after dismissal'});
 const miniRadar=target('resourceRadar').bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);
 click('mapWorkspaceButton');
@@ -548,16 +550,31 @@ click('terminalButton');click('terminalConnect');
 waitNode('terminalStatus',n=>/\bconnected\b/i.test(n.text+' '+n['content-desc']));
 waitNode('terminalSurface',n=>n.focused==='true');inputAboveKeyboard(['terminalStatus','terminalSurface'],'container-terminal-connected');
 run('shell','input','text','echo%sPODLORD_ANDROID_E2E_OK');run('shell','input','keyevent','66');state();inputAboveKeyboard(['terminalStatus','terminalSurface'],'container-terminal-typing');run('shell','input','keyevent','4');state();
-waitNode('terminalDisconnect',n=>n.enabled==='true'&&!/\[0,0\]\[0,0\]/.test(n.bounds));
+waitNode('terminalActions',n=>n.enabled==='true'&&!/\[0,0\]\[0,0\]/.test(n.bounds));
 waitNode('terminalStatus',n=>/\bconnected\b/i.test(n.text+' '+n['content-desc']));
-const terminalDeadline=Date.now()+20000;let output=false;
-do{state();output=/(?:^|, |\r?\n|\u2029)PODLORD_ANDROID_E2E_OK(?:\r?\n|\u2029|$)/.test(describe('terminalSurface'));if(output)break;}while(Date.now()<terminalDeadline);
+function waitTerminalOutput(marker){
+ const deadline=Date.now()+20000,pattern=new RegExp('(?:^|, |\\r?\\n|\\u2029)'+marker+'(?:\\r?\\n|\\u2029|$)');
+ do{state();if(pattern.test(describe('terminalSurface')))return true;}while(Date.now()<deadline);
+ return false;
+}
 capture('container-terminal-echo');
-if(!output)throw Error('The real container shell output marker was not exposed by the terminal');
+if(!waitTerminalOutput('PODLORD_ANDROID_E2E_OK'))throw Error('The real container shell output marker was not exposed by the terminal');
+click('collapseTerminal');click('closeInspector');click('portForwardTasksButton');
+waitNode('portCell_0_0',n=>/visual-multi-container/.test(n.text+' '+n['content-desc']));
+capture('session-connections');
+click('portCell_0_0');
+waitNode('terminalStatus',n=>/\bconnected\b/i.test(n.text+' '+n['content-desc']));
+waitNode('terminalSurface',n=>n.focused==='true');
+if(!waitTerminalOutput('PODLORD_ANDROID_E2E_OK'))throw Error('Reopening Connections lost the retained shell output');
+run('shell','input','text','echo%sPODLORD_ANDROID_REOPEN_OK');run('shell','input','keyevent','66');state();
+if(!waitTerminalOutput('PODLORD_ANDROID_REOPEN_OK'))throw Error('The reopened shell did not accept input');
+if(nodes.some(n=>n['resource-id']?.endsWith('.portContextStop')))throw Error('A Connections context menu remained exposed over the terminal');
+run('shell','input','keyevent','4');state();capture('container-terminal-reopened');
 click('terminalSurface');run('shell','input','text','exit');run('shell','input','keyevent','66');state();
 waitNode('terminalStatus',n=>/\b(closed|exited|disconnected)\b/i.test(n.text+' '+n['content-desc']));
-steps.push({step:'Native Kubernetes PTY connects, executes echo, returns output and exits without kubectl'});
-click('collapseTerminal');click('closeInspector');
+steps.push({step:'Native Kubernetes PTY executes echo, reopens its retained shell from Connections, accepts more input and exits without kubectl'});
+click('collapseTerminal');
+click('resourcesWorkspaceButton');
 }
 
 function sourceJourney(){

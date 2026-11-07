@@ -72,6 +72,10 @@ public:
     QString portForwardError(const QString& id) const;
     Result<QString> startTerminal(const QString& id, const QString& path, const QString& container, const QString& shell);
     ContainerTerminal* terminal(const QString& id) const;
+    /** Retained identity and state of the session's one terminal. No resource read or request. */
+    QVariantMap terminalConnection(const QString& id) const;
+    /** Existing forwards and active shell streams, without opening another connection. */
+    int connectionCount(const QString& id) const;
     bool stopTerminal(const QString& id);
     /** Confirmed, target-bound JSON Patch. One send only; no automatic retry. */
     bool applyYaml(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline,

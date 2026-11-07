@@ -340,7 +340,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     eventRows_(nullptr, {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage", "name", "owner"},
         {"Last observed", "Status", "Reason", "Namespace", "Target name", "Count", "Message", "Name", "Object"}),
     portRows_(nullptr, {"endpoint", "name", "kind", "namespace", "remotePort", "resolvedPort", "status"},
-        {"Local endpoint", "Name", "Kind", "Namespace", "Remote", "Resolved", "Status"}, "id"),
+        {"Connection", "Name", "Kind", "Namespace", "Remote", "Resolved", "Status"}, "id"),
     inspectorEventRows_(nullptr, {"time", "type", "reason", "count", "message"}, {"Last observed", "Type", "Reason", "Count", "Message"}),
     inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status"}, {"From", "Link", "To", "Namespace", "Status"}),
     valueRows_(nullptr, {"name", "encoding", "preview", "copy", "reveal"}, {"Key", "Encoding", "Value", "Copy", "Reveal"}, "id"),
@@ -384,8 +384,12 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     if (restore) client_.enableRequests(false);
     connect(&client_, &ResourceClient::requestStarted, this, &Workspace::requestStarted);
-    connect(&client_, &ResourceClient::portForwardsChanged, this, [this](const QString& id) { if (id == active_) { publishPorts(); emit changed(); } });
-    connect(&client_, &ResourceClient::terminalChanged, this, [this](const QString& id) { if (id == active_) emit changed(); });
+    const auto connectionsChanged = [this](const QString& id) {
+        if (id == active_) publishPorts();
+        if (id == active_ || runtime_->owners.value(id) == this) emit changed();
+    };
+    connect(&client_, &ResourceClient::portForwardsChanged, this, connectionsChanged);
+    connect(&client_, &ResourceClient::terminalChanged, this, connectionsChanged);
     publishAppearance();
     bindYamlApply();
     bindDeletion();
@@ -465,6 +469,11 @@ QVariantList Workspace::tabs() const {
     result.erase(std::remove_if(result.begin(), result.end(), [this](const auto& row) {
         return runtime_->owners.value(row.toMap()["id"].toString()) != this;
     }), result.end());
+    for (auto& value : result) {
+        auto row = value.toMap();
+        row["connectionCount"] = client_.connectionCount(row["id"].toString());
+        value = row;
+    }
     return result;
 }
 bool Workspace::busy() const { return busy_; }

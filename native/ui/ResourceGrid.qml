@@ -144,6 +144,7 @@ ColumnLayout {
     signal copyRequested(int row, int column)
     signal copyPathRequested(string path, int column)
     signal contextRequested(string path)
+    property string contextOpenText: workspace.uiText["ref.menuOpen"]
     property list<Action> contextActions
     function pathAt(row) { return tableModel.data(tableModel.index(row, 0), Qt.UserRole) || "" }
     function endpointAt(row, column) { return tableModel.data(tableModel.index(row, column), Qt.UserRole + 12) || pathAt(row) }
@@ -235,7 +236,7 @@ ColumnLayout {
         property int column: -1
         onAboutToShow: grid.contextRequested(path)
         property string endpoint: ""
-        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: workspace.uiText["ref.menuOpen"]; visible: grid.inspectable; enabled: visible; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
+        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: grid.contextOpenText; visible: grid.inspectable; enabled: visible; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
         MenuItem { objectName: grid.prefix === "resource" ? "menuCopy" : grid.prefix + "MenuCopy"; text: workspace.uiText["copy.value"]; onTriggered: grid.copyPathRequested(cellMenu.path, cellMenu.column) }
         Instantiator {
             model: grid.contextActions
@@ -279,7 +280,7 @@ ColumnLayout {
             onClicked: if (sortable) grid.sortRequested(column)
             ToolTip.visible: (hovered || activeFocus) && contentItem.implicitWidth > availableWidth
             ToolTip.text: text
-            TapHandler { acceptedButtons: Qt.RightButton; onTapped: grid.openColumns() }
+            TapHandler { acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen; acceptedButtons: Qt.RightButton; onTapped: grid.openColumns() }
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
                     grid.openColumns(); event.accepted = true
@@ -358,6 +359,7 @@ ColumnLayout {
         TapHandler {
             id: rightTap
             property var origin: null
+            acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen
             acceptedButtons: Qt.RightButton
             gesturePolicy: TapHandler.DragThreshold
             onPressedChanged: if (pressed) origin = surface.pressOrigin(point.scenePosition)

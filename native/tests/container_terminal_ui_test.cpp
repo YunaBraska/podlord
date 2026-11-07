@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "window_host.h"
 #include "ui_input.h"
 #include <QFile>
 #include <QClipboard>
@@ -6,9 +7,11 @@
 #include <QInputMethodEvent>
 #include <QInputMethod>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrlQuery>
@@ -33,6 +36,12 @@ bool run(const QString& scenario, const QString& configPath) {
     QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", name}, {"namespace", ns}, {"uid", "original-pod"}, {"resourceVersion", "1"}}},
         {"status", QJsonObject{{"phase", scenario == "completed" ? "Succeeded" : "Running"}}},
         {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}, {"image", "external-kubernetes-boundary"}}, QJsonObject{{"name", "beta"}, {"image", "external-kubernetes-boundary"}}}}}}};
+    const QString otherPath = "/api/v1/namespaces/" + ns + "/pods/other-pod";
+    auto otherPod = pod;
+    auto otherMetadata = pod["metadata"].toObject();
+    otherMetadata["name"] = "other-pod"; otherMetadata["uid"] = "other-pod-uid";
+    otherPod["metadata"] = otherMetadata;
+    otherPod["spec"] = QJsonObject{{"containers",QJsonArray{QJsonObject{{"name","omega"}}}}};
     QPointer<QWebSocket> peer; QPointer<QTcpSocket> heldTarget; QUrl upgradeUrl; QByteArray input; QList<QJsonObject> sizes;
     int upgrades = 0, freshReads = 0, inputFrames = 0; bool armed = false, authorized = true;
     QObject::connect(&api, &QTcpServer::newConnection, &api, [&] {
@@ -53,9 +62,9 @@ bool run(const QString& scenario, const QString& configPath) {
                 if (url.path() == "/api") body = {{"versions", QJsonArray{"v1"}}};
                 else if (url.path() == "/apis") body = {{"groups", QJsonArray{}}};
                 else if (url.path() == "/api/v1") body = {{"resources", QJsonArray{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list", "get"}}}}}};
-                else if (url.path() == "/api/v1/pods") body = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}};
-                else if (url.path() == path) {
-                    body = pod;
+                else if (url.path() == "/api/v1/pods") body = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{}}, {"items", scenario == "connections_retained_target" ? QJsonArray{pod,otherPod} : QJsonArray{pod}}};
+                else if (url.path() == path || url.path() == otherPath) {
+                    body = url.path() == otherPath ? otherPod : pod;
                     if (armed) {
                         ++freshReads;
                         if (scenario == "close_pending_target") { heldTarget = socket; return; }
@@ -88,30 +97,57 @@ bool run(const QString& scenario, const QString& configPath) {
     const auto imported = podlord::KubeconfigStore(profile.path()).importFile(real ? configPath : config);
     const auto* source = std::get_if<podlord::SourceSnapshot>(&imported); REQUIRE(source && !source->contexts.isEmpty());
     podlord::Workspace workspace(profile.path()); QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("workspace", &workspace); engine.load(QUrl("qrc:/podlord/Main.qml")); REQUIRE(!engine.rootObjects().isEmpty());
-    auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first()); REQUIRE(window);
+    std::unique_ptr<podlord::WindowHost> host;
+    QQuickWindow* window = nullptr;
+    if (scenario == "connections_window") {
+        host = std::make_unique<podlord::WindowHost>(workspace);
+        REQUIRE(host->open() && host->windows().size() == 1);
+        window = host->windows().first();
+    } else {
+        engine.rootContext()->setContextProperty("workspace", &workspace);
+        engine.load(QUrl("qrc:/podlord/Main.qml")); REQUIRE(!engine.rootObjects().isEmpty());
+        window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    }
+    REQUIRE(window);
+    std::unique_ptr<QPointingDevice> touchScreen;
+    const auto touchDevice = [&] {
+        if (!touchScreen) touchScreen.reset(QTest::createTouchDevice());
+        return touchScreen.get();
+    };
 #ifdef Q_OS_IOS
     REQUIRE(podlord::test::orientIosTestWindow(window));
 #endif
     REQUIRE(waitFor([&] { return !workspace.busy(); }) && workspace.openContext(source->contexts.first().id));
     REQUIRE(waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.table()->rowCount() > 0; }, real ? 120000 : 15000));
     REQUIRE(workspace.inspectPath(path)); REQUIRE(waitFor([&] { return !workspace.loading(); }, real ? 60000 : 15000));
-    const auto click = [&](const char* object) {
-        auto* item = podlord::test::visibleItem(window->contentItem(), QString::fromLatin1(object));
+    const auto click = [&](const char* object, Qt::MouseButton button = Qt::LeftButton) {
+        const QString objectName = QString::fromLatin1(object);
+        auto* item = podlord::test::visibleItem(window->contentItem(), objectName);
+        if (!item && (objectName == "terminalCopy" || objectName == "terminalPaste" || objectName == "terminalFollow"
+            || objectName == "terminalKeys" || objectName == "terminalDisconnect" || objectName == "terminalHelp")) {
+            auto* menu = podlord::test::visibleItem(window->contentItem(), "terminalActions");
+            if (!menu || !podlord::test::scrollIntoView(window, menu)) return false;
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, menu->mapToScene({menu->width()/2, menu->height()/2}).toPoint());
+            if (!waitFor([&] { return podlord::test::visibleItem(window->contentItem(), objectName) != nullptr; })) return false;
+            item = podlord::test::visibleItem(window->contentItem(), objectName);
+        }
+        if (!item && objectName.startsWith("portCell_")) {
+            const auto parts = objectName.split('_');
+            item = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"), parts.value(1).toInt(), parts.value(2).toInt());
+        }
 #ifdef Q_OS_IOS
         if (item && QByteArray(object) == "terminalButton") {
             const auto visible = podlord::test::visibleBounds(window, item);
             const auto full = item->mapRectToScene(QRectF(QPointF{}, item->size()));
             if (!visible.isEmpty() && !visible.contains(full)) {
-                std::unique_ptr<QPointingDevice> device(QTest::createTouchDevice());
                 const auto from = visible.center().toPoint();
                 const auto to = QPoint(qMax(24, from.x() - 220), from.y());
-                QTest::touchEvent(window, device.get()).press(0, from, window).commit();
+                QTest::touchEvent(window, touchDevice()).press(0, from, window).commit();
                 for (int step = 1; step <= 4; ++step) {
-                    QTest::touchEvent(window, device.get()).move(0, from + (to - from) * step / 4, window).commit();
+                    QTest::touchEvent(window, touchDevice()).move(0, from + (to - from) * step / 4, window).commit();
                     QTest::qWait(20);
                 }
-                QTest::touchEvent(window, device.get()).release(0, to, window).commit();
+                QTest::touchEvent(window, touchDevice()).release(0, to, window).commit();
                 REQUIRE(waitFor([&] { return podlord::test::visibleBounds(window, item).contains(item->mapRectToScene(QRectF(QPointF{}, item->size()))); }));
             }
         }
@@ -120,13 +156,13 @@ bool run(const QString& scenario, const QString& configPath) {
             const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FAILURE_FRAME"); if (!frame.isEmpty()) window->grabWindow().save(frame);
             return false;
         }
-        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, item->mapToScene({item->width() / 2, item->height() / 2}).toPoint()); return true;
+        QTest::mouseClick(window, button, Qt::NoModifier, item->mapToScene({item->width() / 2, item->height() / 2}).toPoint()); return true;
     };
     REQUIRE(click("terminalButton"));
     REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "terminalConnect") != nullptr; }));
     if (scenario == "connect") {
-        const auto* status = podlord::test::visibleItem(window->contentItem(), "terminalStatus");
-        REQUIRE(status && status->property("text").toString().contains("remote processes may continue"));
+        REQUIRE(podlord::test::visibleItem(window->contentItem(), "terminalActions"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "terminalHelpDialog"));
     }
     if (scenario == "completed") { REQUIRE(!workspace.canStartTerminal()); REQUIRE(!workspace.startContainerTerminal("alpha", "/bin/sh")); return true; }
     if (scenario == "invalid_container" || scenario == "invalid_shell" || scenario == "empty_shell" || scenario == "relative_shell") {
@@ -163,6 +199,38 @@ bool run(const QString& scenario, const QString& configPath) {
     surface->forceActiveFocus(); QTest::qWait(30);
     const auto keys = [&](const QByteArray& value) { for (const char c : value) QTest::keyClick(window, c); };
     const auto type = [&](const QByteArray& value) { keys(value); QTest::keyClick(window, Qt::Key_Return); };
+    if (scenario == "real_connections") {
+        type("printf 'PODLORD_BEFORE:%s\\n' \"$$\"");
+        QString pid;
+        REQUIRE(waitFor([&] { pid=QRegularExpression("PODLORD_BEFORE:([0-9]+)").match(surface->visibleText()).captured(1); return !pid.isEmpty(); }));
+        if (window->property("terminalExpanded").toBool()) REQUIRE(click("collapseTerminal"));
+        REQUIRE(workspace.closeInspector() && click("portForwardTasksButton"));
+        const bool listed = waitFor([&] { return workspace.portTable()->rowCount() == 1
+            && podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(),"portTable"),0,0); });
+        if (!listed) {
+            std::fprintf(stderr, "Connections navigation: page=%s rows=%d expanded=%d window=%dx%d\n",
+                qPrintable(workspace.workspacePage()), workspace.portTable()->rowCount(),
+                window->property("terminalExpanded").toBool(), window->width(), window->height());
+            const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FAILURE_FRAME");
+            if (!frame.isEmpty()) window->grabWindow().save(frame);
+        }
+        REQUIRE(listed);
+        REQUIRE(click("portCell_0_0"));
+        REQUIRE(waitFor([&] { return window->property("terminalExpanded").toBool()
+            && podlord::test::visibleItem(window->contentItem(),"terminalSurface"); }));
+        surface=qobject_cast<podlord::TerminalSurface*>(podlord::test::visibleItem(window->contentItem(),"terminalSurface"));
+        REQUIRE(surface && workspace.containerTerminal() == terminal);
+        REQUIRE(waitFor([&] { return surface->hasActiveFocus(); }));
+        type("printf 'PODLORD_AFTER:%s\\n' \"$$\"");
+        REQUIRE(waitFor([&] { return QRegularExpression("PODLORD_AFTER:([0-9]+)").match(surface->visibleText()).captured(1)==pid; }));
+        const auto frame=qEnvironmentVariable("PODLORD_TERMINAL_FRAME");
+        if (!frame.isEmpty()) REQUIRE(window->grabWindow().save(frame));
+        type("exit");
+        REQUIRE(waitFor([&] { return !terminal->active(); }));
+        REQUIRE(click("collapseTerminal") && workspace.stopContainerTerminal());
+        std::fprintf(stderr,"Real Connections reopen preserved remote shell PID %s and the original terminal.\n",qPrintable(pid));
+        return true;
+    }
     const auto output = [&](const QByteArray& value) { peer->sendBinaryMessage(QByteArray(1, char(1)) + value); };
     if (real) {
         type("printf '\\033[32mPODLORD_NATIVE_PTY_OK\\033[0m\\n'; stty size");
@@ -201,6 +269,170 @@ bool run(const QString& scenario, const QString& configPath) {
         }
         const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FRAME"); if (!frame.isEmpty()) { QTest::qWait(150); REQUIRE(window->grabWindow().save(frame)); }
         type("exit 0"); REQUIRE(waitFor([&] { return !terminal->active(); })); std::fprintf(stderr, "Real terminal exit: %s\n", qPrintable(terminal->status())); REQUIRE(terminal->status() == "Shell exited successfully."); return true;
+    }
+    if (scenario.startsWith("connections_") || scenario.startsWith("compact_")) {
+        const auto owner = workspace.currentSession();
+        const auto connection = workspace.terminalConnection();
+        REQUIRE(!connection.isEmpty() && connection["container"] == "alpha" && connection["path"] == path);
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "terminalConnect"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "terminalContainer"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "terminalDisconnect"));
+        REQUIRE(workspace.closeInspector());
+        if (scenario == "connections_touch") {
+            REQUIRE(waitFor([&] { return !window->property("terminalExpanded").toBool(); }));
+            auto* navigation = podlord::test::visibleItem(window->contentItem(), "portForwardTasksButton");
+            REQUIRE(navigation && navigation->isEnabled() && podlord::test::scrollIntoView(window,navigation));
+            const auto point = navigation->mapToScene(QPointF(navigation->width()/2,navigation->height()/2)).toPoint();
+            QTest::touchEvent(window,touchDevice()).press(0,point,window).commit();
+            QTest::touchEvent(window,touchDevice()).release(0,point,window).commit();
+            const bool navigated = waitFor([&] { return workspace.workspacePage() == "ports"; });
+            if (!navigated) std::fprintf(stderr,"Touch navigation: appState=%d active=%d exposed=%d page=%s\n",
+                int(QGuiApplication::applicationState()),window->isActive(),window->isExposed(),qPrintable(workspace.workspacePage()));
+            REQUIRE(navigated);
+        } else REQUIRE(click("portForwardTasksButton"));
+        REQUIRE(waitFor([&] { return workspace.portTable()->rowCount() == 1 && podlord::test::visibleItem(window->contentItem(), "portTable"); }));
+        REQUIRE(workspace.portTable()->data(workspace.portTable()->index(0, 0)).toString() == terminal->target());
+        REQUIRE(workspace.portTable()->data(workspace.portTable()->index(0, 2)).toString() == "Terminal");
+        if (scenario == "connections_overview") {
+            REQUIRE(workspace.filterPorts("absent-connection") && workspace.portTable()->rowCount() == 0);
+            REQUIRE(workspace.filterPorts("alpha") && workspace.portTable()->rowCount() == 1);
+            REQUIRE(!workspace.copyPortForwardEndpoint(connection["id"].toString()));
+            REQUIRE(!workspace.stopPortForward(connection["id"].toString()));
+            REQUIRE(terminal->connected() && upgrades == 1 && freshReads == 1);
+        } else if (scenario == "connections_window") {
+            REQUIRE(workspace.duplicateSession(owner, "Other window"));
+            QString other;
+            REQUIRE(waitFor([&] {
+                for (const auto& value : workspace.sessions()) if (value.toMap()["name"] == "Other window") other=value.toMap()["id"].toString();
+                return !workspace.busy() && !other.isEmpty();
+            }));
+            REQUIRE(workspace.activate(other));
+            REQUIRE(waitFor([&] { return !workspace.busy() && workspace.currentSession() == other; }));
+            REQUIRE(host && host->detach(workspace,owner));
+            REQUIRE(waitFor([&] { return host->windows().size() == 2 && workspace.currentSession() == other && !workspace.busy(); }));
+            auto* destination = qobject_cast<podlord::Workspace*>(QQmlEngine::contextForObject(host->windows().last())->contextProperty("workspace").value<QObject*>());
+            REQUIRE(destination && destination->currentSession() == owner && destination->containerTerminal() == terminal);
+            REQUIRE(!workspace.containerTerminal() && workspace.portTable()->rowCount() == 0 && terminal->connected());
+            REQUIRE(destination->terminalConnection()["id"] == connection["id"] && upgrades == 1);
+            REQUIRE(destination->stopContainerTerminal());
+            REQUIRE(waitFor([&] { return !destination->containerTerminal() && destination->portTable()->rowCount() == 0; }));
+            REQUIRE(!workspace.containerTerminal() && workspace.portTable()->rowCount() == 0);
+            return true;
+        } else if (scenario == "connections_session") {
+            REQUIRE(workspace.duplicateSession(owner, "Independent connections"));
+            REQUIRE(waitFor([&] { return !workspace.busy(); }));
+            QString other;
+            REQUIRE(waitFor([&] {
+                for (const auto& value : workspace.sessions()) if (value.toMap()["name"] == "Independent connections") other=value.toMap()["id"].toString();
+                return !other.isEmpty();
+            }));
+            REQUIRE(workspace.activate(other));
+            REQUIRE(waitFor([&] { return !workspace.busy() && workspace.currentSession() == other; }));
+            REQUIRE(!workspace.containerTerminal() && workspace.portTable()->rowCount() == 0 && terminal->connected());
+            const auto* badge=podlord::test::visibleItem(window->contentItem(), "sessionConnections_"+owner);
+            REQUIRE(badge && badge->property("text").toString() == "1");
+            REQUIRE(click(qPrintable("activateSession_"+owner)));
+            REQUIRE(waitFor([&] { return workspace.currentSession() == owner && workspace.portTable()->rowCount() == 1; }));
+            REQUIRE(workspace.containerTerminal() == terminal && upgrades == 1);
+        } else if (scenario == "connections_retained_target") {
+            peer->sendBinaryMessage(QByteArray(1,char(3))+"{\"status\":\"Success\"}");
+            peer->sendBinaryMessage(QByteArray::fromHex("ff03"));
+            peer->sendBinaryMessage(QByteArray::fromHex("ff01"));
+            REQUIRE(waitFor([&] { return !terminal->active(); }));
+            REQUIRE(workspace.inspectPath(otherPath) && waitFor([&] { return !workspace.loading() && workspace.inspectorName() == "other-pod"; }));
+            REQUIRE(workspace.setInspectorPage("terminal"));
+            REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(),"terminalTarget") != nullptr; }));
+            REQUIRE(workspace.terminalConnection()["path"] == path && workspace.canStartTerminal());
+            REQUIRE(!podlord::test::visibleItem(window->contentItem(),"terminalConnect"));
+            REQUIRE(!podlord::test::visibleItem(window->contentItem(),"terminalContainer"));
+            REQUIRE(click("terminalDisconnect"));
+            REQUIRE(waitFor([&] { return !workspace.containerTerminal() && podlord::test::visibleItem(window->contentItem(),"terminalConnect"); }));
+            REQUIRE(click("terminalConnect"));
+            REQUIRE(waitFor([&] { return workspace.containerTerminal() && workspace.containerTerminal()->connected(); }));
+            REQUIRE(workspace.terminalConnection()["path"] == otherPath && QUrlQuery(upgradeUrl).queryItemValue("container") == "omega" && upgrades == 2);
+            REQUIRE(workspace.stopContainerTerminal());
+            return true;
+        } else if (scenario == "connections_mixed") {
+            REQUIRE(workspace.inspectPath(path) && waitFor([&] { return !workspace.loading(); }));
+            QTcpServer reservation; REQUIRE(reservation.listen(QHostAddress::LocalHost));
+            const auto port=reservation.serverPort(); reservation.close();
+            REQUIRE(workspace.preparePortForward() && workspace.startPreparedPortForward(QString::number(port), "8080"));
+            REQUIRE(waitFor([&] { return workspace.portTable()->rowCount() == 2; }));
+            const auto forward=workspace.portForwards().first().toMap()["id"].toString();
+            int shellRow=-1;
+            for (int row=0;row<workspace.portTable()->rowCount();++row)
+                if (workspace.portTable()->index(row,0).data(Qt::UserRole).toString()==connection["id"]) shellRow=row;
+            REQUIRE(shellRow>=0 && click(qPrintable("portCell_"+QString::number(shellRow)+"_0"), Qt::RightButton));
+            REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "portMenuInspector") != nullptr; }));
+            REQUIRE(podlord::test::visibleItem(window->contentItem(), "portMenuInspector")->property("text").toString() == "Open terminal");
+            REQUIRE(!podlord::test::visibleItem(window->contentItem(), "connectionOpenTerminal"));
+            QTest::keyClick(window,Qt::Key_Escape);
+            REQUIRE(click("stopPortForwardTask"));
+            REQUIRE(waitFor([&] { return !workspace.containerTerminal() && workspace.portTable()->rowCount() == 1; }));
+            REQUIRE(workspace.portForwards().size() == 1 && !reservation.listen(QHostAddress::LocalHost,port));
+            REQUIRE(workspace.stopPortForward(forward) && reservation.listen(QHostAddress::LocalHost,port));
+            return true;
+        } else {
+            if (scenario == "connections_reopen") window->setPosition(120,80);
+            REQUIRE(waitFor([&] { return podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"),0,0) != nullptr; }));
+            if (scenario == "connections_touch") {
+                auto* cell = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"),0,0);
+                REQUIRE(cell);
+                REQUIRE(waitFor([&] { return cell->isEnabled() && !window->property("terminalExpanded").toBool(); }));
+                REQUIRE(podlord::test::scrollIntoView(window,cell));
+                const auto point = cell->mapToScene(QPointF(cell->width()/2,cell->height()/2)).toPoint();
+                QTest::touchEvent(window,touchDevice()).press(0,point,window).commit();
+                QTest::touchEvent(window,touchDevice()).release(0,point,window).commit();
+            } else REQUIRE(click("portCell_0_0"));
+            const bool expanded = waitFor([&] { return window->property("terminalExpanded").toBool(); });
+            if (!expanded) {
+                std::fprintf(stderr, "Terminal activation: page=%s session=%s focused=%s\n",
+                    qPrintable(workspace.workspacePage()), qPrintable(workspace.currentSession()),
+                    window->activeFocusItem() ? qPrintable(window->activeFocusItem()->objectName()) : "none");
+                const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FAILURE_FRAME");
+                if (!frame.isEmpty()) window->grabWindow().save(frame);
+            }
+            REQUIRE(expanded);
+            REQUIRE(!podlord::test::visibleItem(window->contentItem(), "portContextStop"));
+            auto* backgroundStop=podlord::test::visibleItem(window->contentItem(),"stopPortForwardTask");
+            REQUIRE(backgroundStop && !backgroundStop->isEnabled());
+            if (scenario.startsWith("compact_")) {
+                window->setMinimumSize(QSize(200,200));
+                window->resize(scenario == "compact_landscape" ? QSize(640,320) : QSize(320,640));
+            }
+            const bool readable = waitFor([&] {
+                auto* visible=podlord::test::visibleItem(window->contentItem(), "terminalSurface");
+                auto* close=podlord::test::visibleItem(window->contentItem(), "collapseTerminal");
+                auto* dialog=window->findChild<QObject*>("expandedTerminal");
+                const auto available=window->property("inputArea").toRectF();
+                const auto closeBounds = close ? close->mapRectToScene(QRectF(QPointF{},close->size())) : QRectF{};
+                return visible && close && dialog && dialog->property("height").toDouble() >= available.height()-20
+                    && visible->height() > available.height()*0.60 && visible->hasActiveFocus() && close->isEnabled()
+                    && QRectF(0,0,window->width(),window->height()).contains(closeBounds)
+                    && visible->width() <= window->width();
+            });
+            if (!readable) {
+                auto* pane=podlord::test::visibleItem(window->contentItem(), "terminalSurface");
+                auto* dialog=window->findChild<QObject*>("expandedTerminal");
+                std::fprintf(stderr,"Terminal geometry: window=%dx%d surface=%.1fx%.1f dialogHeight=%.1f expanded=%d\n",window->width(),window->height(),pane?pane->width():-1,pane?pane->height():-1,dialog?dialog->property("height").toDouble():-1,window->property("terminalExpanded").toBool());
+                std::fprintf(stderr,"Terminal focus owner: %s; dialogFocus=%d shellFocus=%d\n",window->activeFocusItem()?qPrintable(window->activeFocusItem()->objectName()):"none",dialog?dialog->property("activeFocus").toBool():false,pane?pane->hasActiveFocus():false);
+                auto* parent=dialog?dialog->property("parent").value<QObject*>():nullptr;
+                const auto area=dialog?dialog->property("usableArea").toRectF():QRectF{};
+                const auto input=window->property("inputArea").toRectF();
+                std::fprintf(stderr,"Terminal parent: %s %s %.1fx%.1f; usable=%.1f %.1f %.1f %.1f; input=%.1f %.1f %.1f %.1f; viewport=%.1f..%.1f\n",parent?parent->metaObject()->className():"missing",parent?qPrintable(parent->objectName()):"",parent?parent->property("width").toDouble():-1,parent?parent->property("height").toDouble():-1,area.x(),area.y(),area.width(),area.height(),input.x(),input.y(),input.width(),input.height(),dialog?dialog->property("viewportTop").toDouble():-1,dialog?dialog->property("viewportBottom").toDouble():-1);
+            }
+            const auto capture=qEnvironmentVariable("PODLORD_TERMINAL_FRAME");
+            if (!capture.isEmpty()) REQUIRE(window->grabWindow().save(capture+"-"+scenario+"-"+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png"));
+            REQUIRE(readable);
+            output("\r\nRETAINED_SHELL_STREAM");
+            REQUIRE(waitFor([&] { auto* visible=podlord::test::visibleItem(window->contentItem(), "terminalSurface"); return visible && visible->property("visibleText").toString().contains("RETAINED_SHELL_STREAM"); }));
+            REQUIRE(click("collapseTerminal"));
+            REQUIRE(workspace.inspectorPath().isEmpty() && workspace.containerTerminal() == terminal && terminal->connected());
+            REQUIRE(upgrades == 1 && freshReads == 1);
+        }
+        REQUIRE(workspace.stopContainerTerminal());
+        REQUIRE(waitFor([&] { return workspace.portTable()->rowCount() == 0 && (!peer || peer->state() == QAbstractSocket::UnconnectedState); }));
+        return true;
     }
     if (scenario == "empty_escape" || scenario.startsWith("control_")) {
         const QMap<QString, QPair<int, char>> controls{
@@ -417,7 +649,12 @@ bool run(const QString& scenario, const QString& configPath) {
                 QTest::keyClick(window, Qt::Key_Escape, Qt::ShiftModifier); QTest::qWait(30);
                 REQUIRE(input.isEmpty() && window->activeFocusItem() != expandedSurface);
                 auto* back = podlord::test::visibleItem(window->contentItem(), "collapseTerminal"); REQUIRE(back);
-                for (int index = 0; index < 16 && window->activeFocusItem() != back; ++index) { QTest::keyClick(window, Qt::Key_Tab, Qt::ShiftModifier); QTest::qWait(10); }
+                REQUIRE(window->activeFocusItem() == back);
+                QTest::keyClick(window, Qt::Key_Tab, Qt::ShiftModifier);
+                REQUIRE(waitFor([&] { return window->activeFocusItem() && window->activeFocusItem()->objectName() == "terminalActions"; }));
+                QTest::keyClick(window, Qt::Key_Tab);
+                REQUIRE(waitFor([&] { return window->activeFocusItem() == back; }));
+                if (window->activeFocusItem() != back) std::fprintf(stderr,"Terminal close focus: current=%s expected=%s closeTabFocus=%d closePolicy=%d\n",window->activeFocusItem()?qPrintable(window->activeFocusItem()->objectName()):"none",qPrintable(back->objectName()),back->activeFocusOnTab(),back->property("focusPolicy").toInt());
                 REQUIRE(window->activeFocusItem() == back); QTest::keyClick(window, Qt::Key_Space);
             }
             REQUIRE(waitFor([&] { return !dialog->property("visible").toBool(); }));
@@ -445,6 +682,8 @@ bool run(const QString& scenario, const QString& configPath) {
             for (auto key = expected.cbegin(); key != expected.cend(); ++key) {
                 auto* button = podlord::test::visibleItem(window->contentItem(), "terminalKey_" + key.key()); REQUIRE(button && !button->isEnabled());
             }
+            REQUIRE(click("terminalKeys"));
+            REQUIRE(waitFor([&] { return !podlord::test::visibleItem(window->contentItem(), "terminalKey_escape"); }));
             QTest::qWait(30); REQUIRE(input.isEmpty() && inputFrames == 0); return true;
         }
         if (control == "narrow") {
@@ -552,5 +791,8 @@ bool run(const QString& scenario, const QString& configPath) {
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv); Q_INIT_RESOURCE(workspace_ui);
     if (argc < 2 || argc > 3) return 2;
-    return run(QString::fromLocal8Bit(argv[1]), argc == 3 ? QString::fromLocal8Bit(argv[2]) : QString{}) ? 0 : 1;
+    QTimer::singleShot(0, &app, [&] {
+        app.exit(run(QString::fromLocal8Bit(argv[1]), argc == 3 ? QString::fromLocal8Bit(argv[2]) : QString{}) ? 0 : 1);
+    });
+    return app.exec();
 }

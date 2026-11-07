@@ -399,10 +399,10 @@ foreach(file IN LISTS dependency_notice_files)
 endforeach()
 set(workspace_qml_files
     ui/Main.qml ui/IconButton.qml ui/DialogHeader.qml ui/WorkspaceTab.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
-    ui/PortForwardView.qml ui/SettingsView.qml ui/AboutView.qml
+    ui/ConnectionsView.qml ui/SettingsView.qml ui/AboutView.qml
     ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/SessionManager.qml ui/FieldFilterEditor.qml
     ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
-    ui/ContainerTerminalView.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
+    ui/ContainerTerminalView.qml ui/ContainerTerminalDialog.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
     ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
     ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml
     ui/MapOverview.qml ui/SourceAliasDialog.qml ui/SourceInspector.qml
@@ -593,7 +593,7 @@ if(BUILD_TESTING)
         add_executable(container-terminal-ui-test tests/container_terminal_ui_test.cpp)
         target_link_libraries(container-terminal-ui-test PRIVATE podlord_workspace Qt6::Test)
     endif()
-    foreach(scenario connect input ime_query ime_commit ime_empty wheel_history wheel_pixel wheel_shift_tracking wheel_tracking_up wheel_tracking_down wheel_follow shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
+    foreach(scenario connections_overview connections_reopen connections_touch connections_window connections_session connections_mixed connections_retained_target compact_landscape compact_portrait connect input ime_query ime_commit ime_empty wheel_history wheel_pixel wheel_shift_tracking wheel_tracking_up wheel_tracking_down wheel_follow shifted_colon shifted_exclamation shifted_uppercase shifted_unicode shifted_alt_colon shifted_alt_unicode shortcut_input gui_modifier interrupt resize ansi alternate unicode history history_anchor_output history_anchor_trim history_anchor_grow history_clear history_follow copy_selection copy_tracking_selection clipboard_isolation copy_no_selection paste_cancel paste_confirm paste_snapshot paste_empty paste_oversized paste_unicode_oversized paste_unicode_limit paste_ascii_limit paste_bracketed touch_escape touch_tab touch_interrupt touch_eof touch_left touch_right touch_up touch_down touch_narrow touch_disconnected expanded_escape expanded_shortcut expanded_close expanded_leave
         status_success status_empty status_failure status_malformed status_fragmented status_tcp_eof status_array status_other_failure status_oversized status_output_first
         status_invalid_exit_reason status_invalid_exit_text status_invalid_exit_zero status_invalid_exit_large status_invalid_exit_fraction status_invalid_exit_missing
         frame_empty close_bad_size close_bad_channel stderr_frame

@@ -7,7 +7,9 @@
 
 namespace podlord {
 bool Workspace::publishPorts() {
-    const auto forwards = client_.portForwards(active_);
+    auto forwards = client_.portForwards(active_);
+    const auto shell = client_.terminalConnection(active_);
+    if (!shell.isEmpty()) forwards.append(shell);
     if (forwards.isEmpty() && portRows_.rowCount() == 0) return true;
     portRows_.publish(QJsonArray::fromVariantList(forwards));
     const auto nav = navigation_.value(active_);

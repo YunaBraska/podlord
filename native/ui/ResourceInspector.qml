@@ -46,7 +46,7 @@ Pane {
     property real valuesPosition: 0
     property string previousScope: ""
     property string previousPage: ""
-    onWidthChanged: if (width > 0 && width < 600 && workspace.inspectorPage === "terminal") terminalDialog.open()
+    onWidthChanged: if (width > 0 && width < 600 && workspace.inspectorPage === "terminal") inspectorRoot.hostWindow.openContainerTerminal(true)
     function restorePosition() {
         const same = previousScope === workspace.inspectorScope
         const yamlPane = yamlPage.item ? yamlPage.item.scrollContent : null
@@ -68,8 +68,7 @@ Pane {
         function onInspectorPresentationChanged() { Qt.callLater(inspector.restorePosition) }
         function onChanged() {
             const page = workspace.inspectorPage
-            if (page !== "terminal") terminalDialog.close()
-            else if (page !== inspector.previousPage && inspector.width < 600) terminalDialog.open()
+            if (page === "terminal" && page !== inspector.previousPage && inspector.width < 600) inspectorRoot.hostWindow.openContainerTerminal(true)
             inspector.previousPage = page
         }
     }
@@ -101,7 +100,7 @@ Pane {
         spacing: 6
         visible: (workspace.yamlVisible && !workspace.yamlEditing) || workspace.inspectorPage === "terminal" || workspace.canReadBackDeletion
         IconButton { objectName: "copyYaml"; glyph: "ConfigMap"; text: "Copy visible YAML"; visible: workspace.yamlVisible && !workspace.yamlEditing; enabled: !workspace.yamlEditing && workspace.yamlText !== ""; onClicked: workspace.copyYaml() }
-        IconButton { objectName: "expandTerminal"; glyph: "Sidebar"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: terminalDialog.open() }
+        IconButton { objectName: "expandTerminal"; glyph: "Sidebar"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: inspectorRoot.hostWindow.openContainerTerminal(true) }
         IconButton { objectName: "readBackResourceDelete"; glyph: "Reset"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
     }
     Label {
@@ -376,7 +375,7 @@ Pane {
     Loader {
         Layout.fillWidth: true; Layout.fillHeight: true
         Layout.minimumHeight: 0
-        active: workspace.inspectorPage === "terminal" && !terminalDialog.visible
+        active: workspace.inspectorPage === "terminal" && !inspectorRoot.hostWindow.terminalExpanded
         visible: active
         source: "ContainerTerminalView.qml"
         onLoaded: {
@@ -384,41 +383,7 @@ Pane {
             if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
         }
     }
-    Dialog {
-        id: terminalDialog
-        objectName: "expandedTerminal"
-        parent: Overlay.overlay
-        readonly property var hostWindow: inspectorRoot.hostWindow
-        readonly property bool inputPriority: hostWindow?.inputPriority ?? false
-        // Keyboard bounds are window-relative; Popup positions are overlay-relative.
-        readonly property rect usableArea: parent ? parent.mapFromItem(null, hostWindow?.inputArea ?? Qt.rect(0, 0, parent.width, parent.height)) : Qt.rect(0, 0, 0, 0)
-        readonly property real viewportTop: Math.max(8, usableArea.y)
-        readonly property real viewportBottom: Math.min(parent.height, usableArea.y + usableArea.height)
-        x: (parent.width - width) / 2
-        y: viewportTop
-        width: Math.max(0, parent.width - 16)
-        height: Math.max(0, viewportBottom - viewportTop - 8)
-        title: inputPriority ? "" : "Container terminal"
-        modal: true
-        closePolicy: Popup.NoAutoClose
-        Binding { target: terminalDialog; property: "padding"; value: 2; when: terminalDialog.inputPriority }
-        Binding { target: terminalDialog; property: "topMargin"; value: terminalDialog.viewportTop; when: Qt.inputMethod.visible }
-        Binding { target: terminalDialog; property: "bottomMargin"; value: Math.max(0, terminalDialog.parent.height - terminalDialog.viewportBottom + 8); when: Qt.inputMethod.visible }
-        footer: DialogButtonBox {
-            visible: !terminalDialog.inputPriority
-            height: visible ? implicitHeight : 0
-            Button { objectName: "collapseTerminal"; text: "Back to inspector"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            onRejected: terminalDialog.reject()
-        }
-        contentItem: Loader {
-            active: terminalDialog.visible && workspace.inspectorPage === "terminal"
-            source: "ContainerTerminalView.qml"
-            onLoaded: {
-                item.inputPriority = Qt.binding(function() { return inspectorRoot.hostWindow?.inputPriority ?? false })
-                if (item.terminal && item.terminal.connected) item.inputSurface.forceActiveFocus()
-            }
-        }
-    }
+
     }
     }
 }

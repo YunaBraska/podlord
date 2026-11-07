@@ -16,6 +16,13 @@ ApplicationWindow {
     font.weight: Font.Normal
     property bool sidebarOpen: true
     property bool searchOpen: false
+    readonly property bool terminalExpanded: terminalDialog.visible
+    function openContainerTerminal(followsInspector) {
+        terminalDialog.ownerSession = workspace.currentSession
+        terminalDialog.followsInspector = followsInspector
+        terminalDialog.open()
+    }
+    ContainerTerminalDialog { id: terminalDialog; hostWindow: window }
     function focusSearchIfOpen() {
         if (!window.searchOpen || !searchToggle.enabled) return
         if (workspace.workspacePage === "ports") portsView.item.focusSearch()
@@ -524,7 +531,7 @@ ApplicationWindow {
                     NavButton { objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; checked: workspace.workspacePage === "map" }
                     NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
                     NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
-                    NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Port forwards in this session"; onClicked: workspace.setWorkspacePage("ports") }
+                    NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Connections in this session"; onClicked: workspace.setWorkspacePage("ports") }
                     NavButton { objectName: "settingsWorkspaceButton"; glyph: "Filters"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
@@ -743,7 +750,7 @@ ApplicationWindow {
                             required property var modelData
                             objectName: "activateSession_" + modelData.id
                             implicitHeight: window.touchLayout ? 44 : 32
-                            implicitWidth: Math.min(Math.max(120, sessionName.implicitWidth + tabActions.implicitWidth + 16), window.wideLayout ? 240 : 160)
+                            implicitWidth: Math.min(Math.max(120, sessionName.implicitWidth + tabActions.implicitWidth + (connectionBadge.visible ? connectionBadge.implicitWidth : 0) + 24), window.wideLayout ? 240 : 160)
                             width: implicitWidth
                             leftPadding: 8
                             rightPadding: 8
@@ -753,18 +760,30 @@ ApplicationWindow {
                             checkable: true
                             checked: modelData.id === workspace.currentSession
                             enabled: !workspace.busy
-                            Accessible.name: modelData.name
+                            Accessible.name: modelData.name + (modelData.connectionCount > 0 ? ", " + modelData.connectionCount + " open connections" : "")
                             onClicked: sessionTabs.activateIndex(sessionTab.TabBar.index)
                             contentItem: Row {
                                 spacing: 4
                                 Label {
                                     id: sessionName
-                                    width: Math.max(0, sessionTab.availableWidth - tabActions.implicitWidth - 4)
+                                    width: Math.max(0, sessionTab.availableWidth - tabActions.implicitWidth - (connectionBadge.visible ? connectionBadge.implicitWidth + 8 : 4))
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData.name
                                     font: sessionTab.font
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
+                                }
+                                Label {
+                                    id: connectionBadge
+                                    objectName: "sessionConnections_" + modelData.id
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: modelData.connectionCount > 0
+                                    text: String(modelData.connectionCount)
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    padding: 3
+                                    Accessible.name: modelData.connectionCount + " open connections"
+                                    background: Rectangle { color: workspace.appearanceColors.raised; border.color: workspace.appearanceColors.accent }
                                 }
                                 Row {
                                     id: tabActions
@@ -810,7 +829,7 @@ ApplicationWindow {
                                 MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onTriggered: workspace.detachSession(modelData.id) }
                             }
                             ToolTip.visible: hovered || activeFocus
-                            ToolTip.text: modelData.name
+                            ToolTip.text: modelData.name + (modelData.connectionCount > 0 ? " / " + modelData.connectionCount + " open connections" : "")
                         }
                     }
             }
@@ -1045,12 +1064,14 @@ ApplicationWindow {
                 }
                 Loader {
                     id: portsView
+                    enabled: !window.terminalExpanded
                     anchors.fill: parent
                     visible: workspace.workspacePage === "ports"
                     property bool opened: false
                     active: opened
                     onVisibleChanged: if (visible) opened = true
-                    sourceComponent: PortForwardView {
+                    sourceComponent: ConnectionsView {
+                        onTerminalRequested: window.openContainerTerminal(false)
                         searchOpen: window.searchOpen
                         onSearchClosed: { window.searchOpen = false; searchToggle.forceActiveFocus() }
                         onAuthenticationRequested: authentication.open()

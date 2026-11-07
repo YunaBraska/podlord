@@ -232,6 +232,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool canPortForward READ canPortForward NOTIFY changed)
     Q_PROPERTY(bool canStartTerminal READ canStartTerminal NOTIFY changed)
     Q_PROPERTY(podlord::ContainerTerminal* containerTerminal READ containerTerminal NOTIFY changed)
+    Q_PROPERTY(QVariantMap terminalConnection READ terminalConnection NOTIFY changed)
     Q_PROPERTY(QStringList terminalContainers READ terminalContainers NOTIFY inspectorPresentationChanged)
     Q_PROPERTY(QVariantMap portForwardTarget READ portForwardTarget NOTIFY changed)
     Q_PROPERTY(QVariantList portForwards READ portForwards NOTIFY changed)
@@ -314,6 +315,7 @@ class Workspace final : public QObject {
 public:
     bool canStartTerminal() const;
     ContainerTerminal* containerTerminal() const { return client_.terminal(active_); }
+    QVariantMap terminalConnection() const { return client_.terminalConnection(active_); }
     QStringList terminalContainers() const;
     Q_INVOKABLE bool startContainerTerminal(const QString& container, const QString& shell);
     Q_INVOKABLE bool stopContainerTerminal();

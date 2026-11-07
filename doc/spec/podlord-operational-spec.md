@@ -1438,7 +1438,7 @@ UI-TBL-02: Status text follows reference semantics with the selected theme's hea
 - RAD-DET-03: Actual Namespace resources MUST remain selectable at their district anchor. Decorative cluster/district labels MUST NOT become synthetic Kubernetes resources or change resource counts.
 - RAD-DET-04: Input enumeration, table sorting, presentation filters and camera changes MUST NOT change world coordinates. Filtering retains noninteractive grey excluded terrain. Geometry, projection and painting read public cache models and MUST NOT initiate transport.
 - RAD-DET-05: Exact native geometry comparisons MUST use the same recorded cache projection, context identity and camera settings. C#/C++ comparisons retain behavior, colors and controls while recording the newly approved geometry difference. Comparing changing API snapshots or aggregate counts is insufficient. Isolated renderer captures MUST identify their boundary and MUST NOT be presented as full installed-window, water, animation, every-theme or release-parity evidence.
-- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Ports remain available. The small context Radar MUST be hidden only in Map and remain available on the other workspace tabs. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. Map MUST provide backward and forward navigation, retaining the existing dirty-YAML Stay/Discard protection when changing sessions. On both Map and the small Radar, existing navigation, zoom and back/forward controls MUST overlay the drawing area rather than occupy separate reserved rows or sections. Their existing keyboard, touch and focus access MUST remain available. This replaces the earlier menu-only, Table-default target.
+- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Connections (including port-forwards) remain available. The small context Radar MUST be hidden only in Map and remain available on the other workspace tabs. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. Map MUST provide backward and forward navigation, retaining the existing dirty-YAML Stay/Discard protection when changing sessions. On both Map and the small Radar, existing navigation, zoom and back/forward controls MUST overlay the drawing area rather than occupy separate reserved rows or sections. Their existing keyboard, touch and focus access MUST remain available. This replaces the earlier menu-only, Table-default target.
 - RAD-VIEW-02: Cluster names MUST be visible at overview scale; namespace labels appear when zooming in; existing resource glyphs and interactive details remain available at closer scales. Label work MUST be viewport-bounded, theme-aware and decluttered. Existing wheel/trackpad zoom, drag, focused arrow keys, selection and alert focus remain unchanged. This increment adds no per-cluster status/age panel. Guidance for selection hidden by filters is lower priority, not part of this increment.
 
 ## What Does The Approved Context Overview Read?
@@ -1693,6 +1693,28 @@ The terminal retains its original target across inspector/session navigation;
 session close and confirmed context removal close its stream. Paint and scroll
 read its retained screen rather than fetching. Clipboard paste is explicitly
 confirmed against a captured snapshot and the original terminal.
+
+Confirmed on 2026-11-07: the existing Ports workspace is presented as Connections.
+It MUST list the active session's port-forwards and its one retained shell in
+the existing sortable, searchable table. Existing port column IDs and saved
+layouts remain compatible. A terminal row MUST reopen its retained screen
+without a new exec, authentication, resource read or Inspector dependency.
+Shell and port actions MUST remain target- and session-specific. A shell row's
+context menu offers one named Open terminal action, not an Inspector label or
+duplicate opening entries. An ended
+shell remains readable until explicitly dismissed. Session tabs show a small
+derived indicator of existing forwards and active shell streams, without a
+new connection cache or automatic reconnect.
+
+The terminal MUST prioritize its screen over permanent toolbars and help.
+A single compact header shows the Pod, one container label or selection,
+connection state, contextual actions and, when expanded, a top-right X.
+Container selection and Connect appear before starting, not as disabled form
+fields during a running shell. Copy, paste, follow, disconnect, shell-path
+editing and keyboard help remain available through the contextual menu.
+Special keys are shown only on request. Closing the expanded view preserves
+the stream; changing the active session closes that view rather than silently
+retargeting terminal input. The shared keyboard-priority layout still applies.
 
 Closing a stream MUST NOT be presented as proof that its remote processes have
 terminated. The 2026-10-10 local K3d desktop check observed a remaining shell

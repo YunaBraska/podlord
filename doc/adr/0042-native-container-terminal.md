@@ -46,16 +46,24 @@ Commands are user-directed remote actions, not diagnostic quick fixes.
 ## How Are Small Screens And Keyboard-Only Controls Handled?
 
 The same session-owned stream and retained VT screen serve inline and expanded
-views. Narrow inspector panes open the expanded native dialog; desktop users
-can expand explicitly. Only the visible surface is loaded. Its toolbar is
-scrollable and bounded by the available view height, with optional special
-keys for Escape, Tab, interrupt, end of input and arrows. Opening, resizing or
-closing an expanded view must not start another exec request or close the shell.
+views. The expanded view belongs to the workspace window, not the Inspector,
+so Connections can reopen it after the Inspector closes. A session change
+closes that view without changing the owning stream. Narrow inspectors open
+the same dialog, and only the visible surface is loaded.
+
+One compact header identifies the Pod, container and connection state. Container
+selection appears before connecting, not as a disabled form during the shell.
+Copy, paste, follow, disconnect, shell-path editing and keyboard help are
+contextual menu actions. Special keys are a user-enabled horizontal strip.
+The terminal consumes the remaining viewport. The top-right X closes the view
+without disconnecting. Existing paste review and remote-process warnings stay
+bound to their original terminal. Opening, resizing or closing the view must
+not start another exec request or close the shell.
 
 Unmodified Escape and Control shortcuts remain terminal input, including
 inside the dialog. Shift+Escape is the documented local focus escape: it moves
 to reachable controls without sending remote input. Native Tab navigation then
-reaches the return button. GUI Copy without selection preserves the clipboard
+reaches the top-right close button. GUI Copy without selection preserves the clipboard
 and sends nothing to the container. The native input surface owns these key
 decisions; no competing global shortcut handles them. Command on macOS and
 Super elsewhere remain local GUI modifiers, never characters injected into
