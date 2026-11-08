@@ -130,11 +130,20 @@ inline QQuickItem* tableCell(QQuickItem* view, int row, int column) {
 /** Open the actual workspace menu before operating its non-primary actions. */
 inline bool revealWorkspaceAction(QQuickWindow* window, const QString& name) {
     if (name != "refreshButton" && name != "commandPaletteButton" && name != "resourceFindButton"
-        && name != "eventFindButton" && name != "resourceColumnsButton" && name != "eventColumnsButton") return true;
+        && name != "eventFindButton" && name != "resourceColumnsButton" && name != "eventColumnsButton"
+        && name != "workspaceSearchButton" && name != "quickOpenDropdown" && name != "mapWorkspaceButton"
+        && name != "resourcesWorkspaceButton" && name != "eventsWorkspaceButton" && name != "portForwardTasksButton"
+        && name != "settingsWorkspaceButton" && name != "toggleSidebar") return true;
     if (visibleItem(window->contentItem(), name)) return true;
     auto* trigger = visibleItem(window->contentItem(), "workspaceActionsButton");
     if (!trigger || !trigger->isEnabled()) return false;
     trigger->ensurePolished();
+    QSignalSpy frame(window,&QQuickWindow::frameSwapped);
+    window->update();
+    if (!QTest::qWaitFor([&] { return !frame.isEmpty(); },2000)) return false;
+    if (visibleItem(window->contentItem(),name)) return true;
+    trigger = visibleItem(window->contentItem(),"workspaceActionsButton");
+    if (!trigger || !trigger->isEnabled()) return false;
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
         trigger->mapToScene({trigger->width()/2, trigger->height()/2}).toPoint());
     return QTest::qWaitFor([&] { return visibleItem(window->contentItem(), name) != nullptr; }, 2000);
@@ -267,6 +276,7 @@ inline bool clickVisible(QQuickWindow* window, const QString& name, Qt::MouseBut
                 << "exposed" << window->isExposed() << "active" << window->isActive();
             return false;
         }
+        if (!visibleItem(window->contentItem(),name) && !revealWorkspaceAction(window,name)) return false;
         const QPointer<QQuickItem> target(visibleItem(window->contentItem(),name));
         if (!target || !target->isEnabled() || !scrollIntoView(window,target,true)) return false;
         if (!target || target->objectName()!=name) continue;

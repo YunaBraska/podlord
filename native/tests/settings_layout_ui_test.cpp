@@ -48,8 +48,8 @@ int main(int argc, char** argv) {
     }
     if (argc == 2 && QString::fromLocal8Bit(argv[1]) == "compact_scroll") {
         window->resize(640, 320);
-        auto* rail = window->findChild<QQuickItem*>("landscapeNavigation");
-        if (!rail || !QTest::qWaitFor([&] { return rail->isVisible(); }, 3000)
+        auto* header = window->findChild<QQuickItem*>("workspaceToolbar");
+        if (!header || !QTest::qWaitFor([&] { return header->isVisible(); }, 3000)
             || !podlord::test::clickVisible(window, "settingsWorkspaceButton")) {
             std::fprintf(stderr, "Compact Settings navigation is unavailable.\n");
             return 1;

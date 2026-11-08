@@ -54,12 +54,34 @@ ApplicationWindow {
         .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
             [{name: "Imported contexts", header: true}],
             workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
-    Action { id: mapCommand; text: "Open Map"; onTriggered: workspace.setWorkspacePage("map") }
-    Action { id: resourcesCommand; text: "Open Resources"; onTriggered: workspace.setWorkspacePage("resources") }
-    Action { id: eventsCommand; text: "Open Events"; onTriggered: workspace.setWorkspacePage("events") }
+    Action { id: mapCommand; text: "Open Map"; checkable: true; checked: workspace.workspacePage === "map"; onTriggered: workspace.setWorkspacePage("map") }
+    Action { id: resourcesCommand; text: "Open Resources"; checkable: true; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard"; onTriggered: workspace.setWorkspacePage("resources") }
+    Action { id: eventsCommand; text: "Open Events"; checkable: true; checked: workspace.workspacePage === "events"; onTriggered: workspace.setWorkspacePage("events") }
     Action { id: sourcesCommand; text: "Open Sources Settings"; onTriggered: { if (workspace.setWorkspacePage("settings")) settingsLoader.item.section = "sources" } }
     Action { id: portCommand; text: "Open Port Forwards"; enabled: workspace.canPortForward; onTriggered: workspace.preparePortForward() }
-    Action { id: settingsCommand; text: "Open Settings"; onTriggered: workspace.setWorkspacePage("settings") }
+    Action { id: settingsCommand; text: "Open Settings"; checkable: true; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts"; onTriggered: workspace.setWorkspacePage("settings") }
+    Action { id: connectionsCommand; text: workspace.uiText["nav.ports"]; checkable: true; checked: workspace.workspacePage === "ports"; onTriggered: workspace.setWorkspacePage("ports") }
+    Action { id: sidebarCommand; text: "Show or hide radar and filters"; onTriggered: window.toggleSidebar() }
+    Action {
+        id: searchCommand
+        text: workspace.uiText["nav.search"]
+        checkable: true; checked: window.searchOpen
+        enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview)
+        onTriggered: {
+            window.searchOpen = !window.searchOpen
+            if (window.searchOpen) Qt.callLater(window.focusSearchIfOpen)
+            else { searchToggle.forceActiveFocus(); Qt.inputMethod.hide() }
+        }
+    }
+    Action {
+        id: quickOpenCommand
+        text: "Open kubeconfig, session or context"
+        enabled: !workspace.busy
+        onTriggered: {
+            const anchor = quickOpenControl.visible ? quickOpenControl : workspaceActionsButton
+            quickOpenMenu.popup(anchor, 0, anchor.height)
+        }
+    }
     Action { id: problemsCommand; text: "Toggle Problems"; enabled: workspace.currentSession !== ""; onTriggered: workspace.setFilterMode(workspace.problemsOnly ? "" : "problems") }
     CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand] }
     Shortcut { sequences: ["Ctrl+K", "Meta+K"]; onActivated: commands.open() }
@@ -474,8 +496,7 @@ ApplicationWindow {
         }
     }
     component NavButton: IconButton {
-        checkable: true
-        showText: !window.touchLayout
+        showText: false
         font.bold: true
     }
     function toggleSidebar() {
@@ -488,59 +509,59 @@ ApplicationWindow {
         visible: !window.inputPriority
         padding: 0
         leftPadding: 0; rightPadding: 0; topPadding: SafeArea.margins.top; bottomPadding: 0
-        implicitHeight: headerLayout.implicitHeight + (window.compactLandscape ? 4 : 12) + topPadding
+        implicitHeight: (window.touchLayout ? 44 : 32) + 12 + topPadding
         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
-        GridLayout {
+        RowLayout {
             id: headerLayout
-            anchors.fill: parent; anchors.margins: window.compactLandscape ? 2 : 6
-            columns: window.width >= 1000 && !window.compactLandscape ? 2 : 1
-            columnSpacing: 12; rowSpacing: 4
+            anchors.fill: parent; anchors.margins: 6
+            spacing: 6
             Item {
                 id: navigationSlot
-                visible: !window.compactLandscape
                 Layout.fillWidth: true; Layout.minimumWidth: 0
-                Layout.preferredWidth: navigationRow.children.reduce((total, control) => total + control.implicitWidth, 0) + navigationRow.spacing * Math.max(0, navigationRow.children.length - 1)
-                Layout.preferredHeight: Math.max(34, navigationRow.implicitHeight)
-                Flow {
+                Layout.preferredWidth: navigationRow.fullWidth
+                Layout.preferredHeight: window.touchLayout ? 44 : 32
+                Row {
                     id: navigationRow
-                    parent: window.compactLandscape ? railContent : navigationSlot
                     width: parent.width
                     height: implicitHeight
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
                     spacing: window.touchLayout ? 0 : 4
+                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, sidebarControl]
+                    readonly property real fullWidth: controls.filter(control => control !== quickOpenControl || quickOpenControl.available)
+                        .reduce((total, control) => total + control.implicitWidth + spacing, workspaceActionsButton.implicitWidth)
+                    function fits(control) {
+                        let used = workspaceActionsButton.implicitWidth
+                        for (const candidate of controls) {
+                            if (candidate === quickOpenControl && !quickOpenControl.available) continue
+                            used += candidate.implicitWidth + spacing
+                            if (candidate === control) return used <= width
+                        }
+                        return false
+                    }
                     IconButton {
                         id: searchToggle
                         objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
-                        checkable: true; checked: window.searchOpen
+                        action: searchCommand; visible: navigationRow.fits(this)
                         activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
                             : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
-                        enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview)
                         Accessible.name: "Show or hide current search"
                         Accessible.description: "Search the current cached view. Hiding search retains its filter."
-                        onClicked: {
-                            window.searchOpen = !window.searchOpen
-                            if (window.searchOpen) Qt.callLater(window.focusSearchIfOpen)
-                            else {
-                                searchToggle.forceActiveFocus()
-                                Qt.inputMethod.hide()
-                            }
-                        }
                     }
-                    IconButton { id: quickOpenControl; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; text: "Open kubeconfig, session or context"; visible: workspace.contexts.length > 0 || workspace.sessions.length > 0; enabled: !workspace.busy; onClicked: quickOpenMenu.popup(quickOpenControl, 0, quickOpenControl.height) }
-                    NavButton { objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; checked: workspace.workspacePage === "map" }
-                    NavButton { objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard" }
-                    NavButton { objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; checked: workspace.workspacePage === "events" }
-                    NavButton { objectName: "portForwardTasksButton"; glyph: "Service"; text: workspace.uiText["nav.ports"]; checked: workspace.workspacePage === "ports"; Accessible.name: "Connections in this session"; onClicked: workspace.setWorkspacePage("ports") }
-                    NavButton { objectName: "settingsWorkspaceButton"; glyph: "Settings"; action: settingsCommand; text: workspace.uiText["nav.settings"]; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" }
-                IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
-                IconButton { objectName: "toggleSidebar"; glyph: "Sidebar"; text: "Show or hide radar and filters"; onClicked: window.toggleSidebar() }
+                    IconButton { id: quickOpenControl; readonly property bool available: workspace.contexts.length > 0 || workspace.sessions.length > 0; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; action: quickOpenCommand; visible: available && navigationRow.fits(this) }
+                    NavButton { id: mapControl; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: navigationRow.fits(this) }
+                    NavButton { id: resourcesControl; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: navigationRow.fits(this) }
+                    NavButton { id: eventsControl; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: navigationRow.fits(this) }
+                    NavButton { id: connectionsControl; objectName: "portForwardTasksButton"; glyph: "Service"; action: connectionsCommand; Accessible.name: "Connections in this session"; visible: navigationRow.fits(this) }
+                    NavButton { id: settingsControl; objectName: "settingsWorkspaceButton"; glyph: "Settings"; action: settingsCommand; text: workspace.uiText["nav.settings"]; visible: navigationRow.fits(this) }
+                IconButton { id: sidebarControl; objectName: "toggleSidebar"; glyph: "Sidebar"; action: sidebarCommand; visible: navigationRow.fits(this) }
+                IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 }
             }
             PulseStrip {
+                id: headerMetrics
                 objectName: "headerMetrics"
-                condensed: window.compactLandscape
-                Layout.fillWidth: headerLayout.columns === 1
+                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing)
                 Layout.alignment: Qt.AlignRight
                 Layout.preferredHeight: implicitHeight
                 onDetailsRequested: workspace.setWorkspacePage("dashboard")
@@ -553,6 +574,30 @@ ApplicationWindow {
         width: compactMenu ? Math.min(240, window.width - 24) : implicitWidth
         height: compactMenu ? Math.min(implicitHeight, window.height - 48) : implicitHeight
         Binding { target: workspaceActions; property: "popupType"; value: Popup.Item; when: workspaceActions.compactMenu }
+        readonly property var overflowControls: visible ? navigationRow.controls.filter(control => !control.visible && (control !== quickOpenControl || quickOpenControl.available)) : []
+        readonly property var overflowEntries: overflowControls.concat(headerMetrics.overflowMetrics.map(metric => ({metric: metric})))
+        Instantiator {
+            active: workspaceActions.visible
+            model: workspaceActions.overflowEntries
+            delegate: MenuItem {
+                required property var modelData
+                readonly property bool metricEntry: !!modelData.metric
+                objectName: metricEntry ? "overflowMetric_" + modelData.metric.id : modelData.objectName
+                action: metricEntry ? null : modelData.action
+                text: metricEntry ? modelData.metric.label + ": " + (modelData.metric.display || modelData.metric.usage) : modelData.text
+                enabled: metricEntry || modelData.enabled
+                checkable: !metricEntry && modelData.checkable
+                checked: !metricEntry && modelData.checked
+                Accessible.name: metricEntry ? text : modelData.Accessible.name
+                implicitHeight: workspaceActions.compactMenu ? 44 : 32
+                ToolTip.visible: metricEntry && (hovered || activeFocus)
+                ToolTip.text: metricEntry ? modelData.metric.usage + "\n" + modelData.metric.description : ""
+                onTriggered: if (metricEntry) headerMetrics.detailsRequested()
+            }
+            onObjectAdded: (index, object) => workspaceActions.insertItem(index, object)
+            onObjectRemoved: (index, object) => workspaceActions.removeItem(object)
+        }
+        MenuSeparator { visible: workspaceActions.overflowControls.length > 0 || headerMetrics.overflowMetrics.length > 0; height: visible ? implicitHeight : 0 }
         MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; Accessible.name: "Open command palette"; onTriggered: commands.open() }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
@@ -639,20 +684,8 @@ ApplicationWindow {
             function onSidebarDockedChanged() { if (window.sidebarDocked) sidebarDrawer.close() }
         }
     }
-    ScrollView {
-        id: navigationRail
-        objectName: "landscapeNavigation"
-        visible: window.compactLandscape && !window.inputPriority
-        anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-        anchors.margins: 6
-        width: 44
-        contentWidth: 44; contentHeight: navigationRow.implicitHeight
-        clip: true
-        Item { id: railContent; width: 44; height: navigationRow.implicitHeight }
-    }
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6
-        anchors.leftMargin: window.compactLandscape && !window.inputPriority ? 56 : 6
         spacing: 4
         Frame {
             id: sourcePanel
@@ -1118,7 +1151,7 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             objectName: "workspaceFooter"
-            visible: !window.inputPriority
+            visible: !window.inputPriority && window.width >= 600 && window.height >= 600
             Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
             Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached") : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }

@@ -2,34 +2,49 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import Podlord.Graphics 1.0
 
-Flow {
+Row {
     id: strip
     signal detailsRequested()
-    property bool condensed: false
+    property real availableWidth: implicitWidth
+    readonly property int cardWidth: 112
+    readonly property var availableMetrics: workspace.pulseMetrics.filter(metric => metric.bar ? metric.available === true : Number(metric.usage) > 0)
+    readonly property int visibleCount: Math.min(availableMetrics.length, Math.max(0, Math.floor((availableWidth + spacing) / (cardWidth + spacing))))
+    readonly property var overflowMetrics: availableMetrics.slice(visibleCount)
     spacing: 6
-    Layout.preferredWidth: workspace.pulseMetrics.reduce((width, metric) => width + (metric.bar ? 170 : 62), 0)
-        + spacing * Math.max(0, workspace.pulseMetrics.length - 1)
+    Layout.preferredWidth: visibleCount * cardWidth + spacing * Math.max(0, visibleCount - 1)
+    Layout.preferredHeight: strip.Window.window && strip.Window.window.touchLayout ? 44 : 32
         Repeater {
-            model: workspace.pulseMetrics.length
+            model: strip.availableMetrics.length
             delegate: Button {
                 id: metricCard
                 required property int index
-                readonly property var modelData: workspace.pulseMetrics[index]
+                readonly property var modelData: strip.availableMetrics[index]
                 objectName: "pulse_" + modelData.id
-                width: modelData.bar ? Math.floor(Math.min(170, Math.max(62, (strip.width - (strip.condensed ? 124 + 4 * strip.spacing : 2 * strip.spacing)) / 3))) : 62
-                height: strip.condensed ? 32 : strip.Window.window && strip.Window.window.width < 900 ? 44 : 36
+                visible: index < strip.visibleCount
+                width: strip.cardWidth
+                height: strip.Window.window && strip.Window.window.touchLayout ? 44 : 32
                 leftPadding: 7; rightPadding: 7; topPadding: 3; bottomPadding: 3
                 Accessible.name: modelData.label + ": " + modelData.usage
                 onClicked: detailsRequested()
                 background: Rectangle { color: workspace.appearanceColors.inset; border.color: metricCard.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border }
-                contentItem: Column {
-                    spacing: 1
-                    Label { visible: !strip.condensed || !metricCard.modelData.bar; text: metricCard.modelData.label; font.pixelSize: strip.condensed ? 8 : 9; color: workspace.appearanceColors.muted }
-                    Label { objectName: "pulse_" + metricCard.modelData.id + "_usage"; width: parent.width; text: (strip.condensed && metricCard.modelData.bar ? metricCard.modelData.label + ": " : "") + (metricCard.modelData.display || metricCard.modelData.usage); font.pixelSize: 11; elide: Text.ElideRight; textFormat: Text.PlainText }
+                contentItem: Item {
+                    RowLayout {
+                        anchors.fill: parent; anchors.bottomMargin: metricCard.modelData.bar ? 4 : 0
+                        spacing: 4
+                        KindGlyph {
+                            visible: !metricCard.modelData.bar
+                            Layout.preferredWidth: 16; Layout.preferredHeight: 16
+                            kind: metricCard.modelData.id === "pods" ? "Pod" : "Node"
+                            fill: workspace.appearanceColors.inset; stroke: workspace.appearanceColors.text
+                        }
+                        Label { visible: metricCard.modelData.bar; text: metricCard.modelData.id === "memory" ? "MEM" : metricCard.modelData.id === "storage" ? "DISK" : "CPU"; font.pixelSize: 10; color: workspace.appearanceColors.muted }
+                        Label { objectName: "pulse_" + metricCard.modelData.id + "_usage"; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight; text: metricCard.modelData.display || metricCard.modelData.usage; font.pixelSize: 11; maximumLineCount: 1; elide: Text.ElideRight; textFormat: Text.PlainText }
+                    }
                     ProgressBar {
                         objectName: "pulse_" + metricCard.modelData.id + "_bar"
-                        width: parent.width; height: 3
+                        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 3
                         visible: metricCard.modelData.bar
                         value: metricCard.modelData.fraction; from: 0; to: 1
                         background: Rectangle { color: workspace.appearanceColors.border }

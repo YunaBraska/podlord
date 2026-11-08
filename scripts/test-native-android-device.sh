@@ -262,33 +262,40 @@ function target(id){
  const sourceRow=id==='sourceRow_0',limit=sourceRow?20:8;
  const matches=n=>sourceRow?/^sourceCell_0_[0-7]$/.test(n['resource-id']?.split('.').at(-1)||''):n['resource-id']?.endsWith('.'+id);
  const bounds=n=>n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
+ let overflowOpened=false;
  for(let attempt=0;attempt<=limit;attempt++){
   const n=nodes.find(n=>matches(n)&&n.enabled==='true'&&bounds(n)?.[2]>bounds(n)?.[0]&&bounds(n)?.[3]-bounds(n)?.[1]>=18&&(()=>{
-    const b=bounds(n), nav=n['resource-id']?.includes('.landscapeNavigation.'), side=n['resource-id']?.includes('.workspaceSidebar.');
+    const b=bounds(n), side=n['resource-id']?.includes('.workspaceSidebar.');
     const inspector=/\.(workspaceInspector|sourceInspector)\./.test(n['resource-id']||'');
     const settings=sourceRow||/^inline/.test(id)||n['resource-id']?.includes('.settingsContent.');
-    const host=settings?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>/\.(workspaceInspector|sourceInspector)$/.test(x['resource-id']||'')):nav?nodes.find(x=>x['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(x)?.[3]-bounds(x)?.[1]>50):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
+    const host=settings?nodes.find(x=>x['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(x=>/\.(workspaceInspector|sourceInspector)$/.test(x['resource-id']||'')):side?nodes.find(x=>x['resource-id']?.endsWith('.sessionHealthStrip')):null;
     const clip=bounds(host),center=(b[1]+b[3])/2;
     return !clip||(center>=clip[1]&&center<=clip[3]&&Math.min(b[3],clip[3])-Math.max(b[1],clip[1])>=18);
   })());
   if(n){const before=n.bounds,identity=n['resource-id'];state();const stable=nodes.find(n=>n['resource-id']===identity&&n.bounds===before&&n.enabled==='true');if(stable)return stable;continue;}
-  const nav=/WorkspaceButton|workspaceSearchButton|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id);
   if(attempt===limit)break;
+  if(/WorkspaceButton|workspaceSearchButton|quickOpenDropdown|portForwardTasksButton|workspaceActionsButton|toggleSidebar/.test(id)){
+   if(overflowOpened||id==='workspaceActionsButton')break;
+   const menu=nodes.find(n=>n['resource-id']?.endsWith('.workspaceActionsButton')&&n.enabled==='true'),b=bounds(menu);
+   if(!b)break;
+   run('shell','input','tap',String(Math.floor((b[0]+b[2])/2)),String(Math.floor((b[1]+b[3])/2)));
+   overflowOpened=true;state();continue;
+  }
   const current=nodes.find(matches);
   const inspector=/\.(workspaceInspector|sourceInspector)\./.test(current?.['resource-id']||'');
   const settings=sourceRow||/^inline/.test(id)||current?.['resource-id']?.includes('.settingsContent.');
-  const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>/\.(workspaceInspector|sourceInspector)$/.test(n['resource-id']||'')):nav?nodes.find(n=>n['resource-id']?.includes('.landscapeNavigation.ScrollBar_')&&bounds(n)?.[3]-bounds(n)?.[1]>50):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
+  const host=settings?nodes.find(n=>n['resource-id']?.endsWith('.settingsContent')):inspector?nodes.find(n=>/\.(workspaceInspector|sourceInspector)$/.test(n['resource-id']||'')):nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));
   const b=bounds(host);if(!b)break;
-  const x=settings||inspector?b[0]+8:nav?Math.max(10,b[0]-16):Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
-  const orderedHost=settings?host:!inspector&&!nav?nodes.find(n=>n['resource-id']?.endsWith('.sidebarFilterScroll')):null;
+  const x=settings||inspector?b[0]+8:Math.floor((b[2]+Math.max(...nodes.map(n=>bounds(n)?.[2]||0)))/2);
+  const orderedHost=settings?host:!inspector?nodes.find(n=>n['resource-id']?.endsWith('.sidebarFilterScroll')):null;
   const orderedPrefix=orderedHost?orderedHost['resource-id']+'.':'';
   const firstVisible=orderedHost?nodes.findIndex(n=>n['resource-id']?.startsWith(orderedPrefix)&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
   const currentBounds=bounds(current);
-  const partialSidebar=!settings&&!inspector&&!nav&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
+  const partialSidebar=!settings&&!inspector&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
   const reverse=partialSidebar?currentBounds[1]<b[1]:current&&firstVisible>=0&&(settings||current['resource-id']?.startsWith(orderedPrefix))?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   const inset=settings?4:12;
   let start=reverse?b[1]+inset:b[3]-inset;
-  if(!settings&&!inspector&&!nav){
+  if(!settings&&!inspector){
    const editors=nodes.filter(n=>/EditText/.test(n.class||'')||/\.resourceLimit(?:\.|$)/.test(n['resource-id']||''));
    const direction=reverse?1:-1;
    while(editors.some(n=>{const area=bounds(n);return area&&x>=area[0]&&x<=area[2]&&start>=area[1]&&start<=area[3];})
@@ -296,9 +303,9 @@ function target(id){
   }
   // A full swipe can jump over a short control that misses the viewport by one pixel.
   const desiredDistance=sourceRow?Math.max(24,Math.floor((b[3]-b[1])/4)):partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
-  const distance=!settings&&!inspector&&!nav?Math.min(reverse?b[3]-inset-start:start-b[1]-inset,desiredDistance):desiredDistance;
+  const distance=!settings&&!inspector?Math.min(reverse?b[3]-inset-start:start-b[1]-inset,desiredDistance):desiredDistance;
   run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings&&!sourceRow?'150':'350');state();
-  if(!settings&&!inspector&&!nav)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
+  if(!settings&&!inspector)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
   if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
  capture('unreachable-'+id);throw Error('Public UI target unavailable after scrolling: '+id);

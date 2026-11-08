@@ -183,7 +183,7 @@ QVariantList ResourceMetricSummary::presentation() const {
         const auto description=label+" from filtered "+scope+". Measured "+QString::number(total.observed)+" of "+QString::number(total.eligible)
             +" resources. "+(group==1 ? "Configured limits" : "Capacity")+" are references only; missing measurements are not zero. Node and Pod usage are never added together."
             +(total.oldestStaleMeasurement.isValid() ? " Oldest stale measurement: "+total.oldestStaleMeasurement.toUTC().toString(Qt::ISODateWithMs)+"." : "");
-        result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",true},
+        result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",true},{"available",measured},
             {"fraction",measured && maximum>0 ? total.used/maximum : 0},{"description",description}});
     }
     result.append(QVariantMap{{"id","pods"},{"label","Pods"},{"usage",QString::number(counts[1])},{"bar",false},{"fraction",0},{"description","Pods in the filtered session cache."}});

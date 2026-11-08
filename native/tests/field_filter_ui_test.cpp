@@ -382,7 +382,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (scenario == "limit_ui" || scenario == "limit_narrow") {
                 if (scenario == "limit_narrow") {
                     window->resize(844, 390);
-                    if (!waitFor([&] { return item(window, "landscapeNavigation")->isVisible() && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
+                    if (!waitFor([&] { return item(window, "workspaceToolbar")->isVisible() && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
                 }
                 auto* control = item(window, "resourceLimit");
                 if (!control) return false;
