@@ -340,6 +340,12 @@ function click(id){
  }
  tap(target(id));
 }
+function healthyPodVisible(){
+ return nodes.some(n=>{
+  const row=(n['resource-id']||'').match(/\.cell_(\d+)_1$/);
+  return row&&(n.text||n['content-desc'])==='Pod'&&nodes.some(status=>status['resource-id']?.endsWith('.cell_'+row[1]+'_3')&&(status.text||status['content-desc'])==='Running');
+ });
+}
 function healthCount(){const text=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'))?.['content-desc']||'';const values=/^(?:Session health:|Loading session\.)\s*(\d+) healthy, (\d+) warnings, (\d+) errors/.exec(text);return values?values.slice(1).reduce((sum,value)=>sum+Number(value),0):0;}
 function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
 function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:terminalOnly==='1'?'terminal-only':mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; scoped diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
@@ -444,11 +450,10 @@ click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Pr
 // The footer is intentionally hidden here. Session health is not a filtered row count.
 search('visual-multi-container');
 const filterDeadline=Date.now()+30000;
-do{state();if(!nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))break;}while(Date.now()<filterDeadline);
-if(nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))throw Error('Problems filter retained the known healthy Pod');
+do{state();if(!nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&(n.text||n['content-desc'])==='Pod'))break;}while(Date.now()<filterDeadline);
+if(nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&(n.text||n['content-desc'])==='Pod'))throw Error('Problems filter retained the known healthy Pod');
 click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');
-waitNode('cell_0_1',n=>(n.text||n['content-desc'])==='Pod');
-waitNode('cell_0_3',n=>(n.text||n['content-desc'])==='Running');
+waitNode('resourcesWorkspaceButton',healthyPodVisible);
 search('');steps.push({step:'Problems filter excludes the known healthy Pod and restores it when disabled through public input'});
 filterPresetJourney();
 click('toggleLandscapeFilters');
@@ -710,8 +715,7 @@ capture('source-yaml-applied');click('closeSourceInspector');click('resourcesWor
 click('workspaceSearchButton');
 waitNode('resourceFilter',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
 click('workspaceSearchButton');
-waitNode('cell_0_1',n=>(n.text||n['content-desc'])==='Pod');
-waitNode('cell_0_3',n=>(n.text||n['content-desc'])==='Running');
+waitNode('resourcesWorkspaceButton',healthyPodVisible);
 steps.push({step:'Portrait Sources touch editing keeps YAML above the keyboard, restores actions on dismissal and preserves the original file and existing session on immutable Apply'});
 }
 
