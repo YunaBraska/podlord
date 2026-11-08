@@ -440,7 +440,15 @@ waitNode('resourceRadar',n=>n.enabled==='true');click('resourcesWorkspaceButton'
 state();if(nodes.some(n=>n['resource-id']?.endsWith('.resourceRadar')&&n.bounds!=='[0,0][0,0]'))throw Error('Returning to the compact table must hide only the small Radar');
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
-click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');const filtered=nodes.map(n=>n['content-desc']||'').join('\n').match(/(\d+) matching resources/);const filteredCount=filtered?Number(filtered[1]):healthCount();if(filteredCount<=0||filteredCount>=count)throw Error('Problems filter did not reduce cached matches');click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');steps.push({step:'Problems filter enables, reduces cached matches and disables',matches:filteredCount});
+click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');
+// The footer is intentionally hidden here. Session health is not a filtered row count.
+search('visual-multi-container');
+const filterDeadline=Date.now()+30000;
+do{state();if(!nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))break;}while(Date.now()<filterDeadline);
+if(nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))throw Error('Problems filter retained the known healthy Pod');
+click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');
+waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+search('');steps.push({step:'Problems filter excludes the known healthy Pod and restores it when disabled through public input'});
 filterPresetJourney();
 click('toggleLandscapeFilters');
 for(const id of ['eventsWorkspaceButton','portForwardTasksButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}
