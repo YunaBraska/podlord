@@ -31,7 +31,7 @@ cp "$ROOT/native/macos/AppStore.entitlements" "$ENTITLEMENTS"
 /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $APP_STORE_TEAM_ID" "$ENTITLEMENTS"
 find "$APP" -type f > "$DIST/runtime-files.txt"
 while IFS= read -r binary; do
-    if /usr/bin/lipo -archs "$binary" >/dev/null 2>&1; then
+    if [ "$binary" != "$APP/Contents/MacOS/podlord-native" ] && /usr/bin/lipo -archs "$binary" >/dev/null 2>&1; then
         /usr/bin/codesign --force --options runtime --timestamp --sign "$MACOS_APP_STORE_APPLICATION_IDENTITY" "$binary"
     fi
 done < "$DIST/runtime-files.txt"

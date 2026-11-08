@@ -504,3 +504,52 @@ test('native package consumers await the complete workflow and select their own 
     assert.ok(store.includes('store-x64/native-store-package/podlord-native.zip'));
     assert.ok(release.includes('pattern: native-*-${{ github.sha }}'));
 });
+
+test('Store signing seals nested code before the app executable', {skip: !mac}, async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-store-signing-'));
+    t.after(() => fs.rm(directory, {recursive: true, force: true}));
+    const app = path.join(directory, 'Podlord.app');
+    const executable = path.join(app, 'Contents/MacOS/podlord-native');
+    const plugin = path.join(app, 'Contents/PlugIns/quick/libfixture.dylib');
+    for (const folder of ['MacOS', 'PlugIns/quick', 'Frameworks'])
+        await fs.mkdir(path.join(app, 'Contents', folder), {recursive: true});
+    await fs.writeFile(path.join(app, 'Contents/Info.plist'), '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>berlin.yuna.podlord.packaging-test</string><key>CFBundleExecutable</key><string>podlord-native</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>');
+    const program = path.join(directory, 'fixture.c');
+    const library = path.join(directory, 'library.c');
+    await fs.writeFile(program, 'extern int fixture(void); int main(void) { return fixture(); }\n');
+    await fs.writeFile(library, 'int fixture(void) { return 0; }\n');
+    for (const args of [['-dynamiclib', library, '-install_name', '@rpath/libfixture.dylib', '-o', plugin],
+        [program, plugin, '-Wl,-rpath,@executable_path/../PlugIns/quick', '-o', executable]]) {
+        const built = spawnSync('/usr/bin/xcrun', ['clang', ...args], {encoding: 'utf8', timeout: 30000});
+        assert.ifError(built.error);
+        assert.equal(built.status, 0, built.stdout + built.stderr);
+    }
+    // Main-first is a valid filesystem enumeration order. It must not affect signing.
+    await fs.writeFile(path.join(directory, 'runtime-files.txt'), executable + '\n' + plugin + '\n' + path.join(app, 'Contents/Info.plist') + '\n');
+    const entitlements = path.join(directory, 'entitlements.plist');
+    await fs.writeFile(entitlements, '<?xml version="1.0"?><plist version="1.0"><dict/></plist>');
+    const signer = path.join(directory, 'codesign.cjs');
+    // Only Apple's distribution identity/timestamp boundary changes. Real codesign still
+    // signs and verifies the actual Mach-O bundle with an ad-hoc local identity.
+    await fs.writeFile(signer,
+        "const {spawnSync}=require('node:child_process');const fs=require('node:fs');" +
+        "const args=process.argv.slice(2);const stamp=args.indexOf('--timestamp');if(stamp>=0)args.splice(stamp,1);" +
+        "const sign=args.indexOf('--sign');if(sign>=0){args[sign+1]='-';fs.appendFileSync(process.env.SIGN_CALLS,args.at(-1)+'\\n');}" +
+        "const result=spawnSync('/usr/bin/codesign',args,{stdio:'inherit'});if(result.error)throw result.error;process.exit(result.status??1);"
+    );
+    const source = await fs.readFile(packageScript, 'utf8');
+    const start = source.indexOf('while IFS= read -r binary; do');
+    const end = source.indexOf('find "$APP" -type f -exec /usr/bin/stat', start);
+    assert.ok(start >= 0 && end > start);
+    const phase = source.slice(start, end).replaceAll('/usr/bin/codesign', 'codesign');
+    const calls = path.join(directory, 'calls');
+    const result = spawnSync('/bin/sh', ['-eu', '-c',
+        'codesign() { "' + process.execPath + '" "' + signer + '" "$@"; }\n' + phase], {
+        encoding: 'utf8', timeout: 30000,
+        env: {...process.env, APP: app, DIST: directory, ENTITLEMENTS: entitlements,
+            MACOS_APP_STORE_APPLICATION_IDENTITY: 'external-distribution-boundary', SIGN_CALLS: calls},
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual((await fs.readFile(calls, 'utf8')).trim().split('\n'), [plugin, app]);
+});

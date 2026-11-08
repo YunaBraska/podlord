@@ -3433,7 +3433,8 @@ bool execute(const QString& requestedScenario) {
                     workspace.busy(),workspace.authenticationRequired(),qPrintable(workspace.currentSession()),qPrintable(workspace.status()));
                 return false;
             }
-            if (!waitFor([&] { return !workspace.loading() && server.refresh > previous; })) {
+            // Refresh completion is an asynchronous functional boundary, not a frame-time assertion.
+            if (!waitFor([&] { return !workspace.loading() && server.refresh > previous; }, 30000)) {
                 std::fprintf(stderr,"Table refresh did not complete: requests=%d->%d loading=%d status=%s\n",
                     previous,server.refresh,workspace.loading(),qPrintable(workspace.status()));
                 return false;
