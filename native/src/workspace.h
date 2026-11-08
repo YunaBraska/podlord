@@ -280,6 +280,8 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool valuesVisible READ valuesVisible NOTIFY changed)
     Q_PROPERTY(bool valuesAvailable READ valuesAvailable NOTIFY changed)
     Q_PROPERTY(QString monospaceFamily READ monospaceFamily CONSTANT)
+    Q_PROPERTY(QVariantMap textSizes READ textSizes NOTIFY typographyChanged)
+    Q_PROPERTY(qreal textScale READ textScale NOTIFY typographyChanged)
     Q_PROPERTY(QAbstractItemModel* table READ table CONSTANT)
     Q_PROPERTY(QVariantList resourceColumns READ resourceColumns NOTIFY tableLayoutChanged)
     Q_PROPERTY(QAbstractItemModel* sourceTable READ sourceTable CONSTANT)
@@ -568,6 +570,8 @@ public:
     bool valuesVisible() const;
     bool valuesAvailable() const;
     QString monospaceFamily() const;
+    QVariantMap textSizes() const;
+    qreal textScale() const;
     /** Explicit, stable diagnostics snapshot; contains no credentials or response bodies. */
     Q_INVOKABLE QVariantMap settingsDiagnostics() const;
     Q_INVOKABLE QString refreshSettingsDiagnostics();
@@ -705,6 +709,7 @@ signals:
     void dashboardChanged();
     void inspectorRelatedChanged();
     void appearanceChanged();
+    void typographyChanged();
     void tableLayoutChanged();
     void tableLayoutStatusChanged();
     void logViewChanging();

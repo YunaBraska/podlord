@@ -101,7 +101,17 @@ CLEANUP_LOGS
 }
 trap cleanup 0
 trap 'exit 130' INT TERM
-printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k "$system_image" -p "$tmp/device" > "$out/avd-create.log" 2>&1
+printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k "$system_image" -d pixel_8 -p "$tmp/device" > "$out/avd-create.log" 2>&1
+# Retain the small-screen stress geometry on a real rotatable phone hardware profile.
+node - "$tmp/device/config.ini" <<'HARDWARE'
+const fs=require('node:fs'),file=process.argv[2];let text=fs.readFileSync(file,'utf8');
+for(const [key,value] of Object.entries({'hw.lcd.width':'320','hw.lcd.height':'640','hw.lcd.density':'160'})) {
+ const line=key+'='+value;const expression=new RegExp('^'+key.replaceAll('.','\\.')+'=.*$','m');
+ text=expression.test(text)?text.replace(expression,()=>line):text+'\n'+line+'\n';
+}
+fs.writeFileSync(file,text);
+HARDWARE
+cp "$tmp/device/config.ini" "$out/avd-config.ini"
 ADB_TRACE="$adbTrace" "$sdk/platform-tools/adb" -P "$adbPort" --one-device "$serial" server nodaemon > "$out/adb-server.log" 2>&1 &
 adbpid=$!
 printf '%s\n' "$adbpid" > "$out/adb-server-pid.txt"
@@ -258,6 +268,13 @@ function state(){
  }while(Date.now()<deadline);
  throw Error('Android did not produce a fresh accessibility hierarchy within the command watchdog');
 }
+function rotate(value){
+ run('shell','wm','user-rotation','lock',String(value));
+ const deadline=Date.now()+30000;
+ // UIAutomator restores the rotation it observes on connection. Wait for rotation before connecting.
+ do{const frame=runAdb(['exec-out','screencap','-p'],null);const width=frame.readUInt32BE(16),height=frame.readUInt32BE(20);if((value===1&&width>height)||(value===0&&height>width)){state();return;}}while(Date.now()<deadline);
+ throw Error('Android did not render the requested physical orientation');
+}
 function target(id){
  const sourceRow=id==='sourceRow_0',limit=sourceRow?20:8;
  const matches=n=>sourceRow?/^sourceCell_0_[0-7]$/.test(n['resource-id']?.split('.').at(-1)||''):n['resource-id']?.endsWith('.'+id);
@@ -311,14 +328,26 @@ function target(id){
  capture('unreachable-'+id);throw Error('Public UI target unavailable after scrolling: '+id);
 }
 function tap(n){const b=n.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/).slice(1).map(Number);if(b[2]<=b[0]||b[3]<=b[1])throw Error('Target outside viewport');const point=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];run('shell','input','tap',...point.map(String));state();const after=nodes.find(x=>x['resource-id']===n['resource-id']);fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({id:n['resource-id'],bounds:n.bounds,point,beforeChecked:n.checked,afterBounds:after?.bounds,afterChecked:after?.checked,focused:nodes.filter(x=>x.focused==='true').map(x=>({id:x['resource-id'],text:x.text,description:x['content-desc']}))})+'\n');}
-function click(id){tap(target(id));}
+function click(id){
+ const row=/^cell_(\d+)_0$/.exec(id);
+ if(row){
+  const visible=nodes.filter(n=>new RegExp('\\.cell_'+row[1]+'_\\d+$').test(n['resource-id']||''))
+   .map(n=>({node:n,b:n.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number)}))
+   .filter(x=>x.b&&x.b[2]-x.b[0]>=44&&x.b[3]-x.b[1]>=18)
+   .sort((a,b)=>(b.b[2]-b.b[0])-(a.b[2]-a.b[0]));
+  const selected=visible.find(x=>x.node['resource-id'].endsWith('.'+id))||visible.find(x=>x.node['resource-id'].endsWith('.cell_'+row[1]+'_1'))||visible.find(x=>x.node['resource-id'].endsWith('.cell_'+row[1]+'_3'));
+  if(selected){tap(target(selected.node['resource-id'].split('.').at(-1)));return;}
+ }
+ tap(target(id));
+}
+function healthCount(){const text=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'))?.['content-desc']||'';const values=/^(?:Session health:|Loading session\.)\s*(\d+) healthy, (\d+) warnings, (\d+) errors/.exec(text);return values?values.slice(1).reduce((sum,value)=>sum+Number(value),0):0;}
 function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
 function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:terminalOnly==='1'?'terminal-only':mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; scoped diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,failures:journeyFailures,error:String(error)},null,2)+'\n');
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
  const pid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
- const diagnostics=[['crash-logcat',['logcat','-b','crash','-d']],['system-logcat',['logcat','-b','all','-d','-t','2000']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
+ const diagnostics=[['crash-logcat',['logcat','-b','crash','-d']],['system-logcat',['logcat','-b','all','-d','-t','2000']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['display-rotation',['shell','dumpsys','window','displays']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
  if(/^\d+$/.test(pid))diagnostics.push(['process',['shell','cat','/proc/'+pid+'/status']],['native-backtrace',['shell','debuggerd','-b',pid]]);
  for(const [name,args] of diagnostics){try{fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),run(...args))}catch(diagnosticError){fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),String(diagnosticError)+'\n'+(diagnosticError.stdout||'')+(diagnosticError.stderr||''))}}
  console.error(error);process.exitCode=1;
@@ -330,12 +359,24 @@ const cardDeadline=Date.now()+30000;let contextCard='';
 do{state();const card=nodes.find(n=>n['resource-id']?.split('.').at(-1).startsWith('contextMapCard_')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');if(card){contextCard=card['resource-id'].split('.').at(-1);break;}}while(Date.now()<cardDeadline);
 if(!contextCard){capture('missing-context-card');throw Error('Imported context card did not appear');}
 capture('contexts-before-opening');click(contextCard);click('resourcesWorkspaceButton');
-run('shell','settings','put','system','accelerometer_rotation','0');run('shell','settings','put','system','user_rotation','1');state();
+run('shell','settings','put','system','accelerometer_rotation','0');rotate(1);state();
 const deadline=Date.now()+120000;let count=0;
-do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):0;const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
-if(count<1000){capture('load-failure');throw Error('Real cluster cache did not fill');}steps.push({step:'Real TLS source import and cached resources',resources:count});run('shell','settings','put','system','user_rotation','0');state();capture('loaded-portrait');
+do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):healthCount();const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
+if(count<1000){capture('load-failure');throw Error('Real cluster cache did not fill');}steps.push({step:'Real TLS source import and cached resources',resources:count});rotate(0);state();capture('loaded-portrait');
 if(sourceOnly==='1'){search('visual-multi-container');sourceJourney();completeJourney();process.exit(0);}
-run('shell','settings','put','system','accelerometer_rotation','0');run('shell','settings','put','system','user_rotation','1');state();capture('loaded-landscape');
+run('shell','settings','put','system','accelerometer_rotation','0');rotate(1);state();capture('loaded-landscape');
+const textRow=()=>{const n=nodes.find(n=>n['resource-id']?.endsWith('.cell_0_0'));const b=n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);return b?b[3]-b[1]:0;};
+const originalTextRow=textRow(),textPid=run('shell','pidof','berlin.yuna.podlord').trim();
+if(originalTextRow<=0)throw Error('Text-scale baseline has no visible resource row');
+run('shell','settings','put','system','font_scale','2.0');
+waitNode('cell_0_0',()=>textRow()>originalTextRow*1.25);capture('system-text-200-landscape');
+const enlargedTextRow=textRow();
+if(run('shell','settings','get','system','font_scale').trim()!=='2.0'||run('shell','pidof','berlin.yuna.podlord').trim()!==textPid)throw Error('System font change did not stay in the installed app process');
+click('settingsWorkspaceButton');capture('system-text-200-settings');click('resourcesWorkspaceButton');
+rotate(0);capture('system-text-200-portrait');
+run('shell','settings','put','system','font_scale','1.0');rotate(1);
+waitNode('cell_0_0',()=>textRow()===originalTextRow);capture('system-text-restored');
+steps.push({step:'Live Android system text 100%-200%-100% without app restart',originalRowPixels:originalTextRow,enlargedRowPixels:enlargedTextRow,sameProcess:true});
 if(inspectorOnly==='1'){
  search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
  click('cell_0_0');waitNode('inspectorResourceName',n=>(n.text+' '+n['content-desc']).includes('Pod/visual-multi-container'));
@@ -351,7 +392,7 @@ if(coldInspectorCycles){
   if(!/^\d+$/.test(pid))throw Error('Cold inspector diagnostic did not start the product');
   fs.writeFileSync(path.join(out,'product-pid.txt'),pid+'\n');
   waitNode(contextCard,n=>n.enabled==='true');click(contextCard);click('resourcesWorkspaceButton');
-  waitNode('resourceMatchCount',n=>Number((n.text+' '+n['content-desc']).match(/visible: \d+\/(\d+)/)?.[1])>=1000,120000);
+  waitNode('sessionHealthStrip',()=>healthCount()>=1000,120000);
   search('visual-multi-container');waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
   click('cell_0_0');waitNode('inspectorResourceName',n=>(n.text+' '+n['content-desc']).includes('Pod/visual-multi-container'));
   target('terminalButton');click('closeInspector');
@@ -399,7 +440,7 @@ waitNode('resourceRadar',n=>n.enabled==='true');click('resourcesWorkspaceButton'
 state();if(nodes.some(n=>n['resource-id']?.endsWith('.resourceRadar')&&n.bounds!=='[0,0][0,0]'))throw Error('Returning to the compact table must hide only the small Radar');
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
-click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');const filtered=nodes.map(n=>n['content-desc']||'').join('\n').match(/(\d+) matching resources/);if(!filtered||Number(filtered[1])<=0||Number(filtered[1])>=count)throw Error('Problems filter did not reduce cached matches');click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');steps.push({step:'Problems filter enables, reduces cached matches and disables',matches:Number(filtered[1])});
+click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');const filtered=nodes.map(n=>n['content-desc']||'').join('\n').match(/(\d+) matching resources/);const filteredCount=filtered?Number(filtered[1]):healthCount();if(filteredCount<=0||filteredCount>=count)throw Error('Problems filter did not reduce cached matches');click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');steps.push({step:'Problems filter enables, reduces cached matches and disables',matches:filteredCount});
 filterPresetJourney();
 click('toggleLandscapeFilters');
 for(const id of ['eventsWorkspaceButton','portForwardTasksButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}
@@ -636,7 +677,7 @@ click('resourcesWorkspaceButton');
 
 function sourceJourney(){
 if(nodes.some(n=>n['resource-id']?.endsWith('.workspaceInspector')&&n.bounds!=='[0,0][0,0]'))click('closeInspector');
-run('shell','settings','put','system','user_rotation','0');state();
+rotate(0);state();
 click('settingsWorkspaceButton');click('settingsSectionPicker');
 const sourceSection=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
 if(!sourceSection)throw Error('Sources is unavailable in the public Settings picker');

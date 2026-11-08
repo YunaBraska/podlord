@@ -71,6 +71,7 @@ class TerminalSurface : public QQuickPaintedItem {
     Q_PROPERTY(QColor foreground READ foreground WRITE setForeground NOTIFY colorsChanged)
     Q_PROPERTY(QColor background READ background WRITE setBackground NOTIFY colorsChanged)
     Q_PROPERTY(QString fontFamily READ fontFamily WRITE setFontFamily NOTIFY colorsChanged)
+    Q_PROPERTY(int fontPixelSize READ fontPixelSize WRITE setFontPixelSize NOTIFY colorsChanged)
     Q_PROPERTY(QString visibleText READ visibleText NOTIFY visibleTextChanged)
     Q_PROPERTY(Qt::InputMethodHints inputMethodHints READ inputMethodHints CONSTANT)
 public:
@@ -80,6 +81,8 @@ public:
     QColor foreground() const { return foreground_; }
     QColor background() const { return background_; }
     QString fontFamily() const { return font_.family(); }
+    int fontPixelSize() const { return font_.pixelSize(); }
+    bool setFontPixelSize(int size);
     bool setForeground(QColor color);
     bool setBackground(QColor color);
     bool setFontFamily(const QString& family);

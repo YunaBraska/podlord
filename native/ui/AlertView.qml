@@ -189,7 +189,7 @@ Pane {
             columns: workspace.alertColumns
             sortColumn: workspace.alerts.tableSortColumn
             sortDirection: workspace.alerts.tableSortDirection
-            rowHeight: view.width < 600 ? 44 : 28
+            rowHeight: (view.width < 600 ? 44 : 28) * workspace.textScale
             inspectable: false
             actionColumns: [0, 1, 2, 3, 4, 5]
             accessoryColumns: [0]
@@ -208,9 +208,9 @@ Pane {
             ActionButton { objectName: "deleteAlert"; text: workspace.uiText["action.delete"]; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
             ActionButton { objectName: "saveAlert"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.alerts.busy && view.draft !== null; onClicked: view.save() }
             ActionButton { objectName: "reloadAlerts"; text: workspace.uiText["alert.retryLoad"]; visible: workspace.alerts.error !== ""; enabled: !workspace.alerts.busy; onClicked: view.changeSelection("reload") }
-            CheckBox { id: ruleEnabled; objectName: "alertEnabled"; text: workspace.uiText["alert.active"]; enabled: !workspace.alerts.busy && view.draft !== null }
-            CheckBox { objectName: "muteAlerts"; text: workspace.uiText["audio.mute"]; checked: workspace.alerts.muted; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(checked, workspace.alerts.reducedMotion) }
-            CheckBox { objectName: "reduceAlertMotion"; text: "Reduce motion"; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) }
+            WrappingCheckBox { id: ruleEnabled; objectName: "alertEnabled"; text: workspace.uiText["alert.active"]; enabled: !workspace.alerts.busy && view.draft !== null }
+            WrappingCheckBox { objectName: "muteAlerts"; text: workspace.uiText["audio.mute"]; checked: workspace.alerts.muted; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(checked, workspace.alerts.reducedMotion) }
+            WrappingCheckBox { objectName: "reduceAlertMotion"; text: "Reduce motion"; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) }
         }
         ScrollView {
             id: editor

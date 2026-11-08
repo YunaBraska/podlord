@@ -68,8 +68,8 @@ Dialog {
                         RowLayout {
                             Layout.fillWidth: true
                             Label { Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; elide: Text.ElideRight }
-                            CheckBox { objectName: dialog.tableType + "ColumnVisible_" + modelData.id; text: "Show"; checked: modelData.visible; Accessible.name: "Show " + modelData.title; onToggled: dialog.change(index, "visible", checked) }
-                            CheckBox { objectName: dialog.tableType + "ColumnPinned_" + modelData.id; text: "Pin"; checked: modelData.pinned; Accessible.name: "Pin " + modelData.title; onToggled: dialog.change(index, "pinned", checked) }
+                            WrappingCheckBox { objectName: dialog.tableType + "ColumnVisible_" + modelData.id; text: "Show"; checked: modelData.visible; Accessible.name: "Show " + modelData.title; onToggled: dialog.change(index, "visible", checked) }
+                            WrappingCheckBox { objectName: dialog.tableType + "ColumnPinned_" + modelData.id; text: "Pin"; checked: modelData.pinned; Accessible.name: "Pin " + modelData.title; onToggled: dialog.change(index, "pinned", checked) }
                         }
                         RowLayout {
                             Layout.fillWidth: true

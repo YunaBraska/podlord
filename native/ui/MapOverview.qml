@@ -83,7 +83,7 @@ Pane {
         anchors.centerIn: parent; width: Math.min(360, parent.width - 24)
         visible: cards.count === 0
         Image { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 140; Layout.preferredHeight: 120; source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit; asynchronous: true }
-        Label { Layout.fillWidth: true; text: "Import a kubeconfig"; font.pixelSize: 22; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
+        Label { Layout.fillWidth: true; text: "Import a kubeconfig"; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
         Button { objectName: "mapImportSource"; Layout.alignment: Qt.AlignHCenter; text: "Open kubeconfig"; onClicked: overview.sourcesRequested() }
     }
 }

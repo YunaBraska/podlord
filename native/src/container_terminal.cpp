@@ -268,6 +268,11 @@ bool TerminalSurface::setTerminal(ContainerTerminal* terminal) {
 bool TerminalSurface::setForeground(QColor color) { foreground_ = color; update(); emit colorsChanged(); return true; }
 bool TerminalSurface::setBackground(QColor color) { background_ = color; update(); emit colorsChanged(); return true; }
 bool TerminalSurface::setFontFamily(const QString& family) { font_.setFamily(family); sizeScreen(); update(); emit colorsChanged(); return true; }
+bool TerminalSurface::setFontPixelSize(int size) {
+    if (size < 1) return false;
+    if (font_.pixelSize() == size) return true;
+    font_.setPixelSize(size); sizeScreen(); refreshInputMethod(); update(); emit colorsChanged(); return true;
+}
 bool TerminalSurface::sizeScreen() {
     const QFontMetricsF metrics(font_); cellWidth_ = std::max<qreal>(1, metrics.horizontalAdvance('M')); cellHeight_ = std::max<qreal>(1, metrics.height()); ascent_ = metrics.ascent();
     if (width() < 2 * cellWidth_ || height() < 2 * cellHeight_) return true;

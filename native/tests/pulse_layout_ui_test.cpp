@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "ui_input.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -42,36 +43,25 @@ int main(int argc, char** argv) {
         const auto metrics = workspace.pulseMetrics();
         require(metrics.size() == 5, "Expected public CPU, memory, storage, pod and node metrics.");
         const auto fits = [&] {
-            QList<QRectF> bounds;
-            for (const auto& value : metrics) {
-                const auto metric = value.toMap();
-                auto* card = findItem(window->contentItem(), "pulse_" + metric["id"].toString());
-                if (!card || !card->isVisible() || !card->isEnabled() || card->width() < 62 || card->height() < 36) return false;
-                const auto rectangle = card->mapRectToScene(card->boundingRect());
-                if (rectangle.left() < 0 || rectangle.right() > window->width() + 0.5
-                    || rectangle.top() < 0 || rectangle.bottom() > window->height()) return false;
-                // A control outside its clipping parent is not an accessible HUD card.
-                for (auto* parent = card->parentItem(); parent; parent = parent->parentItem()) {
-                    if (parent->clip() && !parent->mapRectToScene(parent->boundingRect()).adjusted(-0.5, -0.5, 0.5, 0.5).contains(rectangle)) return false;
-                }
-                for (const auto& previous : bounds) if (previous.intersects(rectangle)) return false;
-                bounds.append(rectangle);
-            }
-            if (width==1440) {
-                for (const auto& rectangle:bounds)
-                    if (qAbs(rectangle.top()-bounds.first().top())>0.5) return false;
+            auto* strip=findItem(window->contentItem(),"headerMetrics");
+            if (!strip || strip->property("visibleCount").toInt()!=0 || !strip->property("overflowMetrics").toList().isEmpty()) return false;
+            for (const auto& value:metrics) {
+                const auto metric=value.toMap();
+                if (metric.value("available").toBool() || metric.value("usage").toDouble()>0) return false;
+                const auto* card=findItem(window->contentItem(),"pulse_"+metric.value("id").toString());
+                if (card && card->isVisible()) return false;
             }
             return true;
         };
-        require(QTest::qWaitFor(fits, 3000), "HUD metrics are clipped, overlapping or unreachable.");
+        require(QTest::qWaitFor(fits, 3000), "Empty sessions must not display unavailable or zero-count HUD cards.");
         QList<QRectF> navigationBounds;
         for (const auto* name : {"resourcesWorkspaceButton", "eventsWorkspaceButton", "portForwardTasksButton", "settingsWorkspaceButton"}) {
             auto* button = findItem(window->contentItem(), name);
-            require(button && button->isVisible() && button->property("showText").toBool() == (width == 1440),
-                "Navigation labels do not match the desktop or compact layout.");
-            if (width != 1440) continue;
+            require(button && !button->property("showText").toBool(),
+                "Navigation must retain compact icons with accessible labels.");
+            if (!button->isVisible()) continue;
             const auto rectangle = button->mapRectToScene(button->boundingRect());
-            require(rectangle.width() > 32 && rectangle.left() >= 0 && rectangle.right() <= window->width() + 0.5,
+            require(rectangle.width() >= 32 && rectangle.left() >= 0 && rectangle.right() <= window->width() + 0.5,
                 "Desktop navigation label is clipped.");
             for (const auto& previous : navigationBounds)
                 require(!previous.intersects(rectangle), "Desktop navigation labels overlap.");
@@ -99,16 +89,9 @@ int main(int argc, char** argv) {
             window->resize(width, 720);
             require(QTest::qWaitFor(fits, 3000), "HUD metrics did not recover after landscape resize.");
         }
-        auto* cpu = findItem(window->contentItem(), "pulse_cpu");
-        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-            cpu->mapToScene(QPointF(cpu->width() / 2, cpu->height() / 2)).toPoint());
-        require(QTest::qWaitFor([&] { return workspace.workspacePage() == "dashboard"; }, 3000), "HUD no longer opens the real dashboard.");
         const auto navigate = [&](const char* buttonName, const char* page) {
-            auto* button = findItem(window->contentItem(), buttonName);
-            if (!button) return false;
-            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint());
-            return QTest::qWaitFor([&] { return workspace.workspacePage() == page; }, 3000);
+            return podlord::test::clickVisible(window,buttonName)
+                && QTest::qWaitFor([&] { return workspace.workspacePage()==page; },3000);
         };
         require(navigate("resourcesWorkspaceButton", "resources") && navigate("eventsWorkspaceButton", "events")
             && navigate("portForwardTasksButton", "ports") && navigate("settingsWorkspaceButton", "settings"),

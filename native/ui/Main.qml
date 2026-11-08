@@ -12,8 +12,9 @@ ApplicationWindow {
     minimumWidth: 320
     minimumHeight: 360
     font.family: workspace.monospaceFamily
-    font.pixelSize: 14
+    font.pixelSize: workspace.textSizes.body
     font.weight: Font.Normal
+    readonly property real controlHeight: Math.max(touchLayout ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
     property bool sidebarOpen: true
     property bool searchOpen: false
     readonly property bool terminalExpanded: terminalDialog.visible
@@ -513,7 +514,7 @@ ApplicationWindow {
         visible: !window.inputPriority
         padding: 0
         leftPadding: 0; rightPadding: 0; topPadding: SafeArea.margins.top; bottomPadding: 0
-        implicitHeight: (window.touchLayout ? 44 : 32) + 12 + topPadding
+        implicitHeight: Math.max(navigationRow.implicitHeight, headerMetrics.implicitHeight) + 12 + topPadding
         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
         RowLayout {
             id: headerLayout
@@ -523,11 +524,12 @@ ApplicationWindow {
                 id: navigationSlot
                 Layout.fillWidth: true; Layout.minimumWidth: 0
                 Layout.preferredWidth: navigationRow.fullWidth
-                Layout.preferredHeight: window.touchLayout ? 44 : 32
+                Layout.preferredHeight: navigationRow.implicitHeight
                 Row {
                     id: navigationRow
                     width: parent.width
                     height: implicitHeight
+                    anchors.verticalCenter: parent.verticalCenter
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
                     spacing: window.touchLayout ? 0 : 4
@@ -593,7 +595,7 @@ ApplicationWindow {
                 checkable: !metricEntry && modelData.checkable
                 checked: !metricEntry && modelData.checked
                 Accessible.name: metricEntry ? text : modelData.Accessible.name
-                implicitHeight: workspaceActions.compactMenu ? 44 : 32
+                implicitHeight: window.controlHeight
                 ToolTip.visible: metricEntry && (hovered || activeFocus)
                 ToolTip.text: metricEntry ? modelData.metric.usage + "\n" + modelData.metric.description : ""
                 onTriggered: if (metricEntry) headerMetrics.detailsRequested()
@@ -602,11 +604,11 @@ ApplicationWindow {
             onObjectRemoved: (index, object) => workspaceActions.removeItem(object)
         }
         MenuSeparator { visible: workspaceActions.overflowControls.length > 0 || headerMetrics.overflowMetrics.length > 0; height: visible ? implicitHeight : 0 }
-        MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; Accessible.name: "Open command palette"; onTriggered: commands.open() }
+        MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: window.controlHeight; Accessible.name: "Open command palette"; onTriggered: commands.open() }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
             text: workspace.uiText["nav.search"]
-            implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0
+            implicitHeight: visible ? (window.controlHeight) : 0
             visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
             Accessible.name: "Find within the current cached table"
             onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openFind()
@@ -614,19 +616,19 @@ ApplicationWindow {
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventColumnsButton" : "resourceColumnsButton"
             text: "Columns"
-            implicitHeight: visible ? (workspaceActions.compactMenu ? 44 : 32) : 0
+            implicitHeight: visible ? (window.controlHeight) : 0
             visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
             Accessible.name: "Columns for the current table"
             onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openColumns()
         }
-        MenuItem { objectName: "refreshButton"; text: "Refresh"; implicitHeight: workspaceActions.compactMenu ? 44 : 32; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
+        MenuItem { objectName: "refreshButton"; text: "Refresh"; implicitHeight: window.controlHeight; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
     }
     Menu {
         id: quickOpenMenu
         objectName: "quickOpenMenu"
         width: Math.min(360, window.width - 24)
         height: Math.min(implicitHeight, window.height - 48)
-        MenuItem { objectName: "quickOpenFile"; text: "Open kubeconfig file..."; implicitHeight: window.touchLayout ? 44 : 32; enabled: !workspace.busy; onTriggered: quickChooser.open() }
+        MenuItem { objectName: "quickOpenFile"; text: "Open kubeconfig file..."; implicitHeight: window.controlHeight; enabled: !workspace.busy; onTriggered: quickChooser.open() }
         MenuItem { objectName: "closeCurrentSession"; text: "Close session"; enabled: workspace.currentSession !== "" && !workspace.busy; onTriggered: workspace.close(workspace.currentSession) }
         MenuSeparator {}
         Instantiator {
@@ -634,7 +636,7 @@ ApplicationWindow {
             model: window.quickOpenEntries
             delegate: MenuItem {
                 required property var modelData
-                implicitHeight: window.touchLayout ? 44 : 32
+                implicitHeight: window.controlHeight
                 objectName: modelData.header ? "" : (modelData.context ? "quickContext_" : "quickSession_") + modelData.id
                 text: modelData.name
                 enabled: !modelData.header && !workspace.busy
@@ -660,7 +662,7 @@ ApplicationWindow {
             model: window.quickOpenEntries
             delegate: MenuItem {
                 required property var modelData
-                implicitHeight: window.touchLayout ? 44 : 32
+                implicitHeight: window.controlHeight
                 objectName: modelData.header ? "" : (modelData.context ? "quickWindowContext_" : "quickWindowSession_") + modelData.id
                 text: modelData.name
                 enabled: !modelData.header && workspace.sessionWindowActionsReady
@@ -786,7 +788,7 @@ ApplicationWindow {
                             id: sessionTab
                             required property var modelData
                             objectName: "activateSession_" + modelData.id
-                            implicitHeight: window.touchLayout ? 44 : 32
+                            implicitHeight: window.controlHeight
                             implicitWidth: Math.min(Math.max(120, sessionName.implicitWidth + tabActions.implicitWidth + (connectionBadge.visible ? connectionBadge.implicitWidth : 0) + 24), window.wideLayout ? 240 : 160)
                             width: implicitWidth
                             leftPadding: 8
@@ -816,7 +818,7 @@ ApplicationWindow {
                                     anchors.verticalCenter: parent.verticalCenter
                                     visible: modelData.connectionCount > 0
                                     text: String(modelData.connectionCount)
-                                    font.pixelSize: 11
+                                    font.pixelSize: workspace.textSizes.caption
                                     font.bold: true
                                     padding: 3
                                     Accessible.name: modelData.connectionCount + " open connections"
@@ -885,7 +887,7 @@ ApplicationWindow {
                 enabled: workspace.currentSession !== "" && !workspace.busy
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
-                implicitHeight: window.touchLayout ? 44 : 32
+                implicitHeight: window.controlHeight
                 text: workspace.filterText
                 placeholderText: "Search cached resources"
                 Accessible.name: "Filter cached resources"
@@ -903,7 +905,7 @@ ApplicationWindow {
             TextField {
                 id: eventFilterInput; objectName: "eventFilter"
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-                Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.touchLayout ? 44 : 32
+                Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.controlHeight
                 visible: window.searchOpen && workspace.workspacePage === "events"
                 text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"
                 onTextEdited: if (workspace.filterEvents(text)) Qt.callLater(eventGridLoader.item.navigateRows, 0)
@@ -1156,10 +1158,10 @@ ApplicationWindow {
             Layout.fillWidth: true
             objectName: "workspaceFooter"
             visible: !window.inputPriority && window.width >= 600 && window.height >= 600
-            Layout.minimumHeight: 24; Layout.maximumHeight: 24; Layout.preferredHeight: 24
+            Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached") : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
-            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: 11; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached") : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
+            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
     ResourceSidebar {

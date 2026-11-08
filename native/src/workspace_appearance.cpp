@@ -1,6 +1,9 @@
 #include "workspace.h"
+#include "workspace_runtime.h"
 
 namespace podlord {
+QVariantMap Workspace::textSizes() const { return runtime_->typography.sizes(); }
+qreal Workspace::textScale() const { return runtime_->typography.scale(); }
 bool Workspace::publishAppearance() {
     if (appearance_.name == settings_.themeName && appearance_.variant == settings_.themeVariant) return true;
     const auto result = makeAppearance(settings_.themeName, settings_.themeVariant);

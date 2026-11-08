@@ -354,7 +354,7 @@ void RadarIsland::layout(const QList<Row>& rows) {
     struct Cluster final { QString name, label; QList<District> districts; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     const auto caption=[](const QString& value) { return value.size()>48 ? value.left(45)+"..." : value; };
     const auto bounds=[](const QString& label,bool cluster) {
-        QFont font; font.setPixelSize(cluster ? 12 : 10); font.setBold(cluster);
+        QFont font; font.setPixelSize(cluster ? 12 : 11); font.setBold(cluster);
         return QFontMetricsF(font).boundingRect(label).adjusted(-3,-2,3,2);
     };
     QMap<QString,QMap<QString,QList<Row>>> grouped;
@@ -467,6 +467,14 @@ void RadarIsland::setViewPose(const QVariantMap& pose) {
 void RadarIsland::setTextColor(const QColor& color) {
     if (!color.isValid() || textColor_==color) return;
     textColor_=color; update(); emit textColorChanged();
+}
+void RadarIsland::setCaptionPixelSize(qreal size) {
+    if (!std::isfinite(size) || size < 1 || captionPixelSize_ == size) return;
+    captionPixelSize_ = size; update(); emit textSizesChanged();
+}
+void RadarIsland::setHeadingPixelSize(qreal size) {
+    if (!std::isfinite(size) || size < 1 || headingPixelSize_ == size) return;
+    headingPixelSize_ = size; update(); emit textSizesChanged();
 }
 bool RadarIsland::pan(double dx,double dy) {
     if (!std::isfinite(dx) || !std::isfinite(dy)) return false;
@@ -655,6 +663,7 @@ void RadarIsland::paint(QPainter* painter) {
         const bool clusterLabel=marker.overview;
         if ((clusterLabel && zoom_>=1.35) || (!clusterLabel && zoom_<.85)) continue;
         QRectF label=marker.labelBounds;
+        label.setSize(label.size() * (marker.overview ? headingPixelSize_ / 12 : captionPixelSize_ / 11));
         label.setWidth(std::min(label.width(),std::max(0.,width()-8)));
         if (label.width()<=0 || label.height()>height()-8) continue;
         const QRectF land(screen(marker.area.topLeft()),marker.area.size()*zoom_);
@@ -724,7 +733,7 @@ void RadarIsland::paint(QPainter* painter) {
     // Labels are a foreground annotation, never terrain or an input target.
     for (const auto& [label,index]:labels) {
         const auto& marker=markers_[index];
-        QFont font; font.setPixelSize(marker.overview ? 12 : 10); font.setBold(marker.overview); painter->setFont(font);
+        QFont font; font.setPixelSize(qRound(marker.overview ? headingPixelSize_ : captionPixelSize_)); font.setBold(marker.overview); painter->setFont(font);
         painter->fillRect(label.adjusted(-1,-1,1,1),QColor("#061621"));
         painter->setPen(groups_.contains(marker.group) ? textColor_ : textColor_.darker(140));
         painter->drawText(label,Qt::AlignCenter,QFontMetricsF(font).elidedText(marker.label,Qt::ElideRight,label.width()));

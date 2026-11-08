@@ -1,6 +1,7 @@
 package berlin.yuna.podlord;
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.view.KeyEvent;
 import org.qtproject.qt.android.bindings.QtActivity;
 
@@ -21,6 +22,18 @@ public final class PodlordActivity extends QtActivity {
             if (event.getAction() == KeyEvent.ACTION_UP && super.onKeyUp(key, event)) return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    private static native void notifyTypographyChanged();
+
+    @Override
+    public void onConfigurationChanged(final Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        try {
+            notifyTypographyChanged();
+        } catch (final UnsatisfiedLinkError notStarted) {
+            // Qt reads the current configuration when its native library starts.
+        }
     }
 
     /** Starts one user-confirmed GKE authorization attempt. */

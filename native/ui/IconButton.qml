@@ -11,7 +11,7 @@ ToolButton {
     property bool activeIndicator: false
     readonly property int targetSize: Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32
     implicitWidth: Math.max(targetSize, implicitContentWidth + leftPadding + rightPadding)
-    implicitHeight: targetSize
+    implicitHeight: Math.max(targetSize, implicitContentHeight + topPadding + bottomPadding)
     padding: 6
     Accessible.name: text
     ToolTip.visible: !showText && (hovered || visualFocus)

@@ -156,6 +156,7 @@ ColumnLayout {
         foreground: workspace.appearanceColors.text
         background: workspace.appearanceColors.inset
         fontFamily: workspace.monospaceFamily
+        fontPixelSize: workspace.textSizes.body
         Accessible.role: Accessible.Terminal
         Accessible.name: root.terminal ? "Interactive container terminal: " + root.terminal.target : "Container terminal"
         Accessible.description: visibleText

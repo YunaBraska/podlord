@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QLockFile>
 #include <QGuiApplication>
+#include <limits>
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -236,6 +237,15 @@ public:
                             else if (path == "/apis/example.test/v1/secrets") { status = 200; document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{custom}}}; }
                             else if (path == "/apis/example.test/v1/namespaces/default/secrets/custom-secret") { status = 200; document = custom; ++detailReads; }
                         }
+                    }
+                    if (scenario=="shell_text_system" || scenario=="shell_text_terminal_invalid") {
+                        if (path=="/api/v1") {
+                            auto endpoints=document["resources"].toArray();
+                            endpoints.append(QJsonObject{{"name","pods/exec"},{"kind","Pod"},{"namespaced",true},{"verbs",QJsonArray{"create"}}});
+                            document["resources"]=endpoints;
+                        }
+                        if (path.startsWith("/api/v1/namespaces/default/pods/"))
+                            document["spec"]=QJsonObject{{"containers",QJsonArray{QJsonObject{{"name","main"},{"image","example.test/app:1"}}}}};
                     }
                     if (scenario == "missing_kind") {
                         // Optional list kind is resolved by the discovery contract.
@@ -662,6 +672,12 @@ bool execute(const QString& requestedScenario) {
         if (!QDir().mkpath(profile)) return false;
         QFile invalid(QDir(profile).filePath("read-settings.json"));
         if (!invalid.open(QIODevice::WriteOnly) || invalid.write("{\"version\":1,\"requestHardLimitPerMinute\":-1,\"inactiveSyncMinutes\":0}") < 0) return false;
+    }
+    const auto previousFont = QGuiApplication::font();
+    const auto restoreFont = qScopeGuard([&] { if (scenario.startsWith("shell_text_")) QGuiApplication::setFont(previousFont); });
+    if (scenario.startsWith("shell_text_")) {
+        auto font = previousFont; font.setPixelSize(scenario=="shell_text_initial" ? 28 : 14);
+        QGuiApplication::setFont(font);
     }
     podlord::Workspace workspace(profile, nullptr, [&] { return reference; });
     if ((scenario == "session_tabs_controls" || scenario.startsWith("radar_") || scenario.startsWith("map_") || scenario=="inspector_malformed")
@@ -1485,6 +1501,96 @@ bool execute(const QString& requestedScenario) {
         }
         const auto calls=server.requests.size();
         auto* radar=item(window,"resourceRadar");
+        if (scenario=="shell_text_renderer_invalid") {
+            if (!radar) return false;
+            const auto pose=radar->property("viewPose");
+            QSignalSpy changes(radar,SIGNAL(textSizesChanged()));
+            for (const auto* property:{"captionPixelSize","headingPixelSize"}) {
+                const auto original=radar->property(property).toDouble();
+                for (const auto invalid:{qreal(0),qreal(-1),std::numeric_limits<qreal>::quiet_NaN()}) {
+                    changes.clear(); radar->setProperty(property,invalid);
+                    if (radar->property(property).toDouble()!=original || !changes.isEmpty()) return false;
+                }
+                radar->setProperty(property,original*2);
+                if (radar->property(property).toDouble()!=original*2) return false;
+                changes.clear(); radar->setProperty(property,original*2);
+                if (!changes.isEmpty()) return false;
+                radar->setProperty(property,original);
+            }
+            return radar->property("viewPose")==pose && server.requests.size()==calls;
+        }
+        if (scenario=="shell_text_terminal_invalid") {
+            if (!workspace.inspectPath("/api/v1/namespaces/default/pods/alpha")
+                || !waitFor([&] { return workspace.canStartTerminal(); }) || !workspace.setInspectorPage("terminal")
+                || !waitFor([&] { return item(window,"terminalSurface")!=nullptr; })) return false;
+            auto* surface=item(window,"terminalSurface");
+            const auto original=surface->property("fontPixelSize").toInt();
+            const auto requests=server.requests.size();
+            QSignalSpy changes(surface,SIGNAL(colorsChanged()));
+            for (const int invalid:{0,-1}) {
+                surface->setProperty("fontPixelSize",invalid);
+                if (surface->property("fontPixelSize").toInt()!=original || !changes.isEmpty()) return false;
+            }
+            surface->setProperty("fontPixelSize",original*2);
+            if (surface->property("fontPixelSize").toInt()!=original*2) return false;
+            changes.clear(); surface->setProperty("fontPixelSize",original*2);
+            if (!changes.isEmpty()) return false;
+            surface->setProperty("fontPixelSize",original);
+            return surface->property("fontPixelSize").toInt()==original && server.requests.size()==requests;
+        }
+        if (scenario=="shell_text_system") {
+            const auto expected=qEnvironmentVariable("PODLORD_SYSTEM_TEXT_MINIMUM").toDouble();
+            const auto actualFont=[&](QQuickItem* control) { return control ? control->property("font").value<QFont>().pixelSize() : 0; };
+            const auto fontFailure=[&](const char* stage) { qWarning()<<"System text probe"<<stage<<"minimum"<<expected<<"body"<<window->property("font")<<"cell"<<actualFont(item(window,"cell_0_0")); saveShellFrame(window,"system-text-failure"); return false; };
+            if (expected<14 || !waitFor([&] {
+                return window->property("font").value<QFont>().pixelSize()>=expected && actualFont(item(window,"cell_0_0"))>=expected*13/14-1;
+            })) return fontFailure("initial size");
+            const int body=window->property("font").value<QFont>().pixelSize();
+            const int cell=actualFont(item(window,"cell_0_0"));
+            if (!saveShellFrame(window,"system-text-resources") || !click(window,item(window,"settingsWorkspaceButton"))
+                || !waitFor([&] { return item(window,"settingsSectionPicker") && item(window,"settingsSectionPicker")->isVisible(); })
+                || !saveShellFrame(window,"system-text-settings") || !click(window,item(window,"resourcesWorkspaceButton"))
+                || !workspace.inspectPath("/api/v1/namespaces/default/pods/alpha")
+                || !waitFor([&] { return workspace.canStartTerminal(); }) || !saveShellFrame(window,"system-text-inspector")
+                || !workspace.setInspectorPage("terminal") || !waitFor([&] { return item(window,"terminalSurface")!=nullptr; })) return fontFailure("view journey");
+            const int terminal=item(window,"terminalSurface")->property("fontPixelSize").toInt();
+            if (terminal!=body || !saveShellFrame(window,"system-text-terminal") || !workspace.closeInspector()
+                || !workspace.setWorkspacePage("map") || !saveShellFrame(window,"system-text-map")) return fontFailure("view journey");
+            const auto* map=item(window,"resourceRadar");
+            const auto caption=map ? map->property("captionPixelSize").toDouble() : 0;
+            const auto directory=qEnvironmentVariable("PODLORD_SHELL_EVIDENCE");
+            QFile report(directory+"/system-text.json");
+            const auto bytes=QJsonDocument(QJsonObject{{"platform",QGuiApplication::platformName()}, {"bodyPixels",body},
+                {"cellPixels",cell}, {"terminalPixels",terminal}, {"radarCaptionPixels",caption},
+                {"width",window->width()}, {"height",window->height()}, {"minimumExpected",expected}}).toJson();
+            return caption>=11 && !directory.isEmpty() && report.open(QIODevice::WriteOnly) && report.write(bytes)==bytes.size();
+        }
+        if (scenario.startsWith("shell_text_")) {
+            if (scenario=="shell_text_resize") { auto font=QGuiApplication::font(); font.setPixelSize(28); QGuiApplication::setFont(font); }
+            if (!waitFor([&] {
+                auto* cell=item(window,"cell_0_2");
+                return window->property("font").value<QFont>().pixelSize()==28 && cell
+                    && cell->property("font").value<QFont>().pixelSize()==26 && cell->height()>=44;
+            })) { qWarning()<<"System font enlargement did not reach application and table"; return false; }
+            window->setMinimumHeight(0);
+            for (const auto size:{QSize(320,640),QSize(640,320),QSize(1440,920)}) {
+                window->resize(size);
+                if (!waitFor([&] { return displayedWithin(item(window,"workspaceToolbar"),item(window,"workspaceActionsButton")); })
+                    || !saveShellFrame(window,scenario+"-"+QString::number(size.width())+"x"+QString::number(size.height()))) return false;
+            }
+            auto enlarged=QGuiApplication::font(); enlarged.setPixelSize(39); QGuiApplication::setFont(enlarged);
+            window->resize(320,640);
+            if (!click(window,item(window,"settingsWorkspaceButton")) || !waitFor([&] {
+                auto* box=item(window,"muteAlerts");
+                auto* label=box ? box->property("contentItem").value<QQuickItem*>() : nullptr;
+                return label && box->width()<=box->parentItem()->width()+1 && box->property("font").value<QFont>().pixelSize()==39 && label->width()>0 && label->property("paintedWidth").toReal()>0 && label->property("paintedWidth").toReal()<=label->width()+1;
+            }) || !saveShellFrame(window,scenario+"-largest-settings") || !click(window,item(window,"resourcesWorkspaceButton"))) return false;
+            window->resize(1440,920);
+            auto font=QGuiApplication::font(); font.setPixelSize(14); QGuiApplication::setFont(font);
+            return waitFor([&] { auto* restored=item(window,"cell_0_2"); return restored && window->property("font").value<QFont>().pixelSize()==14
+                && restored->property("font").value<QFont>().pixelSize()==13; })
+                && workspace.currentSession()!="" && server.requests.size()==calls;
+        }
         if (scenario == "shell_navigation_overflow") {
             window->setMinimumHeight(0);
             const auto session = workspace.currentSession();
@@ -3851,10 +3957,10 @@ bool execute(const QString& requestedScenario) {
             return workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
         }
         if (scenario=="radar_pulse_focus_refresh") {
-            auto* cpu=item(window,"pulse_cpu");
-            if (!cpu) return failed("CPU summary control");
-            cpu->forceActiveFocus();
-            const auto focused=[&] { return window->activeFocusItem() && window->activeFocusItem()->objectName()=="pulse_cpu"; };
+            auto* metric=item(window,"pulse_pods");
+            if (!metric) return failed("available Pod summary control");
+            metric->forceActiveFocus();
+            const auto focused=[&] { return window->activeFocusItem() && window->activeFocusItem()->objectName()=="pulse_pods"; };
             if (!workspace.filterField("name","\"alpha\"") || !waitFor([&] { return workspace.resourceCount()==1; })
                 || !focused()) return failed("metric update preserves keyboard focus");
             if (!workspace.resetResourceFilters() || !waitFor([&] { return workspace.resourceCount()==expectedRows; })
@@ -6276,12 +6382,7 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
             return picker && picker->isVisible() ? choose("settingsSectionPicker", index)
                 : click(window, item(window, sections[index].second));
         };
-        const auto dismissSidebar = [&] {
-            auto* drawer = window->findChild<QObject*>("sidebarDrawer");
-            if (!drawer || !drawer->property("visible").toBool()) return true;
-            QTest::keyClick(window, Qt::Key_Escape);
-            return waitFor([&] { return !drawer->property("visible").toBool(); });
-        };
+        const auto dismissSidebar = [&] { return podlord::test::closeSidebarDrawer(window); };
         const auto capture = [&](const QString& view, int themeIndex, const QString& variant) {
             QSignalSpy frame(window, &QQuickWindow::frameSwapped);
             window->requestUpdate();
@@ -6291,7 +6392,8 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
             if (image.isNull() || !image.save(QDir(directory).filePath(file), "PNG")) return false;
             captures.append(QJsonObject{{"theme", workspace.themeName()}, {"variant", variant}, {"view", view},
                 {"file", file}, {"width", image.width()}, {"height", image.height()},
-                {"resources", workspace.totalResourceCount()}});
+                {"resources", workspace.totalResourceCount()}, {"workspacePage",workspace.workspacePage()},
+                {"bodyPixels",window->property("font").value<QFont>().pixelSize()}});
             return true;
         };
         const auto names = workspace.themeNames();
@@ -6315,7 +6417,7 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
                     {"radar", ""}, {"events", "eventsWorkspaceButton"}, {"ports", "portForwardTasksButton"}}) {
                     if (view.first=="radar" ? !podlord::test::focusResourceRadar(window) : !click(window,item(window,view.second))) return failure("theme workspace navigation");
                     if (view.first != "radar" && !waitFor([&] { return workspace.workspacePage() == view.first; })) return failure("theme workspace selection");
-                    if (!capture(view.first, themeIndex, variant) || !dismissSidebar()) return failure("theme workspace capture");
+                    if (!capture(view.first, themeIndex, variant) || !dismissSidebar()) return failure(qPrintable("theme workspace capture "+view.first));
                 }
                 if (!click(window, item(window, "resourcesWorkspaceButton"))) return failure("theme resource navigation");
                 if (!type(window, item(window, "resourceFilter"), "\"local-path-config\"")) return failure("theme resource search input");

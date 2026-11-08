@@ -12,7 +12,7 @@ ResourceGrid {
     sortDirection: workspace.valuesSortDirection
     sortableColumns: 3
     inspectable: false
-    rowHeight: 64
+    rowHeight: (64) * workspace.textScale
     wrapCells: true
     actionColumns: [4]
     accessoryColumns: [3]

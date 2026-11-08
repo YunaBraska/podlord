@@ -223,7 +223,7 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME native.ui.compact_toolbar COMMAND workspace_ui_test compact_toolbar)
     set_tests_properties(native.ui.compact_toolbar PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
-    foreach(scenario search_demand search_events search_map_queued footer_narrow tools_menu touch touch_search_tooltip reset_icon navigation_overflow metric_empty metric_zero empty_cache)
+    foreach(scenario search_demand search_events search_map_queued footer_narrow tools_menu touch touch_search_tooltip reset_icon navigation_overflow metric_empty metric_zero empty_cache text_initial text_resize text_renderer_invalid text_terminal_invalid)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.shell_${scenario}_${style} COMMAND workspace_ui_test shell_${scenario})
             set_tests_properties(native.ui.shell_${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -353,7 +353,11 @@ target_sources(podlord_workspace PRIVATE src/yaml_presentation.cpp)
 target_sources(podlord_workspace PRIVATE src/platform_websocket_tls.cpp)
 target_sources(podlord_workspace PRIVATE src/runtime_diagnostics.cpp src/workspace_diagnostics.cpp)
 target_sources(podlord_workspace PRIVATE src/resource_cache_diagnostics.cpp src/release_updates.cpp src/workspace_windows.cpp src/window_host.cpp)
-target_sources(podlord_workspace PRIVATE src/workspace_snapshots.cpp)
+target_sources(podlord_workspace PRIVATE src/workspace_snapshots.cpp src/system_typography.cpp)
+if(IOS)
+    target_sources(podlord_workspace PRIVATE src/system_typography_ios.mm)
+    target_link_libraries(podlord_workspace PRIVATE "-framework UIKit")
+endif()
 if(BUILD_TESTING)
     add_executable(snapshot-preparation-test tests/snapshot_preparation_test.cpp)
     target_link_libraries(snapshot-preparation-test PRIVATE podlord_workspace Qt6::Test)
@@ -413,7 +417,7 @@ foreach(file IN LISTS dependency_notice_files)
     set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
 endforeach()
 set(workspace_qml_files
-    ui/Main.qml ui/IconButton.qml ui/DialogHeader.qml ui/WorkspaceTab.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
+    ui/Main.qml ui/IconButton.qml ui/DialogHeader.qml ui/WorkspaceTab.qml ui/WrappingCheckBox.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
     ui/ConnectionsView.qml ui/SettingsView.qml ui/AboutView.qml
     ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/SessionManager.qml ui/FieldFilterEditor.qml
     ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml

@@ -10,7 +10,7 @@ ColumnLayout {
     id: grid
     Layout.minimumHeight: implicitHeight
     readonly property var colors: workspace.appearanceColors
-    readonly property font cellFont: Qt.font({family: workspace.monospaceFamily, pixelSize: 13, weight: Font.Normal})
+    readonly property font cellFont: Qt.font({family: workspace.monospaceFamily, pixelSize: workspace.textSizes.cell, weight: Font.Normal})
     required property var tableModel
     required property int sortColumn
     required property string sortDirection
@@ -18,13 +18,13 @@ ColumnLayout {
     required property string emptyText
     property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
     property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
-    readonly property string layoutSignature: JSON.stringify(columns.map(function(column) {
+    readonly property string layoutSignature: JSON.stringify([rowHeight, workspace.textSizes.body, columns.map(function(column) {
         return [column.column, column.width, column.visible, column.pinned]
-    }))
+    })])
     property var visualOrder: []
     property bool inspectable: true
     property int sortableColumns: -1
-    property int rowHeight: 32
+    property int rowHeight: Math.max(32, Math.ceil(workspace.textSizes.cell * 1.3) + 12)
     property bool wrapCells: false
     property var actionColumns: []
     property var accessoryColumns: []
@@ -154,6 +154,8 @@ ColumnLayout {
     }
     function synchronizeColumns() {
         if (!visible || table.columns !== columns.length) return
+        scrollingHeader.forceLayout()
+        pinnedHeader.forceLayout()
         const wanted = columns.filter(function(column) { return column.visible && column.pinned }).concat(columns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
         if (table.rows > 0 && wanted.every(function(column, position) { return table.columnAtIndex(tableModel.index(0, column)) === position })) {
             visualOrder = wanted
@@ -256,8 +258,8 @@ ColumnLayout {
             objectName: (pinned ? "pinnedHeader_" : grid.prefix === "resource" ? "header_" : grid.prefix + "Header_") + column
             text: model.display
             implicitWidth: 170
-            implicitHeight: 38
-            font.pixelSize: 14
+            implicitHeight: Math.max(38, Math.ceil(workspace.textSizes.body * 1.3) + 12)
+            font.pixelSize: workspace.textSizes.body
             font.bold: true
             leftPadding: 10; rightPadding: 10
             background: Rectangle {
@@ -273,7 +275,7 @@ ColumnLayout {
                     fill: grid.colors.accent
                 }
                 Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight }
-                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: 12 }
+                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small }
             }
             focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
             Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
@@ -548,7 +550,7 @@ ColumnLayout {
                 id: emptyTitle; visible: grid.prefix === "resource"
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: workspace.uiText[workspace.totalResourceCount > 0 ? "resource.noMatchingTitle" : workspace.loading ? "resource.loadingTitle" : "resource.emptyTitle"]
-                textFormat: Text.PlainText; font.pixelSize: parent.columns === 2 ? 18 : 24; font.bold: true
+                textFormat: Text.PlainText; font.pixelSize: parent.columns === 2 ? workspace.textSizes.subheading : workspace.textSizes.title; font.bold: true
                 color: grid.colors.accent; wrapMode: Text.Wrap
             }
             Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: grid.colors.muted }

@@ -124,6 +124,8 @@ Pane {
                 }
                 identityScope: workspace.sessionConfiguration(workspace.currentSession).contextId || ""
                 textColor: "#DDE7EC"
+                captionPixelSize: workspace.textSizes.caption
+                headingPixelSize: workspace.textSizes.small
                 readonly property int count: workspace.resourceCount
                 readonly property real cellWidth: 7 * viewPose.zoom
                 readonly property bool renderActive: visible && Window.window !== null && Window.window.visibility !== Window.Hidden && Window.window.visibility !== Window.Minimized

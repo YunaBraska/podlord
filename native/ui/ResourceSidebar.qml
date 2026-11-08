@@ -177,7 +177,7 @@ Pane {
                     objectName: "sourcesButton"
                     text: workspace.title || "Sources"
                     Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0
-                    implicitHeight: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32
+                    implicitHeight: Math.max(sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
                     contentItem: Label { text: sourceAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                     Accessible.name: "Show or hide kubeconfig sources"
                     onClicked: sourcesRequested()
@@ -243,7 +243,7 @@ Pane {
             ListView {
                 id: savedFilters
                 objectName: "savedFilterOptions"
-                readonly property int rowHeight: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32
+                readonly property int rowHeight: Math.max(sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? Math.min(180, count * rowHeight) : 0
                 visible: sidebar.presetsExpanded
@@ -305,7 +305,7 @@ Pane {
                     id: fieldButton
                     readonly property var modelData: fieldGroup.modelData
                     objectName: "sidebarField_" + modelData.id
-                    Layout.fillWidth: true; implicitHeight: sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 30
+                    Layout.fillWidth: true; implicitHeight: Math.max(sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 30, Math.ceil(workspace.textSizes.body * 1.3) + 12)
                     text: modelData.name + (workspace.resourceFieldFilters[modelData.id] ? ": " + workspace.resourceFieldFilters[modelData.id] : "")
                     leftPadding: 10; rightPadding: 10
                     font.bold: true

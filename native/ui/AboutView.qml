@@ -76,7 +76,7 @@ ColumnLayout {
         Image { objectName: "aboutLogo"; Layout.preferredWidth: 96; Layout.preferredHeight: 96; source: "qrc:/podlord/brand-logo.png"; sourceSize.width: 192; sourceSize.height: 192; fillMode: Image.PreserveAspectFit; asynchronous: true; Accessible.ignored: true }
         ColumnLayout {
             Layout.fillWidth: true; Layout.minimumWidth: 0
-            Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "PODLORD"; font.pixelSize: 24; font.bold: true; color: workspace.appearanceColors.accent; elide: Text.ElideRight }
+            Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "PODLORD"; font.pixelSize: workspace.textSizes.title; font.bold: true; color: workspace.appearanceColors.accent; elide: Text.ElideRight }
             Label { objectName: "aboutTagline"; Layout.fillWidth: true; text: workspace.uiText["about.tagline"]; font.italic: true; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
             Label { objectName: "settingsVersion"; Layout.fillWidth: true; text: workspace.uiText["about.version"].replace("{0}", Qt.application.version); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
         }

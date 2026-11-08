@@ -308,17 +308,29 @@ inline bool clickVisible(QQuickWindow* window, const QString& name, Qt::MouseBut
     }
     return false;
 }
+/** Dismiss the actual modal Drawer through its public outside-tap gesture. */
+inline bool closeSidebarDrawer(QQuickWindow* window) {
+    auto* drawer=window ? window->findChild<QObject*>("sidebarDrawer") : nullptr;
+    if (!drawer || !drawer->property("visible").toBool()) return true;
+    if (!QTest::qWaitFor([&] { return drawer->property("opened").toBool(); },2000)) return false;
+    const auto left=drawer->property("x").toReal();
+    const auto right=left+drawer->property("width").toReal();
+    const auto outside=left>1 ? left/2 : right+(window->width()-right)/2;
+    QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,QPoint(qRound(outside),window->height()/2));
+    return QTest::qWaitFor([&] { return !drawer->property("visible").toBool(); },2000);
+}
 /** Open the retained Radar through the actual workspace controls, using Map when space is compact. */
 inline bool focusResourceRadar(QQuickWindow* window, bool expanded = false) {
     if (!window) return false;
-    const bool map = expanded || window->property("compactLandscape").toBool();
+    const auto* sidebar=window->findChild<QQuickItem*>("workspaceSidebar");
+    const bool map = expanded || window->property("compactLandscape").toBool()
+        || (sidebar && sidebar->property("suppressSmallRadar").toBool());
     const auto navigation = map ? "mapWorkspaceButton" : "resourcesWorkspaceButton";
     auto* button = visibleItem(window->contentItem(),navigation);
     if (!button || !button->property("checked").toBool()) {
         auto* drawer = window->findChild<QObject*>("sidebarDrawer");
         if (drawer && drawer->property("visible").toBool()) {
-            QTest::keyClick(window,Qt::Key_Escape);
-            if (!QTest::qWaitFor([&] { return !drawer->property("visible").toBool(); },2000)) return false;
+            if (!closeSidebarDrawer(window)) return false;
         }
         if (!clickVisible(window,navigation)) return false;
     }

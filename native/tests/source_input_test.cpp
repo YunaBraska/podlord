@@ -49,7 +49,7 @@ Response run(const QString& executable, const QString& profile, const QStringLis
     return {process.exitCode(), document.object()};
 }
 bool click(QQuickWindow* window, QQuickItem* target) {
-    if (!target || !target->isVisible() || !target->isEnabled()) return false;
+    if (!target || !target->isEnabled()) return false;
     return podlord::test::clickVisible(window,target->objectName());
 }
 bool ui(const QString& profile, const QString& directory, bool partial, int width = 0) {

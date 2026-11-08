@@ -6,7 +6,7 @@ TabButton {
     id: tab
     width: visible ? undefined : 0
     implicitWidth: Math.max(88, implicitContentWidth + leftPadding + rightPadding)
-    implicitHeight: Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32
+    implicitHeight: Math.max(Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32, implicitContentHeight + topPadding + bottomPadding)
     padding: 8
     font.bold: true
     Accessible.role: Accessible.PageTab

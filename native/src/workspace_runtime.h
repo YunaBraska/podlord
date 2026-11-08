@@ -3,6 +3,7 @@
 #include "credential_process.h"
 #include "release_updates.h"
 #include "map_previews.h"
+#include "system_typography.h"
 
 namespace podlord {
 class Workspace;
@@ -17,6 +18,7 @@ public:
     CredentialProcess credentials;
     ReleaseUpdates releases;
     MapPreviews previews{profile};
+    SystemTypography typography;
     QList<Workspace*> windows;
     QMap<QString, Workspace*> owners;
     quint64 selectionRevision = 0;

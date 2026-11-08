@@ -114,7 +114,7 @@ ColumnLayout {
             required property string line
             objectName: "logEntry_" + index
             width: lines.width
-            height: 30
+            height: Math.max(30, implicitContentHeight + topPadding + bottomPadding)
             text: line
             Accessible.name: line
             highlighted: lines.currentIndex === index

@@ -23,10 +23,10 @@ Pane {
             Label { Layout.fillWidth: true; text: workspace.sourceRemoval.name || ""; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
             Label { Layout.fillWidth: true; text: "This removes the context and the saved sessions below. Their tabs and port-forwards will close. Original kubeconfig files and other contexts stay unchanged."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ListView {
-                Layout.fillWidth: true; Layout.preferredHeight: Math.min(180, count * 28)
+                Layout.fillWidth: true; Layout.preferredHeight: Math.min(180 * workspace.textScale, count * Math.max(28, workspace.textSizes.body * 1.3))
                 clip: true; reuseItems: true; model: workspace.sourceRemoval.sessions || []
                 ScrollBar.vertical: ScrollBar {}
-                delegate: Label { required property string modelData; width: ListView.view.width; height: 28; text: modelData; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: modelData }
+                delegate: Label { required property string modelData; width: ListView.view.width; height: Math.max(28, implicitHeight); text: modelData; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: modelData }
             }
             Label { visible: !(workspace.sourceRemoval.sessions || []).length; text: "No saved sessions use this context."; textFormat: Text.PlainText }
             Label { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
@@ -90,13 +90,13 @@ Pane {
         required property string label
         required property string help
         default property alias controls: editor.data
-        readonly property bool narrow: width < 650
+        readonly property bool narrow: width < 650 * workspace.textScale
         Layout.fillWidth: true; columns: narrow ? 1 : 2
         columnSpacing: 14; rowSpacing: 6
         data: [
         Label { Layout.row: 0; Layout.column: 0; Layout.preferredWidth: parent.narrow ? -1 : 240; text: parent.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
         ,ColumnLayout { id: editor; Layout.row: parent.narrow ? 1 : 0; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; Layout.maximumWidth: parent.narrow ? Number.POSITIVE_INFINITY : 420 }
-        ,Label { Layout.row: parent.narrow ? 2 : 1; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; text: parent.help; visible: text !== ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+        ,Label { Layout.row: parent.narrow ? 2 : 1; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; text: parent.help; visible: text !== ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; font.pixelSize: workspace.textSizes.small; wrapMode: Text.Wrap }
         ,Rectangle { Layout.row: parent.narrow ? 3 : 2; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
         ]
     }
@@ -104,7 +104,7 @@ Pane {
     TableColumnsDialog { id: eventColumns; tableType: "event"; columns: workspace.eventColumns }
     contentItem: ColumnLayout {
         spacing: 12
-        Label { text: workspace.uiText["settings.title"]; font.pixelSize: 16; font.bold: true; color: workspace.appearanceColors.accent }
+        Label { text: workspace.uiText["settings.title"]; font.pixelSize: workspace.textSizes.heading; font.bold: true; color: workspace.appearanceColors.accent }
         TabBar {
             id: settingsTabs
             Layout.fillWidth: true; Layout.minimumWidth: 0
@@ -115,7 +115,7 @@ Pane {
                 const destination = settings.sections[currentIndex].id
                 if (settings.section !== destination) settings.section = destination
             }
-            visible: settings.width >= 650
+            visible: settings.width >= 650 * workspace.textScale
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
             SectionButton { objectName: "settingsDiagnosticsSection"; text: workspace.uiText["settings.diagnostics"]; destination: "diagnostics" }
@@ -127,7 +127,7 @@ Pane {
             SectionButton { objectName: "settingsAboutSection"; text: workspace.uiText["settings.about"]; destination: "about" }
         }
         ComboBox {
-            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 650
+            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 650 * workspace.textScale
             model: settings.sections; textRole: "label"; valueRole: "id"
             currentIndex: model.findIndex(option => option.id === settings.section)
             Accessible.name: workspace.uiText["settings.title"]
@@ -156,9 +156,9 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "graphics"
-                    SettingRow { label: "Radar background water"; help: "Only background water animates. Events do not create water effects."; CheckBox { objectName: "inlineRadarWaterEnabled"; text: "Enabled"; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
+                    SettingRow { label: "Radar background water"; help: "Only background water animates. Events do not create water effects."; WrappingCheckBox { objectName: "inlineRadarWaterEnabled"; text: "Enabled"; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
                     SettingRow { label: "Water speed"; help: "0 hides waves. Hidden or minimized Radar does not animate."; RowLayout { Layout.fillWidth: true; Slider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterSpeedPercent; enabled: !workspace.busy; Accessible.name: "Water speed in percent"; onMoved: if (!pressed) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)) } Label { text: workspace.radarWaterSpeedPercent + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
-                    SettingRow { label: "Reduced motion"; help: "Freezes water and removes moving alert effects. No screensaver is used."; CheckBox { objectName: "inlineReducedMotion"; text: "Enabled"; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
+                    SettingRow { label: "Reduced motion"; help: "Freezes water and removes moving alert effects. No screensaver is used."; WrappingCheckBox { objectName: "inlineReducedMotion"; text: "Enabled"; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sync"
@@ -178,7 +178,7 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "workspace"
-                    SettingRow { label: "Workspace restoration"; help: "Reopen saved tabs on next launch. Off starts with closed tabs but retains sessions and their view preferences. Changing this does not close current tabs or port forwards; forwards never restart automatically."; CheckBox { objectName: "inlineWorkspaceRestore"; text: "Restore tabs on launch"; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: "Restore workspace tabs on launch"; onClicked: workspace.saveWorkspaceRestore(checked) } }
+                    SettingRow { label: "Workspace restoration"; help: "Reopen saved tabs on next launch. Off starts with closed tabs but retains sessions and their view preferences. Changing this does not close current tabs or port forwards; forwards never restart automatically."; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: "Restore tabs on launch"; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: "Restore workspace tabs on launch"; onClicked: workspace.saveWorkspaceRestore(checked) } }
                     SettingRow { label: "Session configuration"; help: "Save closed configuration snapshots or independent copies without changing the active session."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsManageSessions"; text: "Manage sessions"; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
                     SettingRow { label: "Resource columns"; help: "Show, hide, order, resize and pin columns. Saved layouts are not overwritten by new defaults."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsResourceColumns"; text: "Configure resource columns"; onClicked: resourceColumns.open() } }
                     SettingRow { label: "Event columns"; help: "Event layouts are independent from resource layouts."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsEventColumns"; text: "Configure Event columns"; onClicked: eventColumns.open() } }
@@ -239,7 +239,7 @@ Pane {
                         visible: settings.section === "sources"; prefix: "source"
                         tableModel: workspace.sourceTable; columns: workspace.sourceColumns
                         sortColumn: workspace.sourceSortColumn; sortDirection: workspace.sourceSortDirection
-                        rowHeight: settings.width < 650 ? 44 : 32
+                        rowHeight: (settings.width < 650 * workspace.textScale ? 44 : 32) * workspace.textScale
                         sortableColumns: 8; actionColumns: [8,9]; accessoryColumns: [8,9]
                         emptyText: "No imported contexts. Open or paste a kubeconfig."
                         onSortRequested: column => workspace.sortSourceColumn(column)

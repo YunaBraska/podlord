@@ -55,6 +55,8 @@ class RadarIsland : public QQuickPaintedItem {
     Q_PROPERTY(QVariantMap viewPose READ viewPose WRITE setViewPose NOTIFY viewPoseChanged)
     Q_PROPERTY(int currentIndex READ currentIndex NOTIFY currentResourceChanged)
     Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor NOTIFY textColorChanged)
+    Q_PROPERTY(qreal captionPixelSize READ captionPixelSize WRITE setCaptionPixelSize NOTIFY textSizesChanged)
+    Q_PROPERTY(qreal headingPixelSize READ headingPixelSize WRITE setHeadingPixelSize NOTIFY textSizesChanged)
     Q_PROPERTY(Alerts* alerts READ alerts WRITE setAlerts NOTIFY alertsChanged)
     Q_PROPERTY(bool effectsEnabled READ effectsEnabled WRITE setEffectsEnabled NOTIFY effectsEnabledChanged)
     Q_PROPERTY(QColor glyphFill READ glyphFill WRITE setGlyphFill NOTIFY glyphFillChanged)
@@ -69,6 +71,10 @@ public:
     QAbstractItemModel* tiles() { return &tiles_; }
     QVariantMap viewPose() const;
     QColor textColor() const { return textColor_; }
+    qreal captionPixelSize() const { return captionPixelSize_; }
+    qreal headingPixelSize() const { return headingPixelSize_; }
+    void setCaptionPixelSize(qreal size);
+    void setHeadingPixelSize(qreal size);
     Alerts* alerts() const { return alerts_; }
     bool effectsEnabled() const { return effectsEnabled_; }
     QColor glyphFill() const { return glyphFill_; }
@@ -102,6 +108,7 @@ signals:
     void viewPoseChanged();
     void currentResourceChanged();
     void textColorChanged();
+    void textSizesChanged();
     void alertsChanged();
     void effectsEnabledChanged();
     void glyphFillChanged();
@@ -144,6 +151,7 @@ private:
     QRectF terrainBounds_;
     QPointF pan_;
     QColor textColor_{QStringLiteral("#DDE7EC")};
+    qreal captionPixelSize_ = 11, headingPixelSize_ = 12;
     QString currentPath_;
     QString identityScope_;
     double zoom_ = 1;

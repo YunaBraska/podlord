@@ -62,7 +62,7 @@ Dialog {
                 required property int index
                 objectName: "commandEntry_" + modelData.text
                 width: ListView.view.width
-                height: 38
+                height: Math.max(38, implicitContentHeight + topPadding + bottomPadding)
                 text: modelData.text + (modelData.enabled ? "" : " (unavailable)")
                 enabled: modelData.enabled
                 highlighted: ListView.isCurrentItem

@@ -347,6 +347,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     diagnosticRows_(nullptr, {"label", "value", "description"}, {"Metric", "Value", "Description"}, "id", true),
     requestAuditRows_(nullptr, {"time", "method", "path", "priority", "status", "duration", "outcome"},
         {"Time", "Method", "Path", "Priority", "Status", "Duration", "Outcome"}, "id") {
+    connect(&runtime_->typography, &SystemTypography::changed, this, &Workspace::typographyChanged);
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::filterPresetsChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::tableLayoutStatusChanged, this, &Workspace::sessionWindowActionsReadyChanged);
