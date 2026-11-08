@@ -61,6 +61,10 @@ ApplicationWindow {
     Action { id: portCommand; text: "Open Port Forwards"; enabled: workspace.canPortForward; onTriggered: workspace.preparePortForward() }
     Action { id: settingsCommand; text: "Open Settings"; checkable: true; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts"; onTriggered: workspace.setWorkspacePage("settings") }
     Action { id: connectionsCommand; text: workspace.uiText["nav.ports"]; checkable: true; checked: workspace.workspacePage === "ports"; onTriggered: workspace.setWorkspacePage("ports") }
+    ActionGroup {
+        id: workspaceNavigationActions
+        actions: [mapCommand, resourcesCommand, eventsCommand, connectionsCommand, settingsCommand]
+    }
     Action { id: sidebarCommand; text: "Show or hide radar and filters"; onTriggered: window.toggleSidebar() }
     Action {
         id: searchCommand

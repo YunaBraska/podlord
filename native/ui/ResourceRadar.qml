@@ -370,7 +370,7 @@ Pane {
                     y: radarNavigation.height + (grid.height - radarNavigation.height - height) / 2
                     visible: grid.count === 0 && grid.height - radarNavigation.height >= implicitHeight + 8
                     width: Math.min(320, parent.width - 24)
-                    text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources. Cached resources appear as they arrive." : "No resources match. Reset the filters to see the available cache."
+                    text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources. Cached resources appear as they arrive." : workspace.totalResourceCount === 0 ? "No resources are cached for this context." : "No resources match. Reset the filters to see the available cache."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter

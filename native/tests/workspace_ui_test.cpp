@@ -459,6 +459,7 @@ public:
                         metadata["resourceVersion"] = QString::number(requests.size());
                         document["metadata"] = metadata;
                     }
+                    if (scenario=="shell_empty_cache" && document.contains("items")) document["items"]=QJsonArray{};
                     if (raw.isEmpty()) raw = QJsonDocument(document).toJson(QJsonDocument::Compact);
                     const auto response = "HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Type: application/json\r\nConnection: close\r\nRetry-After: 1\r\nLocation: http://127.0.0.1:9/credential-leak\r\nContent-Length: " + QByteArray::number(raw.size()) + "\r\n\r\n" + raw;
                     const QPointer<QTcpSocket> live(socket);
@@ -1468,6 +1469,15 @@ bool execute(const QString& requestedScenario) {
         if (!reported) std::fprintf(stderr, "Invalid list response was not reported; visible status: %s; requests: %s\n", qPrintable(text(window, "syncProblemMessage")), qPrintable(server.requests.join('\n')));
         return reported;
     }
+    if (scenario=="shell_empty_cache") {
+        if (!waitFor([&] { return !workspace.loading() && !workspace.busy(); })
+            || !click(window,item(window,"mapWorkspaceButton"))) return false;
+        return waitFor([&] {
+            auto* empty=item(window,"emptyRadar");
+            return workspace.totalResourceCount()==0 && empty && empty->isVisible()
+                && text(window,"emptyRadar")=="No resources are cached for this context.";
+        });
+    }
     if (scenario.startsWith("shell_")) {
         if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" ? 5 : 3) && !workspace.loading(); },10000)) {
             std::fprintf(stderr, "Shell cache failed: resources=%d loading=%d busy=%d error=%s\n", workspace.totalResourceCount(), workspace.loading(), workspace.busy(), qPrintable(text(window, "errorMessage")));
@@ -1501,12 +1511,18 @@ bool execute(const QString& requestedScenario) {
                 || !click(window,item(window,"workspaceActionsButton"))) return false;
             auto* selected = podlord::test::visibleItem(window->contentItem(),"settingsWorkspaceButton");
             if (!selected || !selected->property("checkable").toBool() || !selected->property("checked").toBool()) return false;
+            if (!click(window,selected) || !waitFor([&] {
+                return workspace.workspacePage()=="settings" && item(window,"settingsWorkspaceButton")->property("checked").toBool()
+                    && item(window,"workspaceActionsButton")->property("activeIndicator").toBool();
+            })) return false;
             QTest::keyClick(window,Qt::Key_Escape);
             if (!click(window,item(window,"workspaceActionsButton"))) return false;
             auto* metric = podlord::test::visibleItem(window->contentItem(),"overflowMetric_pods");
             if (!metric || !click(window,metric) || workspace.workspacePage()!="dashboard") return false;
             window->resize(1440,920);
-            return click(window,item(window,"resourcesWorkspaceButton")) && workspace.currentSession()==session && server.requests.size()==calls;
+            return click(window,item(window,"resourcesWorkspaceButton")) && click(window,item(window,"resourcesWorkspaceButton"))
+                && item(window,"resourcesWorkspaceButton")->property("checked").toBool()
+                && workspace.currentSession()==session && server.requests.size()==calls;
         }
         if (scenario == "shell_metric_empty") {
             if (!workspace.filter("no-matching-resource")) return false;
