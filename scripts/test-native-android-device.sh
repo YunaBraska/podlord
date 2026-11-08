@@ -442,12 +442,13 @@ steps.push({step:'Same-session Map overview, namespace zoom and return to Table 
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
 click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');
 // The footer is intentionally hidden here. Session health is not a filtered row count.
-search('visual-multi-container');
+search('kind:Pod name:visual-multi-container');
 const filterDeadline=Date.now()+30000;
 do{state();if(!nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))break;}while(Date.now()<filterDeadline);
 if(nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))throw Error('Problems filter retained the known healthy Pod');
 click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');
-waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+waitNode('cell_0_1',n=>(n.text||n['content-desc'])==='Pod');
+waitNode('cell_0_3',n=>(n.text||n['content-desc'])==='Running');
 search('');steps.push({step:'Problems filter excludes the known healthy Pod and restores it when disabled through public input'});
 filterPresetJourney();
 click('toggleLandscapeFilters');
