@@ -3098,11 +3098,11 @@ bool execute(const QString& requestedScenario) {
         const int requests = server.requests.size();
         auto* view = item(window, "resourceTable");
         const auto show = [&](int index) {
-            QList<int> order;
-            for (const auto& value:workspace.resourceColumns()) { const auto state=value.toMap(); if (state["visible"].toBool() && state["pinned"].toBool()) order.append(state["column"].toInt()); }
-            for (const auto& value:workspace.resourceColumns()) { const auto state=value.toMap(); if (!state["visible"].toBool() || !state["pinned"].toBool()) order.append(state["column"].toInt()); }
-            QQmlExpression position(qmlContext(view), view, QString("positionViewAtColumn(%1, TableView.Contain)").arg(order.indexOf(index))); position.evaluate();
-            const bool shown = !position.hasError() && waitFor([&] {
+            QQmlExpression position(qmlContext(view), view,
+                QString("positionViewAtColumn(columnAtIndex(model.index(0, %1)), TableView.Contain)").arg(index));
+            const bool shown = waitFor([&] {
+                position.evaluate();
+                if (position.hasError()) return false;
                 auto* cell = item(window, "cell_0_" + QString::number(index));
                 if (!cell || !cell->isVisible() || cell->width() <= 0 || view->property("moving").toBool()) return false;
                 const auto left = cell->mapToItem(view, {0,0}).x();
