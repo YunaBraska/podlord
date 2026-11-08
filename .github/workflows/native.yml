@@ -439,8 +439,13 @@ jobs:
           CMAKE_BUILD_PARALLEL_LEVEL=4 sh scripts/build-native-ios-toolchain.sh iphoneos \
             "$RUNNER_TEMP/native-toolchain/qt-sdk" "$RUNNER_TEMP/native-ios-toolchain" > "$RUNNER_TEMP/native-ios-toolchain.log" 2>&1 || { tail -40 "$RUNNER_TEMP/native-ios-toolchain.log"; exit 1; }
       - name: Cross-build unsigned iPhone and iPad application
+        env:
+          PODLORD_GKE_IOS_CLIENT_ID: ${{ vars.PODLORD_GKE_IOS_CLIENT_ID }}
         run: |
           set -eu
+          if [ -n "$PODLORD_GKE_IOS_CLIENT_ID" ]; then
+            printf '::add-mask::%s\n' "$PODLORD_GKE_IOS_CLIENT_ID"
+          fi
           log="$RUNNER_TEMP/native-ios.log"
           sdk="$RUNNER_TEMP/native-ios-toolchain"
           build="$RUNNER_TEMP/native-ios-build"
@@ -449,6 +454,7 @@ jobs:
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO -DQT_HOST_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk" \
             -DOPENSSL_ROOT_DIR="$sdk/ssl" -DFFMPEG_DIR="$sdk/media" \
             -Dyaml-cpp_DIR="$sdk/yaml/lib/cmake/yaml-cpp" -DBUILD_TESTING=OFF \
+            -DPODLORD_GKE_IOS_CLIENT_ID="$PODLORD_GKE_IOS_CLIENT_ID" \
             -DQT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY=ON >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
           cmake --build "$build" --config Release --target podlord-native --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
           app="$build/Release-iphoneos/podlord-native.app"
@@ -457,6 +463,12 @@ jobs:
           [ "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist")" = '17.0' ]
           [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$plist")" = '1' ]
           [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:1' "$plist")" = '2' ]
+          if [ -n "$PODLORD_GKE_IOS_CLIENT_ID" ]; then
+            [ "$(/usr/libexec/PlistBuddy -c 'Print :GIDClientID' "$plist")" = "$PODLORD_GKE_IOS_CLIENT_ID" ]
+            prefix=${PODLORD_GKE_IOS_CLIENT_ID%.apps.googleusercontent.com}
+            /usr/bin/plutil -extract CFBundleURLTypes xml1 -o - "$plist" | grep -F -q "<string>com.googleusercontent.apps.$prefix</string>"
+            printf 'Registered Google iOS client and callback scheme are included.\n' >> "$log"
+          fi
           for library in libavcodec libavformat libavutil libswresample libswscale; do
             [ -f "$app/Frameworks/$library.framework/$library" ]
           done

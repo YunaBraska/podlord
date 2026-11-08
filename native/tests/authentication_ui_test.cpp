@@ -152,7 +152,17 @@ bool execute(const QString& scenario) {
         if (!click(window, "authenticationCancel")) return false;
         QTest::qWait(100); return server.calls == 0 && read(counter).isEmpty() && workspace->authenticationRequired();
     }
+    if (scenario == "authenticated_transport_failure") server.close();
     if (!click(window, "authenticationAccept")) return failed("confirm login");
+    if (scenario == "authenticated_transport_failure") {
+        if (!waitFor([&] { return read(counter) == "call\n" && !workspace->authenticationRunning()
+            && !workspace->loading() && text(window, "syncProblemMessage").contains("Connection or TLS failure"); })) return failed("accepted credentials followed by transport failure");
+        const auto* authentication = item(window, "authenticationButton");
+        return (!workspace->authenticationRequired()
+            && !text(window, "syncProblemMessage").contains("/authentication")
+            && authentication && !authentication->isVisible() && server.calls == 0)
+            || failed("stale authentication message after accepted credentials");
+    }
     const auto first = workspace->currentSession();
     const auto openSecond = [&] {
         if (!click(window, "sourcesButton")) return false;

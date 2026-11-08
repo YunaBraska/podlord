@@ -844,7 +844,10 @@ bool ResourceClient::authenticate(const ClusterConnection& connection, const QSt
         if (it->connection.credentialId != connection.credentialId) continue;
         const auto context = it->connection.contextId;
         it->connection = connection; it->connection.contextId = context;
-        ++it->revision; it->suspended = false; emit changed(it.key());
+        ++it->revision;
+        it->suspended = false;
+        it->failures.remove("/authentication");
+        emit changed(it.key());
     }
     resetConnections_ = true; expire();
     return refresh(session, true);

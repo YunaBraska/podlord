@@ -1649,7 +1649,7 @@ Use the existing native Qt actions, not a second implementation of navigation, f
 
 Opening and searching the palette use local action metadata and must not request Kubernetes data. Resource/Event/Settings navigation and Problems filtering continue through their cache-backed owners. Port-forward preparation targets the current eligible selection and still requires the existing separate start confirmation. Source navigation selects Sources settings without importing or opening a session. Keep the button and Close action reachable at narrow widths.
 
-The native catalog implements all seven reference actions, including generated K3D import. Import uses the existing asynchronous source owner, an installed CLI without a shell, bounded output and explicit failure feedback. It preserves generated configuration bytes in immutable snapshots, normalizes only parsed local endpoints, and neither changes the user's kubeconfig nor opens a session or authentication implicitly. Missing tooling disables no unrelated capability. Generated sources require explicit re-export rather than file refresh. An embedded container terminal is a different capability.
+The native catalog reuses the confirmed workspace commands. K3D and K3s cluster creation belong only to local and CI end-to-end fixtures. Production imports standard kubeconfig content without K3D detection, export commands or a K3D-specific action. Import neither changes the user's original kubeconfig nor opens a session or authentication implicitly. An embedded container terminal is a different capability.
 
 ## How Does Explicit Native Startup Import Work?
 
