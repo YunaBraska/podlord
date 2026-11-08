@@ -442,7 +442,7 @@ steps.push({step:'Same-session Map overview, namespace zoom and return to Table 
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
 click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');
 // The footer is intentionally hidden here. Session health is not a filtered row count.
-search('kind:Pod name:visual-multi-container');
+search('visual-multi-container');
 const filterDeadline=Date.now()+30000;
 do{state();if(!nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))break;}while(Date.now()<filterDeadline);
 if(nodes.some(n=>/\.cell_\d+_\d+$/.test(n['resource-id']||'')))throw Error('Problems filter retained the known healthy Pod');
@@ -707,7 +707,11 @@ waitNode('sourceOverviewTab',n=>n.checked==='true');click('sourceYamlTab');
 waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||'')&&(n.text+' '+n['content-desc']).includes('android-owned-source-draft'));
 if(run('shell','cat','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig')!==importedFile)throw Error('Source Apply modified the original imported file');
 capture('source-yaml-applied');click('closeSourceInspector');click('resourcesWorkspaceButton');
-waitNode('cell_0_0',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+click('workspaceSearchButton');
+waitNode('resourceFilter',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
+click('workspaceSearchButton');
+waitNode('cell_0_1',n=>(n.text||n['content-desc'])==='Pod');
+waitNode('cell_0_3',n=>(n.text||n['content-desc'])==='Running');
 steps.push({step:'Portrait Sources touch editing keeps YAML above the keyboard, restores actions on dismissal and preserves the original file and existing session on immutable Apply'});
 }
 

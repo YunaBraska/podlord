@@ -6012,7 +6012,8 @@ bool realCluster(const QString& source) {
         auto* footer = item(window, "workspaceFooter");
         return content && inspector && footer && (systemWindow || !content->isVisible()) && inspector->isVisible()
             && inspector->height() > 100
-            && inspector->mapToScene(QPointF(0, inspector->height())).y() <= footer->mapToScene(QPointF()).y() + 1;
+            && inspector->mapToScene(QPointF(0, inspector->height())).y()
+                <= (footer->isVisible() ? footer->mapToScene(QPointF()).y() : window->height()) + 1;
     })) return failed(systemWindow ? "system-sized inspector layout" : "compact landscape inspector layout");
     std::printf("Real inspector viewport: platform=%s width=%d height=%d desktop-resize=%d\n",
         qPrintable(QGuiApplication::platformName()), window->width(), window->height(), !systemWindow);
