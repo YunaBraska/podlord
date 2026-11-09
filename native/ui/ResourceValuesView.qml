@@ -16,7 +16,7 @@ ResourceGrid {
     wrapCells: true
     actionColumns: [4]
     accessoryColumns: [3]
-    emptyText: "No values cached. Refresh detail to request current data."
+    emptyText: workspace.uiText["inspector.noValues"]
     property string copyError: ""
     function copy(identity, representation) {
         copyError = workspace.copyValue(identity, representation) ? "" : "Cannot decode this value as text. Copy the raw value instead."

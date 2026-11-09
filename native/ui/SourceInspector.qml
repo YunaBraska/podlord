@@ -127,7 +127,7 @@ Pane {
                         text: "Apply"
                         visible: workspace.sourceEditing
                         enabled: !workspace.busy && !workspace.discardPending
-                        Accessible.name: "Import edited kubeconfig as an immutable snapshot"
+                        Accessible.name: workspace.uiText["source.applyEdited"]
                         onClicked: workspace.applySourceDraft()
                     }
                     IconButton {

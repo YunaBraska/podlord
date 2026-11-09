@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include <QPointer>
 #include "ui_input.h"
 #include <QAbstractItemModel>
 #include <QClipboard>
@@ -77,8 +78,13 @@ bool run(const QString& scenario) {
     };
     const auto focus = [&](const QString& name) {
         for (int attempt=0; attempt<4; ++attempt) {
-            auto* item = control(name);
-            require(item && test::scrollIntoView(window,item), "Sources focus target missing.");
+            QPointer<QQuickItem> item;
+            require(QTest::qWaitFor([&] {
+                item = control(name);
+                return item && item->isVisible() && item->width() > 0 && item->height() > 0;
+            }), "Sources focus target missing.");
+            require(test::scrollIntoView(window,item), "Sources focus target could not be revealed.");
+            if (!item) continue;
             item->forceActiveFocus(Qt::TabFocusReason);
             QSignalSpy frame(window,&QQuickWindow::frameSwapped);
             window->update();

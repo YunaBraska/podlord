@@ -123,7 +123,7 @@ Pane {
                 id: guidanceToggle
                 objectName: "resourceGuidanceToggle"
                 Layout.fillWidth: true
-                text: (checked ? "Hide" : "Show") + " cached diagnostics (" + workspace.resourceGuidance.length + ")"
+                text: workspace.uiText["inspector.diagnostics"] + " (" + workspace.resourceGuidance.length + ")"
                 checkable: true
                 checked: false
                 Accessible.name: "Expand or collapse known diagnostic guidance"
@@ -153,7 +153,7 @@ Pane {
                         Flow {
                             Layout.fillWidth: true
                             spacing: 6
-                            Button { objectName: "guidanceEvents_" + index; text: workspace.uiText["inspector.events"]; Accessible.name: "Open cached events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
+                            Button { objectName: "guidanceEvents_" + index; text: workspace.uiText["inspector.events"]; Accessible.name: "Open events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
                             Button { objectName: "guidanceYaml_" + index; text: workspace.uiText["inspector.yaml"]; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
                             Button { objectName: "guidanceLogs_" + index; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
                         }
@@ -268,7 +268,7 @@ Pane {
             prefix: "inspectorEvent"; tableModel: workspace.inspectorEventTable; columns: workspace.inspectorEventColumns
             sortColumn: workspace.inspectorEventSortColumn; sortDirection: workspace.inspectorEventSortDirection
             emptyObjectName: "emptyInspectorEvents"
-            emptyText: "No related Events in this cache. Only Events for this resource UID are included. Check synchronization for unavailable data."
+            emptyText: workspace.uiText["inspector.noEvents"]
             onSortRequested: column => workspace.sortInspectorColumn("inspectorEvent", column)
             onInspectRequested: path => workspace.inspectEventPath(path)
             onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorEvent", events.pathAt(row), column)
@@ -285,7 +285,7 @@ Pane {
             prefix: "inspectorLink"; tableModel: workspace.inspectorLinkTable; columns: workspace.inspectorLinkColumns
             sortColumn: workspace.inspectorLinkSortColumn; sortDirection: workspace.inspectorLinkSortDirection
             emptyObjectName: "emptyInspectorLinks"
-            emptyText: "No related resources in this cache. Owner references are resolved by UID; node and namespace links use their explicit scope."
+            emptyText: workspace.uiText["inspector.noLinks"]
             onSortRequested: column => workspace.sortInspectorColumn("inspectorLink", column)
             onInspectRequested: path => workspace.inspectPath(path)
             onCopyRequested: (row, column) => workspace.copyInspectorCell("inspectorLink", links.pathAt(row), column)

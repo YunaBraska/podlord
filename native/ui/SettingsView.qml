@@ -13,7 +13,7 @@ Pane {
     ModalDialog {
         id: sourceRemovalDialog
         objectName: "sourceRemovalDialog"
-        title: "Remove imported context"
+        title: workspace.uiText["settings.removeContextTitle"]
         modal: true
         focus: true
         parent: Overlay.overlay
@@ -22,19 +22,19 @@ Pane {
         closePolicy: workspace.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
         contentItem: ColumnLayout {
             Label { Layout.fillWidth: true; text: workspace.sourceRemoval.name || ""; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
-            Label { Layout.fillWidth: true; text: "This removes the context and the saved sessions below. Their tabs and port-forwards will close. Original kubeconfig files and other contexts stay unchanged."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; text: workspace.uiText["settings.removeContextHelp"]; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ListView {
                 Layout.fillWidth: true; Layout.preferredHeight: Math.min(180 * workspace.textScale, count * Math.max(28, workspace.textSizes.body * 1.3))
                 clip: true; reuseItems: true; model: workspace.sourceRemoval.sessions || []
                 ScrollBar.vertical: ScrollBar {}
                 delegate: Label { required property string modelData; width: ListView.view.width; height: Math.max(28, implicitHeight); text: modelData; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: modelData }
             }
-            Label { visible: !(workspace.sourceRemoval.sessions || []).length; text: "No saved sessions use this context."; textFormat: Text.PlainText }
+            Label { visible: !(workspace.sourceRemoval.sessions || []).length; text: workspace.uiText["settings.noSessionsForContext"]; textFormat: Text.PlainText }
             Label { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
             IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceRemoval"; text: workspace.uiText["action.cancel"]; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? "Removing..." : "Remove"; enabled: !workspace.busy; Accessible.name: "Remove imported context and its listed sessions"; onClicked: workspace.confirmSourceRemoval() }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? workspace.uiText["settings.removing"] : workspace.uiText["settings.remove"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.removeContextAccessible"]; onClicked: workspace.confirmSourceRemoval() }
         }
         onAboutToHide: workspace.cancelSourceRemoval()
         Connections {
@@ -164,42 +164,42 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "graphics"
-                    SettingRow { label: "Radar background water"; help: "Only background water animates. Events do not create water effects."; WrappingCheckBox { objectName: "inlineRadarWaterEnabled"; text: workspace.uiText["alert.enabledState"]; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
-                    SettingRow { label: "Water speed"; help: "0 hides waves. Hidden or minimized Radar does not animate."; RowLayout { Layout.fillWidth: true; Slider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterSpeedPercent; enabled: !workspace.busy; Accessible.name: "Water speed in percent"; onMoved: if (!pressed) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)) } Label { text: workspace.radarWaterSpeedPercent + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
-                    SettingRow { label: "Reduced motion"; help: "Freezes water and removes moving alert effects. No screensaver is used."; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
+                    SettingRow { label: workspace.uiText["settings.radarWater"]; help: workspace.uiText["settings.radarWaterHelp"]; WrappingCheckBox { objectName: "inlineRadarWaterEnabled"; text: workspace.uiText["alert.enabledState"]; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
+                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: workspace.uiText["settings.radarWaterSpeedHelp"]; RowLayout { Layout.fillWidth: true; Slider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterSpeedPercent; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)) } Label { text: workspace.radarWaterSpeedPercent + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
+                    SettingRow { label: workspace.uiText["settings.reducedMotion"]; help: workspace.uiText["settings.reducedMotionHelp"]; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sync"
-                    SettingRow { label: "Inactive session sync"; help: "Minutes. 0 disables inactive sync. Closed sessions never synchronize."; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: "Inactive session sync in minutes" } }
-                    SettingRow { label: "Request limit per minute"; help: "0 adds no extra limit. Requests remain at least 400 ms apart, with up to four parallel reads. Inspector reads have priority."; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; enabled: !workspace.busy; Accessible.name: "Request limit per minute" } }
-                    SettingRow { label: "Resource cache TTL"; help: "Hours. Default 24. Longer retention can use more memory. Retains resource collections, including closed sessions. Does not extend credential or detail freshness."; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: "Resource cache TTL in hours" } }
-                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: "Cached payload (estimate): " + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: "Captured on opening or saving Sync settings. JSON and log text across sessions, excluding object overhead and shared UI projections." }
-                    SettingRow { label: "Retained logs per Pod"; help: "Positive whole MB. Default 5 MB."; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Retained logs per Pod in MB" } }
-                    IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? "Saving..." : "Save sync settings"; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value) }
+                    SettingRow { label: workspace.uiText["settings.inactiveSessionSync"]; help: workspace.uiText["settings.inactiveSessionSyncHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.inactiveSessionSyncMinutes"] } }
+                    SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
+                    SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceCacheTtlHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
+                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.cachedPayloadDescription"] }
+                    SettingRow { label: workspace.uiText["settings.retainedLogsPerPod"]; help: workspace.uiText["settings.retainedLogsPerPodHelp"]; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.retainedLogsPerPodMb"] } }
+                    IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? workspace.uiText["settings.saving"] : workspace.uiText["settings.saveSyncSettings"]; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value) }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "privacy"
-                    SettingRow { label: "Telemetry"; help: "No product telemetry is sent. Kubernetes and explicitly confirmed authentication contact the configured endpoints."; Label { objectName: "privacyTelemetry"; text: "Off"; font.bold: true } }
-                    SettingRow { label: "Secret values"; help: "Loaded Secret values and diff previews are masked. Explicitly revealed values and self-entered local YAML drafts may be visible."; Label { text: "Masked by default" } }
-                    SettingRow { label: "YAML document / patch limit"; help: "Positive whole MiB. Default 3 MiB. Checked before sending, not by interrupting running requests."; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "YAML document and patch limit in MiB" } IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveYamlLimit"; text: "Save"; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
-                    SettingRow { label: "Request audit retention"; help: "At most 200 completed requests in memory. No authorization headers, response bodies, log contents or query parameters are retained. Diagnostics refresh explicitly."; Label { text: "In memory only" } }
+                    SettingRow { label: workspace.uiText["settings.telemetry"]; help: workspace.uiText["settings.telemetryHelp"]; Label { objectName: "privacyTelemetry"; text: workspace.uiText["settings.off"]; font.bold: true } }
+                    SettingRow { label: workspace.uiText["settings.secretValues"]; help: workspace.uiText["settings.secretValuesHelp"]; Label { text: workspace.uiText["settings.maskedByDefault"] } }
+                    SettingRow { label: workspace.uiText["settings.yamlLimit"]; help: workspace.uiText["settings.yamlLimitHelp"]; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.yamlLimitMiB"] } IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveYamlLimit"; text: workspace.uiText["action.save"]; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
+                    SettingRow { label: workspace.uiText["settings.requestAuditRetention"]; help: workspace.uiText["settings.requestAuditRetentionHelp"]; Label { text: workspace.uiText["settings.inMemoryOnly"] } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "workspace"
-                    SettingRow { label: "Workspace restoration"; help: "Reopen saved tabs on next launch. Off starts with closed tabs but retains sessions and their view preferences. Changing this does not close current tabs or port forwards; forwards never restart automatically."; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: "Restore tabs on launch"; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: "Restore workspace tabs on launch"; onClicked: workspace.saveWorkspaceRestore(checked) } }
-                    SettingRow { label: "Session configuration"; help: "Save closed configuration snapshots or independent copies without changing the active session."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsManageSessions"; text: "Manage sessions"; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
-                    SettingRow { label: "Resource columns"; help: "Show, hide, order, resize and pin columns. Saved layouts are not overwritten by new defaults."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsResourceColumns"; text: "Configure resource columns"; onClicked: resourceColumns.open() } }
-                    SettingRow { label: "Event columns"; help: "Event layouts are independent from resource layouts."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsEventColumns"; text: "Configure Event columns"; onClicked: eventColumns.open() } }
-                    SettingRow { label: workspace.uiText["nav.savedViews"]; help: "Reload persisted layouts and filters without querying Kubernetes."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsReloadViews"; text: "Reload saved views"; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
+                    SettingRow { label: workspace.uiText["settings.workspaceRestore"]; help: workspace.uiText["settings.workspaceRestoreHelp"]; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: workspace.uiText["settings.restoreTabsOnLaunch"]; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.restoreTabsOnLaunch"]; onClicked: workspace.saveWorkspaceRestore(checked) } }
+                    SettingRow { label: workspace.uiText["settings.sessionConfiguration"]; help: workspace.uiText["settings.sessionConfigurationHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsManageSessions"; text: workspace.uiText["settings.manageSessions"]; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
+                    SettingRow { label: workspace.uiText["settings.resourceColumns"]; help: workspace.uiText["settings.resourceColumnsHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsResourceColumns"; text: workspace.uiText["settings.configureResourceColumns"]; onClicked: resourceColumns.open() } }
+                    SettingRow { label: workspace.uiText["settings.eventColumns"]; help: workspace.uiText["settings.eventColumnsHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsEventColumns"; text: workspace.uiText["settings.configureEventColumns"]; onClicked: eventColumns.open() } }
+                    SettingRow { label: workspace.uiText["nav.savedViews"]; help: workspace.uiText["settings.reloadViewsHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsReloadViews"; text: workspace.uiText["settings.reloadViews"]; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
-                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; visible: !workspace.appStore; Layout.fillWidth: true; placeholderText: "Kubeconfig file or folder (~ supported)"; enabled: !workspace.busy; Accessible.name: "Kubeconfig file or folder"; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: "Import"; enabled: !workspace.busy; onClicked: !workspace.appStore && importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
+                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText; visible: !workspace.appStore; Layout.fillWidth: true; placeholderText: workspace.uiText["settings.kubeconfigPathPlaceholder"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.kubeconfigPathPlaceholder"]; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: workspace.uiText["action.import"]; enabled: !workspace.busy; onClicked: !workspace.appStore && importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
                     IconButton {
                         id: sourceActionsButton
                         objectName: "sourceActionsMenuButton"
-                        glyph: ""; showText: true; font.bold: true
-                        text: "More source actions"
+                        glyph: "Menu"
+                        text: workspace.uiText["settings.moreSourceActions"]
                         Layout.alignment: Qt.AlignLeft
                         enabled: !workspace.busy
                         onClicked: sourceActions.open()
@@ -223,15 +223,15 @@ Pane {
                             id: sourceActionItems
                             width: parent.width
                             spacing: 4
-                            IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: "Browse kubeconfig file"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
-                            IconButton { objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Browse kubeconfig folder"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
-                            IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: "Paste kubeconfig"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
-                            IconButton { objectName: "importHomeButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Import ~/.kube/config"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
-                            IconButton { objectName: "refreshSourceFilesButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: "Reimport changed source files"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
-                            IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: "Import OCI API key"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
-                            IconButton { objectName: "importAwsProfileFromSettings"; glyph: ""; showText: true; text: "Import AWS profile"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); awsProfileDialog.open() } }
-                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: "Import GKE service-account key"; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
-                            IconButton { glyph: ""; showText: true; text: "Reload imported metadata"; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.reload() } }
+                            IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: workspace.uiText["settings.browseKubeconfigFile"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
+                            IconButton { objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.browseKubeconfigFolder"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
+                            IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: workspace.uiText["settings.pasteKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
+                            IconButton { objectName: "importHomeButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.importHomeKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
+                            IconButton { objectName: "refreshSourceFilesButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.reimportChangedSources"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
+                            IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: workspace.uiText["settings.importOciKey"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
+                            IconButton { objectName: "importAwsProfileFromSettings"; glyph: ""; showText: true; text: workspace.uiText["settings.importAwsProfile"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); awsProfileDialog.open() } }
+                            IconButton { objectName: "importGkeKeyFromSettings"; glyph: ""; showText: true; text: workspace.uiText["settings.importGkeKey"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.gkeImportRequested() } }
+                            IconButton { glyph: ""; showText: true; text: workspace.uiText["settings.reloadImportedMetadata"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.reload() } }
                             }
                         }
                     }
@@ -239,7 +239,7 @@ Pane {
                     RowLayout {
                         Layout.fillWidth: true; visible: workspace.sourceImportNotice !== ""
                         Label { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-                        IconButton { objectName: "settingsSourceImportDetails"; glyph: "Event"; text: "View import failures"; visible: workspace.sourceImportIssues.length > 0; onClicked: settings.sourceFailuresRequested() }
+                        IconButton { objectName: "settingsSourceImportDetails"; glyph: "Event"; text: workspace.uiText["settings.viewImportFailures"]; visible: workspace.sourceImportIssues.length > 0; onClicked: settings.sourceFailuresRequested() }
                     }
                     ResourceGrid {
                         objectName: "settingsSourceList"
@@ -249,7 +249,7 @@ Pane {
                         sortColumn: workspace.sourceSortColumn; sortDirection: workspace.sourceSortDirection
                         rowHeight: (settings.width < 650 * workspace.textScale ? 44 : 32) * workspace.textScale
                         sortableColumns: 8; actionColumns: [8,9]; accessoryColumns: [8,9]
-                        emptyText: "No imported contexts. Open or paste a kubeconfig."
+                        emptyText: workspace.uiText["settings.noImportedContexts"]
                         onSortRequested: column => workspace.sortSourceColumn(column)
                         onCopyRequested: (row,column) => workspace.copySourceCell(pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copySourceCell(identity,column)
@@ -266,7 +266,7 @@ Pane {
                                 readonly property bool isRemoval: parent.column === 9
                                 objectName: (isRemoval ? "removeSource_" : "renameSource_") + identity
                                 glyph: isRemoval ? "Close" : "Pencil"
-                                text: (isRemoval ? "Remove source context " : "Rename source context ") + parent.resourceName
+                                text: (isRemoval ? workspace.uiText["settings.removeSourceContext"] : workspace.uiText["settings.renameSourceContext"]) + parent.resourceName
                                 enabled: !workspace.busy
                                 onClicked: {
                                     if (sourceAction.isRemoval) workspace.requestSourceRemoval(sourceAction.identity)
@@ -288,13 +288,13 @@ Pane {
                         findShortcutEnabled: !auditGrid.containsActiveFocus
                         tableModel: workspace.diagnosticTable; columns: workspace.diagnosticColumns
                         sortColumn: workspace.diagnosticSortColumn; sortDirection: workspace.diagnosticSortDirection
-                        emptyText: "No runtime snapshot."
+                        emptyText: workspace.uiText["settings.noRuntimeSnapshot"]
                         cellName: function(row,column,identity) { return column===1 ? "diagnosticValue_"+identity : "diagnosticCell_"+row+"_"+column }
                         onSortRequested: column => workspace.sortDiagnosticColumn("diagnostic",column)
                         onCopyRequested: (row,column) => workspace.copyDiagnosticCell("diagnostic",pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("diagnostic",identity,column)
                     }
-                    Label { text: "Request audit"; font.bold: true; color: workspace.appearanceColors.accent }
+                    Label { text: workspace.uiText["settings.requestAuditTitle"]; font.bold: true; color: workspace.appearanceColors.accent }
                     ResourceGrid {
                         id: auditGrid
                         objectName: "settingsRequestAudit"
@@ -303,7 +303,7 @@ Pane {
                         findShortcutEnabled: auditGrid.containsActiveFocus
                         tableModel: workspace.requestAuditTable; columns: workspace.auditColumns
                         sortColumn: workspace.auditSortColumn; sortDirection: workspace.auditSortDirection
-                        emptyText: "No requests in this session."
+                        emptyText: workspace.uiText["settings.noRequestsInSession"]
                         onSortRequested: column => workspace.sortDiagnosticColumn("audit",column)
                         onCopyRequested: (row,column) => workspace.copyDiagnosticCell("audit",pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("audit",identity,column)

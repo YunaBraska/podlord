@@ -93,9 +93,9 @@ Pane {
             Accessible.name: (workspace.syncLoading ? "Loading session. " : "Session health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
             ToolTip.visible: healthHover.hovered
             ToolTip.text: workspace.authenticationRunning
-                ? (workspace.loadingProgress < 1 ? "Authentication in progress; loading percentage is not yet known." : "Authentication in progress; cached health is retained.")
+                ? "Authentication in progress."
                 : workspace.syncLoading
-                    ? (workspace.loadingProgress < 1 ? "Loading collections; progress grows as requests finish." : "Updating the cached session; health is retained.")
+                    ? workspace.uiText["status.loadingResources"]
                     : Accessible.name
             HoverHandler { id: healthHover }
         }
@@ -204,7 +204,7 @@ Pane {
                     value: workspace.resourceLimit
                     enabled: workspace.currentSession !== "" && !workspace.busy
                     Accessible.name: "Displayed resource row limit"
-                    Accessible.description: "Limits table rows only. Radar, filters and alarms keep the complete cache."
+                    Accessible.description: "Limits table rows only. Radar, filters and alarms use all resources."
                     ToolTip.visible: hovered || activeFocus; ToolTip.text: Accessible.name
                     onValueModified: workspace.setResourceLimit(String(value))
                 }
@@ -319,7 +319,7 @@ Pane {
                     font.bold: true
                     checkable: true
                     checked: sidebar.expandedField === modelData.id
-                    Accessible.description: checked ? "Expanded cached filter values" : "Collapsed cached filter values"
+                    Accessible.description: checked ? "Expanded filter values" : "Collapsed filter values"
                     background: Rectangle {
                         color: fieldButton.down || fieldButton.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.panel
                         border.color: fieldButton.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border

@@ -208,7 +208,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: grid.inlineTools
         Item { Layout.fillWidth: true }
-        IconButton { objectName: grid.prefix + "FindButton"; glyph: "Search"; text: workspace.uiText["nav.search"]; Accessible.name: "Find within cached " + grid.prefix + " rows"; onClicked: grid.openFind() }
+        IconButton { objectName: grid.prefix + "FindButton"; glyph: "Search"; text: workspace.uiText["nav.search"]; Accessible.name: workspace.uiText["table.findRows"]; onClicked: grid.openFind() }
         IconButton { objectName: grid.prefix + "ColumnsButton"; glyph: "Columns"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: grid.openColumns() }
     }
     RowLayout {
@@ -219,8 +219,8 @@ ColumnLayout {
             objectName: grid.prefix + "FindInput"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            placeholderText: "Find in this table; does not change filters"
-            Accessible.name: "Find within cached " + grid.prefix + " rows"
+            placeholderText: workspace.uiText["table.findRows"]
+            Accessible.name: workspace.uiText["table.findRows"]
             onTextChanged: { grid.findValid = findMatches.filter(text); grid.updateFindCount(true) }
             onAccepted: grid.selectFindMatch(1)
             Keys.onEscapePressed: { grid.findOpen = false; table.forceActiveFocus() }

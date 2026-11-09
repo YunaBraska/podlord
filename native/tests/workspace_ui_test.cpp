@@ -5186,7 +5186,8 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "inspector_related_events" || scenario == "inspector_related_wrong_uid") {
             if (!click(window, item(window, "inspectorEventsButton"))) return false;
-            if (scenario == "inspector_related_wrong_uid") return item(window, "emptyInspectorEvents")->isVisible() && server.requests.size() == calls;
+            if (scenario == "inspector_related_wrong_uid") return item(window, "emptyInspectorEvents")->isVisible()
+                && text(window, "emptyInspectorEvents") == "No related events." && server.requests.size() == calls;
             if (!waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled"; })) return false;
             auto* events = item(window, "inspectorEventTable");
             QQmlExpression reveal(qmlContext(events), events, "positionViewAtIndex(model.index(0, 4), TableView.Contain)");

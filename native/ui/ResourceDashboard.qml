@@ -6,9 +6,8 @@ Pane {
     padding: 12
     background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }
     contentItem: ColumnLayout {
-        Label { text: "Resource health and usage"; font.bold: true }
+        Label { text: workspace.uiText["dashboard.title"]; font.bold: true }
         Label { objectName: "dashboardSummary"; Layout.fillWidth: true; text: workspace.dashboardSummary; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-        Label { Layout.fillWidth: true; text: "The same filtered session cache as Resources and Radar. Usage is never inferred from configured requests, limits or provisioned storage."; wrapMode: Text.Wrap; textFormat: Text.PlainText }
         ListView {
             id: metricRows
             objectName: "resourceDashboard"
@@ -29,7 +28,7 @@ Pane {
                 Repeater { model: resourceMetrics; MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData } }
                 Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
             }
-            Label { anchors.centerIn: parent; width: Math.min(360, parent.width-24); visible: metricRows.count===0; text: "No Pods, Nodes or volumes in this filtered cache. Clear filters or check synchronization."; wrapMode: Text.Wrap; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter }
+            Label { anchors.centerIn: parent; width: Math.min(360, parent.width-24); visible: metricRows.count===0; text: workspace.uiText["dashboard.empty"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter }
         }
     }
 }
