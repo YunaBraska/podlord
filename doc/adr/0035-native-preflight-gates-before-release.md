@@ -375,3 +375,7 @@ snapshot qualification. Older runs of the same feature/event/ref may still be
 cancelled. The protected `build / build` result, all preflights and publishing
 conditions remain unchanged. Caller and called workflows use distinct prefixes,
 as required by the [GitHub reuse/concurrency rules](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations).
+
+### macOS test-shell runtime boundary, 2026-11-09
+
+The native CI test runner owns the development SDK environment. macOS removes inherited `DYLD_*` variables when starting the system shell. The runner therefore restores `DYLD_LIBRARY_PATH` from the explicit `OPENSSL_ROOT_DIR` inside that shell before launching test processes. This is not applied to distributed packages. The ordinary shell entrypoint must pass without a caller-side workaround. The previous macOS failures at `441c3f5` stopped in the startup canary, so their resulting partial coverage is not a release qualification. Runtime selection and certificate verification in the product remain unchanged.

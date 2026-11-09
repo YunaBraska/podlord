@@ -415,8 +415,9 @@ if(coldInspectorCycles){
  steps.push({step:'First inspector opening after process restart and explicit context loading',cycles:coldInspectorCycles});
  completeJourney();process.exit(0);
 }
+// Check compact keyboard dialogs before the longer terminal journey.
+if(terminalOnly!=='1')filterPresetJourney();
 if(mapRoundtrip==='1'){
- filterPresetJourney();
  try{mapTouchRoundtrip();}
  catch(error){
   journeyFailures.push({step:'Map touch roundtrip',error:String(error)});
@@ -459,9 +460,8 @@ const filterDeadline=Date.now()+30000;
 do{state();if(!nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&(n.text||n['content-desc'])==='Pod'))break;}while(Date.now()<filterDeadline);
 if(nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&(n.text||n['content-desc'])==='Pod'))throw Error('Problems filter retained the known healthy Pod');
 click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');
-waitNode('resourcesWorkspaceButton',healthyPodVisible);
+waitNode('cell_0_0',healthyPodVisible);
 search('');steps.push({step:'Problems filter excludes the known healthy Pod and restores it when disabled through public input'});
-filterPresetJourney();
 click('toggleLandscapeFilters');
 for(const id of ['eventsWorkspaceButton','portForwardTasksButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}
 
@@ -497,10 +497,11 @@ function describe(id){const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
 function filterPresetJourney(){
  const value=n=>n?.text||n?.['content-desc']||'';
  const keyboardVisible=()=>/(?:mType|type)=ime\b[^\n]*?(?:mVisible|visible)=true/.test(run('shell','dumpsys','window'));
- const write=(id,text)=>{
+ const write=(id,text,keepKeyboard=false)=>{
   click(id);inputAboveKeyboard([id],'preset-input-'+id);
   run('shell','input','keyevent','123',...Array(64).fill('67'));run('shell','input','text',text);
   waitNode(id,n=>(n.text+' '+n['content-desc']).includes(text));
+  if(keepKeyboard)return;
   if(keyboardVisible())run('shell','input','keyevent','4');
   const deadline=Date.now()+10000;
   do{state();if(!keyboardVisible())return;}while(Date.now()<deadline);
@@ -527,13 +528,19 @@ function filterPresetJourney(){
  const ok=nodes.find(n=>value(n)==='OK'&&n.enabled==='true');if(!ok)throw Error('Rename confirmation must be reachable');tap(ok);
  waitNode('renameFilterPreset',n=>n.enabled==='true');click('reloadFilterPresets');waitNode('renameFilterPreset',n=>n.enabled==='true');
  if(!nodes.some(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&value(n)==='Android-renamed'))throw Error('Renamed preset must survive reload');
+ click('renameFilterPreset');write('renameFilterPresetName','Android-keyboard',true);
+ run('shell','input','keyevent','66');state();
+ if(keyboardVisible())run('shell','input','keyevent','4');
+ waitNode('filterPresetOption_1',n=>value(n)==='Android-keyboard');
+ if(nodes.some(n=>n['resource-id']?.endsWith('.renameFilterPresetName')&&n.bounds!=='[0,0][0,0]'))throw Error('Keyboard Enter must accept and close the rename dialog');
+ click('reloadFilterPresets');waitNode('filterPresetOption_1',n=>value(n)==='Android-keyboard');
  click('importFilterPresets');run('shell','input','keyevent','4');state();waitNode('deleteFilterPreset',n=>n.enabled==='true');
  click('deleteFilterPreset');waitNode('filterPresetOption_0',n=>value(n)==='default');
- if(nodes.some(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&/Android-(preset|renamed)/.test(value(n))))throw Error('Deleted preset remains in the inline list');
+ if(nodes.some(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&/Android-(preset|renamed|keyboard)/.test(value(n))))throw Error('Deleted preset remains in the inline list');
  if(target('problemsOnly').checked!=='true')throw Error('Deleting a preset must not clear active cached filters');
  click('resetResourceFilters');if(target('filterPreset').checked==='true')click('filterPreset');
  if(!filtersWereExpanded)click('toggleLandscapeFilters');
- steps.push({step:'Inline saved-filter save, touch and keyboard load, rename, reload, import cancellation and delete retain current filters and protected default'});
+ steps.push({step:'Inline saved-filter save, touch and keyboard load, button and IME-Enter rename, reload, import cancellation and delete retain current filters and protected default'});
 }
 function mapTouchRoundtrip(){
  const assert=require('node:assert/strict'),crypto=require('node:crypto'),zlib=require('node:zlib');
@@ -724,7 +731,7 @@ capture('source-yaml-applied');click('closeSourceInspector');click('resourcesWor
 click('workspaceSearchButton');
 waitNode('resourceFilter',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
 click('workspaceSearchButton');
-waitNode('resourcesWorkspaceButton',healthyPodVisible);
+waitNode('cell_0_0',healthyPodVisible);
 steps.push({step:'Portrait Sources touch editing keeps YAML above the keyboard, restores actions on dismissal and preserves the original file and existing session on immutable Apply'});
 }
 

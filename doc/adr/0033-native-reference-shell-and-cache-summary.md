@@ -144,3 +144,9 @@ profiles and binaries require no migration.
 The accepted native editor may persist incomplete custom matchers as disabled drafts. The same catalog and atomic store remain authoritative. A version-2 draft flag distinguishes them from validated disabled rules. Version 1 is decoded with draft=false and is not rewritten merely by loading. Saving version 2 preserves malformed matcher text for editing but still validates structure and action fields. Explicitly enabling a stored draft requires full matcher validation. Drafts never enter evaluation. Built-ins remain locked.
 
 The editor exposes Enabled/Draft separately from observed Triggered/Not evaluated state, and dirty close retains Keep editing/Discard protection. This introduces no second evaluator or draft sidecar. Older executables can reject version 2, so binary rollback must preserve the newer file rather than claiming automatic downgrade support.
+
+### Interface review boundary, 2026-11-09
+
+Apple's [modality guidance](https://developer.apple.com/design/human-interface-guidelines/modality) supports a clear temporary task, visible blocking state and an identifiable dismissal path. The shared dialog header and dimmed modal layer address those requirements. In the approved compact-keyboard mode, input takes priority and the ordinary dialog controls return when the keyboard closes.
+
+[Tab-bar guidance](https://developer.apple.com/design/human-interface-guidelines/tab-bars) prefers stable section availability and labels. Podlord deliberately retains the confirmed contextual navigation and compact overflow rules instead: resource-only destinations appear after choosing a context, while smaller layouts move destinations to the menu. These product decisions are not a claim of complete native-HIG conformity. [Button guidance](https://developer.apple.com/design/human-interface-guidelines/buttons) remains relevant to consistent sizing, clear purposes and the primary Return action.

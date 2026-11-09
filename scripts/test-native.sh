@@ -24,6 +24,12 @@ PREFIX=${CMAKE_PREFIX_PATH:-/opt/homebrew}
 "$CMAKE" -S "$ROOT/native" -B "$BUILD" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
     -DCMAKE_PREFIX_PATH="$PREFIX" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_COVERAGE=ON
 "$CMAKE" --build "$BUILD" --parallel "${PODLORD_BUILD_JOBS:-4}"
+# macOS strips inherited DYLD variables when starting /bin/sh. Restore the
+# configured development SDK for test processes, never for distributed packages.
+if [ "$(uname -s)" = Darwin ] && [ -n "${OPENSSL_ROOT_DIR:-}" ]; then
+    DYLD_LIBRARY_PATH="$OPENSSL_ROOT_DIR/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    export DYLD_LIBRARY_PATH
+fi
 mkdir -p "$BUILD/coverage"
 RUN=$(mktemp -d "$BUILD/coverage/run.XXXXXX")
 APP="$BUILD/podlord-native"

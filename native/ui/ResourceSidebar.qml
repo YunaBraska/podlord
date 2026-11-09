@@ -360,15 +360,18 @@ Pane {
         id: renamePreset
         objectName: "renameFilterPresetDialog"
         property string original
+        readonly property bool keyboardEditing: sidebar.Window.window && sidebar.Window.window.inputPriority
         title: "Rename filter"
         modal: true
         parent: Overlay.overlay
+        padding: keyboardEditing ? 0 : 12
+        header: DialogHeader { dialog: renamePreset; visible: !renamePreset.keyboardEditing }
         width: sidebar.Window.window ? Math.min(360, sidebar.Window.window.width - 24) : 360
         x: parent ? (parent.width-width)/2 : 0
         y: Math.max(sidebar.Window.window ? sidebar.Window.window.topPadding : 0,
             ((sidebar.Window.window ? sidebar.Window.window.keyboardTop : parent.height)-height)/2)
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        TextField { id: renameText; objectName: "renameFilterPresetName"; width: parent.width; maximumLength: 128; Accessible.name: "New saved filter name" }
+        standardButtons: keyboardEditing ? Dialog.NoButton : Dialog.Ok | Dialog.Cancel
+        TextField { id: renameText; objectName: "renameFilterPresetName"; width: parent.width; maximumLength: 128; Accessible.name: "New saved filter name"; onAccepted: renamePreset.accept() }
         onAccepted: { if (workspace.renameFilterPreset(original, renameText.text)) presetName.text = renameText.text.trim() }
     }
 }
