@@ -1,5 +1,7 @@
 #include "resource_client.h"
 #include <QSslKey>
+#include <QSslError>
+#include <QLocale>
 #include "container_terminal.h"
 #include "resource_metrics.h"
 #include "port_forward_transport.h"
@@ -604,7 +606,7 @@ QString ResourceClient::detailStatus(const QString& id, const QString& path) con
     QStringList messages;
     if (loading) messages.append("Refreshing detail.");
     const auto fetched = detail(id, path)["fetchedAt"].toString();
-    messages.append(fetched.isEmpty() ? "No current detail cached." : "Cached detail from " + fetched + '.');
+    messages.append(fetched.isEmpty() ? "Details are not loaded." : "Updated: " + QLocale::system().toString(QDateTime::fromString(fetched, Qt::ISODate).toLocalTime(), QLocale::ShortFormat));
     if (state->failures.contains(path)) messages.append(state->failures.value(path));
     else if (state->suspended) messages.append(state->failures.value("/authentication"));
     return messages.join(' ');
@@ -663,9 +665,9 @@ QString ResourceClient::status(const QString& id) const {
     QDateTime oldest;
     for (const auto& collection : it->collections)
         if (!oldest.isValid() || collection.at < oldest) oldest = collection.at;
-    if (oldest.isValid()) messages.append((!it->failures.isEmpty() || oldest < now_().addSecs(-25) ? "Stale snapshot: " : "Snapshot: ") + oldest.toLocalTime().toString(Qt::ISODate));
+    if (oldest.isValid()) messages.append((!it->failures.isEmpty() || oldest < now_().addSecs(-25) ? "Last updated: " : "Updated: ") + QLocale::system().toString(oldest.toLocalTime(), QLocale::ShortFormat));
     if (it->pending) messages.append(QString("Loading (%1 queued or running)").arg(it->pending));
-    return messages.isEmpty() ? "No resource snapshot yet" : messages.join("\n");
+    return messages.isEmpty() ? "Resources are not loaded." : messages.join("\n");
 }
 bool ResourceClient::collectionSnapshotAvailable(const QString& id) const {
     const auto state=states_.constFind(id);
@@ -913,7 +915,7 @@ void ResourceClient::expire() {
             else next = std::min(next, delay);
         }
     }
-    for (const auto& credential : expired) suspend(credential, "Credentials expired. Confirm another authentication attempt; cached data is retained.");
+    for (const auto& credential : expired) suspend(credential, "Credentials expired. Sign in again to reconnect.");
     if (next != std::numeric_limits<qint64>::max()) expiry_.start(static_cast<int>(std::min<qint64>(next, std::numeric_limits<int>::max())));
 }
 bool ResourceClient::enqueue(Task task) {
@@ -1026,13 +1028,20 @@ void ResourceClient::dispatch() {
             {"apiVersion", "v1"}, {"kind", "DeleteOptions"}, {"preconditions", QJsonObject{{"uid", task.change->baseline["uid"]}}}
         }).toJson(QJsonDocument::Compact)) : network_.get(request);
     const auto payload = std::make_shared<LogPayload>();
+    const auto tlsErrors = std::make_shared<QStringList>();
+    connect(reply, &QNetworkReply::sslErrors, this, [tlsErrors](const QList<QSslError>& errors) {
+        for (const auto& error : errors) {
+            const auto detail = error.errorString().simplified().left(512);
+            if (tlsErrors->size() < 8 && !tlsErrors->contains(detail)) tlsErrors->append(detail);
+        }
+    });
     const bool parallel = parallelRead(task);
     if (parallel) { reads_.insert(reply, task); running_.reset(); }
     if (task.read == Read::Log) {
         reply->setReadBufferSize(65536);
         connect(reply, &QNetworkReply::readyRead, this, [this, reply, payload] { payload->append(reply->readAll(), static_cast<qint64>(settings_.logLimitMb) * 1000000); });
     }
-    connect(reply, &QNetworkReply::finished, this, [this, reply, task, payload, parallel] {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, task, payload, tlsErrors, parallel, url, authorization = connection.authorization] {
         Task completion = task; completion.foreground = parallel ? reads_.value(reply).foreground : running_->foreground;
         const auto remaining = reply->readAll();
         const auto http = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -1046,8 +1055,29 @@ void ResourceClient::dispatch() {
             payload->append(remaining, static_cast<qint64>(settings_.logLimitMb) * 1000000);
             states_[task.id].logs[task.logKey].limited = states_[task.id].logs[task.logKey].limited || payload->limited;
         }
+        QString transportDetail;
+        if (http < 400 && (transportError || http == 0)) {
+            QString message;
+            if (incomplete) message = "The server response was incomplete.";
+            else switch (reply->error()) {
+            case QNetworkReply::HostNotFoundError: message = "Server not found. Check the address and network connection."; break;
+            case QNetworkReply::ConnectionRefusedError: message = "The server refused the connection."; break;
+            case QNetworkReply::TimeoutError: message = "The connection timed out."; break;
+            case QNetworkReply::RemoteHostClosedError: message = "The server closed the connection."; break;
+            case QNetworkReply::SslHandshakeFailedError: message = tlsErrors->isEmpty() ? "TLS handshake failed." : "TLS certificate verification failed."; break;
+            case QNetworkReply::ProxyAuthenticationRequiredError: message = "The network proxy requires authentication."; break;
+            default: message = "Could not connect to the server."; break;
+            }
+            auto detail = reply->errorString().simplified().left(2048);
+            detail.replace(url.toString(), url.adjusted(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment).toString());
+            const auto credential = QString::fromUtf8(authorization);
+            for (const auto& secret : {credential, credential.section(' ', 1)})
+                if (!secret.isEmpty()) detail.replace(secret, "[redacted]");
+            transportDetail = message + "\nQt network error " + QString::number(static_cast<int>(reply->error())) + ": " + detail;
+            if (!tlsErrors->isEmpty()) transportDetail += "\n" + tlsErrors->join("; ");
+        }
         finish(completion, http, task.read == Read::Log ? payload->bytes : remaining,
-            transportError, reply->rawHeader("Retry-After"));
+            transportError, reply->rawHeader("Retry-After"), transportDetail);
         reply->deleteLater();
         if (parallel) reads_.remove(reply); else running_.reset();
         emit changed(task.id);
@@ -1060,7 +1090,7 @@ void ResourceClient::fail(const Task& task, QString message) {
     if (task.read == Read::Log) states_[task.id].logs[task.logKey].failures.insert(task.container, std::move(message));
     else { states_[task.id].failures.insert(task.path, std::move(message)); states_[task.id].blocked.insert(task.path); }
 }
-void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter) {
+void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail) {
     auto& state = states_[task.id];
     --state.pending;
     if (task.read == Read::Log) --state.logs[task.logKey].pending;
@@ -1080,11 +1110,11 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         }
         const auto now = clock_.elapsed();
         backoffUntil_ = delay > std::numeric_limits<qint64>::max() - now ? std::numeric_limits<qint64>::max() : now + delay;
-        fail(task, "Rate limited. Retry-After is active; cached data is retained.");
+        fail(task, "The server is limiting requests. Waiting before retrying.");
     } else if (http == 403) fail(task, "Authorization denied; other resource kinds remain available.");
     else if (http >= 300 && http < 400) fail(task, "Redirect refused; credentials were not forwarded.");
     else if (http >= 400) fail(task, QString("API rejected the %1 (HTTP %2).").arg(task.read == Read::Apply || task.read == Read::Delete ? "write" : "read").arg(http));
-    else if (transportError || http == 0) fail(task, "Connection or TLS failure; cached data is retained.");
+    else if (transportError || http == 0) fail(task, transportDetail.isEmpty() ? QString("Could not connect to the server.") : transportDetail.section('\n', 0, 0));
     else if (task.read == Read::Log) {
         auto& history = state.logs[task.logKey];
         if (const auto error = history.append(task.container, bytes, now_(), static_cast<qint64>(settings_.logLimitMb) * 1000000, history.limited)) fail(task, error->message);
@@ -1094,7 +1124,7 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
     } else {
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(bytes, &error);
-        if (error.error != QJsonParseError::NoError || !document.isObject()) fail(task, "Malformed API response; cached data is retained.");
+        if (error.error != QJsonParseError::NoError || !document.isObject()) fail(task, "The server returned an invalid response.");
         else {
             state.failures.remove(task.path);
             state.blocked.remove(task.path);
@@ -1133,7 +1163,7 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         {"priority",task.foreground || task.read==Read::Detail || task.change ? "Foreground" : "Background"},
         {"status",transportError || http>=400 || state.failures.contains(task.path) ? "Failed" : "Success"},
         {"duration",QString::number(std::max<qint64>(0,clock_.elapsed()-task.started))+" ms"},
-        {"outcome",http>0 ? QString("HTTP %1").arg(http) : QString("Transport failure")}});
+        {"outcome",!transportDetail.isEmpty() ? transportDetail : http>0 ? QString("HTTP %1").arg(http) : QString("Connection failed")}});
     if (completedRequests_.size()>200) completedRequests_.removeFirst();
 }
 void ResourceClient::collections(const QString& id, const QString& path, const QJsonObject& document, bool foreground) {
@@ -1192,7 +1222,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
                 || (!state.namespaces.isEmpty() && ns != task.collection.section('/', -2, -2))))
                 || (!suppliedVersion.isUndefined() && (!suppliedVersion.isString() || suppliedVersion.toString() != apiVersion(task.path)))
                 || (!suppliedKind.isUndefined() && (!suppliedKind.isString() || suppliedKind.toString() != task.kind))) {
-                fail(task, "Invalid resource list entry; previous snapshot retained."); return;
+                fail(task, "The server returned an invalid resource."); return;
             }
             QString path = task.collection;
             if (task.namespaced && state.namespaces.isEmpty()) {
@@ -1212,7 +1242,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
         if (!continuation.isUndefined() && !continuation.isString()) { fail(task, "Invalid list continuation."); return; }
         next.continuation = continuation.toString();
         if (!next.continuation.isEmpty()) {
-            if (next.tokens.contains(next.continuation)) { fail(task, "Repeated list continuation; previous snapshot retained."); return; }
+            if (next.tokens.contains(next.continuation)) { fail(task, "The server repeated a resource page."); return; }
             next.tokens.insert(next.continuation);
             enqueue(std::move(next));
         } else {
@@ -1245,7 +1275,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
         previous.remove("fetchedAt");
         const bool different = previous != row;
         row.insert("fetchedAt", now_().toString(Qt::ISODateWithMs));
-        if (entry != state.resources.end() && entry->received > task.received) { fail(task, "A newer resource read is already cached. Refresh the inspector to edit it."); return; }
+        if (entry != state.resources.end() && entry->received > task.received) { fail(task, "A newer version is available. Reopen the inspector to edit it."); return; }
         state.details.insert(task.path, {row, now_(), document, task.revision});
         state.unresolvedDeletes.remove(task.path);
         if (entry != state.resources.end()) {

@@ -46,6 +46,11 @@ bool scenario(const QStringList& args) {
         if (mode == "retired_theme_catalog")
             return require(!text.contains("settings.themeIntensity") && !text.contains("settings.themeIntensityHelp"),
                 "Retired theme intensity remains in the public language catalog.");
+        for (const auto* key:{"alert.emptyContext","alert.emptyMatches"}) {
+            require(text.contains(key) && !text.value(key).toString().isEmpty(), "Alert empty-state translation missing.");
+            if (args[2]!="system" && args[2]!="en") require(text.value(key)!=podlord::uiText("en").value(key),
+                "Alert empty state fell back to English in a supported language.");
+        }
         QStringList keys{"alert.chooseColor", "alert.retryLoad", "alert.builtinHelp", "alert.syntax", "alert.expressionHint", "alert.syntaxHelp"};
         for (const auto& field : QStringList{"search", "kind", "namespace", "name", "status", "node", "image", "owner", "ready", "restarts", "age", "issue",
                 "eventReason", "eventMessage", "problems", "activity", "recentlyChanged", "newInView", "cpu", "memory", "storage"})
@@ -147,6 +152,14 @@ bool scenario(const QStringList& args) {
         return require(workspace.uiLanguage() == "system" && !workspace.error().isEmpty() && selector->property("currentIndex").toInt() == 0, "Failed save left misleading language selection.");
     }
     require(workspace.uiLanguage() == code, "Public selector did not apply the chosen language.");
+    require(workspace.currentSession().isEmpty() && workspace.contexts().isEmpty(),"Language selection changed the empty workspace.");
+    require(workspace.importText(temporary.filePath("language.yaml"),QString::fromUtf8("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: https://127.0.0.1:9}\nusers:\n- name: local\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1beta1, command: podlord-test-never-run}\ncontexts:\n- name: local\n  context: {cluster: local, user: local}\n"))
+        && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; },5000)
+        && workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
+        && QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); },5000),"Cannot prepare the explicit-auth language fixture.");
+    const auto languageSession=workspace.currentSession();
+    const auto languageContexts=workspace.contexts();
+    require(click(window,"settingsWorkspaceButton") && click(window,"settingsAppearanceSection"),"Cannot return to translated settings.");
     for (const auto& pair : QList<QPair<QString, QString>>{{"resourcesWorkspaceButton", "nav.resources"}, {"eventsWorkspaceButton", "nav.events"},
         {"settingsWorkspaceButton", "nav.settings"}, {"settingsAppearanceSection", "settings.appearance"}}) {
         auto* target = podlord::test::visibleItem(window->contentItem(), pair.first);
@@ -162,14 +175,14 @@ bool scenario(const QStringList& args) {
         require(target && target->property("text") == podlord::uiText(code)[pair.second], "Visible filters did not update their translated labels.");
     }
     if (mode != "table_tools" && mode != "narrow") require(click(window, "settingsWorkspaceButton") && click(window, "settingsAppearanceSection"), "Cannot return to language settings.");
-    require(workspace.currentSession().isEmpty() && workspace.contexts().isEmpty(), "Changing UI language changed cluster/session selection.");
+    require(workspace.currentSession()==languageSession && workspace.contexts()==languageContexts, "Changing UI language changed cluster/session selection.");
     require(workspace.uiRightToLeft() == (code == "ar" || code == "ur"), "Language reading direction is incorrect.");
     if (mode == "table_tools") {
         require(click(window, "resourcesWorkspaceButton") && click(window, "resourceColumnsButton"), "Cannot open the actual table tools.");
         auto* save = podlord::test::visibleItem(window->contentItem(), "resourceSaveColumns");
         require(save && save->property("text") == workspace.uiText()["action.save"], "Table layout save action is not localized.");
         require(click(window, "resourceSaveColumns") && QTest::qWaitFor([&] { return !workspace.tableLayoutSaving(); }, 5000), "Cannot save the translated table layout.");
-        require(workspace.tableLayoutError().isEmpty() && workspace.currentSession().isEmpty(), "Translated table tools changed session state or failed to save.");
+        require(workspace.tableLayoutError().isEmpty() && workspace.currentSession()==languageSession, "Translated table tools changed session state or failed to save.");
     }
     if (mode == "restart") {
         podlord::Workspace reopened(profile);

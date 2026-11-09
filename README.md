@@ -12,6 +12,8 @@ filters, inspector, container terminal and port forwarding.
 in progress.** C#/.NET/Avalonia remains a separately buildable functional and
 visual reference, not a runtime dependency of the replacement.
 
+**[Product site and user documentation](https://yunabraska.github.io/podlord/)**
+
 ## Start Developing
 
 Follow the [native build and launch instructions](native/README.md) for the
@@ -64,9 +66,12 @@ not be disguised as native evidence.
 
 ## Release Candidates
 
-The [native candidate workflow](.github/workflows/release.yml) is manually
-started and collects checked artifacts. It does not create a tag or publish a
-release. The [Store preparation workflow](.github/workflows/app-store.yml)
+Merges to `main` run the native qualification and automatically publish a
+GitHub prerelease snapshot containing the checked desktop archives from that
+exact commit. Regular releases remain manual.
+
+The [native candidate workflow](.github/workflows/release.yml) can also be
+started manually to collect checked artifacts without publishing. The [Store preparation workflow](.github/workflows/app-store.yml)
 prepares native macOS packaging without uploading to the Store.
 
 Existing [published releases](https://github.com/YunaBraska/podlord/releases)
@@ -77,6 +82,14 @@ the linked specification and test map, not an inferred download promise.
 
 Developer-ID signing and notarization are deferred for the private release.
 Other agreed gates remain in effect.
+
+## Native Screenshots
+
+[![C++ context map](docs/Page/assets/screenshots/native-map.png)](docs/Page/assets/screenshots/native-map.png)
+
+The [resource explorer](docs/Page/assets/screenshots/native-resources.png) and
+[YAML inspector](docs/Page/assets/screenshots/native-inspector-yaml.png) also
+show the C++ application against disposable local Kubernetes data.
 
 ## Design Reference
 

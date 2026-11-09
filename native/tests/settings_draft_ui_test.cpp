@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
         }
         if (scenario.contains('_')) {
             if (scenario.endsWith("_leave")) {
-                click("resourcesWorkspaceButton");
+                click("mapWorkspaceButton");
                 click("settingsWorkspaceButton");
                 require(podlord::test::selectSettingsSection(window, yaml ? "privacy" : "sync"), "Draft settings section is not reachable.");
                 require(yaml ? item("inlineYamlLimit")->property("text").toString() == "3"

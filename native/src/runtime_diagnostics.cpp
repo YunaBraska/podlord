@@ -1,5 +1,6 @@
 #include "runtime_diagnostics.h"
 #include <QFile>
+#include <QSslSocket>
 #include <QVariantMap>
 #include <QtGlobal>
 
@@ -88,6 +89,8 @@ QVariantList runtimeDiagnostics() {
     }
 #endif
     return {
+        QVariantMap{{"id", "tlsBackend"}, {"label", "TLS backend"}, {"value", QSslSocket::activeBackend()}, {"description", "Active encrypted-connection backend."}},
+        QVariantMap{{"id", "tlsRuntime"}, {"label", "TLS runtime"}, {"value", QSslSocket::sslLibraryVersionString()}, {"description", "Loaded TLS library version."}},
         QVariantMap{{"id", "rss"}, {"label", "Process RSS"}, {"value", rss}, {"description", "Resident pages, including shared mappings."}},
         QVariantMap{{"id", "memory"}, {"label", memoryLabel}, {"value", memory}, {"description", memoryDescription}},
         QVariantMap{{"id", "cpuTime"}, {"label", "Process CPU time"}, {"value", cpu}, {"description", "Cumulative user and kernel CPU time; not a utilization percentage."}},

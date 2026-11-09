@@ -8496,3 +8496,87 @@ This real bundle check exposed main-first signing in the prepared Store script: 
 - `closing-platform-result.json` and `closing-linux-result.json` retain the complete successful job results and exact head revision. `closing-cleanup.json` records no owned native-E2E containers, free private Android ports 5039/5680/5681 and no remaining visible measurement processes. Unrelated applications and physical devices were not modified.
 
 This closes the system-text work and the requested technical full-suite, simulated-mobile, image, package and macOS start/frame/memory/idle qualification. Evidence retains its stated source and runtime boundaries. Distribution identities, provisioning, notarization and Store submission are not fabricated or claimed by these private/ad-hoc checks. Those remain the separately agreed publishing work. No new production-cloud access or public OAuth publisher approval is asserted.
+
+## Native main integration and product screenshots, 2026-11-08
+
+The approved integration preserves automatic snapshots after merges to `main` and
+manual regular releases. The native candidate workflow owns the full platform
+preflight and both Linux standalone packages. The protected PR result remains
+`build / build`. Publication takes only checksum-verified candidate archives from
+the same source commit. This integration does not itself merge to main, create
+a tag, publish a release or submit to a store. The manual C# reference remains.
+
+The product site now uses these unmodified C++ captures from the qualified
+1,849-resource local Kubernetes matrix at `google-login-20261108.51qnhv/desktop-qualified-matrix/images`.
+They show the context map, resource explorer and YAML inspector, not synthetic
+UI or a production cluster. Each opens at full resolution. Existing C# reference
+images remain in `doc/screenshots`. The source is application-equivalent to the
+qualified `adf18f2` application. Only delivery and website files change here.
+
+| Published asset | Matrix capture | SHA256 |
+| --- | --- | --- |
+| `docs/Page/assets/screenshots/native-map.png` | `06-dark-map-context.png` | `4fa0a540aa2eede73a9990fa889023bc8c2fb57da714e4ada3a738af92d96162` |
+| `docs/Page/assets/screenshots/native-resources.png` | `06-dark-resources.png` | `263887678cbcdc55d420106b40f7bf90dc335f45e512d4bab8c5a49776785ddc` |
+| `docs/Page/assets/screenshots/native-inspector-yaml.png` | `01-dark-inspector-yaml.png` | `a83fb4e31f0ed5ea477a3f0b13626d37ecd79d2743906816f097b1878acdc5e1` |
+
+Integration qualification must run against the resulting merge commit. Earlier
+application evidence is not a substitute for workflow lint, executable snapshot
+checks, rendered website checks or the hosted integration run.
+
+Local integration evidence: actionlint passes for all repository workflows;
+76/76 native packaging/snapshot cases and 3/3 affected C# reference cases pass.
+The official Pages builder produces the site. Browser checks confirm all three
+1440x920 captures load and open at full size. The inherited More-apps menu
+overflow reproduces at 600 px before its CSS correction and passes at 320, 390,
+600, 760, 1024 and 1280 px afterward. Desktop/mobile captures and the measured
+menu bounds are retained under `site-preview-20261108.H6jlaM/evidence`.
+The approved integration uses native pull-request validation and automatic native snapshots after a merge to main. Full releases remain manual. The renewed local integration checks pass 77/77 packaging cases, all workflow lint, and the three affected C# reference assertions. Publication is limited to the existing feature branch until hosted integration succeeds.
+
+## Native acceptance reopened, 2026-11-09
+
+The previous technical qualification is retained at its exact source boundary. User acceptance exposed visible UX gaps and an incorrectly launched developer artifact. This section supersedes a blanket release-ready interpretation of that older evidence.
+
+### Connection artifact boundary
+
+- The failed context was tested only after explicit read-only authorization. No cluster writes, shells, forwards or credential resets were permitted.
+- System curl verified the configured CA/client certificate and received HTTP 200 from `/api`. The developer runtime selected SecureTransport and failed the handshake. With its intended OpenSSL runtime discoverable, the same Qt transport succeeded. No certificate verification was disabled.
+- The untouched standalone package loaded 571 real resources from that same context, using an isolated private profile and no developer runtime-path override. Its test window closed afterward. The original app/profile and unsaved user work were not restarted.
+- Private evidence is under `connection-repro-20261109.zejIiv`. Credentials and endpoint identities must not enter public artifacts. These reads do not establish live GKE or EKS cluster E2E. Provider fixtures, real Google account sign-in and local Kubernetes evidence retain their distinct boundaries.
+
+### Current fix cohort
+
+New public regressions cover valid/invalid/multiple/repeated dropped documents, positional file/file-URL input, no implicit session/authentication, explicit All resources selection, context tab options and modal blocking. Alert scenarios cover enabled/disabled complete rules becoming inactive drafts, restart, validation before enabling, no draft effects, and clean/dirty editor dismissal. Diagnostics scenarios prove automatic visible refresh and unchanged published output while hidden.
+
+The first focused cohort passed 72/78 executions. Its six failures were test-side assumptions about removed controls, fixed row order and popup/field lifetime. The corrected lifecycle/context cohort passes 10/10. Original logs are retained. These counts include Basic/Fusion variants and are not distinct-feature counts.
+
+A broader diagnostic run was interrupted after exposing additional obsolete import/Refresh/Commands test journeys. The duplicate inline source form is being removed, with dedicated import UI coverage moved to Sources and unrelated component setup routed through the public Workspace API. No hidden production control is retained solely for old tests. Final current-source suite, actual package, local Kubernetes, rendered acceptance and platform checks remain pending here.
+
+
+### Reopened acceptance progress
+
+The full diagnostic cohort completed 5,908 CTest executions with 103 failures. This is retained as a failed run, not qualification. Most failures referenced removed controls or the previous verbose status copy. Corrected tests preserve network, selection, lifecycle, timing and data-retention assertions. The source removal controller also had a real cleanup-warning loss, now covered through Sources. No compatibility-only invisible buttons were added.
+
+- `updated-read-source-tests.log`: 49/49 read-boundary and source-layout executions pass, including Basic/Fusion at 320, 390 and 1,440 pixels.
+- `acceptance-corrective-tests.log`: 238/238 Sources, immutable editor, source removal, alert/radar, command shortcut, modal, toolbar and quiet-notice executions pass.
+- The source-time regression fails before the display fix and passes afterward in both Qt styles. Display/copy uses the system's short local date/time. Stored UTC values and sort input remain canonical. Event times use the same display boundary. A legacy Event assertion still expecting ISO text is updated for the final retest.
+- Both `acceptance-real-kubernetes-20261109.log` and `final-reviewed-real-kubernetes-20261109.log` complete real local TLS/client-certificate, inspection, source editing, multi-container logs, YAML write/reconciliation/masking, interactive PTY/vi/resize/interrupt and UID-protected deletion journeys. Each owned cluster and its volumes are removed. The later short-date/quiet-notice changes need their final affected-source retest.
+- `acceptance-package-final.log` records the new standalone ARM64 package under `connection-repro-20261109.zejIiv/acceptance-package`. ZIP: 34,029,853 bytes. Installed regular files: 88,020,989 bytes. Dependency paths, minimum system and ad-hoc signature checks pass. Main executable SHA256: `8815b5e685d6e003e792e246382130271933c15eefb7cf32ff38c1cc53ada4ad`. ZIP SHA256: `58322a51836b68416d021279af2b8da1a4bd15acf14a3e1a4c205c2209d8c077`. This is not distribution signing, notarization or a Store submission.
+- Actual LaunchServices document opening imported a disposable kubeconfig into an isolated app profile, verified through the public source CLI. The desktop locked before visible verification. The owned process, test profile and comparison bundle were removed. This does not qualify visible Finder interaction, drag/drop on macOS, or normal app-quit behavior.
+
+The first qualification-script attempt lost its developer-only runtime path at the macOS system-shell boundary. Its preflight failed and its partial coverage report is not qualifying evidence. The repeat sets that path inside the shell. The distributed package does not use it. Full current-source coverage, fresh platform CI, visible acceptance and foreground startup/frame evidence remain separate until completed. No live managed-cloud cluster result is inferred from local Kubernetes or mocked provider protocol responses.
+
+### Latest acceptance candidate
+
+- `release-candidate-full-suite.log`: 34 preflight plus 5,882 main executions pass (5,916 total, including style variants). Main runtime is 884.83 seconds. Native coverage is 98.04% lines and 86.62% branches. Every existing critical-family gate passes, including Radar/Map 944/1,032 branches, source editor 103/108 and window restoration 107/118.
+- `ingress-coverage/functions.txt`: the real application FileOpen adapter reaches 11/12 branches (91.67%) and all source lines. Its test target compiles the unchanged application entrypoint. Public Qt events drive valid/repeated local documents and unsupported provider/web/empty URLs. The actual app exits normally after the imported context is published. The separate missing-runtime case keeps real platform plugins but makes TLS plugins unavailable, proving clean failure without import, authentication, requests or a silent backend fallback. No production test hook or replacement business implementation is linked into shipped packages.
+- The old ISO-text assertion is corrected to the approved system-local short format. Upper-right alert close and empty-context Settings/sidebar failures are retained in `final-close-regression-before.log` and `empty-settings-regression-before.log`. Current focused cohorts pass 366/366 and 30/30 executions. `alert-close-after.png` shows the rendered fix. New alert empty-state labels have explicit translations in all twenty non-English supported locales, rather than English fallback. Existing broader reference fallback policy remains unchanged.
+- `release-candidate-package.log`: the final standalone ARM64 app has valid dependency/minimum-system/ad-hoc-signature checks. ZIP: 34,030,498 bytes. Installed regular files: 88,020,989 bytes. Executable SHA256: `912fd5a95624049c0a318f0210c969ce3f1e93ef1cb2fd8a6f709a6a8e68337b`. ZIP SHA256: `8ac2be290ec16f2ae1d6a7dcdfaa0801581e5e130bba868bd7c579ee8675426a`. Prior package hashes above are retained historical artifacts, not the latest candidate.
+- `acceptance-ios-build.log` builds the current ARM64 simulator application and UI driver successfully. `acceptance-android-jdk21-build.log` builds the current release APK with the existing JDK 21. The initial inherited GraalVM 25 Gradle image-transform failure remains diagnostic evidence, not an application-source failure.
+- The current private Android package reuses the previous Podlord signer (`33e9c762958da07ed11b0ef67b7407039b7103688ea2321d77ebaf5fc7dfbb2a`). Signature and 16-KiB ZIP alignment pass. APK: 98,368,778 bytes, SHA256 `2d5fc1d68b427fbb0928145abd21570fdb6d236c0651232a06f7e33e42b4f2c0`. Approved flat APK.zip: 37,637,188 bytes, SHA256 `d6545b26d7b12e8198c9dbb2d1ccf3e28b5aa105092fa834e8e20d0570643987`. This is package preparation, not yet a current installed-device journey. No new signing key was generated or shared.
+
+- `release-candidate-kubernetes.log`: the current real local Kubernetes repeat passes TLS/client certificates, inspection, source Apply, multi-container logs, YAML reconciliation and Secret masking, interactive PTY/vi/resize/interrupt, and UID-protected deletion. Its owned cluster and volumes are removed.
+- `release-candidate-ios-matrix.log`: the ARM64 iPhone simulator matrix completes 798 captures (19 themes, two variants, 21 views) against 1,843 real local Kubernetes resources. Evidence is under `ios-acceptance-images/podlord-visual-run-jp38tl-ios-themes`. The owned simulator, cluster and profiles are removed. This is simulator evidence, not a physical-device or live managed-cloud claim.
+- `file-input-full-gate.log`: the complete qualification profile passes the new-logic gate separately for the application event adapter (11/12 branches, 91.67%) and complete batch-import family (20/22, 90.91%). A real partial profile is rejected at 14/22 (63.64%), proving that a high aggregate cannot hide a deficient import family.
+- The installed Android driver initially expected the removed Resources entry before any context and the removed duplicate source form. Its public journey now imports through Settings/Sources and opens the context card. Saved-filter checks use the current inline disclosure. The failed driver run and its completed cleanup record are retained. Both current installed Android journeys remain pending until the repeat completes.
+
+Fresh foreground macOS acceptance/start/frame evidence and current hosted Windows/Linux/platform CI remain open. A locked desktop or historical platform result is not a waiver. The original user process is preserved, including any unsaved alert.

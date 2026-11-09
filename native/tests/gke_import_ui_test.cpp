@@ -62,7 +62,7 @@ bool run(const QString& scenario) {
 
     Workspace workspace(profile);
     if (!QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; }, 5000)) return false;
-    const bool desktopUi = scenario == "desktop_main" || scenario == "desktop_settings";
+    const bool desktopUi = scenario == "desktop_settings";
     std::unique_ptr<QQmlApplicationEngine> engine;
     QQuickWindow* window = nullptr;
     const auto target = scenario == "wrong_context" ? QString("ctx:") + QString(64, '0') : contextId;
@@ -73,20 +73,10 @@ bool run(const QString& scenario) {
         if (engine->rootObjects().isEmpty()) return false;
         window = qobject_cast<QQuickWindow*>(engine->rootObjects().first());
         if (!window || !QTest::qWaitFor([&] { return window->isVisible(); }, 5000)) return false;
-        if (scenario == "desktop_main") {
-            if (!podlord::test::clickVisible(window, "resourcesWorkspaceButton")
-                || !podlord::test::clickVisible(window, "sourcesButton")
-                || !podlord::test::clickVisible(window, "importGkeKey")) {
-                std::fputs("Desktop source controls cannot open GKE key import.\n", stderr);
-                return false;
-            }
-        } else if (!podlord::test::clickVisible(window, "settingsWorkspaceButton")
+        if (!podlord::test::clickVisible(window, "settingsWorkspaceButton")
             || !podlord::test::selectSettingsSection(window, "sources")
             || !podlord::test::clickVisible(window, "sourceActionsMenuButton")
-            || !podlord::test::clickVisible(window, "importGkeKeyFromSettings")) {
-            std::fputs("Desktop Sources settings cannot open GKE key import.\n", stderr);
-            return false;
-        }
+            || !podlord::test::clickVisible(window, "importGkeKeyFromSettings")) return false;
         auto* dialog = engine->rootObjects().first()->findChild<QObject*>("gkeImportDialog");
         auto* picker = engine->rootObjects().first()->findChild<QObject*>("gkeImportContext");
         if (!dialog || !picker || !QTest::qWaitFor([&] { return dialog->property("opened").toBool(); }, 2000)
@@ -119,8 +109,7 @@ bool run(const QString& scenario) {
     const QFileInfo privateCopy(profile + "/kubeconfigs/gke-" + contextId.mid(4) + ".cred");
     if (!std::get<bool>(stored) || !privateCopy.isFile()
         || privateCopy.permissions() & (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther | QFileDevice::WriteOther)
-        || !workspace.sourceImportError().isEmpty() || !workspace.sourceImportNotice().contains("private app storage")
-        || workspace.sourceImportNotice().contains(keyPath) || QString::fromUtf8(json).contains(workspace.sourceImportNotice())) return false;
+        || !workspace.sourceImportError().isEmpty() || !workspace.sourceImportNotice().isEmpty()) return false;
     const auto resolved = store.connection(contextId);
     const auto* connection = std::get_if<ClusterConnection>(&resolved);
     if (!connection || !connection->exec || !connection->exec->gke || !connection->exec->gke->serviceAccount

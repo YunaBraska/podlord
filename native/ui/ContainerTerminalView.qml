@@ -186,7 +186,7 @@ ColumnLayout {
             onTriggered: workspace.stopContainerTerminal()
         }
     }
-    Dialog {
+    ModalDialog {
         id: helpDialog
         objectName: "terminalHelpDialog"
         title: "Terminal keys"
@@ -199,7 +199,7 @@ ColumnLayout {
             wrapMode: Text.Wrap
         }
     }
-    Dialog {
+    ModalDialog {
         id: pasteReview
         objectName: "terminalPasteReview"
         title: "Paste into running shell?"

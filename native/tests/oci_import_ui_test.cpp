@@ -195,8 +195,8 @@ bool run(const QString& scenario) {
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == (scenario == "identity" ? 2 : 1); }, 5000)) return false;
-    if (!test::clickVisible(window,"resourcesWorkspaceButton") || !test::clickVisible(window,"sourcesButton")
-        || !test::clickVisible(window, "importOciKey")) return false;
+    if (!test::clickVisible(window,"settingsWorkspaceButton") || !test::selectSettingsSection(window,"sources")
+        || !test::clickVisible(window,"sourceActionsMenuButton") || !test::clickVisible(window,"importOciKeyFromSettings")) return false;
     auto* dialog = window->findChild<QObject*>("ociImportDialog");
     auto* context = window->findChild<QQuickItem*>("ociImportContext");
     if (!dialog || !dialog->property("visible").toBool() || !context || context->property("currentValue").toString() != contextId)
@@ -209,7 +209,7 @@ bool run(const QString& scenario) {
             && std::holds_alternative<bool>(credential) && !std::get<bool>(credential);
     const auto connection = store.connection(contextId);
     const auto* ready = std::get_if<ClusterConnection>(&connection);
-    if (!(workspace.sourceImportError().isEmpty() && workspace.sourceImportNotice().contains("OCI API key")
+    if (!(workspace.sourceImportError().isEmpty() && workspace.sourceImportNotice().isEmpty()
         && std::holds_alternative<bool>(credential) && std::get<bool>(credential)
         && ready && ready->exec && ready->exec->oci && ready->exec->oci->privateKey == key
         && QTest::qWaitFor([&] { return !dialog->property("visible").toBool(); }, 2000))) return false;
@@ -230,9 +230,13 @@ bool run(const QString& scenario) {
         const auto privateCopy = profile + "/kubeconfigs/oci-" + contextId.mid(4) + ".cred";
         if (!QFile::remove(privateCopy) || !QDir().mkdir(privateCopy)
             || !workspace.requestSourceRemoval(contextId) || !workspace.confirmSourceRemoval()
-            || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.sourceRemoval().isEmpty() && workspace.contexts().isEmpty(); }, 5000)) return false;
-        return workspace.sessions().isEmpty() && workspace.sourceImportError().contains("private credential")
+            || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.sourceRemoval().isEmpty() && workspace.contexts().isEmpty(); }, 5000)) {
+            qWarning() << "OCI removal did not settle" << workspace.busy() << workspace.contexts().size() << workspace.sourceRemoval() << workspace.sourceImportError(); return false;
+        }
+        const bool removed=workspace.sessions().isEmpty() && workspace.sourceImportError().contains("private credential")
             && QFileInfo(privateCopy).isDir() && QFileInfo::exists(keyPath) && requests == 0;
+        if (!removed) qWarning() << "OCI removal outcome" << workspace.sessions().size() << workspace.sourceImportError() << QFileInfo(privateCopy).isDir() << QFileInfo::exists(keyPath) << requests;
+        return removed;
     }
     if (!workspace.refresh(true) || !QTest::qWaitFor([&] { return requests > 0 && !workspace.authenticationRunning(); }, 5000)
         || workspace.authenticationRequired()) { qWarning("OCI login: required=%d running=%d requests=%d",workspace.authenticationRequired(),workspace.authenticationRunning(),requests); return false; }
@@ -347,7 +351,7 @@ bool run(const QString& scenario) {
             auto old = secret;
             auto metadata = old["metadata"].toObject(); metadata["resourceVersion"] = "late-A"; old["metadata"] = metadata;
             respond(heldA, old);
-            if (!QTest::qWaitFor([&] { return workspace.inspectorStatus().contains("A newer resource read is already cached."); }, 5000)
+            if (!QTest::qWaitFor([&] { return workspace.inspectorStatus().contains("A newer version is available."); }, 5000)
                 || !workspace.canEditYaml() || workspace.yamlText() != cachedYaml || !secretVisible()
                 || !workspace.revealValue("data/password", true) || patches != 0) return failed("late A preserves accepted B freshness");
             rejectBDetail = true;

@@ -331,6 +331,73 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         const auto selected = [&] { return item(window,"alertName")->property("text").toString(); };
         const auto baseline = rules();
         if (selected() != baseline.first().toMap()["name"].toString()) return false;
+        if (scenario=="reference_valid_to_draft_restart" || scenario=="reference_disabled_to_draft_restart") {
+            if (!click(window,"addAlert") || !type(window,"alertName","Editable custom") || !type(window,"alertExpression_0","alpha")
+                || !click(window,"saveAlert") || !settle()) return false;
+            if (scenario=="reference_disabled_to_draft_restart" && (!click(window,"alertEnabled") || !click(window,"saveAlert") || !settle())) return false;
+            if (!type(window,"alertExpression_0","") || !click(window,"saveAlert") || !settle()) return false;
+            const auto draft=rules().last().toMap();
+            if (!draft["draft"].toBool() || draft["enabled"].toBool()
+                || !draft["groups"].toList().first().toList().first().toMap()["expression"].toString().isEmpty()) return false;
+            podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.alerts()->busy(); }) || restored.alerts()->rules().last().toMap()!=draft) return false;
+            QSignalSpy focus(workspace.alerts(), &podlord::Alerts::focusRequested);
+            QSignalSpy sound(workspace.alerts(), &podlord::Alerts::soundRequested);
+            if (!loadSession() || !waitFor([&] { return !workspace.loading(); })) return false;
+            for (const auto& match : workspace.alerts()->matches()) if (match.toMap()["id"]==draft["id"]) return false;
+            return focus.isEmpty() && sound.isEmpty();
+        }
+        if (scenario=="reference_draft_round_trip" || scenario=="reference_draft_enable") {
+            if (!click(window,"addAlert") || !type(window,"alertName","Incomplete draft")
+                || !type(window,"alertExpression_0","/[broken/") || !click(window,"saveAlert") || !settle()) return false;
+            const auto saved=rules().last().toMap();
+            const auto expression=saved["groups"].toList().first().toList().first().toMap()["expression"].toString();
+            if (!saved["draft"].toBool() || saved["enabled"].toBool() || expression!="/[broken/") return false;
+            if (scenario=="reference_draft_round_trip") {
+                podlord::Workspace restored(profile);
+                if (!waitFor([&] { return !restored.alerts()->busy(); })) return false;
+                const auto reloaded=restored.alerts()->rules().last().toMap();
+                if (!waitFor([&] { return item(window,"alertCell_0_3") && item(window,"alertCell_1_3"); })) return false;
+                return reloaded["draft"].toBool() && !reloaded["enabled"].toBool()
+                    && reloaded["groups"].toList().first().toList().first().toMap()["expression"]=="/[broken/"
+                    && item(window,"alertCell_0_3")->property("text").toString()=="Draft"
+                    && item(window,"alertCell_1_3")->property("text").toString()=="Not evaluated" && server.requests==0;
+            }
+            if (!type(window,"alertExpression_0","alpha") || !click(window,"alertEnabled") || !click(window,"saveAlert") || !settle()) return false;
+            const auto enabled=rules().last().toMap();
+            return !enabled["draft"].toBool() && enabled["enabled"].toBool()
+                && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha" && server.requests==0;
+        }
+        if (scenario=="reference_editor_close_clean") {
+            const auto* close=item(window,"closeAlertEditor");
+            const auto* editor=item(window,"alertEditor");
+            if (!close || !editor || !waitFor([&] {
+                const auto closeBounds=close->mapRectToScene(close->boundingRect());
+                const auto editorBounds=editor->mapRectToScene(editor->boundingRect());
+                return qAbs(closeBounds.right()-editorBounds.right())<=2 && closeBounds.bottom()<=editorBounds.top();
+            })) {
+                std::fputs("Alert editor close action is not at the upper right.\n",stderr);
+                const auto frame=qEnvironmentVariable("PODLORD_ALERT_FAILURE_FRAME");
+                if (!frame.isEmpty()) window->grabWindow().save(frame);
+                return false;
+            }
+            const auto capture=qEnvironmentVariable("PODLORD_ALERT_LAYOUT_FRAME");
+            if (!capture.isEmpty() && !window->grabWindow().save(capture)) return false;
+            if (!click(window,"closeAlertEditor") || !waitFor([&] { return !item(window,"alertEditor")->isVisible(); })) return false;
+            if (!workspace.alerts()->reload() || !settle()) return false;
+            return !item(window,"alertEditor")->isVisible() && rules()==baseline && server.requests==0;
+        }
+        if (scenario=="reference_editor_close_dirty") {
+            if (!click(window,"duplicateAlert") || !settle()) return false;
+            const auto beforeEdit = rules();
+            if (!type(window,"alertDescription","unsaved") || !click(window,"closeAlertEditor")
+                || !waitFor([&] { return (window->findChild<QObject*>("discardAlertChanges") && window->findChild<QObject*>("discardAlertChanges")->property("visible").toBool()); })
+                || !click(window,"keepAlertChanges")) return false;
+            if (!item(window,"alertEditor")->isVisible() || item(window,"alertDescription")->property("text").toString()!="unsaved") return false;
+            if (!click(window,"closeAlertEditor") || !waitFor([&] { return (window->findChild<QObject*>("discardAlertChanges") && window->findChild<QObject*>("discardAlertChanges")->property("visible").toBool()); })
+                || !click(window,"discardAlertChangesButton") || !waitFor([&] { return !item(window,"alertEditor")->isVisible(); })) return false;
+            return rules()==beforeEdit && server.requests==0;
+        }
         if (scenario.startsWith("reference_controls_")) {
             const auto requested = scenario.mid(QString("reference_controls_").size());
             const auto mode = requested == "narrow_motion" ? QStringLiteral("narrow") : requested;
@@ -342,7 +409,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 QTest::keyClick(window, Qt::Key_Return);
                 return waitFor([&] { return item(window, control)->property("currentIndex").toInt() == index; });
             };
-            if (item(window, "sourceManagementPanel")->isVisible()) return false;
+            if (item(window, "sourceManagementPanel")) return false;
             if (mode == "locked")
                 return !item(window, "alertColorChoice")->isEnabled() && !item(window, "alertChooseColor")->isEnabled()
                     && !item(window, "alertColorMode")->isEnabled() && rules() == baseline && server.requests == 0;
@@ -352,9 +419,12 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 if (!choose("alertField_0", workspace.alerts()->fields().indexOf("problems"))) return false;
                 expectedField = "problems"; expectedExpression = mode == "boolean_invalid" ? "false" : "true";
                 if (mode == "boolean_invalid") {
-                    if (!click(window, "saveAlert") || workspace.alerts()->error().isEmpty() || rules() != baseline
+                    if (!click(window, "saveAlert") || !settle() || !workspace.alerts()->error().isEmpty()
+                        || rules().size() != baseline.size()+1 || !rules().last().toMap()["draft"].toBool()
+                        || rules().last().toMap()["enabled"].toBool()
                         || item(window, "alertBoolean_0")->property("currentIndex").toInt() != -1
-                        || item(window, "alertExpression_0")->property("text").toString() != "alpha") return false;
+                        || item(window, "alertExpression_0")->property("text").toString() != "alpha"
+                        || !click(window,"alertEnabled")) return false;
                 }
                 if (!choose("alertBoolean_0", expectedExpression == "true" ? 0 : 1)) return false;
                 if (item(window, "alertExpression_0")->isVisible()) return false;
@@ -985,10 +1055,10 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         }
         if (scenario=="radar_loading_partial") {
             const auto* summary=item(window, "radarHealthSummary");
-            if (!summary || !summary->property("text").toString().contains("1 cached") || !summary->property("text").toString().contains("Loading")
+            if (!summary || !summary->property("text").toString().contains("1 resources") || !summary->property("text").toString().contains("Loading")
                 || !workspace.alerts()->matches().isEmpty() || !focus.isEmpty()) return false;
             if (!waitFor([&] { return !workspace.loading() && workspace.resourceCount()==2; })) return false;
-            return summary->property("text").toString().contains("2 cached") && !summary->property("text").toString().contains("Loading");
+            return summary->property("text").toString().contains("2 resources") && !summary->property("text").toString().contains("Loading");
         }
         if (scenario=="radar_refresh_preserves_alarm") {
             const auto problemCount=[&] {
@@ -1002,7 +1072,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!waitFor([&] { return problemCount()==1 && podlord::test::radarPixel(window,0)==red; }) || !focus.isEmpty()) return false;
             server.holdPodResponses=true;
             server.phase="Running";
-            if (!click(window,"refreshButton") || !waitFor([&] { return workspace.loading() && !server.heldPodResponses.isEmpty(); })) return false;
+            if (!workspace.refresh() || !waitFor([&] { return workspace.loading() && !server.heldPodResponses.isEmpty(); })) return false;
             const bool preserved=problemCount()==1 && podlord::test::radarPixel(window,0)==red && focus.isEmpty();
             if (!server.releasePodResponses()) return false;
             if (!preserved) { std::fputs("Background sync removed an alarm from the still-visible cached resource.\n",stderr); return false; }
@@ -1013,13 +1083,13 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (scenario=="radar_focus_filtered" && !workspace.filter("alpha")) return false;
             const auto requests=server.requests; const auto previous=focus.count();
             server.secondFailed=true;
-            if (!click(window, "refreshButton") || !waitFor([&] { return server.requests>requests && !workspace.loading() && focus.count()>previous; })) return false;
+            if (!workspace.refresh() || !waitFor([&] { return server.requests>requests && !workspace.loading() && focus.count()>previous; })) return false;
             auto* radar=item(window, "resourceRadar");
             const bool target=focus.last()[1].toString().endsWith("/zeta");
             const int index=radar->property("currentIndex").toInt();
             const bool visibleTarget=scenario=="radar_focus_filtered" ? index<=0 && workspace.resourceCount()==1 : index==workspace.alertResourceIndex("/api/v1/namespaces/default/pods/zeta");
             const auto settled=focus.count();
-            if (!click(window, "refreshButton") || !waitFor([&] { return !workspace.loading(); })) return false;
+            if (!workspace.refresh() || !waitFor([&] { return !workspace.loading(); })) return false;
             QTest::qWait(100);
             return target && visibleTarget && focus.count()==settled;
         }

@@ -54,6 +54,8 @@ int main(int argc, char** argv) {
             return true;
         };
         require(QTest::qWaitFor(fits, 3000), "Empty sessions must not display unavailable or zero-count HUD cards.");
+        for (const auto* name : {"resourcesWorkspaceButton", "eventsWorkspaceButton", "portForwardTasksButton"})
+            require(!findItem(window->contentItem(),name)->isVisible(),"Context-only navigation appeared without a context.");
         QList<QRectF> navigationBounds;
         for (const auto* name : {"resourcesWorkspaceButton", "eventsWorkspaceButton", "portForwardTasksButton", "settingsWorkspaceButton"}) {
             auto* button = findItem(window->contentItem(), name);
@@ -93,8 +95,7 @@ int main(int argc, char** argv) {
             return podlord::test::clickVisible(window,buttonName)
                 && QTest::qWaitFor([&] { return workspace.workspacePage()==page; },3000);
         };
-        require(navigate("resourcesWorkspaceButton", "resources") && navigate("eventsWorkspaceButton", "events")
-            && navigate("portForwardTasksButton", "ports") && navigate("settingsWorkspaceButton", "settings"),
+        require(navigate("settingsWorkspaceButton", "settings") && navigate("mapWorkspaceButton", "map"),
             "Visible navigation did not open its workspace.");
         const auto evidence = qEnvironmentVariable("PODLORD_UI_EVIDENCE_DIR");
         if (!evidence.isEmpty()) {

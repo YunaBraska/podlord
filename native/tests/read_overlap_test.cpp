@@ -311,18 +311,18 @@ bool run(const QString& scenario) {
         {"groups_invalid_body", "Invalid group discovery response"},
         {"groups_invalid_version", "Invalid preferred API version"},
         {"list_invalid_body", "Invalid resource list response"},
-        {"list_invalid_entry", "Invalid resource list entry"},
-        {"list_invalid_version", "Invalid resource list entry"},
-        {"list_invalid_version_type", "Invalid resource list entry"},
-        {"list_invalid_kind", "Invalid resource list entry"},
-        {"list_invalid_kind_type", "Invalid resource list entry"},
-        {"list_missing_namespace", "Invalid resource list entry"},
-        {"list_control_name", "Invalid resource list entry"},
+        {"list_invalid_entry", "invalid resource"},
+        {"list_invalid_version", "invalid resource"},
+        {"list_invalid_version_type", "invalid resource"},
+        {"list_invalid_kind", "invalid resource"},
+        {"list_invalid_kind_type", "invalid resource"},
+        {"list_missing_namespace", "invalid resource"},
+        {"list_control_name", "invalid resource"},
         {"list_invalid_continuation", "Invalid list continuation"},
-        {"list_malformed_json", "Malformed API response"},
+        {"list_malformed_json", "invalid response"},
         {"list_forbidden", "Authorization denied"},
         {"list_redirect", "Redirect refused"},
-        {"list_rate_limited_invalid_retry_after", "Rate limited"}
+        {"list_rate_limited_invalid_retry_after", "limiting requests"}
     };
     if (invalidReadMessages.contains(scenario))
         return waitFor([&] { return !client.loading("session") && !server.active; })
@@ -342,9 +342,9 @@ bool run(const QString& scenario) {
             if (previous.size() != 1) return false;
             server.podNamespace = "other";
             if (!client.refresh("session") || !waitFor([&] { return !client.loading("session") && !server.active; })) return false;
-            return client.rows("session") == previous && client.failureStatus("session").contains("Invalid resource list entry");
+            return client.rows("session") == previous && client.failureStatus("session").contains("invalid resource");
         }
-        return client.rows("session").isEmpty() && client.failureStatus("session").contains("Invalid resource list entry");
+        return client.rows("session").isEmpty() && client.failureStatus("session").contains("invalid resource");
     }
     if (scenario == "namespace_all_valid")
         return waitFor([&] { return !client.loading("session") && !server.active; })
@@ -360,7 +360,7 @@ bool run(const QString& scenario) {
         server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", "repeat"}}}, {"items", QJsonArray{}}});
         if (!client.refresh("session") || !waitFor([&] { return !client.loading("session") && !server.active; })) return false;
         return server.podLists == 3 && client.rows("session") == previous
-            && client.failureStatus("session").contains("Repeated list continuation");
+            && client.failureStatus("session").contains("repeated a resource page");
     }
     if (scenario == "discovery_invalid_entry")
         return client.failureStatus("session").contains("Invalid resource discovery entry") && server.podLists == 1;
@@ -467,7 +467,7 @@ bool run(const QString& scenario) {
         if (scenario == "auth") return client.authenticationRequired("session") && !client.refresh("session");
         bool held = false;
         for (qsizetype i = before + 1; i < starts.size(); ++i) held = held || starts[i] - starts[i-1] >= 2000;
-        return held && client.status("session").contains("Rate limited");
+        return held && client.status("session").contains("limiting requests");
     }
     return false;
 }

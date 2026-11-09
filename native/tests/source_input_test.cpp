@@ -15,6 +15,7 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QInputMethodEvent>
 #include <cstdio>
 #include <stdexcept>
 
@@ -60,70 +61,42 @@ bool ui(const QString& profile, const QString& directory, bool partial, int widt
     require(!engine.rootObjects().isEmpty(), "Cannot create real source UI");
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     require(window, "Source UI has no window");
-    require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Initial catalogs did not settle");
-    require(click(window, window->findChild<QQuickItem*>("resourcesWorkspaceButton")), "Cannot open the resource import view");
-    auto* input = window->findChild<QQuickItem*>("sourcePath");
+    if (width > 0) window->resize(width,720);
+    require(QTest::qWaitFor([&] { return !workspace.busy(); },5000), "Initial catalogs did not settle");
+    require(podlord::test::clickVisible(window,"settingsWorkspaceButton")
+        && podlord::test::selectSettingsSection(window,"sources"), "Cannot open Sources settings");
+    auto* input = podlord::test::visibleItem(window->contentItem(),"settingsSourcePath");
+    auto* import = podlord::test::visibleItem(window->contentItem(),"settingsImportSource");
+    require(input && import, "Source input is unavailable");
     if (width > 0) {
-        window->setWidth(width);
-        window->setHeight(720);
-        require(QTest::qWaitFor([&] { return window->contentItem()->width() == width && input && input->width() >= 160; }, 2000),
-            "Kubeconfig path field is too narrow to read or edit");
-        const auto controls = input->parentItem()->childItems();
-        QList<QRectF> occupied;
-        int actions = 0;
-        for (auto* control : controls) {
-            const auto text = control->property("text").toString();
-            const bool action = QStringList{"Browse", "Folder", "Import"}.contains(text);
-            if (control != input && !action) continue;
-            require(control->isVisible() && control->isEnabled(), "Source import control is unavailable");
-            require(!action || (control->width() >= 44 && control->height() >= 26), "Source action has an unusable target");
-            const QRectF bounds(control->mapToScene(QPointF()), QSizeF(control->width(), control->height()));
-            require(bounds.left() >= 0 && bounds.right() <= width && bounds.top() >= 0 && bounds.bottom() <= 720,
-                "Source import control extends beyond the viewport");
-            for (const auto& previous : occupied) require(!bounds.intersects(previous), "Source import controls overlap");
-            occupied.append(bounds);
-            if (action) ++actions;
+        if (!QTest::qWaitFor([&] { return input->width() >= 160 && import->width() >= 44 && import->height() >= 32; },2000)) {
+            std::fprintf(stderr,"Source geometry: viewport=%d input=%gx%g import=%gx%g\n",width,input->width(),input->height(),import->width(),import->height());
+            const auto output=qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
+            if (!output.isEmpty()) window->grabWindow().save(output+"/source-layout-failed-"+QString::number(width)+".png");
+            require(false,"Source controls are too small");
         }
-        require(actions == 3, "Source import actions are missing");
-        auto* selector = window->findChild<QQuickItem*>("contexts");
-        require(selector && selector->width() >= 160, "Context selector is too narrow to read");
-        for (const auto* name : {"contexts", "openContext", "reloadSources"}) {
-            auto* control = window->findChild<QQuickItem*>(name);
-            require(control && control->isVisible(), "Context action is unavailable");
-            const QRectF bounds(control->mapToScene(QPointF()), QSizeF(control->width(), control->height()));
-            require(bounds.left() >= 0 && bounds.right() <= width && bounds.bottom() <= 720,
-                "Context controls extend beyond the viewport");
-        }
-        input->forceActiveFocus();
-        QTest::keyClick(window, Qt::Key_X);
-        require(input->property("text").toString() == "x", "Source path cannot be edited with the keyboard");
+        const auto inputBounds = input->mapRectToScene(input->boundingRect());
+        const auto importBounds = import->mapRectToScene(import->boundingRect());
+        const QRectF viewport(0,0,width,720);
+        require(viewport.contains(inputBounds) && viewport.contains(importBounds) && !inputBounds.intersects(importBounds),"Source controls clip or overlap");
     }
-    require(input && input->setProperty("text", directory), "Source path control is unavailable");
-    require(click(window, window->findChild<QQuickItem*>("importButton")), "Cannot activate public Import button");
-    require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Source import did not settle");
-    require(workspace.contexts().size() == 1, "Folder import did not populate the context selector");
-    if (width > 0) {
-        const QString evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
-        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/source-layout-" + QString::number(width)
-            + "-" + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + ".png"), "Cannot save actual source import frame");
-    }
-    auto* notice = window->findChild<QQuickItem*>("sourceImportNotice");
-    require(notice && notice->property("visible").toBool(), "Import outcome is not visible");
-    require(notice->property("text").toString().contains("1"), "Import outcome does not describe imported sources");
+    input->forceActiveFocus();
+    QInputMethodEvent entry; entry.setCommitString(directory); QCoreApplication::sendEvent(input,&entry);
+    require(click(window,import),"Cannot activate public Import button");
+    require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; },5000),"Source import did not populate Sources");
+    require(workspace.currentSession().isEmpty(),"Import unexpectedly opened a context");
     if (partial) {
-        require(click(window, window->findChild<QQuickItem*>("sourceImportDetailsButton")), "Cannot open partial import details");
-        auto* dialog = window->findChild<QObject*>("sourceImportDetails");
-        require(dialog && dialog->property("visible").toBool(), "Partial import dialog did not open");
-        require(!dialog->property("title").toString().isEmpty(), "Import errors have no accessible title");
-        QTest::keyClick(window, Qt::Key_Escape);
-        require(QTest::qWaitFor([&] { return !dialog->property("visible").toBool(); }), "Partial import dialog did not close");
-    }
-    require(click(window, window->findChild<QQuickItem*>("settingsWorkspaceButton")), "Cannot open Settings after source import");
-    require(podlord::test::selectSettingsSection(window, "sources"), "Cannot open Sources after source import");
-    require(QTest::qWaitFor([&] {
-        auto* list = window->findChild<QQuickItem*>("settingsSourceList");
-        return list && list->property("count").toInt() == 1;
-    }), "Imported context is missing from Settings Sources");
+        require(!workspace.sourceImportNotice().isEmpty(),"Partial import has no visible summary");
+        require(podlord::test::clickVisible(window,"settingsSourceImportDetails"),"Cannot open partial import details");
+        auto* dialog=window->findChild<QObject*>("sourceImportDetails");
+        require(dialog && dialog->property("visible").toBool(),"Partial import dialog did not open");
+        require(!dialog->property("title").toString().isEmpty(),"Import errors have no accessible title");
+        QTest::keyClick(window,Qt::Key_Escape);
+        require(QTest::qWaitFor([&] { return !dialog->property("visible").toBool(); }),"Partial import dialog did not close");
+    } else require(workspace.sourceImportNotice().isEmpty(),"Successful import produced a diagnostic notice");
+    require(QTest::qWaitFor([&] { auto* list=window->findChild<QQuickItem*>("settingsSourceList"); return list && list->property("count").toInt()==1; }),"Imported context is absent from Sources");
+    const auto evidence=qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
+    if (width>0 && !evidence.isEmpty()) require(window->grabWindow().save(evidence+"/source-layout-"+QString::number(width)+"-"+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png"),"Cannot save source frame");
     return true;
 }
 bool management(const QString& scenario, const QString& root, const QString& profile) {
@@ -205,9 +178,9 @@ bool management(const QString& scenario, const QString& root, const QString& pro
     const auto settle = [&] { require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Management operation did not settle"); };
     if (mode == "refresh_quick_controls_changed") {
         write(origin, yaml + "- name: third\n  context:\n    cluster: local\n    user: local\n");
-        press("resourcesWorkspaceButton");
-        press("sourcesButton");
-        require(click(window, item("reloadSources")), "Cannot activate public Reload sources button");
+        require(podlord::test::clickVisible(window,"settingsWorkspaceButton")
+            && podlord::test::selectSettingsSection(window,"sources"), "Cannot open Sources settings");
+        press("refreshSourceFilesButton");
         settle();
         require(sourceCount() == 2, "Reload sources did not import changed original content");
         bool updatedContextVisible = false;

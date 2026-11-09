@@ -11,6 +11,7 @@
 #include "yaml_presentation.h"
 #include <qqml.h>
 #include <QClipboard>
+#include <QLocale>
 #include <QColor>
 #include <QFutureWatcher>
 #include <QEvent>
@@ -175,6 +176,9 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
             value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : QStringLiteral("-");
             if (cell.isDouble() && !row["metricComplete"].toObject()[field].toBool()) value += " (incomplete)";
             if (cell.isDouble() && row["metricStale"].toBool()) value += " (stale)";
+        } else if (field == "eventTime" || field == "imported") {
+            const auto date = QDateTime::fromString(text, Qt::ISODate);
+            value = date.isValid() ? QLocale::system().toString(date.toLocalTime(), QLocale::ShortFormat) : QString{};
         } else if (field == "createdAt") {
             if (!created.isValid() || created > now) value = QStringLiteral("-");
             else {
@@ -518,7 +522,7 @@ QString Workspace::error() const {
     }
     return error_.isEmpty() ? client_.portForwardError(active_) : error_;
 }
-QString Workspace::status() const { return authenticationRunning() ? "Authentication running; cached resources remain available." : client_.status(active_); }
+QString Workspace::status() const { return authenticationRunning() ? "Signing in…" : client_.status(active_); }
 QString Workspace::currentSession() const { return active_; }
 QString Workspace::title() const {
     for (const auto& session : catalog_.sessions) if (sessionId(session.id) == active_) return session.displayName();
@@ -659,6 +663,17 @@ bool Workspace::yamlVisible() const { return currentNavigation().page == "yaml";
 bool Workspace::valuesVisible() const { return currentNavigation().page == "values" && valuesAvailable(); }
 bool Workspace::valuesAvailable() const { return isCoreValueResource(client_.resource(active_, inspectorPath())); }
 QString Workspace::monospaceFamily() const { return QFontDatabase::families().contains("Menlo") ? QString("Menlo") : QFontDatabase::systemFont(QFontDatabase::FixedFont).family(); }
+QString Workspace::syncProblem() const {
+    auto message = client_.failureStatus(active_).section('\n', 0, 0);
+    if (message.isEmpty()) return {};
+    if (message.startsWith('/')) message = message.section(": ", 1);
+    const auto context = mapContextCaption();
+    return context.isEmpty() ? message : context + ": " + message;
+}
+QString Workspace::displayDateTime(const QString& value) const {
+    const auto time = QDateTime::fromString(value, Qt::ISODateWithMs);
+    return time.isValid() ? QLocale::system().toString(time.toLocalTime(), QLocale::ShortFormat) : QString{};
+}
 QVariantMap Workspace::settingsDiagnostics() const {
     const auto cache = client_.cacheDiagnostics();
     QVariantList metrics{
@@ -915,7 +930,7 @@ bool Workspace::logFollow() const { return logPositions_.value(logScope_).follow
 QString Workspace::logPositionNotice() const {
     const auto position = logPositions_.value(logScope_);
     if (!position.evicted) return {};
-    const auto reason = position.removal == PodLogHistory::Removal::Limit ? "was removed by the log-size limit" : position.removal == PodLogHistory::Removal::Expiry ? "was removed by cache expiry" : "is no longer retained";
+    const auto reason = position.removal == PodLogHistory::Removal::Limit ? "was removed by the log-size limit" : position.removal == PodLogHistory::Removal::Expiry ? "was removed by history retention" : "is no longer retained";
     return QString("The section being read %1. Showing the oldest retained entry; live following remains off.").arg(reason);
 }
 bool Workspace::rememberLogPosition(const QString& anchor, double offset, bool follow) {
@@ -949,7 +964,7 @@ bool Workspace::publishLogs() {
 }
 bool Workspace::setLogsVisible(bool visible) {
     emit logViewChanging();
-    if (visible && (!podInspected() || !client_.showLogs(active_, currentNavigation().inspected, viewId_))) { error_ = "Logs require a Pod with valid cached container metadata."; emit changed(); return false; }
+    if (visible && (!podInspected() || !client_.showLogs(active_, currentNavigation().inspected, viewId_))) { error_ = "Container details are not available yet."; emit changed(); return false; }
     navigation_[active_].page = visible ? "logs" : "overview";
     if (!visible) client_.hideLogs(viewId_);
     publishLogs(); emit changed(); return true;
@@ -1130,7 +1145,7 @@ bool Workspace::importOciCredentials(const QString& contextId, const QString& co
         const auto imported = store.importOciCredentials(contextId, configPath, keyPath);
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
-    }, "OCI API key imported for the selected context. The private key is not shown in Sources.", false, contextId);
+    }, false, contextId);
 }
 bool Workspace::importGkeServiceAccount(const QString& contextId, const QString& keyPath) {
     if (!retainDocumentReadAccess(keyPath)) {
@@ -1142,7 +1157,7 @@ bool Workspace::importGkeServiceAccount(const QString& contextId, const QString&
         const auto imported = store.importGkeServiceAccount(contextId, keyPath);
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
-    }, "Google service-account key imported into private app storage. The original selected file is unchanged; key contents are not shown in Sources.", false, contextId);
+    }, false, contextId);
 }
 bool Workspace::importAwsProfile(const QString& contextId, const QString& configPath, const QString& credentialsPath) {
     for (const auto& path : {configPath, credentialsPath}) if (!path.isEmpty() && !retainDocumentReadAccess(path)) {
@@ -1153,7 +1168,30 @@ bool Workspace::importAwsProfile(const QString& contextId, const QString& config
         const auto imported = store.importAwsProfile(contextId, configPath, credentialsPath);
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
-    }, "Selected AWS profile imported privately for this context. Confirm sign-in to connect. Original files are unchanged.", false, contextId);
+    }, false, contextId);
+}
+bool Workspace::importFiles(const QStringList& inputs) {
+    auto paths = inputs; paths.removeDuplicates();
+    if (paths.isEmpty()) return false;
+    for (const auto& path : paths) if (!retainDocumentReadAccess(path)) {
+        sourceImportError_ = error_ = "Cannot access the selected file. Choose it again.";
+        emit changed(); return false;
+    }
+    return importSource([paths](const KubeconfigStore& store) -> Result<SourceImportReport> {
+        SourceImportReport report; std::optional<Failure> rejected;
+        for (const auto& path : paths) {
+            const auto imported = store.importPath(path);
+            if (const auto* failure = std::get_if<Failure>(&imported)) {
+                if (!rejected || (rejected->sourceInput && !failure->sourceInput)) rejected = *failure;
+                if (!failure->sourceInput) report.errors.append({path, *failure});
+            } else {
+                const auto& result = std::get<SourceImportReport>(imported);
+                report.sources.append(result.sources); report.errors.append(result.errors);
+            }
+        }
+        if (report.sources.isEmpty() && rejected) return *rejected;
+        return report;
+    }, true);
 }
 bool Workspace::quickImportFile(const QString& path) {
     if (!retainDocumentReadAccess(path)) {
@@ -1165,7 +1203,7 @@ bool Workspace::quickImportFile(const QString& path) {
         const auto imported = store.importFile(path);
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
-    }, {}, true);
+    }, true);
 }
 QString Workspace::defaultSourceOrigin() const { return appStore() ? QDir(profile_).filePath("pasted-kubeconfig") : QDir::home().filePath(".kube/pasted-kubeconfig"); }
 bool Workspace::importHome() { return !appStore() && importFile(QDir::home().filePath(".kube/config")); }
@@ -1220,7 +1258,7 @@ bool Workspace::requestSourceRemoval(const QString& contextId) {
     emit changed(); return false;
 }
 bool Workspace::cancelSourceRemoval() {
-    if (busy_) return false;
+    if (busy_ || sourceRemoval_.isEmpty()) return false;
     sourceRemoval_.clear(); sourceImportError_.clear();
     emit sourceRemovalChanged(); emit changed(); return true;
 }
@@ -1284,7 +1322,7 @@ bool Workspace::confirmSourceRemoval() {
         select(catalog);
         refreshSessionSelection();
         sourceRemoval_.clear();
-        sourceImportNotice_ = QString("Removed the imported context and %1 saved session(s). Original kubeconfig files are unchanged.").arg(ids.size());
+        sourceImportNotice_.clear();
         sourceImportError_.clear();
         emit sourceRemovalChanged(); emit changed();
     });
@@ -1293,12 +1331,12 @@ bool Workspace::confirmSourceRemoval() {
     watcher->setFuture(sessionMutationFuture_);
     return true;
 }
-bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice, bool ignoreInvalid, const QString& credentialContext) {
+bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid, const QString& credentialContext) {
     if (busy_) return false;
     if (!ignoreInvalid) { sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear(); }
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<SourceImportReport>>(this);
-    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, notice, ignoreInvalid, credentialContext] {
+    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, ignoreInvalid, credentialContext] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) {
             if (!ignoreInvalid || !failure->sourceInput) {
@@ -1309,9 +1347,7 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
         else {
             const auto& report = std::get<SourceImportReport>(result);
             sourceImportError_.clear(); sourceImportIssues_.clear();
-            sourceImportNotice_ = notice.isEmpty() ? QString("Imported %1 source(s); %2 input(s) failed. Existing snapshots and sessions were retained.")
-                .arg(report.sources.size()).arg(report.errors.size())
-                : notice;
+            sourceImportNotice_ = report.errors.isEmpty() ? QString{} : QString("Some files could not be opened.");
             for (const auto& issue : report.errors) sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
             if (!credentialContext.isEmpty()) credentials_.revoke(importedCredentialId(credentialContext));
             credentialImportContext_ = credentialContext;
@@ -1539,7 +1575,7 @@ bool Workspace::publishDashboard() {
         rows_.accumulateMetrics(sourceRow, metricSummary);
     }
     QStringList counts; for (auto it=kinds.begin(); it!=kinds.end(); ++it) counts.append(it.key()+": "+QString::number(it.value()));
-    const auto summary=QString("%1 / %2 cached resources; %3 with problems. ").arg(table_.rowCount()).arg(rows_.rowCount()).arg(problems)+counts.join(" / ");
+    const auto summary=QString("%1 / %2 resources; %3 with problems. ").arg(table_.rowCount()).arg(rows_.rowCount()).arg(problems)+counts.join(" / ");
     const auto metrics=metricSummary.presentation();
     const bool changed=dashboardSummary_!=summary || pulseMetrics_!=metrics;
     dashboardSummary_=summary; pulseMetrics_=metrics; dashboardDirty_=false;
@@ -1666,7 +1702,7 @@ bool Workspace::canInspectForward() const { return inspectorHistoryTarget(1) >= 
 bool Workspace::inspectHistory(const QString& path, int index) {
     const auto nav = currentNavigation();
     if (index < 0 || index >= nav.history.size() || nav.history[index] != path || !client_.containsResource(active_, path)) {
-        error_ = "The requested history resource is no longer available in this session cache."; emit changed(); return false;
+        error_ = "This resource is no longer available in this context."; emit changed(); return false;
     }
     openInspector(path, index);
     return true;

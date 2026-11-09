@@ -14,5 +14,26 @@
     <key>CFBundleVersion</key><string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>CFBundleDocumentTypes</key>
+    <array><dict>
+        <key>CFBundleTypeName</key><string>Kubernetes configuration</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>berlin.yuna.podlord.kubeconfig</string><string>public.yaml</string></array>
+    </dict></array>
+    <key>UTExportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>berlin.yuna.podlord.kubeconfig</string>
+        <key>UTTypeDescription</key><string>Kubernetes configuration</string>
+        <key>UTTypeConformsTo</key><array><string>public.text</string></array>
+        <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>kubeconfig</string></array></dict>
+    </dict></array>
+    <key>UTImportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>public.yaml</string>
+        <key>UTTypeDescription</key><string>YAML document</string>
+        <key>UTTypeConformsTo</key><array><string>public.text</string></array>
+        <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>yaml</string><string>yml</string></array></dict>
+    </dict></array>
 </dict>
 </plist>

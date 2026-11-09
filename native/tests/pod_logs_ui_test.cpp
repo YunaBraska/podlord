@@ -193,9 +193,10 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     if (!waitFor([&] { return !workspace.busy(); })) return false;
     // Log/UI repetitions do not exercise speakers. The playback test uses volume zero.
     if (!podlord::test::muteAlerts(workspace.alerts())) return false;
-    if (!click(window, "resourcesWorkspaceButton")) return false;
-    item(window, "sourcePath")->setProperty("text", source);
-    if (!click(window, "importButton") || !waitFor([&] { return workspace.contexts().size() == 1 && !workspace.busy(); }) || !click(window, "openContext")) return false;
+    if (!workspace.quickImportFile(source) || !waitFor([&] { return workspace.contexts().size() == 1 && !workspace.busy(); })
+        || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
+        || !waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })
+        || !workspace.setWorkspacePage("resources")) return false;
     if (!realFile.isEmpty()) {
         auto* filter = item(window, "resourceFilter");
         if (!waitFor([&] { return filter->isEnabled(); })) return false;
@@ -435,7 +436,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         if (!waitFor([&] { return server.logs.size() == 1; })) return false;
         if (scenario == "resource_refresh") {
             const auto before = server.coreReads;
-            return click(window, "refreshButton") && waitFor([&] { return server.coreReads > before; });
+            return workspace.refresh() && waitFor([&] { return server.coreReads > before; });
         }
         auto* selector = item(window, "logContainers"); selector->forceActiveFocus();
         QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Down);
@@ -473,7 +474,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
     }
     if (scenario == "single") return workspace.property("logSelection").toString() == "alpha" && model->rowCount() == 1 && QUrlQuery(server.logs.first()).queryItemValue("container") == "alpha";
     if (scenario == "open_detail_recreate" || scenario == "pagination") {
-        if (scenario == "pagination" && (!click(window, "refreshButton") || !waitFor([&] { return server.paginationStarted; }))) return false;
+        if (scenario == "pagination" && (!workspace.refresh() || !waitFor([&] { return server.paginationStarted; }))) return false;
         if (!click(window, QString("cell_%1_0").arg(selectedRow)) || !waitFor([&] { return model->rowCount() == 2 && model->data(model->index(0, 0)).toString().contains("[delta]") && model->data(model->index(1, 0)).toString().contains("[gamma]"); })) return false;
         if (scenario == "pagination") return waitFor([&] { return server.paginationFinished && !workspace.loading(); }) && workspace.inspected().contains("uid-first-2") && model->data(model->index(0, 0)).toString().contains("[delta]");
         return workspace.inspected().contains("uid-first-2");
@@ -484,8 +485,8 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         if (ready && scenario == "detail_expiry") {
             if (!click(window, "pauseLogs")) return false;
             utc = utc.addSecs(301);
-            if (!click(window, "refreshButton")) return false;
-            return workspace.inspected().contains("uid-first-2") && model->rowCount() == 2 && workspace.property("logsPaused").toBool() && model->data(model->index(0, 0)).toString().contains("[delta]");
+            if (!workspace.refresh()) return false;
+            return waitFor([&] { return workspace.inspected().contains("uid-first-2") && model->rowCount() == 2 && workspace.property("logsPaused").toBool() && model->data(model->index(0, 0)).toString().contains("[delta]"); });
         }
         return ready;
     }
@@ -496,7 +497,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
                 qPrintable(workspace.inspectorName()),qPrintable(workspace.inspectorPath()));
             return false;
         }
-        const bool ready = click(window, "refreshButton") && waitFor([&] {
+        const bool ready = workspace.refresh() && waitFor([&] {
             return server.coreReads > 1 && workspace.inspected().contains("uid-first-2") && model->rowCount() == 2
                 && model->data(model->index(0, 0)).toString().contains("new instance")
                 && model->data(model->index(1, 0)).toString().contains("new instance");
@@ -520,9 +521,9 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         if (workspace.property("logFollow").toBool() || workspace.property("logAnchor").toString().isEmpty()) return false;
         if (scenario == "expiry") {
             utc = utc.addSecs(61);
-            if (!click(window, "refreshButton")) return false;
+            if (!workspace.refresh()) return false;
             return waitFor([&] { return model->rowCount() == 0 && !workspace.property("logFollow").toBool()
-                && workspace.property("logPositionNotice").toString().contains("cache expiry")
+                && workspace.property("logPositionNotice").toString().contains("history retention")
                 && !workspace.property("logPositionNotice").toString().contains("log-size limit"); }, 1000);
         }
         if (scenario == "scroll") {

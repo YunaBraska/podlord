@@ -52,7 +52,7 @@ local Kubernetes screenshots, full-suite results and remaining acceptance gaps.
 
 The complete cached radar island remains visible when filters exclude resources. Excluded cells are painted once from viewport buckets, without interactive or animated QML delegates. This preserves spatial context without increasing delegate count or permitting inspection of excluded resources.
 
-New table defaults use reference order and widths, while saved layouts remain authoritative. Defaults and reset share the C++ layout owner. Inline Settings reuse existing asynchronous policy/store entrypoints; diagnostics are explicitly refreshed snapshots. Completed request auditing is bounded to 200 in-memory metadata entries, is session-scoped, and excludes payloads, query parameters and credentials. No additional network work or timer is introduced by opening Settings.
+New table defaults use reference order and widths, while saved layouts remain authoritative. Defaults and reset share the C++ layout owner. Inline Settings reuse existing asynchronous policy/store entrypoints; diagnostics refresh on entry and every five seconds while their section and window remain visible. The Settings surface owns and stops this timer. Completed request auditing is bounded to 200 in-memory metadata entries, is session-scoped, and excludes payloads, query parameters and credentials. Diagnostics adds no Kubernetes requests. Other Settings sections have no diagnostic refresh loop.
 
 ### Deterministic reference geometry and selectable namespaces
 
@@ -138,3 +138,9 @@ clock. Read errors move to a separate bounded accessible banner rather than
 vanishing behind elision. Existing client notifications update the summary; no
 additional polling timer or persisted telemetry store is introduced. Existing
 profiles and binaries require no migration.
+
+### How do incomplete alert drafts remain safe?
+
+The accepted native editor may persist incomplete custom matchers as disabled drafts. The same catalog and atomic store remain authoritative. A version-2 draft flag distinguishes them from validated disabled rules. Version 1 is decoded with draft=false and is not rewritten merely by loading. Saving version 2 preserves malformed matcher text for editing but still validates structure and action fields. Explicitly enabling a stored draft requires full matcher validation. Drafts never enter evaluation. Built-ins remain locked.
+
+The editor exposes Enabled/Draft separately from observed Triggered/Not evaluated state, and dirty close retains Keep editing/Discard protection. This introduces no second evaluator or draft sidecar. Older executables can reject version 2, so binary rollback must preserve the newer file rather than claiming automatic downgrade support.

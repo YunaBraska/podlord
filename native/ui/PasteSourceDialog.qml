@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Dialog {
-    id: dialog
+ModalDialog {
+    id: surfaceDialog
     objectName: "pasteSourceDialog"
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -24,27 +24,21 @@ Dialog {
     Connections {
         target: workspace
         function onSourceImportFinished(success) {
-            if (!dialog.awaitingImport) return
-            dialog.awaitingImport = false
-            if (success) dialog.close()
-            else dialog.errorText = workspace.sourceImportError
+            if (!surfaceDialog.awaitingImport) return
+            surfaceDialog.awaitingImport = false
+            if (success) surfaceDialog.close()
+            else surfaceDialog.errorText = workspace.sourceImportError
         }
     }
     ColumnLayout {
         anchors.fill: parent
-        Label {
-            Layout.fillWidth: true
-            text: "An owned snapshot is saved privately. Import does not connect to a cluster or run credential plugins. Maximum: 16 MiB."
-            wrapMode: Text.Wrap
-            textFormat: Text.PlainText
-        }
         Label { visible: !workspace.appStore; text: "Origin path for relative certificate, token and plugin paths" }
         TextField {
             id: origin
             objectName: "pasteSourceOrigin"
             visible: !workspace.appStore
             Layout.fillWidth: true
-            enabled: !dialog.awaitingImport
+            enabled: !surfaceDialog.awaitingImport
             selectByMouse: true
             Accessible.name: "Kubeconfig origin path; source file is not written"
         }
@@ -58,7 +52,7 @@ Dialog {
                 wrapMode: TextEdit.NoWrap
                 textFormat: TextEdit.PlainText
                 selectByMouse: true
-                enabled: !dialog.awaitingImport
+                enabled: !surfaceDialog.awaitingImport
                 Accessible.name: "Pasted kubeconfig YAML, may contain credentials"
             }
         }
@@ -66,7 +60,7 @@ Dialog {
             objectName: "pasteSourceError"
             Layout.fillWidth: true
             visible: text.length > 0
-            text: dialog.errorText
+            text: surfaceDialog.errorText
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
             Accessible.name: text
@@ -76,17 +70,18 @@ Dialog {
             Item { Layout.fillWidth: true }
             Button {
                 objectName: "cancelPastedSource"
-                text: "Cancel"
-                enabled: !dialog.awaitingImport
-                onClicked: dialog.close()
+                text: workspace.uiText["action.cancel"]
+                enabled: !surfaceDialog.awaitingImport
+                onClicked: surfaceDialog.close()
             }
             Button {
                 objectName: "importPastedSource"
-                text: dialog.awaitingImport ? "Importing..." : "Import snapshot"
-                enabled: !workspace.busy && !dialog.awaitingImport && yaml.text.trim().length > 0 && origin.text.trim().length > 0
+                text: surfaceDialog.awaitingImport ? "Importing..." : workspace.uiText["action.import"]
+                Accessible.description: "Imports privately without connecting or signing in. Maximum 16 MiB."
+                enabled: !workspace.busy && !surfaceDialog.awaitingImport && yaml.text.trim().length > 0 && origin.text.trim().length > 0
                 onClicked: {
-                    dialog.errorText = ""
-                    dialog.awaitingImport = workspace.importText(origin.text, yaml.text)
+                    surfaceDialog.errorText = ""
+                    surfaceDialog.awaitingImport = workspace.importText(origin.text, yaml.text)
                 }
             }
         }

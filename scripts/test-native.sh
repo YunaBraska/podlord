@@ -217,6 +217,20 @@ END {
     printf 'Native window-restoration coverage gate failed: require 90%% branches across layout, restore, cancelClose and confirmLayoutClose.\n' >&2
     exit 1
 fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions     "$ROOT/native/src/app_main.cpp" "$ROOT/native/src/workspace.cpp"     | awk '/PodlordApplication5event|Workspace11importFiles/' > "$BUILD/coverage/file-input-functions.txt"
+cat "$BUILD/coverage/file-input-functions.txt"
+if ! awk '
+/PodlordApplication5event/ { event=1; events+=$(NF-2); eventMissed+=$(NF-1) }
+/Workspace11importFiles/ { import=1; imports+=$(NF-2); importMissed+=$(NF-1) }
+END {
+    if (!event || !import || events<=0 || imports<=0) exit 1
+    printf "File event branches: %d/%d %.2f%%\n",events-eventMissed,events,100*(events-eventMissed)/events
+    printf "Batch import family branches: %d/%d %.2f%%\n",imports-importMissed,imports,100*(imports-importMissed)/imports
+    if (100*(events-eventMissed)/events<90 || 100*(imports-importMissed)/imports<90) exit 1
+}' "$BUILD/coverage/file-input-functions.txt"; then
+    printf 'Native file-input coverage failed: require 90%% branches in the application event adapter and complete batch-import family.\n' >&2
+    exit 1
+fi
 if ! awk '$1=="window_layout.cpp" { seen=1; if ($13+0<90) fail=1 }
           END { if (!seen || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
     printf 'Native window-layout storage coverage gate failed: require 90%% branches in window_layout.cpp.\n' >&2

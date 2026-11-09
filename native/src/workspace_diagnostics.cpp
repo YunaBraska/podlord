@@ -19,6 +19,11 @@ QString Workspace::refreshSettingsDiagnostics() {
         request.insert("sortValues",QVariantMap{{"duration",measured && duration>=0 ? QVariant(duration) : QVariant{}}});
         const auto identity=request.value("time").toString()+'\n'+request.value("method").toString()+'\n'+request.value("path").toString();
         request.insert("id",identity+'\n'+QString::number(occurrences[identity]++));
+        const auto time = QDateTime::fromString(request.value("time").toString(), Qt::ISODateWithMs);
+        if (time.isValid()) {
+            auto sort = request.value("sortValues").toMap(); sort.insert("time", time.toMSecsSinceEpoch());
+            request.insert("sortValues", sort); request.insert("time", displayDateTime(time.toString(Qt::ISODateWithMs)));
+        }
         requests.append(QJsonObject::fromVariantMap(request));
     }
     diagnosticRows_.publish(metrics);

@@ -19,6 +19,18 @@ bool run(const QString& scenario) {
     }
     const auto original=std::get<podlord::AlertCatalog>(loaded);
     if (scenario=="missing") return original.rules.size()==3 && !QFile::exists(profile);
+    if (scenario=="draft_round_trip" || scenario=="draft_enable_requires_valid_matcher") {
+        auto draft=original.rules[0].value; draft["id"]="draft"; draft["name"]="Incomplete"; draft["builtIn"]=false; draft["enabled"]=false; draft["draft"]=true;
+        draft["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field","name"},{"expression",""}}})};
+        const auto parsedDraft=podlord::parseAlertRule(draft); if (!std::holds_alternative<podlord::AlertRule>(parsedDraft)) return false;
+        auto desiredDraft=original; desiredDraft.rules.append(std::get<podlord::AlertRule>(parsedDraft));
+        if (!std::holds_alternative<podlord::AlertCatalog>(store.save(desiredDraft,original))) return false;
+        const auto restored=store.load(); if (!std::holds_alternative<podlord::AlertCatalog>(restored)) return false;
+        const auto value=std::get<podlord::AlertCatalog>(restored).rules.last().value;
+        if (scenario=="draft_round_trip") return value==draft && !value["enabled"].toBool();
+        auto enabled=value; enabled["enabled"]=true; enabled["draft"]=false;
+        return std::holds_alternative<podlord::Failure>(podlord::parseAlertRule(enabled));
+    }
     if (scenario.startsWith("description_")) {
         const QStringList descriptions{
             "Paint resources yellow or red while they have an active problem.",
@@ -32,6 +44,17 @@ bool run(const QString& scenario) {
     if (scenario == "once") { custom["colorMode"] = "once"; custom["animationMode"] = "once"; }
     const auto parsed=podlord::parseAlertRule(custom); if (!std::holds_alternative<podlord::AlertRule>(parsed)) return false;
     desired.rules.append(std::get<podlord::AlertRule>(parsed));
+    if (scenario=="valid_to_draft_restart") {
+        auto saved=store.save(desired,original); if (!std::holds_alternative<podlord::AlertCatalog>(saved)) return false;
+        auto inactive=std::get<podlord::AlertCatalog>(saved); auto value=inactive.rules.last().value;
+        value["enabled"]=false; value["draft"]=true;
+        value["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field","name"},{"expression",""}}})};
+        const auto parsedDraft=podlord::parseAlertRule(value); if (!std::holds_alternative<podlord::AlertRule>(parsedDraft)) return false;
+        inactive.rules.last()=std::get<podlord::AlertRule>(parsedDraft);
+        if (!std::holds_alternative<podlord::AlertCatalog>(store.save(inactive,std::get<podlord::AlertCatalog>(saved)))) return false;
+        const auto restored=store.load();
+        return std::holds_alternative<podlord::AlertCatalog>(restored) && std::get<podlord::AlertCatalog>(restored).rules.last().value==value;
+    }
     if (scenario=="invalid_save") { desired.rules.last().value["name"]=""; return std::holds_alternative<podlord::Failure>(store.save(desired, original)) && !QFile::exists(profile); }
     if (scenario.startsWith("invalid_")) {
         const auto field=scenario.mid(8);
@@ -89,7 +112,11 @@ bool run(const QString& scenario) {
     QFile file(path); if (!file.open(QIODevice::ReadOnly)) return false;
     const auto previous=file.readAll(); file.close(); auto root=QJsonDocument::fromJson(previous).object();
     if (scenario.startsWith("legacy_descriptions_")) {
+        root["version"]=1;
         auto rules=root["rules"].toArray();
+        for (int index=0; index<rules.size(); ++index) {
+            auto rule=rules[index].toObject(); rule.remove("draft"); rules[index]=rule;
+        }
         for (int index=0; index<3; ++index) {
             auto rule=rules[index].toObject(); rule["description"]="Built-in desktop alert";
             if (index==0) rule["enabled"]=false;
@@ -162,7 +189,7 @@ bool run(const QString& scenario) {
             rules[rules.size()-1]=rule; root["rules"]=rules;
         }
     }
-    else if (scenario=="future") root["version"]=2;
+    else if (scenario=="future") root["version"]=3;
     else if (scenario=="extra_root") root["unknown"]=true;
     else if (scenario=="duplicate") { auto rules=root["rules"].toArray(); rules.append(rules.last()); root["rules"]=rules; }
     else if (scenario=="locked") { auto rules=root["rules"].toArray(); auto rule=rules[0].toObject(); rule["name"]="Changed built-in"; rules[0]=rule; root["rules"]=rules; }

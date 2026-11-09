@@ -738,11 +738,9 @@ public sealed class AppBehaviorTests
     public void Legacy_reference_build_uses_shared_archives_and_public_asset_names()
     {
         var root = LocateProjectRoot();
-        var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
         var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
         var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
 
-        Assert.Matches(@"wc_dotnet_build_native\.yml@[a-f0-9]{40}", mergeWorkflow);
 
         Assert.Contains("macos-arm64) RID=osx-arm64 ;;", macOSBundleScript, StringComparison.Ordinal);
         Assert.Contains("macos-x64) RID=osx-x64 ;;", macOSBundleScript, StringComparison.Ordinal);
@@ -763,7 +761,7 @@ public sealed class AppBehaviorTests
 
         Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
         Assert.Contains("uses: ./.github/workflows/native.yml", workflow, StringComparison.Ordinal);
-        Assert.Contains("needs: native-preflight", workflow, StringComparison.Ordinal);
+        Assert.Contains("needs: [native-preflight, linux-package-preflight]", workflow, StringComparison.Ordinal);
         Assert.Contains("native-*-${{ github.sha }}", workflow, StringComparison.Ordinal);
         Assert.Contains("podlord-native-macos-arm64.zip", workflow, StringComparison.Ordinal);
         Assert.Contains("podlord-native-macos-x64.zip", workflow, StringComparison.Ordinal);
@@ -778,20 +776,21 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Ci_workflows_use_shared_pull_request_and_main_merge_builds()
+    public void Ci_workflows_use_native_pull_request_builds_and_main_snapshots()
     {
         var root = LocateProjectRoot();
         var pullRequestWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-pr.yml"));
         var mergeWorkflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "build-merge.yml"));
 
         Assert.Contains("pull_request:", pullRequestWorkflow, StringComparison.Ordinal);
-        Assert.Contains("group: podlord-pr-${{ github.event.pull_request.number }}", pullRequestWorkflow, StringComparison.Ordinal);
-        Assert.Matches(@"wc_dotnet_build_common\.yml@[a-f0-9]{40}", pullRequestWorkflow);
+        Assert.Contains("group: podlord-pr-${{ github.event.pull_request.number || github.ref }}", pullRequestWorkflow, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/ci.yml", pullRequestWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("push:", pullRequestWorkflow, StringComparison.Ordinal);
 
         Assert.Contains("push:\n    branches:\n      - main", mergeWorkflow, StringComparison.Ordinal);
-        Assert.Matches(@"wc_dotnet_build_common\.yml@[a-f0-9]{40}", mergeWorkflow);
-        Assert.Matches(@"wc_dotnet_build_native\.yml@[a-f0-9]{40}", mergeWorkflow);
+        Assert.Contains("uses: ./.github/workflows/ci.yml", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Matches(@"wc_dotnet_create_github_release\.yml@[a-f0-9]{40}", mergeWorkflow);
+        Assert.Contains("contents: write", mergeWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("dev", mergeWorkflow, StringComparison.Ordinal);
     }
 

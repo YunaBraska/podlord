@@ -2,14 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Dialog {
-    id: dialog
+ModalDialog {
+    id: surfaceDialog
     objectName: "sessionManagementDialog"
     parent: Overlay.overlay
     anchors.centerIn: parent
     modal: true
-    title: "Session configuration"
-    header: DialogHeader { dialog: dialog; closeObjectName: "cancelSessionManagement"; closeEnabled: !workspace.busy }
+    title: workspace.uiText["session.configure"]
+    header: DialogHeader { dialog: surfaceDialog; closeObjectName: "cancelSessionManagement"; closeEnabled: !workspace.busy }
     width: Math.min(580, parent ? parent.width - 24 : 580)
     height: Math.min(560, parent ? parent.height - 24 : 560)
     property string selectedSession: ""
@@ -32,7 +32,7 @@ Dialog {
     onOpened: loadSession(workspace.currentSession || (sessions.count ? sessions.valueAt(0) : ""))
     Connections {
         target: workspace
-        function onCatalogsChanged() { if (dialog.visible) Qt.callLater(dialog.alignSelection) }
+        function onCatalogsChanged() { if (surfaceDialog.visible) Qt.callLater(surfaceDialog.alignSelection) }
     }
     ScrollView {
         anchors.fill: parent
@@ -40,44 +40,38 @@ Dialog {
         ColumnLayout {
             width: parent.width
             spacing: 10
-            Label {
-                Layout.fillWidth: true
-                text: "Creates a saved snapshot. Your open session stays unchanged."
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            Label { text: "Session" }
+            Label { text: workspace.uiText["session.configure"] }
             ComboBox {
                 id: sessions
                 objectName: "sessionManageSelector"
                 Layout.fillWidth: true
-                model: dialog.visible ? workspace.sessions : []
+                model: surfaceDialog.visible ? workspace.sessions : []
                 textRole: "name"
                 valueRole: "id"
                 enabled: !workspace.busy
                 Accessible.name: "Session to configure, not activate"
-                onActivated: dialog.loadSession(currentValue)
+                onActivated: surfaceDialog.loadSession(currentValue)
             }
-            Label { text: "Context" }
+            Label { text: workspace.uiText["context.name"] }
             ComboBox {
                 id: contexts
                 objectName: "sessionManageContext"
                 Layout.fillWidth: true
-                model: dialog.visible ? workspace.contexts : []
+                model: surfaceDialog.visible ? workspace.contexts : []
                 textRole: "name"
                 valueRole: "id"
                 enabled: !workspace.busy
                 Accessible.name: "Snapshot context"
-                onActivated: dialog.selectedContext = currentValue
+                onActivated: surfaceDialog.selectedContext = currentValue
             }
-            Label { Layout.fillWidth: true; text: "Namespaces"; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; text: workspace.uiText["session.namespaces"]; wrapMode: Text.Wrap }
             TextField {
                 id: namespaces
                 objectName: "sessionManageNamespaces"
                 Layout.fillWidth: true
                 selectByMouse: true
                 enabled: !workspace.busy
-                placeholderText: "All namespaces"
+                placeholderText: workspace.uiText["session.allNamespaces"]
                 Accessible.name: "Namespace scope"
                 Accessible.description: "Comma-separated namespace names; empty includes all namespaces."
             }
@@ -85,11 +79,11 @@ Dialog {
                 glyph: "Save"; showText: true
                 objectName: "saveSessionConfiguration"
                 Layout.fillWidth: true
-                text: "Save snapshot"
-                enabled: !workspace.busy && dialog.selectedSession.length > 0
-                onClicked: { dialog.submitted = true; workspace.saveSessionConfiguration(dialog.selectedSession, dialog.selectedContext, namespaces.text) }
+                text: workspace.uiText["action.save"]
+                enabled: !workspace.busy && surfaceDialog.selectedSession.length > 0
+                onClicked: { surfaceDialog.submitted = true; workspace.saveSessionConfiguration(surfaceDialog.selectedSession, surfaceDialog.selectedContext, namespaces.text) }
             }
-            Label { Layout.fillWidth: true; text: "Copy name (optional)"; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; text: workspace.uiText["session.copyName"]; wrapMode: Text.Wrap }
             TextField {
                 id: copyName
                 objectName: "sessionCopyName"
@@ -102,24 +96,16 @@ Dialog {
                 glyph: "Save"; showText: true
                 objectName: "duplicateSessionConfiguration"
                 Layout.fillWidth: true
-                text: "Save a copy"
+                text: workspace.uiText["session.saveCopy"]
                 Accessible.description: "Copy the original session, not the unsaved context or namespace changes above."
-                enabled: !workspace.busy && dialog.selectedSession.length > 0
-                onClicked: { dialog.submitted = true; workspace.duplicateSession(dialog.selectedSession, copyName.text) }
+                enabled: !workspace.busy && surfaceDialog.selectedSession.length > 0
+                onClicked: { surfaceDialog.submitted = true; workspace.duplicateSession(surfaceDialog.selectedSession, copyName.text) }
             }
             Label {
                 objectName: "sessionManagementError"
                 Layout.fillWidth: true
                 visible: text.length > 0
-                text: dialog.submitted ? workspace.sessionManagementError : ""
-                wrapMode: Text.Wrap
-                textFormat: Text.PlainText
-            }
-            Label {
-                objectName: "sessionManagementNotice"
-                Layout.fillWidth: true
-                visible: text.length > 0
-                text: dialog.submitted ? workspace.sessionManagementNotice : ""
+                text: surfaceDialog.submitted ? workspace.sessionManagementError : ""
                 wrapMode: Text.Wrap
                 textFormat: Text.PlainText
             }

@@ -350,22 +350,86 @@ function ciJob(workflow, name) {
     return workflow.split(heading)[1].split(/\n  [a-z][a-z0-9-]*:\n/)[0];
 }
 
-test('CI excludes only exact evidence-only pushes and keeps pull-request checks', async () => {
+test('CI excludes only exact evidence-only pushes and keeps native pull-request checks', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
-    const push = workflow.split('  push:\n')[1].split('\n  pull_request:')[0];
+    const request = await fs.readFile(path.join(root, '.github/workflows/build-pr.yml'), 'utf8');
+    const push = workflow.split('  push:\n')[1].split('  workflow_dispatch:')[0];
     const ignore = push.match(/    paths-ignore:\n((?:      - [^\n]+\n?)+)/);
     assert.ok(ignore, 'Evidence-only pushes must not restart the complete build matrix');
     const paths = ignore[1].trim().split('\n').map(line => line.trim().slice(2).replace(/^['"]|['"]$/g, ''));
     assert.deepEqual(paths, ['doc/ROADMAP.md', 'doc/spec/k3d-test-map.md']);
     assert.doesNotMatch(push, /^    paths:/m);
     assert.match(push, /      - dev\n      - 'feat\/\*\*'/);
-    const pullRequest = workflow.split('  pull_request:\n')[1].split('\n  workflow_dispatch:')[0];
+    const pullRequest = request.split('  pull_request:\n')[1].split('\n  workflow_dispatch:')[0];
     assert.doesNotMatch(pullRequest, /paths|branches|if:/);
     for (const event of ['opened', 'synchronize', 'reopened', 'ready_for_review'])
-        assert.ok(pullRequest.includes(`      - ${event}`));
+        assert.ok(pullRequest.includes('      - ' + event));
+    assert.doesNotMatch(workflow, /  pull_request:/);
     assert.match(workflow, /  workflow_dispatch:\n  workflow_call:/);
-    assert.match(ciJob(workflow, 'native-preflight'), /uses: \.\/\.github\/workflows\/native\.yml/);
+    assert.match(ciJob(request, 'build'), /uses: \.\/\.github\/workflows\/ci\.yml/);
+    assert.match(ciJob(workflow, 'native-preflight'), /uses: \.\/\.github\/workflows\/release\.yml/);
+    assert.match(ciJob(workflow, 'build'), /if: \$\{\{ always\(\) \}\}/);
+    assert.match(ciJob(workflow, 'build'), /needs: native-preflight/);
 });
+
+for (const result of ['success', 'failure', 'cancelled', 'skipped']) {
+    test('required native build result: ' + result, async () => {
+        const workflow = await fs.readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+        const script = ciJob(workflow, 'build').split('        run: |\n')[1]
+            .trimEnd().split('\n').map(line => line.replace(/^ {10}/, '')).join('\n');
+        const actual = spawnSync('/bin/sh', ['-eu', '-c', script], {encoding: 'utf8', timeout: 10000,
+            env: {...process.env, NATIVE_RESULT: result}});
+        assert.ifError(actual.error);
+        assert.equal(actual.status, result === 'success' ? 0 : 1, actual.stdout + actual.stderr);
+    });
+}
+
+test('snapshots use native qualification and the pinned artifact-only publisher on main', async () => {
+    const workflow = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
+    const linux = await fs.readFile(path.join(root, '.github/workflows/native-linux-package.yml'), 'utf8');
+    assert.match(workflow, /push:\n    branches:\n      - main/);
+    for (const job of ['version', 'build']) assert.match(ciJob(workflow, job), /if: github.ref == 'refs\/heads\/main'/);
+    assert.match(ciJob(workflow, 'build'), /uses: \.\/\.github\/workflows\/ci\.yml/);
+    assert.match(ciJob(workflow, 'assets'), /needs: \[version, build\]/);
+    assert.match(ciJob(workflow, 'publish'), /needs: \[version, assets\]/);
+    assert.match(ciJob(workflow, 'publish'), /wc_dotnet_create_github_release\.yml@[a-f0-9]{40}/);
+    assert.doesNotMatch(workflow, /wc_dotnet_(?:build|snapshot|release)\.yml|secrets: inherit/);
+    assert.match(workflow, /steps\.semver\.outputs\.next_snapshot/);
+    assert.doesNotMatch(linux, /  push:/);
+    assert.match(linux, /  workflow_dispatch:\n  workflow_call:/);
+});
+
+for (const scenario of ['valid', 'wrong source', 'missing archive', 'changed archive']) {
+    test('native snapshot asset boundary: ' + scenario, async t => {
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-snapshot-assets-'));
+        t.after(() => fs.rm(directory, {recursive: true, force: true}));
+        const workflow = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
+        const step = workflow.split('      - name: Stage verified snapshot assets\n')[1].split('      - uses:')[0];
+        const script = step.split('        run: |\n')[1].trimEnd().split('\n').map(line => line.replace(/^ {10}/, '')).join('\n');
+        const candidate = path.join(directory, 'native-candidate');
+        await fs.mkdir(candidate);
+        const names = ['macos-arm64.zip', 'macos-x64.zip', 'win-x64.zip', 'linux-x64.tar.gz', 'linux-arm64.tar.gz']
+            .map(name => 'podlord-native-' + name);
+        const crypto = require('node:crypto');
+        const contents = Buffer.from('exact checked candidate bytes');
+        for (const name of names) await fs.writeFile(path.join(candidate, name), contents);
+        await fs.writeFile(path.join(candidate, 'SOURCE_COMMIT'), scenario === 'wrong source' ? 'other' : 'checked');
+        await fs.writeFile(path.join(candidate, 'SHA256SUMS'), names.map(name => crypto.createHash('sha256').update(contents).digest('hex') + '  ./' + name).join('\n') + '\n');
+        if (scenario === 'missing archive') await fs.rm(path.join(candidate, names[0]));
+        if (scenario === 'changed archive') await fs.writeFile(path.join(candidate, names[0]), 'unverified replacement');
+        const bin = path.join(directory, 'bin'); await fs.mkdir(bin);
+        // macOS shasum has no --strict option. The system tool still verifies each real SHA256.
+        if (mac) await fs.writeFile(path.join(bin, 'sha256sum'), '#!/bin/sh\n[ "$1" != --strict ] || shift\nexec /usr/bin/shasum -a 256 "$@"\n', {mode: 0o700});
+        const actual = spawnSync('/bin/sh', ['-eu', '-c', script], {cwd: directory, encoding: 'utf8', timeout: 10000,
+            env: {...process.env, PATH: bin + path.delimiter + process.env.PATH, SOURCE_COMMIT: 'checked', SNAPSHOT_VERSION: '1.2.3-SNAPSHOT.42'}});
+        assert.ifError(actual.error);
+        assert.equal(actual.status === 0, scenario === 'valid', actual.stdout + actual.stderr);
+        if (scenario === 'valid') {
+            for (const name of names) assert.deepEqual(await fs.readFile(path.join(directory, 'release-assets', name)), contents);
+            assert.equal(await fs.readFile(path.join(directory, 'release-assets/SNAPSHOT_VERSION'), 'utf8'), '1.2.3-SNAPSHOT.42\n');
+        } else await assert.rejects(fs.stat(path.join(directory, 'release-assets')), {code: 'ENOENT'});
+    });
+}
 
 test('macOS failure diagnostics retain only new owned crash reports', async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-macos-crash-evidence-'));
@@ -552,4 +616,26 @@ test('Store signing seals nested code before the app executable', {skip: !mac}, 
     assert.ifError(result.error);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.deepEqual((await fs.readFile(calls, 'utf8')).trim().split('\n'), [plugin, app]);
+});
+
+test('CI concurrency isolates callers, events and individual main snapshots', async () => {
+    const workflow = await fs.readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+    const configured = workflow.match(/^concurrency:\n  group: (.+)$/m)?.[1];
+    assert.ok(configured, 'Native CI requires an explicit concurrency group');
+    // Model only the external GitHub context expansion, using the actual configuration.
+    const group = context => {
+        const expanded = configured.replace(/\$\{\{\s*github\.ref == 'refs\/heads\/main' && github\.sha \|\| 'latest'\s*\}\}/g,
+            () => context.ref === 'refs/heads/main' ? context.sha : 'latest')
+            .replace(/\$\{\{\s*github\.head_ref \|\| github\.ref_name\s*\}\}/g, () => context.head_ref || context.ref_name)
+            .replace(/\$\{\{\s*github\.([a-z_]+)\s*\}\}/g, (_, key) => context[key]);
+        assert.doesNotMatch(expanded, /\$\{\{|undefined/);
+        return expanded;
+    };
+    const push = {workflow:'CI',event_name:'push',ref:'refs/heads/feat/context',ref_name:'feat/context',head_ref:'',sha:'first'};
+    const pull = {...push,workflow:'Pull request',event_name:'pull_request',ref:'refs/pull/17/merge',head_ref:'feat/context'};
+    const snapshot = {...push,workflow:'Release snapshot',ref:'refs/heads/main',ref_name:'main'};
+    assert.notEqual(group(push),group(pull), 'A push must not cancel the required PR check');
+    assert.equal(group(push),group({...push,sha:'second'}), 'Older same-branch feature checks remain cancellable');
+    assert.notEqual(group(snapshot),group({...snapshot,sha:'second'}), 'Every main snapshot retains its qualification');
+    assert.notEqual(group(snapshot),group({...snapshot,event_name:'workflow_dispatch'}), 'Manual and push entrypoints are independent');
 });

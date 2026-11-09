@@ -27,11 +27,13 @@ bool run(const QString& scenario) {
     if (!write(temporary.filePath("inputs/valid.yaml"),
         "apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: 'http://127.0.0.1:9'}\n"
         "users:\n- name: anonymous\n  user: {}\ncontexts:\n- name: local\n  context: {cluster: local, user: anonymous}\ncurrent-context: local\n")) return false;
-    if (scenario == "failures" && !write(temporary.filePath("inputs/invalid.yaml"), "apiVersion: v1\nkind: Config\ncontexts: [\n")) return false;
+    if (scenario != "once" && !write(temporary.filePath("inputs/invalid.yaml"), "apiVersion: v1\nkind: Config\ncontexts: [\n")) return false;
     podlord::Workspace workspace(temporary.filePath("profile"));
     QSignalSpy requests(&workspace, &podlord::Workspace::requestStarted);
     if (!QTest::qWaitFor([&] { return !workspace.busy(); }) || !workspace.importFile(temporary.filePath("inputs"))
-        || !QTest::qWaitFor([&] { return !workspace.busy(); }) || workspace.sourceImportNotice().isEmpty()) return false;
+        || !QTest::qWaitFor([&] { return !workspace.busy(); })) return false;
+    if (scenario == "once" ? !workspace.sourceImportNotice().isEmpty() || !workspace.sourceImportIssues().isEmpty()
+        : workspace.sourceImportNotice().isEmpty() || workspace.sourceImportIssues().isEmpty()) return false;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
@@ -40,7 +42,9 @@ bool run(const QString& scenario) {
     if (!window || !podlord::test::clickVisible(window, "settingsWorkspaceButton")) return false;
     if (!podlord::test::selectSettingsSection(window, scenario == "unrelated" ? "about" : "sources")) return false;
     if (scenario == "once" || scenario == "unrelated") {
-        const int expected = scenario == "once" ? 1 : 0;
+        if (scenario == "once") return workspace.sourceImportNotice().isEmpty()
+            && !podlord::test::visibleItem(window->contentItem(),"settingsSourceImportDetails") && requests.isEmpty();
+        const int expected = 0;
         if (!QTest::qWaitFor([&] { return visibleNotices(window->contentItem(), workspace.sourceImportNotice()) == expected; })) {
             std::fprintf(stderr, "Expected %d visible import messages, observed %d.\n", expected, visibleNotices(window->contentItem(), workspace.sourceImportNotice()));
             return false;

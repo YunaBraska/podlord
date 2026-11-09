@@ -12,6 +12,26 @@ correctly omit.
 
 ## Decision
 
+On 2026-11-08 the user confirmed automatic native snapshots after merges to
+`main`, with regular releases remaining manual. The PR entrypoint delegates to
+native CI and retains the protected `build / build` result. Its aggregate fails
+unless the complete native candidate workflow succeeds, including both Linux
+standalone packages. The same candidate workflow serves push checks, manual
+collection and snapshots. The separate Linux workflow no longer duplicates
+push builds. C# remains a manually runnable comparison reference.
+
+Snapshot publication uses the shared YunaBraska semver/run-ID convention and
+artifact-only GitHub publisher. Only `main` can enter this path. It downloads
+the candidate for the exact checked commit, verifies source identity, required
+archives and checksums, then uploads those same bytes. It does not rebuild,
+produce a stable release, invoke a .NET builder or submit to an app store.
+The historical shared publisher filename contains `dotnet`, but its pinned
+implementation only downloads artifacts and creates the GitHub release.
+This explicit snapshot approval supersedes the earlier private-only prohibition
+on automatic GitHub publication. Signing, notarization and Store submission
+remain separate. A prerelease tag identifies the CI snapshot, not a change to
+the application's existing embedded base version.
+
 On 2026-11-06 the user approved excluding evidence-only pushes from the root
 build workflow. Its push filter names exactly `doc/ROADMAP.md` and
 `doc/spec/k3d-test-map.md`, not their directories or all Markdown files.
@@ -345,3 +365,13 @@ existing licensing, native trust, embedded-library and standalone requirements.
 
 Sources: [Qt 6.11.3 release](https://www.qt.io/blog/qt-6.11.3-released),
 [Qt security advisories](https://wiki.qt.io/List_of_known_vulnerabilities_in_Qt_products).
+
+## How Are Required PR Checks Kept Independent Of Pushes?
+
+The native CI concurrency key includes its caller workflow, event and ref. On
+`main` it also includes the exact source commit. A feature push therefore cannot
+cancel the required PR result, and a later main merge cannot cancel an earlier
+snapshot qualification. Older runs of the same feature/event/ref may still be
+cancelled. The protected `build / build` result, all preflights and publishing
+conditions remain unchanged. Caller and called workflows use distinct prefixes,
+as required by the [GitHub reuse/concurrency rules](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations).

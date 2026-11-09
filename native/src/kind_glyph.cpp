@@ -103,6 +103,8 @@ const QHash<QString, Glyph>& catalog() {
         ellipse(.5,.5,.13,.13,Fill::Main,false);
         result.insert("Visible", parts);
         line(.16,.84,.84,.16); finish({"Hidden"});
+        line(.35,.12,.65,.12); line(.4,.12,.4,.45); line(.6,.12,.6,.45);
+        polygon({{.4,.45},{.25,.65},{.75,.65},{.6,.45}},Fill::None); line(.5,.65,.5,.92); finish({"Pin"});
         return result;
     }();
     return value;

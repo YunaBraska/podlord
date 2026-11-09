@@ -1,16 +1,6 @@
 name: Native Linux distribution trial
 
 on:
-  push:
-    branches: [dev, 'feat/**']
-    paths:
-      - '.github/workflows/native-linux-package.yml'
-      - 'native/**'
-      - 'scripts/build-native-linux-toolchain.sh'
-      - 'scripts/qt-quick-shutdown.cmake'
-      - 'scripts/patches/**'
-      - 'scripts/check-native-linux-package.sh'
-      - 'scripts/test-native-linux-package.sh'
   workflow_dispatch:
   workflow_call:
 

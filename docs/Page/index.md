@@ -12,8 +12,8 @@ description: A cache-first native desktop console for everyday Kubernetes work.
     <p class="actions"><a class="button" href="install.html">Get PodLord</a><a class="button secondary" href="documentation.html">Read the documentation</a></p>
   </div>
   <figure class="hero-art">
-    <img src="https://raw.githubusercontent.com/YunaBraska/podlord/main/doc/screenshots/resource-explorer.png" alt="PodLord resource explorer showing Kubernetes resources">
-    <figcaption>Explore what is running across namespaces from one native desktop view.</figcaption>
+    <a href="{{ '/assets/screenshots/native-map.png' | relative_url }}" aria-label="View the cluster map at full size"><img src="{{ '/assets/screenshots/native-map.png' | relative_url }}" width="1440" height="920" fetchpriority="high" alt="Cluster map with distinct namespace islands and highlighted problems"></a>
+    <figcaption>Your cluster at a glance. Problems stand out.</figcaption>
   </figure>
 </section>
 
@@ -31,17 +31,17 @@ description: A cache-first native desktop console for everyday Kubernetes work.
   <h2>Fast where it matters, deliberate where it counts.</h2>
   <p class="section-intro">The interface is built around keeping context while you check resource state, choose a different source or prepare a next action.</p>
   <div class="screenshot-grid">
-    <figure><img src="https://raw.githubusercontent.com/YunaBraska/podlord/main/doc/screenshots/resource-explorer.png" alt="PodLord explorer with resource state and navigation"><figcaption>Search and inspect resources across the cluster without a namespace-first detour.</figcaption></figure>
-    <figure><img src="https://raw.githubusercontent.com/YunaBraska/podlord/main/doc/screenshots/inspector-settings.png" alt="PodLord resource inspector settings"><figcaption>Keep inspector and connection behavior visible when the work gets specific.</figcaption></figure>
+    <figure><a href="{{ '/assets/screenshots/native-resources.png' | relative_url }}" aria-label="View the resource explorer at full size"><img src="{{ '/assets/screenshots/native-resources.png' | relative_url }}" width="1440" height="920" loading="lazy" alt="Resource table with status, kind, namespace and cluster columns beside the minimap and filters"></a><figcaption>Resources, filters and the minimap share one cached view.</figcaption></figure>
+    <figure><a href="{{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }}" aria-label="View the YAML inspector at full size"><img src="{{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }}" width="1440" height="920" loading="lazy" alt="YAML inspector opened for a ConfigMap, with syntax highlighting, search and an explicit Edit YAML action"></a><figcaption>Inspect fresh YAML without losing the selected resource or filters.</figcaption></figure>
   </div>
 </section>
 
 <section class="section">
   <h2>Get PodLord your way.</h2>
-  <p class="section-intro">PodLord is available for macOS, Linux and Windows. The Homebrew cask is for macOS. The Mac App Store channel is planned.</p>
+  <p class="section-intro">These images show the new PodLord experience. Look for a snapshot to try it. Stable releases and Homebrew may still contain the previous version. The Mac App Store edition is coming later.</p>
   <div class="install-options">
     <article class="install-option"><h3>Homebrew</h3><p>Install the macOS cask with the YunaBraska tap.</p><a href="install.html#homebrew">Install with Homebrew</a></article>
-    <article class="install-option"><h3>GitHub download</h3><p>Choose the current archive for macOS, Linux or Windows.</p><a href="https://github.com/YunaBraska/podlord/releases/latest">Download PodLord</a></article>
+    <article class="install-option"><h3>Native snapshots</h3><p>Look for a prerelease with <code>podlord-native-</code> archives for macOS, Linux or Windows.</p><a href="https://github.com/YunaBraska/podlord/releases">Browse native snapshots</a></article>
     <article class="install-option"><h3>Mac App Store</h3><p>Coming soon. The App Store channel will be available for the macOS build.</p></article>
   </div>
 </section>

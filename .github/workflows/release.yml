@@ -2,6 +2,7 @@ name: Native release candidate
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   actions: read
@@ -51,7 +52,7 @@ jobs:
           done
           (cd native-candidate && sha256sum ./*.zip ./*.tar.gz > SHA256SUMS)
           printf '%s\n' "$SOURCE_COMMIT" > native-candidate/SOURCE_COMMIT
-          printf '%s\n' 'Native desktop candidates for macOS, Windows and Linux only. No tag, GitHub release, Store upload or release approval is created. Mobile packages and full visual, performance, licensing and publisher gates remain required.' > native-candidate/SCOPE.txt
+          printf '%s\n' 'Native desktop candidate archives for macOS, Windows and Linux only. Collection does not establish release approval. Mobile packages, visual and performance evidence, licensing and publisher gates remain separate. Store submission is not performed.' > native-candidate/SCOPE.txt
       - uses: actions/upload-artifact@v7
         with:
           name: podlord-native-candidates-${{ github.sha }}

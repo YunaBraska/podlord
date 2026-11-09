@@ -121,7 +121,7 @@ bool exercise(const QStringList& arguments) {
         return true;
     }
     if (scenario == "leave_unchanged") {
-        return require(click(window, "resourcesWorkspaceButton") && !QFileInfo::exists(profile), "Leaving unchanged appearance settings wrote data");
+        return require(click(window, "mapWorkspaceButton") && !QFileInfo::exists(profile), "Leaving unchanged appearance settings wrote data");
     }
     if (scenario == "busy" || scenario == "conflict") {
         require(QDir().mkpath(profile), "Cannot establish appearance failure boundary");
@@ -154,7 +154,8 @@ bool exercise(const QStringList& arguments) {
     require(palette.color(QPalette::Window) == colors[0] && palette.color(QPalette::Base) == colors[3]
         && palette.color(QPalette::Button) == colors[2] && palette.color(QPalette::Text) == colors[9]
         && palette.color(QPalette::Accent) == colors[6], "Qt palette does not preserve shipped semantic colors");
-    auto* field = window->findChild<QObject*>("sourcePath");
+    auto* field = window->findChild<QObject*>("inlineAppearanceFontSize");
+    if (!field) field = window->findChild<QObject*>("inlineAppearanceTheme");
     auto* controlPalette = field ? field->property("palette").value<QObject*>() : nullptr;
     require(controlPalette && controlPalette->property("base").value<QColor>() == colors[3]
         && controlPalette->property("text").value<QColor>() == colors[9], "Actual Qt control palette did not follow the selected theme");

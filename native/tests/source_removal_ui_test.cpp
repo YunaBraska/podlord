@@ -125,6 +125,10 @@ void run(const QString& scenario) {
     QQuickWindow* window = nullptr;
     const bool ui = scenario == "ui" || scenario == "keyboard" || scenario == "narrow" || scenario == "cancel_ui";
     const auto click = [&](const QString& name, bool keyboard = false) {
+        if (name == "settingsWorkspaceButton") {
+            require(podlord::test::clickVisible(window,name), "Sources settings navigation is unavailable.");
+            return;
+        }
         QSignalSpy frames(window, &QQuickWindow::frameSwapped); window->update();
         require(frames.wait(1000), "Source controls did not render.");
         auto* control = podlord::test::visibleItem(window->contentItem(), name);

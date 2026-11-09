@@ -148,7 +148,7 @@ Pane {
                 Layout.fillWidth: true
                 glyph: "Filters"; text: "Show or hide filters"
                 checkable: true; checked: sidebar.filtersExpanded
-                activeIndicator: workspace.filterText !== "" || workspace.problemsOnly || workspace.activityOnly || workspace.selectedFilterPreset !== "default"
+                activeIndicator: workspace.filterText !== "" || workspace.problemsOnly || workspace.activityOnly || Object.keys(workspace.resourceFieldFilters).length > 0
                 onClicked: sidebar.filtersExpanded = !sidebar.filtersExpanded
             }
             ScrollView {
@@ -175,7 +175,7 @@ Pane {
                 Button {
                     id: sourceAction
                     objectName: "sourcesButton"
-                    text: workspace.title || "Sources"
+                    text: workspace.mapContextCaption || workspace.title || workspace.uiText["settings.sources"]
                     Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0
                     implicitHeight: Math.max(sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
                     contentItem: Label { text: sourceAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
@@ -211,11 +211,11 @@ Pane {
             }
             RowLayout {
                 Layout.fillWidth: true
-                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text); onActiveFocusChanged: if (activeFocus) Qt.callLater(sidebar.revealPresetInput) }
-                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && presetName.text.trim().length > 0 && workspace.currentSession !== ""; onClicked: workspace.saveFilterPreset(presetName.text) }
+                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""; onClicked: { if (!sidebar.presetsExpanded || presetName.text.trim() === "") { sidebar.presetsExpanded = true; Qt.callLater(function() { presetName.forceActiveFocus() }) } else workspace.saveFilterPreset(presetName.text) } }
                 IconButton {
                     id: preset; objectName: "filterPreset"
-                    glyph: sidebar.presetsExpanded ? "Expand" : "Next"; text: "Saved filters"
+                    Layout.fillWidth: true; showText: true
+                    glyph: sidebar.presetsExpanded ? "Expand" : "Next"; text: !workspace.problemsOnly && !workspace.activityOnly && workspace.filterText === "" && Object.keys(workspace.resourceFieldFilters).length === 0 ? workspace.uiText["filters.allResources"] : workspace.selectedFilterPreset || workspace.uiText["filters.savedFilters"]
                     checkable: true; checked: sidebar.presetsExpanded
                     Accessible.description: checked ? "Expanded saved filters" : "Collapsed saved filters"
                     enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""
@@ -231,6 +231,14 @@ Pane {
                 spacing: 4
                 visible: sidebar.presetsExpanded
                 enabled: visible
+                ItemDelegate {
+                    objectName: "allResourceFilters"
+                    Layout.fillWidth: true; implicitHeight: Math.max(44, implicitContentHeight + 12)
+                    text: workspace.uiText["filters.allResources"]
+                    highlighted: !workspace.problemsOnly && !workspace.activityOnly && workspace.filterText === "" && Object.keys(workspace.resourceFieldFilters).length === 0
+                    onClicked: { if (workspace.resetResourceFilters()) { presetName.text = ""; sidebar.presetsExpanded = false } }
+                }
+                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text); onActiveFocusChanged: if (activeFocus) Qt.callLater(sidebar.revealPresetInput) }
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 4
@@ -348,7 +356,7 @@ Pane {
         }
     }
         }
-    Dialog {
+    ModalDialog {
         id: renamePreset
         objectName: "renameFilterPresetDialog"
         property string original

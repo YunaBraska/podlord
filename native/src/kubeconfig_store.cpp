@@ -769,14 +769,14 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
 }
 Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
     const auto normalized = sourcePath(std::move(path));
-    if (const auto* failure = std::get_if<Failure>(&normalized)) return *failure;
+    if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};
     if (const auto failure = profileFailure(profile_)) return *failure;
     path = std::get<QString>(normalized);
     const QFileInfo root(path);
 #ifdef PODLORD_MAC_APP_STORE
     if (root.isDir()) return Failure{StoreError::UnsupportedVersion, "The App Store build imports individual selected files or pasted kubeconfigs, not folders."};
 #endif
-    if (!contentSource(path) && !root.exists()) return Failure{StoreError::ReadFailed, "Kubeconfig source does not exist."};
+    if (!contentSource(path) && !root.exists()) return Failure{StoreError::ReadFailed, "Kubeconfig source does not exist.", true};
     if (root.isDir() && root == QFileInfo(profile_))
         return Failure{StoreError::InvalidInput, "The private application profile cannot be scanned as a source folder."};
     if (contentSource(path) || !root.isDir()) {
@@ -784,7 +784,7 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
     }
-    if (!readableDirectory(path)) return Failure{StoreError::ReadFailed, "Cannot read source folder."};
+    if (!readableDirectory(path)) return Failure{StoreError::ReadFailed, "Cannot read source folder.", true};
     SourceImportReport report;
     QStringList directories{path};
     while (!directories.isEmpty()) {

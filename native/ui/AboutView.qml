@@ -155,7 +155,7 @@ ColumnLayout {
         }
     }
     Label { objectName: "aboutLinkError"; Layout.fillWidth: true; visible: text !== ""; text: about.linkError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
-    Dialog {
+    ModalDialog {
         id: licenseDialog
         objectName: "aboutLicenseDialog"
         parent: Overlay.overlay

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -9,7 +10,7 @@ Pane {
     PasteSourceDialog { id: pasteSourceDialog }
     SessionManager { id: sessionManager }
     AwsProfileDialog { id: awsProfileDialog }
-    Dialog {
+    ModalDialog {
         id: sourceRemovalDialog
         objectName: "sourceRemovalDialog"
         title: "Remove imported context"
@@ -32,7 +33,7 @@ Pane {
             Label { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceRemoval"; text: "Cancel"; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
+            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceRemoval"; text: workspace.uiText["action.cancel"]; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
             IconButton { glyph: ""; showText: true; font.bold: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? "Removing..." : "Remove"; enabled: !workspace.busy; Accessible.name: "Remove imported context and its listed sessions"; onClicked: workspace.confirmSourceRemoval() }
         }
         onAboutToHide: workspace.cancelSourceRemoval()
@@ -45,7 +46,6 @@ Pane {
         }
     }
     SourceAliasDialog { id: sourceAliasDialog }
-    signal sourcesRequested()
     signal fileRequested()
     signal folderRequested()
     signal ociImportRequested()
@@ -55,6 +55,14 @@ Pane {
     readonly property var sections: ["alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
     property string diagnosticTimestamp: ""
     function refreshDiagnostics() { diagnosticTimestamp = workspace.refreshSettingsDiagnostics() }
+    Timer {
+        objectName: "diagnosticsRefreshTimer"
+        interval: 5000; repeat: true
+        running: settings.visible && settings.section === "diagnostics"
+            && settings.Window.window && settings.Window.window.visibility !== Window.Minimized
+            && settings.Window.window.visibility !== Window.Hidden
+        onTriggered: settings.refreshDiagnostics()
+    }
     function synchronizeAppearance() {
         theme.currentIndex = workspace.themeNames.indexOf(workspace.themeName)
         variant.currentIndex = variant.model.indexOf(workspace.themeVariant)
@@ -156,9 +164,9 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "graphics"
-                    SettingRow { label: "Radar background water"; help: "Only background water animates. Events do not create water effects."; WrappingCheckBox { objectName: "inlineRadarWaterEnabled"; text: "Enabled"; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
+                    SettingRow { label: "Radar background water"; help: "Only background water animates. Events do not create water effects."; WrappingCheckBox { objectName: "inlineRadarWaterEnabled"; text: workspace.uiText["alert.enabledState"]; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
                     SettingRow { label: "Water speed"; help: "0 hides waves. Hidden or minimized Radar does not animate."; RowLayout { Layout.fillWidth: true; Slider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterSpeedPercent; enabled: !workspace.busy; Accessible.name: "Water speed in percent"; onMoved: if (!pressed) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)) } Label { text: workspace.radarWaterSpeedPercent + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
-                    SettingRow { label: "Reduced motion"; help: "Freezes water and removes moving alert effects. No screensaver is used."; WrappingCheckBox { objectName: "inlineReducedMotion"; text: "Enabled"; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
+                    SettingRow { label: "Reduced motion"; help: "Freezes water and removes moving alert effects. No screensaver is used."; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sync"
@@ -182,7 +190,7 @@ Pane {
                     SettingRow { label: "Session configuration"; help: "Save closed configuration snapshots or independent copies without changing the active session."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsManageSessions"; text: "Manage sessions"; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
                     SettingRow { label: "Resource columns"; help: "Show, hide, order, resize and pin columns. Saved layouts are not overwritten by new defaults."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsResourceColumns"; text: "Configure resource columns"; onClicked: resourceColumns.open() } }
                     SettingRow { label: "Event columns"; help: "Event layouts are independent from resource layouts."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsEventColumns"; text: "Configure Event columns"; onClicked: eventColumns.open() } }
-                    SettingRow { label: "Saved views"; help: "Reload persisted layouts and filters without querying Kubernetes."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsReloadViews"; text: "Reload saved views"; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
+                    SettingRow { label: workspace.uiText["nav.savedViews"]; help: "Reload persisted layouts and filters without querying Kubernetes."; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsReloadViews"; text: "Reload saved views"; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
@@ -270,8 +278,8 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "diagnostics"
-                    RowLayout { Layout.fillWidth: true; Label { Layout.fillWidth: true; text: "Runtime diagnostics"; font.bold: true } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "refreshSettingsDiagnostics"; text: "Refresh snapshot"; onClicked: settings.refreshDiagnostics() } }
-                    Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: settings.diagnosticTimestamp ? "Snapshot: " + new Date(settings.diagnosticTimestamp).toLocaleString(Qt.locale()) : ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                    Label { Layout.fillWidth: true; text: workspace.uiText["settings.diagnostics"]; font.bold: true }
+                    Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: workspace.displayDateTime(settings.diagnosticTimestamp); textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
                     ResourceGrid {
                         id: diagnosticGrid
                         Layout.fillWidth: true; Layout.minimumWidth: 0

@@ -126,7 +126,7 @@ ColumnLayout {
             Keys.onEnterPressed: panel.openEntry(index)
         }
     }
-    Dialog {
+    ModalDialog {
         id: entry
         title: "Log entry"
         modal: true

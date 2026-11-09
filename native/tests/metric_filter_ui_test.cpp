@@ -254,11 +254,9 @@ bool execute(const QString& scenario) {
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !waitFor([&] { return window->isVisible() && window->isExposed() && !workspace.busy(); })
-        || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
-    if (!window || !waitFor([&] { auto* control = item(window, "importButton"); return control && control->isEnabled(); }) ||
-        !type(window, item(window, "sourcePath"), source.fileName()) || !click(window, item(window, "importButton")) ||
-        !waitFor([&] { auto* control = item(window, "openContext"); return control && control->isEnabled() && !workspace.busy(); }) ||
-        !click(window, item(window, "openContext"))) return false;
+         ) return false;
+    if (!workspace.quickImportFile(source.fileName()) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; })
+        || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())) return false;
     if (!waitFor([&] {
         if (workspace.loading() || workspace.totalResourceCount() != 5) return false;
         auto* model = workspace.table();
@@ -371,11 +369,9 @@ bool realCluster(const QString& source) {
             stage, workspace.resourceCount(), workspace.totalResourceCount(), qPrintable(workspace.filterError()), qPrintable(workspace.status()));
         return false;
     };
-    if (!window || !waitFor([&] { auto* control = item(window, "importButton"); return control && control->isEnabled(); }) ||
-        !type(window, item(window, "sourcePath"), QUrl::fromLocalFile(source).toString()) || !click(window, item(window, "importButton")) ||
-        !waitFor([&] { auto* control = item(window, "openContext"); return control && control->isEnabled() && !workspace.busy(); }) ||
-        !click(window, item(window, "openContext"))) return fail("import");
-    std::fprintf(stdout, "Real source import: file URL through public source field and Import button.\n");
+    if (!workspace.quickImportFile(QUrl::fromLocalFile(source).toString()) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; })
+        || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())) return fail("import");
+    std::fprintf(stdout, "Real source import: file URL through the public importer; filter interaction uses the actual UI.\n");
     const auto measuredIdentities = [&](const QString& field) {
         QStringList identities;
         auto* model = workspace.table();

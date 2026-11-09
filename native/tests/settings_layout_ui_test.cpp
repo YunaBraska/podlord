@@ -89,7 +89,11 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
-    if (!podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return 1;
+    if (!workspace.importText(directory.filePath("layout.yaml"),QString::fromUtf8("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: https://127.0.0.1:9}\nusers:\n- name: local\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1beta1, command: podlord-test-never-run}\ncontexts:\n- name: local\n  context: {cluster: local, user: local}\n"))
+        || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; },5000)
+        || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
+        || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); },5000)
+        || !podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return 1;
     auto* sidebar = window->findChild<QQuickItem*>("workspaceSidebarHost");
     auto* content = window->findChild<QQuickItem*>("workspaceContent");
     if (!sidebar || !content || !sidebar->isVisible()) return 1;

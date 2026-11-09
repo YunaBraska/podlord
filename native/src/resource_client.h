@@ -230,7 +230,7 @@ private:
     void discardHiddenReads();
     void dispatch();
     void recordRequestStarted(const Task& task);
-    void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter);
+    void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail);
     void consume(const Task& task, const QJsonObject& document);
     void fail(const Task& task, QString message);
     QString logKey(const QString& id, const QString& path) const;

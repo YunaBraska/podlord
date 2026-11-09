@@ -358,9 +358,15 @@ process.on('uncaughtException',error=>{
  for(const [name,args] of diagnostics){try{fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),run(...args))}catch(diagnosticError){fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),String(diagnosticError)+'\n'+(diagnosticError.stdout||'')+(diagnosticError.stderr||''))}}
  console.error(error);process.exitCode=1;
 });
-waitNode('resourcesWorkspaceButton',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');click('resourcesWorkspaceButton');
-waitNode('sourcePath',n=>n.enabled==='true'&&!/\[0,0\]\[0,0\]/.test(n.bounds));click('sourcePath');run('shell','input','text','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');state();run('shell','input','keyevent','4');state();waitNode('sourcePath',n=>n.text==='/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');click('importButton');state();
-waitNode('closeSourceControls',n=>n.enabled==='true');click('closeSourceControls');click('mapWorkspaceButton');
+waitNode('mapImportSource',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
+if(nodes.some(n=>n['resource-id']?.endsWith('.resourcesWorkspaceButton')&&n.bounds!=='[0,0][0,0]'))throw Error('Resources navigation is visible before a context is opened');
+click('settingsWorkspaceButton');click('settingsSectionPicker');
+const initialSources=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
+if(!initialSources)throw Error('Sources is unavailable in the public Settings picker');tap(initialSources);
+waitNode('settingsSourcePath',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');click('settingsSourcePath');
+run('shell','input','text','/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');state();run('shell','input','keyevent','4');state();
+waitNode('settingsSourcePath',n=>n.text==='/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig');click('settingsImportSource');state();
+click('mapWorkspaceButton');
 const cardDeadline=Date.now()+30000;let contextCard='';
 do{state();const card=nodes.find(n=>n['resource-id']?.split('.').at(-1).startsWith('contextMapCard_')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');if(card){contextCard=card['resource-id'].split('.').at(-1);break;}}while(Date.now()<cardDeadline);
 if(!contextCard){capture('missing-context-card');throw Error('Imported context card did not appear');}
@@ -504,8 +510,11 @@ function filterPresetJourney(){
  const filtersWereExpanded=target('toggleLandscapeFilters').checked==='true';
  if(!filtersWereExpanded)click('toggleLandscapeFilters');
  if(target('problemsOnly').checked!=='true')click('problemsOnly');
+ click('saveFilterPreset');waitNode('filterPresetName',n=>n.enabled==='true');
  write('filterPresetName','Android-preset');click('saveFilterPreset');waitNode('filterPreset',n=>n.enabled==='true');
- click('problemsOnly');waitNode('problemsOnly',n=>n.checked==='false');click('filterPreset');waitNode('filterPresetOption_1',n=>value(n)==='Android-preset');
+ click('problemsOnly');waitNode('problemsOnly',n=>n.checked==='false');
+ if(target('filterPreset').checked!=='true')click('filterPreset');
+ waitNode('filterPresetOption_1',n=>value(n)==='Android-preset');
  if(nodes.some(n=>n['resource-id']?.endsWith('.filterPresetActions')))throw Error('Saved filters must have one inline entry, not a second actions menu');
  const saved=nodes.find(n=>/\.filterPresetOption_\d+$/.test(n['resource-id']||'')&&value(n)==='Android-preset');
  if(!saved)throw Error('Saved filter must appear in the inline selection');

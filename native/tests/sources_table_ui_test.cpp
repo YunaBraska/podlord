@@ -2,6 +2,8 @@
 #include "ui_input.h"
 #include <QAbstractItemModel>
 #include <QClipboard>
+#include <QLocale>
+#include <QDateTime>
 #include <QFile>
 #include <QItemSelectionModel>
 #include <QQmlApplicationEngine>
@@ -128,7 +130,15 @@ bool run(const QString& scenario) {
     const auto identity = model->index(0,0).data(Qt::UserRole).toString();
     const auto firstName = model->index(0,0).data().toString();
     const auto firstUser = model->index(0,2).data().toString();
-    if (scenario == "table" || scenario == "narrow") {
+    if (scenario == "timestamp") {
+        const auto imported = workspace.contexts().first().toMap()["imported"].toString();
+        const auto time = QDateTime::fromString(imported, Qt::ISODate);
+        const auto expected = QLocale::system().toString(time.toLocalTime(), QLocale::ShortFormat);
+        require(time.isValid() && model->index(0,6).data() == expected, "Import time is not displayed in system-local short format.");
+        require(model->index(0,6).data(Qt::UserRole+6) == imported, "Localized display changed the canonical timestamp sort value.");
+        require(workspace.copySourceCell(identity,6) && QGuiApplication::clipboard()->text() == expected,
+            "Copied import time differs from the displayed local time.");
+    } else if (scenario == "table" || scenario == "narrow") {
         require(control("sourceColumnsButton") && control("renameSource_"+identity) && control("removeSource_"+identity), "Source row actions missing.");
         if (scenario == "table") require(QTest::qWaitFor([&] { auto* cell=control("sourceCell_0_2"); return cell && cell->property("text")==firstUser; }), "Canonical User name is not rendered in the Sources table.");
     } else if (scenario == "sort") {

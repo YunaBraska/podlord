@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLibraryInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QScopeGuard>
@@ -29,10 +30,10 @@ bool write(const QString& path, const QByteArray& bytes) {
     return require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "Cannot write isolated input");
 }
 bool execute(const QString& binary, const QString& scenario, const QString& expectedVersion, const QString& sourceBinary) {
-    require(QStringList{"default", "ambient_kubeconfig", "ambient_exec", "profile_file", "profile_symlink", "explicit_empty", "explicit_override",
+    require(QStringList{"default", "tls_missing", "ambient_kubeconfig", "ambient_exec", "profile_file", "profile_symlink", "explicit_empty", "explicit_override",
         "help", "version", "help_invalid_profile", "version_invalid_profile", "unknown_option", "source_file", "source_url", "source_folder",
         "source_partial", "source_missing", "source_invalid", "source_empty", "source_repeated", "source_exec", "source_repeat_import",
-        "source_changed", "help_with_source", "version_with_source"}.contains(scenario), "Unknown application startup scenario");
+        "source_changed", "source_events", "source_positional", "source_positional_url", "source_positional_invalid", "source_positional_repeat", "help_with_source", "version_with_source"}.contains(scenario), "Unknown application startup scenario");
     const bool explicitSource = scenario.startsWith("source_");
     const bool metadata = scenario.startsWith("help") || scenario.startsWith("version");
     QTemporaryDir temporary;
@@ -48,6 +49,17 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
     environment.insert("QT_QUICK_BACKEND", "software");
     environment.insert("QT_QUICK_CONTROLS_STYLE", "Fusion");
     if (!environment.contains("LLVM_PROFILE_FILE")) environment.insert("LLVM_PROFILE_FILE", temporary.filePath("startup-%p.profraw"));
+    if (scenario == "tls_missing") {
+        const auto plugins=temporary.filePath("plugins");
+        require(QDir().mkpath(plugins+"/platforms"), "Cannot create isolated runtime plugin directory");
+        const QDir platforms(QLibraryInfo::path(QLibraryInfo::PluginsPath)+"/platforms");
+        const auto files=platforms.entryList(QDir::Files);
+        require(!files.isEmpty(), "Real platform plugins are unavailable");
+        for (const auto& file:files) require(QFile::copy(platforms.filePath(file),plugins+"/platforms/"+file),
+            "Cannot copy a real platform plugin");
+        environment.insert("PODLORD_FILE_OPEN_TEST_NO_TLS","1");
+        environment.insert("PODLORD_FILE_OPEN_TEST_PLUGIN_ROOT",plugins);
+    }
     // Resolve the real platform path in this environment before starting the app.
     // If platform isolation is unavailable, never launch against the user's data.
     QProcess probe;
@@ -69,7 +81,7 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
     const auto marker = temporary.filePath("provider-started");
     const auto kubeconfig = "apiVersion: v1\nkind: Config\ncurrent-context: ambient\nclusters:\n- name: ambient\n  cluster: {server: 'http://127.0.0.1:"
         + QByteArray::number(boundary.serverPort()) + "'}\nusers:\n- name: ambient\n  user:\n";
-    const auto credentials = scenario == "ambient_exec" || scenario == "source_exec" || metadata || scenario == "unknown_option"
+    const auto credentials = scenario == "ambient_exec" || scenario == "source_exec" || scenario == "source_events" || metadata || scenario == "unknown_option"
         ? "    exec:\n      command: " + QCoreApplication::applicationFilePath().toUtf8()
             + "\n      apiVersion: client.authentication.k8s.io/v1\n      interactiveMode: Never\n      args: [provider, '" + marker.toUtf8() + "']\n"
         : QByteArray("    token: ambient-startup-secret\n");
@@ -91,16 +103,21 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
     QByteArray sourceContents = original;
     if (explicitSource || scenario.endsWith("with_source")) {
         sourceContents.replace("ambient", "explicit-source");
-        if (scenario == "source_invalid") sourceContents = "apiVersion: [\n";
+        if (scenario == "source_invalid" || scenario == "source_positional_invalid") sourceContents = "apiVersion: [\n";
         write(explicitPath, sourceContents);
         QString input = explicitPath;
-        if (scenario == "source_url") input = QUrl::fromLocalFile(input).toString(QUrl::FullyEncoded);
+        if (scenario == "source_url" || scenario == "source_positional_url") input = QUrl::fromLocalFile(input).toString(QUrl::FullyEncoded);
         if (scenario == "source_folder" || scenario == "source_partial") input = QFileInfo(explicitPath).absolutePath();
         if (scenario == "source_partial") write(QFileInfo(explicitPath).absolutePath() + "/invalid.yaml", "apiVersion: [\n");
         if (scenario == "source_missing") input = temporary.filePath("missing-config");
         if (scenario == "source_empty") input.clear();
-        arguments = {"--kubeconfig", input};
+        arguments = scenario.startsWith("source_positional") ? QStringList{input} : QStringList{"--kubeconfig", input};
+        if (scenario == "source_positional_repeat") arguments.append(input);
         if (scenario == "source_repeated") arguments.append({"--kubeconfig", explicitPath});
+    }
+    if (scenario == "source_events") {
+        arguments.clear();
+        environment.insert("PODLORD_FILE_OPEN_TEST_DOCUMENT",explicitPath);
     }
     if (metadata) {
         if (scenario.endsWith("invalid_profile")) {
@@ -121,6 +138,16 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
     });
     process.start(binary, arguments);
     require(process.waitForStarted(5000), "Native application failed to start");
+    if (scenario == "tls_missing") {
+        require(process.waitForFinished(5000) && process.exitStatus()==QProcess::NormalExit && process.exitCode()==1,
+            "Missing TLS runtime did not stop the actual app cleanly");
+        const auto errors=process.readAllStandardError();
+        require(errors.contains("TLS runtime is unavailable") && !errors.contains("ambient-startup-secret"),
+            "Missing TLS runtime lacks safe, actionable feedback");
+        QCoreApplication::processEvents();
+        return require(calls==0 && !QFileInfo(marker).exists() && !QFileInfo(profile+"/kubeconfigs").exists(),
+            "Missing TLS runtime connected, authenticated or imported data");
+    }
     if (metadata || scenario == "unknown_option") {
         require(process.waitForFinished(5000) && process.exitStatus() == QProcess::NormalExit, "Command-line metadata did not exit normally");
         QCoreApplication::processEvents();
@@ -169,7 +196,18 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
         }
         return false;
     };
-    const bool sourceAccepted = explicitSource && scenario != "source_missing" && scenario != "source_invalid";
+    if (scenario == "source_events") {
+        require(process.waitForFinished(15000) && process.exitStatus()==QProcess::NormalExit && process.exitCode()==0,
+            "Public file-open event journey did not finish normally");
+        QCoreApplication::processEvents();
+        require(sourceRows().size()==1 && calls==0 && !QFileInfo(marker).exists(),
+            "File-open events duplicated data, connected or authenticated");
+        QFile retained(explicitPath);
+        require(retained.open(QIODevice::ReadOnly) && retained.readAll()==sourceContents,
+            "File-open events changed the original input");
+        return true;
+    }
+    const bool sourceAccepted = explicitSource && scenario != "source_missing" && scenario != "source_invalid" && scenario != "source_positional_invalid";
     if (sourceAccepted) require(awaitSources(1), "Explicit startup did not import its source asynchronously");
     QElapsedTimer timer; timer.start();
     while (timer.elapsed() < 1500 && process.state() != QProcess::NotRunning) {

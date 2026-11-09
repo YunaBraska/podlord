@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
         QTemporaryDir directory;
         require(directory.isValid(), "Cannot create private command profile.");
         Kubernetes server(scenario == "problems");
-        const bool populated = scenario == "forward" || scenario == "problems";
+        const bool populated = QStringList{"keyboard_arrows", "resources", "events", "forward", "problems"}.contains(scenario);
         QString sessionId;
         if (populated) {
             require(server.listen(QHostAddress::LocalHost, 0), "Cannot start external Kubernetes boundary.");
@@ -103,11 +103,11 @@ int main(int argc, char** argv) {
         };
         const auto item = [&](const char* name) {
             QQuickItem* target = nullptr;
-            require(QTest::qWaitFor([&] { target = visibleItem(window->contentItem(), QString::fromLatin1(name)); return target != nullptr; }, 2000), "Palette control is not visible.");
+            const auto message = QString("Palette control is not visible: %1.").arg(QString::fromLatin1(name));
+            require(QTest::qWaitFor([&] { target = visibleItem(window->contentItem(), QString::fromLatin1(name)); return target != nullptr; }, 2000), message.toUtf8().constData());
             return target;
         };
         const auto click = [&](const char* name) {
-            require(podlord::test::revealWorkspaceAction(window, QString::fromLatin1(name)), "Workspace action is unreachable.");
             auto* target = item(name);
             require(target->isEnabled(), "Palette action is disabled.");
             target->ensurePolished();
@@ -116,13 +116,15 @@ int main(int argc, char** argv) {
             QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point.toPoint());
             QCoreApplication::processEvents();
         };
+        const auto openPalette = [&] {
+            QTest::keyClick(window, Qt::Key_K, Qt::ControlModifier);
+        };
         if (scenario == "narrow") {
             window->setWidth(390); window->setHeight(720);
             require(QTest::qWaitFor([&] { return window->contentItem()->width() == 390; }, 2000), "Actual narrow scene did not resize.");
         }
-        if (scenario == "resources" || scenario == "keyboard_default") click("settingsWorkspaceButton");
         if (scenario == "keyboard" || scenario == "keyboard_meta") QTest::keyClick(window, Qt::Key_K, scenario == "keyboard_meta" ? Qt::MetaModifier : Qt::ControlModifier);
-        else click("commandPaletteButton");
+        else openPalette();
         auto* palette = window->findChild<QObject*>("commandPalette");
         require(palette && QTest::qWaitFor([&] { return palette->property("opened").toBool(); }, 2000), "Palette did not finish opening.");
         auto* search = item("commandPaletteSearch");
@@ -141,7 +143,7 @@ int main(int argc, char** argv) {
             query("events"); QTest::keyClick(window, Qt::Key_Escape);
             require(QTest::qWaitFor([&] { return !palette->property("visible").toBool(); }, 2000), "Escape did not close palette.");
             if (scenario == "repeat") {
-                click("commandPaletteButton");
+                openPalette();
                 require(QTest::qWaitFor([&] { return palette->property("visible").toBool(); }, 2000)
                     && item("commandPaletteSearch")->property("text").toString().isEmpty()
                     && item("commandPaletteList")->property("count").toInt() == 7, "Reopened palette retained an obsolete query.");
@@ -181,7 +183,7 @@ int main(int argc, char** argv) {
                 require(workspace.portForwards().isEmpty(), "Preparing a forward started it without confirmation.");
             } else {
                 require(workspace.problemsOnly() && workspace.resourceCount() == 1, "Palette did not toggle cached Problems.");
-                click("commandPaletteButton");
+                openPalette();
                 require(QTest::qWaitFor([&] { return palette->property("opened").toBool(); }, 2000), "Cannot reopen palette for repeated toggle.");
                 query("problems"); QTest::keyClick(window, Qt::Key_Return);
                 require(!workspace.problemsOnly() && workspace.resourceCount() == 1 && server.requests == requestsBefore, "Repeated Problems toggle lost cache or fetched data.");

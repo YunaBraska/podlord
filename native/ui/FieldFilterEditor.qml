@@ -11,7 +11,7 @@ Pane {
     readonly property bool durationField: controller.filterPickerField === "createdAt"
     padding: 4
     Accessible.role: Accessible.Grouping
-    Accessible.name: "Cached field filter"
+    Accessible.name: "Field filter"
     Keys.onEscapePressed: dismissed()
     Component.onCompleted: expressionInput.forceActiveFocus()
     contentItem: ColumnLayout {
@@ -27,7 +27,7 @@ Pane {
                 : editor.controller.filterPickerField === "restarts" ? '>=3 =0 (alternatives), /regex/'
                 : 'Alternatives, "exact", ~prefix, suffix~, /regex/'
             Accessible.name: "Field filter expression"
-            Accessible.description: editor.quantityField ? "Numeric filters use actual cached measurements. CPU uses cores, c, milliCPU or millicores. Memory/storage units are case-insensitive: m or MB means megabytes, mi or MiB means mebibytes. Ranges all match; exact numeric alternatives use OR. Without numeric terms, exact text, prefix, suffix and regex match the displayed value, including unavailable, stale or incomplete markers." : "Edit the complete expression, including custom values. Filtering uses cached data only."
+            Accessible.description: editor.quantityField ? "Numeric filters use actual measurements. CPU uses cores, c, milliCPU or millicores. Memory/storage units are case-insensitive: m or MB means megabytes, mi or MiB means mebibytes. Ranges all match; exact numeric alternatives use OR. Without numeric terms, exact text, prefix, suffix and regex match the displayed value, including unavailable, stale or incomplete markers." : "Edit the complete expression, including custom values. Filtering does not start requests."
             onTextEdited: editor.controller.filterField(editor.controller.filterPickerField, text)
         }
         Label {
@@ -43,8 +43,8 @@ Pane {
             id: optionSearch
             objectName: "fieldFilterOptionSearch"
             Layout.fillWidth: true
-            placeholderText: "Find cached values"
-            Accessible.name: "Find cached filter values"
+            placeholderText: editor.controller.uiText["filters.findValues"]
+            Accessible.name: editor.controller.uiText["filters.findValues"]
         }
         ListView {
             id: values
@@ -108,14 +108,6 @@ Pane {
                     MenuItem { objectName: "copyFieldFilterValue_" + valueControl.index; text: editor.controller.uiText["copy.value"]; onTriggered: editor.controller.copyFilterValue(valueControl.modelData) }
                 }
             }
-        }
-        Label {
-            Layout.fillWidth: true
-            visible: values.count === 0
-            text: "No cached values. Enter an expression above."
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: editor.controller.appearanceColors.muted
         }
     }
 }

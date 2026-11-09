@@ -1,6 +1,7 @@
 #include "workspace.h"
 #include "workspace_runtime.h"
 #include <QClipboard>
+#include <QLocale>
 #include <QGuiApplication>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
@@ -12,7 +13,7 @@ QVariantMap sourceInspectionMetadata(const SourceSnapshot& source, const SourceC
     for (const auto& entry : QList<QPair<QString,QString>>{
         {"Name",context.displayName},{"Context",context.name},{"Cluster",context.cluster},{"Server",context.server},
         {"User",context.user},{"Authentication",context.authType},{"Source",source.sourcePath},{"Owned copy",source.ownedPath},
-        {"Imported",source.importedAt.toString(Qt::ISODate)},{"Hash",source.contentHash},{"Context ID",context.id},
+        {"Imported",QLocale::system().toString(source.importedAt.toLocalTime(),QLocale::ShortFormat)},{"Hash",source.contentHash},{"Context ID",context.id},
         {"Detail",context.brokenReferences.join(", ")}})
         fields.append(QVariantMap{{"label",entry.first},{"value",entry.second.isEmpty() ? QStringLiteral("-") : entry.second}});
     return {{"contextId",context.id},{"snapshotId",source.id},
@@ -92,7 +93,7 @@ bool Workspace::applySourceDraft() {
         const auto selected=std::find_if(source.contexts.cbegin(),source.contexts.cend(),[&](const auto& value) { return value.name==context; });
         const auto& target=selected==source.contexts.cend() ? source.contexts.first() : *selected;
         sourceInspection_=SourceInspection{sourceInspectionMetadata(source,target),draft,{},{},false,false};
-        sourceImportNotice_="Edited kubeconfig imported. Original files, previous snapshots and existing sessions are unchanged.";
+        sourceImportNotice_.clear();
         emit sourceInspectionChanged(); emit sourceDraftChanged(); emit yamlEditChanged();
         reloadCatalogs(false); emit sourceImportFinished(true);
     });

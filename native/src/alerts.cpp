@@ -21,7 +21,7 @@ const QStringList scopes{"search", "kind", "namespace", "name", "status", "node"
 const QStringList modes{"no-match", "duration", "new-in-view", "once"};
 QJsonObject encoded(const AlertCatalog& catalog) {
     QJsonArray rules; for (const auto& rule : catalog.rules) rules.append(rule.value);
-    return {{"version", 1}, {"rules", rules}, {"muted", catalog.muted}, {"reducedMotion", catalog.reducedMotion}};
+    return {{"version", 2}, {"rules", rules}, {"muted", catalog.muted}, {"reducedMotion", catalog.reducedMotion}};
 }
 bool whole(const QJsonValue& value, int low, int high) {
     return value.isDouble() && value.toDouble() >= low && value.toDouble() <= high && value.toDouble() == value.toInt(-1);
@@ -137,7 +137,7 @@ Evaluated evaluate(const QJsonArray& snapshot, const AlertCatalog& catalog, cons
     return result;
 }
 QJsonObject draft(QString id, QString name, QString field, QString expression, QString color, QString animation, QString sound, QString description) {
-    return {{"id", id}, {"name", name}, {"description", description}, {"enabled", true}, {"builtIn", true},
+    return {{"id", id}, {"name", name}, {"description", description}, {"enabled", true}, {"builtIn", true}, {"draft", false},
         {"groups", QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", field}, {"expression", expression}}})}},
         {"color", color}, {"colorMode", "no-match"}, {"colorSeconds", 5}, {"animation", animation}, {"animationMode", animation == "none" ? "no-match" : "new-in-view"}, {"animationSeconds", 5},
         {"zoom", color == "status" ? 100 : 0}, {"sound", sound}, {"soundMinimumMatches", 1}};
@@ -194,10 +194,10 @@ QVariantList soundCatalog() {
 }
 }
 Result<AlertRule> parseAlertRule(QJsonObject value) {
-    const QStringList keys{"id", "name", "description", "enabled", "builtIn", "groups", "color", "colorMode", "colorSeconds", "animation", "animationMode", "animationSeconds", "zoom", "sound", "soundMinimumMatches"};
+    const QStringList keys{"id", "name", "description", "enabled", "builtIn", "draft", "groups", "color", "colorMode", "colorSeconds", "animation", "animationMode", "animationSeconds", "zoom", "sound", "soundMinimumMatches"};
     if (value.size() != keys.size()) return Failure{StoreError::InvalidInput, "An alert must contain exactly the supported fields."};
     for (const auto& key : keys) if (!value.contains(key)) return Failure{StoreError::InvalidInput, "An alert field is missing."};
-    if (!value["enabled"].isBool() || !value["builtIn"].isBool() || !value["id"].isString() || value["id"].toString().isEmpty() || !value["name"].isString() || value["name"].toString().trimmed().isEmpty() || !value["description"].isString()) return Failure{StoreError::InvalidInput, "Provide an alert name and valid identity."};
+    if (!value["enabled"].isBool() || !value["builtIn"].isBool() || !value["draft"].isBool() || !value["id"].isString() || value["id"].toString().isEmpty() || !value["name"].isString() || value["name"].toString().trimmed().isEmpty() || !value["description"].isString()) return Failure{StoreError::InvalidInput, "Provide an alert name and valid identity."};
     if (!value["color"].isString() || (!QStringList{"none", "status", "fresh"}.contains(value["color"].toString()) && !(value["color"].toString().startsWith('#') && QColor(value["color"].toString()).isValid()))
         || !modes.contains(value["colorMode"].toString()) || !modes.contains(value["animationMode"].toString())
         || !QStringList{"none", "blink", "pulse", "sweep", "outline"}.contains(value["animation"].toString())
@@ -206,14 +206,18 @@ Result<AlertRule> parseAlertRule(QJsonObject value) {
     if (!sound) return Failure{StoreError::InvalidInput, "Choose an available local sound."};
     if (!value["groups"].isArray() || value["groups"].toArray().isEmpty()) return Failure{StoreError::InvalidInput, "Add at least one matcher group."};
     AlertRule rule{value, {}};
+    const bool isDraft = value["draft"].toBool();
+    if (isDraft && (value["enabled"].toBool() || value["builtIn"].toBool())) return Failure{StoreError::InvalidInput, "Draft alerts must be custom and disabled."};
     static const QRegularExpression tokenPattern("\"[^\"]*\"|/[^/]*/|[^\\s]+"), comparison("^(<=|>=|>|<|=)?(.*)$");
     for (const auto& group : value["groups"].toArray()) {
         if (!group.isArray() || group.toArray().isEmpty()) return Failure{StoreError::InvalidInput, "Every OR group needs at least one AND criterion."};
         QList<AlertCriterion> criteria;
         for (const auto& input : group.toArray()) {
+            if (!input.isObject()) return Failure{StoreError::InvalidInput, "Choose a supported field and matcher expression."};
             const auto object=input.toObject(); const auto field=object["field"].toString(), expression=object["expression"].toString().trimmed();
-            if (!input.isObject() || object.size()!=2 || !scopes.contains(field) || !object["expression"].isString() || expression.isEmpty()) return Failure{StoreError::InvalidInput, "Choose a supported field and nonempty matcher expression."};
+            if (object.size()!=2 || !object["field"].isString() || !scopes.contains(field) || !object["expression"].isString() || (!isDraft && expression.isEmpty())) return Failure{StoreError::InvalidInput, "Choose a supported field and nonempty matcher expression."};
             AlertCriterion criterion{field, expression, {}, {}, {}};
+            if (isDraft) { criteria.append(criterion); continue; }
             if (QStringList{"problems", "activity", "recentlyChanged", "newInView"}.contains(field) && expression != "true" && expression != "false") return Failure{StoreError::InvalidInput, "Boolean matchers accept true or false."};
             auto tokens = tokenPattern.globalMatch(expression);
             while (tokens.hasNext()) {
@@ -252,13 +256,19 @@ Result<AlertCatalog> defaultAlerts() {
     return result;
 }
 Result<AlertCatalog> decodeAlerts(const QJsonObject& root) {
-    if (root.size()!=4 || root["version"]!=1 || !root["rules"].isArray() || !root["muted"].isBool() || !root["reducedMotion"].isBool()) return Failure{StoreError::InvalidData, "Invalid or unsupported alert document; existing data was retained."};
+    const int version=root["version"].toInt(-1);
+    if (root.size()!=4 || !whole(root["version"], 1, 2) || !root["rules"].isArray() || !root["muted"].isBool() || !root["reducedMotion"].isBool()) return Failure{StoreError::InvalidData, "Invalid or unsupported alert document; existing data was retained."};
     const auto defaults = defaultAlerts();
     if (const auto* failure = std::get_if<Failure>(&defaults)) return *failure;
     auto result=std::get<AlertCatalog>(defaults); result.muted=root["muted"].toBool(); result.reducedMotion=root["reducedMotion"].toBool(); QSet<QString> ids;
     for (const auto& entry : root["rules"].toArray()) {
         if (!entry.isObject()) return Failure{StoreError::InvalidData, "Invalid alert record; existing data was retained."};
-        const auto parsed=parseAlertRule(entry.toObject()); if (const auto* failure=std::get_if<Failure>(&parsed)) return *failure;
+        auto value=entry.toObject();
+        if (version==1) {
+            if (value.contains("draft")) return Failure{StoreError::InvalidData, "Invalid alert record; existing data was retained."};
+            value["draft"]=false;
+        }
+        const auto parsed=parseAlertRule(value); if (const auto* failure=std::get_if<Failure>(&parsed)) return *failure;
         auto rule=std::get<AlertRule>(parsed); const auto id=rule.value["id"].toString();
         if (ids.contains(id)) return Failure{StoreError::InvalidData, "Duplicate alert identity; existing data was retained."}; ids.insert(id);
         auto builtin=std::find_if(result.rules.begin(), result.rules.end(), [&](const auto& item) { return item.value["id"] == id; });
@@ -318,7 +328,7 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
         const bool loading = !client_->initialSyncComplete(session);
         if (states_[session].loading != loading) { states_[session].loading = loading; queue(session); }
     });
-    const QList<QPair<QString, QString>> columns{{"enabled", "On"}, {"active", "Active"}, {"name", "Name"}, {"when", "When"}, {"actions", "Actions"}, {"soundLabel", "Sound"}};
+    const QList<QPair<QString, QString>> columns{{"enabled", "Enabled"}, {"active", "Triggered"}, {"name", "Name"}, {"when", "Conditions"}, {"actions", "Actions"}, {"soundLabel", "Sound"}};
     ruleRows_.setColumnCount(static_cast<int>(columns.size()));
     for (int column = 0; column < columns.size(); ++column) {
         ruleRows_.setHeaderData(column, Qt::Horizontal, columns[column].first, Qt::UserRole);
@@ -339,14 +349,17 @@ bool Alerts::publishTableMatches() {
         const auto match = value.toMap();
         counts.insert(match["id"].toString(), match["count"].toInt());
     }
+    const auto state=states_.constFind(shown_);
+    const bool evaluated=state!=states_.cend() && state->initialized;
     for (int row = 0; row < ruleRows_.rowCount(); ++row) {
         const auto index = ruleRows_.index(row, 1);
         const auto identity = ruleRows_.index(row, 0).data(Qt::UserRole).toString();
         const int count = counts.value(identity);
         const bool hasMatches = counts.contains(identity);
-        const bool displayedMatches = index.data(Qt::DisplayRole).toString() != "-";
-        if (index.data(Qt::UserRole + 6).toInt() == count && hasMatches == displayedMatches) continue;
-        const auto text = hasMatches ? QString::number(count) + " match(es)" : QString("-");
+        const auto rule=std::find_if(catalog_.rules.cbegin(), catalog_.rules.cend(), [&](const auto& candidate) { return candidate.value["id"] == identity; });
+        const bool notEvaluated=rule==catalog_.rules.cend() || rule->value["draft"].toBool() || !rule->value["enabled"].toBool() || !evaluated;
+        const auto text=notEvaluated ? presentationText_.value("alert.notEvaluated").toString() : hasMatches ? presentationText_.value("alert.triggeredState").toString() + " (" + QString::number(count) + ')' : presentationText_.value("alert.notTriggeredState").toString();
+        if (index.data(Qt::UserRole + 6).toInt() == count && index.data(Qt::DisplayRole).toString() == text) continue;
         ruleRows_.setItemData(index, {{Qt::DisplayRole, text}, {Qt::UserRole + 2, text}, {Qt::UserRole + 6, count}});
     }
     return true;
@@ -359,7 +372,11 @@ bool Alerts::setPresentationText(const QVariantMap& text) {
 bool Alerts::publishTable() {
     QMap<QString, int> counts;
     for (const auto& match : matches()) { const auto value = match.toMap(); counts.insert(value["id"].toString(), value["count"].toInt()); }
+    const auto state=states_.constFind(shown_);
+    const bool evaluated=state!=states_.cend() && state->initialized;
     const auto sounds = soundCatalog();
+    const QStringList headers{"alert.enabledState", "alert.triggeredState", "alert.name", "alert.conditions", "alert.actions", "alert.sound"};
+    for (int column = 0; column < headers.size(); ++column) ruleRows_.setHeaderData(column, Qt::Horizontal, presentationText_.value(headers[column]), Qt::DisplayRole);
     ruleRows_.setRowCount(static_cast<int>(catalog_.rules.size()));
     for (int row = 0; row < catalog_.rules.size(); ++row) {
         const auto& rule = catalog_.rules[row].value;
@@ -368,7 +385,7 @@ bool Alerts::publishTable() {
         for (const auto& group : catalog_.rules[row].groups) {
             QStringList criteria;
             for (const auto& criterion : group) criteria.append(presentationText_.value("alert.field." + criterion.field).toString() + ": " + criterion.expression);
-            groups.append('(' + criteria.join(" AND ") + ')');
+            groups.append("(" + criteria.join(" " + presentationText_.value("alert.all").toString() + " ") + ")");
         }
         if (rule["color"] != "none") actions.append("color: " + rule["color"].toString());
         if (rule["animation"] != "none") actions.append("animation: " + rule["animation"].toString());
@@ -378,10 +395,13 @@ bool Alerts::publishTable() {
             const auto value = sound.toMap();
             if (value["id"] == rule["sound"].toVariant()) { soundLabel = value["name"].toString() + " (" + value["license"].toString() + ')'; break; }
         }
-        const QVariantList values{rule["enabled"].toBool() ? "On" : "Off", counts.contains(identity) ? QString::number(counts.value(identity)) + " match(es)" : QString("-"),
-            rule["name"].toString(), groups.join(" OR "), actions.join(", "), soundLabel};
+        const bool isDraft=rule["draft"].toBool(), enabled=rule["enabled"].toBool();
+        const QString enabledLabel=presentationText_.value(isDraft ? "alert.draft" : enabled ? "alert.enabledState" : "alert.disabledState").toString();
+        const QString triggeredLabel=!enabled || isDraft || !evaluated ? presentationText_.value("alert.notEvaluated").toString()
+            : counts.contains(identity) ? presentationText_.value("alert.triggeredState").toString() + " (" + QString::number(counts.value(identity)) + ')' : presentationText_.value("alert.notTriggeredState").toString();
+        const QVariantList values{enabledLabel, triggeredLabel, rule["name"].toString(), groups.join(" " + presentationText_.value("alert.any").toString() + " "), actions.join(", "), soundLabel};
         for (int column = 0; column < values.size(); ++column) {
-            const QVariant sorting = column == 0 ? QVariant(rule["enabled"].toBool() ? 1 : 0) : column == 1 ? QVariant(counts.value(identity)) : values[column];
+            const QVariant sorting = column == 0 ? QVariant(isDraft ? 0 : enabled ? 2 : 1) : column == 1 ? QVariant(counts.value(identity)) : values[column];
             const auto* previous = ruleRows_.item(row, column);
             if (previous && previous->data(Qt::DisplayRole) == values[column] && previous->data(Qt::UserRole) == identity
                 && previous->data(Qt::UserRole + 6) == sorting) continue;
@@ -462,7 +482,24 @@ bool Alerts::saveRule(const QVariantMap& input) {
         auto locked=found->value; locked["enabled"]=value["enabled"];
         if (locked!=value) { error_="Built-in alerts can only be enabled or disabled. Duplicate to edit."; emit rulesChanged(); return false; }
     } else if (value["builtIn"].toBool()) { error_="New alerts cannot claim a built-in identity."; emit rulesChanged(); return false; }
-    const auto result=parseAlertRule(value); if (const auto* failure=std::get_if<Failure>(&result)) { error_=failure->message; emit rulesChanged(); return false; }
+    if (value["draft"].toBool() && value["enabled"].toBool()) {
+        auto active=value; active["draft"]=false;
+        const auto activeResult=parseAlertRule(active);
+        if (const auto* failure=std::get_if<Failure>(&activeResult)) {
+            if (found!=desired.rules.end()) { error_=failure->message; emit rulesChanged(); return false; }
+            value["enabled"]=false;
+        } else value=active;
+    }
+    auto result=parseAlertRule(value);
+    if (std::holds_alternative<Failure>(result)) {
+        if (found!=desired.rules.end() && !found->value["builtIn"].toBool() && !found->value["draft"].toBool()
+            && !value["draft"].toBool()) {
+            auto inactive=value; inactive["enabled"]=false; inactive["draft"]=true;
+            const auto draftResult=parseAlertRule(inactive);
+            if (std::holds_alternative<AlertRule>(draftResult)) { value=inactive; result=draftResult; }
+        }
+        if (const auto* rejected=std::get_if<Failure>(&result)) { error_=rejected->message; emit rulesChanged(); return false; }
+    }
     if (found==desired.rules.end()) desired.rules.append(std::get<AlertRule>(result)); else *found=std::get<AlertRule>(result);
     return persist(desired);
 }
@@ -688,6 +725,7 @@ bool Alerts::previewZoom(const QVariantMap& draft, const QStringList& visiblePat
     if (client_->syncLoading(shown_) || !client_->initialSyncComplete(shown_)) return reject("Wait until the session finishes loading.");
     auto value = QJsonObject::fromVariantMap(draft);
     if (value["id"].isString() && value["id"].toString().isEmpty()) value["id"] = "zoom-preview";
+    value["draft"] = false;
     const auto parsed = parseAlertRule(value);
     if (const auto* failure = std::get_if<Failure>(&parsed)) return reject(failure->message);
     auto rule = std::get<AlertRule>(parsed);

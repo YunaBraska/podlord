@@ -49,29 +49,38 @@ ApplicationWindow {
             || (workspace.sourceEditing && inputArea.height < 480))
     bottomPadding: Math.max(SafeArea.margins.bottom, height - keyboardTop)
     visible: true
-    property bool sourcesExpanded: false
+    DropArea {
+        id: configDrop; objectName: "kubeconfigDropArea"
+        anchors.fill: parent
+        enabled: !workspace.busy
+        onDropped: drop => {
+            const paths = drop.urls.map(url => url.toString()).filter(url => url.startsWith("file:") || url.startsWith("content:"))
+            if (paths.length > 0) { workspace.importFiles(paths); drop.acceptProposedAction() }
+        }
+        Rectangle { anchors.fill: parent; visible: configDrop.containsDrag; color: "transparent"; border.width: 2; border.color: workspace.appearanceColors.accent }
+    }
     property string ociImportConfigPath: ""
-    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: "Saved sessions", header: true}]
+    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: workspace.uiText["nav.savedViews"], header: true}]
         .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
-            [{name: "Imported contexts", header: true}],
+            [{name: workspace.uiText["nav.contexts"], header: true}],
             workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
     Action { id: mapCommand; text: "Open Map"; checkable: true; checked: workspace.workspacePage === "map"; onTriggered: workspace.setWorkspacePage("map") }
-    Action { id: resourcesCommand; text: "Open Resources"; checkable: true; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard"; onTriggered: workspace.setWorkspacePage("resources") }
-    Action { id: eventsCommand; text: "Open Events"; checkable: true; checked: workspace.workspacePage === "events"; onTriggered: workspace.setWorkspacePage("events") }
+    Action { id: resourcesCommand; enabled: workspace.currentSession !== ""; text: "Open Resources"; checkable: true; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard"; onTriggered: workspace.setWorkspacePage("resources") }
+    Action { id: eventsCommand; enabled: workspace.currentSession !== ""; text: "Open Events"; checkable: true; checked: workspace.workspacePage === "events"; onTriggered: workspace.setWorkspacePage("events") }
     Action { id: sourcesCommand; text: "Open Sources Settings"; onTriggered: { if (workspace.setWorkspacePage("settings")) settingsLoader.item.section = "sources" } }
     Action { id: portCommand; text: "Open Port Forwards"; enabled: workspace.canPortForward; onTriggered: workspace.preparePortForward() }
     Action { id: settingsCommand; text: "Open Settings"; checkable: true; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts"; onTriggered: workspace.setWorkspacePage("settings") }
-    Action { id: connectionsCommand; text: workspace.uiText["nav.ports"]; checkable: true; checked: workspace.workspacePage === "ports"; onTriggered: workspace.setWorkspacePage("ports") }
+    Action { id: connectionsCommand; enabled: workspace.currentSession !== ""; text: workspace.uiText["nav.ports"]; checkable: true; checked: workspace.workspacePage === "ports"; onTriggered: workspace.setWorkspacePage("ports") }
     ActionGroup {
         id: workspaceNavigationActions
         actions: [mapCommand, resourcesCommand, eventsCommand, connectionsCommand, settingsCommand]
     }
-    Action { id: sidebarCommand; text: "Show or hide radar and filters"; onTriggered: window.toggleSidebar() }
+    Action { id: sidebarCommand; text: "Show or hide radar and filters"; enabled: workspace.currentSession !== ""; onTriggered: window.toggleSidebar() }
     Action {
         id: searchCommand
         text: workspace.uiText["nav.search"]
         checkable: true; checked: window.searchOpen
-        enabled: ["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview)
+        enabled: workspace.currentSession !== "" && (["resources", "events", "ports", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
         onTriggered: {
             window.searchOpen = !window.searchOpen
             if (window.searchOpen) Qt.callLater(window.focusSearchIfOpen)
@@ -80,7 +89,7 @@ ApplicationWindow {
     }
     Action {
         id: quickOpenCommand
-        text: "Open kubeconfig, session or context"
+        text: workspace.uiText["context.openFile"]
         enabled: !workspace.busy
         onTriggered: {
             const anchor = quickOpenControl.visible ? quickOpenControl : workspaceActionsButton
@@ -154,7 +163,7 @@ ApplicationWindow {
             else if (!workspace.yamlReconcilePending && reconcile.visible) reconcile.close()
         }
     }
-    Dialog {
+    ModalDialog {
         id: discardChanges
         objectName: "discardYamlDialog"
         title: "Unapplied YAML changes"
@@ -190,7 +199,7 @@ ApplicationWindow {
         onAccepted: workspace.confirmDiscard(true)
         onRejected: workspace.confirmDiscard(false)
     }
-    Dialog {
+    ModalDialog {
         id: portForwardDialog
         objectName: "portForwardDialog"
         title: "Port forward"
@@ -217,7 +226,7 @@ ApplicationWindow {
             Label { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
-            Button { id: forwardCancel; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { id: forwardCancel; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "startPortForward"; text: "Start forwarding"; visible: !portForwardDialog.stopMode; enabled: !workspace.authenticationRequired && !workspace.busy; onClicked: workspace.startPreparedPortForward(forwardLocal.text, forwardRemote.text) }
             Button { objectName: "stopPortForward"; text: "Stop forwarding"; visible: portForwardDialog.stopMode; onClicked: workspace.stopPreparedPortForward() }
         }
@@ -256,7 +265,7 @@ ApplicationWindow {
         title: "Import kubeconfig"
         onAccepted: { sourcePath.text = selectedFile.toString(); workspace.importFile(sourcePath.text) }
     }
-    Dialog {
+    ModalDialog {
         id: ociImportDialog
         objectName: "ociImportDialog"
         title: "Import OCI API key"
@@ -289,7 +298,7 @@ ApplicationWindow {
         }
         onRejected: window.ociImportConfigPath = ""
     }
-    Dialog {
+    ModalDialog {
         id: gkeImportDialog
         objectName: "gkeImportDialog"
         property bool importing: false
@@ -326,7 +335,7 @@ ApplicationWindow {
         title: "Import kubeconfig folder"
         onAccepted: { sourcePath.text = selectedFolder.toString(); workspace.importFile(sourcePath.text) }
     }
-    Dialog {
+    ModalDialog {
         id: sourceImportDetails
         objectName: "sourceImportDetails"
         title: "Source import failures"
@@ -348,7 +357,7 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    ModalDialog {
         id: deleteConfirmation
         objectName: "resourceDeleteDialog"
         title: "Delete this resource?"
@@ -362,7 +371,7 @@ ApplicationWindow {
             Label { Layout.fillWidth: true; text: "Only this UID will be authorized. Kubernetes grace periods and finalizers remain in effect. This cannot be undone."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
-            Button { id: deleteCancel; objectName: "cancelResourceDelete"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { id: deleteCancel; objectName: "cancelResourceDelete"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "confirmResourceDelete"; text: "Delete this resource"; enabled: workspace.deletionPending && !workspace.authenticationRequired && !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onAboutToShow: footer.contentItem.currentIndex = -1
@@ -370,7 +379,7 @@ ApplicationWindow {
         onAccepted: workspace.confirmDeletion(true)
         onRejected: workspace.confirmDeletion(false)
     }
-    Dialog {
+    ModalDialog {
         id: applyPreview
         objectName: "applyYamlDialog"
         title: "Review YAML changes"
@@ -388,7 +397,7 @@ ApplicationWindow {
             Label { Layout.fillWidth: true; text: "Only Apply sends this patch. UID and original version must still match. Secret values remain hidden."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
-            Button { id: applyCancel; objectName: "cancelYamlApply"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { id: applyCancel; objectName: "cancelYamlApply"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "confirmYamlApply"; text: "Apply to this resource"; enabled: workspace.yamlApplyPreview && !workspace.discardPending; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onAboutToShow: footer.contentItem.currentIndex = -1
@@ -396,7 +405,7 @@ ApplicationWindow {
         onAccepted: workspace.confirmYamlApply(true)
         onRejected: workspace.confirmYamlApply(false)
     }
-    Dialog {
+    ModalDialog {
         id: reconcile
         objectName: "yamlReconcileDialog"
         title: "Compare and reconcile changes"
@@ -436,14 +445,14 @@ ApplicationWindow {
             Label { Layout.fillWidth: true; text: "Unrelated server changes are retained. Choose every overlap. Continue creates a new preview; it does not send a write."; wrapMode: Text.Wrap; textFormat: Text.PlainText }
         }
         footer: DialogButtonBox {
-            Button { id: reconcileCancel; objectName: "cancelYamlReconcile"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { id: reconcileCancel; objectName: "cancelYamlReconcile"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             Button { objectName: "continueYamlReconcile"; text: "Continue to preview"; enabled: workspace.yamlReconcileReady; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onOpened: reconcileCancel.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.finishYamlReconcile(true)
         onRejected: workspace.finishYamlReconcile(false)
     }
-    Dialog {
+    ModalDialog {
         id: authentication
         objectName: "authenticationConfirmation"
         title: "Retry authentication: " + workspace.title
@@ -471,14 +480,15 @@ ApplicationWindow {
         }
         footer: DialogButtonBox {
             Button { objectName: "authenticationAccept"; text: "Authenticate"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            Button { objectName: "authenticationCancel"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { objectName: "authenticationCancel"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
         }
         onAccepted: { if (session === workspace.currentSession) workspace.refresh(true) }
     }
-    Dialog {
+    ModalDialog {
         id: renameSessionDialog
+        header: DialogHeader { dialog: renameSessionDialog; closeObjectName: "cancelSessionRename"; closeEnabled: !workspace.busy }
         objectName: "renameSessionDialog"
-        title: "Rename session"
+        title: workspace.uiText["session.rename"]
         width: Math.min(440, window.width - 32)
         anchors.centerIn: parent
         modal: true
@@ -490,14 +500,12 @@ ApplicationWindow {
         onOpened: { sessionNameInput.forceActiveFocus(Qt.TabFocusReason); sessionNameInput.selectAll() }
         Connections { target: workspace; function onSessionRenamed(id) { if (id === renameSessionDialog.targetSession) renameSessionDialog.close() } }
         contentItem: ColumnLayout {
-            Label { text: "Session name" }
+            Label { text: workspace.uiText["session.name"] }
             TextField { id: sessionNameInput; objectName: "sessionNameInput"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Session name"; onAccepted: renameSessionDialog.save() }
-            Label { Layout.fillWidth: true; text: "Leave empty for an automatic name. The session, source snapshot and running operations stay unchanged."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             Label { objectName: "sessionRenameError"; Layout.fillWidth: true; text: renameSessionDialog.attempted ? workspace.sessionRenameError : ""; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
-            Button { objectName: "cancelSessionRename"; text: "Cancel"; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "saveSessionRename"; text: workspace.busy ? "Saving..." : "Rename"; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: renameSessionDialog.save() }
+            IconButton { glyph: "Save"; showText: true; objectName: "saveSessionRename"; text: workspace.busy ? workspace.uiText["action.saving"] : workspace.uiText["action.save"]; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: renameSessionDialog.save() }
         }
     }
     component NavButton: IconButton {
@@ -533,13 +541,13 @@ ApplicationWindow {
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
                     spacing: window.touchLayout ? 0 : 4
-                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, sidebarControl]
-                    readonly property real fullWidth: controls.filter(control => control !== quickOpenControl || quickOpenControl.available)
+                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl]
+                    readonly property real fullWidth: controls.filter(control => control.available !== false)
                         .reduce((total, control) => total + control.implicitWidth + spacing, workspaceActionsButton.implicitWidth)
                     function fits(control) {
                         let used = workspaceActionsButton.implicitWidth
                         for (const candidate of controls) {
-                            if (candidate === quickOpenControl && !quickOpenControl.available) continue
+                            if (candidate.available === false) continue
                             used += candidate.implicitWidth + spacing
                             if (candidate === control) return used <= width
                         }
@@ -547,31 +555,34 @@ ApplicationWindow {
                     }
                     IconButton {
                         id: searchToggle
+                        readonly property bool available: searchCommand.enabled
                         objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
-                        action: searchCommand; visible: navigationRow.fits(this)
+                        action: searchCommand; visible: available && navigationRow.fits(this)
                         activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
                             : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
                         Accessible.name: "Show or hide current search"
-                        Accessible.description: "Search the current cached view. Hiding search retains its filter."
+                        Accessible.description: "Search this view. Hiding search keeps the filter."
                     }
                     IconButton { id: quickOpenControl; readonly property bool available: workspace.contexts.length > 0 || workspace.sessions.length > 0; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; action: quickOpenCommand; visible: available && navigationRow.fits(this) }
-                    NavButton { id: mapControl; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: navigationRow.fits(this) }
-                    NavButton { id: resourcesControl; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: navigationRow.fits(this) }
-                    NavButton { id: eventsControl; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: navigationRow.fits(this) }
-                    NavButton { id: connectionsControl; objectName: "portForwardTasksButton"; glyph: "Service"; action: connectionsCommand; Accessible.name: "Connections in this session"; visible: navigationRow.fits(this) }
+                    NavButton { id: mapControl; readonly property bool available: true; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: available && navigationRow.fits(this) }
+                    NavButton { id: resourcesControl; readonly property bool available: workspace.currentSession !== ""; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: available && navigationRow.fits(this) }
+                    NavButton { id: eventsControl; readonly property bool available: workspace.currentSession !== ""; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: available && navigationRow.fits(this) }
+                    NavButton { id: connectionsControl; readonly property bool available: workspace.currentSession !== ""; objectName: "portForwardTasksButton"; glyph: "Service"; action: connectionsCommand; Accessible.name: "Connections in this session"; visible: available && navigationRow.fits(this) }
                     NavButton { id: settingsControl; objectName: "settingsWorkspaceButton"; glyph: "Settings"; action: settingsCommand; text: workspace.uiText["nav.settings"]; visible: navigationRow.fits(this) }
-                IconButton { id: sidebarControl; objectName: "toggleSidebar"; glyph: "Sidebar"; action: sidebarCommand; visible: navigationRow.fits(this) }
-                IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: "Workspace actions"; activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
+
+                IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 }
             }
             PulseStrip {
                 id: headerMetrics
                 objectName: "headerMetrics"
-                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing)
+                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing - (sidebarControl.visible ? sidebarControl.implicitWidth + headerLayout.spacing : 0) - (closeContextControl.visible ? closeContextControl.implicitWidth + headerLayout.spacing : 0))
                 Layout.alignment: Qt.AlignRight
                 Layout.preferredHeight: implicitHeight
                 onDetailsRequested: workspace.setWorkspacePage("dashboard")
             }
+            IconButton { id: sidebarControl; objectName: "toggleSidebar"; glyph: "Sidebar"; action: sidebarCommand; visible: workspace.currentSession !== "" && !(workspace.workspacePage === "map" && workspace.mapOverview) }
+            IconButton { id: closeContextControl; objectName: "closeCurrentSession"; glyph: "Close"; text: "Close context"; visible: workspace.currentSession !== "" && workspace.tabs.length < 2; enabled: !workspace.busy; onClicked: workspace.close(workspace.currentSession) }
         }
     }
     Menu {
@@ -580,7 +591,7 @@ ApplicationWindow {
         width: compactMenu ? Math.min(240, window.width - 24) : implicitWidth
         height: compactMenu ? Math.min(implicitHeight, window.height - 48) : implicitHeight
         Binding { target: workspaceActions; property: "popupType"; value: Popup.Item; when: workspaceActions.compactMenu }
-        readonly property var overflowControls: visible ? navigationRow.controls.filter(control => !control.visible && (control !== quickOpenControl || quickOpenControl.available)) : []
+        readonly property var overflowControls: visible ? navigationRow.controls.filter(control => control.available !== false && !control.visible) : []
         readonly property var overflowEntries: overflowControls.concat(headerMetrics.overflowMetrics.map(metric => ({metric: metric})))
         Instantiator {
             active: workspaceActions.visible
@@ -604,32 +615,29 @@ ApplicationWindow {
             onObjectRemoved: (index, object) => workspaceActions.removeItem(object)
         }
         MenuSeparator { visible: workspaceActions.overflowControls.length > 0 || headerMetrics.overflowMetrics.length > 0; height: visible ? implicitHeight : 0 }
-        MenuItem { objectName: "commandPaletteButton"; text: "Commands"; implicitHeight: window.controlHeight; Accessible.name: "Open command palette"; onTriggered: commands.open() }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventFindButton" : "resourceFindButton"
             text: workspace.uiText["nav.search"]
             implicitHeight: visible ? (window.controlHeight) : 0
             visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
-            Accessible.name: "Find within the current cached table"
+            Accessible.name: workspace.uiText["nav.search"]
             onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openFind()
         }
         MenuItem {
             objectName: workspace.workspacePage === "events" ? "eventColumnsButton" : "resourceColumnsButton"
-            text: "Columns"
+            text: workspace.uiText["action.columns"]
             implicitHeight: visible ? (window.controlHeight) : 0
             visible: workspace.workspacePage === "resources" || workspace.workspacePage === "events"
             Accessible.name: "Columns for the current table"
             onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openColumns()
         }
-        MenuItem { objectName: "refreshButton"; text: "Refresh"; implicitHeight: window.controlHeight; enabled: !workspace.busy && !workspace.authenticationRequired && workspace.currentSession !== ""; onTriggered: workspace.refresh() }
     }
     Menu {
         id: quickOpenMenu
         objectName: "quickOpenMenu"
         width: Math.min(360, window.width - 24)
         height: Math.min(implicitHeight, window.height - 48)
-        MenuItem { objectName: "quickOpenFile"; text: "Open kubeconfig file..."; implicitHeight: window.controlHeight; enabled: !workspace.busy; onTriggered: quickChooser.open() }
-        MenuItem { objectName: "closeCurrentSession"; text: "Close session"; enabled: workspace.currentSession !== "" && !workspace.busy; onTriggered: workspace.close(workspace.currentSession) }
+        MenuItem { objectName: "quickOpenFile"; text: workspace.uiText["context.openFile"]; implicitHeight: window.controlHeight; enabled: !workspace.busy; onTriggered: quickChooser.open() }
         MenuSeparator {}
         Instantiator {
             active: quickOpenMenu.visible
@@ -654,7 +662,7 @@ ApplicationWindow {
         delegate: Menu {
             id: quickWindowMenu
             objectName: "quickOpenWindowMenu"
-            title: "Open in separate window"
+            title: workspace.uiText["action.openInWindow"]
             width: Math.min(360, window.width - 24)
             height: Math.min(implicitHeight, window.height - 48)
         Instantiator {
@@ -684,7 +692,11 @@ ApplicationWindow {
         objectName: "sidebarDrawer"
         edge: Qt.RightEdge
         width: Math.min(392, window.width - 24); height: window.height
-        onVisibleChanged: if (visible && window.sidebarDocked) close()
+        onVisibleChanged: if (visible && (window.sidebarDocked || workspace.currentSession === "")) close()
+        Connections {
+            target: workspace
+            function onChanged() { if (workspace.currentSession === "") sidebarDrawer.close() }
+        }
         Connections {
             target: window
             function onSidebarDockedChanged() { if (window.sidebarDocked) sidebarDrawer.close() }
@@ -693,63 +705,6 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6
         spacing: 4
-        Frame {
-            id: sourcePanel
-            objectName: "sourceManagementPanel"
-            Layout.fillWidth: true
-            visible: !settingsLoader.visible && (window.sourcesExpanded || (workspace.workspacePage !== "map" && workspace.currentSession === "" && workspace.contexts.length === 0 && (!window.compactLandscape || workspace.sessions.length === 0)))
-            contentItem: ColumnLayout {
-                GridLayout {
-                    Layout.fillWidth: true
-                    columns: window.width < 480 ? 4 : 5
-                    columnSpacing: 6
-                    rowSpacing: 6
-                    TextField {
-                        id: sourcePath
-                        objectName: "sourcePath"
-                        visible: !workspace.appStore
-                        inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 160
-                        Layout.columnSpan: parent.columns === 4 ? 4 : 1
-                        enabled: !workspace.busy
-                        placeholderText: "Kubeconfig file or folder (~ supported)"
-                        Accessible.name: "Kubeconfig file or folder path"
-                        onAccepted: workspace.importFile(text)
-                    }
-                    Button { text: "Browse"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: chooser.open() }
-                    Button { objectName: "browseSourceFolder"; visible: !workspace.appStore; text: "Folder"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: folderChooser.open() }
-                    Button { objectName: "importButton"; visible: !workspace.appStore; text: "Import"; Layout.minimumWidth: 44; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 4; enabled: !workspace.busy; onClicked: { window.sourcesExpanded = true; sourcePath.text.trim() ? workspace.importFile(sourcePath.text) : chooser.open() } }
-                }
-                GridLayout {
-                    Layout.fillWidth: true
-                    columns: window.width < 480 ? 2 : 3
-                    columnSpacing: 6
-                    rowSpacing: 6
-                    ComboBox {
-                        id: contexts
-                        objectName: "contexts"
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 160
-                        Layout.columnSpan: parent.columns === 2 ? 2 : 1
-                        enabled: !workspace.busy
-                        model: workspace.contexts
-                        textRole: "name"
-                        valueRole: "id"
-                        displayText: count > 0 ? currentText : "No imported contexts"
-                        Accessible.name: "Imported context"
-                    }
-                    Button { objectName: "openContext"; text: "Open context"; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { if (workspace.openContext(contexts.currentValue)) window.sourcesExpanded = false } }
-                    Button { objectName: "importOciKey"; text: "OCI key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { ociImportContext.currentIndex = contexts.currentIndex; ociImportDialog.open() } }
-                    Button { objectName: "importGkeKey"; text: "GKE key..."; Layout.minimumHeight: 32; Layout.fillWidth: parent.columns === 2; enabled: !workspace.busy && contexts.currentIndex >= 0; onClicked: { gkeImportContext.currentIndex = contexts.currentIndex; gkeImportDialog.open() } }
-                    RowLayout {
-                        Layout.fillWidth: parent.columns === 2
-                        Button { objectName: "reloadSources"; visible: !workspace.appStore; text: "Reload sources"; Layout.minimumHeight: 32; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: workspace.refreshSources() }
-                        IconButton { objectName: "closeSourceControls"; glyph: "Close"; text: "Close source controls"; visible: workspace.currentSession !== "" || workspace.contexts.length > 0; onClicked: window.sourcesExpanded = false }
-                    }
-                }
-            }
-        }
         RowLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
@@ -889,8 +844,8 @@ ApplicationWindow {
                 Layout.minimumWidth: 0
                 implicitHeight: window.controlHeight
                 text: workspace.filterText
-                placeholderText: "Search cached resources"
-                Accessible.name: "Filter cached resources"
+                placeholderText: "Search resources"
+                Accessible.name: "Filter resources"
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
                 ToolTip.visible: hovered; ToolTip.text: Accessible.description
                 visible: window.searchOpen && (["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
@@ -907,7 +862,7 @@ ApplicationWindow {
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 Layout.fillWidth: true; Layout.minimumWidth: 0; implicitHeight: window.controlHeight
                 visible: window.searchOpen && workspace.workspacePage === "events"
-                text: workspace.eventFilterText; placeholderText: "Search cached Events"; Accessible.name: "Search cached Events"
+                text: workspace.eventFilterText; placeholderText: "Search events"; Accessible.name: "Search events"
                 onTextEdited: if (workspace.filterEvents(text)) Qt.callLater(eventGridLoader.item.navigateRows, 0)
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
@@ -965,18 +920,12 @@ ApplicationWindow {
                         Component.onCompleted: if (window.active) forceActiveFocus()
                     }
                     Button { objectName: "submitAuthenticationMfa"; text: "Continue"; enabled: mfaCode.acceptableInput && mfaCode.text.length === 6; onClicked: mfaCode.submit() }
-                    Button { objectName: "cancelAuthenticationMfa"; text: "Cancel"; onClicked: workspace.cancelAuthentication() }
+                    Button { objectName: "cancelAuthenticationMfa"; text: workspace.uiText["action.cancel"]; onClicked: workspace.cancelAuthentication() }
                 }
                 Label { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
             }
         }
         Label { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
-        RowLayout {
-            Layout.fillWidth: true
-            visible: workspace.workspacePage !== "settings" && workspace.sourceImportNotice !== "" && (window.sourcesExpanded || workspace.currentSession === "" || workspace.sourceImportIssues.length > 0)
-            Label { objectName: "sourceImportNotice"; Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-            Button { objectName: "sourceImportDetailsButton"; text: "View failures"; visible: workspace.sourceImportIssues.length > 0; onClicked: sourceImportDetails.open() }
-        }
         Label { objectName: "errorMessage"; Layout.fillWidth: true; text: workspace.error; textFormat: Text.PlainText; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
         Label {
             objectName: "syncProblemMessage"
@@ -1041,12 +990,12 @@ ApplicationWindow {
                     }
                     RowLayout {
                         id: mapNavigationRow
-                        visible: workspace.workspacePage === "map"
+                        visible: workspace.workspacePage === "map" && (!workspace.mapOverview || workspace.canMapBack || workspace.canMapForward || workspace.mapCatalogWarning !== "")
                         parent: workspace.mapOverview ? mapNavigationSlot : sidebar.mapNavigationHost
                         Layout.fillWidth: true
-                        IconButton { objectName: "mapBack"; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
-                        IconButton { objectName: "mapForward"; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }
-                        IconButton { objectName: "mapOverview"; glyph: "Cluster"; text: "All contexts"; enabled: !workspace.mapOverview && !workspace.busy; onClicked: workspace.showMapOverview() }
+                        IconButton { objectName: "mapBack"; visible: !workspace.mapOverview || workspace.canMapBack; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
+                        IconButton { objectName: "mapForward"; visible: !workspace.mapOverview || workspace.canMapForward; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }
+                        IconButton { objectName: "mapOverview"; visible: !workspace.mapOverview; glyph: "Cluster"; text: "All contexts"; enabled: !workspace.mapOverview && !workspace.busy; onClicked: workspace.showMapOverview() }
                         Label {
                             id: mapCaption
                             objectName: "mapTitle"
@@ -1086,7 +1035,7 @@ ApplicationWindow {
                         inlineTools: false
                         prefix: "event"; tableModel: workspace.eventTable
                         sortColumn: workspace.eventSortColumnIndex; sortDirection: workspace.eventSortDirection
-                        emptyText: workspace.loading ? "Loading Events. Cached Events appear immediately." : "No matching Events in this cache."
+                        emptyText: workspace.loading ? "Loading events…" : "No matching events."
                         onSortRequested: function(column) { workspace.sortEventColumn(column) }
                         onInspectRequested: function(path) { workspace.inspectEventPath(path) }
                         onCopyRequested: function(row, column) { workspace.copyEventCell(row, column) }
@@ -1124,7 +1073,6 @@ ApplicationWindow {
                     active: opened
                     onVisibleChanged: if (visible) opened = true
                     sourceComponent: SettingsView {
-                        onSourcesRequested: window.sourcesExpanded = true
                         onFileRequested: chooser.open()
                         onFolderRequested: folderChooser.open()
                         onOciImportRequested: ociImportDialog.open()
@@ -1148,7 +1096,7 @@ ApplicationWindow {
             Item {
                 id: sidebarHost
                 objectName: "workspaceSidebarHost"
-                visible: window.sidebarDocked && window.sidebarOpen && (!window.inputPriority || sidebar.ownsInputFocus) && !(workspace.workspacePage === "map" && workspace.mapOverview)
+                visible: workspace.currentSession !== "" && window.sidebarDocked && window.sidebarOpen && (!window.inputPriority || sidebar.ownsInputFocus) && !(workspace.workspacePage === "map" && workspace.mapOverview)
                 SplitView.preferredWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 240 : 392
                 SplitView.minimumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 228 : 300
                 SplitView.maximumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 320 : 720
@@ -1157,10 +1105,10 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             objectName: "workspaceFooter"
-            visible: !window.inputPriority && window.width >= 600 && window.height >= 600
+            visible: !window.inputPriority && window.width >= 600 && window.height >= 600 && (workspace.totalResourceCount > 0 || (workspace.mapOverview && window.mapContexts.length > 0))
             Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount + " cached") : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
+            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
             Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
@@ -1173,7 +1121,7 @@ ApplicationWindow {
         suppressSmallRadar: window.compactLandscape
         anchors.fill: parent
         visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible
-        onSourcesRequested: { window.sourcesExpanded = !sourcePanel.visible; if (!window.sidebarDocked) sidebarDrawer.close() }
+        onSourcesRequested: { quickOpenCommand.trigger(); if (!window.sidebarDocked) sidebarDrawer.close() }
         onRenameRequested: renameSessionDialog.openFor(workspace.currentSession, workspace.title)
     }
 }

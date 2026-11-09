@@ -457,7 +457,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
             original.close();
             if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
             if (scenario == "reference_presets_conflict") {
-                if (!workspace.filterField("name", "bravo") || !type(window, "filterPresetName", "Pod alpha")
+                if (!workspace.filterField("name", "bravo") || !click(window,"saveFilterPreset") || !type(window, "filterPresetName", "Pod alpha")
                     || !click(window, "saveFilterPreset") || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
             }
             const auto beforeImport = workspace.filterPresets();
@@ -806,9 +806,10 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 return workspace.activate(session) && waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; })
                     && workspace.property("problemsOnly").toBool();
             }
-            if (!type(window, "filterPresetName", "Broken pods") || !click(window, "saveFilterPreset")
+            if (!click(window,"saveFilterPreset") || !type(window, "filterPresetName", "Broken pods") || !click(window, "saveFilterPreset")
                 || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })
                 || !workspace.property("filterPresetsError").toString().isEmpty()) return false;
+            if (item(window,"savedFilterPanel")->isVisible() && !click(window,"filterPreset")) return false;
             if (scenario == "preset_controls") {
                 const auto failed=[&](const char* stage) { qWarning() << "Saved-filter controls:" << stage << window->size() << workspace.filterPresetsError(); return false; };
                 if (window->findChild<QObject*>("filterPresetActions") || !item(window,"savedFilterPanel")) return failed("single inline entry");
@@ -847,13 +848,14 @@ bool run(const QString& scenario, const QString& referencePresets) {
                         }
                     }
                 }
+                if (!click(window,"filterPreset")) return false;
                 auto* presetInput=item(window,"filterPresetName"); presetInput->forceActiveFocus();
                 if (!item(window,"workspaceSidebar")->hasActiveFocus()) return failed("sidebar owns input focus");
                 window->setMinimumHeight(80); window->resize(640,150);
                 if (!waitFor([&] { return presetInput->isVisible()
                     && podlord::test::visibleBounds(window,presetInput).contains(presetInput->mapRectToScene(presetInput->boundingRect())); })) return failed("short viewport keeps focused input visible");
                 window->resize(640,320);
-                if (!click(window,"filterPreset") || !click(window,"renameFilterPreset")
+                if (!click(window,"renameFilterPreset")
                     || !type(window,"renameFilterPresetName","Renamed pods")) return failed("rename input");
                 auto* renameDialog=window->findChild<QObject*>("renameFilterPresetDialog");
                 if (!renameDialog) return failed("rename dialog");
@@ -887,9 +889,10 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 && waitFor([&] { return !workspace.property("filterPresetsBusy").toBool() && workspace.property("filterPresets").toStringList() == QStringList{"default"}; })
                 && workspace.resourceCount() == 1 && server.requests == requests;
             if (scenario == "preset_overwrite") {
-                if (!click(window, "activityOnly") || !click(window, "saveFilterPreset")
+                if (!click(window,"filterPreset") || !click(window, "activityOnly") || !click(window, "saveFilterPreset")
                     || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })) return false;
             }
+            if (item(window,"savedFilterPanel")->isVisible() && !click(window,"filterPreset")) return false;
             if (!click(window, "resetResourceFilters") || workspace.resourceCount() != 3 || !click(window, "filterPreset")) return false;
             const auto* options = item(window, "savedFilterOptions");
             if (!options || !waitFor([&] { return options->isVisible() && options->width() > 0; })) return false;
@@ -942,7 +945,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!passed || server.requests != requests) return false;
             if (scenario.endsWith("_preset")) {
                 QTest::keyClick(window, Qt::Key_Escape);
-                if (!type(window, "filterPresetName", "Time and identity") || !click(window, "saveFilterPreset")
+                if (!click(window,"saveFilterPreset") || !type(window, "filterPresetName", "Time and identity") || !click(window, "saveFilterPreset")
                     || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })
                     || !workspace.property("filterPresetsError").toString().isEmpty()) return false;
                 return workspace.resetResourceFilters() && workspace.resourceCount() == 3

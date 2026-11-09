@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "workspace.h"
 #include <QGuiApplication>
 #include <QSslSocket>
@@ -51,7 +52,11 @@ int main(int argc, char** argv) {
             return !workspace.currentSession().isEmpty() && !workspace.busy() && !workspace.loading();
         }, 15000), "TLS discovery did not complete.");
         if (scenario == "trusted" || scenario == "system_trusted") require(workspace.resourceCount() == 1, "Trusted mutual TLS did not populate the real session cache.");
-        else require(workspace.resourceCount() == 0 && workspace.status().contains("TLS"), "Untrusted TLS populated the cache or did not report failure.");
+        else {
+            require(workspace.resourceCount() == 0 && !workspace.syncProblem().isEmpty(), "Untrusted TLS populated the cache or did not report failure.");
+            const auto audit = workspace.settingsDiagnostics().value("requests").toList();
+            require(std::any_of(audit.cbegin(), audit.cend(), [](const QVariant& row) { return row.toMap().value("outcome").toString().contains("Qt network error"); }), "TLS diagnostics discarded the network failure details.");
+        }
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
         require(QSslSocket::activeBackend() == "openssl", "The app did not use its required OpenSSL runtime.");
 #endif

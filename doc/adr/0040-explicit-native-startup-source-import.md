@@ -16,17 +16,11 @@ input as the existing Import action. An empty or repeated option is rejected
 before creating an application profile. Help and version remain side-effect-free,
 including when the import option is present.
 
-After loading the window, one single-shot timer waits for the existing workspace
-to become available, disconnects its readiness subscription and submits to
-`Workspace.importFile`. It does not parse configuration, persist snapshots or
-perform authentication itself. Missing or malformed sources keep the application
-open and use the existing import error presentation. Closing the application
-destroys unsent startup work with its owning timer.
+After loading the window, an application-owned single-shot timer submits explicit documents through `Workspace.importFiles`, which reuses the existing importer. Local positional files and macOS document-open events enter that same owner. Pending files wait while the workspace importer is busy. Repeated paths are deduplicated per batch. Closing the application destroys unsent work.
 
-No implicit home/KUBECONFIG import, positional-path interpretation, automatic
-session activation or second import queue is added. Importing several explicit
-files together uses the supported folder workflow. Arbitrary repeated paths and
-automatic source watchers remain separate parity gaps.
+The same importer accepts dropped file/content URLs. Non-document URL events, including OAuth callbacks, retain their existing owner. The platform file association uses a Viewer role and does not take over the user's default editor.
+
+No ambient home/KUBECONFIG import, automatic context activation, authentication, source watcher or duplicate recent-file store is added. Invalid quick-open input is quiet, while profile/write failures remain actionable. Explicit `--kubeconfig` keeps its existing file/folder contract.
 
 ## Verification And Rollback
 

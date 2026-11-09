@@ -9,6 +9,12 @@ Pane {
     padding: 4
     background: Rectangle { color: workspace.appearanceColors.inset }
     SourceAliasDialog { id: aliases }
+    Menu {
+        id: contextOpenMenu
+        property string contextId: ""
+        MenuItem { objectName: "openMapContextInTab"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInTab"]; onTriggered: workspace.openContext(contextOpenMenu.contextId) }
+        MenuItem { objectName: "openMapContextInWindow"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInWindow"]; visible: workspace.windowActionsAvailable; height: visible ? implicitHeight : 0; onTriggered: workspace.openContext(contextOpenMenu.contextId, true) }
+    }
     ColumnLayout {
         anchors.fill: parent
         Label {
@@ -34,7 +40,7 @@ Pane {
                 padding: 8
                 enabled: !workspace.busy
                 Accessible.name: modelData.name + ", cluster " + modelData.cluster
-                Accessible.description: "Open this context using the existing session loader"
+                Accessible.description: workspace.uiText["action.openInTab"]
                 onClicked: workspace.openContext(modelData.id)
                 background: Rectangle {
                     color: card.hovered || card.activeFocus ? workspace.appearanceColors.raised : workspace.appearanceColors.panel
@@ -61,7 +67,7 @@ Pane {
                             visible: preview.source.toString() === "" || preview.status === Image.Error
                             text: "?"; font.pixelSize: 64; font.bold: true
                             color: workspace.appearanceColors.muted
-                            Accessible.name: "No saved map preview"
+                            Accessible.name: workspace.uiText["context.noPreview"]
                         }
                     }
                     RowLayout {
@@ -69,8 +75,14 @@ Pane {
                         Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1
                         Label { objectName: "contextMapName_" + card.modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; text: card.modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; font.bold: true }
                         IconButton {
+                            id: openContextOptions
+                            objectName: "openMapContextOptions_" + card.modelData.id
+                            glyph: "Expand"; text: workspace.uiText["action.open"]
+                            onClicked: { contextOpenMenu.contextId = card.modelData.id; contextOpenMenu.popup(openContextOptions, 0, openContextOptions.height) }
+                        }
+                        IconButton {
                             objectName: "renameMapContext_" + card.modelData.id
-                            glyph: "Pencil"; text: "Rename context locally"
+                            glyph: "Pencil"; text: workspace.uiText["context.rename"]
                             onClicked: aliases.edit(card.modelData)
                         }
                     }
@@ -83,7 +95,7 @@ Pane {
         anchors.centerIn: parent; width: Math.min(360, parent.width - 24)
         visible: cards.count === 0
         Image { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 140; Layout.preferredHeight: 120; source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit; asynchronous: true }
-        Label { Layout.fillWidth: true; text: "Import a kubeconfig"; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
-        Button { objectName: "mapImportSource"; Layout.alignment: Qt.AlignHCenter; text: "Open kubeconfig"; onClicked: overview.sourcesRequested() }
+        Label { Layout.fillWidth: true; text: workspace.uiText["context.emptyTitle"]; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
+        Button { objectName: "mapImportSource"; Layout.alignment: Qt.AlignHCenter; text: workspace.uiText["context.openFile"]; onClicked: overview.sourcesRequested() }
     }
 }

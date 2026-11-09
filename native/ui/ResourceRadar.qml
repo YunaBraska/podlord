@@ -98,7 +98,7 @@ Pane {
             Label {
                 objectName: "radarHealthSummary"
                 Layout.fillWidth: true
-                text: (workspace.healthSummary.total || 0) + " cached / " + (workspace.healthSummary.healthy || 0) + " healthy / "
+                text: (workspace.healthSummary.total || 0) + " resources / " + (workspace.healthSummary.healthy || 0) + " healthy / "
                     + (workspace.healthSummary.warning || 0) + " warnings / " + (workspace.healthSummary.critical || 0) + " errors"
                     + (workspace.loading ? " / Loading" : "")
                 textFormat: Text.PlainText
@@ -372,7 +372,7 @@ Pane {
                     y: radarNavigation.height + (grid.height - radarNavigation.height - height) / 2
                     visible: grid.count === 0 && grid.height - radarNavigation.height >= implicitHeight + 8
                     width: Math.min(320, parent.width - 24)
-                    text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources. Cached resources appear as they arrive." : workspace.totalResourceCount === 0 ? "No resources are cached for this context." : "No resources match. Reset the filters to see the available cache."
+                    text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources..." : workspace.totalResourceCount === 0 ? "No resources to display." : "No matching resources."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter
@@ -438,7 +438,7 @@ Pane {
                     }
                     padding: radarPane.shortLandscape ? 4 : 8
                     Accessible.role: Accessible.Grouping
-                    Accessible.name: "Cached resource details"
+                    Accessible.name: "Resource details"
                     background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }
                     contentItem: ColumnLayout {
                         id: infoLayout

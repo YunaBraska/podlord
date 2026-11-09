@@ -1,35 +1,17 @@
 # How is source management kept out of the active resource workspace?
 
-Status: accepted for the native desktop presentation.
+Status: accepted, revised after native acceptance testing on 2026-11-09.
 
 ## Decision
 
-Keep the existing import, file/folder chooser, context selector, open-context and
-reload actions together in one source-management panel. Show it while no session
-is active. After a context is opened, collapse it and retain one keyboard-operable
-Sources disclosure in the application toolbar. Synchronization and appearance
-settings remain directly reachable outside this panel.
+Use context cards and the existing anchored quick-open chooser to open contexts or saved views. The sidebar caption invokes that same chooser. Sources settings owns file/folder/paste imports, source editing and provider-key/profile management. Remove the duplicate two-row source-management form from the resource workspace. The empty Map retains one import action. Drag-and-drop and OS document-open events reuse the ordinary importer.
 
-Opening or closing the panel reads the existing source catalog. It performs no
-network request, storage reload, authentication retry or session change. Import,
-reload and opening a context remain explicit actions using their existing owners.
-The disclosure is transient presentation state, not another persisted setting.
+A context is an imported connection definition. A saved view is the existing session configuration with its own scope, filters, name and history. Renaming or reopening either uses its existing owner. Presentation does not add a cache, parser, watcher, authentication path or persisted setting.
 
 ## Consequences
 
-Two source-management rows no longer occupy the active resource workspace.
-Controls remain available for subsequent imports and context changes. The empty
-workspace still provides the complete import path without an extra discovery
-step. No source cache, background watcher or timer is added.
-
-This is a presentation improvement, not evidence of the still-missing source,
-session, localization or settings capabilities elsewhere in the migration.
+The original disclosed form became a second route with repeated import/open/key buttons. Removing it eliminates a maintained UI implementation and its layout state without removing those capabilities. Source settings and quick-open remain reachable with keyboard, mouse and touch. Opening the chooser itself neither reloads storage nor contacts Kubernetes.
 
 ## Verification and rollback
 
-The public QML tests exercise collapsed state, reopening, repeated use, keyboard
-activation, the minimum desktop width, failed import without losing the session,
-and opening another context. Each runs with Basic and production Fusion styles.
-Existing import, authentication and session-navigation tests use the same visible
-Sources action when the panel is collapsed. The isolated C# reference and its
-profile are unchanged; no stored data format is modified.
+Dedicated public UI tests exercise Sources import, quick-open, repeated disclosure, keyboard dismissal, narrow geometry, invalid input and context switching. Unrelated log/auth/filter component fixtures may prepare sources through the public Workspace API instead of repeating an import-form journey. They still use real stores, request scheduling, QML and external HTTP boundaries. Actual delivered-app and local Kubernetes checks remain separate proof. No source/session schema is changed by this consolidation.

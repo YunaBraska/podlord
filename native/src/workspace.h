@@ -401,7 +401,7 @@ public:
     QString error() const;
     QString status() const;
     QString syncSummary() const { return client_.syncSummary(active_); }
-    QString syncProblem() const { return client_.failureStatus(active_); }
+    QString syncProblem() const;
     QString currentSession() const;
     QString title() const;
     QString sessionRenameError() const { return sessionRenameError_; }
@@ -666,6 +666,7 @@ public:
     QString uiLanguage() const { return settings_.language; }
     QVariantList uiLanguages() const;
     QVariantMap uiText() const;
+    Q_INVOKABLE QString displayDateTime(const QString& value) const;
     bool uiRightToLeft() const;
     Q_INVOKABLE bool saveUiLanguage(const QString& language);
     Q_INVOKABLE bool reload();
@@ -675,6 +676,7 @@ public:
     Q_INVOKABLE bool importAwsProfile(const QString& contextId, const QString& configPath, const QString& credentialsPath);
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
+    Q_INVOKABLE bool importFiles(const QStringList& paths);
     Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false);
     Q_INVOKABLE bool activate(const QString& id);
     Q_INVOKABLE bool close(const QString& id);
@@ -826,7 +828,7 @@ private:
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
     QFuture<Result<SourceSnapshot>> sourceEditFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
-    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, const QString& notice = {}, bool ignoreInvalid = false, const QString& credentialContext = {});
+    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid = false, const QString& credentialContext = {});
     bool contextUsable(const QString& id) const;
     QVariantList sourceImportIssues_;
     SessionCatalog catalog_;

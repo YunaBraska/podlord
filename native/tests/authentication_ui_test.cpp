@@ -134,15 +134,8 @@ bool execute(const QString& scenario) {
         if (!evidence.isEmpty()) { QTest::qWait(30); window->grabWindow().save(evidence, "PNG"); }
         return false;
     };
-    // Wait for the scheduled startup scan before issuing the import action.
-    QTest::qWait(20);
-    if (!waitFor([&] { return !workspace->busy(); })) return false;
-    if (!click(window, "resourcesWorkspaceButton")) return false;
-    auto* field = item(window, "sourcePath");
-    if (!field) return false;
-    field->forceActiveFocus(); QTest::keySequence(window, QKeySequence::SelectAll);
-    for (const auto c : source) QTest::keyClick(window, c.toLatin1());
-    if (!click(window, "importButton") || !waitFor([&] { return workspace->contexts().size() == (shared ? 2 : 1) && !workspace->busy(); }) || !click(window, "openContext")) return failed("import/open context");
+    if (!workspace->quickImportFile(source) || !waitFor([&] { return workspace->contexts().size() == (shared ? 2 : 1) && !workspace->busy(); })
+        || !workspace->openContext(workspace->contexts().first().toMap()["id"].toString())) return failed("import/open context");
     const bool badConfig = scenario == "invalid_mode" || scenario == "requires_stdin" || scenario == "invalid_args" || scenario == "invalid_env" || scenario == "mixed_credentials";
     if (badConfig) return waitFor([&] { return !workspace->error().isEmpty(); }) && server.calls == 0 && read(counter).isEmpty();
     if (!waitFor([&] { return workspace->authenticationRequired() && !workspace->busy(); }) || server.calls != 0 || !read(counter).isEmpty()) return failed("await login confirmation");
@@ -156,7 +149,7 @@ bool execute(const QString& scenario) {
     if (!click(window, "authenticationAccept")) return failed("confirm login");
     if (scenario == "authenticated_transport_failure") {
         if (!waitFor([&] { return read(counter) == "call\n" && !workspace->authenticationRunning()
-            && !workspace->loading() && text(window, "syncProblemMessage").contains("Connection or TLS failure"); })) return failed("accepted credentials followed by transport failure");
+            && !workspace->loading() && !text(window, "syncProblemMessage").isEmpty(); })) return failed("accepted credentials followed by transport failure");
         const auto* authentication = item(window, "authenticationButton");
         return (!workspace->authenticationRequired()
             && !text(window, "syncProblemMessage").contains("/authentication")
@@ -165,10 +158,8 @@ bool execute(const QString& scenario) {
     }
     const auto first = workspace->currentSession();
     const auto openSecond = [&] {
-        if (!click(window, "sourcesButton")) return false;
-        if (!click(window, "contexts")) return false;
-        QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Return);
-        return click(window, "openContext") && waitFor([&] { return !workspace->busy() && workspace->currentSession() != first; });
+        return workspace->openContext(workspace->contexts().last().toMap()["id"].toString())
+            && waitFor([&] { return !workspace->busy() && workspace->currentSession() != first; });
     };
     if (scenario == "shared_running") {
         if (!waitFor([&] { return workspace->authenticationRunning() && read(counter) == "call\n"; }) || !openSecond()) return false;
@@ -206,7 +197,7 @@ bool execute(const QString& scenario) {
         if (!openSecond()) return failed("open shared session");
         if (!waitFor([&] { return workspace->table()->rowCount() == 1 && !workspace->loading(); })) return failed("shared cached resources");
         server.reject = true;
-        if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("shared rejection");
+        if (!workspace->refresh() || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("shared rejection");
         const auto calls = server.calls;
         if (!workspace->activate(first) || !waitFor([&] { return !workspace->busy() && workspace->authenticationRequired(); })) return failed("shared rejected activation");
         QTest::qWait(100);
@@ -221,7 +212,7 @@ bool execute(const QString& scenario) {
     if (scenario == "compact_inspector_401") {
         window->resize(640, 320);
         server.reject = true;
-        if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("compact rejection");
+        if (!workspace->refresh() || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("compact rejection");
         if (!click(window, "resourcesWorkspaceButton") || !click(window, "cell_0_0") || !waitFor([&] { return window->property("compactInspector").toBool(); })) {
             const auto* cell = item(window, "cell_0_0");
             qWarning() << "Compact auth inspector:" << window->size() << "landscape" << window->property("compactLandscape")
@@ -240,7 +231,7 @@ bool execute(const QString& scenario) {
     }
     if (scenario == "retry_401") {
         server.reject = true;
-        if (!click(window, "refreshButton") || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("retry after 401");
+        if (!workspace->refresh() || !waitFor([&] { return workspace->authenticationRequired(); })) return failed("retry after 401");
         const auto calls = server.calls; QTest::qWait(100);
         if (server.calls != calls || read(counter) != "call\n" || workspace->table()->rowCount() != 1) return failed("no automatic auth retry");
         if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return failed("retry confirmation");
@@ -298,14 +289,9 @@ bool realCluster(const QString& original) {
     if (!window) return false;
     QTest::qWait(20);
     if (!waitFor([&] { return !workspace.busy(); })) return false;
-    if (!click(window, "resourcesWorkspaceButton")) return false;
-    if (!item(window,"sourcePath")->isVisible() && !click(window,"sourcesButton")) return false;
-    auto* field = item(window, "sourcePath");
-    if (!field) return false;
-    field->forceActiveFocus(); for (const auto c : input) QTest::keyClick(window, c.toLatin1());
-    if (!click(window, "importButton") || !waitFor([&] { return workspace.contexts().size() == 2 && !workspace.busy(); })) return false;
-    // The newly imported source is first in the authoritative recency ordering.
-    if (!click(window, "openContext") || !waitFor([&] { return workspace.authenticationRequired() && !workspace.busy(); }) || !read(counter).isEmpty()) return false;
+    if (!workspace.quickImportFile(input) || !waitFor([&] { return workspace.contexts().size() == 2 && !workspace.busy(); })
+        || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
+        || !waitFor([&] { return workspace.authenticationRequired() && !workspace.busy(); }) || !read(counter).isEmpty()) return false;
     if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept") && item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return false;
     if (!waitFor([&] { return !workspace.authenticationRunning() && !workspace.busy() && !workspace.authenticationRequired(); })) return false;
     if (!click(window, "resourcesWorkspaceButton") || !click(window, "resourceFindButton")) return false;

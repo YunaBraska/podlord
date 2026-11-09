@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Dialog {
+ModalDialog {
     id: commandPopup
     objectName: "commandPalette"
     required property var actions

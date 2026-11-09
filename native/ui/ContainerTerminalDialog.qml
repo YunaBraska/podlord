@@ -1,8 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 
-Dialog {
-    id: dialog
+ModalDialog {
+    id: surfaceDialog
     required property var hostWindow
     property bool followsInspector: false
     property string ownerSession: ""
@@ -27,23 +27,23 @@ Dialog {
     onClosed: ownerSession = ""
     onOpened: Qt.callLater(function() {
         const view = terminalContent.item
-        if (dialog.visible && view && view.terminal && view.terminal.connected) view.inputSurface.forceActiveFocus()
+        if (surfaceDialog.visible && view && view.terminal && view.terminal.connected) view.inputSurface.forceActiveFocus()
     })
     Connections {
         target: workspace
         function onChanged() {
-            if (dialog.visible && (dialog.ownerSession !== workspace.currentSession
-                || (dialog.followsInspector && workspace.inspectorPage !== "terminal"))) dialog.close()
+            if (surfaceDialog.visible && (surfaceDialog.ownerSession !== workspace.currentSession
+                || (surfaceDialog.followsInspector && workspace.inspectorPage !== "terminal"))) surfaceDialog.close()
         }
     }
     contentItem: Loader {
         id: terminalContent
-        active: dialog.visible
+        active: surfaceDialog.visible
         source: "ContainerTerminalView.qml"
         onLoaded: {
             item.expanded = true
-            item.inputPriority = Qt.binding(function() { return dialog.inputPriority })
-            item.closeRequested.connect(function() { dialog.reject() })
+            item.inputPriority = Qt.binding(function() { return surfaceDialog.inputPriority })
+            item.closeRequested.connect(function() { surfaceDialog.reject() })
         }
     }
 }
