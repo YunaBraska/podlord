@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import Podlord.Graphics 1.0
@@ -12,6 +13,7 @@ ColumnLayout {
     property var terminal: workspace.containerTerminal
     readonly property bool running: terminal !== null && terminal.active
     readonly property bool canConfigure: terminal === null || workspace.terminalConnection.path === workspace.inspectorPath
+    readonly property real controlHeight: root.Window.window ? root.Window.window.controlHeight : 44
     property alias inputSurface: surface
     signal closeRequested()
     spacing: inputPriority ? 2 : 4
@@ -39,6 +41,7 @@ ColumnLayout {
             visible: !root.inputPriority && !root.running && root.canConfigure
             Layout.preferredWidth: Math.min(160, root.width * 0.35)
             Layout.minimumWidth: 64
+            Layout.minimumHeight: root.controlHeight
             model: workspace.terminalContainers
             Accessible.name: "Container for interactive shell"
         }
@@ -62,6 +65,7 @@ ColumnLayout {
         }
         Button {
             objectName: "terminalConnect"
+            Layout.minimumHeight: root.controlHeight
             visible: !root.inputPriority && !root.running && root.canConfigure
             text: "Connect"
             enabled: workspace.canStartTerminal
@@ -94,7 +98,9 @@ ColumnLayout {
         objectName: "terminalShell"
         visible: root.showShell && !root.inputPriority && !root.running && root.canConfigure
         Layout.fillWidth: true
+        Layout.minimumHeight: root.controlHeight
         text: "/bin/sh"
+        inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
         selectByMouse: true
         Accessible.name: "Absolute POSIX shell path"
     }
@@ -169,14 +175,15 @@ ColumnLayout {
     }
     Menu {
         id: actions
-        MenuItem { objectName: "terminalCopy"; text: "Copy selection"; enabled: root.terminal !== null; onTriggered: surface.copySelection() }
-        MenuItem { objectName: "terminalPaste"; text: "Paste..."; enabled: root.terminal !== null && root.terminal.connected; onTriggered: pasteReview.open() }
-        MenuItem { objectName: "terminalFollow"; text: "Follow output"; enabled: root.terminal !== null; onTriggered: surface.followOutput() }
-        MenuItem { objectName: "terminalKeys"; text: "Special keys"; checkable: true; checked: root.showKeys; enabled: root.showKeys || (root.terminal !== null && root.terminal.connected); onTriggered: root.showKeys = checked }
-        MenuItem { text: "Shell path"; visible: !root.running && root.canConfigure; checkable: true; checked: root.showShell; onTriggered: root.showShell = checked }
-        MenuItem { objectName: "terminalHelp"; text: "Keyboard help"; onTriggered: helpDialog.open() }
+        MenuItem { implicitHeight: root.controlHeight; objectName: "terminalCopy"; text: "Copy selection"; enabled: root.terminal !== null; onTriggered: surface.copySelection() }
+        MenuItem { implicitHeight: root.controlHeight; objectName: "terminalPaste"; text: "Paste..."; enabled: root.terminal !== null && root.terminal.connected; onTriggered: pasteReview.open() }
+        MenuItem { implicitHeight: root.controlHeight; objectName: "terminalFollow"; text: "Follow output"; enabled: root.terminal !== null; onTriggered: surface.followOutput() }
+        MenuItem { implicitHeight: root.controlHeight; objectName: "terminalKeys"; text: "Special keys"; checkable: true; checked: root.showKeys; enabled: root.showKeys || (root.terminal !== null && root.terminal.connected); onTriggered: root.showKeys = checked }
+        MenuItem { implicitHeight: root.controlHeight; text: "Shell path"; visible: !root.running && root.canConfigure; checkable: true; checked: root.showShell; onTriggered: root.showShell = checked }
+        MenuItem { implicitHeight: root.controlHeight; objectName: "terminalHelp"; text: "Keyboard help"; onTriggered: helpDialog.open() }
         MenuSeparator {}
         MenuItem {
+            implicitHeight: root.controlHeight
             objectName: "terminalDisconnect"
             text: root.terminal && !root.terminal.active ? "Dismiss" : "Disconnect"
             enabled: root.terminal !== null
@@ -218,8 +225,8 @@ ColumnLayout {
             }
         }
         footer: DialogButtonBox {
-            Button { objectName: "terminalPasteConfirm"; text: "Paste"; enabled: pasteReview.pasteError === "" && pasteReview.payload !== "" && pasteReview.reviewedTerminal !== null && pasteReview.reviewedTerminal === root.terminal && pasteReview.reviewedTerminal.connected; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            Button { objectName: "terminalPasteCancel"; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { objectName: "terminalPasteConfirm"; implicitHeight: root.controlHeight; text: "Paste"; enabled: pasteReview.pasteError === "" && pasteReview.payload !== "" && pasteReview.reviewedTerminal !== null && pasteReview.reviewedTerminal === root.terminal && pasteReview.reviewedTerminal.connected; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            Button { objectName: "terminalPasteCancel"; implicitHeight: root.controlHeight; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             onAccepted: pasteReview.accept()
             onRejected: pasteReview.reject()
         }

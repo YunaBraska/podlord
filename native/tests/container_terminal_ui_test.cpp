@@ -160,6 +160,23 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "connect") {
         REQUIRE(podlord::test::visibleItem(window->contentItem(), "terminalActions"));
         REQUIRE(!podlord::test::visibleItem(window->contentItem(), "terminalHelpDialog"));
+        window->setMinimumSize(QSize(200,200));
+        for (const auto size : {QSize(320,640), QSize(640,320), QSize(1440,920)}) {
+            window->resize(size);
+            QSignalSpy frame(window,&QQuickWindow::frameSwapped);
+            window->update(); REQUIRE(frame.wait(2000));
+            const auto minimum = window->property("controlHeight").toDouble();
+            for (const auto* name : {"terminalContainer", "terminalConnect"}) {
+                auto* control = podlord::test::visibleItem(window->contentItem(),name);
+                REQUIRE(control && control->height() + 0.5 >= minimum);
+            }
+            REQUIRE(click("terminalActions"));
+            REQUIRE(waitFor([&] {
+                const auto* help = podlord::test::visibleItem(window->contentItem(),"terminalHelp");
+                return help && help->height() + 0.5 >= minimum;
+            }));
+            QTest::keyClick(window,Qt::Key_Escape);
+        }
     }
     if (scenario == "completed") { REQUIRE(!workspace.canStartTerminal()); REQUIRE(!workspace.startContainerTerminal("alpha", "/bin/sh")); return true; }
     if (scenario == "invalid_container" || scenario == "invalid_shell" || scenario == "empty_shell" || scenario == "relative_shell") {
