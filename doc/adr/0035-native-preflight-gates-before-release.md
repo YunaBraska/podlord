@@ -379,3 +379,5 @@ as required by the [GitHub reuse/concurrency rules](https://docs.github.com/en/a
 ### macOS test-shell runtime boundary, 2026-11-09
 
 The native CI test runner owns the development SDK environment. macOS removes inherited `DYLD_*` variables when starting the system shell. The runner therefore restores `DYLD_LIBRARY_PATH` from the explicit `OPENSSL_ROOT_DIR` inside that shell before launching test processes. This is not applied to distributed packages. The ordinary shell entrypoint must pass without a caller-side workaround. The previous macOS failures at `441c3f5` stopped in the startup canary, so their resulting partial coverage is not a release qualification. Runtime selection and certificate verification in the product remain unchanged.
+
+The same caller/event/ref and main-commit separation applies to the nested Linux distribution workflow. Unique parent groups alone do not prevent a child concurrency group from cancelling an older main qualification. Both actual workflow configurations are covered by the context-expansion regression, with the old child collision retained as a failing-before test.

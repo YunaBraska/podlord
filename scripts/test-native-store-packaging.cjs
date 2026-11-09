@@ -618,8 +618,9 @@ test('Store signing seals nested code before the app executable', {skip: !mac}, 
     assert.deepEqual((await fs.readFile(calls, 'utf8')).trim().split('\n'), [plugin, app]);
 });
 
-test('CI concurrency isolates callers, events and individual main snapshots', async () => {
-    const workflow = await fs.readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+for (const workflowFile of ['ci.yml', 'native-linux-package.yml']) {
+test(workflowFile + ' concurrency isolates callers, events and individual main snapshots', async () => {
+    const workflow = await fs.readFile(path.join(root, '.github/workflows', workflowFile), 'utf8');
     const configured = workflow.match(/^concurrency:\n  group: (.+)$/m)?.[1];
     assert.ok(configured, 'Native CI requires an explicit concurrency group');
     // Model only the external GitHub context expansion, using the actual configuration.
@@ -639,3 +640,4 @@ test('CI concurrency isolates callers, events and individual main snapshots', as
     assert.notEqual(group(snapshot),group({...snapshot,sha:'second'}), 'Every main snapshot retains its qualification');
     assert.notEqual(group(snapshot),group({...snapshot,event_name:'workflow_dispatch'}), 'Manual and push entrypoints are independent');
 });
+}

@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-linux-trial-${{ github.workflow }}-${{ github.ref }}
+  group: native-linux-trial-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'latest' }}
   cancel-in-progress: true
 
 jobs:
