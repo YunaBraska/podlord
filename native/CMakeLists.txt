@@ -2008,7 +2008,7 @@ if(TARGET read-overlap-test)
 endif()
 
 if(TARGET resource_filter_test)
-    foreach(case empty_bounds cluster_refresh incremental_snapshot ordered_snapshot metric_and_age safe_tooltip cached_refresh cached_membership cached_handoff cached_cluster cached_age cached_ordered_repeat)
+    foreach(case empty_bounds cluster_refresh incremental_snapshot ordered_snapshot metric_and_age safe_tooltip cached_refresh cached_membership cached_handoff cached_cluster cached_age cached_ordered_repeat presence_retired_rows)
         add_test(NAME native.resource_table.${case} COMMAND $<TARGET_FILE:resource_filter_test> table_${case})
     endforeach()
 endif()

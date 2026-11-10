@@ -12,6 +12,16 @@
 namespace {
 bool tableScenario(const QString& scenario) {
     using podlord::ResourceTable;
+    if (scenario == "table_presence_retired_rows") {
+        ResourceTable rows(nullptr, {"cpu", "memory", "storage", "image", "namespace"}, {"CPU", "Memory", "Storage", "Image", "Namespace"});
+        if (rows.populatedColumns(-1) || rows.populatedColumns(0)) return false;
+        rows.publish({QJsonObject{{"path", "a"}, {"cpu", 0}, {"memory", 0}, {"storage", 0}, {"image", "-"}, {"namespace", ""}}});
+        if (rows.populatedColumns(0) != 15 || rows.populatedColumns(1)) return false;
+        rows.publish({});
+        if (rows.populatedColumns(0)) return false;
+        rows.publish({QJsonObject{{"path", "b"}, {"cpu", 0}}});
+        return rows.populatedColumns(0) == 1;
+    }
     if (scenario == "table_cached_refresh") {
         ResourceTable rows(nullptr, {"name", "cpu"}, {"Name", "CPU"});
         QJsonObject row{{"path", "a"}, {"name", "alpha"}, {"cpu", 2000},
