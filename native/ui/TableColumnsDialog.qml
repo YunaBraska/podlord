@@ -13,9 +13,17 @@ ModalDialog {
     title: workspace.uiText["action.columns"]
     modal: true
     parent: Overlay.overlay
-    width: Math.min(580, parent.width - 24)
-    height: Math.min(600, parent.height - 24)
-    anchors.centerIn: parent
+    readonly property rect usableArea: {
+        if (!parent) return Qt.rect(0, 0, 0, 0)
+        const margins = parent.SafeArea.margins
+        return Qt.rect(margins.left, margins.top,
+            Math.max(0, parent.width - margins.left - margins.right),
+            Math.max(0, parent.height - margins.top - margins.bottom))
+    }
+    width: Math.min(580, Math.max(0, usableArea.width - 24))
+    height: Math.min(600, Math.max(0, usableArea.height - 24))
+    x: usableArea.x + (usableArea.width - width) / 2
+    y: usableArea.y + (usableArea.height - height) / 2
     Overlay.modal: Rectangle { color: "#99000000" }
     header: DialogHeader { dialog: surfaceDialog; closeObjectName: surfaceDialog.tableType + "CancelColumns"; closeEnabled: !workspace.tableLayoutSaving }
     function snapshot() {
@@ -95,11 +103,16 @@ ModalDialog {
             }
         }
         Label { Layout.fillWidth: true; visible: workspace.tableLayoutSaving || workspace.tableLayoutError !== ""; text: workspace.tableLayoutSaving ? "Saving column layout..." : workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-        RowLayout {
-            Button { objectName: surfaceDialog.tableType + "ResetColumns"; text: "Defaults"; enabled: !workspace.tableLayoutSaving; onClicked: surfaceDialog.resetDraft() }
-        }
     }
     footer: DialogButtonBox {
+        Button {
+            objectName: surfaceDialog.tableType + "ResetColumns"
+            text: "Defaults"
+            enabled: !workspace.tableLayoutSaving
+            implicitHeight: Window.window ? Window.window.controlHeight : 44
+            DialogButtonBox.buttonRole: DialogButtonBox.ResetRole
+            onClicked: surfaceDialog.resetDraft()
+        }
         IconButton { glyph: "Save"; showText: true; objectName: surfaceDialog.tableType + "SaveColumns"; text: workspace.uiText["action.save"]; enabled: !workspace.tableLayoutSaving; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: surfaceDialog.save(); Keys.onReturnPressed: surfaceDialog.save() }
         onRejected: surfaceDialog.close()
     }

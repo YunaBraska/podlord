@@ -160,11 +160,9 @@ if [ "$page_size" = 16384 ]; then
   [ "$linker_compat" = false ] && [ "$package_compat" = true ] || { printf 'The private emulator still permits page-size compatibility mode.\n' >&2; exit 1; }
 fi
 adb shell input keyevent 82
-if [ "$startup" = 1 ]; then
-  # Finish first-boot configuration broadcasts before the controlled recreation.
-  adb shell am wait-for-broadcast-idle > "$out/boot-broadcasts.txt"
-fi
 adb install --no-streaming "$apk" > "$out/install.log" 2>&1
+# Finish first-boot and installation broadcasts before testing the app itself.
+adb shell am wait-for-broadcast-idle > "$out/boot-broadcasts.txt"
 activity=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$out/badging.txt")
 if [ -z "$activity" ]; then printf 'No launchable activity in signed APK\n' >&2; exit 1; fi
 if [ "$startup" = 1 ]; then
@@ -335,8 +333,9 @@ function target(id){
   const orderedPrefix=orderedHost?orderedHost['resource-id']+'.':'';
   const firstVisible=orderedHost?nodes.findIndex(n=>n['resource-id']?.startsWith(orderedPrefix)&&!n['resource-id'].includes('.ScrollBar_')&&(()=>{const visible=bounds(n);return visible&&visible[2]>visible[0]&&visible[1]>=b[1]&&visible[3]<=b[3]&&visible[3]>visible[1];})()):-1;
   const currentBounds=bounds(current);
+  const partialSettings=settings&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
   const partialSidebar=!settings&&!inspector&&currentBounds&&currentBounds[2]>currentBounds[0]&&currentBounds[3]>currentBounds[1];
-  const reverse=partialSidebar?currentBounds[1]<b[1]:current&&firstVisible>=0&&(settings||current['resource-id']?.startsWith(orderedPrefix))?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
+  const reverse=partialSettings?currentBounds[1]<=b[1]:partialSidebar?currentBounds[1]<b[1]:current&&firstVisible>=0&&(settings||current['resource-id']?.startsWith(orderedPrefix))?nodes.indexOf(current)<firstVisible:id==='toggleLandscapeFilters'?attempt<4:attempt>=4;
   const inset=settings?4:12;
   let start=reverse?b[1]+inset:b[3]-inset;
   if(!settings&&!inspector){
@@ -346,11 +345,11 @@ function target(id){
     && start+direction*8>b[1]+inset&&start+direction*8<b[3]-inset)start+=direction*8;
   }
   // A full swipe can jump over a short control that misses the viewport by one pixel.
-  const desiredDistance=sourceRow?Math.max(24,Math.floor((b[3]-b[1])/4)):partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
+  const desiredDistance=sourceRow?Math.max(24,Math.floor((b[3]-b[1])/4)):partialSettings?Math.min(44,b[3]-b[1]-2*inset):partialSidebar?Math.min(b[3]-b[1]-2*inset,Math.max(24,(reverse?b[1]-currentBounds[1]:currentBounds[3]-b[3])+inset)):b[3]-b[1]-2*inset;
   const distance=!settings&&!inspector?Math.min(reverse?b[3]-inset-start:start-b[1]-inset,desiredDistance):desiredDistance;
   run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings&&!sourceRow?'150':'350');state();
   if(!settings&&!inspector)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
-  if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
+  if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,distance,targetBounds:currentBounds,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
  capture('unreachable-'+id);throw Error('Public UI target unavailable after scrolling: '+id);
 }
@@ -381,7 +380,7 @@ process.on('uncaughtException',error=>{
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
  const pid=recordProductPid();
  const diagnostics=[['crash-logcat',['logcat','-b','crash','-d']],['system-logcat',['logcat','-b','all','-d','-t','2000']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['display-rotation',['shell','dumpsys','window','displays']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
- if(/^\d+$/.test(pid))diagnostics.push(['process',['shell','cat','/proc/'+pid+'/status']],['native-backtrace',['shell','debuggerd','-b',pid]]);
+ if(/^\d+$/.test(pid))diagnostics.push(['product-logcat',['logcat','-d','--pid='+pid]],['process',['shell','cat','/proc/'+pid+'/status']],['native-backtrace',['shell','debuggerd','-b',pid]]);
  for(const [name,args] of diagnostics){try{fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),run(...args))}catch(diagnosticError){fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),String(diagnosticError)+'\n'+(diagnosticError.stdout||'')+(diagnosticError.stderr||''))}}
  console.error(error);process.exitCode=1;
 });
@@ -764,20 +763,28 @@ for(const orientation of [0,1]){
  rotate(orientation);click('sourceColumnsButton');waitNode('sourceCancelColumns',n=>n.enabled==='true');
  const frame=capture('source-columns-'+(orientation?'landscape':'portrait'));
  const width=frame.readUInt32BE(16),height=frame.readUInt32BE(20);
+ const systemWindows=run('shell','dumpsys','window','windows');
+ fs.writeFileSync(path.join(out,'source-columns-'+orientation+'-system-windows.txt'),systemWindows);
+ const systemBars=systemWindows.split(/(?=  Window #\d+ Window\{)/)
+  .filter(section=>/u0 (?:StatusBar|NavigationBar\d*)\}/.test(section.slice(0,140))&&/^\s+isVisible=true\s*$/m.test(section))
+  .map(section=>section.match(/\bframe=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]/)?.slice(1).map(Number)).filter(Boolean);
  const firstColumn=nodes.find(n=>n['resource-id']?.includes('.sourceColumnVisible_')&&n.bounds!=='[0,0][0,0]');
  if(!firstColumn)throw Error('Sources column controls are missing');
  const column=firstColumn['resource-id'].split('.sourceColumnVisible_').at(-1);
- const boxes=['sourceColumnVisible_','sourceColumnPinned_','sourceColumnWidth_','sourceColumnEarlier_','sourceColumnLater_'].map(prefix=>prefix+column).concat('sourceCancelColumns').map(id=>{
+ const boxes=['sourceColumnVisible_','sourceColumnPinned_','sourceColumnWidth_','sourceColumnEarlier_','sourceColumnLater_'].map(prefix=>prefix+column).concat('sourceCancelColumns','sourceResetColumns','sourceSaveColumns').map(id=>{
   const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
   const b=n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
   // Qt 6.11.3 screenRect exports QRect's inclusive right/bottom to Android Rect.
   if(b){b[2]+=1;b[3]+=1;}
   if(!b||b[0]<0||b[1]<0||b[2]>width||b[3]>height||b[2]-b[0]<44||b[3]-b[1]<44)throw Error('Sources column touch control is clipped or too small: '+id);
+  if(systemBars.some(bar=>Math.max(b[0],bar[0])<Math.min(b[2],bar[2])&&Math.max(b[1],bar[1])<Math.min(b[3],bar[3])))throw Error('Sources column touch control is covered by an Android system bar: '+id);
   return b;
  });
  for(let a=0;a<boxes.length;a++)for(let b=a+1;b<boxes.length;b++)
   if(Math.max(boxes[a][0],boxes[b][0])<Math.min(boxes[a][2],boxes[b][2])&&Math.max(boxes[a][1],boxes[b][1])<Math.min(boxes[a][3],boxes[b][3]))throw Error('Sources column touch controls overlap');
  click('sourceCancelColumns');
+ waitNode('sourceColumnsButton',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]'&&!nodes.some(x=>x['resource-id']?.endsWith('.sourceCancelColumns')&&x.bounds!=='[0,0][0,0]'));
+ capture('source-columns-closed-'+orientation);
 }
 rotate(0);click('sourceRow_0');
 waitNode('sourceOverviewTab',n=>n.checked==='true');capture('source-inspector-overview');

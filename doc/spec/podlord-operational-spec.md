@@ -414,7 +414,7 @@ These requirements were confirmed on 2026-10-02 and apply to all data tables. Im
 | TBL-004 | Users MUST be able to show and hide table columns. |
 | TBL-005 | Users MUST be able to reorder table columns. |
 | TBL-006 | Users MUST be able to pin columns so they remain visible while scrolling horizontally. |
-| TBL-007 | Column layout, including visibility, ordering, pinning, and widths, MUST be saved per table type and restored across app restarts. The editor uses one compact aligned row per column when space permits, otherwise two compact rows. Visibility, pinning, numeric width, ordering, reset, save, cancel, keyboard order and accessible names remain available. Width fields retain the same minimum touch height as the other controls. |
+| TBL-007 | Column layout, including visibility, ordering, pinning, and widths, MUST be saved per table type and restored across app restarts. The editor uses one compact aligned row per column when space permits, otherwise two compact rows. Visibility, pinning, numeric width, ordering, reset, save, cancel, keyboard order and accessible names remain available. Width fields retain the same minimum touch height as the other controls. The dialog remains inside system SafeArea bounds. Defaults and Save share its standard footer so the controls remain reachable in flat landscape. |
 | TBL-008 | The same image, cluster, namespace, status, resource type, or node MUST have consistent identifying colors wherever that category is presented. |
 | TBL-009 | Colored identities and statuses MUST retain textual identification; color MUST NOT be their only identifying information. |
 | TBL-010 | Users MUST be able to copy cell values. |

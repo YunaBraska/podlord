@@ -217,6 +217,10 @@ bool run(const QString& scenario) {
         const auto screenshotPrefix = qEnvironmentVariable("PODLORD_SOURCES_SCREENSHOT");
         require(screenshotPrefix.isEmpty() || window->grabWindow().save(screenshotPrefix + ".columns-wide.png"),
             "Cannot capture wide Sources columns dialog.");
+        click("sourceCancelColumns");
+        require(QTest::qWaitFor([&] { return !window->findChild<QObject*>("sourceColumnsDialog")->property("visible").toBool(); }),
+            "Sources columns X did not close the dialog.");
+        click("sourceColumnsButton");
         window->resize(320,640);
         require(QTest::qWaitFor(layoutControlsVisible), "Sources narrow column dialog controls are clipped.");
         require(QTest::qWaitFor([&] {
