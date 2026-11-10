@@ -76,6 +76,7 @@ ApplicationWindow {
         actions: [mapCommand, resourcesCommand, eventsCommand, connectionsCommand, settingsCommand]
     }
     Action { id: sidebarCommand; text: "Show or hide radar and filters"; enabled: workspace.currentSession !== ""; onTriggered: window.toggleSidebar() }
+    Action { id: musicCommand; text: workspace.uiText[workspace.music.playing ? "music.pause" : "music.play"]; onTriggered: workspace.music.playing ? workspace.music.pause() : workspace.music.play() }
     Action {
         id: searchCommand
         text: workspace.uiText["nav.search"]
@@ -541,7 +542,7 @@ ApplicationWindow {
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
                     spacing: window.touchLayout ? 0 : 4
-                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl]
+                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, musicControl]
                     readonly property real fullWidth: controls.filter(control => control.available !== false)
                         .reduce((total, control) => total + control.implicitWidth + spacing, workspaceActionsButton.implicitWidth)
                     function fits(control) {
@@ -569,6 +570,15 @@ ApplicationWindow {
                     NavButton { id: eventsControl; readonly property bool available: workspace.currentSession !== ""; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: available && navigationRow.fits(this) }
                     NavButton { id: connectionsControl; readonly property bool available: workspace.currentSession !== ""; objectName: "portForwardTasksButton"; glyph: "Service"; action: connectionsCommand; Accessible.name: "Connections in this session"; visible: available && navigationRow.fits(this) }
                     NavButton { id: settingsControl; objectName: "settingsWorkspaceButton"; glyph: "Settings"; action: settingsCommand; text: workspace.uiText["nav.settings"]; visible: navigationRow.fits(this) }
+                    IconButton {
+                        id: musicControl
+                        readonly property bool available: !sidebar.musicButtonVisible
+                        objectName: "workspaceMusicButton"
+                        glyph: workspace.music.playing ? "Pause" : "Play"
+                        action: musicCommand
+                        activeIndicator: workspace.music.playing
+                        visible: available && navigationRow.fits(this)
+                    }
 
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 }
@@ -585,8 +595,10 @@ ApplicationWindow {
             IconButton { id: closeContextControl; objectName: "closeCurrentSession"; glyph: "Close"; text: "Close context"; visible: workspace.currentSession !== "" && workspace.tabs.length < 2; enabled: !workspace.busy; onClicked: workspace.close(workspace.currentSession) }
         }
     }
+
     Menu {
         id: workspaceActions
+        objectName: "workspaceActionsMenu"
         readonly property bool compactMenu: window.touchLayout || Qt.platform.os === "android" || Qt.platform.os === "ios"
         width: compactMenu ? Math.min(240, window.width - 24) : implicitWidth
         height: compactMenu ? Math.min(implicitHeight, window.height - 48) : implicitHeight
@@ -1114,6 +1126,7 @@ ApplicationWindow {
     }
     ResourceSidebar {
         id: sidebar
+        musicAction: musicCommand
         parent: window.sidebarDocked ? sidebarHost : sidebarDrawer.contentItem
         expandedRadarHost: workspace.workspacePage === "map" && !workspace.mapOverview && !window.compactInspector ? resourceMapHost : null
         radarVisible: workspace.workspacePage !== "map" || !workspace.mapOverview

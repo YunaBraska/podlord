@@ -12,7 +12,6 @@ Pane {
     property bool selectNew: false
     property bool editorClosed: false
     property string savedDraft: ""
-    property string sourceError: ""
     property string selectedSoundId: "none"
     readonly property var fieldOptions: workspace.alerts.fields.map(field => ({id: field, label: workspace.uiText["alert.field." + field]}))
     readonly property var holdOptions: [
@@ -29,10 +28,9 @@ Pane {
         return Object.freeze(entries)
     }
     readonly property var selectedSound: soundsById[selectedSoundId]
-    onSelectedSoundIdChanged: sourceError = ""
     readonly property var soundOptions: {
         const query = soundSearch.text.trim().toLowerCase()
-        return soundCatalog.filter(s => !query || [s.id, s.name, s.purpose, s.author, s.license, s.source, s.asset, s.isMusic ? "music" : "sound"].join(" ").toLowerCase().includes(query))
+        return soundCatalog.filter(s => !query || [s.id, s.name, s.purpose].join(" ").toLowerCase().includes(query))
     }
     ListModel { id: criteria }
     function selectRule(identity) {
@@ -350,11 +348,11 @@ Pane {
                 }
                 FormRow { label: "Zoom (%)"; SpinBox { id: zoom; objectName: "alertZoom"; enabled: form.editable; from: 0; to: 200; editable: true; Accessible.name: "Radar zoom percent" } ActionButton { objectName: "previewAlertZoom"; text: "Preview"; enabled: view.draft !== null && !workspace.alerts.busy && !workspace.alerts.zoomPreviewBusy; Accessible.name: "Preview draft radar zoom without saving"; onClicked: workspace.previewAlertZoom(view.ruleDraft()) } Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "0 disables automatic focus"; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted } }
                 Label { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
-                FormRow { label: workspace.uiText["alert.soundSearch"]; TextField { id: soundSearch; objectName: "alertSoundSearch"; Layout.fillWidth: true; enabled: form.editable; placeholderText: "Name, purpose, author, license or music"; Accessible.name: "Find alert sound" } }
-                FormRow { label: workspace.uiText["alert.sound"]; ComboBox { id: sound; objectName: "alertSound"; Layout.fillWidth: true; Layout.minimumWidth: 0; enabled: form.editable; model: view.soundOptions; currentIndex: view.soundOptions.findIndex(s => s.id === view.selectedSoundId); textRole: "name"; valueRole: "id"; Accessible.name: "Alert sound"; onActivated: view.selectedSoundId = currentValue } ActionButton { objectName: "previewAlertSound"; text: "Preview"; enabled: !workspace.alerts.busy && !workspace.alerts.muted && view.selectedSoundId !== "none"; onClicked: workspace.alerts.previewSound(view.selectedSoundId) } ActionButton { objectName: "openAlertSoundSource"; text: workspace.uiText["alert.source"]; enabled: view.selectedSound !== undefined; Accessible.name: "Open selected sound source in the external browser"; onClicked: view.sourceError = Qt.openUrlExternally(view.selectedSound.source) ? "" : "The browser could not open this link. Please try again explicitly." } }
+                FormRow { label: workspace.uiText["alert.soundSearch"]; TextField { id: soundSearch; objectName: "alertSoundSearch"; Layout.fillWidth: true; enabled: form.editable; placeholderText: workspace.uiText["music.soundSearch"]; Accessible.name: "Find alert sound" } }
+                FormRow { label: workspace.uiText["alert.sound"]; ComboBox { id: sound; objectName: "alertSound"; Layout.fillWidth: true; Layout.minimumWidth: 0; enabled: form.editable; model: view.soundOptions; currentIndex: view.soundOptions.findIndex(s => s.id === view.selectedSoundId); textRole: "name"; valueRole: "id"; Accessible.name: "Alert sound"; onActivated: view.selectedSoundId = currentValue } ActionButton { objectName: "previewAlertSound"; text: "Preview"; enabled: !workspace.alerts.busy && !workspace.alerts.muted && view.selectedSoundId !== "none"; onClicked: workspace.alerts.previewSound(view.selectedSoundId) } }
                 Label { objectName: "alertSoundNoResults"; Layout.fillWidth: true; visible: view.soundOptions.length === 0; text: "No sounds match. The selected sound is unchanged."; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-                Label { objectName: "alertSoundAttribution"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: view.selectedSound ? view.selectedSound.name + "\n" + view.selectedSound.purpose + "\n" + view.selectedSound.author + " / " + view.selectedSound.license + "\n" + view.selectedSound.source : ""; wrapMode: Text.WrapAnywhere; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; Accessible.name: text }
-                Label { objectName: "alertSoundSourceError"; Layout.fillWidth: true; visible: text !== ""; text: view.sourceError; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; Accessible.name: text }
+                Label { objectName: "alertSoundPurpose"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: view.selectedSound ? view.selectedSound.purpose : ""; visible: text !== ""; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted }
+
                 FormRow { label: "Minimum matches"; enabled: form.editable; SpinBox { id: soundMinimum; objectName: "alertSoundMinimum"; from: 1; to: 2147483647; editable: true; Accessible.name: "Minimum matches before sound" } }
             }
             background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }

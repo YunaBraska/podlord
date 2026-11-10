@@ -1,4 +1,5 @@
 #include "alerts.h"
+#include "music.h"
 #include "ui_language.h"
 #include <QClipboard>
 #include <QGuiApplication>
@@ -142,58 +143,10 @@ QJsonObject draft(QString id, QString name, QString field, QString expression, Q
         {"color", color}, {"colorMode", "no-match"}, {"colorSeconds", 5}, {"animation", animation}, {"animationMode", animation == "none" ? "no-match" : "new-in-view"}, {"animationSeconds", 5},
         {"zoom", color == "status" ? 100 : 0}, {"sound", sound}, {"soundMinimumMatches", 1}};
 }
-QVariantList soundCatalog() {
-    static const QVariantList catalog = [] {
-        const auto sound = [](const QString& id, const QString& name, const QString& purpose,
-                              const QString& source, const QString& asset, bool music, const QString& author, const QString& license = "CC0-1.0") {
-            return QVariantMap{{"id", id}, {"name", name}, {"purpose", purpose}, {"author", author},
-                {"license", license}, {"source", source}, {"asset", asset}, {"isMusic", music}};
-        };
-        QVariantList result{
-            sound("none", "No sound", "Silent alert action.", "https://github.com/YunaBraska/podlord", "", false, "Podlord project"),
-            sound("panel-segment-load", "Panel segment load", "Short low-power tick for health bar and panel segment changes.", "https://kenney.nl/assets/ui-audio", "qrc:/podlord/audio/ui/panel-segment-load.ogg", false, "Kenney"),
-            sound("radar-activated", "Radar activated", "Scanner wake-up sound when the radar leaves idle screensaver mode.", "https://kenney.nl/assets/interface-sounds", "qrc:/podlord/audio/events/radar-activated.ogg", false, "Kenney"),
-            sound("activity-tick", "Activity tick", "Small non-alarming activity cue for recent changes.", "https://kenney.nl/assets/interface-sounds", "qrc:/podlord/audio/events/activity-tick.ogg", false, "Kenney"),
-            sound("warning-ping", "Warning ping", "Amber tactical warning cue.", "https://kenney.nl/assets/interface-sounds", "qrc:/podlord/audio/alerts/warning-ping.ogg", false, "Kenney"),
-            sound("electro-warning", "Electro warning", "Bright electronic warning chirp.", "https://kenney.nl/assets/digital-audio", "qrc:/podlord/audio/alerts/electro-warning.ogg", false, "Kenney"),
-            sound("bell-alert", "Bell alert", "Metallic command bell for notable changes.", "https://kenney.nl/assets/impact-sounds", "qrc:/podlord/audio/alerts/bell-alert.ogg", false, "Kenney"),
-            sound("metal-impact", "Metal impact", "Industrial metal impact for heavy alerts.", "https://kenney.nl/assets/impact-sounds", "qrc:/podlord/audio/alerts/metal-impact.ogg", false, "Kenney"),
-            sound("critical-klaxon", "Critical klaxon", "Short red alert cue for critical matches.", "https://kenney.nl/assets/sci-fi-sounds", "qrc:/podlord/audio/alerts/critical-klaxon.ogg", false, "Kenney"),
-            sound("power-up", "Power up", "Positive tactical activation sound.", "https://kenney.nl/assets/digital-audio", "qrc:/podlord/audio/events/power-up.ogg", false, "Kenney"),
-            sound("power-down", "Power down", "Low descending tactical cue.", "https://kenney.nl/assets/digital-audio", "qrc:/podlord/audio/events/power-down.ogg", false, "Kenney"),
-            sound("three-tone", "Three tone", "Neutral three-tone system notification.", "https://kenney.nl/assets/digital-audio", "qrc:/podlord/audio/events/three-tone.ogg", false, "Kenney"),
-            sound("metal-click", "Metal click", "Tiny mechanical UI click.", "https://kenney.nl/assets/rpg-audio", "qrc:/podlord/audio/ui/metal-click.ogg", false, "Kenney"),
-            sound("book-open", "Book open", "Soft fantasy war-room page cue.", "https://kenney.nl/assets/rpg-audio", "qrc:/podlord/audio/fantasy/book-open.ogg", false, "Kenney"),
-            sound("command-ambient-loop", "Command jingle", "Short optional retro command jingle for demos.", "https://kenney.nl/assets/music-jingles", "qrc:/podlord/audio/music/energetic/command-jingle.ogg", true, "Kenney"),
-            sound("steel-command-jingle", "Steel command jingle", "Short metallic command jingle.", "https://kenney.nl/assets/music-jingles", "qrc:/podlord/audio/music/energetic/steel-command.ogg", true, "Kenney"),
-            sound("bit-command-jingle", "8-bit command jingle", "Short retro digital command jingle.", "https://kenney.nl/assets/music-jingles", "qrc:/podlord/audio/music/energetic/bit-command.ogg", true, "Kenney")
-        };
-        for (const auto& file : QDir(":/podlord/audio/interface").entryList({"*.ogg"}, QDir::Files, QDir::Name)) {
-            QString base = file.chopped(4);
-            auto parts = base.split('_');
-            for (auto& part : parts) if (!part.isEmpty()) part[0] = part[0].toUpper();
-            result.append(sound("kenney-interface-" + base.replace('_', '-'), parts.join(' '),
-                "Interface command sound from Kenney Interface Sounds.", "https://kenney.nl/assets/interface-sounds",
-                "qrc:/podlord/audio/interface/" + file, false, "Kenney"));
-        }
-        result.append(sound("modern-soft-confirm", "Soft confirm", "A restrained two-note confirmation cue.",
-            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/soft-confirm.mp3", false, "Podlord project", "MIT"));
-        result.append(sound("modern-gentle-change", "Gentle change", "A quiet rising cue for routine resource changes.",
-            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/gentle-change.mp3", false, "Podlord project", "MIT"));
-        result.append(sound("modern-attention", "Gentle attention", "A soft, brief cue for items that need attention.",
-            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/attention.mp3", false, "Podlord project", "MIT"));
-        result.append(sound("modern-complete", "Quiet complete", "A short calm cue when an operation completes.",
-            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/complete.mp3", false, "Podlord project", "MIT"));
-        result.append(sound("modern-soft-warning", "Soft warning", "A low-intensity descending cue for a warning.",
-            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/soft-warning.mp3", false, "Podlord project", "MIT"));
-        result.append(sound("modern-new-activity", "New activity", "A subtle short cue for newly observed activity.",
-            "https://github.com/YunaBraska/podlord", "qrc:/podlord/audio/modern/new-activity.mp3", false, "Podlord project", "MIT"));
-        return result;
-    }();
-    return catalog;
-}
+QVariantList soundCatalog() { return bundledSounds(); }
 }
 Result<AlertRule> parseAlertRule(QJsonObject value) {
+    if (value["sound"].isString()) value["sound"] = migratedSound(value["sound"].toString());
     const QStringList keys{"id", "name", "description", "enabled", "builtIn", "draft", "groups", "color", "colorMode", "colorSeconds", "animation", "animationMode", "animationSeconds", "zoom", "sound", "soundMinimumMatches"};
     if (value.size() != keys.size()) return Failure{StoreError::InvalidInput, "An alert must contain exactly the supported fields."};
     for (const auto& key : keys) if (!value.contains(key)) return Failure{StoreError::InvalidInput, "An alert field is missing."};
@@ -245,7 +198,7 @@ Result<AlertCatalog> defaultAlerts() {
     active["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "newInView"}, {"expression", "true"}}, QJsonObject{{"field", "activity"}, {"expression", "true"}}})};
     AlertCatalog result;
     for (const auto& value : {
-        draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "warning-ping", "Paint resources yellow or red while they have an active problem."),
+        draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "attention", "Paint resources yellow or red while they have an active problem."),
         draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "none", "none", "Highlight recently changed resources green for the freshness window."),
         active}) {
         const auto parsed = parseAlertRule(value);

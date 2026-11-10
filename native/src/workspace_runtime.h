@@ -4,6 +4,7 @@
 #include "release_updates.h"
 #include "map_previews.h"
 #include "system_typography.h"
+#include "music.h"
 
 namespace podlord {
 class Workspace;
@@ -19,6 +20,7 @@ public:
     ReleaseUpdates releases;
     MapPreviews previews{profile};
     SystemTypography typography;
+    Music music;
     QList<Workspace*> windows;
     QMap<QString, Workspace*> owners;
     quint64 selectionRevision = 0;

@@ -49,16 +49,7 @@ ColumnLayout {
         quoteIndex = next
     }
     onVisibleChanged: if (visible) rotateQuote()
-    readonly property var soundCredits: {
-        const groups = {}
-        for (const sound of workspace.alerts.sounds) {
-            if (sound.id === "none") continue
-            const key = sound.source + "\n" + sound.author + "\n" + sound.license
-            if (!groups[key]) groups[key] = {source: sound.source, author: sound.author, license: sound.license, pack: sound.source.split("/").pop(), count: 0}
-            ++groups[key].count
-        }
-        return Object.keys(groups).map(key => groups[key])
-    }
+
     function openLink(url) { linkError = Qt.openUrlExternally(url) ? "" : "The browser could not open this link. Please try again explicitly." }
     component LinkButton: IconButton {
         glyph: ""
@@ -144,16 +135,7 @@ ColumnLayout {
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutDependencyNotices"; text: "Third-party notices"; Accessible.name: "Read complete bundled dependency license texts"; onClicked: { licenseDialog.title = "Third-party notices"; licenseText.text = workspace.dependencyNotices(); licenseDialog.open() } }
     }
     Label { Layout.fillWidth: true; text: "Qt, FFmpeg, OpenSSL, yaml-cpp and libvterm retain their own licenses. Podlord's license does not replace their distribution obligations."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-    IconButton { id: credits; objectName: "aboutSoundCredits"; glyph: checked ? "Visible" : "Hidden"; text: "Sound credits"; showText: true; checkable: true; Accessible.description: "Expand or collapse bundled sound attribution and source links" }
-    Repeater {
-        model: about.visible && credits.checked ? about.soundCredits : []
-        RowLayout {
-            required property var modelData
-            Layout.fillWidth: true
-            Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: modelData.pack.replace(/-/g, " ") + " (" + modelData.count + " sound" + (modelData.count === 1 ? "" : "s") + ") / " + modelData.author + " / " + modelData.license; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutSoundSource_" + modelData.pack; text: "Source"; Accessible.name: "Open source for " + modelData.pack; onClicked: about.openLink(modelData.source); ToolTip.visible: hovered || activeFocus; ToolTip.text: modelData.source }
-        }
-    }
+
     Label { objectName: "aboutLinkError"; Layout.fillWidth: true; visible: text !== ""; text: about.linkError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
     ModalDialog {
         id: licenseDialog

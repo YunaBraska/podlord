@@ -864,58 +864,24 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!workspace.alerts()->setPreferences(true,workspace.alerts()->reducedMotion()) || !settle()) return false;
             return !item(window,"previewAlertSound")->isEnabled() && server.requests==0;
         }
-        if (scenario.startsWith("reference_sound_source_")) {
-            const auto mode=scenario.mid(QString("reference_sound_source_").size());
-            const QMap<QString,QPair<QString,QString>> cases{
-                {"ui", {"panel-segment-load","ui-audio"}}, {"interface", {"warning-ping","interface-sounds"}},
-                {"digital", {"electro-warning","digital-audio"}}, {"impact", {"bell-alert","impact-sounds"}},
-                {"critical", {"critical-klaxon","sci-fi-sounds"}}, {"rpg", {"book-open","rpg-audio"}},
-                {"music", {"command-ambient-loop","music-jingles"}}, {"project", {"none","project"}},
-                {"filtered", {"warning-ping","interface-sounds"}}, {"failure", {"warning-ping","interface-sounds"}}};
-            if (!cases.contains(mode) || !click(window,"duplicateAlert") || !settle()) return false;
-            const auto input=cases.value(mode);
-            if (mode=="filtered") {
-                if (!type(window,"alertSoundSearch","no-sound-matches-this")) return false;
-            } else if (input.first!="warning-ping") {
-                if (!type(window,"alertSoundSearch",input.first=="none" ? "Silent alert action." : input.first)
-                    || !waitFor([&] { return item(window,"alertSound")->property("count").toInt()==1; })
-                    || !click(window,"alertSound")) return false;
-                QTest::keyClick(window,Qt::Key_Down); QTest::keyClick(window,Qt::Key_Return);
-                if (!waitFor([&] { return item(window,"alertSound")->property("currentValue").toString()==input.first; })) return false;
-            }
-            const auto unchanged=rules();
-            BrowserBoundary browser;
-            if (mode=="failure") {
-                QDesktopServices::setUrlHandler("https",&browser,"unavailable");
-                if (!click(window,"openAlertSoundSource") || !waitFor([&] { return item(window,"alertSoundSourceError")->isVisible(); })) return false;
-                QTest::qWait(100);
-                if (!browser.urls.isEmpty() || rules()!=unchanged) return false;
-                QDesktopServices::setUrlHandler("https",&browser,"open");
-            }
-            if (!click(window,"openAlertSoundSource") || !waitFor([&] { return browser.urls.size()==1; })) return false;
-            const QUrl expected(input.second=="project" ? "https://github.com/YunaBraska/podlord" : "https://kenney.nl/assets/"+input.second);
-            return browser.urls.first()==expected && rules()==unchanged && server.requests==0
-                && !item(window,"alertSoundSourceError")->isVisible();
-        }
+
         if (scenario.startsWith("reference_sound_search_")) {
             const auto mode=scenario.mid(QString("reference_sound_search_").size());
             const QMap<QString,QPair<QString,int>> cases{
-                {"name", {"warning-ping",1}}, {"purpose", {"industrial metal",1}},
-                {"source", {"rpg-audio",2}}, {"license", {" CC0-1.0 ",117}},
-                {"author", {"KeNNeY",116}}, {"music", {"music",3}},
+                {"name", {"soft-warning",1}}, {"purpose", {"Silent alert action.",1}},
                 {"empty", {"no-sound-matches-this",0}}, {"clear", {"no-sound-matches-this",0}},
-                {"select", {"industrial metal",1}}};
+                {"select", {"Silent alert action.",1}}};
             if (!cases.contains(mode) || !click(window,"duplicateAlert") || !settle()) return false;
             if (!waitFor([&] { return item(window,"alertSoundSearch") && item(window,"alertSoundSearch")->isEnabled(); })) return false;
             const auto input=cases.value(mode);
             if (!type(window,"alertSoundSearch",input.first)) return false;
             if (!waitFor([&] { return item(window,"alertSound")->property("count").toInt()==input.second; })) return false;
             if (mode=="empty" && (!item(window,"alertSoundNoResults")->isVisible()
-                || !item(window,"alertSoundAttribution")->property("text").toString().contains("Warning ping"))) return false;
+                || item(window,"alertSoundPurpose")->property("text").toString().isEmpty())) return false;
             if (mode=="clear") {
-                if (!type(window,"alertSoundSearch","") || !waitFor([&] { return item(window,"alertSound")->property("count").toInt()==123; })) return false;
+                if (!type(window,"alertSoundSearch","") || !waitFor([&] { return item(window,"alertSound")->property("count").toInt()==21; })) return false;
             }
-            const auto expected=mode=="select" ? "metal-impact" : "warning-ping";
+            const auto expected=mode=="select" ? "none" : "attention";
             if (mode=="select") {
                 const auto capture=qEnvironmentVariable("PODLORD_ALERT_SOUND_FRAME");
                 if (!capture.isEmpty()) { QTest::qWait(50); if (!window->grabWindow().save(capture)) return false; }

@@ -90,6 +90,8 @@ const QHash<QString, Glyph>& catalog() {
         rect(.15,.15,.7,.7,Fill::None); line(.38,.15,.38,.85); line(.62,.15,.62,.85); finish({"Columns"});
         line(.7,.2,.3,.5); line(.3,.5,.7,.8); finish({"Previous"});
         line(.3,.2,.7,.5); line(.7,.5,.3,.8); finish({"Next"});
+    line(.3,.2,.75,.5); line(.75,.5,.3,.8); line(.3,.8,.3,.2); finish({"Play"});
+    line(.35,.2,.35,.8); line(.65,.2,.65,.8); finish({"Pause"});
         line(.2,.5,.8,.5); finish({"ZoomOut"});
         line(.2,.5,.8,.5); line(.5,.2,.5,.8); finish({"ZoomIn"});
         QPainterPath reset; reset.arcMoveTo(.18,.18,.64,.64,135); reset.arcTo(.18,.18,.64,.64,135,-290);

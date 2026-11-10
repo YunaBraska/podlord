@@ -14,6 +14,7 @@
 #include <QFutureWatcher>
 #include <QPromise>
 #include "alerts.h"
+#include "music.h"
 #include <QAbstractListModel>
 #include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
@@ -135,6 +136,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool appStore READ appStore CONSTANT)
     Q_PROPERTY(QVariantList contexts READ contexts NOTIFY catalogsChanged)
     Q_PROPERTY(podlord::Alerts* alerts READ alerts CONSTANT)
+    Q_PROPERTY(podlord::Music* music READ music CONSTANT)
     Q_PROPERTY(podlord::ReleaseUpdates* releaseUpdates READ releaseUpdates CONSTANT)
     Q_PROPERTY(QStringList themeNames READ themeNames CONSTANT)
     Q_PROPERTY(QString themeName READ themeName NOTIFY appearanceChanged)
@@ -355,6 +357,7 @@ public:
     Q_INVOKABLE bool setWindowFocused(bool focused);
     bool windowActionsAvailable() const;
     Alerts* alerts() { return &alerts_; }
+    Music* music();
     ReleaseUpdates* releaseUpdates() { return &releaseUpdates_; }
     Q_INVOKABLE int alertResourceIndex(const QString& path) const;
     Q_INVOKABLE bool previewAlertZoom(const QVariantMap& draft);

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 umask 077
-[ "$#" -eq 3 ] || { printf 'Usage: %s SIGNED_APK LOCAL_FIXTURE_KUBECONFIG_OR_--startup NEW_EVIDENCE_DIRECTORY\n' "$0" >&2; exit 2; }
+[ "$#" -eq 3 ] || { printf 'Usage: %s SIGNED_APK LOCAL_FIXTURE_KUBECONFIG_OR_--startup_OR_--music NEW_EVIDENCE_DIRECTORY\n' "$0" >&2; exit 2; }
 sdk=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
 system_image=${PODLORD_ANDROID_SYSTEM_IMAGE:-system-images;android-36;google_apis;arm64-v8a}
 case "$system_image" in
@@ -14,6 +14,7 @@ source=$2
 out=$3
 startup=0
 [ "$source" != --startup ] || startup=1
+[ "$source" != --music ] || startup=2
 adbPort=5039
 # Stay outside another ADB server's default emulator scan (ending at 5585).
 consolePort=5680
@@ -23,7 +24,7 @@ case "${PODLORD_ANDROID_ADB_TRACE:-0}" in
   1) adbTrace="transport,shell,services,sockets" ;;
   *) printf 'PODLORD_ANDROID_ADB_TRACE must be 0 or 1\n' >&2; exit 2 ;;
 esac
-[ -f "$apk" ] && { [ "$startup" = 1 ] || [ -f "$source" ]; } || { printf 'APK and fixture kubeconfig must exist.\n' >&2; exit 2; }
+[ -f "$apk" ] && { [ "$startup" != 0 ] || [ -f "$source" ]; } || { printf 'APK and fixture kubeconfig must exist.\n' >&2; exit 2; }
 for tool in platform-tools/adb emulator/emulator cmdline-tools/latest/bin/avdmanager build-tools/36.0.0/aapt; do
   [ -x "$sdk/$tool" ] || { printf 'Required Android SDK tool is missing: %s\n' "$tool" >&2; exit 2; }
 done
@@ -386,15 +387,15 @@ process.on('uncaughtException',error=>{
 });
 waitNode('mapImportSource',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
 if(!recordProductPid())throw Error('Product process unavailable after its native window became ready');
-if(startupOnly){
+if(startupOnly||startupMode==='2'){
  const pid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
  const lifecycle=run('logcat','-d','--pid='+pid,'-s','PodlordStartupRegression:I','*:S');
  fs.writeFileSync(path.join(out,'startup-lifecycle.txt'),lifecycle);
  const created=[...lifecycle.matchAll(/created nativeStarted=(true|false) pid=(\d+)/g)];
  const requested=[...lifecycle.matchAll(/recreate-before-start pid=(\d+)/g)];
- if(created.length!==2||created[0][1]!=='false'||created.some(m=>m[2]!==pid)||requested.length!==1||requested[0][1]!==pid)
+ if(startupOnly&&(created.length!==2||created[0][1]!=='false'||created.some(m=>m[2]!==pid)||requested.length!==1||requested[0][1]!==pid))
   throw Error('Startup fixture did not prove one early Activity recreation in the same product process');
- capture('startup-recreated');
+ capture(startupOnly?'startup-recreated':'startup-ready');
  click('settingsWorkspaceButton');click('settingsSectionPicker');
  const sources=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
  if(!sources)throw Error('Sources is unavailable after early Activity recreation');tap(sources);
@@ -403,8 +404,47 @@ if(startupOnly){
  run('shell','input','text','startup-input-check');
  waitNode('settingsSourcePath',n=>n.text==='startup-input-check');
  if(run('shell','pidof','berlin.yuna.podlord').trim()!==pid)throw Error('Text input restarted the recreated application');
- fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',mode:'startup',steps:[{step:'Real Android Activity recreation before native startup reaches the actual Podlord window in the same process'},{step:'Recreated Activity retains visible system keyboard and real text input'}],failures:[]},null,2)+'\n');
- console.log(JSON.stringify({androidStartupRegression:'passed',pid,recreations:1}));
+ const musicSteps=[];
+ if(startupMode==='2'){
+  run('shell','input','keyevent','4');state();click('mapWorkspaceButton');
+  const textAction=text=>{const node=nodes.find(n=>(n.text||n['content-desc'])===text&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');if(!node)throw Error('Music action unavailable: '+text);tap(node);};
+  const services=()=>run('shell','dumpsys','activity','services','berlin.yuna.podlord/.MusicService');
+  const waitService=playing=>{const deadline=Date.now()+10000;let value;do{value=services();if(/isForeground=true/.test(value)===playing)return value;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);}while(Date.now()<deadline);throw Error('Music foreground service did not become '+playing);};
+  const showMusicAction=text=>{if(!nodes.some(n=>(n.text||n['content-desc'])===text&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]'))click('workspaceActionsButton');};
+  showMusicAction('Play music');capture('music-toggle');textAction('Play music');
+  fs.writeFileSync(path.join(out,'music-service-playing.txt'),waitService(true));
+  run('shell','input','keyevent','3');state();
+  const until=Date.now()+3000;
+  do{if(!/isForeground=true/.test(services()))throw Error('Music stopped when the product entered the background');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);}while(Date.now()<until);
+  const session=run('shell','dumpsys','media_session');
+  fs.writeFileSync(path.join(out,'music-media-session.txt'),session);
+  const productSession=session.slice(session.indexOf('    Podlord music berlin.yuna.podlord/')).split('\nAudio playback')[0];
+  if(!productSession.includes('package=berlin.yuna.podlord')||!(/state=PlaybackState \{state=(?:PLAYING\(3\)|3)[,}]/.test(productSession)))throw Error('Android did not expose a playing Podlord media session');
+  const initialTitle=productSession.match(/metadata:.*description=([^\n]+)/)?.[1];
+  if(!initialTitle)throw Error('Playing track metadata is missing');
+  const transitionDeadline=Date.now()+180000;
+  let transitioned=false;
+  do{
+   if(!/isForeground=true/.test(services()))throw Error('Music lost background lifetime between shuffled tracks');
+   const playing=run('shell','dumpsys','media_session');
+   const title=playing.slice(playing.indexOf('    Podlord music berlin.yuna.podlord/')).match(/metadata:.*description=([^\n]+)/)?.[1];
+   if(title&&title!==initialTitle){fs.writeFileSync(path.join(out,'music-automatic-shuffle.txt'),playing);transitioned=true;break;}
+   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000);
+  }while(Date.now()<transitionDeadline);
+  if(!transitioned)throw Error('The full track did not automatically advance while the application was in the background');
+  run('shell','cmd','media_session','dispatch','pause');
+  fs.writeFileSync(path.join(out,'music-service-paused.txt'),waitService(false));
+  const activity=fs.readFileSync(path.join(out,'badging.txt'),'utf8').match(/^launchable-activity: name='([^']+)'/m)?.[1];
+  if(!activity)throw Error('Product launch activity unavailable');
+  run('shell','am','start','-W','-n','berlin.yuna.podlord/'+activity);state();
+  if(recordProductPid()!==pid)throw Error('Music test unexpectedly restarted the product process');
+  showMusicAction('Play music');
+  if(!nodes.some(n=>(n.text||n['content-desc'])==='Play music'&&n.enabled==='true'))throw Error('System Pause did not reach the shared Qt music player');
+  capture('music-paused');
+  musicSteps.push({step:'Single public Play/Pause action, complete background track with automatic shuffle and system Pause in the same product process. Emulator audio output is disabled.'});
+ }
+ fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',mode:musicSteps.length?'music-background':'startup',steps:[{step:startupOnly?'Real Android Activity recreation before native startup reaches the actual Podlord window in the same process':'Normal packaged application startup'},{step:'Visible system keyboard and real text input remain in the same product process'},...musicSteps],failures:[]},null,2)+'\n');
+ console.log(JSON.stringify({androidStartupRegression:'passed',pid,recreations:startupOnly?1:0,music:musicSteps.length>0}));
  process.exit(0);
 }
 if(nodes.some(n=>n['resource-id']?.endsWith('.resourcesWorkspaceButton')&&n.bounds!=='[0,0][0,0]'))throw Error('Resources navigation is visible before a context is opened');

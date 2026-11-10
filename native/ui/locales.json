@@ -385,7 +385,15 @@
     "alert.discard": "Discard",
     "alert.conditions": "Conditions",
     "alert.emptyContext": "Open a context to see alerts.",
-    "alert.emptyMatches": "No matching alerts."
+    "alert.emptyMatches": "No matching alerts.",
+    "music.play": "Play music",
+    "music.pause": "Pause music",
+    "music.soundSearch": "Name or purpose",
+    "music.muteAlerts": "Mute alerts",
+    "music.unmuteAlerts": "Unmute alerts",
+    "music.noOutput": "No audio output is available.",
+    "music.failed": "Music could not be played.",
+    "music.unavailable": "Audio is busy. Try Play again."
   },
   "languages": [
     {
@@ -540,7 +548,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "打开上下文以查看告警。",
-        "alert.emptyMatches": "无匹配告警。"
+        "alert.emptyMatches": "无匹配告警。",
+        "music.play": "播放音乐",
+        "music.pause": "暂停音乐",
+        "music.soundSearch": "名称或用途",
+        "music.muteAlerts": "静音警报",
+        "music.unmuteAlerts": "取消警报静音",
+        "music.noOutput": "没有可用的音频输出。",
+        "music.failed": "无法播放音乐。",
+        "music.unavailable": "音频正忙，请重试播放。"
       }
     },
     {
@@ -685,7 +701,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "अलर्ट देखने के लिए कोई कॉन्टेक्स्ट खोलें।",
-        "alert.emptyMatches": "कोई मेल खाते अलर्ट नहीं हैं।"
+        "alert.emptyMatches": "कोई मेल खाते अलर्ट नहीं हैं।",
+        "music.play": "संगीत चलाएँ",
+        "music.pause": "संगीत रोकें",
+        "music.soundSearch": "नाम या उद्देश्य",
+        "music.muteAlerts": "अलर्ट म्यूट करें",
+        "music.unmuteAlerts": "अलर्ट अनम्यूट करें",
+        "music.noOutput": "ऑडियो आउटपुट उपलब्ध नहीं है।",
+        "music.failed": "संगीत नहीं चल सका।",
+        "music.unavailable": "ऑडियो व्यस्त है। फिर से चलाएँ।"
       }
     },
     {
@@ -827,7 +851,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Abre un contexto para ver las alertas.",
-        "alert.emptyMatches": "No hay alertas coincidentes."
+        "alert.emptyMatches": "No hay alertas coincidentes.",
+        "music.play": "Reproducir música",
+        "music.pause": "Pausar música",
+        "music.soundSearch": "Nombre o finalidad",
+        "music.muteAlerts": "Silenciar alertas",
+        "music.unmuteAlerts": "Activar alertas",
+        "music.noOutput": "No hay salida de audio disponible.",
+        "music.failed": "No se pudo reproducir la música.",
+        "music.unavailable": "Audio ocupado. Intenta reproducir de nuevo."
       }
     },
     {
@@ -972,7 +1004,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "افتح سياقًا لعرض التنبيهات.",
-        "alert.emptyMatches": "لا توجد تنبيهات مطابقة."
+        "alert.emptyMatches": "لا توجد تنبيهات مطابقة.",
+        "music.play": "تشغيل الموسيقى",
+        "music.pause": "إيقاف الموسيقى مؤقتًا",
+        "music.soundSearch": "الاسم أو الغرض",
+        "music.muteAlerts": "كتم التنبيهات",
+        "music.unmuteAlerts": "إلغاء كتم التنبيهات",
+        "music.noOutput": "لا يتوفر مخرج صوت.",
+        "music.failed": "تعذر تشغيل الموسيقى.",
+        "music.unavailable": "الصوت مشغول. حاول التشغيل مجددًا."
       }
     },
     {
@@ -1113,7 +1153,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "সতর্কতা দেখতে একটি কনটেক্সট খুলুন।",
-        "alert.emptyMatches": "কোনো মিলে যাওয়া সতর্কতা নেই।"
+        "alert.emptyMatches": "কোনো মিলে যাওয়া সতর্কতা নেই।",
+        "music.play": "সঙ্গীত চালান",
+        "music.pause": "সঙ্গীত থামান",
+        "music.soundSearch": "নাম বা উদ্দেশ্য",
+        "music.muteAlerts": "সতর্কতা নিঃশব্দ করুন",
+        "music.unmuteAlerts": "সতর্কতার শব্দ চালু করুন",
+        "music.noOutput": "অডিও আউটপুট উপলব্ধ নেই।",
+        "music.failed": "সঙ্গীত চালানো যায়নি।",
+        "music.unavailable": "অডিও ব্যস্ত। আবার চালান।"
       }
     },
     {
@@ -1252,7 +1300,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Abra um contexto para ver os alertas.",
-        "alert.emptyMatches": "Nenhum alerta correspondente."
+        "alert.emptyMatches": "Nenhum alerta correspondente.",
+        "music.play": "Reproduzir música",
+        "music.pause": "Pausar música",
+        "music.soundSearch": "Nome ou finalidade",
+        "music.muteAlerts": "Silenciar alertas",
+        "music.unmuteAlerts": "Ativar alertas",
+        "music.noOutput": "Nenhuma saída de áudio disponível.",
+        "music.failed": "Não foi possível reproduzir a música.",
+        "music.unavailable": "Áudio ocupado. Tente reproduzir novamente."
       }
     },
     {
@@ -1397,7 +1453,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Откройте контекст, чтобы просмотреть оповещения.",
-        "alert.emptyMatches": "Нет соответствующих оповещений."
+        "alert.emptyMatches": "Нет соответствующих оповещений.",
+        "music.play": "Включить музыку",
+        "music.pause": "Приостановить музыку",
+        "music.soundSearch": "Название или назначение",
+        "music.muteAlerts": "Выключить звук оповещений",
+        "music.unmuteAlerts": "Включить звук оповещений",
+        "music.noOutput": "Аудиовыход недоступен.",
+        "music.failed": "Не удалось воспроизвести музыку.",
+        "music.unavailable": "Аудио занято. Попробуйте снова."
       }
     },
     {
@@ -1542,7 +1606,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "アラートを表示するにはコンテキストを開いてください。",
-        "alert.emptyMatches": "一致するアラートはありません。"
+        "alert.emptyMatches": "一致するアラートはありません。",
+        "music.play": "音楽を再生",
+        "music.pause": "音楽を一時停止",
+        "music.soundSearch": "名前または用途",
+        "music.muteAlerts": "通知音をミュート",
+        "music.unmuteAlerts": "通知音のミュートを解除",
+        "music.noOutput": "音声出力を利用できません。",
+        "music.failed": "音楽を再生できませんでした。",
+        "music.unavailable": "音声を使用中です。もう一度再生してください。"
       }
     },
     {
@@ -1683,7 +1755,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "ਚੇਤਾਵਨੀਆਂ ਦੇਖਣ ਲਈ ਕੋਈ ਸੰਦਰਭ ਖੋਲ੍ਹੋ।",
-        "alert.emptyMatches": "ਕੋਈ ਮੇਲ ਖਾਂਦੀਆਂ ਚੇਤਾਵਨੀਆਂ ਨਹੀਂ ਹਨ।"
+        "alert.emptyMatches": "ਕੋਈ ਮੇਲ ਖਾਂਦੀਆਂ ਚੇਤਾਵਨੀਆਂ ਨਹੀਂ ਹਨ।",
+        "music.play": "ਸੰਗੀਤ ਚਲਾਓ",
+        "music.pause": "ਸੰਗੀਤ ਰੋਕੋ",
+        "music.soundSearch": "ਨਾਮ ਜਾਂ ਉਦੇਸ਼",
+        "music.muteAlerts": "ਚੇਤਾਵਨੀਆਂ ਮਿਊਟ ਕਰੋ",
+        "music.unmuteAlerts": "ਚੇਤਾਵਨੀਆਂ ਅਨਮਿਊਟ ਕਰੋ",
+        "music.noOutput": "ਆਡੀਓ ਆਉਟਪੁੱਟ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।",
+        "music.failed": "ਸੰਗੀਤ ਨਹੀਂ ਚੱਲ ਸਕਿਆ।",
+        "music.unavailable": "ਆਡੀਓ ਵਿਅਸਤ ਹੈ। ਮੁੜ ਚਲਾਓ।"
       }
     },
     {
@@ -2074,7 +2154,15 @@
         "update.noUpdate": "Podlord ist aktuell.",
         "yaml.tabIndent": "TAB=einrücken",
         "alert.emptyContext": "Kontext öffnen, um Alarme anzuzeigen.",
-        "alert.emptyMatches": "Keine passenden Alarme."
+        "alert.emptyMatches": "Keine passenden Alarme.",
+        "music.play": "Musik abspielen",
+        "music.pause": "Musik pausieren",
+        "music.soundSearch": "Name oder Zweck",
+        "music.muteAlerts": "Alarme stummschalten",
+        "music.unmuteAlerts": "Alarme einschalten",
+        "music.noOutput": "Keine Audioausgabe verfügbar.",
+        "music.failed": "Musik konnte nicht abgespielt werden.",
+        "music.unavailable": "Audio ist belegt. Erneut auf Play drücken."
       }
     },
     {
@@ -2208,7 +2296,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Ouvrez un contexte pour afficher les alertes.",
-        "alert.emptyMatches": "Aucune alerte correspondante."
+        "alert.emptyMatches": "Aucune alerte correspondante.",
+        "music.play": "Lire la musique",
+        "music.pause": "Mettre la musique en pause",
+        "music.soundSearch": "Nom ou usage",
+        "music.muteAlerts": "Couper les alertes",
+        "music.unmuteAlerts": "Rétablir les alertes",
+        "music.noOutput": "Aucune sortie audio disponible.",
+        "music.failed": "La musique n’a pas pu être lue.",
+        "music.unavailable": "Audio occupé. Réessayez la lecture."
       }
     },
     {
@@ -2349,7 +2445,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "الرٹس دیکھنے کے لیے کوئی سیاق کھولیں۔",
-        "alert.emptyMatches": "کوئی مماثل الرٹ نہیں۔"
+        "alert.emptyMatches": "کوئی مماثل الرٹ نہیں۔",
+        "music.play": "موسیقی چلائیں",
+        "music.pause": "موسیقی روکیں",
+        "music.soundSearch": "نام یا مقصد",
+        "music.muteAlerts": "انتباہات خاموش کریں",
+        "music.unmuteAlerts": "انتباہات کی آواز بحال کریں",
+        "music.noOutput": "آڈیو آؤٹ پٹ دستیاب نہیں ہے۔",
+        "music.failed": "موسیقی نہیں چل سکی۔",
+        "music.unavailable": "آڈیو مصروف ہے۔ دوبارہ چلائیں۔"
       }
     },
     {
@@ -2488,7 +2592,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Buka konteks untuk melihat peringatan.",
-        "alert.emptyMatches": "Tidak ada peringatan yang cocok."
+        "alert.emptyMatches": "Tidak ada peringatan yang cocok.",
+        "music.play": "Putar musik",
+        "music.pause": "Jeda musik",
+        "music.soundSearch": "Nama atau kegunaan",
+        "music.muteAlerts": "Bisukan peringatan",
+        "music.unmuteAlerts": "Aktifkan suara peringatan",
+        "music.noOutput": "Keluaran audio tidak tersedia.",
+        "music.failed": "Musik tidak dapat diputar.",
+        "music.unavailable": "Audio sibuk. Coba putar lagi."
       }
     },
     {
@@ -2631,7 +2743,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Uyarıları görmek için bir bağlam açın.",
-        "alert.emptyMatches": "Eşleşen uyarı yok."
+        "alert.emptyMatches": "Eşleşen uyarı yok.",
+        "music.play": "Müziği çal",
+        "music.pause": "Müziği duraklat",
+        "music.soundSearch": "Ad veya amaç",
+        "music.muteAlerts": "Uyarıları sessize al",
+        "music.unmuteAlerts": "Uyarıların sesini aç",
+        "music.noOutput": "Ses çıkışı yok.",
+        "music.failed": "Müzik çalınamadı.",
+        "music.unavailable": "Ses meşgul. Yeniden çalmayı deneyin."
       }
     },
     {
@@ -2776,7 +2896,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "알림을 보려면 컨텍스트를 여세요.",
-        "alert.emptyMatches": "일치하는 알림이 없습니다."
+        "alert.emptyMatches": "일치하는 알림이 없습니다.",
+        "music.play": "음악 재생",
+        "music.pause": "음악 일시 정지",
+        "music.soundSearch": "이름 또는 용도",
+        "music.muteAlerts": "알림 음소거",
+        "music.unmuteAlerts": "알림 음소거 해제",
+        "music.noOutput": "오디오 출력을 사용할 수 없습니다.",
+        "music.failed": "음악을 재생할 수 없습니다.",
+        "music.unavailable": "오디오 사용 중입니다. 다시 재생하세요."
       }
     },
     {
@@ -2920,7 +3048,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Mở ngữ cảnh để xem cảnh báo.",
-        "alert.emptyMatches": "Không có cảnh báo phù hợp."
+        "alert.emptyMatches": "Không có cảnh báo phù hợp.",
+        "music.play": "Phát nhạc",
+        "music.pause": "Tạm dừng nhạc",
+        "music.soundSearch": "Tên hoặc mục đích",
+        "music.muteAlerts": "Tắt tiếng cảnh báo",
+        "music.unmuteAlerts": "Bật tiếng cảnh báo",
+        "music.noOutput": "Không có đầu ra âm thanh.",
+        "music.failed": "Không thể phát nhạc.",
+        "music.unavailable": "Âm thanh đang bận. Hãy thử phát lại."
       }
     },
     {
@@ -3059,7 +3195,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Apri un contesto per vedere gli avvisi.",
-        "alert.emptyMatches": "Nessun avviso corrispondente."
+        "alert.emptyMatches": "Nessun avviso corrispondente.",
+        "music.play": "Riproduci musica",
+        "music.pause": "Metti in pausa",
+        "music.soundSearch": "Nome o scopo",
+        "music.muteAlerts": "Disattiva audio avvisi",
+        "music.unmuteAlerts": "Attiva audio avvisi",
+        "music.noOutput": "Nessuna uscita audio disponibile.",
+        "music.failed": "Impossibile riprodurre la musica.",
+        "music.unavailable": "Audio occupato. Riprova la riproduzione."
       }
     },
     {
@@ -3201,7 +3345,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Otwórz kontekst, aby zobaczyć alerty.",
-        "alert.emptyMatches": "Brak pasujących alertów."
+        "alert.emptyMatches": "Brak pasujących alertów.",
+        "music.play": "Odtwórz muzykę",
+        "music.pause": "Wstrzymaj muzykę",
+        "music.soundSearch": "Nazwa lub przeznaczenie",
+        "music.muteAlerts": "Wycisz alerty",
+        "music.unmuteAlerts": "Włącz dźwięk alertów",
+        "music.noOutput": "Brak wyjścia dźwięku.",
+        "music.failed": "Nie udało się odtworzyć muzyki.",
+        "music.unavailable": "Dźwięk jest zajęty. Spróbuj ponownie."
       }
     },
     {
@@ -3332,7 +3484,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Open een context om waarschuwingen te zien.",
-        "alert.emptyMatches": "Geen overeenkomende waarschuwingen."
+        "alert.emptyMatches": "Geen overeenkomende waarschuwingen.",
+        "music.play": "Muziek afspelen",
+        "music.pause": "Muziek pauzeren",
+        "music.soundSearch": "Naam of doel",
+        "music.muteAlerts": "Meldingen dempen",
+        "music.unmuteAlerts": "Meldingsgeluid aan",
+        "music.noOutput": "Geen audio-uitvoer beschikbaar.",
+        "music.failed": "De muziek kon niet worden afgespeeld.",
+        "music.unavailable": "Audio is bezet. Probeer opnieuw af te spelen."
       }
     },
     {
@@ -3471,7 +3631,15 @@
         "alert.discard": "Discard",
         "alert.conditions": "Conditions",
         "alert.emptyContext": "Öppna en kontext för att se varningar.",
-        "alert.emptyMatches": "Inga matchande varningar."
+        "alert.emptyMatches": "Inga matchande varningar.",
+        "music.play": "Spela musik",
+        "music.pause": "Pausa musik",
+        "music.soundSearch": "Namn eller syfte",
+        "music.muteAlerts": "Stäng av larmljud",
+        "music.unmuteAlerts": "Slå på larmljud",
+        "music.noOutput": "Ingen ljudutgång tillgänglig.",
+        "music.failed": "Musiken kunde inte spelas.",
+        "music.unavailable": "Ljudet är upptaget. Försök spela igen."
       }
     }
   ]

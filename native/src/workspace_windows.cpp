@@ -7,6 +7,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace podlord {
+Music* Workspace::music() { return &runtime_->music; }
 WorkspaceRuntime::WorkspaceRuntime(QString selectedProfile, std::function<QDateTime()> clock, QUrl releaseEndpoint)
     : profile(std::move(selectedProfile)), now(std::move(clock)), client(nullptr, now),
       releases(profile, nullptr, now, std::move(releaseEndpoint)) {

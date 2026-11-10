@@ -3669,6 +3669,11 @@ bool execute(const QString& requestedScenario) {
                 if (!waitFor([&] { return item(window, name)->property("checked").toBool(); })) return false;
             }
         } else if (scenario == "columns_order" || scenario == "columns_sort_copy") {
+            for (const auto& direction : {QString("Earlier"), QString("Later")}) {
+                auto* control = item(window, "resourceColumn" + direction + "_kind");
+                auto* content = control ? control->property("contentItem").value<QQuickItem*>() : nullptr;
+                if (!content || content->rotation() != 90) return false;
+            }
             if (!click(window, item(window, "resourceColumnEarlier_kind"))) return false;
         } else if (scenario == "columns_width" || scenario == "columns_invalid_width") {
             if (!type(window, item(window, "resourceColumnWidth_name"), scenario == "columns_width" ? "450" : "")) return false;

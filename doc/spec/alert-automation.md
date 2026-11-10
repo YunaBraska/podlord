@@ -14,7 +14,7 @@ An alert is built from a guided top-to-bottom inspector flow:
 | Color | Optional radar block color with `none`, `once`, `no-match`, duration or `new-in-view` hold behavior. |
 | Animation | Optional radar animation with the same hold modes. |
 | Zoom | Optional radar zoom percentage when the rule fires. |
-| Sound | Select a bundled sound with visible author, license, and source link. User-file import is deferred beyond the first release. |
+| Sound | Select one of 20 original bundled cues or silence. Existing choices migrate by purpose. User-file import is deferred beyond the first release. |
 
 Default alerts are built in, enabled by default, and locked against editing. Users can enable, disable, duplicate, or add custom alerts. Duplicating a built-in alert creates an editable custom copy.
 
@@ -71,17 +71,13 @@ Invalid, loading, empty or stale-scope results cannot move the current camera.
 
 ## Sound Policy
 
-Bundled sounds must be original, generated, or clearly royalty-free. Every sound choice must show:
+The release bundles 20 original short cues and 20 independently composed instrumental music tracks. No third-party samples, voices, copied melodies or downloaded audio are used. Each cue has a display name and purpose. Removed sound attribution and source-browser controls disappear. Qt, FFmpeg and other dependency notices remain.
 
-- display name
-- purpose
-- author
-- license
-- source URL
+Existing sound IDs resolve to appropriate original cues without changing rule identity, matcher, activation or mute preferences. Reading never rewrites configuration. The next explicit successful save persists the canonical sound choice through the existing conflict-safe atomic writer. Unknown IDs remain errors.
 
-No copyrighted game samples, faction voices, melodies, logos, or copied assets are allowed. Imported user sounds should keep their metadata beside the imported asset.
+Music uses one application-owned player shared across tabs and windows. Play is explicit. It never resumes after application restart. It continues when minimized or another app is active. A single icon-only Play/Pause button sits below the radar. There is no track chooser, music menu or separate in-app mute control. The same Play/Pause action appears in navigation overflow only when that button is hidden. Tracks shuffle in complete 20-piece cycles, with no immediate repeat across cycle boundaries. Pause retains the current track and position. Native media focus/background lifetime remains active when advancing to the next piece. Playback interruption or output removal pauses music without automatic restart. Mobile wrappers own only OS audio focus, media controls and background lifetime. No download or external runtime is required.
 
-The built-in pack currently uses Kenney CC0 assets from UI Audio, Interface Sounds, Sci-fi Sounds, Music Jingles, Digital Audio, Impact Sounds and RPG Audio. The app stores local OGG copies and keeps purpose, source, author, and license visible in the alert editor.
+The original score/renderer sources are maintained with the assets. The 20 pieces must differ in composition, rhythm, arrangement and instrumentation, not merely pitch, speed or distortion. Complete silent decoding, cue migration, controls, restart behavior, native player lifecycle and mobile background playback need executable evidence. Imported user sounds remain deferred.
 
 ## What Has The Native Implementation Proven?
 
@@ -91,7 +87,7 @@ Evaluation consumes immutable session snapshots off the UI thread. Changes are c
 
 Public QML tests exercise CRUD, invalid input, locking, restart persistence, whole-session evaluation despite filters, grouped AND/OR criteria, numeric ranges, bounded effects, tab non-replay and regex exhaustion. A separate local Kubernetes UI run exercises a real CrashLoop Pod and filtered-out alarm matching. Exact scenarios and remaining coverage belong to [the test map](k3d-test-map.md).
 
-The native catalog now preserves all 117 reference entries and embeds all 116 audio files. Its searchable chooser retains selection when results disappear; every ID has a public persistence check, and each actual embedded asset has native Cocoa/Darwin decoding and repeated-playback checks. The chosen sound exposes its source through an explicit external-browser action. Source-opening failure must remain visible, preserve the draft and allow only explicit retry. Searching, previewing and opening a source must neither save an alert implicitly nor contact Kubernetes. About credits group assets by author/license/source instead of creating one control per file.
+The previous 117-entry C# audio-catalog comparison is superseded by the user-approved original pack. It remains useful only as a legacy-ID inventory, not a requirement to ship third-party audio or credits. New pack qualification is recorded in the test map.
 
 Public lifecycle regressions now cover once/duration/view-entry effects, hidden
 and repeated membership, rejected paths and session closure. Imported sounds,
@@ -101,3 +97,7 @@ accepted removals; lifecycle and component tests do not establish whole-product
 parity. The preserved C# sound catalog contains bundled sounds only: importing
 user sounds is a specification capability, not an already shipped reference
 implementation to copy.
+
+On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. No manual track-selection UI ships. Each full cycle visits all 20 pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
+
+When the radar button is hidden, the same Play/Pause action follows the existing responsive navigation rule: show an icon in the header when it fits, otherwise use the ordinary navigation overflow. There is no dedicated music menu.

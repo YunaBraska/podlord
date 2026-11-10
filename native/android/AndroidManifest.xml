@@ -5,6 +5,8 @@
     android:versionName="-- %%INSERT_VERSION_NAME%% --">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- %%INSERT_FEATURES -->
     <supports-screens
         android:anyDensity="true"
@@ -44,12 +46,15 @@
           <meta-data
                 android:name="android.app.extract_android_style"
                 android:value="none" />
+          <meta-data android:name="android.app.background_running" android:value="true" />
 
           <meta-data
                 android:name="android.app.arguments"
                 android:value="-- %%INSERT_APP_ARGUMENTS%% --" />
         </activity>
 
+        <service android:name="berlin.yuna.podlord.MusicService"
+            android:foregroundServiceType="mediaPlayback" android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.qtprovider"

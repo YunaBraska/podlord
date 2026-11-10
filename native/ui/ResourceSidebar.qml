@@ -15,6 +15,8 @@ Pane {
     property bool suppressSmallRadar: false
     readonly property bool radarShown: radarVisible && (!suppressSmallRadar || expandedRadarHost !== null)
     readonly property bool compactFilterRail: collapsibleFilters && !filtersExpanded && (expandedRadarHost !== null || suppressSmallRadar)
+    property Action musicAction: null
+    readonly property bool musicButtonVisible: musicToggle.visible
     readonly property real collapsedFilterWidth: leftPadding + rightPadding + sidebarLayout.spacing + healthStrip.Layout.preferredWidth + filterToggle.implicitWidth
     readonly property Item mapNavigationHost: radar.navigationHost
     readonly property int count: radar.count
@@ -142,6 +144,22 @@ Pane {
                 }
             }
             IconButton {
+                id: musicToggle
+                objectName: "musicPlayPause"
+                visible: sidebar.radarShown && sidebar.expandedRadarHost === null && !sidebar.compactFilterRail
+                Layout.fillWidth: true
+                action: sidebar.musicAction
+                glyph: workspace.music.playing ? "Pause" : "Play"
+                activeIndicator: workspace.music.playing
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: musicToggle.visible && workspace.music.error !== ""
+                text: workspace.uiText[workspace.music.error] || ""
+                color: workspace.appearanceColors.danger
+                wrapMode: Text.Wrap
+            }
+            IconButton {
                 id: filterToggle
                 objectName: "toggleLandscapeFilters"
                 visible: sidebar.collapsibleFilters
@@ -183,7 +201,7 @@ Pane {
                     onClicked: sourcesRequested()
                 }
                 IconButton { objectName: "renameCurrentSession"; glyph: "Pencil"; text: "Rename session"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: renameRequested() }
-                IconButton { objectName: "masterAudioMute"; glyph: workspace.alerts.muted ? "Mute" : "Volume"; text: workspace.alerts.muted ? "Unmute" : "Mute"; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(!workspace.alerts.muted, workspace.alerts.reducedMotion) }
+                IconButton { objectName: "masterAudioMute"; glyph: workspace.alerts.muted ? "Mute" : "Volume"; text: workspace.uiText[workspace.alerts.muted ? "music.unmuteAlerts" : "music.muteAlerts"]; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(!workspace.alerts.muted, workspace.alerts.reducedMotion) }
             }
             RowLayout {
                 Layout.fillWidth: true

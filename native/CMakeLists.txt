@@ -134,7 +134,7 @@ if(BUILD_TESTING)
     target_link_libraries(performance-ui-test PRIVATE podlord_workspace Qt6::Test)
     add_executable(about-ui-test tests/about_ui_test.cpp tests/browser_boundary.h)
     foreach(style Basic Fusion)
-        foreach(scenario liberapay branding branding_narrow credits)
+        foreach(scenario liberapay branding branding_narrow original_audio)
             add_test(NAME native.about.${scenario}_${style} COMMAND about-ui-test ${scenario})
             set_tests_properties(native.about.${scenario}_${style} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
@@ -151,7 +151,7 @@ if(BUILD_TESTING)
     target_link_libraries(about-ui-test PRIVATE podlord_workspace Qt6::Test)
     target_compile_definitions(about-ui-test PRIVATE PODLORD_TEST_LICENSE="${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE")
     target_compile_definitions(about-ui-test PRIVATE PODLORD_TEST_NOTICES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/licenses")
-    foreach(scenario privacy project issues star sponsors coffee kofi sound_warning sound_critical sound_ui sound_music sound_digital sound_impact sound_rpg license license_copy license_cancel license_narrow notices notices_copy notices_cancel notices_keyboard notices_narrow notices_reopen_project idle)
+    foreach(scenario privacy project issues star sponsors coffee kofi license license_copy license_cancel license_narrow notices notices_copy notices_cancel notices_keyboard notices_narrow notices_reopen_project idle)
         foreach(style Basic Fusion)
             add_test(NAME native.about.${scenario}_${style} COMMAND about-ui-test ${scenario})
             set_tests_properties(native.about.${scenario}_${style} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -372,7 +372,13 @@ target_sources(podlord_workspace PRIVATE src/yaml_presentation.cpp)
 target_sources(podlord_workspace PRIVATE src/platform_websocket_tls.cpp)
 target_sources(podlord_workspace PRIVATE src/runtime_diagnostics.cpp src/workspace_diagnostics.cpp)
 target_sources(podlord_workspace PRIVATE src/resource_cache_diagnostics.cpp src/release_updates.cpp src/workspace_windows.cpp src/window_host.cpp)
-target_sources(podlord_workspace PRIVATE src/workspace_snapshots.cpp src/system_typography.cpp)
+target_sources(podlord_workspace PRIVATE src/workspace_snapshots.cpp src/system_typography.cpp src/music.cpp)
+if(IOS)
+    target_sources(podlord_workspace PRIVATE src/music_platform_ios.mm)
+    target_link_libraries(podlord_workspace PRIVATE "-framework AVFAudio" "-framework MediaPlayer")
+else()
+    target_sources(podlord_workspace PRIVATE src/music_platform.cpp)
+endif()
 if(IOS)
     target_sources(podlord_workspace PRIVATE src/system_typography_ios.mm)
     target_link_libraries(podlord_workspace PRIVATE "-framework UIKit")
@@ -457,35 +463,10 @@ qt_add_qml_module(podlord_workspace
     QML_FILES ${workspace_qml_files}
 )
 qt_add_resources(podlord_workspace "workspace_ui" PREFIX "/podlord" BASE ui FILES ui/theme-palettes.json "${brand_logo}" "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE" ${dependency_notice_files})
-set(alert_audio_files
-    ../src/Podlord.App/Assets/Audio/ui/panel-segment-load.ogg
-    ../src/Podlord.App/Assets/Audio/events/radar-activated.ogg
-    ../src/Podlord.App/Assets/Audio/events/activity-tick.ogg
-    ../src/Podlord.App/Assets/Audio/alerts/warning-ping.ogg
-    ../src/Podlord.App/Assets/Audio/alerts/electro-warning.ogg
-    ../src/Podlord.App/Assets/Audio/alerts/bell-alert.ogg
-    ../src/Podlord.App/Assets/Audio/alerts/metal-impact.ogg
-    ../src/Podlord.App/Assets/Audio/alerts/critical-klaxon.ogg
-    ../src/Podlord.App/Assets/Audio/events/power-up.ogg
-    ../src/Podlord.App/Assets/Audio/events/power-down.ogg
-    ../src/Podlord.App/Assets/Audio/events/three-tone.ogg
-    ../src/Podlord.App/Assets/Audio/ui/metal-click.ogg
-    ../src/Podlord.App/Assets/Audio/fantasy/book-open.ogg
-    ../src/Podlord.App/Assets/Audio/music/energetic/command-jingle.ogg
-    ../src/Podlord.App/Assets/Audio/music/energetic/steel-command.ogg
-    ../src/Podlord.App/Assets/Audio/music/energetic/bit-command.ogg
-)
-file(GLOB interface_audio_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/Assets/Audio/interface/*.ogg")
-list(APPEND alert_audio_files ${interface_audio_files})
-set(modern_audio_files
-    assets/audio/modern/soft-confirm.mp3 assets/audio/modern/gentle-change.mp3
-    assets/audio/modern/attention.mp3 assets/audio/modern/complete.mp3
-    assets/audio/modern/soft-warning.mp3 assets/audio/modern/new-activity.mp3)
-foreach(audio_file IN LISTS modern_audio_files)
-    get_filename_component(audio_name "${audio_file}" NAME)
-    set_source_files_properties("${audio_file}" PROPERTIES QT_RESOURCE_ALIAS "modern/${audio_name}")
-endforeach()
-qt_add_resources(podlord_workspace "alert_audio" PREFIX "/podlord/audio" BASE ../src/Podlord.App/Assets/Audio FILES ${alert_audio_files} ${modern_audio_files})
+file(GLOB alert_audio_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/sfx/*.wav")
+file(GLOB music_audio_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/music/*.m4a")
+qt_add_resources(podlord_workspace "alert_audio" PREFIX "/podlord/audio" BASE assets/audio
+    FILES assets/audio/catalog.json ${alert_audio_files} ${music_audio_files})
 qt_add_executable(podlord-native MACOSX_BUNDLE src/app_main.cpp)
 if(WIN32)
     target_sources(podlord-native PRIVATE windows/podlord.rc)
@@ -728,7 +709,7 @@ if(BUILD_TESTING)
         endforeach()
     endforeach()
     add_executable(alert_ui_test tests/alert_ui_test.cpp tests/browser_boundary.h)
-    foreach(scenario valid_to_draft_restart disabled_to_draft_restart draft_round_trip draft_enable editor_close_clean editor_close_dirty zoom_preview_percent zoom_preview_repeat zoom_preview_busy zoom_preview_scope_reset zoom_preview_refresh_in_flight zoom_preview_invalid_input zoom_preview_regex_limit zoom_preview_keyboard zoom_preview_many zoom_preview_default zoom_preview_unsaved zoom_preview_fallback zoom_preview_invalid zoom_preview_empty zoom_preview_no_session zoom_preview_narrow zoom_preview_hidden zoom_preview_disabled layout layout_narrow layout_light scroll scroll_narrow locked keyboard sound_preview sound_search_name sound_search_purpose sound_search_source sound_search_license sound_search_author sound_search_music sound_search_empty sound_search_clear sound_search_select sound_source_ui sound_source_interface sound_source_digital sound_source_critical sound_source_rpg sound_source_music sound_source_project sound_source_filtered sound_source_failure toggle toggle_failure sort copy groups remove_criterion group_guard failed_draft)
+    foreach(scenario valid_to_draft_restart disabled_to_draft_restart draft_round_trip draft_enable editor_close_clean editor_close_dirty zoom_preview_percent zoom_preview_repeat zoom_preview_busy zoom_preview_scope_reset zoom_preview_refresh_in_flight zoom_preview_invalid_input zoom_preview_regex_limit zoom_preview_keyboard zoom_preview_many zoom_preview_default zoom_preview_unsaved zoom_preview_fallback zoom_preview_invalid zoom_preview_empty zoom_preview_no_session zoom_preview_narrow zoom_preview_hidden zoom_preview_disabled layout layout_narrow layout_light scroll scroll_narrow locked keyboard sound_preview sound_search_name sound_search_purpose sound_search_empty sound_search_clear sound_search_select toggle toggle_failure sort copy groups remove_criterion group_guard failed_draft)
         foreach(style Basic Fusion)
             add_test(NAME native.alert_ui.reference_${scenario}_${style} COMMAND alert_ui_test reference_${scenario})
             set_tests_properties(native.alert_ui.reference_${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
@@ -1712,34 +1693,20 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_link_libraries(audio-playback-test PRIVATE podlord_workspace)
     qt_add_resources(audio-playback-test "audio_test_fixtures"
         PREFIX "/podlord/audio-test" BASE tests/data FILES tests/data/invalid-audio.txt)
-    get_filename_component(audio_root "${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/Assets/Audio" ABSOLUTE)
-    foreach(audio_file IN LISTS alert_audio_files modern_audio_files)
+    foreach(audio_file IN LISTS alert_audio_files music_audio_files)
         get_filename_component(sound "${audio_file}" NAME_WE)
-        get_filename_component(audio_absolute "${audio_file}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-        if(audio_file IN_LIST modern_audio_files)
-            file(RELATIVE_PATH audio_relative "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio" "${audio_absolute}")
-        else()
-            file(RELATIVE_PATH audio_relative "${audio_root}" "${audio_absolute}")
-        endif()
-        add_test(NAME native.audio.${sound}_decode
-            COMMAND audio-playback-test decode qrc:/podlord/audio/${audio_relative})
+        file(RELATIVE_PATH audio_relative "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio" "${audio_file}")
+        add_test(NAME native.audio.${sound}_decode COMMAND audio-playback-test decode qrc:/podlord/audio/${audio_relative})
         set_tests_properties(native.audio.${sound}_decode PROPERTIES TIMEOUT 30 LABELS audio_decode
             ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
-        if(sound STREQUAL "maximize_001")
-            set(audio_mono "qrc:/podlord/audio/${audio_relative}")
-        elseif(sound STREQUAL "critical-klaxon")
-            set(audio_stereo "qrc:/podlord/audio/${audio_relative}")
-        endif()
     endforeach()
-    if(NOT audio_mono OR NOT audio_stereo)
-        message(FATAL_ERROR "Representative mono/stereo audio assets are missing")
-    endif()
+    set(audio_mono "qrc:/podlord/audio/sfx/soft-confirm.wav")
+    set(audio_stereo "qrc:/podlord/audio/sfx/critical.wav")
     if(APPLE)
         add_test(NAME native.audio.device_mono_repeat COMMAND audio-playback-test repeat ${audio_mono})
         add_test(NAME native.audio.device_stereo_repeat COMMAND audio-playback-test repeat ${audio_stereo})
-        add_test(NAME native.audio.device_modern_repeat COMMAND audio-playback-test repeat qrc:/podlord/audio/modern/soft-warning.mp3)
         add_test(NAME native.audio.device_source_switch COMMAND audio-playback-test switch ${audio_mono} ${audio_stereo})
-        set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch native.audio.device_modern_repeat
+        set_tests_properties(native.audio.device_mono_repeat native.audio.device_stereo_repeat native.audio.device_source_switch
             PROPERTIES TIMEOUT 30 RESOURCE_LOCK native_audio_output LABELS audio_device
             ENVIRONMENT "QT_MEDIA_BACKEND=ffmpeg;QT_QPA_PLATFORM=cocoa;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
     endif()
@@ -1760,22 +1727,31 @@ endif()
 if(BUILD_TESTING)
     add_executable(sound-catalog-test tests/sound_catalog_test.cpp)
     target_link_libraries(sound-catalog-test PRIVATE podlord_workspace Qt6::Test)
-    add_test(NAME native.sound_catalog.reference COMMAND sound-catalog-test reference ${CMAKE_CURRENT_SOURCE_DIR}/../src/Podlord.App/AlertSoundCatalog.cs)
-    add_test(NAME native.sound_catalog.assets COMMAND sound-catalog-test assets unused)
-    set_tests_properties(native.sound_catalog.reference native.sound_catalog.assets PROPERTIES
-        TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-    set(alert_sound_ids none panel-segment-load radar-activated activity-tick warning-ping electro-warning bell-alert metal-impact critical-klaxon power-up power-down three-tone metal-click book-open command-ambient-loop steel-command-jingle bit-command-jingle)
-    foreach(audio_file IN LISTS interface_audio_files)
-        get_filename_component(sound "${audio_file}" NAME_WE)
-        string(REPLACE "_" "-" sound "${sound}")
-        list(APPEND alert_sound_ids "kenney-interface-${sound}")
+    foreach(scenario catalog assets legacy_migration unknown)
+        add_test(NAME native.sound_catalog.${scenario} COMMAND sound-catalog-test ${scenario} unused)
+        set_tests_properties(native.sound_catalog.${scenario} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
     endforeach()
-    list(APPEND alert_sound_ids modern-soft-confirm modern-gentle-change modern-attention modern-complete modern-soft-warning modern-new-activity)
+    set(alert_sound_ids none)
+    foreach(audio_file IN LISTS alert_audio_files)
+        get_filename_component(sound "${audio_file}" NAME_WE)
+        list(APPEND alert_sound_ids "${sound}")
+    endforeach()
     foreach(sound IN LISTS alert_sound_ids)
         add_test(NAME native.sound_catalog.roundtrip_${sound} COMMAND sound-catalog-test roundtrip ${sound})
-        set_tests_properties(native.sound_catalog.roundtrip_${sound} PROPERTIES
-            TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        set_tests_properties(native.sound_catalog.roundtrip_${sound} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;PODLORD_DISABLE_AUDIO=1")
     endforeach()
+    add_executable(music-test tests/music_test.cpp)
+    target_link_libraries(music-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario startup shuffle mute disabled ui ui_narrow)
+        add_test(NAME native.music.${scenario} COMMAND music-test ${scenario})
+        set_tests_properties(native.music.${scenario} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion;PODLORD_DISABLE_AUDIO=1")
+    endforeach()
+    if(APPLE AND NOT IOS)
+        add_test(NAME native.music.playback_muted COMMAND music-test playback)
+        set_tests_properties(native.music.playback_muted PROPERTIES TIMEOUT 30 RESOURCE_LOCK native_audio_output
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa;QT_MEDIA_BACKEND=ffmpeg;QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1")
+    endif()
 endif()
 
 if(BUILD_TESTING)

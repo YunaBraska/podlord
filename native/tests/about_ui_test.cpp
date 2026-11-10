@@ -43,12 +43,8 @@ bool run(const QString& scenario) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !waitFor([&] { return !workspace.busy(); }) || !click(window, "settingsWorkspaceButton") || !click(window, "settingsAboutSection")) return false;
     BrowserBoundary browser;
-    if (scenario == "credits") {
-        if (item(window->contentItem(), "aboutSoundSource_interface-sounds") || !click(window, "aboutSoundCredits")) return false;
-        if (!waitFor([&] { return item(window->contentItem(), "aboutSoundSource_interface-sounds"); })) return false;
-        if (!click(window, "aboutSoundCredits")) return false;
-        return waitFor([&] { return !item(window->contentItem(), "aboutSoundSource_interface-sounds"); }) && requests.isEmpty() && browser.urls.isEmpty();
-    }
+    if (scenario == "original_audio") return !item(window->contentItem(), "aboutSoundCredits")
+        && item(window->contentItem(), "aboutDependencyNotices") && requests.isEmpty() && browser.urls.isEmpty();
     const QMap<QString, QPair<QString, QString>> links{
         {"project", {"aboutProject", "https://github.com/YunaBraska/podlord"}},
         {"privacy", {"aboutPrivacy", "https://yunabraska.github.io/podlord/privacy.html"}},
@@ -58,13 +54,7 @@ bool run(const QString& scenario) {
         {"coffee", {"aboutCoffee", "https://buymeacoffee.com/YunaBraska"}},
         {"kofi", {"aboutKofi", "https://ko-fi.com/YunaBraska"}},
         {"liberapay", {"aboutLiberapay", "https://liberapay.com/YunaBraska"}},
-        {"sound_warning", {"aboutSoundSource_interface-sounds", "https://kenney.nl/assets/interface-sounds"}},
-        {"sound_critical", {"aboutSoundSource_sci-fi-sounds", "https://kenney.nl/assets/sci-fi-sounds"}},
-        {"sound_ui", {"aboutSoundSource_ui-audio", "https://kenney.nl/assets/ui-audio"}},
-        {"sound_music", {"aboutSoundSource_music-jingles", "https://kenney.nl/assets/music-jingles"}},
-        {"sound_digital", {"aboutSoundSource_digital-audio", "https://kenney.nl/assets/digital-audio"}},
-        {"sound_impact", {"aboutSoundSource_impact-sounds", "https://kenney.nl/assets/impact-sounds"}},
-        {"sound_rpg", {"aboutSoundSource_rpg-audio", "https://kenney.nl/assets/rpg-audio"}}};
+    };
     if (scenario == "branding" || scenario == "branding_narrow") {
         if (window->title() != "Podlord") return false;
         if (scenario.endsWith("_narrow")) window->resize(360, 600);
@@ -95,7 +85,7 @@ bool run(const QString& scenario) {
             && requests.isEmpty();
     }
     if (links.contains(scenario)) {
-        if (scenario.startsWith("sound_") && !click(window, "aboutSoundCredits")) return false;
+
         const auto [name, url] = links.value(scenario);
         return click(window, name) && waitFor([&] { return browser.urls.size() == 1; }) && browser.urls.first() == QUrl(url) && requests.isEmpty();
     }

@@ -10,7 +10,7 @@ One native alarm owner evaluates cached snapshots from ResourceClient for every 
 
 Persist rule definitions and the mute/reduced-motion preferences in a private, versioned `alert-rules.json`, using the existing lock, optimistic conflict and atomic-save conventions. Invalid data must remain recoverable. Do not persist resource snapshots, Secret values, evaluation results or per-resource effect state in this document.
 
-One deadline timer owns bounded effects and time-dependent evaluation. A lazily created Qt Multimedia player owns local preview/playback; mute stops playback and no hidden view owns a refresh loop. Bundled sounds retain their real source/license attribution. Regular expressions have bounded match/depth work and explicit failure feedback.
+One deadline timer owns bounded effects and time-dependent evaluation. A lazily created Qt Multimedia player owns local preview/playback; mute stops playback and no hidden view owns a refresh loop. The original native audio pack replaces third-party clips. Dependency license notices remain. Regular expressions have bounded match/depth work and explicit failure feedback.
 
 Pure visibility changes reuse the existing rule-match identities while their
 resource snapshot, catalog and time conditions remain valid. Two in-memory time
@@ -40,7 +40,7 @@ replaces 116 serialized device checks rather than adding a second full-device
 matrix. It reduces audio-device disruption. Confirmed on 2026-11-02.
 
 The current playback boundary accepts catalog IDs, not media paths or URLs.
-The catalog resolves all 116 actual audio assets to embedded `qrc:` OGG data.
+The catalog resolves approved asset IDs only to embedded `qrc:` audio.
 Rule decoding rejects unknown IDs and extra fields; preview also resolves an ID
 through that catalog before creating a player. Attribution source URLs are not
 playback URLs. This matters when reviewing FFmpeg version-based vulnerability
@@ -81,3 +81,17 @@ known generic built-in description in memory. Every other locked field is still
 validated, and custom rules and enabled flags are retained. Reading never rewrites
 the file; an explicit successful save publishes the canonical descriptions using
 the existing lock, conflict check and atomic writer.
+
+## How Are Original Music And Legacy Cue Choices Owned?
+
+Confirmed on 2026-11-10: 20 original cues and 20 independently composed instrumental pieces replace the third-party audio catalog. One shared runtime owns music across windows and tabs. It has no persisted playback intent, automatic startup or network source. The user explicitly requested background playback. Android uses a private media-playback foreground service. iOS uses its native audio session and background audio capability. Qt Multimedia remains the decoder/player. OS interruption and output removal pause playback.
+
+Known legacy sound IDs map by purpose during rule decoding. This does not change enablement or save on read. The existing explicit atomic writer publishes canonical IDs. Removed attribution UI and its obsolete tests are deleted rather than retained as empty compatibility controls. The frozen C# reference may retain its own assets, but the C++ package does not embed them.
+
+On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. No manual track-selection UI ships. Each full cycle visits all 20 pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
+
+## Why Can Android Music Receive Commands In The Background?
+
+Android enables Qt's documented `android.app.background_running` metadata so the native event loop can advance tracks and receive Pause while the Activity is suspended. Cluster request ownership still observes application focus and stops passive foreground work. Rendering remains tied to exposed Qt Quick windows. Service and audio-focus Binder calls do not pass through Qt's Activity dispatch queue, which defers callbacks while the Activity is paused. The service owns its Android-main-thread media callbacks. No Qt fork is added. See [Qt manifest configuration](https://doc.qt.io/qt-6/android-manifest-file-configuration.html) and [Android media-playback service types](https://developer.android.com/develop/background-work/services/fgs/service-types#media).
+
+Saving a migrated catalog writes the new cue IDs. An older native binary does not know those IDs and may reject the alert catalog while retaining it. The compatibility guarantee is old-catalog reading in the updated app, not forward compatibility in older binaries. No additional configuration copy or automatic rollback rewrite is introduced.
