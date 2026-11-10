@@ -19,8 +19,9 @@ ColumnLayout {
     property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
     property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
     readonly property string layoutSignature: JSON.stringify([rowHeight, workspace.textSizes.body, columns.map(function(column) {
-        return [column.column, column.width, column.visible, column.pinned]
+        return [column.column, column.width, grid.columnShown(column), column.pinned]
     })])
+    function columnShown(column) { return column && column.visible && column.shown !== false }
     property var visualOrder: []
     property bool inspectable: true
     property int sortableColumns: -1
@@ -38,7 +39,7 @@ ColumnLayout {
     function navigateRows(offset) {
         if (count === 0) return
         const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
-        const column = columns.find(column => column.visible).column
+        const column = columns.find(column => grid.columnShown(column)).column
         selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
         if (visible) table.positionViewAtRow(row, TableView.Contain)
     }
@@ -59,6 +60,7 @@ ColumnLayout {
     function selectIdentity(identity, column) {
         const current = selection.currentIndex
         if (current.valid && pathAt(current.row) === identity) column = current.column
+        if (!columnShown(columns.find(state => state.column === column))) column = columns.find(state => grid.columnShown(state)).column
         for (let row = 0; row < tableModel.rowCount(); ++row) {
             if (pathAt(row) !== identity) continue
             selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
@@ -106,7 +108,7 @@ ColumnLayout {
     }
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => column.visible).column
+            const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => grid.columnShown(column)).column
             event.accepted = handleCellKey(event, 0, column, grid)
         } else if (selection.currentIndex.valid) {
             event.accepted = handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, grid.Window.window.activeFocusItem)
@@ -132,13 +134,13 @@ ColumnLayout {
         if (findCount === 0) return
         findIndex = (findIndex + offset + findCount) % findCount
         const source = findMatches.mapToSource(findMatches.index(findIndex, 0))
-        selection.setCurrentIndex(source, ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+        selection.setCurrentIndex(tableModel.index(source.row, columns.find(column => grid.columnShown(column)).column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
         table.positionViewAtRow(source.row, TableView.Contain)
     }
     function openFind() { findOpen = true; findInput.forceActiveFocus(); findInput.selectAll() }
     function openColumns() { columnsDialog.open() }
-    readonly property real pinnedWidth: columns.filter(function(column) { return column.visible && column.pinned }).reduce(function(width, column) { return width + column.width }, 0)
-    readonly property bool hasScrollingColumns: columns.some(function(column) { return column.visible && !column.pinned })
+    readonly property real pinnedWidth: columns.filter(function(column) { return grid.columnShown(column) && column.pinned }).reduce(function(width, column) { return width + column.width }, 0)
+    readonly property bool hasScrollingColumns: columns.some(function(column) { return grid.columnShown(column) && !column.pinned })
     signal sortRequested(int column)
     signal inspectRequested(string path)
     signal copyRequested(int row, int column)
@@ -154,9 +156,12 @@ ColumnLayout {
     }
     function synchronizeColumns() {
         if (!visible || table.columns !== columns.length) return
+        const selected = selection.currentIndex
+        if (selected.valid && !columnShown(columns.find(column => column.column === selected.column)))
+            selection.setCurrentIndex(tableModel.index(selected.row, columns.find(column => grid.columnShown(column)).column), ItemSelectionModel.NoUpdate)
         scrollingHeader.forceLayout()
         pinnedHeader.forceLayout()
-        const wanted = columns.filter(function(column) { return column.visible && column.pinned }).concat(columns.filter(function(column) { return !column.visible || !column.pinned })).map(function(column) { return column.column })
+        const wanted = columns.filter(function(column) { return grid.columnShown(column) && column.pinned }).concat(columns.filter(function(column) { return !grid.columnShown(column) || !column.pinned })).map(function(column) { return column.column })
         if (table.rows > 0 && wanted.every(function(column, position) { return table.columnAtIndex(tableModel.index(0, column)) === position })) {
             visualOrder = wanted
             table.forceLayout()
@@ -176,7 +181,7 @@ ColumnLayout {
         table.forceLayout()
         pinnedTable.forceLayout()
     }
-    onLayoutSignatureChanged: Qt.callLater(synchronizeColumns)
+    onLayoutSignatureChanged: { cellMenu.close(); valueTip.target = null; Qt.callLater(synchronizeColumns) }
     onVisibleChanged: {
         if (visible) Qt.callLater(synchronizeColumns)
         else { cellMenu.close(); valueTip.target = null }
@@ -499,7 +504,7 @@ ColumnLayout {
                     selectionMode: TableView.SingleSelection
                     syncView: grid.visible && grid.pinnedWidth > 0 ? table : null
                     syncDirection: Qt.Vertical
-                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && state.pinned ? state.width : 0 }
+                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return grid.columnShown(state) && state.pinned ? state.width : 0 }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.horizontal: ScrollBar {}
                     delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
@@ -523,7 +528,7 @@ ColumnLayout {
                     onColumnsChanged: Qt.callLater(grid.synchronizeColumns)
                     selectionBehavior: TableView.SelectRows
                     selectionMode: TableView.SingleSelection
-                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return state && state.visible && !state.pinned ? state.width : 0 }
+                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return grid.columnShown(state) && !state.pinned ? state.width : 0 }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar { id: horizontalScroll }

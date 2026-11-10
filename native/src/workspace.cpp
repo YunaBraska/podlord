@@ -210,6 +210,17 @@ QHash<int, QByteArray> ResourceTable::roleNames() const {
         {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}, {Qt::UserRole + 15, "resourceDetails"}};
 }
 QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index].document : QJsonObject{}; }
+quint64 ResourceTable::populatedColumns(int row) const {
+    if (row < 0 || row >= rows_.size()) return 0;
+    const auto& entry = rows_[row];
+    if (entry.prepared) return entry.populated;
+    quint64 populated = 0;
+    for (int column = 0; column < fields_.size() && column < 64; ++column) {
+        const auto value = entry.document[fields_[column]];
+        if (value.isDouble() || (value.isString() && !value.toString().isEmpty())) populated |= quint64{1} << column;
+    }
+    return populated;
+}
 QString ResourceTable::metadata(int row, int role) const {
     if (row < 0 || row >= rows_.size()) return {};
     const auto& entry = rows_[row];
@@ -436,6 +447,8 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     sourceTable_.setSourceModel(&sourceRows_);
     sourceTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
+    connect(this, &Workspace::tableLayoutChanged, this, &Workspace::resourceColumnsChanged);
+    connect(this, &Workspace::resourcePresentationChanged, this, &Workspace::publishResourceColumns);
     connect(this, &Workspace::resourcePresentationChanged, this, [this] {
         QStringList visible;
         visible.reserve(table_.rowCount());
@@ -1612,7 +1625,7 @@ bool Workspace::sortColumn(int column) {
     if (column < 0 || column >= rows_.columnCount()) return false;
     auto& nav = navigation_[active_];
     cycleSort(column, nav.column, nav.order);
-    table_.sort(nav.column, nav.order); queueViewSave("resource"); emit changed(); return true;
+    table_.sort(nav.column, nav.order); publishResourceColumns(); queueViewSave("resource"); emit changed(); return true;
 }
 bool Workspace::sortPortColumn(int column) {
     if (active_.isEmpty() || column < 0 || column >= portRows_.columnCount()) return false;

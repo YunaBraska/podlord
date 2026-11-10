@@ -23,6 +23,7 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
             if (table.fields_[column] != "createdAt") table.data(table.index(row, column), Qt::DisplayRole);
         for (int column = 0; column < 4; ++column)
             if (document[table.fields_[column]].isString()) entry.metadataStrings |= 1 << column;
+        entry.populated = table.populatedColumns(row);
         entry.prepared = true;
         if (document["kubernetesEvent"].toBool()) result.events.append(document);
         const int severity = document["problemSeverity"].toInt();

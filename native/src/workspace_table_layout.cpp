@@ -35,14 +35,37 @@ QVariantList Workspace::tableColumns(const QString& table, const QAbstractItemMo
     QVariantList result;
     const auto schemas = layoutSchemas();
     const auto ids = schemas.value(table);
+    static const QStringList optionalResourceFields{"namespace", "node", "image", "cpu", "memory", "storage", "ready", "restarts", "owner"};
+    bool anyShown = false;
     for (const auto& entry : defaults ? defaultTableLayouts(schemas).value(table) : tableLayouts_.value(table)) {
         const int column = static_cast<int>(ids.indexOf(entry.id));
+        const bool shown = entry.visible && (table != "resource" || entry.pinned || !optionalResourceFields.contains(entry.id)
+            || (column >= 0 && column < 64 && (resourcePopulatedColumns_ & (quint64{1} << column))));
+        anyShown |= shown;
         result.append(QVariantMap{{"id", entry.id}, {"column", column}, {"title", model.headerData(column, Qt::Horizontal, Qt::DisplayRole)},
-            {"visible", entry.visible}, {"pinned", entry.pinned}, {"width", entry.width}});
+            {"visible", entry.visible}, {"shown", shown}, {"pinned", entry.pinned}, {"width", entry.width}});
+    }
+    if (table == "resource" && !anyShown) {
+        // Preserve the existing minimum-one-column guarantee without changing the saved layout.
+        for (auto& value : result) {
+            auto entry = value.toMap();
+            if (!entry["visible"].toBool()) continue;
+            entry["shown"] = true;
+            value = entry;
+            break;
+        }
     }
     return result;
 }
 QVariantList Workspace::resourceColumns() const { return tableColumns("resource", rows_); }
+void Workspace::publishResourceColumns() {
+    quint64 populated = 0;
+    for (int row = 0; row < visibleTable_.rowCount(); ++row)
+        populated |= rows_.populatedColumns(table_.mapToSource(table_.index(row, 0)).row());
+    if (resourcePopulatedColumns_ == populated) return;
+    resourcePopulatedColumns_ = populated;
+    emit resourceColumnsChanged();
+}
 QVariantList Workspace::alertColumns() const { return tableColumns("alert", *alerts_.tableModel()); }
 QVariantList Workspace::eventColumns() const { return tableColumns("event", eventRows_); }
 QVariantList Workspace::portColumns() const { return tableColumns("port", portRows_); }

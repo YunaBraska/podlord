@@ -408,25 +408,41 @@ public:
                                 metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "owner-uid"}, {"kind", "ReplicaSet"}, {"apiVersion", "apps/v1"}, {"name", "workload"}}};
                                 value["metadata"] = metadata;
                                 QJsonArray containers, states;
-                                const int desired = index == 0 ? 10 : index == 1 ? 2 : 1;
+                                const int desired = scenario == "table_auto_image_literal" ? 1 : index == 0 ? 10 : index == 1 ? 2 : 1;
                                 const int ready = index == 0 && (scenario == "table_overview_full" || ((scenario == "table_overview_refresh" || scenario == "table_overview_stable_refresh") && refresh > 1)) ? 10
                                     : index == 0 && scenario == "table_overview_none" ? 0 : index == 0 ? 2 : 1;
                                 for (int container = 0; container < desired; ++container) {
                                     const auto containerName = "worker" + QString::number(container);
                                     if (metrics) containers.append(QJsonObject{{"name", containerName}, {"usage", QJsonObject{
-                                        {"cpu", container > 0 || scenario == "table_zero" ? "0" : index == 0 ? "2" : "500m"},
-                                        {"memory", container > 0 || scenario == "table_zero" ? "0" : index == 0 ? "2Gi" : "1024Mi"}}}});
-                                    else containers.append(QJsonObject{{"name", containerName}, {"image", "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)},
+                                        {"cpu", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2" : "500m"},
+                                        {"memory", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2Gi" : "1024Mi"}}}});
+                                    else containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)},
                                         {"resources", QJsonObject{{"requests", QJsonObject{{"cpu", "10m"}, {"memory", "16Mi"}, {"ephemeral-storage", "1Gi"}}}}}});
                                     states.append(QJsonObject{{"name", containerName}, {"ready", container < ready},
-                                        {"restartCount", container == 0 ? index == 0 ? 10 : 2 : 0}});
+                                        {"restartCount", scenario == "table_auto_zero" ? 0 : container == 0 ? index == 0 ? 10 : 2 : 0}});
                                 }
                                 if (metrics) { value["timestamp"] = measured.toString(Qt::ISODateWithMs); value["window"] = "15s"; value["containers"] = containers; }
                                 else { value["spec"] = QJsonObject{{"containers", containers}, {"nodeName", "local-node"}};
                                     value["status"] = QJsonObject{{"phase", scenario=="table_status_colors" ? index==0 ? "Running" : index==1 ? "Pending" : "Failed" : scenario == "table_overview_pending" && index == 0 ? "Pending" : "Running"}, {"containerStatuses", index == 2 || (scenario == "table_overview_pending" && index == 0) ? QJsonArray{} : states}}; }
+                                if ((scenario == "table_auto_refresh" || scenario == "table_auto_focus") && refresh > 1 && !metrics) {
+                                    value.remove("spec"); value["status"] = QJsonObject{{"phase", "Running"}};
+                                    metadata.remove("ownerReferences"); value["metadata"] = metadata;
+                                }
+                                if (scenario == "table_auto_namespace" && index == 0) {
+                                    metadata["namespace"] = "cluster"; value["metadata"] = metadata;
+                                }
                                 values.append(value);
                             }
                             document = overviewDetail ? values.first().toObject() : QJsonObject{{"metadata", QJsonObject{}}, {"items", values}};
+                        }
+                        if (scenario == "table_auto_namespace" && path == "/apis/example.test/v1") {
+                            auto endpoints = document["resources"].toArray(); auto endpoint = endpoints.first().toObject();
+                            endpoint["namespaced"] = false; endpoints[0] = endpoint; document["resources"] = endpoints;
+                        }
+                        if (scenario == "table_auto_namespace" && path == "/apis/example.test/v1/widgets") {
+                            auto target = pod("custom-widget", "Widget", "example.test/v1");
+                            auto metadata = target["metadata"].toObject(); metadata.remove("namespace"); target["metadata"] = metadata;
+                            document["items"] = QJsonArray{target};
                         }
                     }
                     if (scenario.startsWith("workload_")) {
@@ -3124,6 +3140,127 @@ bool execute(const QString& requestedScenario) {
         };
         const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"};
         for (const auto& field : fields) if (column(field) < 0) { std::fprintf(stderr, "Missing resource column: %s\n", qPrintable(field)); return false; }
+        if (scenario.startsWith("table_auto_")) {
+            const auto calls = server.requests.size();
+            const auto state = [&](const QString& id) {
+                for (const auto& value : workspace.resourceColumns()) if (value.toMap()["id"] == id) return value.toMap();
+                return QVariantMap{};
+            };
+            const auto shown = [&](const QString& id) {
+                const auto entry = state(id); return entry.value("shown", entry.value("visible")).toBool();
+            };
+            const auto filter = [&](const QString& name) {
+                return type(window, item(window, "resourceFilter"), name)
+                    && waitFor([&] { return model->rowCount() == (name.isEmpty() ? 4 : name == "missing-resource" ? 0 : 1); });
+            };
+            if (scenario == "table_auto_zero") {
+                if (!filter("alpha") || !waitFor([&] { return model->index(0,column("cpu")).data().toString() == "0 mCPU"; })) return false;
+                return shown("cpu") && shown("memory") && shown("restarts") && shown("ready") && !shown("storage")
+                    && model->index(0,column("restarts")).data().toString() == "0" && server.requests.size() == calls;
+            }
+            if (scenario == "table_auto_namespace") {
+                return filter("custom-widget") && waitFor([&] { return !shown("namespace"); })
+                    && filter("alpha") && waitFor([&] { return shown("namespace"); })
+                    && model->index(0,column("namespace")).data() == "cluster" && server.requests.size() == calls;
+            }
+            if (scenario == "table_auto_image_literal") {
+                if (!filter("alpha")) return false;
+                const auto value=model->index(0,column("image")).data().toString();
+                if (!shown("image") || value != "-") { qWarning() << "Literal image:" << value << state("image"); return false; }
+                return server.requests.size() == calls;
+            }
+            if (scenario == "table_auto_focus") {
+                if (!filter("alpha")) return false;
+                auto* view=item(window,"resourceTable");
+                auto* selection=view->property("selectionModel").value<QItemSelectionModel*>();
+                if (!selection) return false;
+                QQmlExpression position(qmlContext(view),view,QString("positionViewAtColumn(columnAtIndex(model.index(0,%1)),TableView.Contain)").arg(column("node")));
+                if (!waitFor([&] { position.evaluate(); auto* cell=item(window,"cell_0_"+QString::number(column("node"))); return !position.hasError() && cell && cell->isVisible() && cell->width()>0; })) return false;
+                item(window,"cell_0_"+QString::number(column("node")))->forceActiveFocus();
+                if (!waitFor([&] { return selection->currentIndex().column() == column("node"); }) || !workspace.refresh()
+                    || !waitFor([&] { return !workspace.loading() && !shown("node") && selection->currentIndex().isValid() && selection->currentIndex().column()!=column("node"); })) return false;
+                view->forceActiveFocus(); QTest::keySequence(window,QKeySequence::Copy);
+                if (QGuiApplication::clipboard()->text()!=model->data(model->index(0,selection->currentIndex().column())).toString()) return false;
+                if (!click(window,item(window,"resourceFindButton")) || !type(window,item(window,"resourceFindInput"),"alpha")
+                    || !waitFor([&] { return text(window,"resourceFindCount")=="1/1"; })
+                    || !click(window,item(window,"resourceFindNext")) || !click(window,item(window,"resourceFindClose"))) return false;
+                view->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Return);
+                return waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml(); });
+            }
+            if (scenario == "table_auto_limit") {
+                return workspace.sortColumn(column("name")) && workspace.sortColumn(column("name"))
+                    && workspace.setResourceLimit("1") && waitFor([&] {
+                        return workspace.displayedResourceCount() == 1 && workspace.visibleResourceTable()->index(0,0).data() == "custom-widget" && !shown("cpu");
+                    }) && workspace.sortColumn(column("name")) && workspace.sortColumn(column("name"))
+                    && waitFor([&] { return workspace.visibleResourceTable()->index(0,0).data() == "alpha" && shown("cpu"); })
+                    && server.requests.size() == calls;
+            }
+            if (scenario == "table_auto_refresh") {
+                if (!filter("alpha") || !shown("node") || !workspace.refresh()) return false;
+                return waitFor([&] { return !workspace.loading() && !shown("node") && !shown("image") && !shown("owner"); })
+                    && state("node")["visible"].toBool();
+            }
+            if (scenario == "table_auto_filter") {
+                return filter("alpha") && waitFor([&] { return shown("cpu"); })
+                    && filter("custom-widget") && waitFor([&] { return !shown("cpu"); })
+                    && filter("alpha") && waitFor([&] { return shown("cpu"); })
+                    && filter("missing-resource") && waitFor([&] { return !shown("namespace") && !shown("cpu") && shown("name"); })
+                    && server.requests.size() == calls;
+            }
+            if (!filter("custom-widget") || !waitFor([&] { return !shown("cpu"); })) return false;
+            if (scenario == "table_auto_empty") {
+                for (const auto& field : QStringList{"cpu","memory","storage","ready","restarts","node","image","owner"}) {
+                    if (shown(field) || !state(field)["visible"].toBool()) {
+                        qWarning() << "Empty resource column was shown or its saved preference changed:" << field; return false;
+                    }
+                }
+                return shown("namespace") && shown("name") && shown("kind") && server.requests.size() == calls
+                    && saveShellFrame(window, scenario, item(window,"workspaceContent"));
+            }
+            if (!click(window, item(window,"resourceColumnsButton"))) return false;
+            if (scenario == "table_auto_pin" || scenario == "table_auto_hidden") {
+                const auto control = scenario == "table_auto_pin" ? "resourceColumnPinned_cpu" : "resourceColumnVisible_cpu";
+                auto* target = item(window,control);
+                if (!target) return false;
+                target->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
+            } else if (scenario == "table_auto_save") {
+                if (!type(window,item(window,"resourceColumnWidth_name"),"450")) return false;
+            } else if (scenario == "table_auto_last") {
+                for (const auto& value : workspace.resourceColumns()) {
+                    const auto entry=value.toMap();
+                    if (entry["id"] == "cpu" || !entry["visible"].toBool()) continue;
+                    auto* target=item(window,"resourceColumnVisible_"+entry["id"].toString());
+                    if (!target) return false;
+                    target->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Space);
+                }
+            } else return false;
+            if (!click(window,item(window,"resourceSaveColumns"))
+                || !waitFor([&] { return !workspace.tableLayoutSaving() && !window->findChild<QObject*>("resourceColumnsDialog")->property("visible").toBool(); })
+                || !workspace.tableLayoutError().isEmpty()) return false;
+            if (scenario == "table_auto_last") {
+                int count=0;
+                for (const auto& value : workspace.resourceColumns()) if (value.toMap()["shown"].toBool()) ++count;
+                return count == 1 && shown("cpu") && !shown("name") && server.requests.size() == calls;
+            }
+            if (scenario == "table_auto_pin") {
+                return shown("cpu") && state("cpu")["pinned"].toBool()
+                    && waitFor([&] { auto* cell=item(window,"pinnedCell_0_"+QString::number(column("cpu"))); return cell && cell->isVisible() && cell->width()>0; })
+                    && server.requests.size() == calls;
+            }
+            if (scenario == "table_auto_hidden") {
+                return !state("cpu")["visible"].toBool() && filter("alpha")
+                    && !shown("cpu") && server.requests.size() == calls;
+            }
+            podlord::Workspace restored(profile);
+            if (!waitFor([&] { return !restored.busy(); })) return false;
+            for (const auto& value : restored.resourceColumns()) {
+                const auto entry=value.toMap();
+                if (entry["id"] == "cpu" && !entry["visible"].toBool()) return false;
+                if (entry["id"] == "name" && entry["width"].toInt() != 450) return false;
+            }
+            return state("cpu")["visible"].toBool() && !shown("cpu") && filter("alpha") && waitFor([&] { return shown("cpu"); })
+                && server.requests.size() == calls;
+        }
         if (!waitFor([&] { return model->data(model->index(0,column("cpu"))).toString() == (scenario == "table_zero" ? "0 mCPU" : "2000 mCPU"); })) {
             std::fprintf(stderr,"Table metrics unavailable: %s; %s; requests=%s\n", qPrintable(model->data(model->index(0,column("cpu"))).toString()), qPrintable(workspace.status()), qPrintable(server.requests.join('\n'))); return false;
         }
@@ -3137,6 +3274,8 @@ bool execute(const QString& requestedScenario) {
                 if (position.hasError()) return false;
                 auto* cell = item(window, "cell_0_" + QString::number(index));
                 if (!cell || !cell->isVisible() || cell->width() <= 0 || view->property("moving").toBool()) return false;
+                auto* header = item(window, "header_" + QString::number(index));
+                if (!header || !header->isVisible() || header->width() <= 0) return false;
                 const auto left = cell->mapToItem(view, {0,0}).x();
                 return left >= -1 && left + cell->width() <= view->width() + 1;
             });
@@ -3403,8 +3542,13 @@ bool execute(const QString& requestedScenario) {
             if (!click(window,item(window,"resourceSaveColumns")) || !waitFor([&] { return !workspace.tableLayoutSaving(); })) return false;
             auto* display = qobject_cast<QAbstractItemModel*>(view->property("model").value<QObject*>());
             if (!display) return false;
-            for (const auto& field : fields)
+            for (const auto& field : fields) {
+                if (field == "storage") {
+                    for (const auto& entry : workspace.resourceColumns()) if (entry.toMap()["id"] == field && entry.toMap()["shown"].toBool()) return false;
+                    continue;
+                }
                 if (!show(column(field)) || text(window, "cell_0_" + QString::number(column(field))) != display->data(display->index(0, column(field))).toString()) return false;
+            }
             return server.requests.size() == requests;
         }
         if (scenario.startsWith("table_sort_")) {

@@ -44,6 +44,7 @@ class ResourceTable final : public QAbstractTableModel {
         std::shared_ptr<const ResourceMetricContribution> metrics = {};
         QString identity = {};
         quint8 metadataStrings = 0;
+        quint64 populated = 0;
         bool prepared = false;
         bool operator==(const Row& other) const { return document == other.document; }
     };
@@ -74,6 +75,8 @@ public:
     bool publishPrepared(const PreparedSnapshot& snapshot, bool replace = false);
     bool retainPreparedSort(PreparedSnapshot& snapshot) const;
     ResourceMetricSummary& accumulateMetrics(int row, ResourceMetricSummary& summary) const;
+    /** Nonempty source fields, preserving numeric zero and excluding display placeholders. */
+    quint64 populatedColumns(int row) const;
     QJsonObject row(int index) const;
     /** Identity/name/kind/namespace/status roles without a QVariant conversion. */
     QString metadata(int row, int role) const;
@@ -283,7 +286,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantMap textSizes READ textSizes NOTIFY typographyChanged)
     Q_PROPERTY(qreal textScale READ textScale NOTIFY typographyChanged)
     Q_PROPERTY(QAbstractItemModel* table READ table CONSTANT)
-    Q_PROPERTY(QVariantList resourceColumns READ resourceColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QVariantList resourceColumns READ resourceColumns NOTIFY resourceColumnsChanged)
     Q_PROPERTY(QAbstractItemModel* sourceTable READ sourceTable CONSTANT)
     Q_PROPERTY(QVariantMap sourceInspection READ sourceInspection NOTIFY sourceInspectionChanged)
     Q_PROPERTY(QString sourceYaml READ sourceYaml NOTIFY sourceInspectionChanged)
@@ -713,6 +716,7 @@ signals:
     void appearanceChanged();
     void typographyChanged();
     void tableLayoutChanged();
+    void resourceColumnsChanged();
     void tableLayoutStatusChanged();
     void logViewChanging();
     void logViewChanged();
@@ -804,11 +808,13 @@ private:
     bool dispatchViewSave();
     QString viewStateError() const;
     TableLayouts tableLayouts_;
+    quint64 resourcePopulatedColumns_ = 0;
     QString tableLayoutError_;
     bool tableLayoutSaving_ = false;
     TableSchemas tableSchemas(bool includeAuxiliary = false) const;
     TableSchemas layoutSchemas() const;
     QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
+    void publishResourceColumns();
     SourceCatalog sources_;
     struct SourceInspection final {
         QVariantMap metadata;
