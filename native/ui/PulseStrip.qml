@@ -8,7 +8,20 @@ Row {
     id: strip
     signal detailsRequested()
     property real availableWidth: implicitWidth
-    readonly property int cardWidth: Math.ceil(112 * workspace.textScale)
+    FontMetrics {
+        id: valueFont
+        font.family: workspace.monospaceFamily
+        font.pixelSize: workspace.textSizes.caption
+        font.weight: Font.Normal
+    }
+    readonly property int glyphSize: Math.max(16, Math.ceil(workspace.textSizes.caption))
+    readonly property int cardWidth: {
+        const iconWidth = Math.max(16, valueFont.font.pixelSize)
+        let widest = 0
+        for (const metric of availableMetrics)
+            widest = Math.max(widest, valueFont.advanceWidth(String(metric.display || metric.usage)))
+        return Math.ceil(Math.max(112 * workspace.textScale, 14 + iconWidth + 4 + widest + 2))
+    }
     readonly property real cardHeight: Math.max(strip.Window.window && strip.Window.window.touchLayout ? 44 : 32, Math.ceil(workspace.textSizes.caption * 1.3) + 10)
     readonly property var availableMetrics: workspace.pulseMetrics.filter(metric => metric.bar ? metric.available === true : Number(metric.usage) > 0)
     readonly property int visibleCount: Math.min(availableMetrics.length, Math.max(0, Math.floor((availableWidth + spacing) / (cardWidth + spacing))))
@@ -35,13 +48,14 @@ Row {
                         anchors.fill: parent; anchors.bottomMargin: metricCard.modelData.bar ? 4 : 0
                         spacing: 4
                         KindGlyph {
-                            visible: !metricCard.modelData.bar
-                            Layout.preferredWidth: 16; Layout.preferredHeight: 16
-                            kind: metricCard.modelData.id === "pods" ? "Pod" : "Node"
+                            objectName: "pulse_" + metricCard.modelData.id + "_glyph"
+                            Layout.preferredWidth: strip.glyphSize; Layout.preferredHeight: strip.glyphSize
+                            kind: metricCard.modelData.id === "cpu" ? "Cpu" : metricCard.modelData.id === "memory" ? "Memory"
+                                : metricCard.modelData.id === "storage" ? "Storage" : metricCard.modelData.id === "pods" ? "Pod" : "Node"
                             fill: workspace.appearanceColors.inset; stroke: workspace.appearanceColors.text
+                            Accessible.ignored: true
                         }
-                        Label { visible: metricCard.modelData.bar; text: metricCard.modelData.id === "memory" ? "MEM" : metricCard.modelData.id === "storage" ? "DISK" : "CPU"; font.pixelSize: workspace.textSizes.caption; color: workspace.appearanceColors.muted }
-                        Label { objectName: "pulse_" + metricCard.modelData.id + "_usage"; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight; text: metricCard.modelData.display || metricCard.modelData.usage; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Label { objectName: "pulse_" + metricCard.modelData.id + "_usage"; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight; text: metricCard.modelData.display || metricCard.modelData.usage; font: valueFont.font; maximumLineCount: 1; elide: Text.ElideRight; textFormat: Text.PlainText }
                     }
                     ProgressBar {
                         objectName: "pulse_" + metricCard.modelData.id + "_bar"

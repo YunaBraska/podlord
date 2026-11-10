@@ -55,7 +55,7 @@ Window {
         if (scenario == "navigation") {
             glyph->setProperty("stroke", QColor(Qt::red));
             QList<QImage> variants;
-            for (const auto* name : {"Settings", "Filters", "Expand", "UnknownResource"}) {
+            for (const auto* name : {"Settings", "Filters", "Expand", "Cpu", "Memory", "Storage", "UnknownResource"}) {
                 glyph->setProperty("kind", name);
                 const auto image=frame(window);
                 if (image.isNull() || coloredPixels(image,true)<30 || variants.contains(image)) return false;

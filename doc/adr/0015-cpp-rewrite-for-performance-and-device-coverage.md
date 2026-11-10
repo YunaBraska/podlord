@@ -60,3 +60,24 @@ backport once a qualified unmodified Qt release contains the correction.
 ## What Licensing Evidence Is Required Before Platform Releases?
 
 Verify the licenses of the exact shipped Qt modules, source and relinking obligations, signing, and distribution terms before each desktop or mobile release. No commercial Qt purchase, project-license change, or App Store compatibility is assumed. The native development toolchain currently uses Qt Core and Qt Quick components, without WebEngine. Installation of development tools is not evidence that the shipped application meets platform distribution requirements. References: [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt open-source obligations](https://www.qt.io/development/open-source-lgpl-obligations).
+
+## Android early-Activity startup correction (2026-11-10)
+
+A second, explicitly approved exception permits a minimal correction to the embedded Qt 6.11.3 Android SDK. If Android recreates the Activity after loading Qt libraries but before starting the native application, Qt returns `AlreadyLoaded` and previously skipped native startup. The correction initializes the new Activity's delegate for both successful loading states. Application arguments are still appended only on the first load. Failed loading and already-running application handling remain unchanged.
+
+On library reuse, Qt refreshes its native Activity reference before starting the delegate. The JNI reference was initialized during library loading and otherwise still points at the destroyed Activity. The destroyed Activity also unregisters its application-state listener regardless of configuration retention. Otherwise that obsolete delegate can register its input backend when native startup completes. The lifecycle regression must therefore prove a visible system keyboard and actual text input, not merely a rendered window.
+
+`scripts/patches/qtbase-6.11.3-android-startup.diff` contains the complete modification. `scripts/qt-android-startup.cmake` verifies the Qt version, exact official source and patch hashes, compiles only the modified Activity class with Java 8 bytecode compatibility, and updates a caller-owned SDK. It records the original and resulting JAR hashes. Android application configuration rejects missing or inconsistent SDK metadata and verifies the actual JAR. Non-Android SDK cache keys exclude this Android-only patch.
+
+Prepare an isolated Android SDK before configuring either the normal app or the regression app:
+
+```sh
+cmake -DQT_SDK_PREFIX=/absolute/path/to/owned/qt-android \
+  -DANDROID_SDK_ROOT=/absolute/path/to/android-sdk \
+  -DWORK_ROOT=/absolute/path/to/new/patch-work \
+  -P scripts/qt-android-startup.cmake
+```
+
+The regression application uses the real Podlord Activity and native entrypoint. Only its test Application requests one early Activity recreation through Android's lifecycle API. The actual Map import action must become accessible in the same process, and Sources must support the system keyboard and real text entry. An unmodified SDK must reproduce the missing UI. The first incomplete correction is retained as a negative input-lifecycle control. The fixture and its trigger are not included in distributable packages. The isolated emulator drains first-boot broadcasts before this controlled lifecycle test, rather than confusing a later system-overlay reconfiguration with the requested recreation.
+
+This is not a general Qt fork or an application restart workaround. Preserve the modified-source notice and corresponding-source availability required by Qt's license. Retire the patch, helper and SDK gate together when an upstream Qt release passes the same regression without the correction.

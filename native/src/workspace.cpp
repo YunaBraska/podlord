@@ -554,14 +554,14 @@ bool Workspace::yamlDirty() const {
         || (sourceInspection_ && sourceInspection_->editing && sourceInspection_->draft!=sourceInspection_->yaml);
 }
 QString Workspace::yamlDraftStatus() const {
-    if (!yamlDraft_) return canEditYaml() ? "Fresh YAML ready. Start editing explicitly." : "Read-only. A successful fresh detail read with resource identity and version is required.";
+    if (!yamlDraft_) return canEditYaml() ? QString{} : "Read-only. A successful fresh detail read with resource identity and version is required.";
     if (inspectorDocument_.isEmpty()) return "Current server detail is unavailable. Your local draft is preserved.";
     if (!yamlDraftCredentialsCurrent())
         return "Local draft preserved. Confirm sign-in and read fresh YAML under current credentials before Apply.";
     const auto baseline = yamlDraft_->document.value("metadata").toObject(), current = inspectorDocument_.value("metadata").toObject();
     if (baseline.value("uid") != current.value("uid") || baseline.value("resourceVersion") != current.value("resourceVersion"))
         return "Server resource version changed. Your local draft is preserved.";
-    return yamlDirty() ? "Unapplied YAML draft. Changes are never sent automatically." : "Editing fresh YAML. Changes are never sent automatically.";
+    return yamlDirty() ? "Unapplied YAML draft. Changes are never sent automatically." : QString{};
 }
 bool Workspace::discardPending() const { return pendingLeave_.has_value(); }
 QString Workspace::discardPrompt() const {

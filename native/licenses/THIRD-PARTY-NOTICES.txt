@@ -75,3 +75,15 @@ Their use and redistribution remain subject to Microsoft's applicable terms.
 App-local runtime security updates are delivered through rebuilt Podlord packages.
 Redistribution documentation and linked license-specific file lists:
 https://learn.microsoft.com/cpp/windows/determining-which-dlls-to-redistribute
+
+Qt Android startup correction
+----------------------------
+The Android distribution additionally modifies Qt 6.11.3 QtActivityBase.java to
+resume native startup after an early Android Activity recreation when Qt's
+libraries are already loaded, refresh the native Activity reference and unregister
+the destroyed Activity's listener. The complete modification is provided in
+scripts/patches/qtbase-6.11.3-android-startup.diff. The exact upstream source and
+rebuild procedure are identified in scripts/qt-android-startup.cmake and
+doc/adr/0015-cpp-rewrite-for-performance-and-device-coverage.md. This correction
+remains covered by Qt's applicable license and corresponding-source obligations.
+Other platform distributions do not use this Android-specific correction.

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 umask 077
-[ "$#" -eq 3 ] || { printf 'Usage: %s SIGNED_APK LOCAL_FIXTURE_KUBECONFIG NEW_EVIDENCE_DIRECTORY\n' "$0" >&2; exit 2; }
+[ "$#" -eq 3 ] || { printf 'Usage: %s SIGNED_APK LOCAL_FIXTURE_KUBECONFIG_OR_--startup NEW_EVIDENCE_DIRECTORY\n' "$0" >&2; exit 2; }
 sdk=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
 system_image=${PODLORD_ANDROID_SYSTEM_IMAGE:-system-images;android-36;google_apis;arm64-v8a}
 case "$system_image" in
@@ -12,6 +12,8 @@ for tool in node lsof; do command -v "$tool" >/dev/null 2>&1 || { printf 'Requir
 apk=$1
 source=$2
 out=$3
+startup=0
+[ "$source" != --startup ] || startup=1
 adbPort=5039
 # Stay outside another ADB server's default emulator scan (ending at 5585).
 consolePort=5680
@@ -21,15 +23,17 @@ case "${PODLORD_ANDROID_ADB_TRACE:-0}" in
   1) adbTrace="transport,shell,services,sockets" ;;
   *) printf 'PODLORD_ANDROID_ADB_TRACE must be 0 or 1\n' >&2; exit 2 ;;
 esac
-[ -f "$apk" ] && [ -f "$source" ] || { printf 'APK and fixture kubeconfig must exist.\n' >&2; exit 2; }
+[ -f "$apk" ] && { [ "$startup" = 1 ] || [ -f "$source" ]; } || { printf 'APK and fixture kubeconfig must exist.\n' >&2; exit 2; }
 for tool in platform-tools/adb emulator/emulator cmdline-tools/latest/bin/avdmanager build-tools/36.0.0/aapt; do
   [ -x "$sdk/$tool" ] || { printf 'Required Android SDK tool is missing: %s\n' "$tool" >&2; exit 2; }
 done
+if [ "$startup" = 0 ]; then
 node - "$source" <<'CHECK'
 const fs=require('node:fs'),text=fs.readFileSync(process.argv[2],'utf8');
 if((text.match(/^\s*server:/gm)||[]).length!==1||!/^\s*server:\s*https:\/\/127\.0\.0\.1:\d+\s*$/m.test(text)||/^\s*exec:/m.test(text))
     throw Error('Use the owned single-cluster loopback TLS fixture without exec authentication.');
 CHECK
+fi
 for port in "$adbPort" "$consolePort" "$((consolePort + 1))"; do
   if lsof -n -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then printf 'Private Android test port occupied: %s\n' "$port" >&2; exit 1; fi
 done
@@ -156,10 +160,18 @@ if [ "$page_size" = 16384 ]; then
   [ "$linker_compat" = false ] && [ "$package_compat" = true ] || { printf 'The private emulator still permits page-size compatibility mode.\n' >&2; exit 1; }
 fi
 adb shell input keyevent 82
+if [ "$startup" = 1 ]; then
+  # Finish first-boot configuration broadcasts before the controlled recreation.
+  adb shell am wait-for-broadcast-idle > "$out/boot-broadcasts.txt"
+fi
 adb install --no-streaming "$apk" > "$out/install.log" 2>&1
 activity=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$out/badging.txt")
 if [ -z "$activity" ]; then printf 'No launchable activity in signed APK\n' >&2; exit 1; fi
-adb shell am start -W -n "berlin.yuna.podlord/$activity" > "$out/startup.txt"
+if [ "$startup" = 1 ]; then
+  adb shell am start -W -n "berlin.yuna.podlord/$activity" --ez podlord_test_recreate true > "$out/startup.txt"
+else
+  adb shell am start -W -n "berlin.yuna.podlord/$activity" > "$out/startup.txt"
+fi
 : > "$out/product-pid.txt"
 adb root > "$out/adb-root-ingress.txt" 2>&1
 adb wait-for-device
@@ -167,6 +179,10 @@ if [ -n "$adbTrace" ]; then
   adb logcat -G 16M
   adb logcat -g > "$out/logcat-buffer.txt"
 fi
+uid=$(adb shell pm list packages -U --user 0 berlin.yuna.podlord | tr -d '\r' | sed -n 's/^package:berlin\.yuna\.podlord uid:\([0-9][0-9]*\)$/\1/p')
+case "$uid" in ''|*[!0-9]*) printf 'Cannot identify the installed Podlord UID\n' >&2; exit 1 ;; esac
+printf '%s\n' "$uid" > "$out/product-uid.txt"
+if [ "$startup" = 0 ]; then
 [ -f "$source" ]
 node - "$source" "$tmp/emulator-kubeconfig" <<'CONFIG'
 const fs=require('node:fs'),text=fs.readFileSync(process.argv[2],'utf8');
@@ -176,15 +192,14 @@ if((text.match(/^\s*server:/gm)||[]).length!==1||!server.test(text)||/^\s*exec:/
 fs.writeFileSync(process.argv[3],text.replace(server,'$110.0.2.2:$2'),{mode:0o600});
 CONFIG
 private="/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig"
-uid=$(adb shell pm list packages -U --user 0 berlin.yuna.podlord | tr -d '\r' | sed -n 's/^package:berlin\.yuna\.podlord uid:\([0-9][0-9]*\)$/\1/p')
-case "$uid" in ''|*[!0-9]*) printf 'Cannot identify the installed Podlord UID\n' >&2; exit 1 ;; esac
-printf '%s\n' "$uid" > "$out/product-uid.txt"
 adb push "$tmp/emulator-kubeconfig" "$private" > "$out/fixture-push.log" 2>&1
 adb shell chown "$uid:$uid" "$private"
 adb shell chmod 600 "$private"
-node - "$out" "$sdk/platform-tools/adb" "$adbPort" "$serial" "$emupid" "$consolePort" "$adbpid" <<'JOURNEY'
+fi
+node - "$out" "$sdk/platform-tools/adb" "$adbPort" "$serial" "$emupid" "$consolePort" "$adbpid" "$startup" <<'JOURNEY'
 const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');
-const [out,adb,port,device,emulatorPid,consolePort,adbServerPid]=process.argv.slice(2), serial=['-P',port,'-s',device];
+const [out,adb,port,device,emulatorPid,consolePort,adbServerPid,startupMode]=process.argv.slice(2), serial=['-P',port,'-s',device];
+const startupOnly=startupMode==='1';
 const adbTraceEnabled=process.env.PODLORD_ANDROID_ADB_TRACE==='1',adbServerLog=path.join(out,'adb-server.log'),adbClientStderrLog=path.join(out,'adb-client-stderr.log');
 const adbClientStderr=adbTraceEnabled?fs.openSync(adbClientStderrLog,'a+'):null;
 const adbEnvironment={...process.env,ADB_TRACE:adbTraceEnabled?'transport,shell,services,sockets':''};
@@ -359,7 +374,7 @@ function healthyPodVisible(){
  });
 }
 function healthCount(){const text=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'))?.['content-desc']||'';const values=/^(?:Session health:|Loading session\.)\s*(\d+) healthy, (\d+) warnings, (\d+) errors/.exec(text);return values?values.slice(1).reduce((sum,value)=>sum+Number(value),0):0;}
-function capture(name){fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),runAdb(['exec-out','screencap','-p'],null));}
+function capture(name){const frame=runAdb(['exec-out','screencap','-p'],null);fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),frame);return frame;}
 function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:terminalOnly==='1'?'terminal-only':mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; scoped diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,failures:journeyFailures,error:String(error)},null,2)+'\n');
@@ -372,6 +387,27 @@ process.on('uncaughtException',error=>{
 });
 waitNode('mapImportSource',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
 if(!recordProductPid())throw Error('Product process unavailable after its native window became ready');
+if(startupOnly){
+ const pid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
+ const lifecycle=run('logcat','-d','--pid='+pid,'-s','PodlordStartupRegression:I','*:S');
+ fs.writeFileSync(path.join(out,'startup-lifecycle.txt'),lifecycle);
+ const created=[...lifecycle.matchAll(/created nativeStarted=(true|false) pid=(\d+)/g)];
+ const requested=[...lifecycle.matchAll(/recreate-before-start pid=(\d+)/g)];
+ if(created.length!==2||created[0][1]!=='false'||created.some(m=>m[2]!==pid)||requested.length!==1||requested[0][1]!==pid)
+  throw Error('Startup fixture did not prove one early Activity recreation in the same product process');
+ capture('startup-recreated');
+ click('settingsWorkspaceButton');click('settingsSectionPicker');
+ const sources=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
+ if(!sources)throw Error('Sources is unavailable after early Activity recreation');tap(sources);
+ waitNode('settingsSourcePath',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');click('settingsSourcePath');
+ inputAboveKeyboard(['settingsSourcePath'],'startup-keyboard');
+ run('shell','input','text','startup-input-check');
+ waitNode('settingsSourcePath',n=>n.text==='startup-input-check');
+ if(run('shell','pidof','berlin.yuna.podlord').trim()!==pid)throw Error('Text input restarted the recreated application');
+ fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'passed',mode:'startup',steps:[{step:'Real Android Activity recreation before native startup reaches the actual Podlord window in the same process'},{step:'Recreated Activity retains visible system keyboard and real text input'}],failures:[]},null,2)+'\n');
+ console.log(JSON.stringify({androidStartupRegression:'passed',pid,recreations:1}));
+ process.exit(0);
+}
 if(nodes.some(n=>n['resource-id']?.endsWith('.resourcesWorkspaceButton')&&n.bounds!=='[0,0][0,0]'))throw Error('Resources navigation is visible before a context is opened');
 click('settingsWorkspaceButton');click('settingsSectionPicker');
 const initialSources=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
@@ -723,7 +759,27 @@ rotate(0);state();
 click('settingsWorkspaceButton');click('settingsSectionPicker');
 const sourceSection=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
 if(!sourceSection)throw Error('Sources is unavailable in the public Settings picker');
-tap(sourceSection);click('sourceRow_0');
+tap(sourceSection);
+for(const orientation of [0,1]){
+ rotate(orientation);click('sourceColumnsButton');waitNode('sourceCancelColumns',n=>n.enabled==='true');
+ const frame=capture('source-columns-'+(orientation?'landscape':'portrait'));
+ const width=frame.readUInt32BE(16),height=frame.readUInt32BE(20);
+ const firstColumn=nodes.find(n=>n['resource-id']?.includes('.sourceColumnVisible_')&&n.bounds!=='[0,0][0,0]');
+ if(!firstColumn)throw Error('Sources column controls are missing');
+ const column=firstColumn['resource-id'].split('.sourceColumnVisible_').at(-1);
+ const boxes=['sourceColumnVisible_','sourceColumnPinned_','sourceColumnWidth_','sourceColumnEarlier_','sourceColumnLater_'].map(prefix=>prefix+column).concat('sourceCancelColumns').map(id=>{
+  const n=nodes.find(n=>n['resource-id']?.endsWith('.'+id));
+  const b=n?.bounds?.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)?.slice(1).map(Number);
+  // Qt 6.11.3 screenRect exports QRect's inclusive right/bottom to Android Rect.
+  if(b){b[2]+=1;b[3]+=1;}
+  if(!b||b[0]<0||b[1]<0||b[2]>width||b[3]>height||b[2]-b[0]<44||b[3]-b[1]<44)throw Error('Sources column touch control is clipped or too small: '+id);
+  return b;
+ });
+ for(let a=0;a<boxes.length;a++)for(let b=a+1;b<boxes.length;b++)
+  if(Math.max(boxes[a][0],boxes[b][0])<Math.min(boxes[a][2],boxes[b][2])&&Math.max(boxes[a][1],boxes[b][1])<Math.min(boxes[a][3],boxes[b][3]))throw Error('Sources column touch controls overlap');
+ click('sourceCancelColumns');
+}
+rotate(0);click('sourceRow_0');
 waitNode('sourceOverviewTab',n=>n.checked==='true');capture('source-inspector-overview');
 click('sourceYamlTab');waitNode('editSourceYaml',n=>n.enabled==='true');
 waitNode('sourceInspectorYaml',n=>/read-only/.test(n['content-desc']||''));capture('source-yaml-read-only');
@@ -744,7 +800,7 @@ click('workspaceSearchButton');
 waitNode('resourceFilter',n=>(n.text+' '+n['content-desc']).includes('visual-multi-container'));
 click('workspaceSearchButton');
 waitNode('cell_0_1',healthyPodVisible);
-steps.push({step:'Portrait Sources touch editing keeps YAML above the keyboard, restores actions on dismissal and preserves the original file and existing session on immutable Apply'});
+steps.push({step:'Sources columns retain full-sized non-overlapping touch controls in both orientations; portrait editing keeps YAML above the keyboard and immutable Apply preserves the original file and session'});
 }
 
 sourceJourney();

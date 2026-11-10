@@ -1716,7 +1716,14 @@ bool execute(const QString& requestedScenario) {
             return waitFor([&] {
                 auto* cpu = podlord::test::visibleItem(window->contentItem(),"pulse_cpu");
                 auto* memory = podlord::test::visibleItem(window->contentItem(),"pulse_memory");
+                auto* cpuValue = item(window,"pulse_cpu_usage");
+                auto* memoryValue = item(window,"pulse_memory_usage");
+                auto* cpuGlyph = podlord::test::visibleItem(window->contentItem(),"pulse_cpu_glyph");
+                auto* memoryGlyph = podlord::test::visibleItem(window->contentItem(),"pulse_memory_glyph");
                 return cpu && memory && text(window,"pulse_cpu_usage").startsWith("0") && text(window,"pulse_memory_usage").startsWith("0")
+                    && cpuValue && memoryValue && !cpuValue->property("truncated").toBool() && !memoryValue->property("truncated").toBool()
+                    && cpuValue->implicitWidth() <= cpuValue->width()+1 && memoryValue->implicitWidth() <= memoryValue->width()+1
+                    && cpuGlyph && memoryGlyph && cpuGlyph->property("kind")=="Cpu" && memoryGlyph->property("kind")=="Memory"
                     && !podlord::test::visibleItem(window->contentItem(),"pulse_storage")
                     && !podlord::test::visibleItem(window->contentItem(),"pulse_nodes")
                     && qAbs(cpu->width()-memory->width())<.5;
@@ -5370,6 +5377,7 @@ bool execute(const QString& requestedScenario) {
             const auto noWrites = [&] { return std::all_of(server.methods.cbegin(), server.methods.cend(), [](const auto& method) { return method == "GET"; }); };
             if (scenario == "inspector_edit_identity") return !edit->isEnabled() && yamlView->property("readOnly").toBool() && noWrites();
             if (!edit->isEnabled()) return false;
+            if (scenario == "inspector_edit_fresh" && item(window,"yamlDraftStatus")->isVisible()) return false;
             if (scenario == "inspector_edit_cached" || scenario == "inspector_edit_failure" || scenario == "inspector_edit_malformed" || scenario == "inspector_edit_auth" || scenario == "inspector_edit_same_version") {
                 if (scenario == "inspector_edit_cached") {
                     if (!click(window, item(window, "closeInspector")) || !click(window, item(window, "cell_0_0"))
@@ -5389,7 +5397,8 @@ bool execute(const QString& requestedScenario) {
             }
             const auto beforeEdit = server.requests.size();
             if (!click(window, edit) || yamlView->property("readOnly").toBool() || server.requests.size() != beforeEdit) return false;
-            if (scenario == "inspector_edit_fresh") return text(window, "inspectorYaml") == oldYaml && noWrites();
+            if (scenario == "inspector_edit_fresh") return text(window, "inspectorYaml") == oldYaml
+                && !item(window,"yamlDraftStatus")->isVisible() && noWrites();
             if (scenario == "inspector_edit_clean") return click(window, item(window, "closeInspector")) && workspace.inspectorPath().isEmpty() && !item(window, "discardStay")->isVisible() && noWrites();
             if (scenario == "inspector_edit_clean_tab") {
                 if (!click(window,item(window,"closeCurrentSession"))) return false;
@@ -6454,7 +6463,8 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
                 for (const auto& view : QList<QPair<QString, QString>>{{"overview", "overviewButton"}, {"yaml", "yamlButton"},
                     {"events", "inspectorEventsButton"}, {"links", "inspectorLinksButton"}, {"values", "valuesButton"}}) {
                     if (!click(window, item(window, view.second))) return false;
-                    if (view.first == "yaml" && !waitFor([&] { return text(window, "yamlDraftStatus").contains("Fresh YAML ready"); })) return false;
+                    if (view.first == "yaml" && !waitFor([&] { return workspace.canEditYaml()
+                        && item(window,"editYaml")->isEnabled() && !item(window,"yamlDraftStatus")->isVisible(); })) return false;
                     if (!capture("inspector-" + view.first, themeIndex, variant)) return false;
                 }
                 if (!click(window, item(window, "closeInspector"))) return failure("theme inspector close");

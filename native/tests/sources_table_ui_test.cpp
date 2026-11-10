@@ -179,7 +179,56 @@ bool run(const QString& scenario) {
             require(QTest::qWaitFor([&] { return control("sourceFindCount")->property("text") == "0/0"; }), "Sources Find exposed credential contents.");
         }
     } else if (scenario == "columns" || scenario == "columns_restart") {
-        click("sourceColumnsButton"); click("sourceColumnVisible_auth");
+        click("sourceColumnsButton");
+        const auto columnControl = [&](const QString& name) {
+            auto* item = qobject_cast<QQuickItem*>(control(name));
+            require(item != nullptr, "Sources column dialog control missing.");
+            const auto bounds = test::visibleBounds(window, item);
+            require(!bounds.isEmpty(), "Sources column dialog control is clipped.");
+            return bounds;
+        };
+        const auto assertNoOverlap = [&](const QList<QRectF>& bounds) {
+            for (qsizetype first = 0; first < bounds.size(); ++first)
+                for (qsizetype second = first + 1; second < bounds.size(); ++second)
+                    require(!bounds[first].intersects(bounds[second]), "Sources column dialog controls overlap.");
+        };
+        const QStringList layoutControls{"sourceColumnVisible_name", "sourceColumnPinned_name",
+            "sourceColumnWidth_name", "sourceColumnEarlier_name", "sourceColumnLater_name"};
+        const auto layoutControlsVisible = [&] {
+            for (const auto& name : layoutControls) {
+                auto* item = qobject_cast<QQuickItem*>(control(name));
+                if (!item || test::visibleBounds(window, item).isEmpty()) return false;
+            }
+            return true;
+        };
+        const auto wideControlsShareRow = [&] {
+            const auto row = columnControl(layoutControls.first()).center().y();
+            for (const auto& name : layoutControls)
+                if (qAbs(columnControl(name).center().y() - row) >= 1.0) return false;
+            return true;
+        };
+        require(QTest::qWaitFor(layoutControlsVisible), "Sources column dialog controls are clipped.");
+        require(QTest::qWaitFor(wideControlsShareRow), "Sources wide column controls do not share one row.");
+        QList<QRectF> wideBounds;
+        for (const auto& name : layoutControls) wideBounds.append(columnControl(name));
+        assertNoOverlap(wideBounds);
+        require(qAbs(control("sourceColumnWidth_name")->property("height").toReal() - window->property("controlHeight").toReal()) < 1.0,
+            "Sources column width field does not meet the control touch target height.");
+        const auto screenshotPrefix = qEnvironmentVariable("PODLORD_SOURCES_SCREENSHOT");
+        require(screenshotPrefix.isEmpty() || window->grabWindow().save(screenshotPrefix + ".columns-wide.png"),
+            "Cannot capture wide Sources columns dialog.");
+        window->resize(320,640);
+        require(QTest::qWaitFor(layoutControlsVisible), "Sources narrow column dialog controls are clipped.");
+        require(QTest::qWaitFor([&] {
+            const auto show = columnControl("sourceColumnVisible_name");
+            return columnControl("sourceColumnWidth_name").top() > show.top();
+        }), "Sources narrow column controls did not wrap.");
+        QList<QRectF> narrowBounds;
+        for (const auto& name : layoutControls) narrowBounds.append(columnControl(name));
+        assertNoOverlap(narrowBounds);
+        require(screenshotPrefix.isEmpty() || window->grabWindow().save(screenshotPrefix + ".columns-narrow.png"),
+            "Cannot capture narrow Sources columns dialog.");
+        click("sourceColumnVisible_auth");
         const auto shown = control("sourceColumnVisible_auth")->property("checked").toBool();
         click("sourceColumnVisible_user");
         require(!control("sourceColumnVisible_user")->property("checked").toBool(), "Sources User column could not be hidden.");

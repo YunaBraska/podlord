@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 ModalDialog {
     id: surfaceDialog
@@ -57,38 +58,38 @@ ModalDialog {
             contentWidth: availableWidth
             ColumnLayout {
                 width: parent.width
-                spacing: 10
+                spacing: 4
                 Repeater {
                     model: draft
-                    delegate: ColumnLayout {
+                    delegate: GridLayout {
                         required property var model
                         readonly property var modelData: model
                         required property int index
+                        readonly property int layoutColumns: width >= 480 ? 6 : 3
                         Layout.fillWidth: true
+                        columns: layoutColumns
+                        columnSpacing: 8
+                        rowSpacing: 4
                         enabled: !workspace.tableLayoutSaving
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; elide: Text.ElideRight }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnVisible_" + modelData.id; glyph: modelData.visible ? "Visible" : "Hidden"; checkable: true; checked: modelData.visible; text: "Show " + modelData.title; Accessible.name: text; onClicked: surfaceDialog.change(index, "visible", checked) }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnPinned_" + modelData.id; glyph: "Pin"; checkable: true; checked: modelData.pinned; text: "Pin " + modelData.title; Accessible.name: text; onClicked: surfaceDialog.change(index, "pinned", checked) }
+                        Label { Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; elide: Text.ElideRight }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnVisible_" + modelData.id; glyph: modelData.visible ? "Visible" : "Hidden"; checkable: true; checked: modelData.visible; text: "Show " + modelData.title; Accessible.name: text; onClicked: surfaceDialog.change(index, "visible", checked) }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnPinned_" + modelData.id; glyph: "Pin"; checkable: true; checked: modelData.pinned; text: "Pin " + modelData.title; Accessible.name: text; onClicked: surfaceDialog.change(index, "pinned", checked) }
+                        TextField {
+                            objectName: surfaceDialog.tableType + "ColumnWidth_" + modelData.id
+                            Layout.preferredWidth: 92
+                            implicitHeight: Window.window ? Window.window.controlHeight : 44
+                            Layout.minimumHeight: implicitHeight
+                            text: modelData.widthText
+                            validator: IntValidator { bottom: 1; top: 2147483647 }
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            Accessible.name: modelData.title + " width in pixels"
+                            ToolTip.text: Accessible.name
+                            ToolTip.visible: hovered || activeFocus
+                            onTextEdited: surfaceDialog.change(index, "widthText", text)
                         }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { text: "Width" }
-                            TextField {
-                                objectName: surfaceDialog.tableType + "ColumnWidth_" + modelData.id
-                                Layout.preferredWidth: 92
-                                text: modelData.widthText
-                                validator: IntValidator { bottom: 1; top: 2147483647 }
-                                inputMethodHints: Qt.ImhDigitsOnly
-                                Accessible.name: modelData.title + " width in pixels"
-                                onTextEdited: surfaceDialog.change(index, "widthText", text)
-                            }
-                            Item { Layout.fillWidth: true }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: "Previous"; text: "Earlier"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnLater_" + modelData.id; glyph: "Next"; text: "Later"; enabled: index + 1 < draft.count; Accessible.name: "Move " + modelData.title + " later"; onClicked: draft.move(index, index + 1, 1) }
-                        }
-                        ToolSeparator { orientation: Qt.Horizontal; Layout.fillWidth: true }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: "Previous"; text: "Earlier"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnLater_" + modelData.id; glyph: "Next"; text: "Later"; enabled: index + 1 < draft.count; Accessible.name: "Move " + modelData.title + " later"; onClicked: draft.move(index, index + 1, 1) }
+                        ToolSeparator { orientation: Qt.Horizontal; Layout.fillWidth: true; Layout.columnSpan: layoutColumns; topPadding: 0; bottomPadding: 0 }
                     }
                 }
             }

@@ -38,6 +38,17 @@ const QHash<QString, Glyph>& catalog() {
         ellipse(.5,.5,.09,.09,Fill::Ink,false); finish({"Cluster"});
         rect(.12,.34,.76,.44); for (const auto x : {.24,.44,.64}) rect(x,.48,.12,.12,Fill::Ink,false);
         line(.5,.34,.5,.12); line(.38,.18,.5,.12); line(.62,.18,.5,.12); finish({"Node"});
+        rect(.24,.24,.52,.52,Fill::None); rect(.38,.38,.24,.24,Fill::Main,false);
+        for (const auto pin : {.32,.5,.68}) {
+            line(pin,.08,pin,.24); line(pin,.76,pin,.92);
+            line(.08,pin,.24,pin); line(.76,pin,.92,pin);
+        }
+        finish({"Cpu"});
+        rect(.1,.26,.8,.48,Fill::None);
+        for (const auto x : {.2,.43,.66}) {
+            rect(x,.38,.14,.2); line(x+.07,.74,x+.07,.9);
+        }
+        finish({"Memory"});
         polygon({{.5,.06},{.88,.28},{.88,.72},{.5,.94},{.12,.72},{.12,.28}});
         ellipse(.5,.5,.12,.12,Fill::Ink,false); finish({"Pod"});
         polygon({{.1,.82},{.1,.42},{.32,.26},{.44,.42},{.62,.28},{.78,.44},{.9,.44},{.9,.82}});
@@ -45,7 +56,7 @@ const QHash<QString, Glyph>& catalog() {
         rect(.2,.16,.6,.2); rect(.16,.4,.68,.2); rect(.12,.64,.76,.2); finish({"ReplicaSet"});
         ellipse(.5,.26,.34,.14); rect(.16,.26,.68,.44,Fill::Main,false);
         line(.16,.26,.16,.7); line(.84,.26,.84,.7); ellipse(.5,.7,.34,.14); line(.2,.48,.8,.48);
-        finish({"StatefulSet","PersistentVolume","PersistentVolumeClaim"});
+        finish({"StatefulSet","PersistentVolume","PersistentVolumeClaim","Storage"});
         diamond(); line(.5,.22,.5,.78); line(.22,.5,.78,.5); finish({"DaemonSet"});
         diamond(); ellipse(.5,.5,.1,.1,Fill::Ink,false); finish({"Job"});
         ellipse(.5,.5,.38,.38); line(.5,.5,.5,.24); line(.5,.5,.7,.62); finish({"CronJob"});

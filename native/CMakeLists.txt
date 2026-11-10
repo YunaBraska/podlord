@@ -313,6 +313,25 @@ if(ANDROID)
         message(FATAL_ERROR "Android Qt Quick patch metadata does not match the pinned source correction.")
     endif()
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${qt_quick_patch}" "${qt_quick_manifest}")
+    set(qt_android_patch "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/patches/qtbase-6.11.3-android-startup.diff")
+    set(qt_android_manifest "${qt_quick_prefix}/podlord-android-startup-patch.txt")
+    set(qt_android_jar "${qt_quick_prefix}/jar/Qt6Android.jar")
+    if(NOT EXISTS "${qt_android_manifest}" OR NOT EXISTS "${qt_android_jar}")
+        message(FATAL_ERROR "Android requires the verified Qt 6.11.3 startup correction. Prepare a caller-owned SDK with scripts/qt-android-startup.cmake before configuring the app.")
+    endif()
+    file(SHA256 "${qt_android_patch}" qt_android_patch_sha)
+    file(SHA256 "${qt_android_jar}" qt_android_jar_sha)
+    file(STRINGS "${qt_android_manifest}" qt_android_version REGEX "^Qt version: ")
+    file(STRINGS "${qt_android_manifest}" qt_android_fix REGEX "^Qt Android startup patch SHA256: ")
+    file(STRINGS "${qt_android_manifest}" qt_android_binary REGEX "^Qt Android jar SHA256: ")
+    if(NOT Qt6Core_VERSION VERSION_EQUAL "6.11.3"
+        OR NOT qt_android_version STREQUAL "Qt version: 6.11.3"
+        OR NOT qt_android_fix STREQUAL "Qt Android startup patch SHA256: ${qt_android_patch_sha}"
+        OR NOT qt_android_binary STREQUAL "Qt Android jar SHA256: ${qt_android_jar_sha}")
+        message(FATAL_ERROR "Android Qt startup metadata or binary does not match the pinned correction.")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${qt_android_patch}" "${qt_android_manifest}" "${qt_android_jar}")
     set(android_openssl_dir "${PODLORD_ANDROID_OPENSSL_ROOT}/${ANDROID_ABI}")
     if(NOT EXISTS "${android_openssl_dir}/libcrypto_3.so" OR NOT EXISTS "${android_openssl_dir}/libssl_3.so"
         OR NOT EXISTS "${android_openssl_dir}/include/openssl/evp.h")
