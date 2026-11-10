@@ -176,7 +176,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
             value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : QStringLiteral("-");
             if (cell.isDouble() && !row["metricComplete"].toObject()[field].toBool()) value += " (incomplete)";
             if (cell.isDouble() && row["metricStale"].toBool()) value += " (stale)";
-        } else if (field == "eventTime" || field == "imported") {
+        } else if (field == "eventTime" || field == "time" || field == "imported") {
             const auto date = QDateTime::fromString(text, Qt::ISODate);
             value = date.isValid() ? QLocale::system().toString(date.toLocalTime(), QLocale::ShortFormat) : QString{};
         } else if (field == "createdAt") {
@@ -721,6 +721,7 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     for (int index = 0; !summary.isEmpty() && index < keys.size(); ++index) {
         const auto cell = summary[keys[index]];
         auto value = cell.isDouble() ? QString::number(cell.toDouble(), 'g', 15) : cell.toString();
+        if (keys[index] == "createdAt" || keys[index] == "fetchedAt") value = displayDateTime(value);
         if (value.isEmpty() && keys[index] == "namespace") value = "Cluster-scoped";
         if (value.isEmpty()) continue;
         QVariantMap field{{"id", keys[index]}, {"label", labels[index]}, {"value", value}};

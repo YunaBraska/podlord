@@ -9,6 +9,7 @@
 #include <QItemSelectionModel>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlExpression>
 #include <QTemporaryDir>
 #include <stdexcept>
 
@@ -77,12 +78,32 @@ bool run(const QString& scenario) {
         QCoreApplication::processEvents();
     };
     const auto focus = [&](const QString& name) {
+        if (name.startsWith("sourceCell_")) {
+            auto* view = control("sourceTable");
+            require(view != nullptr, "Sources table is not visible before keyboard navigation.");
+            require(QTest::qWaitFor([&] { return test::tableColumnsReady(view,workspace.sourceColumns()); }),
+                "Sources columns did not settle before keyboard navigation.");
+            const auto parts = name.split('_');
+            QQmlExpression reveal(qmlContext(view),view,
+                QString("positionViewAtIndex(model.index(%1,%2), TableView.Contain)").arg(parts[1].toInt()).arg(parts[2].toInt()));
+            reveal.evaluate();
+            require(!reveal.hasError(), "Sources keyboard cell could not be scrolled into view.");
+        }
         for (int attempt=0; attempt<4; ++attempt) {
             QPointer<QQuickItem> item;
-            require(QTest::qWaitFor([&] {
+            const bool ready = QTest::qWaitFor([&] {
                 item = control(name);
                 return item && item->isVisible() && item->width() > 0 && item->height() > 0;
-            }), "Sources focus target missing.");
+            });
+            if (!ready) {
+                auto* view = control("sourceTable");
+                qWarning() << "Sources focus target unavailable:" << name << "table" << view
+                    << "offset" << (view ? view->property("contentX") : QVariant{})
+                    << "focus" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{});
+                const auto capture = qEnvironmentVariable("PODLORD_SOURCES_SCREENSHOT");
+                if (!capture.isEmpty()) window->grabWindow().save(capture);
+            }
+            require(ready, "Sources focus target missing.");
             require(test::scrollIntoView(window,item), "Sources focus target could not be revealed.");
             if (!item) continue;
             item->forceActiveFocus(Qt::TabFocusReason);

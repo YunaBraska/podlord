@@ -67,7 +67,10 @@ const [out,adb,port,serial,serverPid]=process.argv.slice(2);
 const commands=[['crash-logcat.txt',['logcat','-b','crash','-d']]];
 const pidFile=path.join(out,'product-pid.txt');
 const pid=fs.existsSync(pidFile)?fs.readFileSync(pidFile,'utf8').trim():'';
-if(/^\d+$/.test(pid))commands.push(['product-final-logcat.txt',['logcat','-d','--pid='+pid]]);
+const uidFile=path.join(out,'product-uid.txt');
+const uid=fs.existsSync(uidFile)?fs.readFileSync(uidFile,'utf8').trim():'';
+if(/^\d+$/.test(uid))commands.push(['product-final-logcat.txt',['logcat','-d','--uid='+uid]]);
+else if(/^\d+$/.test(pid))commands.push(['product-final-logcat.txt',['logcat','-d','--pid='+pid]]);
 commands.push(['emulator-stop.log',['emu','kill']]);
 for(const [name,args] of commands){
   try{process.kill(Number(serverPid),0);}catch{break;}
@@ -157,7 +160,7 @@ adb install --no-streaming "$apk" > "$out/install.log" 2>&1
 activity=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$out/badging.txt")
 if [ -z "$activity" ]; then printf 'No launchable activity in signed APK\n' >&2; exit 1; fi
 adb shell am start -W -n "berlin.yuna.podlord/$activity" > "$out/startup.txt"
-adb shell pidof berlin.yuna.podlord > "$out/product-pid.txt"
+: > "$out/product-pid.txt"
 adb root > "$out/adb-root-ingress.txt" 2>&1
 adb wait-for-device
 if [ -n "$adbTrace" ]; then
@@ -173,7 +176,9 @@ if((text.match(/^\s*server:/gm)||[]).length!==1||!server.test(text)||/^\s*exec:/
 fs.writeFileSync(process.argv[3],text.replace(server,'$110.0.2.2:$2'),{mode:0o600});
 CONFIG
 private="/data/user/0/berlin.yuna.podlord/files/release-fixture.kubeconfig"
-uid=$(adb shell stat -c %u /data/user/0/berlin.yuna.podlord | tr -d '\r')
+uid=$(adb shell pm list packages -U --user 0 berlin.yuna.podlord | tr -d '\r' | sed -n 's/^package:berlin\.yuna\.podlord uid:\([0-9][0-9]*\)$/\1/p')
+case "$uid" in ''|*[!0-9]*) printf 'Cannot identify the installed Podlord UID\n' >&2; exit 1 ;; esac
+printf '%s\n' "$uid" > "$out/product-uid.txt"
 adb push "$tmp/emulator-kubeconfig" "$private" > "$out/fixture-push.log" 2>&1
 adb shell chown "$uid:$uid" "$private"
 adb shell chmod 600 "$private"
@@ -245,6 +250,13 @@ const runAdb=(args,encoding='utf8')=>{
  }
 };
 const run=(...args)=>runAdb(args);
+function recordProductPid(){
+ try{process.kill(Number(adbServerPid),0);}catch{return '';}
+ const result=cp.spawnSync(adb,[...serial,'shell','pidof','berlin.yuna.podlord'],{encoding:'utf8',timeout:5000,maxBuffer:1024,env:adbEnvironment});
+ const pid=String(result.stdout||'').trim();
+ if(result.status!==0||!/^\d+$/.test(pid))return '';
+ fs.writeFileSync(path.join(out,'product-pid.txt'),pid+'\n');return pid;
+}
 const decode=s=>s.replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&#10;','\n').replaceAll('&#13;','\r').replaceAll('&#9;','\t').replaceAll('&amp;','&');
 const parseNodes=xml=>[...xml.matchAll(/<node\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/g)].map(m=>Object.fromEntries([...m[0].matchAll(/([\w-]+)=(["'])([\s\S]*?)\2/g)].map(a=>[a[1],decode(a[3])])));
 require('node:assert/strict').deepEqual(parseNodes(`<node text='key: "value > other" &amp; &apos;' resource-id="yaml"/><node text="&amp;lt;"/>`),[{text:`key: "value > other" & '`, 'resource-id':'yaml'},{text:'&lt;'}]);
@@ -352,13 +364,14 @@ function completeJourney(){const status=journeyFailures.length?'failed':'passed'
 process.on('uncaughtException',error=>{
  fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status:'failed',steps,failures:journeyFailures,error:String(error)},null,2)+'\n');
  try{capture('failure');state();capture('failure-settled');fs.writeFileSync(path.join(out,'failure-nodes.json'),JSON.stringify(nodes,null,2)+'\n')}catch(captureError){console.error(String(captureError))}
- const pid=fs.readFileSync(path.join(out,'product-pid.txt'),'utf8').trim();
+ const pid=recordProductPid();
  const diagnostics=[['crash-logcat',['logcat','-b','crash','-d']],['system-logcat',['logcat','-b','all','-d','-t','2000']],['activity',['shell','dumpsys','activity','top']],['window',['shell','dumpsys','window','windows']],['display-rotation',['shell','dumpsys','window','displays']],['input',['shell','dumpsys','input']],['input-method',['shell','dumpsys','input_method']]];
  if(/^\d+$/.test(pid))diagnostics.push(['process',['shell','cat','/proc/'+pid+'/status']],['native-backtrace',['shell','debuggerd','-b',pid]]);
  for(const [name,args] of diagnostics){try{fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),run(...args))}catch(diagnosticError){fs.writeFileSync(path.join(out,'failure-'+name+'.txt'),String(diagnosticError)+'\n'+(diagnosticError.stdout||'')+(diagnosticError.stderr||''))}}
  console.error(error);process.exitCode=1;
 });
 waitNode('mapImportSource',n=>n.enabled==='true'&&n.bounds!=='[0,0][0,0]');
+if(!recordProductPid())throw Error('Product process unavailable after its native window became ready');
 if(nodes.some(n=>n['resource-id']?.endsWith('.resourcesWorkspaceButton')&&n.bounds!=='[0,0][0,0]'))throw Error('Resources navigation is visible before a context is opened');
 click('settingsWorkspaceButton');click('settingsSectionPicker');
 const initialSources=nodes.find(n=>(n.text||n['content-desc'])==='Sources'&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');

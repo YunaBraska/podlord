@@ -3226,7 +3226,11 @@ bool execute(const QString& requestedScenario) {
             const auto* fill=item(window,"overviewReadinessFill");
             if (!fill || qAbs(bar->property("value").toDouble()-fraction)>0.001 || fill->property("color").value<QColor>() != workspace.appearanceColors()[color].value<QColor>()) return false;
             if (scenario=="table_overview_metadata") {
-                const QStringList ids{"cluster","restarts","owner"}, values{"local","10","ReplicaSet/workload"};
+                const auto createdAt = server.measured.addDays(-2);
+                const auto locale = QLocale::system();
+                const QStringList ids{"cluster","restarts","owner","createdAt","fetchedAt"},
+                    values{"local","10","ReplicaSet/workload",locale.toString(createdAt.toLocalTime(),QLocale::ShortFormat),
+                        locale.toString(reference.toLocalTime(),QLocale::ShortFormat)};
                 qsizetype next=0;
                 const bool visible=waitFor([&] {
                     if (next==ids.size()) return true;
@@ -3243,7 +3247,8 @@ bool execute(const QString& requestedScenario) {
                     qPrintable(ids[next]),qPrintable(text(window,"overview_"+ids[next])),navigationKeys,
                     overview->property("currentIndex").toInt(),overview->property("count").toInt(),
                     overview->property("contentY").toDouble(),overview->height());
-                return visible && server.requests.size()==calls;
+                return visible && workspace.yamlText().contains(createdAt.toString(Qt::ISODateWithMs))
+                    && server.requests.size()==calls && saveShellFrame(window,scenario+"-local-time",item(window,"workspaceInspector"));
             }
             if (scenario=="table_overview_copy") {
                 const QPointer<QQuickItem> field = item(window,"overview_ready");
@@ -5189,6 +5194,12 @@ bool execute(const QString& requestedScenario) {
             if (scenario == "inspector_related_wrong_uid") return item(window, "emptyInspectorEvents")->isVisible()
                 && text(window, "emptyInspectorEvents") == "No related events." && server.requests.size() == calls;
             if (!waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled"; })) return false;
+            const auto observed = QLocale::system().toString(
+                QDateTime::fromString("2026-10-03T10:00:00Z",Qt::ISODate).toLocalTime(),QLocale::ShortFormat);
+            if (!waitFor([&] { return text(window,"inspectorEventCell_0_0") == observed; })) return false;
+            item(window,"inspectorEventCell_0_0")->forceActiveFocus();
+            QTest::keySequence(window,QKeySequence::Copy);
+            if (QGuiApplication::clipboard()->text() != observed) return false;
             auto* events = item(window, "inspectorEventTable");
             QQmlExpression reveal(qmlContext(events), events, "positionViewAtIndex(model.index(0, 4), TableView.Contain)");
             reveal.evaluate();
