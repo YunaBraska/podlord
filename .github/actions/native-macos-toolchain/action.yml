@@ -36,7 +36,7 @@ runs:
       id: macos-toolchain-cache
       uses: actions/cache/restore@v6
       with:
-        key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/**', 'native/tests/qt_shutdown/**') }}
+        key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
         path: |
           ${{ runner.temp }}/native-toolchain/qt
           ${{ runner.temp }}/native-toolchain/qt-sdk

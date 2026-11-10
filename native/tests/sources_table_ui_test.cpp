@@ -9,7 +9,6 @@
 #include <QItemSelectionModel>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QQmlExpression>
 #include <QTemporaryDir>
 #include <stdexcept>
 
@@ -77,42 +76,17 @@ bool run(const QString& scenario) {
         for (const auto character : value) QTest::keyClick(window, character.toLatin1());
         QCoreApplication::processEvents();
     };
-    const auto focus = [&](const QString& name) {
-        if (name.startsWith("sourceCell_")) {
-            auto* view = control("sourceTable");
-            require(view != nullptr, "Sources table is not visible before keyboard navigation.");
-            require(QTest::qWaitFor([&] { return test::tableColumnsReady(view,workspace.sourceColumns()); }),
-                "Sources columns did not settle before keyboard navigation.");
-            const auto parts = name.split('_');
-            QQmlExpression reveal(qmlContext(view),view,
-                QString("positionViewAtIndex(model.index(%1,%2), TableView.Contain)").arg(parts[1].toInt()).arg(parts[2].toInt()));
-            reveal.evaluate();
-            require(!reveal.hasError(), "Sources keyboard cell could not be scrolled into view.");
-        }
-        for (int attempt=0; attempt<4; ++attempt) {
-            QPointer<QQuickItem> item;
-            const bool ready = QTest::qWaitFor([&] {
-                item = control(name);
-                return item && item->isVisible() && item->width() > 0 && item->height() > 0;
-            });
-            if (!ready) {
-                auto* view = control("sourceTable");
-                qWarning() << "Sources focus target unavailable:" << name << "table" << view
-                    << "offset" << (view ? view->property("contentX") : QVariant{})
-                    << "focus" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{});
-                const auto capture = qEnvironmentVariable("PODLORD_SOURCES_SCREENSHOT");
-                if (!capture.isEmpty()) window->grabWindow().save(capture);
-            }
-            require(ready, "Sources focus target missing.");
-            require(test::scrollIntoView(window,item), "Sources focus target could not be revealed.");
-            if (!item) continue;
-            item->forceActiveFocus(Qt::TabFocusReason);
-            QSignalSpy frame(window,&QQuickWindow::frameSwapped);
-            window->update();
-            require(frame.wait(2000), "Sources keyboard target was not rendered.");
-            if (window->activeFocusItem() && window->activeFocusItem()->objectName()==name) return;
-        }
-        require(false, "Sources focus target did not settle.");
+    const auto firstRow = [&] {
+        const QPointer<QQuickItem> view(control("sourceTable"));
+        require(view != nullptr, "Sources table is not visible before keyboard navigation.");
+        require(QTest::qWaitFor([&] { return view && test::tableColumnsReady(view,workspace.sourceColumns()); }),
+            "Sources columns did not settle before keyboard navigation.");
+        view->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window, Qt::Key_Home);
+        const QPointer<QItemSelectionModel> selection(view ? view->property("selectionModel").value<QItemSelectionModel*>() : nullptr);
+        require(selection && QTest::qWaitFor([&] {
+            return selection && selection->currentIndex().isValid() && selection->currentIndex().row() == 0;
+        }), "Sources Home input did not select the first row.");
     };
     const auto navigateColumn = [&](int column) {
         auto* view=control("sourceTable");
@@ -175,7 +149,7 @@ bool run(const QString& scenario) {
         require(model->index(0,0).data() == "zulu" && workspace.property("sourceSortDirection") == "DESC", "Descending source sort failed.");
         click("sourceHeader_0");
         require(workspace.property("sourceSortDirection") == "NONE" && model->index(0,0).data() == firstName, "Unsorted source order failed.");
-        focus("sourceCell_0_0"); navigateColumn(2);
+        firstRow(); navigateColumn(2);
         click("sourceHeader_2");
         require(model->index(0,2).data() == "alpha-user" && model->index(0,0).data() == "zulu" && workspace.sourceSortDirection() == "ASC", "Ascending User sort failed.");
         click("sourceHeader_2");
@@ -184,14 +158,14 @@ bool run(const QString& scenario) {
         require(workspace.sourceSortDirection() == "NONE" && model->index(0,0).data() == firstName, "Unsorted User order failed.");
         require(workspace.sortSourceColumn(7) && workspace.sourceSortColumn() == 7 && workspace.sourceSortDirection() == "ASC", "Shifted Status column is not sortable.");
     } else if (scenario == "copy_keyboard") {
-        focus("sourceCell_0_0"); navigateColumn(2); QTest::keySequence(window, QKeySequence::Copy);
+        firstRow(); navigateColumn(2); QTest::keySequence(window, QKeySequence::Copy);
         require(QGuiApplication::clipboard()->text() == firstUser, "Source User clipboard value is not the entry name.");
         navigateColumn(0); QTest::keySequence(window, QKeySequence::Copy);
         const auto copied = QGuiApplication::clipboard()->text();
         if (copied != firstName) std::fprintf(stderr,"Source copy: expected=%s actual=%s focus=%s\n",qPrintable(firstName),qPrintable(copied),qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}));
         require(copied == firstName, "Source clipboard value incorrect.");
     } else if (scenario == "find" || scenario == "find_empty" || scenario == "find_keyboard") {
-        if (scenario == "find_keyboard") { focus("sourceCell_0_0"); QTest::keySequence(window, QKeySequence::Find); }
+        if (scenario == "find_keyboard") { firstRow(); navigateColumn(0); QTest::keySequence(window, QKeySequence::Find); }
         else click("sourceFindButton");
         fill("sourceFindInput", scenario == "find_empty" ? "absent-context" : "local");
         require(QTest::qWaitFor([&] { return control("sourceFindCount") && control("sourceFindCount")->property("text") == (scenario == "find_empty" ? "0/0" : "1/2"); }), "Sources Find count incorrect.");
@@ -274,7 +248,9 @@ bool run(const QString& scenario) {
         require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount() == (scenario == "remove_cancel" ? 2 : 1)
             && !control("confirmSourceRemoval") && !control("cancelSourceRemoval"); }), "Source removal outcome incorrect.");
         if (scenario=="remove_all") {
-            focus("removeSource_"+model->index(0,0).data(Qt::UserRole).toString());
+            const QPointer<QQuickItem> remove(control("removeSource_"+model->index(0,0).data(Qt::UserRole).toString()));
+            require(remove && test::scrollIntoView(window,remove) && remove, "Sources removal target could not be revealed.");
+            remove->forceActiveFocus(Qt::TabFocusReason);
             QTest::keyClick(window,Qt::Key_Space); click("confirmSourceRemoval");
             require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount()==0 && control("sourceEmpty"); }), "Sources empty state missing after confirmed removal.");
         }

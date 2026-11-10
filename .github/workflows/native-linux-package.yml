@@ -51,7 +51,7 @@ jobs:
           /opt/sbom/bin/pip freeze | LC_ALL=C sort
           ABI
           abi=$(sha256sum "$out/toolchain-abi.txt" | cut -d ' ' -f 1)
-          recipe=${{ hashFiles('native/tests/linux-package.Dockerfile', 'scripts/build-native-linux-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/**', 'native/tests/qt_shutdown/**') }}
+          recipe=${{ hashFiles('native/tests/linux-package.Dockerfile', 'scripts/build-native-linux-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
           key="linux-sdk-v1-${{ matrix.arch }}-$abi-$recipe"
           printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$key" > "$out/toolchain-cache-key.txt"

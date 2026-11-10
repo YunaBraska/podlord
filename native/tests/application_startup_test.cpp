@@ -208,7 +208,19 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
         return true;
     }
     const bool sourceAccepted = explicitSource && scenario != "source_missing" && scenario != "source_invalid" && scenario != "source_positional_invalid";
-    if (sourceAccepted) require(awaitSources(1), "Explicit startup did not import its source asynchronously");
+    if (sourceAccepted) {
+        const bool imported = awaitSources(1);
+        if (!imported) {
+            auto errors = process.readAllStandardError();
+            errors.replace("ambient-startup-secret", "[fixture credential]");
+            errors.replace("explicit-source-startup-secret", "[fixture credential]");
+            const bool exited = process.state() == QProcess::NotRunning;
+            std::fprintf(stderr, "Startup import failed: scenario=%s state=%d exitStatus=%d exitCode=%d processError=%d error=%s\nstderr-tail:\n%s\n",
+                qPrintable(scenario), int(process.state()), exited ? int(process.exitStatus()) : -1, exited ? process.exitCode() : -1,
+                int(process.error()), qPrintable(process.errorString()), errors.right(4096).constData());
+        }
+        require(imported, "Explicit startup did not import its source asynchronously");
+    }
     QElapsedTimer timer; timer.start();
     while (timer.elapsed() < 1500 && process.state() != QProcess::NotRunning) {
         QCoreApplication::processEvents(); process.waitForFinished(20);
