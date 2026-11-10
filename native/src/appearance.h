@@ -16,8 +16,8 @@ QStringList themeNames();
 bool validAppearance(const QString& name, const QString& variant);
 /** Builds a Qt palette and cached, static texture. Invalid choices fail explicitly. */
 Result<Appearance> makeAppearance(const QString& name, const QString& variant);
-/** Preserves the legacy UTF-16 identity hash and theme-specific identity colors. */
+/** Preserves the legacy UTF-16 identity hash, with readable foregrounds in light themes. */
 QColor appearanceIdentity(const Appearance& appearance, const QString& value);
-/** Reference status semantics use theme colors rather than an identity hash. */
+/** Reference status semantics use readable theme foregrounds rather than an identity hash. */
 QColor appearanceStatus(const Appearance& appearance, const QString& status);
 } // namespace podlord

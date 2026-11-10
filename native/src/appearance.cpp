@@ -49,6 +49,13 @@ QColor mix(const QColor& base, const QColor& overlay, double weight) {
     const auto channel = [weight](int a, int b) { return static_cast<int>(std::nearbyint(a * (1 - weight) + b * weight)); };
     return QColor(channel(base.red(), overlay.red()), channel(base.green(), overlay.green()), channel(base.blue(), overlay.blue()));
 }
+double luminance(const QColor& color) {
+    const auto linear = [](int channel) {
+        const double value = channel / 255.0;
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * linear(color.red()) + 0.7152 * linear(color.green()) + 0.0722 * linear(color.blue());
+}
 } // namespace
 QStringList themeNames() {
     QStringList names;
@@ -70,6 +77,28 @@ Result<Appearance> makeAppearance(const QString& name, const QString& variant) {
     const QColor selection = mix(colors[3], colors[6], 0.28);
     appearance.colors.insert("selection", selection);
     appearance.colors.insert("hover", mix(colors[3], colors[7], 0.22));
+    double darkestBackground = 1;
+    if (variant == "light")
+        for (const auto& surface : {"app", "panel", "raised", "inset", "selection", "hover"})
+            darkestBackground = std::min(darkestBackground, luminance(appearance.colors.value(surface).value<QColor>()));
+    // Prepare text-only colors once. Terrain, status fills and the source palettes stay unchanged.
+    // A small margin above 4.5 avoids rounding a marginal color below the readable threshold.
+    const double maximumTextLuminance = (darkestBackground + 0.05) / 4.55 - 0.05;
+    for (const auto& key : {"accentGlow", "accent", "success", "muted", "strongBorder", "accentMuted", "warning", "danger", "unknown"}) {
+        const auto original = appearance.colors.value(key).value<QColor>();
+        auto text = original;
+        if (variant == "light" && luminance(original) > maximumTextLuminance) {
+            int lower = 0, upper = 255;
+            while (lower < upper) {
+                const int scale = (lower + upper + 1) / 2;
+                const auto candidate = mix(original, QColor(Qt::black), 1 - scale / 255.0);
+                if (luminance(candidate) <= maximumTextLuminance) lower = scale;
+                else upper = scale - 1;
+            }
+            text = mix(original, QColor(Qt::black), 1 - lower / 255.0);
+        }
+        appearance.colors.insert(QString::fromLatin1(key) + "Text", text);
+    }
     QColor glow = colors[8]; glow.setAlpha(72);
     appearance.colors.insert("glow", glow);
     for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
@@ -114,7 +143,7 @@ QColor appearanceIdentity(const Appearance& appearance, const QString& value) {
     if (value.trimmed().isEmpty() || value == "-") return QColor(Qt::transparent);
     quint32 hash = 17;
     for (const auto character : value) hash = hash * 31 + character.unicode();
-    const QStringList keys{"accentGlow", "accent", "success", "muted", "strongBorder", "accentMuted"};
+    const QStringList keys{"accentGlowText", "accentText", "successText", "mutedText", "strongBorderText", "accentMutedText"};
     return appearance.colors.value(keys[(hash & 0x7FFFFFFF) % keys.size()]).value<QColor>();
 }
 QColor appearanceStatus(const Appearance& appearance, const QString& status) {
@@ -122,6 +151,6 @@ QColor appearanceStatus(const Appearance& appearance, const QString& status) {
     static const QStringList healthy{"Available","Complete","Ready","Running","Succeeded","Observed","Normal"};
     static const QStringList warning{"Pending","Terminating","Suspended","Warning"};
     static const QStringList critical{"CrashLoopBackOff","CreateContainerConfigError","CreateContainerError","ErrImagePull","Error","Failed","ImagePullBackOff","NotReady","OOMKilled","Unavailable"};
-    return appearance.colors.value(healthy.contains(status) ? "success" : warning.contains(status) ? "warning" : critical.contains(status) ? "danger" : "unknown").value<QColor>();
+    return appearance.colors.value(healthy.contains(status) ? "successText" : warning.contains(status) ? "warningText" : critical.contains(status) ? "dangerText" : "unknownText").value<QColor>();
 }
 } // namespace podlord

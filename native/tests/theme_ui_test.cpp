@@ -19,6 +19,7 @@
 #include <QSignalSpy>
 #include <cstdio>
 #include <stdexcept>
+#include <cmath>
 
 namespace {
 bool require(bool value, const char* message) {
@@ -164,6 +165,35 @@ bool exercise(const QStringList& arguments) {
     const QStringList colorNames{"app", "panel", "raised", "inset", "border", "strongBorder", "accent", "accentMuted", "accentGlow", "text", "muted", "success", "warning", "danger", "unknown", "radarShell", "radarGlass"};
     for (int index = 0; index < colors.size(); ++index)
         require(surfaces[colorNames[index]].value<QColor>() == colors[index], "A shipped semantic surface color changed");
+    const auto appearanceResult = podlord::makeAppearance(selected, variant);
+    const auto* appearance = std::get_if<podlord::Appearance>(&appearanceResult);
+    require(appearance, "Cannot read the selected theme foregrounds");
+    const auto luminance = [](const QColor& color) {
+        const auto linear = [](double value) { return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4); };
+        return 0.2126 * linear(color.redF()) + 0.7152 * linear(color.greenF()) + 0.0722 * linear(color.blueF());
+    };
+    const auto readable = [&](const QColor& foreground) {
+        for (const auto& surface : {"app", "panel", "raised", "inset", "selection", "hover"}) {
+            const auto a=luminance(foreground), b=luminance(surfaces[surface].value<QColor>());
+            require((std::max(a,b)+0.05)/(std::min(a,b)+0.05) >= 4.5, "Light-theme foreground contrast is below 4.5:1");
+        }
+    };
+    const QStringList identityKeys{"accentGlow", "accent", "success", "muted", "strongBorder", "accentMuted"};
+    QSet<int> identityBuckets;
+    for (const auto& identity : QStringList{"kube-system", "local-path-config", "default", "worker-a", "Pod", "registry.example/app:1", "namespace-0", "namespace-1", "namespace-2", "namespace-3", "namespace-4", "namespace-5"}) {
+        quint32 hash=17; for (const auto character : identity) hash=hash*31+character.unicode();
+        const int bucket=int((hash&0x7FFFFFFF)%identityKeys.size()); identityBuckets.insert(bucket);
+        const auto foreground=podlord::appearanceIdentity(*appearance,identity);
+        require(foreground==podlord::appearanceIdentity(*appearance,identity), "Identity foreground is not deterministic");
+        if (variant=="light") readable(foreground);
+        else require(foreground==surfaces[identityKeys[bucket]].value<QColor>(), "Dark identity foreground changed");
+    }
+    require(identityBuckets.size()==identityKeys.size(), "Identity contrast scenarios missed a color bucket");
+    for (const auto& status : QList<QPair<QString,QString>>{{"Observed","success"},{"Running","success"},{"Warning","warning"},{"Error","danger"},{"Unknown","unknown"}}) {
+        const auto foreground=podlord::appearanceStatus(*appearance,status.first);
+        if (variant=="light") readable(foreground);
+        else require(foreground==surfaces[status.second].value<QColor>(), "Dark status foreground changed");
+    }
     require(!surfaces["texture"].toString().isEmpty(), "Theme has no static texture output");
     if (QFileInfo::exists(profile + "/read-settings.json")) {
         const auto settings = QJsonDocument::fromJson(read(profile + "/read-settings.json")).object();

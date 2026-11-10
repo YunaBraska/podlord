@@ -3140,6 +3140,32 @@ bool execute(const QString& requestedScenario) {
         };
         const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"};
         for (const auto& field : fields) if (column(field) < 0) { std::fprintf(stderr, "Missing resource column: %s\n", qPrintable(field)); return false; }
+        if (scenario == "table_light_contrast") {
+            const auto originalTheme=workspace.themeName();
+            const auto originalColor=model->index(0,column("namespace")).data(Qt::ForegroundRole).value<QColor>();
+            const auto luminance=[](QColor color) {
+                const auto linear=[](double value) { return value<=0.04045 ? value/12.92 : std::pow((value+0.055)/1.055,2.4); };
+                return 0.2126*linear(color.redF())+0.7152*linear(color.greenF())+0.0722*linear(color.blueF());
+            };
+            const auto readable=[&](QColor color) {
+                for (const auto& key : {"panel","inset","selection","hover"}) {
+                    const double a=luminance(color),b=luminance(workspace.appearanceColors()[key].value<QColor>());
+                    if ((std::max(a,b)+0.05)/(std::min(a,b)+0.05)<4.5) return false;
+                }
+                return true;
+            };
+            if (!workspace.saveAppearance("Imperial Ledger","light") || !waitFor([&] { return !workspace.busy() && workspace.themeVariant()=="light"; })) return false;
+            if (!readable(model->index(0,column("namespace")).data(Qt::ForegroundRole).value<QColor>())
+                || !readable(model->index(0,column("status")).data(Qt::ForegroundRole).value<QColor>())) return false;
+            if (!workspace.inspectPath(model->index(0,0).data(Qt::UserRole).toString()) || !waitFor([&] { return workspace.canEditYaml(); })) return false;
+            const auto calls=server.requests.size();
+            for (const auto& field : {"name","namespace","status"}) {
+                if (!waitFor([&] { auto* value=item(window,"overview_"+QString::fromLatin1(field)); return value && value->isVisible() && readable(value->property("color").value<QColor>()); })) return false;
+            }
+            if (!saveShellFrame(window,scenario,item(window,"workspaceInspector"))
+                || !workspace.saveAppearance(originalTheme,"dark") || !waitFor([&] { return !workspace.busy() && workspace.themeVariant()=="dark"; })) return false;
+            return model->index(0,column("namespace")).data(Qt::ForegroundRole).value<QColor>()==originalColor && server.requests.size()==calls;
+        }
         if (scenario.startsWith("table_auto_")) {
             const auto calls = server.requests.size();
             const auto state = [&](const QString& id) {
