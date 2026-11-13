@@ -566,7 +566,16 @@ test('native package consumers await the complete workflow and select their own 
     }
     assert.ok(store.includes('store-arm64/native-store-package/podlord-native.zip'));
     assert.ok(store.includes('store-x64/native-store-package/podlord-native.zip'));
-    assert.ok(release.includes('pattern: native-*-${{ github.sha }}'));
+    const downloaded = [...ciJob(release, 'candidate').matchAll(/^\s+name: (native-[^\r\n]+)$/gm)]
+        .map(match => match[1]);
+    assert.deepEqual(downloaded, [
+        'native-package-direct-macos-15-${{ github.sha }}',
+        'native-package-direct-macos-15-intel-${{ github.sha }}',
+        'native-windows-x64-${{ github.sha }}',
+        'native-linux-trial-x64-${{ github.sha }}',
+        'native-linux-trial-arm64-${{ github.sha }}',
+    ], 'Collect only the exact direct-download packages for this commit');
+    assert.doesNotMatch(ciJob(release, 'candidate'), /\bpattern:/);
 });
 
 test('Store signing seals nested code before the app executable', {skip: !mac}, async t => {
