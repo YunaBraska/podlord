@@ -109,8 +109,8 @@ CLEANUP_LOGS
 }
 trap cleanup 0
 trap 'exit 130' INT TERM
-printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k "$system_image" -d pixel_8 -p "$tmp/device" > "$out/avd-create.log" 2>&1
-# Retain the small-screen stress geometry on a real rotatable phone hardware profile.
+printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$name" -k "$system_image" -d medium_phone -p "$tmp/device" > "$out/avd-create.log" 2>&1
+# Use a rotatable phone without a fixed-resolution cutout on the small stress display.
 node - "$tmp/device/config.ini" <<'HARDWARE'
 const fs=require('node:fs'),file=process.argv[2];let text=fs.readFileSync(file,'utf8');
 for(const [key,value] of Object.entries({'hw.lcd.width':'320','hw.lcd.height':'640','hw.lcd.density':'160'})) {
@@ -367,10 +367,13 @@ function click(id){
  }
  tap(target(id));
 }
+function cellMatches(node,field,value){
+ return node?.text===value||node?.['content-desc']===value||node?.['content-desc']?.endsWith(', '+field+', '+value);
+}
 function healthyPodVisible(){
  return nodes.some(n=>{
   const row=(n['resource-id']||'').match(/\.cell_(\d+)_1$/);
-  return row&&(n.text||n['content-desc'])==='Pod'&&nodes.some(status=>status['resource-id']?.endsWith('.cell_'+row[1]+'_3')&&(status.text||status['content-desc'])==='Running');
+  return row&&cellMatches(n,'Kind','Pod')&&nodes.some(status=>status['resource-id']?.endsWith('.cell_'+row[1]+'_3')&&cellMatches(status,'Status','Running'));
  });
 }
 function healthCount(){const text=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'))?.['content-desc']||'';const values=/^(?:Session health:|Loading session\.)\s*(\d+) healthy, (\d+) warnings, (\d+) errors/.exec(text);return values?values.slice(1).reduce((sum,value)=>sum+Number(value),0):0;}
@@ -458,7 +461,10 @@ click('mapWorkspaceButton');
 const cardDeadline=Date.now()+30000;let contextCard='';
 do{state();const card=nodes.find(n=>n['resource-id']?.split('.').at(-1).startsWith('contextMapCard_')&&n.enabled==='true'&&n.bounds!=='[0,0][0,0]');if(card){contextCard=card['resource-id'].split('.').at(-1);break;}}while(Date.now()<cardDeadline);
 if(!contextCard){capture('missing-context-card');throw Error('Imported context card did not appear');}
-capture('contexts-before-opening');click(contextCard);click('resourcesWorkspaceButton');
+capture('contexts-before-opening');click(contextCard);
+click('workspaceActionsButton');
+waitNode('resourcesWorkspaceButton',n=>n.enabled==='true',120000);
+click('resourcesWorkspaceButton');
 run('shell','settings','put','system','accelerometer_rotation','0');rotate(1);state();
 const deadline=Date.now()+120000;let count=0;
 do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):healthCount();const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
@@ -545,8 +551,8 @@ click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Pr
 // The footer is intentionally hidden here. Session health is not a filtered row count.
 search('visual-multi-container');
 const filterDeadline=Date.now()+30000;
-do{state();if(!nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&(n.text||n['content-desc'])==='Pod'))break;}while(Date.now()<filterDeadline);
-if(nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&(n.text||n['content-desc'])==='Pod'))throw Error('Problems filter retained the known healthy Pod');
+do{state();if(!nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&cellMatches(n,'Kind','Pod')))break;}while(Date.now()<filterDeadline);
+if(nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&cellMatches(n,'Kind','Pod')))throw Error('Problems filter retained the known healthy Pod');
 click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('Problems filter did not disable');
 waitNode('cell_0_1',healthyPodVisible);
 search('');steps.push({step:'Problems filter excludes the known healthy Pod and restores it when disabled through public input'});
@@ -655,7 +661,7 @@ function mapTouchRoundtrip(){
  fs.writeFileSync(path.join(out,'touch-display.txt'),density+display+run('shell','dumpsys','display'));
  assert.match(density,/Physical density:\s*160/);assert.doesNotMatch(density,/Override density:/);
  click('settingsWorkspaceButton');click('settingsSectionPicker');
- const graphics=nodes.find(n=>value(n)==='Graphics'&&n.enabled==='true'&&n.bounds&&rect(n)[2]>rect(n)[0]);assert.ok(graphics,'Graphics must be selected through the public settings picker');tap(graphics);
+ const appearance=nodes.find(n=>value(n)==='Appearance'&&n.enabled==='true'&&n.bounds&&rect(n)[2]>rect(n)[0]);assert.ok(appearance,'Appearance must be selected through the public settings picker');tap(appearance);
  const waterSpeedTarget=target('inlineRadarWaterSpeed'),waterSpeed=rect(waterSpeedTarget);
  tap({...waterSpeedTarget,bounds:`[${waterSpeed[0]},${waterSpeed[1]}][${waterSpeed[0]+2},${waterSpeed[3]}]`});
  if(target('inlineReducedMotion').checked!=='true')click('inlineReducedMotion');

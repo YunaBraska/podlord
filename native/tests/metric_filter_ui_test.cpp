@@ -362,13 +362,13 @@ bool realCluster(const QString& source) {
     engine.load(QUrl("qrc:/podlord/Main.qml"));
     if (engine.rootObjects().isEmpty()) return false;
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
-    if (!window || !waitFor([&] { return window->isVisible() && window->isExposed() && !workspace.busy(); })
-        || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
     const auto fail = [&](const char* stage) {
         std::fprintf(stderr, "Real cached field filter failed: %s; rows=%d/%d; error=%s; status=%s\n",
             stage, workspace.resourceCount(), workspace.totalResourceCount(), qPrintable(workspace.filterError()), qPrintable(workspace.status()));
         return false;
     };
+    if (!window || !waitFor([&] { return window->isVisible() && window->isExposed() && !workspace.busy(); }))
+        return fail("initial empty window");
     if (!workspace.quickImportFile(QUrl::fromLocalFile(source).toString()) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; })
         || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())) return fail("import");
     std::fprintf(stdout, "Real source import: file URL through the public importer; filter interaction uses the actual UI.\n");
@@ -389,6 +389,9 @@ bool realCluster(const QString& source) {
     if (!waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() > 1000 &&
         !measuredIdentities("cpu").isEmpty() && !measuredIdentities("memory").isEmpty(); }, 120000)) return fail("real resource and metric cache");
     if (!workspace.setWorkspacePage("resources")) return fail("resource tab");
+    if (!workspace.setResourceLimit("5000") || !waitFor([&] {
+        return workspace.resourceCount() == workspace.totalResourceCount();
+    })) return fail("complete fixture inventory within the display limit");
     QStringList expectedConfigMaps, expectedClusterScoped;
     int ownedConfigMaps = 0;
     for (int row = 0; row < workspace.table()->rowCount(); ++row) {

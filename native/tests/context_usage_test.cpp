@@ -275,18 +275,39 @@ bool scenario(const QString& name) {
             CHECK(std::holds_alternative<SessionCatalog>(store.removeContext(beta, ids)));
             CHECK(std::holds_alternative<SourceSnapshot>(store.importText(origin, yaml)));
         }
+        // Finish delivery from the old HTTP clients before measuring a new startup.
+        QCoreApplication::processEvents();
+        CHECK(wait([&] {
+            const auto sockets = api.findChildren<QTcpSocket*>();
+            return std::all_of(sockets.cbegin(), sockets.cend(), [](const auto* socket) {
+                return socket->state() == QAbstractSocket::UnconnectedState;
+            });
+        }));
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QFile catalog(profile + "/kubeconfigs/catalog.json"); CHECK(catalog.open(QIODevice::ReadOnly));
         const auto before = catalog.readAll(); catalog.close();
         requests = 0;
         Workspace restored(profile, nullptr, [&] { return now; });
+        std::unique_ptr<DeferredCompletions> deferredCatalog;
+        if (name == "shared_windows") deferredCatalog = std::make_unique<DeferredCompletions>(&restored);
         WindowHost host(restored);
-        CHECK(host.open() && wait([&] { return host.restorationReady() && !restored.busy(); }));
+        CHECK(host.open());
+        if (deferredCatalog) {
+            CHECK(QThreadPool::globalInstance()->waitForDone(10000));
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::FutureCallOut);
+            CHECK(deferredCatalog->completed());
+            deferredCatalog->release();
+        }
+        CHECK(wait([&] { return host.restorationReady() && !restored.busy(); }));
         const auto expected = name == "remove" ? QStringList{gamma, alpha, beta}
             : name == "catalog_lock" ? QStringList{alpha, beta, gamma} : QStringList{beta, gamma, alpha};
         const auto actual = order(host.windows().value(0));
         if (name == "shared_windows") CHECK((actual == QStringList{beta, alpha, gamma}));
         else CHECK(actual == expected);
-        CHECK(requests == 0 && restored.mapOverview());
+        if (requests != 0 || !restored.mapOverview())
+            std::fprintf(stderr, "Restored overview: requests=%d, overview=%s\n", requests, restored.mapOverview() ? "true" : "false");
+        CHECK(requests == 0);
+        CHECK(restored.mapOverview());
         CHECK(catalog.open(QIODevice::ReadOnly) && catalog.readAll() == before);
     }
     return true;

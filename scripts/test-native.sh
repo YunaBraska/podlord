@@ -44,16 +44,24 @@ trap 'exit 143' TERM
 mkdir "$RUN/tmp"
 TMPDIR="$RUN/tmp"
 export TMPDIR
-# LLVM merges concurrent executions into four locked profiles per binary.
-# Keep complete counters without creating a separate large file per test process.
-LLVM_PROFILE_FILE="$RUN/%4m.profraw"
+# Different executables can share LLVM's module signature. Isolate processes so
+# an incompatible merge cannot discard counters from otherwise passing tests.
+LLVM_PROFILE_FILE="$RUN/%p-%4m.profraw"
 export LLVM_PROFILE_FILE
 TEST_STATUS=0
+run_ctest() {
+    "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error "$@" || TEST_STATUS=$?
+    if [ -f "$BUILD/Testing/Temporary/LastTest.log" ] &&
+        awk '/LLVM Profile (Error|Warning):/ { print; failed=1 } END { exit !failed }' "$BUILD/Testing/Temporary/LastTest.log"; then
+        printf 'LLVM could not collect complete coverage from the test processes.\n' >&2
+        TEST_STATUS=1
+    fi
+}
 # Run existing default and UI canaries first, without repeating them in the full cohort.
 PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default|settings\.read_denied|read_overlap\.snapshot_fields|forward\.form_refresh_(Basic|Fusion)|authentication\.aws_sso_(success|device_expired)|ui\.(inspector_edit_close_space|ui_density_(filters|single_tab|close|tabs)_Basic|quick_open_narrow_basic|radar(_map)?_info_panel.*))$'
-"$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
+run_ctest --tests-regex "$PREFLIGHT"
 if [ "$TEST_STATUS" -eq 0 ]; then
-    "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?
+    run_ctest --exclude-regex "$PREFLIGHT"
 fi
 if [ "$TEST_STATUS" -eq 0 ]; then
 BENCHMARK=$("$BUILD/session_cli_test" "$BUILD/podlord-session" benchmark)

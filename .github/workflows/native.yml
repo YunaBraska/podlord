@@ -374,6 +374,8 @@ jobs:
       - name: Install public iOS build dependencies
         run: |
           brew install cmake ninja python
+      - name: Verify iOS installer contracts before building the SDK
+        run: node --test scripts/test-native-ios-toolchain.cjs
       - name: Resolve exact iOS toolchain cache identity
         id: toolchain-key
         run: |

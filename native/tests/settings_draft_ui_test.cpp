@@ -37,8 +37,13 @@ int main(int argc, char** argv) {
         require(window && QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Settings did not settle.");
         if (scenario.endsWith("_narrow")) window->setWidth(360);
         const auto item = [&](const char* name) {
-            auto* target = window->findChild<QQuickItem*>(QString::fromLatin1(name));
-            require(target && target->isVisible() && target->isEnabled(), "Settings control is not available.");
+            QQuickItem* target = nullptr;
+            const bool ready = QTest::qWaitFor([&] {
+                target = window->findChild<QQuickItem*>(QString::fromLatin1(name));
+                return target && target->isVisible() && target->isEnabled();
+            }, 5000);
+            if (!ready) std::fprintf(stderr, "Settings control did not become ready: %s\n", name);
+            require(ready, "Settings control is not available.");
             return target;
         };
         const auto click = [&](const char* name) {
@@ -109,6 +114,7 @@ int main(int argc, char** argv) {
         }
         const auto name = workspace.themeName();
         const auto variant = workspace.themeVariant() == "dark" ? QString("light") : QString("dark");
+        require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Pending settings write did not settle.");
         if (scenario == "invalid") require(!workspace.saveAppearance("missing-theme", variant), "Unknown theme was accepted.");
         else {
             // A real public preference update, not a fabricated notification or store replacement.
@@ -123,7 +129,9 @@ int main(int argc, char** argv) {
             require(item("inlineInactiveMinutes")->property("value").toInt() == 12
                 && item("inlineRequestLimit")->property("value").toInt() == 60
                 && item("inlineLogLimit")->property("text").toString() == "9", "Appearance update discarded unrelated sync input.");
-            require(workspace.logLimitMb() == 5, "Appearance update saved the sync draft implicitly.");
+            require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.logLimitMb() == 9
+                && workspace.requestLimit() == 60 && workspace.inactiveSyncMinutes() == 12; }, 5000),
+                "Sync edits did not automatically persist.");
         }
         if (scenario != "invalid") {
             require(podlord::test::selectSettingsSection(window, "appearance"), "Appearance section is not reachable.");

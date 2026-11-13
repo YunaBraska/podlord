@@ -56,3 +56,36 @@ for (const level of ['0', '-1', 'invalid', '1 2', '00']) {
         }
     });
 }
+
+test('iOS toolchain finalizes privacy manifests from a changed working directory', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-ios-finalization-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const sdk = path.join(directory, 'sdk');
+    const work = path.join(directory, 'module-build');
+    await fs.mkdir(work);
+    await fs.mkdir(path.join(sdk, 'openssl/os-dep/Apple'), { recursive: true });
+    await fs.writeFile(path.join(sdk, 'build-inputs.txt'), 'Qt: 6.11.3\nOpenSSL: 3.5.9\nFFmpeg: 7.1.5\n');
+    const openssl = '<?xml version="1.0"?><plist version="1.0"><dict/></plist>\n';
+    await fs.writeFile(path.join(sdk, 'openssl/os-dep/Apple/PrivacyInfo.xcprivacy'), openssl);
+    for (const name of ['avcodec', 'avformat', 'avutil', 'swresample', 'swscale']) {
+        const framework = path.join(sdk, `qt/lib/ffmpeg/lib${name}.xcframework/ios-arm64/lib${name}.framework`);
+        await fs.mkdir(framework, { recursive: true });
+        await fs.writeFile(path.join(framework, `lib${name}`), 'external SDK fixture, not executable');
+        await fs.writeFile(path.join(framework, 'Info.plist'), '<plist><dict/></plist>');
+    }
+    // Exercise the actual finalization command with real CMake. The external SDK
+    // files are fixtures. No Podlord installer or manifest implementation is replaced.
+    const source = await fs.readFile(installer, 'utf8');
+    const setup = source.split('\n').find(line => line.startsWith('SCRIPT_DIR='));
+    const finalize = source.split('\n').find(line => line.startsWith('cmake "-DPODLORD_IOS_SDK_ROOT=$ROOT" -P '));
+    assert.ok(setup && finalize, 'The source-built SDK must finalize its privacy declarations');
+    await execute('/bin/sh', ['-eu', '-c', `${setup}\ncd "$FOREIGN"\n${finalize}`, 'scripts/build-native-ios-toolchain.sh'], {
+        cwd: path.resolve(__dirname, '..'), env: { ...process.env, ROOT: sdk, FOREIGN: work }
+    });
+    assert.equal(await fs.readFile(path.join(sdk, 'ssl/share/podlord/PrivacyInfo.xcprivacy'), 'utf8'), openssl);
+    for (const name of ['avcodec', 'avformat', 'avutil', 'swresample', 'swscale']) {
+        const declaration = ['avformat', 'avutil'].includes(name) ? 'FFmpegFilePrivacy' : 'FFmpegPrivacy';
+        const expected = await fs.readFile(path.join(__dirname, '../native/ios', declaration + '.xcprivacy'), 'utf8');
+        assert.equal(await fs.readFile(path.join(sdk, `qt/lib/ffmpeg/lib${name}.xcframework/ios-arm64/lib${name}.framework/PrivacyInfo.xcprivacy`), 'utf8'), expected);
+    }
+});
