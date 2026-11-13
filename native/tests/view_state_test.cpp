@@ -28,9 +28,22 @@ bool run(const QString& scenario) {
     const auto profile = temporary.filePath("profile"), views = profile + "/views";
     const auto path = views + "/" + session + ".json";
     const ViewStateStore store(profile, schemas);
+    const TableViewState resourceDefault{.limit = 1024};
     const TableViewState value{"alpha", "name", true};
+    if (scenario == "preset_default_upgrade") {
+        const QJsonObject oldDefault{{"filter", ""}, {"column", ""}, {"descending", false},
+            {"fields", QJsonObject{}}, {"mode", ""}, {"limit", 256}};
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 2},
+            {"presets", QJsonObject{{"default", oldDefault}, {"My 256 rows", oldDefault}}}}).toJson();
+        const auto presetPath = profile + "/filter-presets.json";
+        if (!QDir().mkpath(profile) || !write(presetPath, bytes)) return false;
+        const auto loaded = store.loadPresets();
+        QFile original(presetPath);
+        return equals(loaded, {{"default", resourceDefault}, {"My 256 rows", {}}})
+            && original.open(QIODevice::ReadOnly) && original.readAll() == bytes;
+    }
     if (scenario.startsWith("limit_")) {
-        if (!equals(store.save(session, "resource", value, {}), {{"resource", value}, {"event", {}}})) return false;
+        if (!equals(store.save(session, "resource", value, resourceDefault), {{"resource", value}, {"event", {}}})) return false;
         auto limited = value; limited.limit = 7;
         if (scenario == "limit_invalid_input") { limited.limit = 0; return fails(store.save(session, "resource", limited, value), StoreError::InvalidInput); }
         if (scenario == "limit_event_input") return fails(store.save(session, "event", limited, {}), StoreError::InvalidInput);
@@ -79,7 +92,7 @@ bool run(const QString& scenario) {
     }
     if (scenario.startsWith("preset_import_")) {
         const auto source = temporary.filePath("saved filters %.json");
-        const TableViewStates empty{{"default", {}}};
+        const TableViewStates empty{{"default", resourceDefault}};
         QJsonObject legacy{{"name", "Imported"}, {"nameFilter", "~web"}, {"namespace", "team"}};
         const auto bytes = QJsonDocument(QJsonArray{legacy}).toJson();
         if (!write(source, scenario == "preset_import_malformed" ? QByteArray("{") : scenario == "preset_import_oversized" ? QByteArray(65537, ' ') : bytes)) return false;
@@ -153,7 +166,7 @@ bool run(const QString& scenario) {
         if (!std::holds_alternative<TableViewStates>(loaded)) return false;
         auto actual = std::get<TableViewStates>(loaded);
         const auto production = actual.value("Production");
-        if (actual.value("default") != TableViewState{} || production.filter != "api" || production.column != ""
+        if (actual.value("default") != resourceDefault || production.filter != "api" || production.column != ""
             || production.mode != (scenario == "legacy_preset_activity" ? "activity" : "problems") || production.limit != (scenario == "legacy_preset_limit" ? 7 : 256)
             || production.fields != QMap<QString, QString>{{"name", "~web"}, {"namespace", "\"team\""}, {"createdAt", ">=1h"}, {"cpu", ">500m"}}) return false;
         if (scenario != "legacy_preset_save") return true;
@@ -182,7 +195,7 @@ bool run(const QString& scenario) {
             && fails(store.load(session), StoreError::InvalidData) && equals(upgraded.load(session), std::get<TableViewStates>(saved));
     }
     if (scenario.startsWith("preset_")) {
-        const TableViewStates empty{{"default", {}}};
+        const TableViewStates empty{{"default", resourceDefault}};
         auto desired = empty; desired["Problems"] = {"", "", false, {{"namespace", "team"}}, "problems"};
         if (scenario == "preset_missing") return equals(store.loadPresets(), empty) && !QFile::exists(profile);
         if (scenario == "preset_default_delete") { desired.remove("default"); return fails(store.savePresets(desired, empty), StoreError::InvalidData); }
@@ -227,7 +240,7 @@ bool run(const QString& scenario) {
     if (scenario == "missing") {
         const auto result = store.load(session);
         return std::holds_alternative<TableViewStates>(result) && std::get<TableViewStates>(result).size() == 2
-            && std::get<TableViewStates>(result).value("resource") == TableViewState{} && !QFile::exists(profile);
+            && std::get<TableViewStates>(result).value("resource") == resourceDefault && !QFile::exists(profile);
     }
     if (scenario == "empty_profile") return fails(ViewStateStore("", schemas).load(session), StoreError::InvalidInput);
     if (scenario == "relative_profile") return fails(ViewStateStore("relative", schemas).load(session), StoreError::InvalidInput);
@@ -241,10 +254,10 @@ bool run(const QString& scenario) {
     if (!QDir().mkpath(views)) return false;
     if (scenario == "file_directory") return QDir().mkpath(path) && fails(store.load(session), StoreError::ReadFailed);
     if (scenario == "busy") {
-        QLockFile lock(path + ".lock"); return lock.tryLock(0) && fails(store.save(session, "resource", value, {}), StoreError::Busy);
+        QLockFile lock(path + ".lock"); return lock.tryLock(0) && fails(store.save(session, "resource", value, resourceDefault), StoreError::Busy);
     }
-    if (scenario == "lock_directory") return QDir().mkpath(path + ".lock") && fails(store.save(session, "resource", value, {}), StoreError::WriteFailed);
-    if (scenario == "oversized_input") return fails(store.save(session, "resource", {QString(65536, 'x'), "", false}, {}), StoreError::InvalidInput) && !QFile::exists(path);
+    if (scenario == "lock_directory") return QDir().mkpath(path + ".lock") && fails(store.save(session, "resource", value, resourceDefault), StoreError::WriteFailed);
+    if (scenario == "oversized_input") return fails(store.save(session, "resource", {QString(65536, 'x'), "", false}, resourceDefault), StoreError::InvalidInput) && !QFile::exists(path);
 #ifdef Q_OS_UNIX
     if (scenario == "profile_symlink") {
         const auto link = temporary.filePath("linked"); return QFile::link(profile, link) && fails(ViewStateStore(link, schemas).load(session), StoreError::InvalidInput);
@@ -253,7 +266,7 @@ bool run(const QString& scenario) {
         const auto target = temporary.filePath("target"); return write(target, "{}") && QFile::link(target, path) && fails(store.load(session), StoreError::InvalidData);
     }
 #endif
-    const auto initial = store.save(session, "resource", value, {});
+    const auto initial = store.save(session, "resource", value, resourceDefault);
     if (!std::holds_alternative<TableViewStates>(initial)) return false;
     const auto saved = std::get<TableViewStates>(initial);
     if (scenario == "mode_save" || scenario == "mode_invalid" || scenario == "mode_event") {
@@ -280,8 +293,8 @@ bool run(const QString& scenario) {
     if (scenario == "save") return equals(store.load(session), saved);
     if (scenario == "repeat") return equals(store.save(session, "resource", value, value), saved);
     if (scenario == "clear") {
-        const auto result = store.save(session, "resource", {}, value);
-        return std::holds_alternative<TableViewStates>(result) && std::get<TableViewStates>(result).value("resource") == TableViewState{};
+        const auto result = store.save(session, "resource", resourceDefault, value);
+        return std::holds_alternative<TableViewStates>(result) && std::get<TableViewStates>(result).value("resource") == resourceDefault;
     }
     if (scenario == "conflict") return fails(store.save(session, "resource", {"bravo", "namespace", false}, {}), StoreError::Conflict) && equals(store.load(session), saved);
     if (scenario == "other_table") {
@@ -291,7 +304,7 @@ bool run(const QString& scenario) {
             && std::get<TableViewStates>(result).value("event") == event;
     }
     if (scenario == "other_session") {
-        const auto result = store.save(other, "resource", {"bravo", "", false}, {});
+        const auto result = store.save(other, "resource", {"bravo", "", false}, resourceDefault);
         return std::holds_alternative<TableViewStates>(result) && equals(store.load(session), saved)
             && std::get<TableViewStates>(store.load(other)).value("resource").filter == "bravo";
     }

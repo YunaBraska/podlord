@@ -34,17 +34,21 @@ void run(const QString& scenario) {
     QTemporaryDir temporary; require(temporary.isValid(), "Cannot create private profile.");
     const auto profile = temporary.filePath("profile"), settingsPath = profile + "/read-settings.json";
     require(std::holds_alternative<ReadSettings>(ReadSettingsStore(profile).save({}, {})), "Cannot save initial real settings.");
+    const auto imported = KubeconfigStore(profile).importText(temporary.filePath("config"),
+        "apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: http://127.0.0.1:9}\n"
+        "contexts:\n- name: first\n  context: {cluster: local}\n- name: second\n  context: {cluster: local}\n");
+    require(std::holds_alternative<SourceSnapshot>(imported), "Cannot import real context identities.");
+    const auto contexts = std::get<SourceSnapshot>(imported).contexts;
     const SessionStore sessions(profile);
-    auto created = sessions.create({"unavailable-owned-context", {"default"}}, "First");
+    auto created = sessions.openTab(contexts.first().id);
     require(std::holds_alternative<SessionCatalog>(created), "Cannot create owned session.");
     const auto first = std::get<SessionCatalog>(created).sessions.first().id;
     require(std::holds_alternative<SessionCatalog>(sessions.activate(first)), "Cannot activate owned session.");
-    created = sessions.create({"another-owned-context", {}}, "Second");
+    created = sessions.openTab(contexts.last().id);
     require(std::holds_alternative<SessionCatalog>(created), "Cannot create second owned session.");
     const auto second = std::get<SessionCatalog>(created).sessions.last().id;
     require(std::holds_alternative<SessionCatalog>(sessions.activate(second)), "Cannot activate second owned session.");
-    const auto before = std::get<SessionCatalog>(sessions.list());
-    const auto sessionBytes = contents(profile + "/sessions.json");
+    const auto sessionBytes = contents(profile + "/tabs.json");
     if (scenario == "disabled" || scenario == "reload" || scenario == "reactivate" || scenario == "reenable" || scenario == "locked_start") {
         auto root = QJsonDocument::fromJson(contents(settingsPath)).object();
         root["workspaceRestore"] = false;
@@ -56,12 +60,12 @@ void run(const QString& scenario) {
         else root.remove("workspaceRestore");
         require(write(settingsPath, QJsonDocument(root).toJson()), "Cannot exercise invalid external preference.");
     }
-    QLockFile sessionLock(profile + "/sessions.lock");
+    QLockFile sessionLock(profile + "/tabs.lock");
     if (scenario == "locked_start") require(sessionLock.tryLock(0), "Cannot hold external session lock.");
     Workspace workspace(profile); settle(workspace);
     if (scenario == "invalid_flag" || scenario == "missing_flag" || scenario == "locked_start") {
         require(!workspace.error().isEmpty(), "Startup failure is not visible.");
-        require(contents(profile + "/sessions.json") == sessionBytes, "Failed startup changed session ownership.");
+        require(contents(profile + "/tabs.json") == sessionBytes, "Failed startup changed session ownership.");
         require(workspace.currentSession().isEmpty() && workspace.tabs().isEmpty(), "Failed startup adopted an unsafe placement.");
         return;
     }
@@ -69,14 +73,13 @@ void run(const QString& scenario) {
     if (scenario == "disabled" || scenario == "reload" || scenario == "reactivate" || scenario == "reenable") {
         require(!workspace.property("workspaceRestoreEnabled").toBool() && workspace.tabs().isEmpty() && workspace.currentSession().isEmpty(), "Disabled restart reopened tabs.");
         const auto after = std::get<SessionCatalog>(sessions.list());
-        require(after.sessions.size() == 2 && !after.activeSession, "Disabled restart deleted sessions or retained activation.");
-        for (int index = 0; index < after.sessions.size(); ++index) {
-            auto retained = after.sessions[index]; retained.open = before.sessions[index].open;
-            require(!after.sessions[index].open && retained == before.sessions[index], "Disabled restart changed identity, configuration, history or order.");
-        }
+        require(after.sessions.isEmpty() && !after.activeSession,
+            "Disabled restart retained a closed-tab catalog or activation.");
         if (scenario == "disabled") return;
-        require(workspace.activate(first.toString(QUuid::WithoutBraces)), "Retained session cannot be reopened."); settle(workspace);
-        require(workspace.tabs().size() == 1, "Explicit activation restored unrelated tabs.");
+        require(!workspace.activate(first.toString(QUuid::WithoutBraces)) && workspace.openContext(contexts.first().id),
+            "Explicit context opening did not replace the closed tab."); settle(workspace);
+        require(workspace.tabs().size() == 1 && workspace.currentSession() != first.toString(QUuid::WithoutBraces),
+            "Explicit context opening restored unrelated or closed tabs.");
         if (scenario == "reload") { require(workspace.reload(), "Explicit reload rejected."); settle(workspace); require(workspace.tabs().size() == 1, "Reload reapplied startup suppression."); }
         if (scenario == "reenable") {
             require(workspace.saveWorkspaceRestore(true), "Cannot reenable restoration."); settle(workspace);
@@ -87,6 +90,7 @@ void run(const QString& scenario) {
     }
     require(workspace.property("workspaceRestoreEnabled").toBool() && workspace.tabs().size() == 2
         && workspace.currentSession() == second.toString(QUuid::WithoutBraces), "Default startup lost saved tab order or activation.");
+    const auto adoptedBytes = contents(profile + "/tabs.json");
     if (scenario == "default") return;
     if (scenario == "conflict") {
         auto changed = std::get<ReadSettings>(ReadSettingsStore(profile).load()); changed.logLimitMb = 9;
@@ -111,6 +115,7 @@ void run(const QString& scenario) {
         require(frames.wait(1000), "Application did not render its controls.");
         auto* control = window->findChild<QQuickItem*>(QString::fromLatin1(name));
         require(control && control->isVisible() && control->isEnabled(), "Restoration control is not reachable.");
+        if (!keyboard) require(podlord::test::scrollIntoView(window, control), "Cannot scroll to the restoration control.");
         QPoint point;
         const auto reachable = QTest::qWaitFor([&] {
             window->contentItem()->ensurePolished(); control->ensurePolished();
@@ -124,10 +129,10 @@ void run(const QString& scenario) {
         else QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
         QCoreApplication::processEvents();
     };
-    click("settingsWorkspaceButton"); require(podlord::test::selectSettingsSection(window, "workspace"), "Workspace section is not reachable.");
+    click("settingsWorkspaceButton"); require(podlord::test::selectSettingsSection(window, "appearance"), "Appearance section is not reachable.");
     click("inlineWorkspaceRestore", scenario == "keyboard"); settle(workspace);
     require(!workspace.property("workspaceRestoreEnabled").toBool(), "Real control did not persist restoration preference.");
-    require(workspace.tabs().size() == 2 && contents(profile + "/sessions.json") == sessionBytes, "Preference change closed current tabs or changed session history.");
+    require(workspace.tabs().size() == 2 && contents(profile + "/tabs.json") == adoptedBytes, "Preference change closed current tabs or changed their catalog.");
     require(workspace.portForwards().isEmpty(), "Preference change recreated forwarding.");
     if (scenario == "repeat") { require(workspace.saveWorkspaceRestore(false), "Repeat preference save rejected."); settle(workspace); }
     Workspace restarted(profile); settle(restarted);

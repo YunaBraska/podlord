@@ -361,7 +361,7 @@ inline bool selectSettingsSection(QQuickWindow* window, const QString& section) 
         return true;
     }
     auto* picker = visibleItem(window->contentItem(), "settingsSectionPicker");
-    const QStringList order{"alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"};
+    const QStringList order{"alerts", "appearance", "diagnostics", "sources", "sync", "about"};
     const int row = order.indexOf(section);
     if (!picker || !picker->isEnabled() || row < 0 || !scrollIntoView(window, picker, true)) return false;
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, picker->mapToScene({picker->width()/2, picker->height()/2}).toPoint());

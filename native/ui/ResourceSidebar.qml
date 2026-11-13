@@ -15,8 +15,6 @@ Pane {
     property bool suppressSmallRadar: false
     readonly property bool radarShown: radarVisible && (!suppressSmallRadar || expandedRadarHost !== null)
     readonly property bool compactFilterRail: collapsibleFilters && !filtersExpanded && (expandedRadarHost !== null || suppressSmallRadar)
-    property Action musicAction: null
-    readonly property bool musicButtonVisible: musicToggle.visible
     readonly property real collapsedFilterWidth: leftPadding + rightPadding + sidebarLayout.spacing + healthStrip.Layout.preferredWidth + filterToggle.implicitWidth
     readonly property Item mapNavigationHost: radar.navigationHost
     readonly property int count: radar.count
@@ -35,6 +33,13 @@ Pane {
         if (delta!==0) viewport.contentY=Math.max(0,Math.min(viewport.contentHeight-viewport.height,viewport.contentY+delta))
     }
     onHeightChanged: if (presetName.activeFocus) Qt.callLater(revealPresetInput)
+    readonly property string contextTab: workspace.currentSession
+    onContextTabChanged: {
+        presetName.text = workspace.selectedFilterPreset === "default" ? "" : workspace.selectedFilterPreset
+        presetsExpanded = false
+        expandedField = ""
+        renamePreset.close()
+    }
     readonly property string page: workspace.workspacePage
     onPageChanged: expandedField = ""
     onVisibleChanged: if (!visible) { expandedField = ""; presetsExpanded = false }
@@ -65,7 +70,6 @@ Pane {
             Label { anchors.centerIn: parent; text: scopeControl.checked ? "✓" : ""; color: workspace.appearanceColors.inset }
         }
     }
-    signal sourcesRequested()
     signal renameRequested()
     function focusPath(path, percent) { return radar.focusPath(path, percent) }
     padding: 6
@@ -91,12 +95,13 @@ Pane {
                     Rectangle { required property var modelData; width: parent.width; height: workspace.healthSummary.total > 0 ? parent.height * modelData.count / workspace.healthSummary.total : 0; color: modelData.color }
                 }
             }
+            readonly property bool initiallyLoading: workspace.syncLoading && workspace.loadingProgress < 1
             Accessible.role: Accessible.StaticText
-            Accessible.name: (workspace.syncLoading ? "Loading session. " : "Session health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
+            Accessible.name: (initiallyLoading ? "Loading session. " : "Session health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
             ToolTip.visible: healthHover.hovered
             ToolTip.text: workspace.authenticationRunning
                 ? "Authentication in progress."
-                : workspace.syncLoading
+                : healthStrip.initiallyLoading
                     ? workspace.uiText["status.loadingResources"]
                     : Accessible.name
             HoverHandler { id: healthHover }
@@ -144,22 +149,6 @@ Pane {
                 }
             }
             IconButton {
-                id: musicToggle
-                objectName: "musicPlayPause"
-                visible: sidebar.radarShown && sidebar.expandedRadarHost === null && !sidebar.compactFilterRail
-                Layout.fillWidth: true
-                action: sidebar.musicAction
-                glyph: workspace.music.playing ? "Pause" : "Play"
-                activeIndicator: workspace.music.playing
-            }
-            Label {
-                Layout.fillWidth: true
-                visible: musicToggle.visible && workspace.music.error !== ""
-                text: workspace.uiText[workspace.music.error] || ""
-                color: workspace.appearanceColors.danger
-                wrapMode: Text.Wrap
-            }
-            IconButton {
                 id: filterToggle
                 objectName: "toggleLandscapeFilters"
                 visible: sidebar.collapsibleFilters
@@ -191,22 +180,22 @@ Pane {
             RowLayout {
                 Layout.fillWidth: true
                 Button {
-                    id: sourceAction
-                    objectName: "sourcesButton"
-                    text: workspace.mapContextCaption || workspace.title || workspace.uiText["settings.sources"]
+                    id: sessionAction
+                    objectName: "renameCurrentContext"
+                    text: workspace.title
                     Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0
                     implicitHeight: Math.max(sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
-                    contentItem: Label { text: sourceAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
-                    Accessible.name: "Show or hide kubeconfig sources"
-                    onClicked: sourcesRequested()
+                    contentItem: Label { text: sessionAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                    enabled: workspace.currentSession !== "" && !workspace.busy
+                    Accessible.name: workspace.uiText["context.rename"] + ": " + text
+                    onClicked: renameRequested()
                 }
-                IconButton { objectName: "renameCurrentSession"; glyph: "Pencil"; text: "Rename session"; enabled: workspace.currentSession !== "" && !workspace.busy; onClicked: renameRequested() }
+                IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.currentSession !== "" && (workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0 || workspace.resourceLimit !== workspace.defaultResourceLimit); onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
                 IconButton { objectName: "masterAudioMute"; glyph: workspace.alerts.muted ? "Mute" : "Volume"; text: workspace.uiText[workspace.alerts.muted ? "music.unmuteAlerts" : "music.muteAlerts"]; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(!workspace.alerts.muted, workspace.alerts.reducedMotion) }
             }
             RowLayout {
                 Layout.fillWidth: true
                 Label { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
-                IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0 || workspace.resourceLimit !== 256; onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
             }
             GridLayout {
                 Layout.fillWidth: true

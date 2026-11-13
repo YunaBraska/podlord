@@ -23,16 +23,16 @@ bool require(bool condition, const char* message) {
 class Kubernetes final : public QTcpServer {
 public:
     int requests = 0;
-    explicit Kubernetes(bool problem) {
+    explicit Kubernetes(bool problem, bool events) {
         const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"},
             {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "palette-pod"}, {"resourceVersion", "1"}}},
             {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "app"}, {"image", "busybox:1.37"}, {"ports", QJsonArray{QJsonObject{{"containerPort", 8080}}}}}}}}},
             {"status", QJsonObject{{"phase", problem ? "Failed" : "Running"}}}};
-        connect(this, &QTcpServer::newConnection, this, [this, pod] {
+        connect(this, &QTcpServer::newConnection, this, [this, pod, events] {
             while (hasPendingConnections()) {
                 auto* socket = nextPendingConnection();
                 auto input = std::make_shared<QByteArray>();
-                connect(socket, &QTcpSocket::readyRead, this, [this, socket, input, pod] {
+                connect(socket, &QTcpSocket::readyRead, this, [this, socket, input, pod, events] {
                     input->append(socket->readAll());
                     if (!input->contains("\r\n\r\n")) return;
                     socket->disconnect(this); ++requests;
@@ -40,8 +40,19 @@ public:
                     QJsonObject body;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", QJsonArray{}}};
-                    else if (path == "/api/v1") body = {{"resources", QJsonArray{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}}}};
+                    else if (path == "/api/v1") {
+                        QJsonArray resources{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}};
+                        if (events) resources.append(QJsonObject{{"name","events"},{"kind","Event"},{"namespaced",true},{"verbs",QJsonArray{"get","list"}}});
+                        body = {{"resources",resources}};
+                    }
                     else if (path == "/api/v1/pods") body = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}};
+                    else if (events && path=="/api/v1/events") body = {{"metadata",QJsonObject{}},{"items",QJsonArray{QJsonObject{{"apiVersion","v1"},{"kind","Event"},
+                        {"metadata",QJsonObject{{"name","palette-event"},{"namespace","default"},{"uid","palette-event"},{"resourceVersion","1"},
+                            {"creationTimestamp",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}}},
+                        {"reason","Started"},{"message","Pod started"},{"type","Normal"},
+                        {"count",1},{"firstTimestamp",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+                        {"lastTimestamp",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+                        {"involvedObject",QJsonObject{{"kind","Pod"},{"name","alpha"},{"namespace","default"},{"uid","palette-pod"}}}}}}};
                     else body = pod;
                     const auto bytes = QJsonDocument(body).toJson(QJsonDocument::Compact);
                     socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + QByteArray::number(bytes.size()) + "\r\n\r\n" + bytes);
@@ -62,7 +73,8 @@ int main(int argc, char** argv) {
         require(QStringList{"button", "keyboard", "keyboard_meta", "keyboard_arrows", "keyboard_default", "escape", "close", "repeat", "empty", "resources", "events", "sources", "settings", "forward", "problems", "disabled_forward", "disabled_problems", "narrow"}.contains(scenario), "Unknown palette scenario.");
         QTemporaryDir directory;
         require(directory.isValid(), "Cannot create private command profile.");
-        Kubernetes server(scenario == "problems");
+        const bool events = scenario=="events" || scenario=="keyboard_arrows";
+        Kubernetes server(scenario == "problems", events);
         const bool populated = QStringList{"keyboard_arrows", "resources", "events", "forward", "problems"}.contains(scenario);
         QString sessionId;
         if (populated) {
@@ -71,7 +83,7 @@ int main(int argc, char** argv) {
             const auto imported = sources.importText(directory.filePath("config"), QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:%1\ncontexts:\n- name: local\n  context:\n    cluster: local\n").arg(server.serverPort()));
             require(std::holds_alternative<podlord::SourceSnapshot>(imported), "Cannot seed real source store.");
             const podlord::SessionStore sessions(directory.filePath("profile"));
-            const auto created = sessions.create({std::get<podlord::SourceSnapshot>(imported).contexts.first().id, {}});
+            const auto created = sessions.openTab(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
             require(std::holds_alternative<podlord::SessionCatalog>(created), "Cannot create real session.");
             sessionId = std::get<podlord::SessionCatalog>(created).sessions.first().id.toString(QUuid::WithoutBraces);
             require(std::holds_alternative<podlord::SessionCatalog>(sessions.activate(std::get<podlord::SessionCatalog>(created).sessions.first().id)), "Cannot activate real session.");
@@ -85,8 +97,9 @@ int main(int argc, char** argv) {
         require(window && QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Palette workspace did not settle.");
         if (populated) {
             require(workspace.activate(sessionId), "Explicit activation failed.");
-            if (!QTest::qWaitFor([&] { return workspace.resourceCount() == 1; }, 8000)) {
-                std::fprintf(stderr, "Cache activation: requests=%d contexts=%lld sessions=%lld active=%s status=%s error=%s\n", server.requests, static_cast<long long>(workspace.contexts().size()), static_cast<long long>(workspace.sessions().size()), workspace.currentSession().toUtf8().constData(), workspace.status().toUtf8().constData(), workspace.error().toUtf8().constData());
+            if (!QTest::qWaitFor([&] { return workspace.resourceCount() == (events ? 2 : 1) && !workspace.syncLoading()
+                    && (!events || workspace.totalEventCount()==1); }, 10000)) {
+                std::fprintf(stderr, "Cache activation: requests=%d contexts=%lld sessions=%lld active=%s status=%s error=%s\n", server.requests, static_cast<long long>(workspace.contexts().size()), static_cast<long long>(workspace.tabs().size()), workspace.currentSession().toUtf8().constData(), workspace.status().toUtf8().constData(), workspace.error().toUtf8().constData());
                 require(false, "Real cache did not populate from HTTP.");
             }
         }

@@ -49,8 +49,8 @@ bool Music::play() {
     }
     if (!player_) {
         output_ = std::make_unique<QAudioOutput>();
-        output_->setMuted(muted_);
-        output_->setVolume(0.35);
+        output_->setMuted(true);
+        output_->setVolume(static_cast<float>(volumePercent_) / 100.0F);
         player_ = std::make_unique<QMediaPlayer>();
         player_->setAudioOutput(output_.get());
         player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
@@ -79,11 +79,13 @@ bool Music::play() {
         player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
     requested_ = true;
     player_->play();
+    output_->setMuted(muted_ || !requested_);
     emit changed();
     return true;
 }
 bool Music::pause() {
     requested_ = false;
+    if (output_) output_->setMuted(true);
     if (player_) player_->pause();
     platform_->release();
     emit changed();
@@ -117,7 +119,14 @@ bool Music::next() {
 void Music::setMuted(bool muted) {
     if (muted_ == muted) return;
     muted_ = muted;
-    if (output_) output_->setMuted(muted);
+    if (output_) output_->setMuted(muted_ || !requested_);
     emit changed();
+}
+bool Music::setVolumePercent(int percent) {
+    if (percent < 0 || percent > 100) return false;
+    if (volumePercent_ == percent) return true;
+    volumePercent_ = percent;
+    if (output_) output_->setVolume(static_cast<float>(percent) / 100.0F);
+    return true;
 }
 }

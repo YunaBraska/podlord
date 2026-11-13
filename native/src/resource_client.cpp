@@ -293,10 +293,25 @@ ResourceClient::~ResourceClient() {
     }
 }
 bool ResourceClient::open(const QString& id, ClusterConnection connection, QStringList namespaces) {
+    bool reboundCache = false;
     if (!states_.contains(id)) {
         State state;
         state.lastSync = now_();
         state.namespaces = std::move(namespaces);
+        auto cached = states_.end();
+        for (auto candidate = states_.begin(); candidate != states_.end(); ++candidate) {
+            if (connection.contextId.isEmpty() || candidate->open || candidate->pending != 0
+                || candidate->connection.contextId != connection.contextId || candidate->namespaces != state.namespaces
+                || candidate->connection.server != connection.server || candidate->connection.credentialId != connection.credentialId) continue;
+            if (cached == states_.end() || candidate->lastSync > cached->lastSync) cached = candidate;
+        }
+        // Reuse a retired tab's cache without moving the destination of sent requests.
+        if (cached != states_.end()) {
+            state = std::move(cached.value());
+            states_.erase(cached);
+            state.forwardError.clear();
+            reboundCache = true;
+        }
         states_.insert(id, std::move(state));
     }
     const auto& previous = states_[id].connection;
@@ -312,11 +327,15 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
     if (!states_[id].connection.credentialReady)
         suspend(states_[id].connection.credentialId, "Authentication required. Confirm sign-in before a request is sent.");
     expire();
+    if (reboundCache) emit rowsChanged(id);
     emit changed(id);
     scheduleSync();
     const auto cutoff = now_().addSecs(-25);
-    if (!states_[id].collections.isEmpty() && states_[id].failures.isEmpty()
-        && std::all_of(states_[id].collections.cbegin(), states_[id].collections.cend(), [&](const auto& collection) { return collection.at >= cutoff; })) return true;
+    const auto& state = states_[id];
+    if (!state.collections.isEmpty() && state.failures.isEmpty()) {
+        if (std::all_of(state.collections.cbegin(), state.collections.cend(), [&](const auto& collection) { return collection.at >= cutoff; })) return true;
+        return refreshSession(id, false);
+    }
     return refresh(id);
 }
 bool ResourceClient::close(const QString& id) {
@@ -358,9 +377,14 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
     it->syncTotal = 0; it->syncCompleted = 0;
     if (!it->initialized) it->progress = 0;
     if (!foreground && !it->collections.isEmpty()) {
-        const auto cutoff = now_().addSecs(-25);
+        const auto now = now_();
+        const bool visible = isVisible(id);
         for (auto collection = it->collections.cbegin(); collection != it->collections.cend(); ++collection) {
-            if (collection->at >= cutoff) continue;
+            // Keep the cadence of status, event and metric feeds independent of list stability.
+            const auto& kind = collection->kind;
+            const bool live = kind == "Pod" || kind == "Node" || kind == "Event" || kind == "PodMetrics" || kind == "NodeMetrics";
+            const int seconds = visible && collection->unchanged && !live ? 120 : 25;
+            if (collection->at.secsTo(now) < seconds) continue;
             Task task; task.id = id; task.path = collection.key(); task.collection = task.path; task.kind = collection->kind;
             task.namespaced = collection->namespaced; task.deletable = collection->deletable; task.read = Read::List; enqueue(task);
         }
@@ -404,13 +428,21 @@ bool ResourceClient::enableRequests(bool enabled) {
     scheduleSync(); if (enabled) { dispatch(); scheduleLogs(); } return true;
 }
 void ResourceClient::discardHiddenReads() {
-    dropQueued([&](const auto& task) { return task.read != Read::Verify && task.read != Read::VerifyDelete
+    dropQueued([&](const auto& task) {
+        if (task.read == Read::Detail && !task.foreground
+            && !std::any_of(views_.cbegin(), views_.cend(), [&](const View& view) {
+                return view.focused && view.session == task.id && view.inspector.path == task.path;
+            })) return true;
+        return task.read != Read::Verify && task.read != Read::VerifyDelete
         && (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() ? (!wanted(task.id) || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id))) : !states_[task.id].open); });
 }
 bool ResourceClient::showSession(const QString& id, const QString& view) {
     for (auto it = views_.cbegin(); it != views_.cend(); ++it)
         if (!id.isEmpty() && it.key() != view && it->session == id) return false;
-    if (views_.value(view).session != id) hideLogs(view);
+    if (views_.value(view).session != id) {
+        hideLogs(view);
+        if (auto previous = views_.find(view); previous != views_.end()) previous->inspector = {};
+    }
     if (id.isEmpty() && !view.isEmpty()) views_.remove(view);
     else views_[view].session = id;
     discardHiddenReads();
@@ -432,7 +464,11 @@ bool ResourceClient::moveSession(const QString& fromView, const QString& toView)
 bool ResourceClient::setFocused(bool focused, const QString& view) {
     const auto it = views_.find(view);
     if (it == views_.end()) return false;
-    it->focused = focused; scheduleSync(); return true;
+    if (!focused && std::any_of(queue_.cbegin(), queue_.cend(), [&](const Task& task) {
+            return task.id == it->session && task.path == it->inspector.path && task.read == Read::Detail && !task.foreground;
+        })) it->inspector.retryAfter = {};
+    it->focused = focused;
+    discardHiddenReads(); expire(); scheduleSync(); return true;
 }
 bool ResourceClient::userActivity(const QString& view) {
     const auto it = views_.find(view);
@@ -481,8 +517,21 @@ bool ResourceClient::inspect(const QString& id, const QString& path) {
     task.kind = row["kind"].toString(); task.namespaced = !row["namespace"].toString().isEmpty();
     return enqueue(task);
 }
+bool ResourceClient::watchInspector(const QString& id, const QString& path, const QString& view) {
+    const auto target = views_.find(view);
+    if (target == views_.end()) return false;
+    const auto state = states_.constFind(id);
+    const auto resource = state != states_.cend() && target->session == id
+        ? state->resources.value(path).value : QJsonObject{};
+    const auto acceptedPath = resource.isEmpty() ? QString{} : path;
+    const auto uid = resource["uid"].toString();
+    if (target->inspector.path == acceptedPath && target->inspector.uid == uid) return true;
+    target->inspector = {acceptedPath, uid, {}};
+    discardHiddenReads(); expire(); return true;
+}
 bool ResourceClient::dismissInspector(const QString& id) {
     if (!states_.contains(id)) return false;
+    if (const auto* shell = terminal(id); shell && !shell->active()) stopTerminal(id);
     dropQueued([&](const auto& task) { return task.id == id && task.read == Read::Detail; });
     return true;
 }
@@ -890,6 +939,7 @@ void ResourceClient::expire() {
     const auto now = now_();
     qint64 next = std::numeric_limits<qint64>::max();
     QSet<QString> expired;
+    QList<Task> renewals;
     for (auto it = states_.begin(); it != states_.end(); ++it) {
         bool rowsChanged = false, detailChanged = false;
         if (it->presentationExpiry.isValid() && it->presentationExpiry<=now) rowsChanged=true;
@@ -914,9 +964,29 @@ void ResourceClient::expire() {
             if (delay <= 0) expired.insert(it->connection.credentialId);
             else next = std::min(next, delay);
         }
+        if (enabled_ && it->open && !it->suspended && it->connection.credentialReady
+            && (!it->connection.expiresAt.isValid() || it->connection.expiresAt > now)) {
+            for (auto& view : views_) {
+                if (!view.focused || view.session != it.key() || view.inspector.path.isEmpty()) continue;
+                const auto row = it->resources.value(view.inspector.path).value;
+                if (row.isEmpty() || row["uid"].toString() != view.inspector.uid) continue;
+                const auto detail = it->details.constFind(view.inspector.path);
+                auto due = detail == it->details.cend() || detail->value["uid"].toString() != view.inspector.uid
+                    ? now : detail->at.addSecs(270);
+                if (view.inspector.retryAfter.isValid() && view.inspector.retryAfter > due) due = view.inspector.retryAfter;
+                const auto delay = now.msecsTo(due);
+                if (delay > 0) { next = std::min(next, delay); continue; }
+                view.inspector.retryAfter = now.addSecs(270);
+                Task task;
+                task.id = it.key(); task.path = view.inspector.path; task.read = Read::Detail;
+                task.kind = row["kind"].toString(); task.namespaced = !row["namespace"].toString().isEmpty();
+                renewals.append(std::move(task));
+            }
+        }
     }
     for (const auto& credential : expired) suspend(credential, "Credentials expired. Sign in again to reconnect.");
     if (next != std::numeric_limits<qint64>::max()) expiry_.start(static_cast<int>(std::min<qint64>(next, std::numeric_limits<int>::max())));
+    for (auto& task : renewals) enqueue(std::move(task));
 }
 bool ResourceClient::enqueue(Task task) {
     expire();
@@ -957,6 +1027,12 @@ void ResourceClient::dispatch() {
     const auto wait = std::max(backoffUntil_, lastStart_ < 0 ? qint64{0} : lastStart_ + spacing) - clock_.elapsed();
     if (wait > 0) { gate_.start(static_cast<int>(std::min<qint64>(wait, std::numeric_limits<int>::max()))); return; }
     auto chosen = std::find_if(queue_.begin(), queue_.end(), [](const auto& task) { return task.change.has_value() || task.read == Read::Detail || (task.read == Read::Log && task.foreground); });
+    if (chosen == queue_.end()) chosen = std::find_if(queue_.begin(), queue_.end(), [this](const auto& task) {
+        if (!task.foreground || task.read != Read::List || !task.path.startsWith("/api/v1/")
+            || (task.kind != "Pod" && task.kind != "Node")) return false;
+        const auto state = states_.constFind(task.id);
+        return state != states_.cend() && !state->initialized && state->snapshot.isEmpty();
+    });
     if (chosen == queue_.end()) chosen = std::find_if(queue_.begin(), queue_.end(), [](const auto& task) { return task.foreground; });
     if (chosen == queue_.end()) chosen = queue_.begin();
     if (!parallelRead(*chosen) && !reads_.isEmpty()) return;
@@ -1246,8 +1322,10 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
             next.tokens.insert(next.continuation);
             enqueue(std::move(next));
         } else {
-            const bool different = state.collections.value(task.collection).rows != next.page;
-            state.collections.insert(task.collection, {next.page, now_(), task.kind, task.namespaced, next.received, task.deletable});
+            const auto previousList = state.collections.constFind(task.collection);
+            const bool known = previousList != state.collections.cend();
+            const bool different = known ? previousList->rows != next.page : !next.page.isEmpty();
+            state.collections.insert(task.collection, {next.page, now_(), task.kind, task.namespaced, next.received, task.deletable, known && !different});
             bool canonicalChanged = false;
             for (const auto& value : next.page) {
                 const auto row = value.toObject();

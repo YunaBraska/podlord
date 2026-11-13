@@ -13,17 +13,10 @@ ModalDialog {
     title: workspace.uiText["action.columns"]
     modal: true
     parent: Overlay.overlay
-    readonly property rect usableArea: {
-        if (!parent) return Qt.rect(0, 0, 0, 0)
-        const margins = parent.SafeArea.margins
-        return Qt.rect(margins.left, margins.top,
-            Math.max(0, parent.width - margins.left - margins.right),
-            Math.max(0, parent.height - margins.top - margins.bottom))
-    }
-    width: Math.min(580, Math.max(0, usableArea.width - 24))
-    height: Math.min(600, Math.max(0, usableArea.height - 24))
-    x: usableArea.x + (usableArea.width - width) / 2
-    y: usableArea.y + (usableArea.height - height) / 2
+    width: Math.min(580, Math.max(0, dialogArea.width - 24))
+    height: Math.min(600, Math.max(0, dialogArea.height - 24))
+    x: dialogArea.x + (dialogArea.width - width) / 2
+    y: dialogArea.y + (dialogArea.height - height) / 2
     Overlay.modal: Rectangle { color: "#99000000" }
     header: DialogHeader { dialog: surfaceDialog; closeObjectName: surfaceDialog.tableType + "CancelColumns"; closeEnabled: !workspace.tableLayoutSaving }
     function snapshot() {
@@ -95,8 +88,8 @@ ModalDialog {
                             ToolTip.visible: hovered || activeFocus
                             onTextEdited: surfaceDialog.change(index, "widthText", text)
                         }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: "Previous"; contentItem.rotation: 90; text: "Earlier"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnLater_" + modelData.id; glyph: "Next"; contentItem.rotation: 90; text: "Later"; enabled: index + 1 < draft.count; Accessible.name: "Move " + modelData.title + " later"; onClicked: draft.move(index, index + 1, 1) }
+                            IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: ""; contentItem: Label { text: "\u2191"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move up"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }
+                            IconButton { objectName: surfaceDialog.tableType + "ColumnLater_" + modelData.id; glyph: ""; contentItem: Label { text: "\u2193"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move down"; enabled: index + 1 < draft.count; Accessible.name: "Move " + modelData.title + " later"; onClicked: draft.move(index, index + 1, 1) }
                         ToolSeparator { orientation: Qt.Horizontal; Layout.fillWidth: true; Layout.columnSpan: layoutColumns; topPadding: 0; bottomPadding: 0 }
                     }
                 }

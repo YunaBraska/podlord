@@ -11,7 +11,7 @@
 #include <array>
 
 namespace podlord {
-bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && collectionCacheHours > 0 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
+bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && collectionCacheHours > 0 && musicVolumePercent >= 0 && musicVolumePercent <= 100 && alertVolumePercent >= 0 && alertVolumePercent <= 100 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
 ReadSettingsStore::ReadSettingsStore(QString profile) : profile_(std::move(profile)) {}
 Result<ReadSettings> ReadSettingsStore::load() const {
     if (const auto failure = profileFailure(profile_)) return *failure;
@@ -26,7 +26,7 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
     const int version = root["version"].toInt(-1);
-    constexpr std::array fieldCounts{3, 4, 5, 8, 10, 11, 12, 11, 12};
+    constexpr std::array fieldCounts{3, 4, 5, 8, 10, 11, 12, 11, 12, 14};
     if (error.error != QJsonParseError::NoError || !document.isObject() || version < 1 || version > static_cast<int>(fieldCounts.size()) || root.size() != fieldCounts[version - 1])
         return Failure{StoreError::InvalidData, "Invalid profile request settings; existing data was retained."};
     const auto integer = [](const QJsonValue& value, int maximum) {
@@ -65,6 +65,12 @@ Result<ReadSettings> ReadSettingsStore::load() const {
             return Failure{StoreError::InvalidData, "Collection cache lifetime must be a positive whole number of hours."};
         settings.collectionCacheHours = root["collectionCacheHours"].toInt();
     }
+    if (version >= 10) {
+        if (!integer(root["musicVolumePercent"], 100) || !integer(root["alertVolumePercent"], 100))
+            return Failure{StoreError::InvalidData, "Audio volumes must be whole-number percentages from 0 to 100."};
+        settings.musicVolumePercent = root["musicVolumePercent"].toInt();
+        settings.alertVolumePercent = root["alertVolumePercent"].toInt();
+    }
     if (!settings.valid()) return Failure{StoreError::InvalidData, "Invalid profile appearance settings; existing data was retained."};
     return settings;
 }
@@ -86,7 +92,7 @@ Result<ReadSettings> ReadSettingsStore::save(ReadSettings value, ReadSettings ex
     const auto current = load();
     if (const auto* failure = std::get_if<Failure>(&current)) return *failure;
     if (std::get<ReadSettings>(current) != expected) return Failure{StoreError::Conflict, "Request settings changed in another window. Reload before saving."};
-    const QJsonObject root{{"version", 9}, {"requestHardLimitPerMinute", value.requestHardLimitPerMinute}, {"inactiveSyncMinutes", value.inactiveSyncMinutes}, {"logLimitMb", value.logLimitMb}, {"yamlLimitMiB", value.yamlLimitMiB}, {"themeName", value.themeName}, {"themeVariant", value.themeVariant}, {"radarWaterEnabled", value.radarWaterEnabled}, {"radarWaterSpeedPercent", value.radarWaterSpeedPercent}, {"workspaceRestore", value.workspaceRestore}, {"language", value.language}, {"collectionCacheHours", value.collectionCacheHours}};
+    const QJsonObject root{{"version", 10}, {"requestHardLimitPerMinute", value.requestHardLimitPerMinute}, {"inactiveSyncMinutes", value.inactiveSyncMinutes}, {"logLimitMb", value.logLimitMb}, {"yamlLimitMiB", value.yamlLimitMiB}, {"themeName", value.themeName}, {"themeVariant", value.themeVariant}, {"radarWaterEnabled", value.radarWaterEnabled}, {"radarWaterSpeedPercent", value.radarWaterSpeedPercent}, {"workspaceRestore", value.workspaceRestore}, {"language", value.language}, {"collectionCacheHours", value.collectionCacheHours}, {"musicVolumePercent", value.musicVolumePercent}, {"alertVolumePercent", value.alertVolumePercent}};
     QSaveFile file(path); file.setDirectWriteFallback(false);
     const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner) || file.write(bytes) != bytes.size() || !file.commit())

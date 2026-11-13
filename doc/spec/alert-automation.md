@@ -16,7 +16,7 @@ An alert is built from a guided top-to-bottom inspector flow:
 | Zoom | Optional radar zoom percentage when the rule fires. |
 | Sound | Select one of 20 original bundled cues or silence. Existing choices migrate by purpose. User-file import is deferred beyond the first release. |
 
-Default alerts are built in, enabled by default, and locked against editing. Users can enable, disable, duplicate, or add custom alerts. Duplicating a built-in alert creates an editable custom copy.
+Default alerts are built in, enabled by default, and locked against editing. Users can enable or disable built-in alerts in the rules table and add custom alerts. The editor does not offer a duplicate action.
 
 ## Matcher Language
 
@@ -71,11 +71,13 @@ Invalid, loading, empty or stale-scope results cannot move the current camera.
 
 ## Sound Policy
 
+The editor shows rule enablement in the rules table. Save and Delete belong to the editor. Auto-focus and sound reveal configuration only when enabled. The editor does not duplicate global mute or reduced-motion controls.
+
 The release bundles 20 original short cues and 20 independently composed instrumental music tracks. No third-party samples, voices, copied melodies or downloaded audio are used. Each cue has a display name and purpose. Removed sound attribution and source-browser controls disappear. Qt, FFmpeg and other dependency notices remain.
 
 Existing sound IDs resolve to appropriate original cues without changing rule identity, matcher, activation or mute preferences. Reading never rewrites configuration. The next explicit successful save persists the canonical sound choice through the existing conflict-safe atomic writer. Unknown IDs remain errors.
 
-Music uses one application-owned player shared across tabs and windows. Play is explicit. It never resumes after application restart. It continues when minimized or another app is active. A single icon-only Play/Pause button sits below the radar. There is no track chooser, music menu or separate in-app mute control. The same Play/Pause action appears in navigation overflow only when that button is hidden. Tracks shuffle in complete 20-piece cycles, with no immediate repeat across cycle boundaries. Pause retains the current track and position. Native media focus/background lifetime remains active when advancing to the next piece. Playback interruption or output removal pauses music without automatic restart. Mobile wrappers own only OS audio focus, media controls and background lifetime. No download or external runtime is required.
+Music uses one application-owned player shared across tabs and windows. Play is explicit. It never resumes after application restart. It continues when minimized or another app is active. A single icon-only Play/Pause action lives in the main navigation. It uses that navigation's overflow menu on narrow screens. There is no track chooser, music menu or separate in-app music mute control. Tracks shuffle in complete 20-piece cycles, with no immediate repeat across cycle boundaries. Pause retains the current track and position. Native media focus/background lifetime remains active when advancing to the next piece. Playback interruption or output removal pauses music without automatic restart. Mobile wrappers own only OS audio focus, media controls and background lifetime. No download or external runtime is required.
 
 The original score/renderer sources are maintained with the assets. The 20 pieces must differ in composition, rhythm, arrangement and instrumentation, not merely pitch, speed or distortion. Complete silent decoding, cue migration, controls, restart behavior, native player lifecycle and mobile background playback need executable evidence. Imported user sounds remain deferred.
 

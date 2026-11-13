@@ -1,5 +1,7 @@
 # How Does The Native Runtime Persist Sessions Without Sharing Legacy State?
 
+Current GUI persistence is owned by [ADR 0027](0027-session-filter-and-sort-persistence.md), updated on 2026-11-13. The session format below is a validated upgrade input. It is not a separate saved-session feature in the current application.
+
 Status: accepted implementation of the isolated-runtime constraint in [ADR 0015](0015-cpp-rewrite-for-performance-and-device-coverage.md).
 
 ## Decision

@@ -16,6 +16,8 @@
 #include <QWebSocketHandshakeOptions>
 #include <QLoggingCategory>
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <utility>
 
 namespace podlord {
@@ -120,7 +122,11 @@ bool ContainerTerminal::stop(const QString& reason) {
     if (ended_) return false;
     ended_ = true; status_ = reason; report(false); socket_.abort(); emit changed(); return true;
 }
-bool ContainerTerminal::reject(const QString& reason) { return stop(reason); }
+bool ContainerTerminal::reject(const QString& reason) {
+    if (ended_) return false;
+    failed_ = true;
+    return stop(reason);
+}
 bool ContainerTerminal::send(int channel, const QByteArray& bytes) {
     if (!connected()) return false;
     if (bytes.size() > streamLimit || socket_.bytesToWrite() + bytes.size() + 1 > streamLimit) return reject("Terminal input exceeded its bounded queue. The connection was closed; input was not retried.");
@@ -136,7 +142,7 @@ bool ContainerTerminal::completeStatus() {
     if (status["status"] == "Failure" && status["reason"] == "NonZeroExitCode") {
         for (const auto& entry : status["details"].toObject()["causes"].toArray()) {
             const auto cause = entry.toObject(); bool valid = false; const auto code = cause["message"].toString().toUInt(&valid);
-            if (cause["reason"] == "ExitCode" && valid && code > 0 && code <= 255) return stop(QString("Shell exited with code %1.").arg(code));
+            if (cause["reason"] == "ExitCode" && valid && code > 0 && code <= 255) return reject(QString("Shell exited with code %1.").arg(code));
         }
         return reject("Invalid Kubernetes exec exit code.");
     }
@@ -199,6 +205,10 @@ bool ContainerTerminal::mouse(int row, int column, int button, bool pressed, Qt:
     return true;
 }
 VTermPos ContainerTerminal::cursor() const { VTermPos value{}; vterm_state_get_cursorpos(vterm_obtain_state(term_), &value); return value; }
+bool ContainerTerminal::lineContinues(int row) const {
+    const auto* line = row >= 0 && row < rows_ ? vterm_state_get_lineinfo(vterm_obtain_state(term_), row) : nullptr;
+    return line && line->continuation;
+}
 QColor ContainerTerminal::color(VTermColor value) const { vterm_screen_convert_color_to_rgb(screen_, &value); return QColor(value.rgb.red, value.rgb.green, value.rgb.blue); }
 VTermScreenCell ContainerTerminal::cell(int row, int column, int scroll) const {
     VTermScreenCell value{};
@@ -279,11 +289,86 @@ bool TerminalSurface::sizeScreen() {
     return !terminal_ || terminal_->resize(std::clamp(static_cast<int>(height() / cellHeight_), 2, 120), std::clamp(static_cast<int>(width() / cellWidth_), 2, 320));
 }
 void TerminalSurface::geometryChange(const QRectF& next, const QRectF& old) { QQuickPaintedItem::geometryChange(next, old); if (next.size() != old.size()) sizeScreen(); }
+namespace {
+QColor readableHint(QColor color, const QColor& background) {
+    const auto luminance = [](const QColor& value) {
+        const auto linear = [](double channel) { return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4); };
+        return 0.2126 * linear(value.redF()) + 0.7152 * linear(value.greenF()) + 0.0722 * linear(value.blueF());
+    };
+    const auto base = luminance(background);
+    const auto contrast = [&](const QColor& value) { const auto light = luminance(value); return (std::max(light, base) + 0.05) / (std::min(light, base) + 0.05); };
+    if (contrast(color) >= 4.5) return color;
+    const QColor target = base > 0.179 ? QColor(Qt::black) : QColor(Qt::white);
+    for (int step = 1; step <= 16; ++step) {
+        const double amount = step / 16.0;
+        const auto adjusted = QColor::fromRgbF(color.redF() * (1 - amount) + target.redF() * amount,
+            color.greenF() * (1 - amount) + target.greenF() * amount, color.blueF() * (1 - amount) + target.blueF() * amount);
+        if (contrast(adjusted) >= 4.5) return adjusted;
+    }
+    return target;
+}
+// Display hints, not a shell parser. Input bytes and explicit terminal colors never change.
+QByteArray terminalHints(const ContainerTerminal& terminal) {
+    const int columns = terminal.columns();
+    QByteArray roles(terminal.rows() * columns, char(0));
+    QChar quote;
+    bool escaped = false;
+    for (int row = 0; row < terminal.rows(); ++row) {
+        if (!terminal.lineContinues(row)) { quote = QChar{}; escaped = false; }
+        QString line(columns, QChar{});
+        for (int column = 0; column < columns; ++column) {
+            const auto code = terminal.cell(row, column).chars[0];
+            line[column] = code <= 0xffff ? QChar(static_cast<ushort>(code)) : QChar(0xfffd);
+        }
+        for (int column = 0; column < columns; ++column) {
+            const auto character = line[column];
+            auto& role = roles[row * columns + column];
+            if (escaped) { role = quote.isNull() ? 0 : 1; escaped = false; continue; }
+            if (character == '\\' && quote != '\'') { role = quote.isNull() ? 0 : 1; escaped = true; continue; }
+            if (quote == '\'') { role = 1; if (character == quote) quote = QChar{}; continue; }
+            if (character == '\'' && quote.isNull()) { quote = character; role = 1; continue; }
+            if (character == '"') { quote = quote.isNull() ? character : QChar{}; role = 1; continue; }
+            if (!quote.isNull()) role = 1;
+            const auto nameCharacter = [](QChar value) { return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || value == '_' || (value >= '0' && value <= '9'); };
+            if (character == '$') {
+                int begin = column + 1;
+                const bool braced = begin < columns && line[begin] == '{';
+                if (braced) ++begin;
+                int end = begin;
+                if (end < columns && nameCharacter(line[end]) && !line[end].isDigit()) {
+                    while (end < columns && nameCharacter(line[end])) ++end;
+                    if (!braced || (end < columns && line[end] == '}')) {
+                        if (braced) ++end;
+                        std::fill(roles.begin() + row * columns + column, roles.begin() + row * columns + end, char(2));
+                        column = end - 1; continue;
+                    }
+                }
+            }
+            if (quote.isNull() && character.isLetter() && (column == 0 || (!line[column - 1].isLetterOrNumber() && line[column - 1] != '_'))) {
+                int end = column;
+                while (end < columns && (line[end].isLetterOrNumber() || line[end] == '_')) ++end;
+                const auto word = line.mid(column, end - column).toLower();
+                const char severity = word == "err" || word == "error" ? 3 : word == "warn" || word == "warning" ? 4 : 0;
+                if (severity) std::fill(roles.begin() + row * columns + column, roles.begin() + row * columns + end, severity);
+                column = end - 1;
+            }
+        }
+    }
+    return roles;
+}
+}
 void TerminalSurface::paint(QPainter* painter) {
     painter->fillRect(boundingRect(), background_); if (!terminal_) return;
+    const auto hints = !scroll_ && !terminal_->alternateScreen() ? terminalHints(*terminal_) : QByteArray{};
+    const bool light = background_.lightnessF() > 0.5;
+    const std::array<QColor, 5> colors{foreground_, readableHint(QColor(light ? "#246b31" : "#91cf96"), background_),
+        readableHint(QColor(light ? "#175e82" : "#86c9ef"), background_), readableHint(QColor(light ? "#a22c35" : "#f08b8b"), background_),
+        readableHint(QColor(light ? "#765700" : "#e2c178"), background_)};
     for (int row = 0; row < terminal_->rows(); ++row) for (int column = 0; column < terminal_->columns(); ++column) {
         const auto cell = terminal_->cell(row, column, scroll_);
         auto fg = VTERM_COLOR_IS_DEFAULT_FG(&cell.fg) ? foreground_ : terminal_->color(cell.fg);
+        if (!hints.isEmpty() && VTERM_COLOR_IS_DEFAULT_FG(&cell.fg) && VTERM_COLOR_IS_DEFAULT_BG(&cell.bg))
+            fg = colors[static_cast<unsigned char>(hints[row * terminal_->columns() + column])];
         auto bg = VTERM_COLOR_IS_DEFAULT_BG(&cell.bg) ? background_ : terminal_->color(cell.bg);
         if (cell.attrs.reverse) std::swap(fg, bg);
         const int index = row * terminal_->columns() + column;

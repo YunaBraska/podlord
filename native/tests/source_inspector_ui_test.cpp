@@ -44,17 +44,19 @@ bool run(const QString& scenario, const QString& liveConfig) {
     const auto source=std::get<SourceSnapshot>(imported);
     const auto context=live ? source.contexts.first().id : std::find_if(source.contexts.cbegin(),source.contexts.cend(),[](const auto& entry) { return entry.name=="alpha"; })->id;
     const auto other=live ? QString{} : std::find_if(source.contexts.cbegin(),source.contexts.cend(),[](const auto& entry) { return entry.name=="beta"; })->id;
-    auto created=SessionStore(profile).create({context,{}}, "Existing session");
+    auto created=SessionStore(profile).openTab(context);
     require(std::holds_alternative<SessionCatalog>(created), "Fixture session failed.");
     const bool windowScenario=scenario.startsWith("removal_");
     if (windowScenario || live) created=SessionStore(profile).activate(std::get<SessionCatalog>(created).sessions.first().id);
     require(std::holds_alternative<SessionCatalog>(created), "Fixture tab failed.");
-    const auto before=std::get<SessionCatalog>(created);
     QFile owned(source.ownedPath);
     require(owned.open(QIODevice::ReadOnly), "Owned fixture unavailable.");
     const auto ownedBytes=owned.readAll(); owned.close();
     Workspace workspace(profile);
     require(QTest::qWaitFor([&] { return !workspace.busy(); }), "Workspace did not load.");
+    const auto restored = SessionStore(profile).list();
+    require(std::holds_alternative<SessionCatalog>(restored), "Current tabs could not be read.");
+    const auto before = std::get<SessionCatalog>(restored);
     WindowHost host(workspace);
     require(host.open(), "Source window unavailable.");
     auto* window=host.windows().first();
@@ -357,7 +359,7 @@ bool run(const QString& scenario, const QString& liveConfig) {
             }
         }
     }
-    require(workspace.settingsDiagnostics()["requests"].toList().size()==initialRequests && workspace.currentSession()==active, "Source inspector connected or activated a session.");
+    require(workspace.settingsDiagnostics()["requests"].toList().size()==initialRequests && workspace.currentSession()==(scenario=="remove" && inspected==context ? QString{} : active), "Source inspector unexpectedly connected or activated a tab.");
     if (!workspace.sourceInspection().isEmpty()) require(workspace.closeInspector(), "Source inspector did not close.");
     return true;
 }

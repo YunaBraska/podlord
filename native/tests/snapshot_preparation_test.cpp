@@ -171,7 +171,9 @@ int main(int argc, char** argv) {
         podlord::ResourceMetricSummary summary;
         for (int row = 0; row < actual.rowCount(); ++row) actual.accumulateMetrics(row, summary);
         CHECK(summary.presentation() == podlord::resourceMetricSummary(samples));
-        CHECK(summary.presentation().first().toMap()["description"].toString().contains("Oldest stale measurement: " + oldest));
+        const auto description = summary.presentation().first().toMap()["description"].toString();
+        CHECK(!description.contains(oldest));
+        CHECK(!description.contains("stale", Qt::CaseInsensitive));
         return 0;
     }
     if (scenario == "handoff") {

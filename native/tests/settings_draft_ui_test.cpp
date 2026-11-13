@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
             QTest::keyClick(window, Qt::Key_Tab);
         };
         click("settingsWorkspaceButton");
-        require(podlord::test::selectSettingsSection(window, yaml ? "privacy" : "sync"), "Draft settings section is not reachable.");
+        require(podlord::test::selectSettingsSection(window, yaml ? "diagnostics" : "sync"), "Draft settings section is not reachable.");
         if (yaml) fill("inlineYamlLimit", scenario == "yaml_invalid" ? "0" : "6");
         else {
             fill("inlineInactiveMinutes", "12");
@@ -72,10 +72,15 @@ int main(int argc, char** argv) {
             if (scenario.endsWith("_leave")) {
                 click("mapWorkspaceButton");
                 click("settingsWorkspaceButton");
-                require(podlord::test::selectSettingsSection(window, yaml ? "privacy" : "sync"), "Draft settings section is not reachable.");
-                require(yaml ? item("inlineYamlLimit")->property("text").toString() == "3"
-                    : item("inlineLogLimit")->property("text").toString() == "5", "Leaving settings implicitly saved an unconfirmed draft.");
-                require(workspace.requestLimit() == 0 && workspace.logLimitMb() == 5 && workspace.yamlLimitMiB() == 3, "Leaving settings changed the active configuration.");
+                require(podlord::test::selectSettingsSection(window, yaml ? "diagnostics" : "sync"), "Draft settings section is not reachable.");
+                if (yaml) {
+                    require(item("inlineYamlLimit")->property("text").toString() == "3" && workspace.yamlLimitMiB() == 3,
+                            "Leaving settings persisted an unconfirmed YAML draft.");
+                } else {
+                    require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.requestLimit() == 60
+                        && workspace.inactiveSyncMinutes() == 12 && workspace.logLimitMb() == 9; }, 5000),
+                            "Leaving settings lost pending sync changes.");
+                }
                 return 0;
             }
             QLockFile lock(directory.filePath("profile/read-settings.json.lock"));
@@ -85,9 +90,10 @@ int main(int argc, char** argv) {
                 require(QTest::qWaitFor([&] { return !other.busy(); }, 5000) && other.saveReadSettings(121, 0, "5", other.collectionCacheHours()), "Could not save settings through the other workspace.");
                 require(QTest::qWaitFor([&] { return !other.busy() && other.requestLimit() == 121; }, 5000), "The other workspace did not complete its save.");
             }
-            click(yaml ? "inlineSaveYamlLimit" : "inlineSaveSync");
-            require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Settings save did not settle.");
+            if (yaml) click("inlineSaveYamlLimit");
             const bool rejected = scenario.endsWith("_lock") || scenario.endsWith("_conflict") || scenario == "yaml_invalid";
+            require(QTest::qWaitFor([&] { return !workspace.busy() && (rejected ? !workspace.error().isEmpty()
+                : yaml ? workspace.yamlLimitMiB() == 6 : workspace.logLimitMb() == 9); }, 5000), "Settings save did not settle.");
             if (rejected) {
                 require(!workspace.error().isEmpty(), "Rejected settings save has no visible error.");
                 require(workspace.requestLimit() == 0 && workspace.logLimitMb() == 5 && workspace.yamlLimitMiB() == 3, "Rejected save changed the active configuration.");

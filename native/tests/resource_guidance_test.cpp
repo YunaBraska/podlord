@@ -143,11 +143,11 @@ bool ui(const QString& mode) {
     const auto imported = podlord::KubeconfigStore(profile).importText(directory.filePath("origin"), yaml);
     require(std::holds_alternative<podlord::SourceSnapshot>(imported), "Cannot import guidance source");
     const podlord::SessionStore sessions(profile);
-    const auto created = sessions.create({std::get<podlord::SourceSnapshot>(imported).contexts.first().id, {}});
+    const auto created = sessions.openTab(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
     require(std::holds_alternative<podlord::SessionCatalog>(created), "Cannot create guidance session");
     require(std::holds_alternative<podlord::SessionCatalog>(sessions.activate(std::get<podlord::SessionCatalog>(created).sessions.first().id)), "Cannot activate guidance session");
     if (mode == "ui_context_reuse") {
-        const auto copy = sessions.create({std::get<podlord::SourceSnapshot>(imported).contexts.first().id, {}}, "Named active copy");
+        const auto copy = sessions.openTab(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
         require(std::holds_alternative<podlord::SessionCatalog>(copy), "Cannot prepare matching active session copy");
         require(std::holds_alternative<podlord::SessionCatalog>(sessions.activate(std::get<podlord::SessionCatalog>(copy).sessions.last().id)), "Cannot activate matching session copy");
     }
@@ -176,11 +176,14 @@ bool ui(const QString& mode) {
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
     };
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Saved tab metadata did not restore");
-    press("resourcesWorkspaceButton");
+    press("quickOpenDropdown");
+    const auto activate = QString("quickContext_") + workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+    press(qPrintable(activate));
     if (!QTest::qWaitFor([&] { return workspace.table()->rowCount() == 1 && !workspace.busy() && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Discovery: rows=%d; requests=%d; active=%s; status=%s\n", workspace.table()->rowCount(), boundary.requests, qPrintable(workspace.currentSession()), qPrintable(workspace.status()));
         require(false, "Real API discovery/list did not populate the cache");
     }
+    press("resourcesWorkspaceButton");
     require(QTest::qWaitFor([&] { return item("cell_0_0") != nullptr; }, 2000), "Resource workspace did not present its cached row");
     press("cell_0_0");
     require(QTest::qWaitFor([&] { return workspace.resourceGuidance().size() == 1 && item("resourceGuidanceToggle"); }, 5000), "Accepted detail did not publish cached guidance");
@@ -253,7 +256,7 @@ bool ui(const QString& mode) {
         require(workspace.openContext(std::get<podlord::SourceSnapshot>(imported).contexts.first().id)
             && !workspace.status().contains("Choose an available") && workspace.currentSession() == active,
             "Valid context reuse retained the earlier invalid-context error");
-    } else if (mode == "ui_session_snapshot" || mode == "ui_session_duplicate" || mode == "ui_source_import" || mode == "ui_context_reuse") {
+    } else if (mode == "ui_source_import" || mode == "ui_context_reuse") {
         const QString active = workspace.currentSession();
         press("yamlButton");
         require(QTest::qWaitFor([&] { return workspace.property("canEditYaml").toBool(); }, 5000), "Fresh YAML did not become editable");
@@ -261,9 +264,7 @@ bool ui(const QString& mode) {
         const QString draft = workspace.property("yamlText").toString() + "\n# preserved local draft\n";
         require(workspace.setYamlDraft(draft), "Cannot enter real YAML draft");
         const bool submitted = mode == "ui_context_reuse" ? workspace.openContext(std::get<podlord::SourceSnapshot>(imported).contexts.first().id)
-            : mode == "ui_session_duplicate" ? workspace.duplicateSession(active, "Active copy")
-            : mode == "ui_source_import" ? workspace.importText(directory.filePath("another-origin"), yaml)
-            : workspace.saveSessionConfiguration(active, std::get<podlord::SourceSnapshot>(imported).contexts.first().id, "team-a");
+            : workspace.importText(directory.filePath("another-origin"), yaml);
         require(submitted, "Cannot submit metadata action with active YAML draft");
         require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Active session snapshot did not settle");
         require(workspace.currentSession() == active && workspace.property("yamlText").toString() == draft

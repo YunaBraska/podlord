@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFontMetricsF>
 #include <QSignalSpy>
+#include <QStyleHints>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJsonDocument>
@@ -190,7 +191,7 @@ public:
 const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
 bool run(const QString& scenario, const QString& referencePresets) {
     QTemporaryDir temporary; KubernetesBoundary server;
-    server.extraConfigurations = scenario.startsWith("limit_") ? 298 : 0;
+    server.extraConfigurations = scenario.startsWith("limit_") ? 1298 : 0;
     server.delayed = scenario == "loading_silent" || scenario == "loading_parallel";
     server.events = scenario.startsWith("table_keyboard_event_");
     server.valueCopies = scenario.startsWith("value_copy_");
@@ -293,11 +294,25 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!cell) return false;
             QSignalSpy activated(cell.data(),SIGNAL(clicked()));
             const auto path = workspace.table()->index(row,0).data(Qt::UserRole).toString();
+            if (scenario == "cache_cell_touch_copy") {
+                auto* device = QTest::createTouchDevice(QInputDevice::DeviceType::TouchScreen);
+                const auto point = cell->mapToScene(QPointF(cell->width()/2, cell->height()/2)).toPoint();
+                QTest::touchEvent(window, device).press(0, point, window).commit();
+                QTest::qWait(QGuiApplication::styleHints()->mousePressAndHoldInterval() + 100);
+                const bool opened = waitFor([&] { auto* copy = item(window, "menuCopy"); return copy && copy->isVisible(); });
+                QTest::touchEvent(window, device).release(0, point, window).commit();
+                if (!opened || !click(window, "menuCopy")) return false;
+                return QGuiApplication::clipboard()->text() == "alpha" && workspace.inspectorPath().isEmpty();
+            }
             if (scenario == "cache_cell_accessibility") {
                 auto* accessible = QAccessible::queryAccessibleInterface(cell);
                 auto* actions = accessible ? accessible->actionInterface() : nullptr;
-                if (!accessible || accessible->role() != QAccessible::Button || accessible->text(QAccessible::Name) != "alpha"
+                if (!accessible || accessible->role() != QAccessible::Button || accessible->text(QAccessible::Name) != "alpha, Name"
                     || !actions || !actions->actionNames().contains(QAccessibleActionInterface::pressAction())) return false;
+                for (int child = 0; child < accessible->childCount(); ++child) {
+                    const auto* descendant = accessible->child(child);
+                    if (descendant && descendant->text(QAccessible::Name) == accessible->text(QAccessible::Name)) return false;
+                }
                 actions->doAction(QAccessibleActionInterface::pressAction());
             } else {
                 window->requestActivate();
@@ -364,7 +379,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
         }
         if (scenario.startsWith("limit_")) {
             auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
-            if (!displayed || workspace.property("resourceLimit").toInt() != 256 || displayed->rowCount() != 256 || workspace.resourceCount() != 301) return false;
+            if (!displayed || workspace.property("resourceLimit").toInt() != 1024 || displayed->rowCount() != 1024 || workspace.resourceCount() != 1301) return false;
             QAbstractItemModelTester consistency(displayed, QAbstractItemModelTester::FailureReportingMode::Fatal);
             const auto setLimit = [&](const QString& text) {
                 bool accepted = false;
@@ -375,9 +390,9 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 const auto value = scenario.mid(QString("limit_normalize_").size());
                 const QMap<QString, QString> inputs{{"empty", ""}, {"zero", "0"}, {"negative", "-1"}, {"invalid", "abc"},
                     {"overflow", "2147483648"}, {"upper", "2147483647"}, {"spaces", " 7 "}, {"one", "1"}, {"max", "5000"}};
-                const int expected = value == "upper" || value == "max" ? 5000 : value == "spaces" ? 7 : value == "one" ? 1 : 256;
+                const int expected = value == "upper" || value == "max" ? 5000 : value == "spaces" ? 7 : value == "one" ? 1 : 1024;
                 return inputs.contains(value) && setLimit(inputs[value]) && workspace.property("resourceLimit").toInt() == expected
-                    && displayed->rowCount() == std::min(expected, 301) && workspace.resourceCount() == 301 && server.requests == requests;
+                    && displayed->rowCount() == std::min(expected, 1301) && workspace.resourceCount() == 1301 && server.requests == requests;
             }
             if (scenario == "limit_ui" || scenario == "limit_narrow") {
                 if (scenario == "limit_narrow") {
@@ -401,10 +416,10 @@ bool run(const QString& scenario, const QString& referencePresets) {
                         && qAbs(origin.y() + control->height()/2 - activityOrigin.y() - activity->height()/2) < 8);
                 }) || !podlord::test::scrollIntoView(window, control)) return false;
                 control->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Up);
-                return waitFor([&] { return workspace.property("resourceLimit").toInt() == 257 && displayed->rowCount() == 257
-                    && item(window, "resourceTable")->property("rows").toInt() == 257; }) && server.requests == requests;
+                return waitFor([&] { return workspace.property("resourceLimit").toInt() == 1025 && displayed->rowCount() == 1025
+                    && item(window, "resourceTable")->property("rows").toInt() == 1025; }) && server.requests == requests;
             }
-            if (!setLimit("7") || displayed->rowCount() != 7 || workspace.resourceCount() != 301) return false;
+            if (!setLimit("7") || displayed->rowCount() != 7 || workspace.resourceCount() != 1301) return false;
             if (scenario == "limit_sort") {
                 if (!workspace.sortColumn(0) || !workspace.sortColumn(0) || workspace.sortDirection() != "DESC") return false;
                 for (int row = 0; row < 7; ++row)
@@ -415,7 +430,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 && displayed->data(displayed->index(0, 0)).toString() == "limit-297" && server.requests == requests;
             if (scenario == "limit_picker") return workspace.prepareFilterPicker("name") && workspace.filterPickerValues().contains("limit-297") && server.requests == requests;
             if (scenario == "limit_reset") return workspace.filterField("name", "limit-") && workspace.resetResourceFilters()
-                && workspace.property("resourceLimit").toInt() == 256 && displayed->rowCount() == 256 && workspace.resourceCount() == 301 && server.requests == requests;
+                && workspace.property("resourceLimit").toInt() == 1024 && displayed->rowCount() == 1024 && workspace.resourceCount() == 1301 && server.requests == requests;
             if (scenario == "limit_preset") {
                 if (!workspace.saveFilterPreset("Seven rows") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
                     || !workspace.resetResourceFilters() || workspace.selectedFilterPreset() != "default" || !workspace.loadFilterPreset("Seven rows")) return false;
@@ -423,8 +438,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
             }
             if (scenario == "limit_session") {
                 const auto other = workspace.contexts().last().toMap().value("id").toString();
-                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() == 301; })
-                    || workspace.property("resourceLimit").toInt() != 256) return false;
+                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() == 1301; })
+                    || workspace.property("resourceLimit").toInt() != 1024) return false;
                 const int afterOpen = server.requests;
                 return workspace.activate(session) && waitFor([&] { return !workspace.busy(); })
                     && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == afterOpen;
@@ -436,17 +451,21 @@ bool run(const QString& scenario, const QString& referencePresets) {
             }
             if (scenario == "limit_radar") {
                 auto* radar = window->findChild<podlord::RadarIsland*>();
-                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 301 && server.requests == requests;
+                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 1301 && server.requests == requests;
             }
             if (scenario == "limit_restart") {
-                if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
+                if (!waitFor([&] { return workspace.requestWindowClose(); })) {
+                    qWarning() << "Limit save did not settle" << workspace.property("viewStateError") << workspace.error(); return false;
+                }
                 podlord::Workspace restored(profile);
             if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
                 || restored.totalResourceCount()!=0 || !restored.activate(session)) {
                 qWarning() << "Field restart restoration failed" << restored.currentSession() << session << restored.totalResourceCount() << restored.resourceFieldFilters() << restored.error(); return false;
             }
-                return waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 301; })
-                    && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
+                const bool loaded = waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 1301; });
+                if (!loaded) qWarning() << "Reopened rows" << restored.busy() << restored.loading() << restored.currentSession()
+                    << restored.resourceCount() << restored.totalResourceCount() << restored.property("resourceLimit") << restored.error();
+                return loaded && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
             }
             return false;
         }
@@ -556,7 +575,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 QTest::keyClick(window, Qt::Key_Escape);
                 passed = waitFor([&] { return !editor; }) && button->hasActiveFocus();
             } else if (scenario == "inline_navigation") {
-                passed = click(window, "eventsWorkspaceButton") && waitFor([&] { return workspace.workspacePage() == "events" && !editor; });
+                passed = click(window, "mapWorkspaceButton") && waitFor([&] { return workspace.workspacePage() == "map" && !editor; });
             } else if (scenario == "inline_keyboard") {
                 auto* value = item(window, "fieldFilterValue_0");
                 if (!value) return false;

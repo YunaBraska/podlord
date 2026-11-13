@@ -22,7 +22,7 @@ QString Workspace::refreshSettingsDiagnostics() {
         const auto time = QDateTime::fromString(request.value("time").toString(), Qt::ISODateWithMs);
         if (time.isValid()) {
             auto sort = request.value("sortValues").toMap(); sort.insert("time", time.toMSecsSinceEpoch());
-            request.insert("sortValues", sort); request.insert("time", displayDateTime(time.toString(Qt::ISODateWithMs)));
+            request.insert("sortValues", sort);
         }
         requests.append(QJsonObject::fromVariantMap(request));
     }

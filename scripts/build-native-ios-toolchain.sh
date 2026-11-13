@@ -170,5 +170,6 @@ yaml-cpp: 0.9.0
 Source SHA256 values: scripts/build-native-ios-toolchain.sh
 EOF
 cat "$ROOT/qt/podlord-qtquick-patch.txt" >> "$ROOT/build-inputs.txt"
+cmake "-DPODLORD_IOS_SDK_ROOT=$ROOT" -P "$(dirname "$0")/install-native-ios-privacy.cmake"
 trap - EXIT HUP INT TERM
 printf 'Toolchain ready: %s/qt\nYAML package: %s/yaml/lib/cmake/yaml-cpp\n' "$ROOT" "$ROOT"

@@ -2,20 +2,24 @@
 #include "table_layout.h"
 
 namespace podlord {
-/** Reference input: invalid/nonpositive values use 256; positive values cap at 5000. */
+inline constexpr int DefaultResourceDisplayLimit = 1024;
+/** Invalid/nonpositive input uses the current display default; positive values cap at 5000. */
 int resourceDisplayLimit(const QString& text);
 struct TableViewState final {
-    QString filter;
-    QString column;
+    QString filter = {};
+    QString column = {};
     bool descending = false;
     QMap<QString, QString> fields = {};
     QString mode = {};
+    // Compatibility value for older records and tables without a resource limit.
     int limit = 256;
+    /** Existing namespace request scope, owned by the resource view. */
+    QStringList namespaces = {};
     bool operator==(const TableViewState&) const = default;
 };
 using TableViewStates = QMap<QString, TableViewState>;
 using LoadedViewStates = QMap<QString, Result<TableViewStates>>;
-/** Session-scoped filters and sorts. Column IDs come from actual model headers. */
+/** Context-owned filters and sorts. */
 class ViewStateStore final {
 public:
     ViewStateStore(QString profile, TableSchemas schemas);

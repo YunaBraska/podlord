@@ -95,6 +95,7 @@ bool Workspace::applySourceDraft() {
         sourceInspection_=SourceInspection{sourceInspectionMetadata(source,target),draft,{},{},false,false};
         sourceImportNotice_.clear();
         emit sourceInspectionChanged(); emit sourceDraftChanged(); emit yamlEditChanged();
+        ++runtime_->contextCatalogRevision;
         reloadCatalogs(false); emit sourceImportFinished(true);
     });
     const auto profile=profile_;

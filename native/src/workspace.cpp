@@ -55,7 +55,7 @@ QVariantList sessionRows(const SessionCatalog& catalog, bool onlyOpen) {
     QVariantList result;
     for (const auto& session : catalog.sessions) {
         if (onlyOpen && !session.open) continue;
-        result.append(QVariantMap{{"id", sessionId(session.id)}, {"name", session.displayName()}});
+        result.append(QVariantMap{{"id", sessionId(session.id)}, {"name", session.config.contextId}});
     }
     return result;
 }
@@ -175,7 +175,6 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         if (metric) {
             value = cell.isDouble() ? formatMetricQuantity(cell.toDouble(), field == "cpu") : QStringLiteral("-");
             if (cell.isDouble() && !row["metricComplete"].toObject()[field].toBool()) value += " (incomplete)";
-            if (cell.isDouble() && row["metricStale"].toBool()) value += " (stale)";
         } else if (field == "eventTime" || field == "time" || field == "imported") {
             const auto date = QDateTime::fromString(text, Qt::ISODate);
             value = date.isValid() ? QLocale::system().toString(date.toLocalTime(), QLocale::ShortFormat) : QString{};
@@ -350,7 +349,9 @@ Workspace::Workspace(QString profile, QObject* parent, std::function<QDateTime()
     : Workspace(std::make_shared<WorkspaceRuntime>(std::move(profile), std::move(now), std::move(releaseEndpoint)), parent, true) {}
 Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent, bool restore)
     : QObject(parent), runtime_(std::move(runtime)), viewId_(restore ? QString{} : QUuid::createUuid().toString(QUuid::WithoutBraces)),
-    profile_(runtime_->profile), client_(runtime_->client), releaseUpdates_(runtime_->releases),
+    profile_(runtime_->profile), savedViews_(runtime_->savedViews), pendingViews_(runtime_->pendingViews),
+    viewSaveFuture_(runtime_->viewSaveFuture), viewSaveContext_(runtime_->viewSaveContext), viewStateErrors_(runtime_->viewStateErrors),
+    viewsLoaded_(runtime_->viewsReady), viewSaving_(runtime_->viewSaving), client_(runtime_->client), releaseUpdates_(runtime_->releases),
     alerts_(profile_, &client_, this, runtime_->now), credentials_(runtime_->credentials),
     eventRows_(nullptr, {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage", "name", "owner"},
         {"Last observed", "Status", "Reason", "Namespace", "Target name", "Count", "Message", "Name", "Object"}),
@@ -364,6 +365,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         {"Time", "Method", "Path", "Priority", "Status", "Duration", "Outcome"}, "id") {
     connect(&runtime_->typography, &SystemTypography::changed, this, &Workspace::typographyChanged);
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
+    connect(this, &Workspace::catalogsChanged, this, [this] { refreshMapContexts(mapContexts_.isEmpty()); });
     connect(this, &Workspace::filterPresetsChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::tableLayoutStatusChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     diagnosticTable_.setSourceModel(&diagnosticRows_); diagnosticTable_.setSortRole(Qt::UserRole + 6);
@@ -411,6 +413,15 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     bindDeletion();
     connect(this, &Workspace::yamlTextChanged, this, &Workspace::clearYamlCheck);
     connect(this, &Workspace::yamlEditChanged, this, &Workspace::clearYamlCheck);
+    const auto watchInspector = [this] {
+        const bool visible = !windowClosed_ && windowVisible_ && !sourceInspection_ && !yamlDraft_
+            && workspacePage() != "settings" && !(workspacePage() == "map" && mapOverview())
+            && (inspectorPage() == "overview" || inspectorPage() == "yaml" || inspectorPage() == "values");
+        client_.watchInspector(active_, visible ? inspectorPath() : QString{}, viewId_);
+    };
+    connect(this, &Workspace::changed, this, watchInspector);
+    connect(this, &Workspace::yamlEditChanged, this, watchInspector);
+    connect(this, &Workspace::sourceInspectionChanged, this, watchInspector);
     if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
         client_.setFocused(app->applicationState() == Qt::ApplicationActive, viewId_);
         connect(app, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
@@ -481,14 +492,17 @@ QVariantList Workspace::contexts() const {
                 {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")}, {"current",source.current}});
     return result;
 }
-QVariantList Workspace::sessions() const { return sessionRows(selection_, false); }
 QVariantList Workspace::tabs() const {
+    if (!viewsLoaded_) return {};
     auto result = sessionRows(catalog_, true);
     result.erase(std::remove_if(result.begin(), result.end(), [this](const auto& row) {
         return runtime_->owners.value(row.toMap()["id"].toString()) != this;
     }), result.end());
     for (auto& value : result) {
         auto row = value.toMap();
+        for (const auto& session : catalog_.sessions) if (sessionId(session.id) == row["id"].toString())
+            for (const auto& source : sources_.sources) for (const auto& context : source.contexts)
+                if (context.id == session.config.contextId) { row["name"] = context.displayName; row["contextId"] = context.id; }
         row["connectionCount"] = client_.connectionCount(row["id"].toString());
         value = row;
     }
@@ -504,7 +518,7 @@ bool Workspace::authenticationRunning() const {
 QString Workspace::authenticationPrompt() const {
     const auto connection = client_.connection(active_);
     if (!connection) return {};
-    return "Session: " + title() + "\nCluster: " + connection->server.toString()
+    return "Context: " + title() + "\nCluster: " + connection->server.toString()
         + (connection->exec && connection->exec->oidc ? "\nOpenID Connect will open the system browser. No imported command runs."
             : connection->exec && connection->exec->eks ? "\nAmazon EKS uses native AWS authentication. SSO may open the system browser; configured roles use AWS STS and may request an MFA code here. No imported command runs. Only trust configurations you know."
             : connection->exec && connection->exec->oci ? "\nOracle OKE will sign a short-lived token locally using the imported OCI API key. No imported command runs. Only trust configurations you know."
@@ -538,7 +552,8 @@ QString Workspace::error() const {
 QString Workspace::status() const { return authenticationRunning() ? "Signing in…" : client_.status(active_); }
 QString Workspace::currentSession() const { return active_; }
 QString Workspace::title() const {
-    for (const auto& session : catalog_.sessions) if (sessionId(session.id) == active_) return session.displayName();
+    const auto identity = mapContextIdentity();
+    if (!identity.isEmpty()) return identity.value("name").toString();
     return "Resources";
 }
 QString Workspace::filterText() const { return currentNavigation().filter; }
@@ -656,6 +671,7 @@ bool Workspace::confirmDiscard(bool discard) {
     case Leave::Source: return inspectSourceContext(pending.target);
     case Leave::Session: return activate(pending.target);
     case Leave::Context: return openContext(pending.target);
+    case Leave::ContextTab: return openContext(pending.target, false, true);
     case Leave::Tab: return close(pending.target);
     case Leave::Inspector: return closeInspector();
     case Leave::Window: emit windowCloseApproved(); return true;
@@ -839,6 +855,7 @@ bool Workspace::closeInspector() {
     if (!allowLeave(Leave::Inspector)) return false;
     clearSourceInspection();
     client_.dismissInspector(active_); client_.hideLogs(viewId_);
+    navigation_[active_].terminalError.clear();
     navigation_[active_].inspected.clear(); navigation_[active_].page = "overview";
     publishInspector(); publishLogs(); emit changed(); return true;
 }
@@ -896,7 +913,9 @@ bool Workspace::savePolicy(ReadSettings desired) {
     if (!desired.valid()) { settingsError_ = "Invalid request settings."; emit changed(); return false; }
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<ReadSettings>>(this);
-    connect(watcher, &QFutureWatcher<Result<ReadSettings>>::finished, this, [this, watcher] {
+    const bool audioChanged = desired.musicVolumePercent != settings_.musicVolumePercent
+        || desired.alertVolumePercent != settings_.alertVolumePercent;
+    connect(watcher, &QFutureWatcher<Result<ReadSettings>>::finished, this, [this, watcher, audioChanged] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         const auto previousLanguage = settings_.language;
         if (const auto* failure = std::get_if<Failure>(&result)) settingsError_ = failure->message;
@@ -906,12 +925,17 @@ bool Workspace::savePolicy(ReadSettings desired) {
             for (auto* other : runtime_->windows) {
                 if (other == this || other->windowClosed_) continue;
                 const auto language = other->settings_.language;
-                other->settings_ = settings_; other->settingsReady_ = true; other->publishAppearance(); emit other->changed();
+                other->settings_ = settings_; other->settingsReady_ = true; other->publishAppearance();
+                other->alerts_.setVolumePercent(settings_.alertVolumePercent);
+                emit other->audioVolumesChanged(); emit other->changed();
                 if (language != settings_.language) emit other->languageChanged();
             }
         }
-        emit changed(); emit appearanceChanged();
+        runtime_->music.setVolumePercent(settings_.musicVolumePercent);
+        alerts_.setVolumePercent(settings_.alertVolumePercent);
+        emit audioVolumesChanged(); emit changed(); emit appearanceChanged();
         if (previousLanguage != settings_.language || std::holds_alternative<Failure>(result)) emit languageChanged();
+        if (audioChanged) emit audioVolumesSaveFinished(std::holds_alternative<ReadSettings>(result));
     });
     const auto profile = profile_; const auto expected = settings_;
     watcher->setFuture(QtConcurrent::run([profile, desired, expected] { return ReadSettingsStore(profile).save(desired, expected); }));
@@ -920,6 +944,14 @@ bool Workspace::savePolicy(ReadSettings desired) {
 bool Workspace::saveRadarWater(bool enabled, int speedPercent) {
     auto desired=settings_; desired.radarWaterEnabled=enabled; desired.radarWaterSpeedPercent=speedPercent;
     return savePolicy(desired);
+}
+bool Workspace::saveAudioVolumes(int musicPercent, int alertPercent) {
+    auto desired = settings_;
+    desired.musicVolumePercent = musicPercent; desired.alertVolumePercent = alertPercent;
+    return desired == settings_ || savePolicy(desired);
+}
+bool Workspace::previewAudioVolume(bool music) {
+    return alerts_.previewVolume(music ? settings_.musicVolumePercent : settings_.alertVolumePercent);
 }
 bool Workspace::saveWorkspaceRestore(bool enabled) {
     auto desired = settings_; desired.workspaceRestore = enabled;
@@ -1054,31 +1086,42 @@ bool Workspace::reloadCatalogs(bool reconnect) {
     if (busy_) return false;
     const auto credentialContext = credentialImportContext_;
     credentialImportContext_.clear();
-    ++runtime_->selectionRevision;
     busy_ = true; emit changed();
     using Catalogs = std::tuple<Result<SourceCatalog>, Result<SessionCatalog>, Result<ReadSettings>>;
+    const auto revision = runtime_->contextCatalogRevision;
     auto* watcher = new QFutureWatcher<Catalogs>(this);
-    connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher, credentialContext, reconnect] {
+    connect(watcher, &QFutureWatcher<Catalogs>::finished, this, [this, watcher, credentialContext, reconnect, revision] {
         const auto [sources, sessions, settings] = watcher->result(); watcher->deleteLater(); busy_ = false;
+        if (revision != runtime_->contextCatalogRevision) {
+            credentialImportContext_ = credentialContext;
+            reloadCatalogs(reconnect);
+            return;
+        }
         if (const auto* failure = std::get_if<Failure>(&settings)) { settingsError_ = failure->message; settingsReady_ = false; client_.enableRequests(false); }
         else {
             const auto previousLanguage = settings_.language;
             settings_ = std::get<ReadSettings>(settings); settingsError_.clear(); settingsReady_ = true;
             publishAppearance(); client_.configure(settings_); client_.enableRequests(true);
+            runtime_->music.setVolumePercent(settings_.musicVolumePercent);
+            alerts_.setVolumePercent(settings_.alertVolumePercent);
+            emit audioVolumesChanged();
             if (previousLanguage != settings_.language) emit languageChanged();
         }
         sourceCatalogFailed_ = std::holds_alternative<Failure>(sources);
         if (const auto* failure = std::get_if<Failure>(&sources)) error_ = failure->message;
         else {
             sources_ = std::get<SourceCatalog>(sources);
+            for (auto use = sources_.usage.begin(); use != sources_.usage.end(); ++use) {
+                auto& cached = runtime_->contextUsage[use.key()];
+                if (use->count > cached.count) cached = use.value();
+            }
             reconcileMapPreviews();
             error_ = sources_.errors.isEmpty() ? QString{} : "Some owned source records could not be read; healthy sources remain available.";
         }
         if (const auto* failure = std::get_if<Failure>(&sessions)) error_ = failure->message;
         else {
-            selection_ = std::get<SessionCatalog>(sessions);
+            if (!viewsLoaded_) catalog_ = std::get<SessionCatalog>(sessions);
             if (!settingsReady_) { emit catalogsChanged(); emit changed(); return; }
-            // Selection is ranked separately; never use it as the tab-order catalog.
             const auto profile = profile_;
             using OrderedViews = std::pair<Result<SessionCatalog>, LoadedViewStates>;
             auto* order = new QFutureWatcher<OrderedViews>(this);
@@ -1090,7 +1133,7 @@ bool Workspace::reloadCatalogs(bool reconnect) {
                 const auto [result, views] = order->result(); order->deleteLater(); busy_ = false;
                 if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; emit changed(); }
                 else {
-                    if (restore) { restoreViewStates(views); viewsLoaded_ = true; }
+                    if (restore) { catalog_ = std::get<SessionCatalog>(result); restoreViewStates(views); viewsLoaded_ = true; }
                     mapNavigating_=restore;
                     const bool selected=select(std::get<SessionCatalog>(result));
                     mapNavigating_=false;
@@ -1101,24 +1144,36 @@ bool Workspace::reloadCatalogs(bool reconnect) {
                         || (!credentialContext.isEmpty() && sessionConfiguration(active_).value("contextId").toString() == credentialContext))) resolve(active_);
                 }
             });
-            order->setFuture(QtConcurrent::run([profile, schemas, restore, closeOnStartup] {
+            QSet<QString> contextIds;
+            for (const auto& source : sources_.sources) for (const auto& context : source.contexts) contextIds.insert(context.id);
+            order->setFuture(QtConcurrent::run([profile, schemas, restore, closeOnStartup, contextIds] {
                 const SessionStore store(profile);
-                auto catalog = closeOnStartup ? store.closeWorkspace() : store.list();
+                const ViewStateStore preferences(profile, schemas);
+                auto catalog = store.list();
+                if (closeOnStartup && std::holds_alternative<SessionCatalog>(catalog)) catalog = store.closeWorkspace();
                 LoadedViewStates views;
-                if (restore) if (const auto* sessions = std::get_if<SessionCatalog>(&catalog))
-                    for (const auto& session : sessions->sessions) {
-                        const auto id = sessionId(session.id); views.insert(id, ViewStateStore(profile, schemas).load(id));
-                    }
+                if (restore) if (const auto* tabs = std::get_if<SessionCatalog>(&catalog)) {
+                    auto ids = contextIds;
+                    for (const auto& tab : tabs->sessions) ids.insert(tab.config.contextId);
+                    for (const auto& id : ids) views.insert(id, preferences.load(id));
+                }
                 return OrderedViews{std::move(catalog), std::move(views)};
             }));
         }
         emit catalogsChanged(); emit changed();
     });
     const auto profile = profile_;
-    watcher->setFuture(QtConcurrent::run([profile] { return Catalogs{KubeconfigStore(profile).list(), SessionStore(profile).selection(), ReadSettingsStore(profile).load()}; }));
+    watcher->setFuture(QtConcurrent::run([profile] { return Catalogs{KubeconfigStore(profile).list(), SessionStore(profile).list(), ReadSettingsStore(profile).load()}; }));
     return true;
 }
-bool Workspace::select(const SessionCatalog& catalog, bool local) {
+bool Workspace::select(const SessionCatalog& incoming, bool local) {
+    auto catalog = incoming;
+    if (!sourceCatalogFailed_) {
+        QSet<QString> contexts;
+        for (const auto& source : sources_.sources) for (const auto& context : source.contexts) contexts.insert(context.id);
+        catalog.sessions.erase(std::remove_if(catalog.sessions.begin(), catalog.sessions.end(), [&](const auto& tab) { return !contexts.contains(tab.config.contextId); }), catalog.sessions.end());
+        if (catalog.activeSession && std::none_of(catalog.sessions.begin(), catalog.sessions.end(), [&](const auto& tab) { return tab.id == *catalog.activeSession; })) catalog.activeSession.reset();
+    }
     if (local) runtime_->publishCatalog(catalog, this);
     const auto selected = catalog.activeSession ? sessionId(*catalog.activeSession) : QString{};
     QString next = local && runtime_->owners.value(selected) == this ? selected
@@ -1126,13 +1181,17 @@ bool Workspace::select(const SessionCatalog& catalog, bool local) {
     if (!local && next.isEmpty())
         for (const auto& session : catalog.sessions)
             if (session.open && runtime_->owners.value(sessionId(session.id)) == this) { next = sessionId(session.id); break; }
+    const bool overviewWasVisible = workspacePage() == "map" && mapOverview();
     const bool sessionChanged = next != active_;
     if (sessionChanged && !allowLeave(Leave::Reload)) return false;
     if (sessionChanged) clearSourceInspection();
     emit logViewChanging();
     catalog_ = catalog;
     active_ = next;
+    const auto context = sessionConfiguration(active_).value("contextId").toString();
+    if (runtime_->contextViews.contains(context)) applyContextViews(context, runtime_->contextViews.value(context), false);
     rememberMapSession(sessionChanged);
+    if (!overviewWasVisible && workspacePage() == "map" && mapOverview()) refreshMapContexts(true);
     client_.showSession(workspacePage()=="map" && mapOverview() ? QString{} : active_, viewId_);
     emit catalogsChanged();
     if (sessionChanged || active_.isEmpty()) publish();
@@ -1232,7 +1291,7 @@ bool Workspace::refreshSources() {
     if (appStore()) return false;
     QStringList paths;
     for (const auto& source : sources_.sources)
-        if (!source.sourcePath.startsWith("podlord-generated://")) paths.append(source.sourcePath);
+        paths.append(source.sourcePath);
     paths.removeDuplicates();
     if (paths.isEmpty()) { sourceImportError_ = "No imported source files to refresh."; emit changed(); return false; }
     return importSource([paths](const KubeconfigStore& store) -> Result<SourceImportReport> {
@@ -1250,22 +1309,22 @@ bool Workspace::renameSourceContext(const QString& contextId, const QString& dis
         const auto result = store.renameContext(contextId, displayName);
         if (const auto* failure = std::get_if<Failure>(&result)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(result)}, {}};
-    }, "Source display name saved. Context identity, credentials and sessions are unchanged.");
+    }, false, {}, SourceReload::MetadataOnly);
 }
 bool Workspace::requestSourceRemoval(const QString& contextId) {
     if (busy_ || pendingLeave_ || !sourceRemoval_.isEmpty()) return false;
     sourceImportError_.clear(); sourceImportNotice_.clear();
     for (const auto& source : sources_.sources) for (const auto& context : source.contexts) {
         if (context.id != contextId) continue;
-        QStringList ids, names;
+        QStringList ids;
         for (const auto& session : catalog_.sessions) if (session.config.contextId == contextId) {
-            ids.append(sessionId(session.id)); names.append(session.displayName());
+            ids.append(sessionId(session.id));
         }
         if (yamlDirty() && (ids.contains(active_) || (sourceInspection_ && sourceInspection_->metadata.value("contextId")==contextId))) {
             sourceImportError_ = "Save or discard the YAML draft before removing its context.";
             emit changed(); return false;
         }
-        sourceRemoval_ = {{"contextId", contextId}, {"name", context.displayName}, {"sessions", names}, {"sessionIds", ids}};
+        sourceRemoval_ = {{"contextId", contextId}, {"name", context.displayName}, {"sessionIds", ids}};
         emit sourceRemovalChanged(); emit changed(); return true;
     }
     sourceImportError_ = "The selected imported context is unavailable.";
@@ -1279,6 +1338,9 @@ bool Workspace::cancelSourceRemoval() {
 bool Workspace::confirmSourceRemoval() {
     if (busy_ || pendingLeave_ || sourceRemoval_.isEmpty()) return false;
     const auto contextId = sourceRemoval_["contextId"].toString();
+    if ((viewSaving_ && viewSaveContext_ == contextId) || pendingViews_.contains(contextId)) {
+        sourceImportError_ = "Wait for the context settings to finish saving."; emit changed(); return false;
+    }
     const auto ids = sourceRemoval_["sessionIds"].toStringList();
     for (auto* owner : runtime_->windows)
         if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId
@@ -1308,9 +1370,13 @@ bool Workspace::confirmSourceRemoval() {
                 if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
                     emit owner->sourceInspectionChanged();
         if (!failure || failure->code == StoreError::CleanupFailed) {
+            ++runtime_->contextCatalogRevision;
             for (auto* owner : runtime_->windows)
                 if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
                     owner->clearSourceInspection();
+            runtime_->contextUsage.remove(contextId);
+            runtime_->pendingUsage.remove(contextId);
+            runtime_->savingUsage.remove(contextId);
             credentials_.revoke(importedCredentialId(contextId));
             for (const auto& id : ids) {
                 client_.close(id); alerts_.closeSession(id); navigation_.remove(id);
@@ -1329,28 +1395,28 @@ bool Workspace::confirmSourceRemoval() {
         sources_.sources.erase(std::remove_if(sources_.sources.begin(), sources_.sources.end(),
             [](const auto& source) { return source.contexts.isEmpty(); }), sources_.sources.end());
         reconcileMapPreviews(); runtime_->previews.forget(contextId);
+        runtime_->contextViews.remove(contextId); savedViews_.remove(contextId);
+        pendingViews_.remove(contextId); viewStateErrors_.remove(contextId);
         const auto& catalog = std::get<SessionCatalog>(result);
-        selection_.sessions.erase(std::remove_if(selection_.sessions.begin(), selection_.sessions.end(),
-            [&](const auto& session) { return session.config.contextId == contextId; }), selection_.sessions.end());
-        selection_.activeSession = catalog.activeSession; selection_.removedContexts = catalog.removedContexts;
-        select(catalog);
-        refreshSessionSelection();
+        if (viewsLoaded_) select(catalog);
+        else catalog_ = catalog;
         sourceRemoval_.clear();
         sourceImportNotice_.clear();
         sourceImportError_.clear();
         emit sourceRemovalChanged(); emit changed();
+        if (!viewsLoaded_) reloadCatalogs(false);
     });
     const auto profile = profile_;
     sessionMutationFuture_ = QtConcurrent::run([profile, contextId, ids] { return KubeconfigStore(profile).removeContext(contextId, ids); });
     watcher->setFuture(sessionMutationFuture_);
     return true;
 }
-bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid, const QString& credentialContext) {
+bool Workspace::importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid, const QString& credentialContext, SourceReload reload) {
     if (busy_) return false;
     if (!ignoreInvalid) { sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear(); }
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<SourceImportReport>>(this);
-    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, ignoreInvalid, credentialContext] {
+    connect(watcher, &QFutureWatcher<Result<SourceImportReport>>::finished, this, [this, watcher, ignoreInvalid, credentialContext, reload] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) {
             if (!ignoreInvalid || !failure->sourceInput) {
@@ -1360,12 +1426,13 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
         }
         else {
             const auto& report = std::get<SourceImportReport>(result);
+            ++runtime_->contextCatalogRevision;
             sourceImportError_.clear(); sourceImportIssues_.clear();
             sourceImportNotice_ = report.errors.isEmpty() ? QString{} : QString("Some files could not be opened.");
             for (const auto& issue : report.errors) sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
             if (!credentialContext.isEmpty()) credentials_.revoke(importedCredentialId(credentialContext));
             credentialImportContext_ = credentialContext;
-            if (!reload()) credentialImportContext_.clear();
+            if (!reloadCatalogs(reload == SourceReload::Configuration)) credentialImportContext_.clear();
             emit sourceImportFinished(!report.sources.isEmpty() && report.errors.isEmpty());
         }
     });
@@ -1374,31 +1441,21 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
     watcher->setFuture(sourceImportFuture_);
     return true;
 }
-bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target, const QString& renamedSession, const QString& managementNotice, bool inWindow) {
+bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target, bool inWindow, const QString& usedContext) {
     if (busy_) return false;
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<SessionCatalog>>(this);
-    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, target, renamedSession, managementNotice, inWindow] {
+    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, target, inWindow, usedContext] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
-        if (const auto* failure = std::get_if<Failure>(&result)) {
-            if (!managementNotice.isEmpty()) { sessionManagementError_ = failure->message; emit changed(); }
-            else if (!renamedSession.isEmpty()) { sessionRenameError_ = failure->message; emit changed(); }
-            else { error_ = failure->message; select(catalog_); }
-            return;
-        }
+        if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; select(catalog_); return; }
         const auto catalog = std::get<SessionCatalog>(result);
-        if (!target.isEmpty()) { client_.close(target); alerts_.closeSession(target); }
-        if (!managementNotice.isEmpty()) {
-            runtime_->publishCatalog(catalog, this);
-            catalog_ = catalog; sessionManagementError_.clear(); sessionManagementNotice_ = managementNotice; emit catalogsChanged(); emit changed();
-        } else if (!renamedSession.isEmpty()) {
-            runtime_->publishCatalog(catalog, this);
-            catalog_ = catalog; sessionRenameError_.clear(); emit catalogsChanged(); emit changed(); emit sessionRenamed(renamedSession);
-        } else if (inWindow && catalog.activeSession) {
+        if (!usedContext.isEmpty()) runtime_->recordContextUse(usedContext);
+        if (!target.isEmpty()) { client_.close(target); alerts_.closeSession(target); navigation_.remove(target); }
+        if (inWindow && catalog.activeSession) {
             catalog_ = catalog; runtime_->publishCatalog(catalog, this);
             const auto id = sessionId(*catalog.activeSession);
             if (!runtime_->host || !runtime_->host->detach(*this, id)) {
-                error_ = "The saved session is open, but its separate window could not be created. Retry from its tab.";
+                error_ = "The context tab is open, but its separate window could not be created. Retry from its tab.";
                 emit changed(); emit catalogsChanged();
             } else if (auto* owner = runtime_->owners.value(id)) owner->resolve(id);
         } else {
@@ -1407,96 +1464,56 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
                 const auto connection = client_.connection(active_);
                 const auto session = std::find_if(catalog.sessions.cbegin(), catalog.sessions.cend(),
                     [&](const auto& value) { return sessionId(value.id) == active_; });
-                if (connection && session != catalog.sessions.cend()) client_.open(active_, *connection, session->config.namespaces);
+                if (connection && session != catalog.sessions.cend())
+                    client_.open(active_, *connection, runtime_->contextViews.value(session->config.contextId).value("resource").namespaces);
                 else resolve(active_);
             } else emit changed();
         }
-        refreshSessionSelection();
     });
-    const auto profile = profile_;
-    sessionMutationFuture_ = QtConcurrent::run([profile, operation] { return operation(SessionStore(profile)); });
+    sessionMutationFuture_ = QtConcurrent::run([profile = profile_, operation] { return operation(SessionStore(profile)); });
     watcher->setFuture(sessionMutationFuture_);
     return true;
-}
-void Workspace::refreshSessionSelection() {
-    // User actions own ranking refresh; stale completions cannot revive deleted sessions.
-    const auto revision = ++runtime_->selectionRevision;
-    auto* ranking = new QFutureWatcher<Result<SessionCatalog>>(this);
-    connect(ranking, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, ranking, revision] {
-        const auto result = ranking->result(); ranking->deleteLater();
-        if (revision == runtime_->selectionRevision)
-            if (const auto* value = std::get_if<SessionCatalog>(&result)) {
-                for (auto* window : runtime_->windows) if (!window->windowClosed_) { window->selection_ = *value; emit window->catalogsChanged(); }
-            }
-    });
-    const auto profile = profile_;
-    ranking->setFuture(QtConcurrent::run([profile] { return SessionStore(profile).selection(); }));
 }
 QVariantMap Workspace::sessionConfiguration(const QString& id) const {
     const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return sessionId(session.id) == id; });
     if (found == catalog_.sessions.cend()) return {};
-    return {{"id", id}, {"name", found->name}, {"displayName", found->displayName()},
-        {"contextId", found->config.contextId}, {"namespaces", found->config.namespaces.join(", ")}};
+    return {{"id", id}, {"contextId", found->config.contextId},
+        {"namespaces", runtime_->contextViews.value(found->config.contextId).value("resource").namespaces.join(", ")}};
 }
 QVariantList Workspace::resourceGuidance() const {
     return podlord::resourceGuidance(client_.document(active_, currentNavigation().inspected));
 }
-bool Workspace::saveSessionConfiguration(const QString& id, const QString& contextId, const QString& namespaces) {
+bool Workspace::openContext(const QString& context, bool inWindow, bool duplicate) {
     if (busy_ || pendingLeave_) return false;
-    sessionManagementError_.clear(); sessionManagementNotice_.clear();
-    const auto configuration = sessionConfiguration(id);
-    if (configuration.isEmpty()) { sessionManagementError_ = "The selected session no longer exists."; emit changed(); return false; }
-    if (!contextUsable(contextId)) { sessionManagementError_ = "Choose an available, usable imported context."; emit changed(); return false; }
-    const SessionConfig config{contextId, namespaces.split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts)};
-    return mutate([id, config](const SessionStore& store) { return store.snapshot(QUuid(id), config); }, {}, {},
-        "Configuration saved. Existing sessions are unchanged; open the result from Saved sessions.");
-}
-bool Workspace::duplicateSession(const QString& id, const QString& name) {
-    if (busy_ || pendingLeave_) return false;
-    sessionManagementError_.clear(); sessionManagementNotice_.clear();
-    const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return sessionId(session.id) == id; });
-    if (found == catalog_.sessions.cend()) { sessionManagementError_ = "The selected session no longer exists."; emit changed(); return false; }
-    const auto config = found->config;
-    return mutate([config, name](const SessionStore& store) { return store.create(config, name); }, {}, {},
-        "Independent session copy saved, closed and without usage history. Open it from Saved sessions.");
-}
-bool Workspace::openContext(const QString& context, bool inWindow) {
-    if (busy_ || pendingLeave_) return false;
+    if (!viewsLoaded_ || viewStateErrors_.contains(context)) {
+        if (viewsLoaded_ || error_.isEmpty())
+            error_ = viewStateErrors_.value(context, "Context settings could not be loaded. Reload the app settings before opening a context.");
+        emit changed(); return false;
+    }
     if (!contextUsable(context)) { error_ = "Choose an available, usable imported context."; emit changed(); return false; }
-    for (const auto& session:catalog_.sessions)
-        if (session.config==SessionConfig{context,{}}) navigation_[sessionId(session.id)].workspace="map";
     if (inWindow && !windowActionsAvailable()) return false;
-    if (inWindow) {
-        for (const auto& session : catalog_.sessions) if (session.config == SessionConfig{context, {}}) return openSessionWindow(sessionId(session.id));
-        if (viewSaving_ || !pendingViews_.isEmpty() || viewStateFailed()) return false;
+    if (!inWindow && !duplicate) {
+        auto existing = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& tab) {
+            return tab.config.contextId == context && sessionId(tab.id) == active_;
+        });
+        if (existing == catalog_.sessions.cend()) existing = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& tab) {
+            return tab.config.contextId == context && runtime_->owners.value(sessionId(tab.id)) == this;
+        });
+        if (existing == catalog_.sessions.cend()) existing = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& tab) {
+            return tab.config.contextId == context;
+        });
+        if (existing != catalog_.sessions.cend()) {
+            const auto id = sessionId(existing->id);
+            auto* owner = runtime_->owners.value(id, this);
+            owner->navigation_[id].workspace = "map";
+            const bool accepted = owner->activate(id);
+            if (accepted) { owner->rememberMapSession(); emit owner->changed(); }
+            return accepted && (owner == this || (runtime_->host && runtime_->host->focus(*owner)));
+        }
     }
-    for (const auto& session : catalog_.sessions)
-        if (session.config == SessionConfig{context, {}})
-            if (auto* owner = runtime_->owners.value(sessionId(session.id)); owner && owner != this) {
-                owner->navigation_[sessionId(session.id)].workspace="map";
-                const bool accepted=owner->activate(sessionId(session.id));
-                if (accepted) { owner->rememberMapSession(); emit owner->changed(); }
-                return accepted && runtime_->host && runtime_->host->focus(*owner);
-            }
-    if (std::any_of(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) {
-        return sessionId(session.id) == active_ && session.open && session.config == SessionConfig{context, {}};
-    })) {
-        rememberMapSession(); emit changed();
-        client_.showSession(active_,viewId_);
-        if (!error_.isEmpty()) { error_.clear(); emit changed(); }
-        return client_.connection(active_) ? true : resolve(active_);
-    }
-    const auto existing = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return session.config == SessionConfig{context, {}}; });
-    if (!inWindow && (existing == catalog_.sessions.cend() || sessionId(existing->id) != active_) && !allowLeave(Leave::Context, context)) return false;
-    return mutate([context](const SessionStore& store) -> Result<SessionCatalog> {
-        const auto catalog = store.list();
-        if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
-        for (const auto& session : std::get<SessionCatalog>(catalog).sessions)
-            if (session.config == SessionConfig{context, {}}) return store.activate(session.id);
-        const auto created = store.create({context, {}});
-        if (const auto* failure = std::get_if<Failure>(&created)) return *failure;
-        return store.activate(std::get<SessionCatalog>(created).sessions.last().id);
-    }, {}, {}, {}, inWindow);
+    if (inWindow && (viewSaving_ || !pendingViews_.isEmpty() || viewStateFailed())) return false;
+    if (!inWindow && !allowLeave(duplicate ? Leave::ContextTab : Leave::Context, context)) return false;
+    return mutate([context](const SessionStore& store) { return store.openTab(context); }, {}, inWindow, context);
 }
 bool Workspace::contextUsable(const QString& id) const {
     for (const auto& source : sources_.sources)
@@ -1509,37 +1526,37 @@ bool Workspace::activate(const QString& id) {
     // The cached navigation changes immediately; persistence and resolution do not block painting.
     const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return sessionId(session.id) == id; });
     if (busy_ || found == catalog_.sessions.cend()) return false;
+    if (!viewsLoaded_ || viewStateErrors_.contains(found->config.contextId)) return false;
     if (auto* owner = runtime_->owners.value(id); owner && owner != this)
         return owner->activate(id) && runtime_->host && runtime_->host->focus(*owner);
+    const bool entered = id != active_ || (workspacePage() == "map" && mapOverview());
     if (id == active_ && found->open && catalog_.activeSession == QUuid(id)) {
         if (workspacePage()=="map") { rememberMapSession(); client_.showSession(id,viewId_); emit changed(); }
-        return client_.connection(id) ? true : resolve(id);
+        const bool accepted = client_.connection(id) ? true : resolve(id);
+        if (accepted && entered) runtime_->recordContextUse(found->config.contextId);
+        return accepted;
     }
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
     if (!client_.showSession(id, viewId_)) return false;
     emit logViewChanging(); active_ = id; rememberMapSession(); publish();
     if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected, viewId_);
     else publishLogs();
-    return mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });
+    const bool accepted = mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });
+    if (accepted && entered) runtime_->recordContextUse(found->config.contextId);
+    return accepted;
 }
 bool Workspace::close(const QString& id) {
     if (auto* owner = runtime_->owners.value(id); owner && owner != this) return owner->close(id);
     if (busy_ || pendingLeave_ || (id == active_ && !allowLeave(Leave::Tab, id))) return false;
     return mutate([id](const SessionStore& store) { return store.close(QUuid(id)); }, id);
 }
-bool Workspace::renameSession(const QString& id, const QString& name) {
-    if (busy_ || pendingLeave_) return false;
-    const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return sessionId(session.id) == id; });
-    sessionRenameError_.clear();
-    if (found == catalog_.sessions.cend()) { sessionRenameError_ = "The selected session no longer exists."; emit changed(); return false; }
-    if (name == found->displayName()) { emit changed(); emit sessionRenamed(id); return true; }
-    return mutate([id, name](const SessionStore& store) { return store.rename(QUuid(id), name); }, {}, id);
-}
 bool Workspace::resolve(const QString& id, bool retry) {
-    if (!settingsReady_) return false;
+    if (!settingsReady_ || !viewsLoaded_) return false;
     const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) { return sessionId(session.id) == id; });
     if (found == catalog_.sessions.cend()) return false;
-    const auto config = found->config;
+    if (viewStateErrors_.contains(found->config.contextId)) return false;
+    auto config = found->config;
+    config.namespaces = runtime_->contextViews.value(config.contextId).value("resource").namespaces;
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<ClusterConnection>>(this);
     connect(watcher, &QFutureWatcher<Result<ClusterConnection>>::finished, this, [this, watcher, id, config, retry] {
@@ -1580,16 +1597,15 @@ bool Workspace::filter(const QString& text) {
 }
 bool Workspace::publishDashboard() {
     if (!dashboardDirty_) return true;
-    QMap<QString, int> kinds; int problems=0;
+    int problems=0;
     ResourceMetricSummary metricSummary;
     for (int index=0; index<table_.rowCount(); ++index) {
         const int sourceRow = table_.mapToSource(table_.index(index, 0)).row();
-        ++kinds[rows_.metadata(sourceRow, Qt::UserRole + 2)];
         if (rows_.row(sourceRow)["problems"].toBool()) ++problems;
         rows_.accumulateMetrics(sourceRow, metricSummary);
     }
-    QStringList counts; for (auto it=kinds.begin(); it!=kinds.end(); ++it) counts.append(it.key()+": "+QString::number(it.value()));
-    const auto summary=QString("%1 / %2 resources; %3 with problems. ").arg(table_.rowCount()).arg(rows_.rowCount()).arg(problems)+counts.join(" / ");
+    const auto summary=uiText().value("dashboard.summary").toString()
+        .arg(table_.rowCount()).arg(rows_.rowCount()).arg(problems);
     const auto metrics=metricSummary.presentation();
     const bool changed=dashboardSummary_!=summary || pulseMetrics_!=metrics;
     dashboardSummary_=summary; pulseMetrics_=metrics; dashboardDirty_=false;
@@ -1694,6 +1710,10 @@ bool Workspace::openInspector(const QString& path, int historyIndex) {
     else if (nav.historyIndex < 0 || nav.history.value(nav.historyIndex) != path) {
         nav.history.insert(nav.historyIndex + 1, path); ++nav.historyIndex;
         if (nav.history.size() > 32) { nav.history.removeFirst(); --nav.historyIndex; }
+    }
+    if (nav.inspected != path) {
+        nav.terminalError.clear();
+        if (const auto* shell = containerTerminal(); shell && !shell->active()) client_.stopTerminal(active_);
     }
     nav.inspected = path;
     yamlFresh_ = false;

@@ -18,10 +18,27 @@ jobs:
     needs: [native-preflight, linux-package-preflight]
     runs-on: ubuntu-24.04
     steps:
+      # Only package inputs, not the Store bundles, SDKs or full preflight evidence.
       - uses: actions/download-artifact@v7
         with:
-          pattern: native-*-${{ github.sha }}
-          path: native-input
+          name: native-package-direct-macos-15-${{ github.sha }}
+          path: native-input/native-package-direct-macos-15-${{ github.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: native-package-direct-macos-15-intel-${{ github.sha }}
+          path: native-input/native-package-direct-macos-15-intel-${{ github.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: native-windows-x64-${{ github.sha }}
+          path: native-input/native-windows-x64-${{ github.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: native-linux-trial-x64-${{ github.sha }}
+          path: native-input/native-linux-trial-x64-${{ github.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: native-linux-trial-arm64-${{ github.sha }}
+          path: native-input/native-linux-trial-arm64-${{ github.sha }}
       - name: Collect verified native desktop candidates
         shell: sh
         env:
@@ -56,6 +73,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: podlord-native-candidates-${{ github.sha }}
+          compression-level: 0
           path: native-candidate
           if-no-files-found: error
           retention-days: 14

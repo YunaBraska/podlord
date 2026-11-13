@@ -44,11 +44,13 @@ trap 'exit 143' TERM
 mkdir "$RUN/tmp"
 TMPDIR="$RUN/tmp"
 export TMPDIR
-LLVM_PROFILE_FILE="$RUN/%p-%m.profraw"
+# LLVM merges concurrent executions into four locked profiles per binary.
+# Keep complete counters without creating a separate large file per test process.
+LLVM_PROFILE_FILE="$RUN/%4m.profraw"
 export LLVM_PROFILE_FILE
 TEST_STATUS=0
 # Run existing default and UI canaries first, without repeating them in the full cohort.
-PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default|settings\.read_denied|read_overlap\.snapshot_fields|forward\.form_refresh_(Basic|Fusion)|authentication\.aws_sso_(success|device_expired)|ui\.(inspector_edit_close_space|ui_density_(filters|single_tab|close|tabs)_Basic|sources_narrow_basic|radar(_map)?_info_panel.*))$'
+PREFLIGHT='^native\.(alert_store\.missing|application\.startup_default|settings\.read_denied|read_overlap\.snapshot_fields|forward\.form_refresh_(Basic|Fusion)|authentication\.aws_sso_(success|device_expired)|ui\.(inspector_edit_close_space|ui_density_(filters|single_tab|close|tabs)_Basic|quick_open_narrow_basic|radar(_map)?_info_panel.*))$'
 "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --tests-regex "$PREFLIGHT" || TEST_STATUS=$?
 if [ "$TEST_STATUS" -eq 0 ]; then
     "$CTEST" --test-dir "$BUILD" --parallel "${PODLORD_TEST_JOBS:-4}" --output-on-failure --no-tests=error --exclude-regex "$PREFLIGHT" || TEST_STATUS=$?
@@ -240,6 +242,38 @@ fi
 if ! awk '$1=="window_layout.cpp" { seen=1; if ($13+0<90) fail=1 }
           END { if (!seen || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
     printf 'Native window-layout storage coverage gate failed: require 90%% branches in window_layout.cpp.\n' >&2
+    exit 1
+fi
+if ! awk '$1=="context_catalog.cpp" { catalog=1; if ($13+0<90) fail=1 }
+          $1=="session_store.cpp" { tabs=1; if ($13+0<90) fail=1 }
+          END { if (!catalog || !tabs || fail) exit 1 }' "$BUILD/coverage/report.txt"; then
+    printf 'Native context storage coverage gate failed: require 90%% branches in the positive context catalog and current tab storage.\n' >&2
+    exit 1
+fi
+"$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
+    "$ROOT/native/src/workspace_map.cpp" "$ROOT/native/src/workspace.cpp" "$ROOT/native/src/container_terminal.cpp" \
+    | awk '/WorkspaceRuntime[0-9]+(recordContextUse|dispatchUsageSave|finishUsageSave|flushUsageSaves)|Workspace[0-9]+(refreshMapContexts|reloadCatalogs)|terminalHints|readableHint/ { print }' \
+    > "$BUILD/coverage/context-terminal-functions.txt"
+cat "$BUILD/coverage/context-terminal-functions.txt"
+if ! awk '
+/recordContextUse/ { record=1 }
+/dispatchUsageSave/ { dispatch=1 }
+/finishUsageSave/ { finish=1 }
+/flushUsageSaves/ { flush=1 }
+/refreshMapContexts/ { overview=1 }
+/reloadCatalogs/ { reload=1; loadTotal+=$(NF-2); loadMissed+=$(NF-1); next }
+/terminalHints/ { lexical=1 }
+/readableHint/ { contrast=1 }
+/terminalHints|readableHint/ { renderTotal+=$(NF-2); renderMissed+=$(NF-1); next }
+{ useTotal+=$(NF-2); useMissed+=$(NF-1) }
+END {
+    if (!record || !dispatch || !finish || !flush || !overview || !reload || !lexical || !contrast || useTotal<=0 || loadTotal<=0 || renderTotal<=0) exit 1
+    printf "Context usage/overview branches: %d/%d %.2f%%\n",useTotal-useMissed,useTotal,100*(useTotal-useMissed)/useTotal
+    printf "Context loader branches: %d/%d %.2f%%\n",loadTotal-loadMissed,loadTotal,100*(loadTotal-loadMissed)/loadTotal
+    printf "Terminal lexical/contrast branches: %d/%d %.2f%%\n",renderTotal-renderMissed,renderTotal,100*(renderTotal-renderMissed)/renderTotal
+    if (100*(useTotal-useMissed)/useTotal<90 || 100*(loadTotal-loadMissed)/loadTotal<90 || 100*(renderTotal-renderMissed)/renderTotal<90) exit 1
+}' "$BUILD/coverage/context-terminal-functions.txt"; then
+    printf 'Native context/terminal coverage gate failed: require 90%% branches independently for usage ownership, catalog loading, and terminal lexical/contrast behavior.\n' >&2
     exit 1
 fi
 [ "$TEST_STATUS" -eq 0 ] || exit "$TEST_STATUS"

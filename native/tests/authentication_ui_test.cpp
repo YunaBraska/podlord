@@ -239,9 +239,10 @@ bool execute(const QString& scenario) {
         QTest::qWait(100); return read(counter) == "call\ncall\n" && workspace->table()->rowCount() == 1;
     }
     if (scenario == "cache_reopen") {
+        const auto context = workspace->sessionConfiguration(session).value("contextId").toString();
         if (!workspace->close(session) || !waitFor([&] { return workspace->currentSession().isEmpty() && !workspace->busy(); })) return false;
-        if (!workspace->activate(session) || !waitFor([&] { return workspace->table()->rowCount() == 1 && !workspace->busy(); })) return false;
-        return !workspace->authenticationRequired() && read(counter) == "call\n";
+        if (!workspace->openContext(context) || !waitFor([&] { return workspace->table()->rowCount() == 1 && !workspace->busy(); })) return false;
+        return workspace->currentSession() != session && !workspace->authenticationRequired() && read(counter) == "call\n";
     }
     if (scenario == "restore") {
         const auto calls = server.calls;
@@ -289,19 +290,33 @@ bool realCluster(const QString& original) {
     if (!window) return false;
     QTest::qWait(20);
     if (!waitFor([&] { return !workspace.busy(); })) return false;
+    const auto failed = [&](const char* stage) {
+        std::fprintf(stderr, "Real authentication stage failed: %s; contexts=%lld busy=%d loading=%d running=%d required=%d rows=%d provider-calls=%lld error-present=%d\n",
+            stage, static_cast<long long>(workspace.contexts().size()), workspace.busy(), workspace.loading(),
+            workspace.authenticationRunning(), workspace.authenticationRequired(), workspace.table()->rowCount(),
+            static_cast<long long>(read(counter).count('\n')), !workspace.error().isEmpty());
+        return false;
+    };
     if (!workspace.quickImportFile(input) || !waitFor([&] { return workspace.contexts().size() == 2 && !workspace.busy(); })
         || !workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
-        || !waitFor([&] { return workspace.authenticationRequired() && !workspace.busy(); }) || !read(counter).isEmpty()) return false;
-    if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept") && item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return false;
-    if (!waitFor([&] { return !workspace.authenticationRunning() && !workspace.busy() && !workspace.authenticationRequired(); })) return false;
-    if (!click(window, "resourcesWorkspaceButton") || !click(window, "resourceFindButton")) return false;
+        || !waitFor([&] { return workspace.authenticationRequired() && !workspace.busy(); }) || !read(counter).isEmpty()) return failed("import/open/login requirement");
+    if (!click(window, "authenticationButton") || !waitFor([&] { return item(window, "authenticationAccept") && item(window, "authenticationAccept")->isVisible(); }) || !click(window, "authenticationAccept")) return failed("confirm login");
+    if (!waitFor([&] { return !workspace.authenticationRunning() && !workspace.busy() && !workspace.authenticationRequired(); })) return failed("authentication completion");
+    if (!waitFor([&] { return workspace.table()->rowCount() > 0 && !workspace.loading(); }, 60000)) return failed("authenticated resource discovery");
+    if (!click(window, "resourcesWorkspaceButton") || !click(window, "workspaceSearchButton")) return failed("resource navigation");
     auto* filter = item(window, "resourceFilter");
-    if (!filter || !filter->isEnabled()) return false;
-    filter->forceActiveFocus(); for (const auto c : QByteArray("podlord-native-e2e")) QTest::keyClick(window, c);
-    if (!waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); }, 60000)) {
+    if (!filter || !filter->isEnabled() || !click(window, "resourceFilter")) return failed("resource search");
+    for (const auto c : QByteArray("podlord-native-e2e")) QTest::keyClick(window, c);
+    if (!waitFor([&] { return workspace.table()->rowCount() == 1 && podlord::test::visibleItem(window->contentItem(), "cell_0_0"); }, 60000)) {
         std::fprintf(stderr, "Exec certificate Kubernetes read failed: %s %s\n", qPrintable(workspace.error()), qPrintable(workspace.status())); return false;
     }
-    return click(window, "cell_0_0") && waitFor([&] { return workspace.inspected().contains("fetchedAt"); })
+    if (!workspace.inspectorPath().isEmpty()) return failed("inspector opened before row selection");
+    const QPointer<QQuickItem> cell(podlord::test::visibleItem(window->contentItem(), "cell_0_0"));
+    if (!cell || !podlord::test::scrollIntoView(window, cell, true) || !cell) return failed("resource row visibility");
+    const auto bounds = podlord::test::visibleBounds(window, cell);
+    if (bounds.isEmpty()) return failed("resource row bounds");
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, bounds.center().toPoint());
+    return waitFor([&] { return workspace.inspected().contains("fetchedAt"); })
         && workspace.inspected().contains("ConfigMap") && read(counter) == "call\n";
 }
 } // namespace

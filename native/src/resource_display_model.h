@@ -1,5 +1,6 @@
 #pragma once
 #include "resource_metrics.h"
+#include "view_state.h"
 #include <QSortFilterProxyModel>
 
 namespace podlord {
@@ -48,6 +49,6 @@ private:
         invalidateFilter();
 #endif
     }
-    int limit_ = 256;
+    int limit_ = DefaultResourceDisplayLimit;
 };
 }

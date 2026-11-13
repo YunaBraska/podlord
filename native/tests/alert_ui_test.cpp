@@ -136,7 +136,9 @@ bool radarGaugesFit(const QString& expectedUsage = {}, const QString& expectedRe
         const auto usageLeft=usage->mapToItem(bar,QPointF{}).x();
         return bar->width()>0 && memory->width()>0 && markerFits(request) && markerFits(limit)
             && usageLeft>=0 && usageLeft+usage->width()<=bar->width()+1
-            && measured->property("text").toString().contains("Measured ")
+            && !measured->property("text").toString().isEmpty()
+            && !measured->property("text").toString().contains("T")
+            && !observed.contains("stale")
             && !visualItem(content,"metric_storage_bar")
             && !visualItem(content,"metric_storage_measurement");
     }
@@ -339,7 +341,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         if (scenario=="reference_valid_to_draft_restart" || scenario=="reference_disabled_to_draft_restart") {
             if (!click(window,"addAlert") || !type(window,"alertName","Editable custom") || !type(window,"alertExpression_0","alpha")
                 || !click(window,"saveAlert") || !settle()) return false;
-            if (scenario=="reference_disabled_to_draft_restart" && (!click(window,"alertEnabled") || !click(window,"saveAlert") || !settle())) return false;
+            if (scenario=="reference_disabled_to_draft_restart" && (!click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle())) return false;
             if (!type(window,"alertExpression_0","") || !click(window,"saveAlert") || !settle()) return false;
             const auto draft=rules().last().toMap();
             if (!draft["draft"].toBool() || draft["enabled"].toBool()
@@ -365,10 +367,11 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 if (!waitFor([&] { return item(window,"alertCell_0_3") && item(window,"alertCell_1_3"); })) return false;
                 return reloaded["draft"].toBool() && !reloaded["enabled"].toBool()
                     && reloaded["groups"].toList().first().toList().first().toMap()["expression"]=="/[broken/"
-                    && item(window,"alertCell_0_3")->property("text").toString()=="Draft"
-                    && item(window,"alertCell_1_3")->property("text").toString()=="Not evaluated" && server.requests==0;
+                    && item(window,"toggleAlert_3")->property("glyph").toString()=="Hidden"
+                    && !item(window,"alertCell_1_3")->property("text").toString().contains("Not evaluated") && server.requests==0;
             }
-            if (!type(window,"alertExpression_0","alpha") || !click(window,"alertEnabled") || !click(window,"saveAlert") || !settle()) return false;
+            if (!type(window,"alertExpression_0","alpha") || !click(window,"saveAlert") || !settle()
+                || !click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle()) return false;
             const auto enabled=rules().last().toMap();
             return !enabled["draft"].toBool() && enabled["enabled"].toBool()
                 && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha" && server.requests==0;
@@ -379,7 +382,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!close || !editor || !waitFor([&] {
                 const auto closeBounds=close->mapRectToScene(close->boundingRect());
                 const auto editorBounds=editor->mapRectToScene(editor->boundingRect());
-                return qAbs(closeBounds.right()-editorBounds.right())<=2 && closeBounds.bottom()<=editorBounds.top();
+                return editorBounds.contains(closeBounds)
+                    && qAbs(closeBounds.right()-editorBounds.right())<=editor->property("rightPadding").toDouble()+2
+                    && closeBounds.top()-editorBounds.top()<=editor->property("topPadding").toDouble()+2;
             })) {
                 std::fputs("Alert editor close action is not at the upper right.\n",stderr);
                 const auto frame=qEnvironmentVariable("PODLORD_ALERT_FAILURE_FRAME");
@@ -393,7 +398,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             return !item(window,"alertEditor")->isVisible() && rules()==baseline && server.requests==0;
         }
         if (scenario=="reference_editor_close_dirty") {
-            if (!click(window,"duplicateAlert") || !settle()) return false;
+            if (!click(window,"addAlert") || !type(window,"alertName","Discard regression")
+                || !type(window,"alertExpression_0","alpha") || !click(window,"saveAlert") || !settle()) return false;
             const auto beforeEdit = rules();
             if (!type(window,"alertDescription","unsaved") || !click(window,"closeAlertEditor")
                 || !waitFor([&] { return (window->findChild<QObject*>("discardAlertChanges") && window->findChild<QObject*>("discardAlertChanges")->property("visible").toBool()); })
@@ -428,8 +434,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                         || rules().size() != baseline.size()+1 || !rules().last().toMap()["draft"].toBool()
                         || rules().last().toMap()["enabled"].toBool()
                         || item(window, "alertBoolean_0")->property("currentIndex").toInt() != -1
-                        || item(window, "alertExpression_0")->property("text").toString() != "alpha"
-                        || !click(window,"alertEnabled")) return false;
+                        || item(window, "alertExpression_0")->property("text").toString() != "alpha") return false;
                 }
                 if (!choose("alertBoolean_0", expectedExpression == "true" ? 0 : 1)) return false;
                 if (item(window, "alertExpression_0")->isVisible()) return false;
@@ -493,6 +498,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             }
             const auto rule = rules().last().toMap();
             const auto criterion = rule["groups"].toList().first().toList().first().toMap();
+            if (mode == "boolean_invalid" && rule["enabled"].toBool()) return false;
             if (rule["color"] != expectedColor || rule["colorMode"] != expectedMode || criterion["field"] != expectedField
                 || criterion["expression"] != expectedExpression || (mode == "hold" && rule["animationMode"] != "new-in-view")
                 || (mode == "once" && rule["animationMode"] != "once")) return false;
@@ -514,8 +520,19 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             const bool custom = scenario.endsWith("_unsaved") || scenario.endsWith("_disabled") || scenario.endsWith("_fallback") || scenario.endsWith("_percent") || invalid;
             if (custom && (!click(window, "addAlert") || !type(window, "alertName", "Unsaved preview")
                 || !type(window, "alertExpression_0", invalid ? "/[broken/" : scenario.endsWith("_fallback") ? "no-match" : scenario.endsWith("_unsaved") ? "zeta" : "alpha"))) return false;
-            if (scenario.endsWith("_disabled") && !click(window, "alertEnabled")) return false;
+            if (scenario.endsWith("_disabled") && (!click(window,"saveAlert") || !settle()
+                || !click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle())) return false;
+            const auto previewRules = rules();
+            const auto rulesPath = profile + "/alert-rules.json";
+            const bool hadRuleFile = QFile::exists(rulesPath);
+            QByteArray savedRuleBytes;
+            if (hadRuleFile) {
+                QFile saved(rulesPath);
+                if (!saved.open(QIODevice::ReadOnly)) return false;
+                savedRuleBytes = saved.readAll();
+            }
             if (scenario.endsWith("_percent")) {
+                if (!click(window,"alertZoomEnabled")) return false;
                 auto* zoom = item(window, "alertZoom");
                 if (!zoom || !podlord::test::scrollIntoView(window, zoom)) return false;
                 auto* input = zoom->property("contentItem").value<QQuickItem*>();
@@ -607,8 +624,10 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 std::sort(times.begin(), times.end());
                 std::printf("Zoom preview UI: 5000 cached resources, 20 input-to-frame samples, p50=%.3f ms p95=%.3f ms max=%.3f ms; no preview transport.\n", (times[9]+times[10])/2, times[18], times.last());
             }
+            QFile savedAfter(rulesPath);
+            const bool storageUntouched = hadRuleFile ? savedAfter.open(QIODevice::ReadOnly) && savedAfter.readAll()==savedRuleBytes : !savedAfter.exists();
             const bool accepted = path.endsWith(QString("/") + expected) && previews.first()[2].toInt() == percent && sounds.isEmpty()
-                && rules() == baseline && server.requests == requests && !QFile::exists(profile + "/alert-rules.json")
+                && rules() == previewRules && server.requests == requests && storageUntouched
                 && QGuiApplication::clipboard()->text() == "unchanged clipboard" && (!custom || selected() == "Unsaved preview");
             if (!accepted) std::fprintf(stderr, "Zoom preview side effects: path=%s expected=%s percent=%d sounds=%lld rules-changed=%d requests=%d baseline=%d persisted=%d clipboard-changed=%d selected=%s\n", qPrintable(path), qPrintable(expected), previews.first()[2].toInt(), static_cast<long long>(sounds.count()), rules() != baseline, server.requests, requests, QFile::exists(profile + "/alert-rules.json"), QGuiApplication::clipboard()->text() != "unchanged clipboard", qPrintable(selected()));
             return accepted;
@@ -846,7 +865,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             }
             return server.requests == 0;
         }
-        if (scenario=="reference_locked") return !item(window,"alertName")->isEnabled() && !item(window,"deleteAlert")->isEnabled() && !item(window,"addAlertOr")->isEnabled() && item(window,"alertEnabled")->isEnabled();
+        if (scenario=="reference_locked") return !item(window,"alertName")->isEnabled() && !item(window,"deleteAlert")->isEnabled() && !item(window,"addAlertOr")->isEnabled() && item(window,"toggleAlert_0")->isEnabled();
         if (scenario=="reference_keyboard") {
             if (!click(window,"alertRule_0")) return false;
             QTest::keyClick(window,Qt::Key_Down);
@@ -865,48 +884,23 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             return !item(window,"previewAlertSound")->isEnabled() && server.requests==0;
         }
 
-        if (scenario.startsWith("reference_sound_search_")) {
-            const auto mode=scenario.mid(QString("reference_sound_search_").size());
-            const QMap<QString,QPair<QString,int>> cases{
-                {"name", {"soft-warning",1}}, {"purpose", {"Silent alert action.",1}},
-                {"empty", {"no-sound-matches-this",0}}, {"clear", {"no-sound-matches-this",0}},
-                {"select", {"Silent alert action.",1}}};
-            if (!cases.contains(mode) || !click(window,"duplicateAlert") || !settle()) return false;
-            if (!waitFor([&] { return item(window,"alertSoundSearch") && item(window,"alertSoundSearch")->isEnabled(); })) return false;
-            const auto input=cases.value(mode);
-            if (!type(window,"alertSoundSearch",input.first)) return false;
-            if (!waitFor([&] { return item(window,"alertSound")->property("count").toInt()==input.second; })) return false;
-            if (mode=="empty" && (!item(window,"alertSoundNoResults")->isVisible()
-                || item(window,"alertSoundPurpose")->property("text").toString().isEmpty())) return false;
-            if (mode=="clear") {
-                if (!type(window,"alertSoundSearch","") || !waitFor([&] { return item(window,"alertSound")->property("count").toInt()==21; })) return false;
-            }
-            const auto expected=mode=="select" ? "none" : "attention";
-            if (mode=="select") {
-                const auto capture=qEnvironmentVariable("PODLORD_ALERT_SOUND_FRAME");
-                if (!capture.isEmpty()) { QTest::qWait(50); if (!window->grabWindow().save(capture)) return false; }
+        if (scenario.startsWith("reference_sound_control_")) {
+            const bool clear = scenario.endsWith("_none");
+            if (!click(window,"addAlert") || !type(window,"alertName","Sound control regression")
+                || !type(window,"alertExpression_0","alpha") || !click(window,"alertSoundEnabled")) return false;
+            auto* choice = item(window,"alertSound");
+            if (!choice || !choice->isVisible() || !choice->isEnabled()) return false;
+            QString expected;
+            if (clear) {
+                if (!click(window,"alertSoundEnabled") || choice->isVisible() || item(window,"previewAlertSound")->isVisible()) return false;
+                expected="none";
+            } else {
+                const auto before=choice->property("currentValue").toString();
                 if (!click(window,"alertSound")) return false;
-                const auto* popup = item(window,"alertSound")->property("popup").value<QObject*>();
-                if (!popup || !waitFor([&] { return popup->property("visible").toBool(); })) {
-                    auto* control = item(window,"alertSound");
-                    auto* editor = item(window,"alertEditor");
-                    auto* content = editor->property("contentItem").value<QObject*>();
-                    std::fprintf(stderr,"Sound popup did not open: x=%.1f y=%.1f width=%.1f height=%.1f focus=%s contentY=%.1f moving=%d\n",
-                        control->mapToScene({0,0}).x(),control->mapToScene({0,0}).y(),control->width(),control->height(),
-                        qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),
-                        content ? content->property("contentY").toDouble() : -1,content && content->property("moving").toBool());
-                    const auto frame=qEnvironmentVariable("PODLORD_ALERT_FAILURE_FRAME");
-                    if (!frame.isEmpty()) window->grabWindow().save(frame);
-                    return false;
-                }
-                QTest::keyClick(window,Qt::Key_Home); QTest::keyClick(window,Qt::Key_Return);
-                if (!waitFor([&] { return item(window,"alertSound")->property("currentValue").toString()==expected; })) {
-                    std::fprintf(stderr,"Sound selection failed: selected=%s focus=%s count=%d\n",
-                        qPrintable(item(window,"alertSound")->property("currentValue").toString()),
-                        qPrintable(window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{}),
-                        item(window,"alertSound")->property("count").toInt());
-                    return false;
-                }
+                QTest::keyClick(window,Qt::Key_Home); QTest::keyClick(window,Qt::Key_Down); QTest::keyClick(window,Qt::Key_Return);
+                if (!waitFor([&] { return choice->property("currentIndex").toInt()==1; })) return false;
+                expected=choice->property("currentValue").toString();
+                if (expected.isEmpty() || expected=="none" || expected==before || !click(window,"previewAlertSound")) return false;
             }
             if (!click(window,"saveAlert") || !settle()) return false;
             return rules().last().toMap()["sound"].toString()==expected && server.requests==0;
@@ -995,16 +989,6 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     if (scenario == "busy") return waitFor([&] { return !item(window, "alertError")->property("text").toString().isEmpty(); });
     if (!waitFor([&] { return item(window, "alertRule_3") != nullptr; })) return false;
     if (scenario == "create") return QFile::exists(profile + "/alert-rules.json") && server.requests == 0;
-    if (scenario == "duplicate") {
-        const auto original = workspace.alerts()->rules().last().toMap();
-        return click(window, "duplicateAlert") && waitFor([&] {
-            const auto rules = workspace.alerts()->rules();
-            return !workspace.alerts()->busy() && rules.size() == 5
-                && rules.last().toMap()["id"] != original["id"]
-                && rules.last().toMap()["name"].toString().startsWith(original["name"].toString())
-                && item(window, "alertName")->property("text") == rules.last().toMap()["name"];
-        }) && server.requests == 0;
-    }
     if (scenario == "delete") {
         return click(window, "deleteAlert") && waitFor([&] {
             const auto rules = workspace.alerts()->rules();
@@ -1127,6 +1111,14 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         }
         return true;
     }
+    const auto toggleNamedRule = [&](const QString& name) {
+        auto* rules = workspace.alerts()->tableModel();
+        for (int row = 0; row < rules->rowCount(); ++row) {
+            if (rules->index(row, 2).data().toString() == name)
+                return click(window, "toggleAlert_" + QString::number(row));
+        }
+        return false;
+    };
     if (scenario=="real_health") {
         const auto failure=[&](const char* stage) {
             std::fprintf(stderr,"Real health failure at %s: cached=%d filtered=%d loading=%d status=%s error=%s matches=%s\n",
@@ -1152,7 +1144,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (captured.isNull() || !captured.save(capturePath,"PNG")) return failure("inspector screenshot");
         }
         if (!workspace.closeInspector() || !click(window, "alertsWorkspaceButton")
-            || !click(window, "alertEnabled") || !click(window, "saveAlert")
+            || !toggleNamedRule("Alpha rule")
             || !waitFor([&] { return !workspace.alerts()->busy(); })
             || !click(window, "resourcesWorkspaceButton")) return failure("open real Radar");
         const auto radarFrames=qEnvironmentVariable("PODLORD_REAL_RADAR_HIGHLIGHTS");
@@ -1423,9 +1415,11 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (scenario=="metric_invalid") return usage.contains("Unavailable") && workspace.status().contains("Invalid Metrics API quantity");
             if (scenario=="metric_zero") return usage.contains("0 mCPU") && !usage.contains("Unavailable");
             if (scenario=="metric_partial") return usage.contains("25 mCPU") && usage.contains("incomplete");
-            if (scenario=="metric_stale") return usage.contains("25 mCPU") && usage.contains("stale");
+            if (scenario=="metric_stale") return usage.contains("25 mCPU") && !usage.contains("stale");
             const auto* reference=item(window, "metric_cpu_references");
-            return usage.contains("25 mCPU") && reference && reference->property("text").toString().contains("250% of request");
+            return usage.contains("25 mCPU") && reference
+                && reference->property("text").toString().contains("request: 10 mCPU")
+                && reference->property("text").toString().contains("limit: 100 mCPU");
         });
         if (!measured) return failure("metric semantics");
         return measured;
@@ -1451,7 +1445,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         if (!workspace.filter("does-not-match")) return false;
         return workspace.resourceCount() == 0 && alphaMatch() && server.requests == requests;
     }
-    if (scenario == "disable") return click(window, "alertEnabled") && click(window, "saveAlert")
+    if (scenario == "disable") return toggleNamedRule("Alpha rule")
         && waitFor([&] { return !alphaMatch(); }) && server.requests == requests;
     return false;
 }

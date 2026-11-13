@@ -13,6 +13,7 @@ class ContainerTerminal final : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(bool connected READ connected NOTIFY changed)
     Q_PROPERTY(bool active READ active NOTIFY changed)
+    Q_PROPERTY(bool failed READ failed NOTIFY changed)
     Q_PROPERTY(QString target READ target CONSTANT)
 public:
     ContainerTerminal(QString target, QObject* parent = nullptr);
@@ -21,6 +22,7 @@ public:
     QString target() const { return target_; }
     bool connected() const { return socket_.state() == QAbstractSocket::ConnectedState && admitted_ && !ended_; }
     bool active() const { return !ended_; }
+    bool failed() const { return failed_; }
     bool stop(const QString& reason = "Disconnected by user.");
     bool reject(const QString& reason);
     bool resize(int rows, int columns);
@@ -36,6 +38,8 @@ public:
     VTermPos cursor() const;
     bool cursorVisible() const { return cursorVisible_; }
     bool mouseTracking() const { return mouseTracking_; }
+    bool alternateScreen() const { return alternate_; }
+    bool lineContinues(int row) const;
 signals:
     void changed();
     void screenChanged(int scrolledLines);
@@ -54,6 +58,7 @@ private:
     int rows_ = 24, columns_ = 80, scrolledLines_ = 0;
     bool admitted_ = false, reported_ = false, ended_ = false, cursorVisible_ = true, alternate_ = false, mouseTracking_ = false;
     bool outputClosed_ = false, statusClosed_ = false;
+    bool failed_ = false;
     bool send(int channel, const QByteArray& bytes);
     bool completeStatus();
     bool report(bool accepted, bool auth = false);

@@ -21,6 +21,8 @@ public:
     QString currentId() const;
     bool playing() const;
     bool muted() const { return muted_; }
+    int volumePercent() const { return volumePercent_; }
+    Q_INVOKABLE bool setVolumePercent(int percent);
     QString error() const { return error_; }
     Q_INVOKABLE bool play();
     Q_INVOKABLE bool pause();
@@ -35,6 +37,7 @@ private:
     int orderIndex_ = 0;
     bool muted_ = false;
     bool requested_ = false;
+    int volumePercent_ = 35;
     QString error_;
     std::unique_ptr<MusicPlatform> platform_;
     std::unique_ptr<QAudioOutput> output_;

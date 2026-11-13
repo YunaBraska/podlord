@@ -24,7 +24,7 @@
 namespace {
 struct Output final { int status; QJsonObject json; };
 struct TestProfile final { const QString executable; const QString path; const QString sessionExecutable{}; };
-const QString context = "local-context";
+const QString context = "ctx:" + QString(64, 'a');
 
 bool check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
@@ -49,39 +49,17 @@ QJsonArray rows(const Output& output) { return output.json["sessions"].toArray()
 QString id(const Output& output, qsizetype index = 0) {
     return rows(output)[index].toObject()["id"].toString();
 }
-Output create(const TestProfile& profile, QString name = {}) {
-    QStringList args{"create", "--context", context};
-    if (!name.isEmpty()) args << "--name" << name;
-    return run(profile, args);
-}
+Output create(const TestProfile& profile) { return run(profile, {"create", "--context", context}); }
 QString code(const Output& output) { return output.json["error"].toObject()["code"].toString(); }
 QByteArray readStore(const TestProfile& profile) {
-    QFile file(QDir(profile.path).filePath("sessions.json"));
+    QFile file(QDir(profile.path).filePath("tabs.json"));
     check(file.open(QIODevice::ReadOnly), "Cannot read test store");
     return file.readAll();
 }
 bool writeStore(const TestProfile& profile, const QByteArray& bytes) {
-    QFile file(QDir(profile.path).filePath("sessions.json"));
+    QFile file(QDir(profile.path).filePath("tabs.json"));
     check(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "Cannot alter ingress data");
     return check(file.write(bytes) == bytes.size(), "Incomplete ingress write");
-}
-bool changeStore(const TestProfile& profile, const std::function<QJsonObject(QJsonObject)>& change) {
-    return writeStore(profile, QJsonDocument(change(QJsonDocument::fromJson(readStore(profile)).object())).toJson());
-}
-bool changeRow(const TestProfile& profile, const QString& key, QJsonValue value) {
-    return changeStore(profile, [&](QJsonObject root) {
-        QJsonArray sessions = root["sessions"].toArray();
-        QJsonObject row = sessions[0].toObject();
-        row[key] = value;
-        sessions[0] = row;
-        root["sessions"] = sessions;
-        return root;
-    });
-}
-bool failurePreserves(const TestProfile& profile, const QString& error) {
-    const QByteArray before = readStore(profile);
-    check(code(run(profile, {"create", "--context", context}, 1)) == error, "Wrong failure category");
-    return check(readStore(profile) == before, "Rejected data was overwritten");
 }
 bool closedOutput(const TestProfile& p) {
     QProcess process;
@@ -98,372 +76,6 @@ bool directoryReadFailure(const TestProfile& p, const QString& path, QFileDevice
     check(restore(), "Cannot restore directory access");
     return check(code(result) == "ReadFailed", "Inaccessible directory reported as empty");
 }
-
-const std::map<QString, std::function<bool(const TestProfile&)>> cases{
-    {"profile_no_traverse", [](const TestProfile& p) {
-        create(p); return directoryReadFailure(p, p.path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    }},
-    {"profile_read_denied", [](const TestProfile& p) {
-        create(p); return directoryReadFailure(p, p.path, {});
-    }},
-    {"output_write_failure", [](const TestProfile& p) {
-        return closedOutput(p);
-    }},
-    {"output_write_failure_large", [](const TestProfile& p) {
-        create(p, QString(30000, 'x')); return closedOutput(p);
-    }},
-    {"empty_read", [](const TestProfile& p) {
-        check(rows(run(p, {"list"})).isEmpty(), "Expected empty catalog");
-        return check(!QFileInfo(QDir(p.path).filePath("sessions.json")).exists(), "Read created a store");
-    }},
-    {"create_unnamed", [](const TestProfile& p) {
-        const auto data = rows(create(p))[0].toObject();
-        check(data["displayName"] == "Unnamed", "Wrong unnamed label");
-        return check(!data["open"].toBool() && data["useCount"] == "0", "New session was opened");
-    }},
-    {"create_named", [](const TestProfile& p) {
-        return check(rows(create(p, " Workspace "))[0].toObject()["displayName"] == "Workspace", "Name not normalized");
-    }},
-    {"normalize_namespaces", [](const TestProfile& p) {
-        const auto data = run(p, {"create", "--context", context, "--namespace", " zeta ", "--namespace", "alpha", "--namespace", "zeta"});
-        return check(rows(data)[0].toObject()["namespaces"].toArray() == QJsonArray{"alpha", "zeta"}, "Scope not canonical");
-    }},
-    {"invalid_namespace", [](const TestProfile& p) {
-        return check(code(run(p, {"create", "--context", context, "--namespace", "Bad_Name"}, 2)) == "InvalidInput", "Namespace accepted");
-    }},
-    {"empty_context", [](const TestProfile& p) {
-        return check(code(run(p, {"create"}, 2)) == "InvalidInput", "Missing context accepted");
-    }},
-    {"whitespace_context", [](const TestProfile& p) {
-        return check(code(run(p, {"create", "--context", "   "}, 2)) == "InvalidInput", "Empty context accepted");
-    }},
-    {"invalid_name", [](const TestProfile& p) {
-        return check(code(run(p, {"create", "--context", context, "--name", "bad\nname"}, 2)) == "InvalidInput", "Control character accepted");
-    }},
-    {"unnamed_snapshot", [](const TestProfile& p) {
-        const QString original = id(create(p));
-        const auto data = rows(run(p, {"snapshot", original, "--context", "changed-context"}));
-        check(data.size() == 2 && data[0].toObject()["contextId"] == context, "Original configuration changed");
-        return check(data[1].toObject()["displayName"] == "Unnamed 2", "Snapshot lost unnamed state");
-    }},
-    {"named_snapshot", [](const TestProfile& p) {
-        const QString original = id(create(p, "Workspace"));
-        return check(rows(run(p, {"snapshot", original, "--context", "changed-context"}))[1].toObject()["name"] == "Workspace", "Explicit name lost");
-    }},
-    {"unchanged_snapshot", [](const TestProfile& p) {
-        const QString original = id(create(p));
-        const QByteArray before = readStore(p);
-        check(rows(run(p, {"snapshot", original, "--context", context})).size() == 1, "Equivalent snapshot duplicated");
-        return check(readStore(p) == before, "No-op altered persisted data");
-    }},
-    {"activate_idempotent", [](const TestProfile& p) {
-        const QString selected = id(create(p));
-        run(p, {"open", selected});
-        const auto data = run(p, {"open", selected});
-        check(data.json["activeSessionId"] == selected, "Active selection missing");
-        return check(rows(data)[0].toObject()["useCount"] == "1", "Repeated activation counted");
-    }},
-    {"activate_switch", [](const TestProfile& p) {
-        const QString first = id(create(p));
-        const QString second = id(create(p), 1);
-        run(p, {"open", first}); run(p, {"open", second});
-        return check(rows(run(p, {"open", first}))[0].toObject()["useCount"] == "2", "Selection reuse not counted");
-    }},
-    {"close_preserves", [](const TestProfile& p) {
-        const QString selected = id(create(p)); run(p, {"open", selected});
-        const auto data = run(p, {"close", selected});
-        check(data.json["activeSessionId"] == "", "Closed session stayed active");
-        return check(rows(data).size() == 1 && !rows(data)[0].toObject()["open"].toBool(), "Close deleted or retained open tab");
-    }},
-    {"reopen_usage", [](const TestProfile& p) {
-        const QString selected = id(create(p)); run(p, {"open", selected}); run(p, {"close", selected});
-        return check(rows(run(p, {"open", selected}))[0].toObject()["useCount"] == "2", "Reopen not recorded");
-    }},
-    {"delete_active", [](const TestProfile& p) {
-        const QString selected = id(create(p)); run(p, {"open", selected});
-        const auto data = run(p, {"delete", selected});
-        return check(rows(data).isEmpty() && data.json["activeSessionId"] == "", "Delete retained session or active state");
-    }},
-    {"reuse_highest", [](const TestProfile& p) {
-        const QString first = id(create(p));
-        const auto second = run(p, {"snapshot", first, "--context", "changed"});
-        run(p, {"delete", id(second, 1)});
-        return check(rows(run(p, {"snapshot", first, "--context", "changed-again"}))[1].toObject()["displayName"] == "Unnamed 2", "Highest freed number not reused");
-    }},
-    {"retain_gap", [](const TestProfile& p) {
-        const QString first = id(create(p));
-        const auto second = run(p, {"snapshot", first, "--context", "changed"});
-        run(p, {"snapshot", first, "--context", "changed-again"});
-        run(p, {"delete", id(second, 1)});
-        return check(rows(run(p, {"snapshot", first, "--context", "changed-last"}))[2].toObject()["displayName"] == "Unnamed 4", "Gap below successor reused");
-    }},
-    {"rename_named", [](const TestProfile& p) {
-        const QString selected = id(create(p));
-        return check(rows(run(p, {"rename", selected, "Custom"}))[0].toObject()["displayName"] == "Custom", "Rename not applied");
-    }},
-    {"rename_unnamed", [](const TestProfile& p) {
-        const QString selected = id(create(p, "Custom"));
-        return check(rows(run(p, {"rename", selected, ""}))[0].toObject()["displayName"] == "Unnamed", "Unnamed rename not allocated");
-    }},
-    {"missing_session", [](const TestProfile& p) {
-        return check(code(run(p, {"open", QUuid::createUuid().toString()}, 1)) == "NotFound", "Missing session failure wrong");
-    }},
-    {"invalid_id", [](const TestProfile& p) {
-        return check(code(run(p, {"open", "invalid"}, 2)) == "InvalidInput", "Invalid id accepted");
-    }},
-    {"corrupted_store", [](const TestProfile& p) {
-        create(p); writeStore(p, "{invalid secret input"); return failurePreserves(p, "InvalidData");
-    }},
-    {"unsupported_version", [](const TestProfile& p) {
-        create(p); changeStore(p, [](QJsonObject root) { root["version"] = 999; return root; });
-        return failurePreserves(p, "UnsupportedVersion");
-    }},
-    {"unknown_field", [](const TestProfile& p) {
-        create(p); changeRow(p, "future", "retain me"); return failurePreserves(p, "InvalidData");
-    }},
-    {"duplicate_id", [](const TestProfile& p) {
-        create(p); changeStore(p, [](QJsonObject root) {
-            auto data = root["sessions"].toArray(); data.append(data[0]); root["sessions"] = data; return root;
-        }); return failurePreserves(p, "InvalidData");
-    }},
-    {"bad_count", [](const TestProfile& p) {
-        create(p); changeRow(p, "usageAt", "invalid"); return failurePreserves(p, "InvalidData");
-    }},
-    {"busy_store", [](const TestProfile& p) {
-        create(p); QLockFile lock(QDir(p.path).filePath("sessions.lock")); check(lock.tryLock(0), "Cannot acquire real lock");
-        return failurePreserves(p, "Busy");
-    }},
-    {"failed_write", [](const TestProfile& p) {
-        QFile blocker(QDir(p.path).filePath("not-a-directory")); check(blocker.open(QIODevice::WriteOnly), "Cannot create blocker");
-        return check(code(run({p.executable, blocker.fileName() + "/child"}, {"create", "--context", context}, 1)) == "WriteFailed", "Bad parent accepted");
-    }},
-    {"relative_profile", [](const TestProfile& p) {
-        return check(code(run({p.executable, "relative-profile"}, {"list"}, 2)) == "InvalidInput", "Relative profile accepted");
-    }},
-    {"symlink_profile", [](const TestProfile& p) {
-#ifdef Q_OS_UNIX
-        const QString link = p.path + "-link"; check(QFile::link(p.path, link), "Cannot create profile alias");
-        const bool rejected = code(run({p.executable, link}, {"list"}, 2)) == "InvalidInput";
-        check(QFile::remove(link), "Cannot remove profile alias");
-        return check(rejected, "Symlink profile accepted");
-#else
-        return check(false, "Unix-only scenario must not be registered on this platform");
-#endif
-    }},
-    {"missing_command", [](const TestProfile& p) { return check(code(run(p, {}, 2)) == "InvalidInput", "Missing command accepted"); }},
-    {"unknown_command", [](const TestProfile& p) { return check(code(run(p, {"unknown"}, 2)) == "InvalidInput", "Unknown command accepted"); }},
-    {"conflicting_options", [](const TestProfile& p) { return check(code(run(p, {"list", "--context", context}, 2)) == "InvalidInput", "Conflicting options ignored"); }},
-    {"extra_arguments", [](const TestProfile& p) { return check(code(run(p, {"list", "extra"}, 2)) == "InvalidInput", "Extra arguments ignored"); }},
-    {"private_permissions", [](const TestProfile& p) {
-        create(p);
-#ifdef Q_OS_UNIX
-        const auto permissions = QFileInfo(QDir(p.path).filePath("sessions.json")).permissions();
-        return check(!(permissions & (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther | QFileDevice::WriteOther)), "Store is not private");
-#else
-        return check(false, "Unix-only scenario must not be registered on this platform");
-#endif
-    }},
-    {"concurrent_creates", [](const TestProfile& p) {
-        constexpr int count = 12;
-        int busy = 0;
-        std::vector<std::unique_ptr<QProcess>> processes;
-        for (int n = 0; n < count; ++n) {
-            auto process = std::make_unique<QProcess>();
-            process->start(p.executable, {"--profile", p.path, "create", "--context", context});
-            processes.push_back(std::move(process));
-        }
-        for (const auto& process : processes) {
-            check(process->waitForFinished(30000), "Concurrent CLI did not finish");
-            check(process->exitStatus() == QProcess::NormalExit, "Concurrent CLI crashed");
-            if (process->exitCode() != 0) {
-                const auto error = QJsonDocument::fromJson(process->readAllStandardError()).object()["error"].toObject();
-                check(error["code"] == "Busy", "Concurrent write failed unexpectedly");
-                ++busy;
-            }
-        }
-        for (int n = 0; n < busy; ++n) create(p); // Busy proves no write; retry after all concurrent writers exit.
-        const auto data = rows(run(p, {"list"}));
-        check(data.size() == count, "Concurrent sessions were lost");
-        QSet<QString> ids;
-        QSet<QString> numbers;
-        for (const auto value : data) { ids.insert(value.toObject()["id"].toString()); numbers.insert(value.toObject()["ordinal"].toString()); }
-        return check(ids.size() == count && numbers.size() == count, "Concurrent identities or ordinals collided");
-    }}
-};
-
-struct RowChange final { QString key; QJsonValue value; };
-const std::map<QString, RowChange> invalidRows{
-    {"bad_id", {"id", "invalid"}},
-    {"bad_name_space", {"name", " bad "}},
-    {"bad_name_control", {"name", "bad\nname"}},
-    {"bad_name_line", {"name", QString("bad") + QChar(0x2028) + "name"}},
-    {"bad_name_paragraph", {"name", QString("bad") + QChar(0x2029) + "name"}},
-    {"bad_name_type", {"name", 1}},
-    {"bad_ordinal_type", {"ordinal", 1}},
-    {"bad_ordinal_empty", {"ordinal", ""}},
-    {"bad_ordinal_negative", {"ordinal", "-1"}},
-    {"bad_ordinal_leading_zero", {"ordinal", "01"}},
-    {"bad_ordinal_range", {"ordinal", "18446744073709551616"}},
-    {"bad_ordinal_zero", {"ordinal", "0"}},
-    {"bad_usage_type", {"usageAt", 1}},
-    {"bad_usage_element", {"usageAt", QJsonArray{1}}},
-    {"bad_usage_date", {"usageAt", QJsonArray{"invalid"}}},
-    {"bad_sequence_type", {"sequenceId", 1}},
-    {"bad_context_empty", {"contextId", ""}},
-    {"bad_context_control", {"contextId", "bad\ncontext"}},
-    {"bad_context_space", {"contextId", " context "}},
-    {"bad_namespaces_type", {"namespaces", QJsonObject{}}},
-    {"bad_namespace_type", {"namespaces", QJsonArray{1}}},
-    {"bad_namespace_value", {"namespaces", QJsonArray{"UPPER"}}},
-    {"bad_namespace_order", {"namespaces", QJsonArray{"zeta", "alpha"}}},
-    {"bad_namespace_duplicate", {"namespaces", QJsonArray{"alpha", "alpha"}}},
-    {"bad_created_date", {"createdAt", "invalid"}},
-    {"bad_created_type", {"createdAt", 1}},
-    {"bad_open_type", {"open", "true"}},
-    {"bad_open_without_usage", {"open", true}},
-    {"bad_sequence_id", {"sequenceId", "invalid"}},
-    {"bad_usage_empty_date", {"usageAt", QJsonArray{""}}}
-};
-const std::map<QString, RowChange> invalidRoots{
-    {"bad_root_version_type", {"version", "1"}},
-    {"bad_root_sessions_type", {"sessions", QJsonObject{}}},
-    {"bad_root_active_type", {"activeSessionId", 1}},
-    {"bad_root_extra", {"future", "retain me"}},
-    {"bad_root_active_invalid", {"activeSessionId", "invalid"}},
-    {"bad_root_active_unknown", {"activeSessionId", QUuid::createUuid().toString()}},
-    {"bad_root_row_type", {"sessions", QJsonArray{true}}}
-};
-const std::map<QString, QStringList> invalidCommands{
-    {"selection_extra_arguments", {"selection", "unexpected"}},
-    {"invalid_context_control", {"create", "--context", "bad\ncontext"}},
-    {"snapshot_invalid_context", {"snapshot", QUuid::createUuid().toString(), "--context", ""}},
-    {"close_invalid_id", {"close", "invalid"}},
-    {"delete_invalid_id", {"delete", "invalid"}},
-    {"rename_invalid_id", {"rename", "invalid", "New"}},
-    {"snapshot_invalid_id", {"snapshot", "invalid", "--context", context}},
-    {"repeat_context", {"create", "--context", context, "--context", context}},
-    {"repeat_name", {"create", "--context", context, "--name", "One", "--name", "Two"}},
-    {"namespace_conflict", {"list", "--namespace", "alpha"}},
-    {"name_conflict", {"list", "--name", "New"}},
-    {"snapshot_name_conflict", {"snapshot", QUuid::createUuid().toString(), "--context", context, "--name", "New"}},
-    {"extra_create_arguments", {"create", "unexpected", "--context", context}},
-    {"extra_rename_arguments", {"rename", "invalid", "New", "unexpected"}},
-    {"parse_failure", {"--unknown-option"}}
-};
-const std::map<QString, std::function<bool(const TestProfile&)>> additionalCases{
-    {"root_not_object", [](const TestProfile& p) {
-        create(p); writeStore(p, "[]"); return failurePreserves(p, "InvalidData");
-    }},
-    {"active_closed", [](const TestProfile& p) {
-        const QString selected = id(create(p));
-        changeStore(p, [selected](QJsonObject root) { root["activeSessionId"] = selected; return root; });
-        return failurePreserves(p, "InvalidData");
-    }},
-    {"duplicate_ordinal", [](const TestProfile& p) {
-        create(p); create(p);
-        changeStore(p, [](QJsonObject root) {
-            auto data = root["sessions"].toArray(); auto second = data[1].toObject();
-            second["ordinal"] = "1"; data[1] = second; root["sessions"] = data; return root;
-        }); return failurePreserves(p, "InvalidData");
-    }},
-    {"store_symlink", [](const TestProfile& p) {
-        create(p); const QString store = QDir(p.path).filePath("sessions.json");
-        const QString original = QDir(p.path).filePath("original.json");
-        check(QFile::rename(store, original) && QFile::link(original, store), "Cannot create store alias");
-        return failurePreserves(p, "InvalidData");
-    }},
-    {"read_denied", [](const TestProfile& p) {
-        create(p); const QString store = QDir(p.path).filePath("sessions.json");
-        check(QFile::setPermissions(store, {}), "Cannot deny file read");
-        const QString error = code(run(p, {"create", "--context", context}, 1));
-        check(QFile::setPermissions(store, QFileDevice::ReadOwner | QFileDevice::WriteOwner), "Cannot restore file permissions");
-        return check(error == "ReadFailed", "Read failure category wrong");
-    }},
-    {"read_directory", [](const TestProfile& p) {
-        check(QDir().mkdir(QDir(p.path).filePath("sessions.json")), "Cannot create directory ingress");
-        return check(code(run(p, {"list"}, 1)) == "ReadFailed", "Directory was accepted as store");
-    }},
-    {"lock_denied", [](const TestProfile& p) {
-        create(p); check(QFile::setPermissions(p.path, QFileDevice::ReadOwner | QFileDevice::ExeOwner), "Cannot deny directory write");
-        const QString error = code(run(p, {"create", "--context", context}, 1));
-        check(QFile::setPermissions(p.path, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner), "Cannot restore directory permissions");
-        return check(error == "WriteFailed", "Lock permission error category wrong");
-    }},
-    {"empty_profile", [](const TestProfile& p) {
-        return check(code(run({p.executable, ""}, {"list"}, 2)) == "InvalidInput", "Empty profile accepted");
-    }},
-    {"new_profile_private", [](const TestProfile& p) {
-        const TestProfile child{p.executable, QDir(p.path).filePath("new-profile")}; create(child);
-        check(QFileInfo(child.path).isDir(), "Profile not created");
-#ifdef Q_OS_UNIX
-        const auto permissions = QFileInfo(child.path).permissions();
-        return check(!(permissions & (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
-            | QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther)), "Created profile not private");
-#else
-        return check(rows(run(child, {"list"})).size() == 1, "Created profile unreadable");
-#endif
-    }},
-    {"missing_profile_read", [](const TestProfile& p) {
-        const TestProfile child{p.executable, QDir(p.path).filePath("not-created")};
-        check(rows(run(child, {"list"})).isEmpty(), "Missing profile not empty");
-        return check(!QFileInfo(child.path).exists(), "Read created profile directory");
-    }},
-    {"profile_is_file", [](const TestProfile& p) {
-        const QString store = QDir(p.path).filePath("sessions.json"); create(p);
-        return check(code(run({p.executable, store}, {"list"}, 1)) == "ReadFailed", "File profile accepted");
-    }},
-    {"snapshot_missing", [](const TestProfile& p) {
-        return check(code(run(p, {"snapshot", QUuid::createUuid().toString(), "--context", context}, 1)) == "NotFound", "Missing snapshot source accepted");
-    }},
-    {"close_missing", [](const TestProfile& p) {
-        return check(code(run(p, {"close", QUuid::createUuid().toString()}, 1)) == "NotFound", "Missing close source accepted");
-    }},
-    {"delete_missing", [](const TestProfile& p) {
-        return check(code(run(p, {"delete", QUuid::createUuid().toString()}, 1)) == "NotFound", "Missing deletion source accepted");
-    }},
-    {"rename_missing", [](const TestProfile& p) {
-        return check(code(run(p, {"rename", QUuid::createUuid().toString(), "New"}, 1)) == "NotFound", "Missing rename source accepted");
-    }},
-    {"rename_invalid_name", [](const TestProfile& p) {
-        const QString selected = id(create(p));
-        return check(code(run(p, {"rename", selected, "bad\nname"}, 2)) == "InvalidInput", "Invalid rename accepted");
-    }},
-    {"snapshot_ordinal_overflow", [](const TestProfile& p) {
-        const QString selected = id(create(p)); changeRow(p, "ordinal", "18446744073709551615");
-        const QByteArray before = readStore(p);
-        check(code(run(p, {"snapshot", selected, "--context", "changed"}, 1)) == "Conflict", "Snapshot overflow not explicit");
-        return check(readStore(p) == before, "Snapshot overflow overwrote data");
-    }},
-    {"close_already_closed", [](const TestProfile& p) {
-        const QString selected = id(create(p)); const QByteArray before = readStore(p);
-        run(p, {"close", selected}); return check(readStore(p) == before, "Closed session was rewritten");
-    }},
-    {"close_inactive", [](const TestProfile& p) {
-        const QString first = id(create(p)); const QString second = id(create(p), 1);
-        run(p, {"open", first}); run(p, {"open", second});
-        return check(run(p, {"close", first}).json["activeSessionId"] == second, "Inactive close cleared active selection");
-    }},
-    {"delete_inactive", [](const TestProfile& p) {
-        const QString first = id(create(p)); const QString second = id(create(p), 1);
-        run(p, {"open", second}); return check(run(p, {"delete", first}).json["activeSessionId"] == second, "Inactive delete cleared active selection");
-    }},
-    {"repeat_profile", [](const TestProfile& p) {
-        return check(code(run(p, {"list", "--profile", p.path}, 2)) == "InvalidInput", "Repeated profile accepted");
-    }},
-    {"missing_profile", [](const TestProfile& p) {
-        return check(code(run(p, {"list"}, 2, false)) == "InvalidInput", "Missing profile accepted");
-    }},
-    {"help", [](const TestProfile& p) {
-        QProcess process; process.start(p.executable, {"--help"});
-        return check(process.waitForFinished(30000) && process.exitCode() == 0
-            && process.readAllStandardOutput().contains("No cluster connections"), "Help not available");
-    }},
-    {"version", [](const TestProfile& p) {
-        QProcess process; process.start(p.executable, {"--version"});
-        return check(process.waitForFinished(30000) && process.exitCode() == 0
-            && process.readAllStandardOutput().contains("0.1.0"), "Version not available");
-    }}
-};
 
 const QString kubeconfig = R"(apiVersion: v1
 kind: Config
@@ -533,7 +145,7 @@ const std::map<QString, std::function<bool(const TestProfile&)>> sourceCases{
         const auto first = importSource(p).json;
         const auto context = first["contexts"].toArray()[0].toObject();
         const TestProfile sessions{p.sessionExecutable, p.path};
-        const auto created = run(sessions, {"create", "--context", context["id"].toString(), "--name", context["name"].toString()});
+        const auto created = run(sessions, {"create", "--context", context["id"].toString()});
         const QString selected = id(created); run(sessions, {"open", selected});
         const auto before = readStore(sessions);
         const auto changed = run(p, {"import", writeSource(p, QString(kubeconfig).replace("6443", "7443"))}).json;
@@ -560,7 +172,7 @@ const std::map<QString, std::function<bool(const TestProfile&)>> sourceCases{
     {"source.owned_filename", [](const TestProfile& p) {
         const auto source = importSource(p).json;
         check(QFile::rename(source["ownedPath"].toString(), QDir(p.path).filePath("kubeconfigs/wrong.json")), "Cannot alter snapshot identity");
-        return check(sourceIssue(p) == "InvalidData", "Wrong owned identity accepted");
+        return check(sourceIssue(p) == "ReadFailed", "Missing catalogued source accepted");
     }},
     {"source.owned_root", [](const TestProfile& p) {
         const auto source = importSource(p).json; QFile file(source["ownedPath"].toString());
@@ -710,6 +322,7 @@ const std::map<QString, QString> invalidSources{
     {"source.bad_auth_provider", QString(kubeconfig).replace("token: keep-this-token-private", "auth-provider: string")},
     {"source.bad_token", QString(kubeconfig).replace("token: keep-this-token-private", "token: {}")}
 };
+struct RowChange final { QString key; QJsonValue value; };
 const std::map<QString, RowChange> invalidOwnedSources{
     {"source.owned_version", {"version", 999}},
     {"source.owned_version_type", {"version", "1"}},
@@ -779,7 +392,7 @@ int benchmark(const TestProfile& profile, bool sources = false) {
     }
     std::sort(timings.begin(), timings.end());
     const QJsonObject report{{"boundary", "CLI list process wall time including startup and JSON validation"},
-        {"catalog", sources ? "owned kubeconfig snapshots" : "sessions"},
+        {"catalog", sources ? "owned kubeconfig snapshots" : "open context tabs"},
         {"records", sessions}, {"samples", samples}, {"p50_ms", timings[24]},
         {"p95_ms", timings[47]}, {"max_ms", timings.back()},
         {"qt_version", QString(qVersion())}, {"platform", QSysInfo::prettyProductName()}};
@@ -788,7 +401,6 @@ int benchmark(const TestProfile& profile, bool sources = false) {
         == static_cast<size_t>(bytes.size()) ? 0 : 1;
 }
 } // namespace
-
 int main(int argc, char* argv[]) {
     const QCoreApplication app(argc, argv);
     if (argc != 3 && argc != 4) return 2;
@@ -827,18 +439,12 @@ int main(int argc, char* argv[]) {
             const auto source = run(profile, {"import", writeSource(profile, QString(kubeconfig).replace("token: keep-this-token-private", auth->second))}).json;
             return check(source["contexts"].toArray()[0].toObject()["authType"] == sourceAuthExpected.at(name), "Authentication label incorrect") ? 0 : 1;
         }
-        if (const auto scenario = cases.find(name); scenario != cases.end()) return scenario->second(profile) ? 0 : 1;
-        if (const auto scenario = additionalCases.find(name); scenario != additionalCases.end()) return scenario->second(profile) ? 0 : 1;
-        if (const auto command = invalidCommands.find(name); command != invalidCommands.end())
-            return check(code(run(profile, command->second, 2)) == "InvalidInput", "Invalid command accepted") ? 0 : 1;
-        if (const auto change = invalidRows.find(name); change != invalidRows.end()) {
-            create(profile); changeRow(profile, change->second.key, change->second.value);
-            return failurePreserves(profile, "InvalidData") ? 0 : 1;
-        }
-        if (const auto change = invalidRoots.find(name); change != invalidRoots.end()) {
-            create(profile); changeStore(profile, [&](QJsonObject root) {
-                root[change->second.key] = change->second.value; return root;
-            }); return failurePreserves(profile, "InvalidData") ? 0 : 1;
+        const std::map<QString, QStringList> invalid{{"empty_profile", {"--profile", "", "list"}}, {"relative_profile", {"--profile", "relative", "list"}}, {"missing_command", {}}, {"unknown_command", {"unknown"}}, {"extra_arguments", {"list", "extra"}}, {"repeat_profile", {"--profile", profile.path, "list"}}, {"missing_profile", {"list"}}, {"parse_failure", {"--unknown"}}};
+        if (name == "output_write_failure") return closedOutput(profile) ? 0 : 1;
+        if (const auto entry = invalid.find(name); entry != invalid.end()) {
+            const bool attach = name != "empty_profile" && name != "relative_profile" && name != "missing_profile";
+            const auto result = run(profile, entry->second, 2, attach);
+            return code(result) == "InvalidInput" ? 0 : 1;
         }
         return 2;
     }

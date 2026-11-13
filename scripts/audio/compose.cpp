@@ -157,7 +157,7 @@ public:
     }
 };
 
-enum class Tone { Felt, Pluck, Reed, Glass, Hollow, Warm, Sub, Veil, Halo, Metal, Kick, Rim, Hush };
+enum class Tone { Felt, Pluck, Reed, Glass, Hollow, Warm, Sub, Veil, Halo, Metal, Kick, Rim, Hush, Drive, Brass, Snare, Tom };
 struct Note { double at; int pitch; double hold; double level = 1; };
 struct Step { double at; int tone; double hold; double level = 1; };
 struct Drum { double at; Tone tone; double level; };
@@ -265,28 +265,28 @@ std::vector<Score> scores() {
     }
     {
         // D Dorian, clipped anticipations and a brighter, sustained middle.
-        Score s{"amber-vector",118,4,1,T::Pluck,T::Reed,T::Veil};
+        Score s{"amber-vector",118,4,1,T::Brass,T::Pluck,T::Veil};
         s.harmony={{50,53,57,59},{43,50,53,59},{48,52,55,62},{45,52,55,62},{47,53,57,62},{50,57,60,64}};
         s.a={{0,65,.5},{.75,69,.5},{1.75,71,.75},{3,67,.5},{4.25,65,.75},{5.5,62,.5},{7,64,.5},{8,69,1},{9.5,72,.5},{10.25,71,.75},{12,67,1},{13.5,65,.5},{14.75,62,.75}};
         s.b={{.25,74,1.25},{2,72,.75},{3.25,69,.5},{4.5,71,1.5},{6.5,67,.75},{8,65,2},{10.75,64,.75},{12.25,62,1},{14,65,1.5}};
         s.counter={{2.5,77,.5},{6,76,.75},{11.25,74,.5},{15,71,.5}};
         s.bass={{0,0,.75},{1.5,2,.5},{2.75,0,.75},{4,0,.75},{5.25,1,.5},{6.5,2,.75},{7.5,3,.3}};
         s.pulse={{.5,1,.25},{2,3,.3},{3.5,2,.25},{4.75,1,.3},{6,3,.3},{7.25,2,.25}};
-        s.drums={{0,T::Kick,.7},{1,T::Hush,.22},{2,T::Rim,.38},{3.25,T::Kick,.35},{4,T::Kick,.65},{5.5,T::Metal,.15},{6,T::Rim,.38},{7.5,T::Hush,.25}};
-        s.form={{8,Bed|Motion|Beat,0,.68},{8,Bed|Ground|Theme|Beat,0,.86},{8,full,0,1},{8,Bed|Ground|Theme,1,.76},{8,full,1,.97},{8,full,0,.9},{8,Bed|Ground|Motion,0,.62}};
+        s.drums={{0,T::Kick,.9},{.75,T::Hush,.38},{1.5,T::Kick,.42},{2,T::Snare,.65},{2.75,T::Hush,.28},{3.5,T::Kick,.51},{4.75,T::Kick,.65},{5.5,T::Hush,.36},{6,T::Snare,.72},{7.25,T::Tom,.38}};
+        s.form={{4,Motion|Beat,0,.74},{8,Ground|Theme|Beat,0,.94},{8,full,0,1},{8,Bed|Answer,0,.54},{8,Ground|Motion|Theme|Beat,1,1},{8,full,0,.92},{4,Motion|Beat,0,.66}};
         s.kit=2; out.push_back(s);
     }
     {
         // C minor, seven beats grouped 2+2+3; droplets answer low reed calls.
-        Score s{"iron-rain",108,7,1,T::Warm,T::Glass,T::Veil};
+        Score s{"iron-rain",108,7,1,T::Drive,T::Metal,T::Veil};
         s.harmony={{48,55,58,62},{44,51,55,60},{41,48,51,58},{43,50,53,59},{46,53,56,60},{48,51,58,63},{39,46,50,55}};
         s.a={{0,60,1},{2.5,63,.75},{4.25,67,1.5},{7.5,65,1},{10,62,1},{12,60,.75},{14.75,58,1.25},{17,62,.75},{19.5,63,1.5},{22,67,1},{24.5,65,.75},{26,60,1.25}};
         s.b={{1,72,1.5},{3.5,70,1},{6,67,.75},{8,63,2},{11,65,1},{14,62,1.5},{16.5,58,1},{19,60,2},{22.5,63,1},{25,62,1.5}};
         s.counter={{3.5,79,.5},{9,77,.6},{15.5,74,.5},{21,75,.75},{27,72,.5}};
         s.bass={{0,0,1.5},{2.25,2,1},{4.5,0,1.5},{7,0,1.5},{9.5,3,1},{12,2,1}};
         s.pulse={{1,1,.4},{3.5,3,.35},{5.75,2,.5},{8.25,1,.35},{10.75,3,.4},{13,2,.4}};
-        s.drums={{0,T::Kick,.65},{2,T::Rim,.35},{4,T::Kick,.42},{6,T::Hush,.2},{7,T::Kick,.6},{9,T::Metal,.18},{11,T::Rim,.33},{13.25,T::Hush,.22}};
-        s.form={{4,Bed|Motion,0,.62},{4,Bed|Ground|Theme|Beat,0,.85},{4,full,0,.95},{4,Bed|Answer|Beat,0,.67},{4,full,1,.96},{4,Bed|Ground|Theme,1,.8},{4,Bed|Motion,0,.58}};
+        s.drums={{0,T::Kick,.9},{1.5,T::Metal,.32},{2,T::Snare,.62},{3,T::Kick,.58},{4.5,T::Tom,.5},{5.5,T::Kick,.53},{6,T::Snare,.57},{7,T::Kick,.78},{8.5,T::Tom,.55},{9,T::Snare,.62},{10.5,T::Metal,.28},{11,T::Kick,.51},{12.5,T::Snare,.7},{13.5,T::Tom,.44}};
+        s.form={{4,Ground|Beat,0,.72},{8,Ground|Theme|Beat,0,1},{4,full,0,.96},{4,Bed|Motion|Answer,0,.55},{8,Ground|Theme|Beat,1,1},{4,full,1,.91},{4,Ground|Beat,0,.61}};
         s.kit=3; out.push_back(s);
     }
     {
@@ -330,14 +330,14 @@ std::vector<Score> scores() {
     }
     {
         // B Phrygian, five-beat 2+3 cells and downward semitone questions.
-        Score s{"mesh-transit",120,5,1,T::Pluck,T::Hollow,T::Veil};
+        Score s{"mesh-transit",120,5,1,T::Pluck,T::Brass,T::Veil};
         s.harmony={{47,54,57,60},{48,55,59,64},{45,52,55,59},{43,50,54,57},{40,47,52,55}};
         s.a={{.25,72,.5},{1.25,71,.75},{3,66,1},{5,64,.5},{6,60,1.25},{8.25,59,.75},{10.5,64,1},{12.25,66,.5},{14,69,1.25},{16,67,.75},{18,64,1.5}};
         s.b={{0,71,1},{1.75,74,.5},{3.5,72,1},{5.5,67,.75},{7,66,1},{9,64,.5},{10,60,1.5},{12.5,59,.75},{14.25,62,1},{16.25,64,1.75},{19,59,.5}};
         s.counter={{2.5,78,.5},{7.75,76,.5},{13.5,79,.75},{18.75,76,.5}};
         s.bass={{0,0,.7},{1.5,2,.5},{3,0,1},{5,0,.7},{6.5,1,.5},{8,3,1}};
         s.pulse={{.5,1,.25},{2.25,3,.3},{4.25,2,.3},{5.75,2,.25},{7.25,1,.3},{9,3,.4}};
-        s.drums={{0,T::Kick,.67},{1.5,T::Metal,.17},{2,T::Rim,.34},{4,T::Hush,.23},{5,T::Kick,.62},{7,T::Rim,.32},{8.5,T::Kick,.3},{9.5,T::Hush,.2}};
+        s.drums={{0,T::Kick,.82},{1,T::Hush,.34},{1.75,T::Snare,.56},{2.5,T::Kick,.47},{3.75,T::Snare,.44},{4.5,T::Hush,.36},{5,T::Kick,.81},{6.5,T::Tom,.45},{7,T::Snare,.62},{8.25,T::Kick,.54},{9,T::Snare,.61},{9.75,T::Hush,.38}};
         s.form={{4,Bed|Motion|Beat,0,.66},{8,Bed|Ground|Theme|Beat,0,.86},{8,full,0,.98},{4,Bed|Ground|Answer,0,.67},{8,full,1,.97},{8,full,0,.9},{4,Bed|Motion,0,.6}};
         s.kit=3; out.push_back(s);
     }
@@ -350,20 +350,20 @@ std::vector<Score> scores() {
         s.counter={{2,73,1},{6.5,71,.75},{10.25,68,1},{15,64,.5}};
         s.bass={{0,0,3.25},{4,0,2.5},{7,2,.65}};
         s.pulse={{.75,2,.65},{3.25,3,.5},{5.75,1,.7},{7.5,2,.3}};
-        s.drums={{0,T::Kick,.45},{2.5,T::Metal,.15},{4,T::Kick,.4},{6.75,T::Rim,.22},{7.5,T::Hush,.14}};
+        s.drums={{0,T::Tom,.58},{1.25,T::Metal,.21},{2.75,T::Tom,.32},{3.75,T::Hush,.19},{4.5,T::Tom,.53},{6.25,T::Metal,.32},{7.5,T::Rim,.26}};
         s.form={{8,Bed|Motion,0,.59},{8,Bed|Ground|Theme,0,.78},{8,full,0,.9},{4,Bed|Answer,0,.6},{8,Bed|Ground|Theme|Beat,1,.83},{8,full,1,.92},{4,Bed,0,.55}};
         s.kit=1; out.push_back(s);
     }
     {
         // A Mixolydian, six-beat interleaved steps and a broad major answer.
-        Score s{"northern-array",106,6,1,T::Hollow,T::Reed,T::Veil};
+        Score s{"northern-array",106,6,1,T::Brass,T::Reed,T::Veil};
         s.harmony={{45,52,55,61},{38,45,49,56},{43,50,54,57},{47,54,57,61},{40,47,52,56},{45,52,59,61}};
         s.a={{0,69,1.5},{2,73,.75},{3.75,76,1},{6.25,74,1.5},{8.5,71,.75},{10,67,1},{12.25,64,1.5},{14.5,67,.75},{16,69,1.25},{18.5,73,1},{21,71,1.5}};
         s.b={{.75,76,1},{2.25,79,.75},{4,76,1},{6,73,2},{9,71,1},{11,69,.5},{12.75,67,1.5},{15.25,64,.75},{17,66,1},{19,67,1.5},{22,69,1}};
         s.counter={{1,57,1},{5,59,.75},{9.75,61,.75},{16.75,62,.75},{23,64,.5}};
         s.bass={{0,0,1.5},{2.75,2,.8},{4.5,0,1},{6,0,1.5},{8.5,3,.75},{10.25,2,1}};
         s.pulse={{1,1,.4},{3.5,3,.4},{5.5,2,.3},{7.5,1,.5},{9.5,2,.3},{11.5,3,.3}};
-        s.drums={{0,T::Kick,.58},{2,T::Hush,.2},{3,T::Rim,.3},{5,T::Metal,.14},{6,T::Kick,.55},{8.75,T::Kick,.25},{9,T::Rim,.32},{11,T::Hush,.2}};
+        s.drums={{0,T::Tom,.62},{1,T::Tom,.37},{2,T::Kick,.61},{3,T::Snare,.46},{4.5,T::Metal,.21},{6,T::Kick,.68},{7.5,T::Tom,.59},{8.5,T::Tom,.38},{9,T::Snare,.46},{11,T::Hush,.27}};
         s.form={{4,Bed|Ground,0,.62},{8,Bed|Ground|Theme|Beat,0,.83},{8,full,0,.95},{4,Bed|Motion|Answer,0,.65},{8,full,1,.96},{4,Bed|Motion,0,.58}};
         s.kit=2; out.push_back(s);
     }
@@ -382,15 +382,15 @@ std::vector<Score> scores() {
     }
     {
         // F minor, tight offbeat low pulses with a spacious upper-register arc.
-        Score s{"basalt-channel",116,4,1,T::Warm,T::Hollow,T::Halo};
+        Score s{"basalt-channel",116,4,1,T::Warm,T::Drive,T::Halo};
         s.harmony={{41,48,51,55},{37,44,48,53},{44,51,55,58},{39,46,49,56},{46,53,56,60},{48,55,58,64}};
         s.a={{.5,68,.75},{1.75,72,.5},{3,75,1.5},{5.25,73,.75},{6.75,70,.5},{8.25,67,1.25},{10,65,.75},{11.5,68,1},{13.25,70,.75},{14.75,65,.75}};
         s.b={{0,77,1.5},{2.25,75,.75},{3.75,72,1},{5.5,68,1.25},{7.5,67,.5},{9,65,1.5},{11.25,63,.75},{13,60,1},{14.5,65,1}};
         s.counter={{2.75,80,.5},{6,79,.5},{10.75,77,.5},{15.25,75,.5}};
         s.bass={{.25,0,.75},{1.75,2,.5},{3.25,0,.5},{4.5,0,.75},{6,1,.5},{7.25,3,.5}};
         s.pulse={{0,1,.25},{1,2,.25},{2.5,3,.3},{4,2,.25},{5.25,1,.3},{6.75,3,.3}};
-        s.drums={{0,T::Kick,.62},{1.25,T::Metal,.14},{2,T::Rim,.34},{3.5,T::Hush,.2},{4.5,T::Kick,.58},{6,T::Rim,.32},{7,T::Kick,.26},{7.75,T::Hush,.17}};
-        s.form={{8,Bed|Motion|Beat,0,.65},{8,Bed|Ground|Theme|Beat,0,.83},{12,full,0,.97},{4,Bed|Answer,0,.6},{8,full,1,.95},{8,full,0,.88},{8,Bed|Ground|Motion,0,.59}};
+        s.drums={{0,T::Kick,.95},{1.5,T::Hush,.34},{2,T::Snare,.75},{3.25,T::Kick,.6},{4,T::Kick,.7},{5,T::Tom,.44},{6,T::Snare,.8},{7.5,T::Tom,.42}};
+        s.form={{4,Ground|Motion,0,.7},{8,Ground|Motion|Beat,0,.91},{8,full,0,1},{4,Ground|Beat,0,.68},{8,Theme|Ground|Motion|Beat,1,1},{8,full,1,.93},{4,Bed|Ground,0,.54}};
         out.push_back(s);
     }
     {
@@ -562,10 +562,10 @@ struct Audio {
 void voice(Audio& audio,double start,double duration,int midi,Tone tone,double level,double pan,std::uint32_t seed) {
     const double hz=440*std::exp2((midi-69)/12.0);
     const bool pad=tone==Tone::Veil || tone==Tone::Halo;
-    const bool drum=tone==Tone::Kick || tone==Tone::Rim || tone==Tone::Hush;
+    const bool drum=tone==Tone::Kick || tone==Tone::Rim || tone==Tone::Hush || tone==Tone::Snare || tone==Tone::Tom;
     const double attack=std::min(duration*.3,pad?.32:drum?.009:tone==Tone::Sub?.018:.02);
     const double release=std::min(duration*.4,pad?.65:tone==Tone::Sub?.13:.16);
-    const double cutoff=tone==Tone::Sub?650:pad?1050:tone==Tone::Metal?1650:tone==Tone::Hush?3200:2100;
+    const double cutoff=tone==Tone::Sub?650:pad?1050:tone==Tone::Metal?1650:tone==Tone::Hush?3200:tone==Tone::Snare?4600:tone==Tone::Drive||tone==Tone::Brass?3800:2100;
     const double filter=1-std::exp(-2*pi*cutoff/rate);
     const double fall=std::exp(-(tone==Tone::Metal?13:tone==Tone::Pluck?5:tone==Tone::Glass?3.5:drum?16:1.6)/rate);
     const double bendFall=std::exp(-35.0/rate);
@@ -589,14 +589,25 @@ void voice(Audio& audio,double start,double duration,int midi,Tone tone,double l
         case Tone::Veil: sample=.53*wave(phase)+.32*wave(phase*1.0018)+.15*wave(phase*2); break;
         case Tone::Halo: sample=.64*wave(phase)+.24*wave(phase*1.0031)+.12*wave(phase*3); break;
         case Tone::Metal: sample=(.72*wave(phase)+.18*wave(phase*2.37)+.1*wave(phase*3.61))*(.025+.975*decay); break;
+        case Tone::Drive: {
+            const double body=wave(phase)+.52*wave(phase*2)+.27*wave(phase*3)+.15*wave(phase*4)+.11*wave(phase*5);
+            const double drive=body/(1+.55*std::abs(body));
+            sample=(drive*.85+.15*wave(phase*1.003))*(.66+.34*decay);
+            break;
+        }
+        case Tone::Brass:
+            sample=(.68*wave(phase)+(.18+.08*wave(t*4))*wave(phase*2)+.12*wave(phase*3)+.06*wave(phase*5))*(.76+.24*decay);
+            break;
+        case Tone::Tom: sample=(.84*wave(phase)+.16*wave(phase*1.55))*decay; break;
         case Tone::Kick: sample=wave(phase)*decay; break;
+        case Tone::Snare:
         case Tone::Rim:
         case Tone::Hush: {
             seed^=seed<<13; seed^=seed>>17; seed^=seed<<5;
             const double noise=double(seed)/2147483647.5-1;
             const double detail=(noise-previousNoise)*.5;
             previousNoise=noise;
-            sample=(tone==Tone::Rim?.77*wave(phase)+.23*detail:detail*.65)*decay;
+            sample=(tone==Tone::Rim?.77*wave(phase)+.23*detail:tone==Tone::Snare?.26*wave(phase)+.48*noise+.26*detail:detail*.65)*decay;
             break;
         }
         }
@@ -609,7 +620,7 @@ void voice(Audio& audio,double start,double duration,int midi,Tone tone,double l
             audio.pcm[frame*2]+=float(value*left);
             audio.pcm[frame*2+1]+=float(value*right);
         }
-        phase+=(hz+(tone==Tone::Kick?85*bend:0))/rate;
+        phase+=(hz+(tone==Tone::Kick?85*bend:tone==Tone::Tom?38*bend:0))/rate;
         decay*=fall; bend*=bendFall;
     }
 }
@@ -651,6 +662,7 @@ Audio render(const Score& score) {
     Audio audio(score.seconds(),2,true);
     const double spb=60.0/score.bpm;
     const auto seed=seedFor(score.id);
+    const int character=int(seed%5);
     std::uint32_t event=0;
     int firstBar=0;
     for (const auto& section:score.form) {
@@ -659,16 +671,22 @@ Audio render(const Score& score) {
         for (int bar=firstBar;bar<lastBar;++bar) {
             const auto& chord=score.harmony[std::size_t(bar/score.chordBars+section.harmonyOffset)%score.harmony.size()];
             if ((section.layers&Bed) && bar%score.chordBars==0) {
-                for (int c=0;c<4;++c) voice(audio,bar*score.meter*spb,
-                    score.chordBars*score.meter*spb+.6,chord[std::size_t(c)]+12,score.pad,
-                    .10*energy,c%2? .62:-.62,seed+(++event));
+                const int articulations=1+((character+bar/score.chordBars)%4);
+                const double span=score.chordBars*score.meter*spb;
+                const double hold=span/double(articulations)*.86;
+                for (int pulse=0;pulse<articulations;++pulse) for (int c=0;c<4;++c)
+                    voice(audio,bar*score.meter*spb+pulse*span/double(articulations),hold,
+                        chord[std::size_t(c)]+12,score.pad,.10*energy,c%2? .62:-.62,seed+(++event));
             }
         }
         for (int cell=firstBar;cell<lastBar;cell+=2) {
+            const int cycle=(cell-firstBar)/2;
             const double end=lastBar*score.meter;
             const auto stepped=[&](const std::vector<Step>& line,Tone tone,double level,int octave,double pan) {
                 for (const auto& n:line) {
-                    const double beat=cell*score.meter+n.at;
+                    double beat=cell*score.meter+n.at;
+                    if ((character==1 || character==4) && n.at-std::floor(n.at)>.1) beat+=.11;
+                    if (character==2 && cycle%4==3 && tone==Tone::Sub && n.at==0) continue;
                     if (beat>=end) continue;
                     const auto bar=int(beat/score.meter);
                     const auto& chord=score.harmony[std::size_t(bar/score.chordBars+section.harmonyOffset)%score.harmony.size()];
@@ -679,11 +697,14 @@ Audio render(const Score& score) {
             if (section.layers&Ground) stepped(score.bass,Tone::Sub,.29,-12,0);
             if (section.layers&Motion) stepped(score.pulse,score.motion,.11,12,-.28);
             if (section.layers&Beat) for (const auto& d:score.drums) {
-                const double beat=cell*score.meter+d.at;
+                double beat=cell*score.meter+d.at;
+                if ((character==1 || character==4) && d.at-std::floor(d.at)>.1) beat+=.11;
+                if (character==2 && cycle%4==3 && d.tone==Tone::Kick) continue;
                 if (beat>=end) continue;
-                const int pitch=d.tone==Tone::Kick?32+score.kit:d.tone==Tone::Rim?51+score.kit*2:70+score.kit;
-                const double duration=d.tone==Tone::Kick?.24:d.tone==Tone::Rim?.16:.12;
-                const double level=d.tone==Tone::Kick?.32:d.tone==Tone::Rim?.17:.075;
+                const bool backbeat=d.tone==Tone::Rim || d.tone==Tone::Snare;
+                const int pitch=d.tone==Tone::Kick?32+score.kit:d.tone==Tone::Tom?42+score.kit:backbeat?51+score.kit*2:70+score.kit;
+                const double duration=d.tone==Tone::Kick?.24:d.tone==Tone::Tom?.28:backbeat?.16:.12;
+                const double level=d.tone==Tone::Kick?.32:d.tone==Tone::Tom?.23:d.tone==Tone::Snare?.25:backbeat?.17:.075;
                 voice(audio,beat*spb,duration,pitch,d.tone,level*d.level*energy,
                     d.tone==Tone::Metal?.38:d.tone==Tone::Hush?-.42:0,seed+(++event));
             }
@@ -695,7 +716,18 @@ Audio render(const Score& score) {
                 voice(audio,at*spb,std::min(n.hold,end-at)*spb,n.pitch,tone,level*n.level*energy,pan,seed+(++event));
             }
         };
-        if (section.layers&Theme) melodic(section.variant?score.b:score.a,score.lead,.19,.12);
+        if (section.layers&Theme) {
+            for (int phrase=firstBar;phrase<lastBar;phrase+=4) {
+                const int variation=section.variant+((phrase-firstBar)/4)+(character%2);
+                const auto& line=variation%2?score.b:score.a;
+                for (const auto& n:line) {
+                    const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
+                    if (at>=end) continue;
+                    voice(audio,at*spb,std::min(n.hold,end-at)*spb,n.pitch,score.lead,
+                        .19*n.level*energy,.12,seed+(++event));
+                }
+            }
+        }
         if (section.layers&Answer) melodic(score.counter,score.lead==Tone::Glass?Tone::Felt:Tone::Glass,.075,.38);
         firstBar=lastBar;
     }

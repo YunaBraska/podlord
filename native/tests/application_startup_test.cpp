@@ -197,7 +197,14 @@ bool execute(const QString& binary, const QString& scenario, const QString& expe
         return false;
     };
     if (scenario == "source_events") {
-        require(process.waitForFinished(15000) && process.exitStatus()==QProcess::NormalExit && process.exitCode()==0,
+        const bool completed=process.waitForFinished(15000) && process.exitStatus()==QProcess::NormalExit && process.exitCode()==0;
+        if (!completed) {
+            auto errors=process.readAllStandardError();
+            errors.replace("ambient-startup-secret","[fixture credential]");
+            errors.replace("explicit-source-startup-secret","[fixture credential]");
+            std::fprintf(stderr,"File-open driver stderr:\n%s\n",errors.right(4096).constData());
+        }
+        require(completed,
             "Public file-open event journey did not finish normally");
         QCoreApplication::processEvents();
         require(sourceRows().size()==1 && calls==0 && !QFileInfo(marker).exists(),

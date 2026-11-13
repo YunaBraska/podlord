@@ -85,6 +85,7 @@ Pane {
     }
     TabBar {
         spacing: 0
+        implicitWidth: 0
         Layout.fillWidth: true
         currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
         InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
@@ -182,7 +183,7 @@ Pane {
             spacing: 12
                 Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
             Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
+            Label { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
         }
     }
     ListView {

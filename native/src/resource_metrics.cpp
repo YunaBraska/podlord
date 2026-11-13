@@ -115,10 +115,10 @@ QJsonObject withResourceMetrics(QJsonObject resource, const QJsonObject& sample,
     resource["metricComplete"]=complete; resource["metricAt"]=sample["metricAt"]; resource["metricWindow"]=sample["metricWindow"]; resource["metricStale"]=at.msecsTo(now)>metricFreshnessMilliseconds; return resource;
 }
 QString formatMetricQuantity(double number, bool cpu, bool compact) {
-    if (cpu) return compact ? number >= 1000 ? QString::number(number / 1000, 'g', 3) + "c" : QString::number(number, 'g', 3) + "m" : QString::number(number, 'g', 8)+" mCPU";
+    if (cpu) return compact ? number >= 1000 ? QString::number(number / 1000, 'g', 3) + "c" : QString::number(number, 'g', 3) + "m" : QString::number(number, 'g', 4)+" mCPU";
     const QStringList units{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}; int unit=0;
     while (number>=1024 && unit<units.size()-1) { number/=1024; ++unit; }
-    return QString::number(number, 'g', compact ? 3 : 8)+(compact ? "" : " ")+(compact && unit > 0 ? units[unit].chopped(1) : units[unit]);
+    return QString::number(number, 'g', compact ? 3 : 4)+(compact ? "" : " ")+(compact && unit > 0 ? units[unit].chopped(1) : units[unit]);
 }
 ResourceMetricContribution resourceMetricContribution(const QJsonObject& row) {
     ResourceMetricContribution result;
@@ -172,22 +172,18 @@ QVariantList ResourceMetricSummary::presentation() const {
         QString usage=measured ? formatMetricQuantity(total.used,metric==0) : "Unavailable";
         if (total.observed>0 && !std::isfinite(total.used)) usage+=" (overflow)";
         if (measured && (total.observed<total.eligible || total.incomplete)) usage+=" (incomplete)";
-        if (measured && total.stale) usage+=" (stale)";
         if (referenced) usage+=" / "+formatMetricQuantity(total.reference,metric==0)+(total.referenced<total.eligible ? " (partial reference)" : "");
         QString display = measured ? formatMetricQuantity(total.used, metric == 0, true) : "Unavailable";
         if (referenced) display += " / " + formatMetricQuantity(total.reference, metric == 0, true);
-        if (measured && total.stale) display += " [stale]";
         if (measured && (total.observed < total.eligible || total.incomplete)) display += " [partial]";
         const auto maximum=std::max(measured ? total.used : 0,referenced ? total.reference : 0);
         const QString label=metric==0 ? "CPU" : metric==1 ? "Memory" : "Storage";
-        const auto description=label+" from filtered "+scope+". Measured "+QString::number(total.observed)+" of "+QString::number(total.eligible)
-            +" resources. "+(group==1 ? "Configured limits" : "Capacity")+" are references only; missing measurements are not zero. Node and Pod usage are never added together."
-            +(total.oldestStaleMeasurement.isValid() ? " Oldest stale measurement: "+total.oldestStaleMeasurement.toUTC().toString(Qt::ISODateWithMs)+"." : "");
+        const auto description = label + ": " + usage + " (" + scope + ")";
         result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",true},{"available",measured},
             {"fraction",measured && maximum>0 ? total.used/maximum : 0},{"description",description}});
     }
-    result.append(QVariantMap{{"id","pods"},{"label","Pods"},{"usage",QString::number(counts[1])},{"bar",false},{"fraction",0},{"description","Pods in the filtered session cache."}});
-    result.append(QVariantMap{{"id","nodes"},{"label","Nodes"},{"usage",QString::number(counts[0])},{"bar",false},{"fraction",0},{"description","Nodes in the filtered session cache."}});
+    result.append(QVariantMap{{"id","pods"},{"label","Pods"},{"usage",QString::number(counts[1])},{"bar",false},{"fraction",0},{"description","Matching Pods"}});
+    result.append(QVariantMap{{"id","nodes"},{"label","Nodes"},{"usage",QString::number(counts[0])},{"bar",false},{"fraction",0},{"description","Matching Nodes"}});
     return result;
 }
 QVariantList resourceMetricSummary(const QJsonArray& resources) {
@@ -207,15 +203,13 @@ QVariantList resourceMetricPresentation(const QJsonObject& resource) {
             const auto value=reference[key]; if (value.isDouble()) maximum=std::max(maximum, value.toDouble());
             QString label=QString(key)+": "+(reference[QString(key)+"Invalid"].toBool() ? "invalid" : value.isDouble() ? formatMetricQuantity(value.toDouble(), QString(id)=="cpu") : "not set");
             if (value.isDouble() && reference.contains(QString(key)+"Complete") && !reference[QString(key)+"Complete"].toBool()) label+=" (incomplete)";
-            if (usage.isDouble() && value.isDouble() && value.toDouble()>0) label+=" / "+QString::number(usage.toDouble()/value.toDouble()*100, 'g', 5)+"% of "+key;
             labels.append(label);
             if (value.isDouble() || reference[QString(key)+"Invalid"].toBool()) presentLabels.append(label);
         }
         for (const auto& key : {"request", "limit", "capacity"}) if (reference[key].isDouble()) markers.append(QVariantMap{{"label", key}, {"position", maximum>0 ? reference[key].toDouble()/maximum : 0}});
         QString measured=usage.isDouble() ? formatMetricQuantity(usage.toDouble(), QString(id)=="cpu")+(complete ? "" : " (incomplete)") : "Unavailable";
-        if (usage.isDouble() && resource["metricStale"].toBool()) measured+=" (stale)";
         result.append(QVariantMap{{"id", id}, {"label", QString(id)=="cpu" ? "CPU" : QString(id)=="memory" ? "Memory" : "Storage"}, {"usage", measured}, {"available", usage.isDouble()},
-            {"references", labels.join("\n")}, {"presentReferences", presentLabels.join("\n")},
+            {"references", labels.join("\n")}, {"presentReferences", presentLabels.join(", ")},
             {"fraction", maximum>0 && usage.isDouble() ? usage.toDouble()/maximum : 0}, {"markers", markers}, {"source", reference["source"].toString()},
             {"timestamp", usage.isDouble() ? resource["metricAt"].toString() : QString{}}, {"window", usage.isDouble() ? resource["metricWindow"].toString() : QString{}}});
     }

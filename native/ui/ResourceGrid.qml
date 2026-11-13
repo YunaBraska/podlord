@@ -18,6 +18,10 @@ ColumnLayout {
     required property string emptyText
     property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
     property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
+    readonly property int identityColumn: {
+        const identity = columns.find(state => state.id === "name" || state.id === "key")
+        return identity ? identity.column : 0
+    }
     readonly property string layoutSignature: JSON.stringify([rowHeight, workspace.textSizes.body, columns.map(function(column) {
         return [column.column, column.width, grid.columnShown(column), column.pinned]
     })])
@@ -30,6 +34,7 @@ ColumnLayout {
     property var actionColumns: []
     property var accessoryColumns: []
     property Component cellAccessory: null
+    property bool accessibleAccessoryCells: false
     property var cellName: null
     property alias contentY: table.contentY
     readonly property real contentHeight: table.contentHeight
@@ -42,6 +47,7 @@ ColumnLayout {
         const column = columns.find(column => grid.columnShown(column)).column
         selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
         if (visible) table.positionViewAtRow(row, TableView.Contain)
+        grid.rowNavigationRequested(grid.pathAt(row))
     }
     readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
     onContextScopeChanged: {
@@ -52,6 +58,7 @@ ColumnLayout {
     }
     signal actionRequested(string identity, int column, string label)
     signal currentRequested(string identity)
+    signal rowNavigationRequested(string identity)
     function focusCell(row, column, owner) {
         const index = tableModel.index(row, column)
         selection.setCurrentIndex(index, ItemSelectionModel.NoUpdate)
@@ -82,12 +89,15 @@ ColumnLayout {
     function handleCellKey(event, row, column, anchor) {
         const current = selection.currentIndex
         if (current.valid) { row = current.row; column = current.column }
-        if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            const target = event.key === Qt.Key_Home ? 0 : table.rows - 1
+        if (event.key === Qt.Key_Home || event.key === Qt.Key_End
+            || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down) && event.modifiers === Qt.NoModifier)) {
+            const target = event.key === Qt.Key_Home ? 0 : event.key === Qt.Key_End ? table.rows - 1
+                : Math.max(0, Math.min(table.rows - 1, row + (event.key === Qt.Key_Down ? 1 : -1)))
             if (target >= 0) {
                 selection.setCurrentIndex(tableModel.index(target, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
                 table.positionViewAtRow(target, TableView.Contain)
                 table.forceActiveFocus(Qt.TabFocusReason)
+                grid.rowNavigationRequested(grid.pathAt(target))
             }
         } else if (event.matches(StandardKey.Copy)) grid.copyRequested(row, column)
         else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
@@ -107,6 +117,7 @@ ColumnLayout {
         }
     }
     Keys.onPressed: function(event) {
+        if (findInput.activeFocus) return
         if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
             const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => grid.columnShown(column)).column
             event.accepted = handleCellKey(event, 0, column, grid)
@@ -136,9 +147,16 @@ ColumnLayout {
         const source = findMatches.mapToSource(findMatches.index(findIndex, 0))
         selection.setCurrentIndex(tableModel.index(source.row, columns.find(column => grid.columnShown(column)).column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
         table.positionViewAtRow(source.row, TableView.Contain)
+        if (offset !== 0) grid.rowNavigationRequested(grid.pathAt(source.row))
     }
     function openFind() { findOpen = true; findInput.forceActiveFocus(); findInput.selectAll() }
     function openColumns() { columnsDialog.open() }
+    readonly property var scrollingColumns: columns.filter(column => columnShown(column) && !column.pinned)
+    readonly property real scrollingWidth: scrollingColumns.reduce((width, column) => width + column.width, 0)
+    readonly property var stretchColumn: scrollingColumns.find(column => ["name", "message", "reason"].includes(column.id))
+        || scrollingColumns.find(column => !actionColumns.includes(column.column)) || scrollingColumns[0]
+    readonly property real extraColumnWidth: Math.max(0, table.width - scrollingWidth - 2)
+    onExtraColumnWidthChanged: Qt.callLater(table.forceLayout)
     readonly property real pinnedWidth: columns.filter(function(column) { return grid.columnShown(column) && column.pinned }).reduce(function(width, column) { return width + column.width }, 0)
     readonly property bool hasScrollingColumns: columns.some(function(column) { return grid.columnShown(column) && !column.pinned })
     signal sortRequested(int column)
@@ -274,17 +292,41 @@ ColumnLayout {
             contentItem: RowLayout {
                 spacing: 6
                 KindGlyph {
+                    Accessible.ignored: true
                     visible: ["alert", "diagnostic", "audit"].indexOf(grid.prefix) < 0
                     Layout.preferredWidth: 12; Layout.preferredHeight: 12
                     kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
                     fill: grid.colors.accent
                 }
-                Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight }
-                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small }
+                Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
+                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small; Accessible.ignored: true }
             }
             focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
             Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
             onClicked: if (sortable) grid.sortRequested(column)
+            MouseArea {
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                z: 1
+                width: 8
+                enabled: visualColumn >= 0 && !grid.stateAt(visualColumn)?.pinned
+                    && !(grid.Window.window && grid.Window.window.touchLayout)
+                cursorShape: Qt.SizeHorCursor
+                preventStealing: true
+                readonly property int visualColumn: grid.visualOrder.indexOf(column)
+                property real originX: 0
+                property real originWidth: 0
+                onPressed: mouse => {
+                    originX = mapToItem(null, mouse.x, mouse.y).x
+                    originWidth = table.columnWidth(visualColumn)
+                }
+                onPositionChanged: mouse => {
+                    if (!pressed) return
+                    const width = originWidth + mapToItem(null, mouse.x, mouse.y).x - originX
+                    table.setColumnWidth(visualColumn, Math.max(48, Math.min(width, 2000)))
+                }
+            }
             ToolTip.visible: (hovered || activeFocus) && contentItem.implicitWidth > availableWidth
             ToolTip.text: text
             TapHandler { acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen; acceptedButtons: Qt.RightButton; onTapped: grid.openColumns() }
@@ -361,6 +403,7 @@ ColumnLayout {
             gesturePolicy: TapHandler.DragThreshold
             onPressedChanged: if (pressed) origin = surface.pressOrigin(point.scenePosition)
             onCanceled: origin = null
+            onLongPressed: { surface.activateOrigin(origin, point.scenePosition, true); origin = null }
             onTapped: (eventPoint) => surface.activateOrigin(origin, eventPoint.scenePosition, false)
         }
         TapHandler {
@@ -385,12 +428,14 @@ ColumnLayout {
         property font font: grid.cellFont
         property real padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
         readonly property Item contentItem: cellText
+        property bool textTruncated: cellText.truncated
         signal clicked()
         activeFocusOnTab: true
         required property int row
         required property int column
         required property string display
         required property string resourcePath
+        required property string resourceName
         required property color identityColor
         required property bool selected
         readonly property bool current: selection.currentIndex.valid && selection.currentIndex.row === row && selection.currentIndex.column === column
@@ -402,14 +447,23 @@ ColumnLayout {
             if (activeFocus) grid.focusCell(row, column, TableView.view)
             else keyboardPressed = false
         }
-        Accessible.role: Accessible.Button
-        Accessible.name: text
+        Accessible.ignored: grid.accessoryColumns.indexOf(column) >= 0 && !grid.accessibleAccessoryCells
+        Accessible.role: grid.inspectable || (grid.actionColumns.indexOf(column) >= 0 && text !== "") ? Accessible.Button : Accessible.Cell
+        Accessible.name: {
+            const heading = grid.columns.find(state => state.column === column)
+            const identity = resourceName || grid.tableModel.data(grid.tableModel.index(row, grid.identityColumn), Qt.DisplayRole) || resourcePath
+            const action = grid.actionColumns.indexOf(column) >= 0 && text !== "" && text !== identity
+            const parts = [identity, action ? text : heading ? heading.title : ""]
+            if (!action && text !== identity && (!heading || text !== heading.title)) parts.push(text)
+            return parts.filter(part => part !== "").join(", ")
+        }
         Accessible.focusable: true
         Accessible.focused: activeFocus
         Accessible.selected: selected
         Accessible.onPressAction: cell.clicked()
         Text {
             id: cellText
+            Accessible.ignored: true
             anchors.fill: parent
             anchors.margins: cell.padding
             text: grid.accessoryColumns.indexOf(cell.column) < 0 ? cell.text : ""
@@ -442,7 +496,7 @@ ColumnLayout {
             }
         }
         property string tipText: text
-        readonly property bool wantsTip: (hovered || activeFocus) && (cellText.truncated || tipText.length > text.length)
+        readonly property bool wantsTip: (hovered || activeFocus) && (textTruncated || tipText.length > text.length)
         onWantsTipChanged: if (wantsTip) valueTip.target=cell
         Component.onDestruction: {
             if (valueTip.target === cell) valueTip.target = null
@@ -460,8 +514,10 @@ ColumnLayout {
         ResourceCell {
             id: accessoryCell
             required property var model
+            textTruncated: accessoryLoader.item ? accessoryLoader.item.truncated === true : false
             tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
             Loader {
+                id: accessoryLoader
                 anchors.fill: parent
                 anchors.margins: accessoryCell.padding
                 active: accessoryCell.width > 0 && grid.accessoryColumns.indexOf(accessoryCell.column) >= 0
@@ -489,7 +545,7 @@ ColumnLayout {
                 Layout.preferredWidth: Math.min(grid.pinnedWidth, Math.max(0, grid.width - (grid.hasScrollingColumns ? 120 : 0)))
                 Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; delegate: headerDelegate }
+                HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; resizableColumns: false; delegate: headerDelegate }
                 ResourceTableView {
                     id: pinnedTable
                     animate: false
@@ -509,12 +565,13 @@ ColumnLayout {
                     ScrollBar.horizontal: ScrollBar {}
                     delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
                     Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
+                    Keys.onPressed: event => { if (selection.currentIndex.valid) event.accepted = grid.handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, pinnedTable) }
                 }
             }
             ColumnLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; delegate: headerDelegate }
+                HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; resizableColumns: false; delegate: headerDelegate }
                 ResourceTableView {
                     id: table
                     animate: false
@@ -528,12 +585,21 @@ ColumnLayout {
                     onColumnsChanged: Qt.callLater(grid.synchronizeColumns)
                     selectionBehavior: TableView.SelectRows
                     selectionMode: TableView.SingleSelection
-                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return grid.columnShown(state) && !state.pinned ? state.width : 0 }
+                    columnWidthProvider: function(column) { const state = grid.stateAt(column); if (!grid.columnShown(state) || state.pinned) return 0
+                        const resized = table.explicitColumnWidth(column)
+                        if (resized >= 0) return Math.max(48, resized)
+                        if (state.column !== grid.stretchColumn?.column || grid.extraColumnWidth <= 0) return state.width
+                        const hasManualWidths = grid.scrollingColumns.some(entry => {
+                            const index = grid.visualOrder.indexOf(entry.column)
+                            return index >= 0 && table.explicitColumnWidth(index) >= 0
+                        })
+                        return state.width + (hasManualWidths ? 0 : grid.extraColumnWidth) }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar { id: horizontalScroll }
                     delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
                     Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
+                    Keys.onPressed: event => { if (selection.currentIndex.valid) event.accepted = grid.handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, table) }
                 }
             }
         }

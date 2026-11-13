@@ -110,6 +110,7 @@ public:
     QList<QByteArray> authorizations;
     int refresh = 0;
     int detailReads = 0;
+    bool inspectorResourceRecreated = false;
     int valueLists = 0;
     bool delayedReadDelivered = false;
     bool prematureDisconnect = false;
@@ -204,6 +205,11 @@ public:
                             document["metadata"] = metadata;
                             if (secret) {
                                 document["data"] = QJsonObject{{"alpha", "YWxwaGEtcHJpdmF0ZS12YWx1ZQ=="}, {"beta", "YmV0YS1wcml2YXRlLXZhbHVl"}, {"binary", "AAH/"}, {"empty", ""}};
+                                if (scenario == "inspector_auto_secret" && detailReads > 1) {
+                                    auto data = document["data"].toObject();
+                                    data["beta"] = QString::fromLatin1(QByteArray("beta-renewed-private-value").toBase64());
+                                    document["data"] = data;
+                                }
                                 if (scenario == "inspector_secret_table_hover") {
                                     auto data = document["data"].toObject();
                                     data["alpha"] = QString::fromLatin1((QByteArray("<b>literal secret</b>\n") + QByteArray(600, 'x')).toBase64());
@@ -219,9 +225,9 @@ public:
                                 document["data"] = data; document["immutable"] = false;
                             }
                             if (detailReads > 1) {
-                                if (scenario == "inspector_failure" || scenario == "inspector_edit_failure" || scenario == "inspector_yaml_expiry_failure") status = 500;
+                                if (scenario == "inspector_failure" || scenario == "inspector_edit_failure" || scenario == "inspector_yaml_expiry_failure" || scenario == "inspector_auto_failure") status = 500;
                                 if (scenario == "inspector_forbidden") status = 403;
-                                if (scenario == "inspector_auth" || scenario == "inspector_edit_auth" || scenario == "inspector_yaml_expiry_auth") status = 401;
+                                if (scenario == "inspector_auth" || scenario == "inspector_edit_auth" || scenario == "inspector_yaml_expiry_auth" || scenario == "inspector_auto_auth") status = 401;
                                 if (scenario == "inspector_redirect") status = 302;
                                 if (scenario == "inspector_backoff") status = 429;
                                 if (scenario == "inspector_malformed" || scenario == "inspector_edit_malformed") raw = "{bad response: alpha-private-value";
@@ -484,6 +490,20 @@ public:
                             document=path.contains("/namespaces/") ? resource : QJsonObject{{"metadata",QJsonObject{}},{"items",QJsonArray{resource}}};
                         }
                     }
+                    if (scenario == "inspector_auto_uid" && inspectorResourceRecreated) {
+                        const auto recreate = [](QJsonObject resource) {
+                            auto metadata = resource["metadata"].toObject();
+                            if (resource["kind"] == "ConfigMap" && metadata["name"] == "bravo") {
+                                metadata["uid"] = "uid-bravo-recreated"; resource["metadata"] = metadata;
+                            }
+                            return resource;
+                        };
+                        if (document.contains("items")) {
+                            QJsonArray items;
+                            for (const auto& resource : document["items"].toArray()) items.append(recreate(resource.toObject()));
+                            document["items"] = items;
+                        } else document = recreate(document);
+                    }
                     if (scenario == "table_overview_live_updates" && path.startsWith("/api/v1/namespaces/default/pods/")) {
                         auto metadata = document["metadata"].toObject();
                         metadata["resourceVersion"] = QString::number(requests.size());
@@ -608,10 +628,10 @@ bool click(QQuickWindow* window, QQuickItem* target, Qt::MouseButton button = Qt
     }
     const auto bounds = podlord::test::visibleBounds(window, target);
     if (bounds.isEmpty()) return false;
-    if (name == "renameCurrentSession" || name.startsWith("renameTab_") || name == "saveSessionRename") {
+    if (name == "renameCurrentContext" || name.startsWith("renameTab_")) {
         auto* hit = window->contentItem();
         while (auto* child = hit->childAt(hit->mapFromScene(bounds.center()).x(), hit->mapFromScene(bounds.center()).y())) hit = child;
-        qInfo() << "Session rename pointer:" << name << "target" << target->mapRectToScene(target->boundingRect())
+        qInfo() << "Context alias pointer:" << name << "target" << target->mapRectToScene(target->boundingRect())
             << "visible" << bounds << "hit" << hit->objectName() << hit->metaObject()->className();
     }
         QTest::mouseMove(window, bounds.center().toPoint(), 0);
@@ -628,8 +648,8 @@ bool type(QQuickWindow* window, QQuickItem* target, const QString& value) {
     QTest::keySequence(window, QKeySequence::SelectAll);
     if (value.isEmpty()) QTest::keyClick(window, Qt::Key_Backspace);
     for (const auto c : value) QTest::keyClick(window, c.toLatin1());
-    if (target->objectName() == "sessionNameInput" && target->property("text").toString() != value) {
-        qWarning() << "Session rename input mismatch:" << target->property("text") << "expected" << value
+    if (target->objectName() == "sourceAliasName" && target->property("text").toString() != value) {
+        qWarning() << "Context alias input mismatch:" << target->property("text") << "expected" << value
             << "focus" << (window->activeFocusItem() ? window->activeFocusItem()->objectName() : QString{});
         return false;
     }
@@ -654,10 +674,10 @@ bool execute(const QString& requestedScenario) {
     bool mapRadar=requestedScenario.startsWith("radar_map_");
     const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
     const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
-    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "session_rename_context_menu" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "sources_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
+    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
-    KubernetesBoundary server(scenario == "shell_metric_zero" ? "radar_quick_info" : scenario == "radar_context_identity" ? "radar_initial_population" : scenario == "shell_search_events" ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
+    KubernetesBoundary server(scenario == "shell_metric_zero" ? "radar_quick_info" : scenario == "radar_context_identity" ? "radar_initial_population" : scenario == "shell_search_events" || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario.startsWith("view_restore_event_") ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
     if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     const auto source = temporary.filePath("source.config");
     QFile file(source);
@@ -705,7 +725,7 @@ bool execute(const QString& requestedScenario) {
     QList<qint64> dispatched;
     if (scenario == "limit") QObject::connect(&workspace, &podlord::Workspace::requestStarted, &workspace,
         [&](const QString&, const QString&, qint64 at) { dispatched.append(at); });
-    if (scenario == "session_tabs_controls" || scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_") || scenario == "shell_touch_search_tooltip") QAccessible::setActive(true);
+    if (scenario == "session_tabs_controls" || scenario.startsWith("accessibility_") || scenario.startsWith("radar_accessibility_") || scenario == "shell_touch_search_tooltip" || scenario=="inspector_secret_table_accessibility" || scenario=="inspector_auto_secret" || scenario=="settings_inline_alerts" || scenario=="settings_inline_graphics" || scenario=="settings_inline_diagnostic_audit_copy") QAccessible::setActive(true);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
     engine.load(QUrl("qrc:/podlord/Main.qml"));
@@ -719,10 +739,10 @@ bool execute(const QString& requestedScenario) {
     QString renameStage = "source import/open";
     bool renamePassed = false;
     const auto renameDiagnostics = qScopeGuard([&] {
-        if (!scenario.startsWith("session_rename_") || renamePassed) return;
-        auto* dialog = window->findChild<QObject*>("renameSessionDialog");
-        auto* input = item(window, "sessionNameInput");
-        qWarning() << "Session rename stage:" << renameStage << "title" << workspace.title()
+        if (!scenario.startsWith("context_alias_") || renamePassed) return;
+        auto* dialog = window->findChild<QObject*>("sourceAliasDialog");
+        auto* input = item(window, "sourceAliasName");
+        qWarning() << "Context alias stage:" << renameStage << "title" << workspace.title()
             << "busy" << workspace.busy() << "error" << workspace.error()
             << "dialog visible/opened" << (dialog ? dialog->property("visible") : QVariant{}) << (dialog ? dialog->property("opened") : QVariant{})
             << "input visible/enabled" << (input && input->isVisible()) << (input && input->isEnabled())
@@ -780,7 +800,7 @@ bool execute(const QString& requestedScenario) {
         const int expected = scenario == "drop_config_invalid" || scenario == "drop_config_missing" ? 0 : scenario == "drop_config_multiple" ? 2 : 1;
         return enter.isAccepted() && drop.isAccepted()
             && waitFor([&] { return !workspace.busy() && workspace.contexts().size() == expected; })
-            && workspace.currentSession().isEmpty() && workspace.sessions().isEmpty() && server.requests.isEmpty()
+            && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty()
             && workspace.sourceImportNotice().isEmpty() && workspace.error().isEmpty()
             && (!item(window,"mapBack") || !item(window,"mapBack")->isVisible())
             && (!item(window,"mapForward") || !item(window,"mapForward")->isVisible());
@@ -791,7 +811,7 @@ bool execute(const QString& requestedScenario) {
         return waitFor([&] { return !workspace.busy() && workspace.workspacePage()=="map" && workspace.mapOverview()
             && item(window,"mapImportSource") && displayedWithin(window->contentItem(),item(window,"mapImportSource")); })
             && !item(window,"resourcesWorkspaceButton")->isVisible() && !item(window,"eventsWorkspaceButton")->isVisible()
-            && !item(window,"portForwardTasksButton")->isVisible() && !item(window,"mapBack")->isVisible()
+            && !item(window,"portForwardTasksButton")->isVisible() && !item(window,"mapBack")
             && !item(window,"workspaceFooter")->isVisible()
             && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty() && server.requests.isEmpty() && saveShellFrame(window,scenario);
     }
@@ -802,7 +822,7 @@ bool execute(const QString& requestedScenario) {
         if (scenario == "import_files_empty") {
             if (workspace.importFiles({})) return false;
         } else if (!workspace.importFiles({folder}) || !waitFor([&] { return !workspace.busy(); })) return false;
-        return workspace.contexts().isEmpty() && workspace.sessions().isEmpty() && workspace.currentSession().isEmpty()
+        return workspace.contexts().isEmpty() && workspace.tabs().isEmpty() && workspace.currentSession().isEmpty()
             && workspace.error().isEmpty() && workspace.sourceImportNotice().isEmpty() && server.requests.isEmpty();
     }
     if (scenario == "ui_density_empty_settings") {
@@ -819,20 +839,23 @@ bool execute(const QString& requestedScenario) {
     }
     if (scenario == "shell_compact_alerts") {
         window->resize(320, 640);
-        if (!click(window, item(window, "settingsWorkspaceButton"))) return false;
+        if (!click(window, item(window, "settingsWorkspaceButton"))
+            || !waitFor([&] { const auto* editor = item(window, "alertEditor"); return editor && editor->isVisible(); })
+            || podlord::test::visibleItem(window->contentItem(), "saveAlert")
+            || !click(window, item(window, "addAlert"))) return false;
         return waitFor([&] {
             auto* table = item(window, "alertRulesTable");
             auto* add = item(window, "addAlert");
-            auto* motion = item(window, "reduceAlertMotion");
+            auto* save = item(window, "saveAlert");
             auto* editor = item(window, "alertEditor");
-            if (!table || !add || !motion || !editor || !table->isVisible() || !add->isVisible() || !editor->isVisible()) return false;
+            if (!table || !add || !save || !editor || !table->isVisible() || !add->isVisible() || !editor->isVisible()) return false;
             const QRectF screen(0, 0, window->width(), window->height());
             const auto bounds = [](QQuickItem* control) { return control->mapRectToScene(control->boundingRect()); };
             auto* description = item(window, "alertDescription");
             return description && description->property("cursorPosition").toInt() == 0
-                && screen.contains(bounds(add)) && screen.contains(bounds(motion))
+                && screen.contains(bounds(add)) && screen.contains(bounds(save))
                 && bounds(table).bottom() <= bounds(add).top() + 1
-                && bounds(motion).bottom() <= bounds(editor).top() + 1
+                && bounds(editor).contains(bounds(save))
                 && server.requests.isEmpty();
         });
     }
@@ -858,7 +881,7 @@ bool execute(const QString& requestedScenario) {
             const auto changed = podlord::ReadSettingsStore(profile).save({121, 0}, {});
             if (!std::holds_alternative<podlord::ReadSettings>(changed)) return false;
         }
-        if (!click(window, item(window, "inlineSaveSync")) || !waitFor([&] { return !workspace.busy(); })) return false;
+        if (!waitFor([&] { return !workspace.busy() && (workspace.requestLimit() == 120 || !workspace.error().isEmpty()); })) return false;
         if (scenario == "settings_busy" || scenario == "settings_conflict") return !workspace.error().isEmpty() && workspace.requestLimit() == 0;
         if (workspace.requestLimit() != 120 || workspace.inactiveSyncMinutes() != 1 || !workspace.error().isEmpty()) return false;
         if (scenario == "settings_save") return server.requests.isEmpty() && QFileInfo(QDir(profile).filePath("read-settings.json")).permissions() == (QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::WriteUser);
@@ -882,17 +905,14 @@ bool execute(const QString& requestedScenario) {
             : scenario == "quick_file_url" ? QUrl::fromLocalFile(path).toString() : path;
         if (scenario == "quick_file_profile") {
             if (!QDir().mkpath(profile)) return false;
-            QFile corrupt(QDir(profile).filePath("sessions.json"));
-            if (!corrupt.open(QIODevice::WriteOnly) || corrupt.write("invalid saved catalog") < 0) return false;
         }
         bool admitted = false;
         if (!QMetaObject::invokeMethod(&workspace, "quickImportFile", Q_RETURN_ARG(bool, admitted), Q_ARG(QString, input))
             || !admitted || !waitFor([&] { return !workspace.busy(); })) return false;
-        if (scenario == "quick_file_profile") return !workspace.error().isEmpty() && workspace.contexts().isEmpty() && server.requests.isEmpty();
         if (scenario == "quick_file_invalid" || scenario == "quick_file_missing")
-            return workspace.contexts().isEmpty() && workspace.sessions().isEmpty() && workspace.error().isEmpty()
+            return workspace.contexts().isEmpty() && workspace.tabs().isEmpty() && workspace.error().isEmpty()
                 && workspace.sourceImportNotice().isEmpty() && server.requests.isEmpty();
-        return workspace.contexts().size() == 1 && workspace.sessions().isEmpty() && workspace.currentSession().isEmpty()
+        return workspace.contexts().size() == 1 && workspace.tabs().isEmpty() && workspace.currentSession().isEmpty()
             && server.requests.isEmpty();
     }
     if (workspace.appStore() || scenario == "gke_prompt") {
@@ -912,6 +932,24 @@ bool execute(const QString& requestedScenario) {
         if (!click(window, item(window, "importPastedSource"))
             || !waitFor([&] { return !workspace.busy() && !item(window, "pasteSourceYaml")->isVisible(); })
             || !click(window, item(window, "mapWorkspaceButton"))) return false;
+    } else if (scenario == "native_file_import" || scenario == "native_folder_import") {
+        QString selected=source;
+        const bool folder=scenario=="native_folder_import";
+        if (folder) {
+            selected=QFileInfo(source).dir().filePath("picked-folder");
+            if (!QDir().mkpath(selected) || !QFile::copy(source,selected+"/config.yaml")) return false;
+        }
+        auto* picker=window->findChild<QObject*>(folder ? "kubeconfigFolderDialog" : "kubeconfigFileDialog");
+        if (folder && picker) {
+            picker->setProperty("currentFolder",QUrl::fromLocalFile(selected));
+            if (!QMetaObject::invokeMethod(picker,"open") || !waitFor([&] { return picker->property("visible").toBool(); })) return false;
+        }
+        if (!picker || !picker->setProperty(folder ? "selectedFolder" : "selectedFile",QUrl::fromLocalFile(selected))
+            || !QMetaObject::invokeMethod(picker,"accepted",Qt::DirectConnection)) return false;
+        if (folder) QMetaObject::invokeMethod(picker,"close");
+        const bool imported=waitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; });
+        if (!imported) std::fprintf(stderr,"Picker import failed: selected=%s contexts=%lld error=%s\n",qPrintable(picker->property(folder ? "selectedFolder" : "selectedFile").toUrl().toString()),static_cast<long long>(workspace.contexts().size()),qPrintable(workspace.error()));
+        return imported && workspace.tabs().isEmpty() && server.requests.isEmpty();
     } else if (scenario == "map_source_enter") {
         if (!click(window, item(window,"settingsWorkspaceButton")) || !podlord::test::selectSettingsSection(window,"sources")
             || !type(window, item(window,"settingsSourcePath"), source)) return false;
@@ -920,8 +958,11 @@ bool execute(const QString& requestedScenario) {
     if (scenario.startsWith("settings_inline_")) {
         if (!waitFor([&] { return !workspace.busy(); }) || !click(window,item(window,"settingsWorkspaceButton"))) return false;
         const auto section=scenario.mid(QString("settings_inline_").size());
-        const auto destination=section=="invalid" || section=="save" ? QString("Sync") : section=="narrow" ? QString("Appearance") : section.startsWith("runtime") || section.startsWith("diagnostic_") ? QString("Diagnostics") : section.left(1).toUpper()+section.mid(1);
-        if (!click(window,item(window,"settings"+destination+"Section"))) return false;
+        const auto destination=section=="invalid" || section=="save" ? QString("Sync")
+            : section=="narrow" || section=="graphics" || section=="workspace" ? QString("Appearance")
+            : section=="privacy" || section.startsWith("runtime") || section.startsWith("diagnostic_") ? QString("Diagnostics")
+            : section.left(1).toUpper()+section.mid(1);
+        if (!click(window,item(window,section=="alerts" ? QString("alertsWorkspaceButton") : "settings"+destination+"Section"))) return false;
         if (item(window,"sourceManagementPanel")) return false;
         if (section.startsWith("diagnostic_")) {
             const bool audit=section.contains("audit_");
@@ -948,6 +989,16 @@ bool execute(const QString& requestedScenario) {
                         && (step==2 || proxy->sortOrder()==(step==0 ? Qt::AscendingOrder : Qt::DescendingOrder)); })) return false;
                 }
             } else if (section.endsWith("copy")) {
+                if (audit) {
+                    const auto timestamp=model->index(0,0).data(Qt::UserRole+6).toLongLong();
+                    const auto expectedTime=QLocale::system().toString(QDateTime::fromMSecsSinceEpoch(timestamp).toLocalTime(),QLocale::ShortFormat);
+                    auto* pathCell=item(window,"auditCell_0_2");
+                    auto* accessible=pathCell ? QAccessible::queryAccessibleInterface(pathCell) : nullptr;
+                    if (model->index(0,0).data().toString()!=expectedTime || !accessible
+                        || accessible->text(QAccessible::Name)!=expectedTime+", Path, "+model->index(0,2).data().toString()) {
+                        std::fprintf(stderr,"Request time and spoken identity must use the system-local display, not an internal ID.\n"); return false;
+                    }
+                }
                 const int column=audit ? 2 : 1;
                 const auto expected=model->index(0,column).data().toString();
                 const auto name=audit ? prefix+"Cell_0_2" : "diagnosticValue_"+model->index(0,0).data(Qt::UserRole).toString();
@@ -1061,12 +1112,35 @@ bool execute(const QString& requestedScenario) {
             auto* input=item(window,"inlineRequestLimit")->property("contentItem").value<QQuickItem*>();
             if (!type(window,input,"120")) return false;
             input->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Tab);
-            if (!type(window,item(window,"inlineLogLimit"),"7") || !click(window,item(window,"inlineSaveSync")) || !waitFor([&] { return !workspace.busy(); })) return false;
+            if (!type(window,item(window,"inlineLogLimit"),"7") || !waitFor([&] { return !workspace.busy() && workspace.logLimitMb()==7; })) return false;
             podlord::Workspace restored(profile);
             return waitFor([&] { return !restored.busy() && restored.requestLimit()==120 && restored.logLimitMb()==7; }) && server.requests.isEmpty();
         }
-        if (section=="invalid") return type(window,item(window,"inlineLogLimit"),"0") && click(window,item(window,"inlineSaveSync")) && !workspace.error().isEmpty() && workspace.logLimitMb()==5 && server.requests.isEmpty();
-        if (section=="graphics") return item(window,"inlineRadarWaterEnabled")->isVisible() && click(window,item(window,"inlineRadarWaterEnabled")) && waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); }) && server.requests.isEmpty();
+        if (section=="invalid") return type(window,item(window,"inlineLogLimit"),"0") && waitFor([&] { return !workspace.error().isEmpty(); }) && workspace.logLimitMb()==5 && server.requests.isEmpty();
+        if (section=="alerts") {
+            if (!waitFor([&] { return item(window,"alertRule_0"); })) return false;
+            auto* row=QAccessible::queryAccessibleInterface(item(window,"alertRule_0"));
+            if (!row || row->text(QAccessible::Name)!="Problem color, Name") {
+                qWarning() << "Alert row accessible name:" << (row ? row->text(QAccessible::Name) : QString("missing")); return false;
+            }
+            for (const auto& pair : {qMakePair("alertZoomEnabled","Auto-focus"),qMakePair("alertSoundEnabled","Sound"),
+                    qMakePair("previewAlertZoom","Auto-focus: Preview"),qMakePair("previewAlertSound","Sound: Preview")}) {
+                auto* accessible=QAccessible::queryAccessibleInterface(item(window,pair.first));
+                if (!accessible || accessible->text(QAccessible::Name)!=QLatin1String(pair.second)) {
+                    qWarning() << "Alert control accessible name:" << pair.first << (accessible ? accessible->text(QAccessible::Name) : QString("missing")); return false;
+                }
+            }
+            return server.requests.isEmpty();
+        }
+        if (section=="graphics") {
+            auto* motion=QAccessible::queryAccessibleInterface(item(window,"inlineReducedMotion"));
+            if (!motion || motion->text(QAccessible::Name)!="Reduced motion") return false;
+            auto* speed = item(window,"inlineRadarWaterSpeed");
+            if (item(window,"inlineRadarWaterEnabled") || !speed || !podlord::test::scrollIntoView(window,speed)) return false;
+            speed->forceActiveFocus(Qt::TabFocusReason);
+            QTest::keyClick(window,Qt::Key_Left);
+            return waitFor([&] { return !workspace.busy() && workspace.radarWaterSpeedPercent()==0; }) && server.requests.isEmpty();
+        }
         if (section=="diagnostics") {
             if (!waitFor([&] { return workspace.settingsDiagnostics()["metrics"].toList().size() >= 11; })) return false;
             auto* metrics = workspace.property("diagnosticTable").value<QAbstractItemModel*>();
@@ -1076,8 +1150,15 @@ bool execute(const QString& requestedScenario) {
             return hasMemory && item(window,"settingsRequestAudit")->property("count").toInt()==0
                 && workspace.settingsDiagnostics()["metrics"].toList().size()>=11 && server.requests.isEmpty();
         }
-        if (section=="privacy") return item(window,"privacyTelemetry")->isVisible() && text(window,"privacyTelemetry")=="Off" && type(window,item(window,"inlineYamlLimit"),"4") && click(window,item(window,"inlineSaveYamlLimit")) && waitFor([&] { return !workspace.busy() && workspace.yamlLimitMiB()==4; }) && server.requests.isEmpty();
-        if (section=="workspace") return click(window,item(window,"settingsResourceColumns")) && waitFor([&] { return item(window,"resourceColumnVisible_kind") && item(window,"resourceColumnVisible_kind")->isVisible(); }) && server.requests.isEmpty();
+        if (section=="privacy") {
+            if (item(window,"privacyTelemetry")) return false;
+            for (const auto* label : {"Telemetry enabled", "Secret values", "Request audit retention"})
+                for (auto* entry : window->findChildren<QQuickItem*>())
+                    if (entry->isVisible() && entry->property("text").toString()==QLatin1String(label)) return false;
+            return type(window,item(window,"inlineYamlLimit"),"4") && click(window,item(window,"inlineSaveYamlLimit"))
+                && waitFor([&] { return !workspace.busy() && workspace.yamlLimitMiB()==4; }) && server.requests.isEmpty();
+        }
+        if (section=="workspace") return !item(window,"settingsWorkspaceSection") && !item(window,"settingsResourceColumns") && item(window,"inlineWorkspaceRestore")->isVisible() && server.requests.isEmpty();
         if (section=="sources") return item(window,"settingsSourcePath")->isVisible()
             && waitFor([&] { return item(window,"settingsSourceList")->property("count").toInt()==1; }) && server.requests.isEmpty();
         if (section=="about") return item(window,"settingsVersion")->isVisible() && server.requests.isEmpty();
@@ -1138,11 +1219,23 @@ bool execute(const QString& requestedScenario) {
             && waitFor([&] { return !item(window, "sourceAliasName")->isVisible(); })
             && workspace.currentSession().isEmpty() && server.requests.isEmpty();
     }
+    if (scenario == "settings_invalid") return waitFor([&] { return !workspace.error().isEmpty() && !workspace.busy(); })
+        && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty();
     const auto openAction=scenario.startsWith("map_") || scenario=="gke_prompt" || workspace.appStore() ? "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString() : "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString();
     if (!workspace.setWorkspacePage("map")) return false;
     if (!waitFor([&] { auto* action=item(window,openAction); return action && action->isVisible(); }) || !click(window,item(window,openAction))) { std::fputs("Open context action unavailable.\n",stderr); return false; }
     if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); },10000)) return false;
-    if (!scenario.startsWith("map_") && !click(window,item(window,"resourcesWorkspaceButton"))) return false;
+    if (scenario == "hidden_followup") {
+        if (!waitFor([&] { return server.requests.contains("/api"); })) return false;
+        if (!click(window,item(window,"closeCurrentSession"))
+            || !waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); })) return false;
+        QTest::qWait(600);
+        return server.requests == QStringList{"/api"} && server.delayedReadDelivered && !server.prematureDisconnect;
+    }
+    if (!scenario.startsWith("map_")) {
+        if (!waitFor([&] { return workspace.totalResourceCount() > 0 || !workspace.loading(); }, 15000)) return false;
+        if (workspace.totalResourceCount() > 0 && !click(window,item(window,"resourcesWorkspaceButton"))) return false;
+    }
     if (scenario == "filters_all_resources") {
         if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
         const auto calls = server.requests.size();
@@ -1175,6 +1268,54 @@ bool execute(const QString& requestedScenario) {
         QImage saved(path);
         if (saved.size()!=QSize(320,200) || !saved.textKeys().isEmpty()) return false;
         const auto calls=server.requests.size();
+        if (scenario=="map_caption_copy" || scenario=="map_caption_touch") {
+            const auto identity=workspace.mapContextIdentity();
+            auto* caption=item(window,"mapTitle");
+            if (!caption) return false;
+            std::unique_ptr<QPointingDevice> touch(scenario=="map_caption_touch" ? QTest::createTouchDevice() : nullptr);
+            const auto openMenu=[&] {
+                if (!touch) return click(window,caption,Qt::RightButton);
+                const auto point=caption->mapToScene(caption->boundingRect().center()).toPoint();
+                QTest::touchEvent(window,touch.get()).press(0,point,window).commit();
+                const bool opened=waitFor([&] { const auto* action=item(window,"copyMapContextName"); return action && action->isVisible(); });
+                QTest::touchEvent(window,touch.get()).release(0,point,window).commit();
+                return opened;
+            };
+            if (!openMenu()
+                || !waitFor([&] { auto* action=item(window,"copyMapContextName"); return action && action->isVisible(); })
+                || !click(window,item(window,"copyMapContextName"))
+                || QGuiApplication::clipboard()->text()!=identity.value("name").toString()
+                || !openMenu()
+                || !click(window,item(window,"copyMapClusterName"))
+                || QGuiApplication::clipboard()->text()!=identity.value("cluster").toString()) return false;
+            QGuiApplication::clipboard()->setText("unchanged");
+            return !workspace.copyMapIdentity("id") && QGuiApplication::clipboard()->text()=="unchanged"
+                && server.requests.size()==calls && saveShellFrame(window,scenario);
+        }
+        if (scenario=="map_repeat_navigation") {
+            auto* overview=item(window,"mapOverview");
+            if (!overview || overview->property("showText").toBool() || !click(window,item(window,"mapWorkspaceButton"))
+                || !workspace.mapOverview() || workspace.currentSession()!=session
+                || !workspace.setWorkspacePage("resources") || !click(window,item(window,"mapWorkspaceButton"))) return false;
+            return workspace.workspacePage()=="map" && !workspace.mapOverview() && workspace.currentSession()==session
+                && server.requests.size()==calls;
+        }
+        if (scenario=="map_menu_remove") {
+            if (!workspace.showMapOverview()
+                || !waitFor([&] { return item(window,"openMapContextOptions_"+context); })
+                || !click(window,item(window,"openMapContextOptions_"+context))
+                || !waitFor([&] { auto* action=item(window,"renameMapContextMenu"); return action && action->isVisible(); })
+                || !click(window,item(window,"removeMapContextMenu"))
+                || !waitFor([&] { auto* dialog=window->findChild<QObject*>("sourceRemovalDialog"); return dialog && dialog->property("opened").toBool(); })
+                || workspace.sourceRemoval().value("contextId")!=context
+                || !click(window,item(window,"cancelSourceRemoval"))) return false;
+            if (!workspace.sourceRemoval().isEmpty() || workspace.contexts().size()!=3
+                || !click(window,item(window,"openMapContextOptions_"+context))
+                || !click(window,item(window,"removeMapContextMenu"))
+                || !click(window,item(window,"confirmSourceRemoval"))) return false;
+            return waitFor([&] { return !workspace.busy() && workspace.contexts().size()==2 && workspace.tabs().isEmpty(); })
+                && server.requests.size()==calls;
+        }
         if (scenario=="map_overview_stability" || scenario=="map_overview_lifecycle") {
             const auto catalog=podlord::KubeconfigStore(profile).list();
             if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
@@ -1340,7 +1481,7 @@ bool execute(const QString& requestedScenario) {
             auto* editor=hours->property("contentItem").value<QQuickItem*>();
             if (hours->property("value").toInt()!=24 || !type(window,editor,"48")) return false;
             QTest::keyClick(window,Qt::Key_Return);
-            if (!click(window,item(window,"inlineSaveSync")) || !waitFor([&] { return !workspace.busy() && workspace.collectionCacheHours()==48; })) return false;
+            if (!waitFor([&] { return !workspace.busy() && workspace.collectionCacheHours()==48; })) return false;
             const auto stored=podlord::ReadSettingsStore(profile).load();
             return std::holds_alternative<podlord::ReadSettings>(stored) && std::get<podlord::ReadSettings>(stored).collectionCacheHours==48
                 && text(window,"collectionCacheUsage").contains("MiB") && server.requests.size()==calls && saveShellFrame(window,scenario);
@@ -1353,7 +1494,7 @@ bool execute(const QString& requestedScenario) {
         if (scenario=="map_active_tab") {
             if (!click(window,item(window,"mapOverview")) || !workspace.mapOverview()
                 || !click(window,item(window,"quickOpenDropdown"))
-                || !click(window,item(window,"quickSession_"+session))) return false;
+                || !click(window,item(window,"quickContext_"+workspace.sessionConfiguration(session).value("contextId").toString()))) return false;
             return waitFor([&] { return !workspace.mapOverview() && workspace.workspacePage()=="map"; }) && server.requests.size()==calls;
         }
         if (scenario=="map_preview_restart" || scenario=="map_restore_tab" || scenario=="map_restore_metadata") {
@@ -1376,10 +1517,9 @@ bool execute(const QString& requestedScenario) {
                 if (server.requests.size()!=calls) std::fprintf(stderr,"Offline metadata connected: calls=%lld -> %lld\n",static_cast<long long>(calls),static_cast<long long>(server.requests.size()));
                 return restored.mapOverview() && server.requests.size()==calls;
             }
-            if (!(scenario=="map_restore_tab"
-                    ? click(second,item(second,"quickOpenDropdown")) && click(second,item(second,"quickSession_"+session))
-                    : click(second,item(second,"resourcesWorkspaceButton")))
+            if (!click(second,item(second,"quickOpenDropdown")) || !click(second,item(second,"quickContext_"+restored.sessionConfiguration(session).value("contextId").toString()))
                 || !waitFor([&] { return !restored.busy() && !restored.loading() && restored.totalResourceCount()==3; },10000)) return false;
+            if (scenario!="map_restore_tab" && !click(second,item(second,"resourcesWorkspaceButton"))) return false;
             return server.requests.size()>calls && restored.currentSession()==session
                 && (scenario!="map_restore_tab" || (!restored.mapOverview() && restored.workspacePage()=="map"));
         }
@@ -1390,11 +1530,13 @@ bool execute(const QString& requestedScenario) {
             if (drawer && !click(window,item(window,"toggleSidebar"))) return failed("open sidebar");
             if (!waitFor([&] { auto* radar=item(window,"resourceRadar"); return radar && radar->width()<720 && radar->isVisible(); })) return failed("mini radar");
             if (drawer) { QTest::keyClick(window,Qt::Key_Escape); if (!waitFor([&] { return !window->findChild<QObject*>("sidebarDrawer")->property("visible").toBool(); })) return failed("close sidebar"); }
-            if (!click(window,item(window,"eventsWorkspaceButton"))) return failed("Events");
-            if (!click(window,item(window,"portForwardTasksButton"))) return failed("Ports");
+            if (workspace.totalEventCount() > 0) {
+                if (!click(window,item(window,"eventsWorkspaceButton"))) return failed("Events");
+            } else if (item(window,"eventsWorkspaceButton")->isVisible()) return failed("Empty Events visible");
+            if (item(window,"portForwardTasksButton")->isVisible()) return failed("Empty Connections visible");
             if (!click(window,item(window,"mapWorkspaceButton"))) return failed("Map");
-            if (!click(window,item(window,"mapBack")) || !workspace.mapOverview()) return failed("Back");
-            if (!click(window,item(window,"mapForward")) || workspace.mapOverview() || workspace.currentSession()!=session) return failed("Forward");
+            if (!click(window,item(window,"mapOverview")) || !workspace.mapOverview()) return failed("All Contexts");
+            if (item(window,"mapBack") || item(window,"mapForward")) return failed("Obsolete map history");
             return (workspace.tabs().size()==1 && server.requests.size()==calls) || failed("retained session/cache");
         }
         return workspace.currentSession()==session && workspace.workspacePage()=="map" && !workspace.mapOverview() && saveShellFrame(window,scenario);
@@ -1493,7 +1635,6 @@ bool execute(const QString& requestedScenario) {
         else if (!click(window,item(window,"resourceFindClose")) || input->isVisible()) return false;
         return workspace.table()->rowCount() == 3 && workspace.filterText().isEmpty() && workspace.inspectorPath().isEmpty() && server.requests.size() == calls;
     }
-    if (scenario == "settings_invalid") return waitFor([&] { return !workspace.error().isEmpty() && !workspace.busy(); }) && server.requests.isEmpty();
     if (scenario.startsWith("accessibility_")) {
         if (!waitFor([&] { return workspace.totalResourceCount() == 3 && !workspace.loading(); })) return false;
         const auto calls = server.requests.size();
@@ -1518,13 +1659,6 @@ bool execute(const QString& requestedScenario) {
                 && accessibleName(window,"More actions") && server.requests.size() == calls;
         }
         return false;
-    }
-    if (scenario == "hidden_followup") {
-        if (!waitFor([&] { return server.requests.contains("/api"); })) return false;
-        if (!click(window,item(window,"closeCurrentSession"))
-            || !waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); })) return false;
-        QTest::qWait(600);
-        return server.requests == QStringList{"/api"} && server.delayedReadDelivered && !server.prematureDisconnect;
     }
     if (scenario == "gke_prompt") {
         window->resize(320, 640);
@@ -1572,16 +1706,16 @@ bool execute(const QString& requestedScenario) {
         return reported;
     }
     if (scenario=="shell_empty_cache") {
-        if (!waitFor([&] { return !workspace.loading() && !workspace.busy(); })
-            || !click(window,item(window,"mapWorkspaceButton"))) return false;
+        if (!waitFor([&] { return !workspace.loading() && !workspace.busy(); })) return false;
         return waitFor([&] {
             auto* empty=item(window,"emptyRadar");
-            return workspace.totalResourceCount()==0 && empty && empty->isVisible()
+            return workspace.workspacePage()=="map" && !workspace.mapOverview()
+                && workspace.totalResourceCount()==0 && empty && empty->isVisible()
                 && text(window,"emptyRadar")=="No resources to display.";
         });
     }
     if (scenario.startsWith("shell_")) {
-        if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" ? 5 : 3) && !workspace.loading(); },10000)) {
+        if (!waitFor([&] { return workspace.totalResourceCount()==(scenario == "shell_search_events" || scenario=="shell_sidebar" ? 5 : 3) && !workspace.loading(); },10000)) {
             std::fprintf(stderr, "Shell cache failed: resources=%d loading=%d busy=%d error=%s\n", workspace.totalResourceCount(), workspace.loading(), workspace.busy(), qPrintable(text(window, "errorMessage")));
             return false;
         }
@@ -1666,8 +1800,9 @@ bool execute(const QString& requestedScenario) {
             }
             auto enlarged=QGuiApplication::font(); enlarged.setPixelSize(39); QGuiApplication::setFont(enlarged);
             window->resize(320,640);
-            if (!click(window,item(window,"settingsWorkspaceButton")) || !waitFor([&] {
-                auto* box=item(window,"muteAlerts");
+            if (!click(window,item(window,"settingsWorkspaceButton")) || !podlord::test::selectSettingsSection(window,"appearance")
+                || !waitFor([&] {
+                auto* box=item(window,"inlineWorkspaceRestore");
                 auto* label=box ? box->property("contentItem").value<QQuickItem*>() : nullptr;
                 return label && box->width()<=box->parentItem()->width()+1 && box->property("font").value<QFont>().pixelSize()==39 && label->width()>0 && label->property("paintedWidth").toReal()>0 && label->property("paintedWidth").toReal()<=label->width()+1;
             }) || !saveShellFrame(window,scenario+"-largest-settings") || !click(window,item(window,"resourcesWorkspaceButton"))) return false;
@@ -1773,7 +1908,6 @@ bool execute(const QString& requestedScenario) {
             if (!workspace.filter("alpha") || !selectView("mapWorkspaceButton")) return false;
             if (!waitFor([&] { return (workspace.workspacePage()=="map" && !workspace.mapOverview())
                 && item(window, "resourceRadar") == radar && radar->isVisible() && radar->width() > miniWidth + 100; })) return false;
-            if (!selectView("mapWorkspaceButton")) return false;
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Right);
             const auto pose = workspace.radarView();
             if (scenario == "shell_map_inspector") {
@@ -1848,10 +1982,18 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "shell_footer_reopen") {
             const auto session = workspace.currentSession();
-            if (!workspace.close(session) || !waitFor([&] { return !workspace.busy(); })
+            const auto context = workspace.sessionConfiguration(session).value("contextId").toString();
+            if (context.isEmpty() || !workspace.close(session)
+                || !waitFor([&] { return !workspace.busy() && workspace.currentSession().isEmpty(); })
                 || !text(window, "syncStatus").isEmpty()
-                || !workspace.activate(session) || !waitFor([&] { return !workspace.busy(); })) return false;
-            return text(window, "syncStatus") == QString("API: %1/min  Synced: 0s ago").arg(calls) && server.requests.size() == calls;
+                || !workspace.openContext(context) || !waitFor([&] {
+                    const auto active = workspace.currentSession();
+                    return !workspace.busy() && !workspace.loading() && !active.isEmpty() && active != session
+                        && workspace.sessionConfiguration(active).value("contextId").toString() == context;
+                })) return false;
+            const bool preserved = text(window, "syncStatus") == QString("API: %1/min  Synced: 0s ago").arg(calls) && server.requests.size() == calls;
+            if (!preserved) qWarning() << "Reopened context footer:" << text(window,"syncStatus") << "requests" << calls << server.requests;
+            return preserved;
         }
         if (scenario == "shell_landscape" || scenario == "shell_landscape_filters" || scenario == "shell_landscape_rotate") {
             const auto rotationFailure = [&](const char* stage) {
@@ -1859,8 +2001,11 @@ bool execute(const QString& requestedScenario) {
                 saveShellFrame(window,"landscape-rotation-failure");
                 return false;
             };
-            if (scenario != "shell_landscape_filters"
-                && (!workspace.filter("alpha") || !click(window, item(window, "radarZoom")))) return false;
+            if (scenario != "shell_landscape_filters") {
+                if (!workspace.filter("alpha")) return rotationFailure("filter request");
+                if (!waitFor([&] { return item(window,"radarZoom")->isVisible(); })) return rotationFailure("zoom availability");
+                if (!click(window,item(window,"radarZoom"))) return rotationFailure("zoom input");
+            }
             const auto pose = radar->property("viewPose").toMap();
             window->resize(800,390);
             if (!waitFor([&] { return item(window, "workspaceToolbar")->isVisible() && !radar->isVisible()
@@ -1920,10 +2065,12 @@ bool execute(const QString& requestedScenario) {
                         }
                     } else if (!waitFor([&] { return !drawer->property("visible").toBool(); })) return false;
                 }
-                if (landscape) for (const auto* name : {"workspaceSearchButton","resourcesWorkspaceButton","eventsWorkspaceButton","portForwardTasksButton","settingsWorkspaceButton","workspaceActionsButton","toggleSidebar"}) {
+                if (landscape) for (const auto* name : {"workspaceSearchButton","resourcesWorkspaceButton","settingsWorkspaceButton","workspaceActionsButton","toggleSidebar"}) {
+                    if (!podlord::test::revealWorkspaceAction(window,name)) return rotationFailure("navigation availability");
                     auto* control = item(window,name);
                     if (!control || control->width() < 44 || control->height() < 44 || !podlord::test::scrollIntoView(window, control)
-                        || !displayedWithin(item(window,"workspaceToolbar"),control)) return false;
+                        || !displayedWithin(window->contentItem(),control)) return rotationFailure("navigation bounds");
+                    QTest::keyClick(window,Qt::Key_Escape);
                 }
                 if (radar != item(window,"resourceRadar") || radar->property("viewPose").toMap() != pose || workspace.filterText() != "alpha"
                     || workspace.resourceCount() != 1 || server.requests.size() != calls) return rotationFailure("retained state");
@@ -2100,12 +2247,20 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "shell_quick_sessions" || scenario == "shell_quick_reopen" || scenario == "shell_quick_context") {
             const auto session = workspace.currentSession();
+            const auto context = workspace.sessionConfiguration(session).value("contextId").toString();
+            if (context.isEmpty()) return false;
             if (scenario == "shell_quick_reopen" && (!workspace.close(session) || !waitFor([&] { return !workspace.busy(); }))) return false;
             if (!click(window, item(window, "quickOpenDropdown"))) return false;
-            const auto target = scenario == "shell_quick_context" ? "quickContext_" + workspace.contexts().first().toMap()["id"].toString() : "quickSession_" + session;
+            const auto target = "quickContext_" + (scenario == "shell_quick_context" ? workspace.contexts().first().toMap()["id"].toString() : context);
             if (!waitFor([&] { return item(window, target) && item(window, target)->isVisible(); })
-                || !click(window, item(window, target)) || !waitFor([&] { return !workspace.busy(); })) return false;
-            return workspace.currentSession() == session && server.requests.size() == calls;
+                || !click(window, item(window, target)) || !waitFor([&] {
+                    return !workspace.busy() && !workspace.loading() && !workspace.currentSession().isEmpty();
+                })) return false;
+            const auto active = workspace.currentSession();
+            if (server.requests.size() != calls) qWarning() << "Quick context reopen requests:" << calls << server.requests;
+            return (scenario == "shell_quick_reopen"
+                ? active != session && workspace.sessionConfiguration(active).value("contextId").toString() == context
+                : active == session) && server.requests.size() == calls;
         }
         if (scenario == "shell_quick_narrow") {
             window->resize(320, 720);
@@ -2142,7 +2297,8 @@ bool execute(const QString& requestedScenario) {
             return server.requests.size()==calls;
         }
         if (scenario == "shell_footer_narrow") {
-            if (!workspace.renameSession(workspace.currentSession(), QString(96, 'x')) || !waitFor([&] { return !workspace.busy(); })) return false;
+            const auto context = workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+            if (!workspace.renameSourceContext(context, QString(96, 'x')) || !waitFor([&] { return !workspace.busy(); })) return false;
             for (const auto size : {QSize(320,360), QSize(390,720), QSize(1440,920)}) {
                 window->resize(size);
                 if (!waitFor([&] {
@@ -2173,7 +2329,11 @@ bool execute(const QString& requestedScenario) {
             window->resize(320,720);
             if (!waitFor([&] { return window->contentItem()->width() == 320; })) return false;
             QList<QRectF> controls;
-            for (const auto* name : {"workspaceSearchButton", "resourcesWorkspaceButton", "eventsWorkspaceButton", "portForwardTasksButton", "settingsWorkspaceButton", "workspaceActionsButton", "toggleSidebar"}) {
+            for (const auto* name : {"eventsWorkspaceButton", "portForwardTasksButton"}) {
+                auto* control = item(window,name);
+                if (control && control->isVisible()) return false;
+            }
+            for (const auto* name : {"workspaceSearchButton", "resourcesWorkspaceButton", "settingsWorkspaceButton", "workspaceActionsButton", "toggleSidebar"}) {
                 if (!podlord::test::revealWorkspaceAction(window,name)) return false;
                 auto* control = item(window, name);
                 if (!control || !waitFor([&] { return control->width() >= 44 && control->height() >= 44; })) return false;
@@ -2208,9 +2368,8 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario=="shell_sidebar") {
             if (!radar || !radar->isVisible() || !click(window,item(window,"eventsWorkspaceButton")) || !radar->isVisible()) return false;
-            if (!click(window,item(window,"portForwardTasksButton"))) return false;
-            const auto* ports = item(window,"portTable");
-            return radar->isVisible() && ports && ports->isVisible() && server.requests.size()==calls;
+            return !item(window,"portForwardTasksButton")->isVisible() && workspace.workspacePage()=="events"
+                && radar->isVisible() && server.requests.size()==calls;
         }
         if (scenario=="shell_navigation") {
             if (!click(window,item(window,"settingsWorkspaceButton")) || !click(window,item(window,"alertsWorkspaceButton")) || !item(window,"addAlert")->isVisible()) return false;
@@ -2280,15 +2439,16 @@ bool execute(const QString& requestedScenario) {
         if (!click(window, item(window, "cell_0_0")) || !waitFor([&] { return workspace.inspected().contains("fetchedAt"); })) {
             std::fprintf(stderr, "Priority inspector did not load; requests: %s\n", qPrintable(server.requests.join('\n'))); return false;
         }
-        int listed = -1, inspected = -1;
-        for (int i = 0; i < server.requests.size(); ++i) {
-            if (server.requests[i].startsWith("/apis/example.test/v1/widgets?")) listed = i;
-            if (server.requests[i].contains("/widgets/custom-widget")) inspected = i;
+        if (!waitFor([&] { return !workspace.loading(); })) return false;
+        const auto discovered = server.requests.indexOf("/apis/example.test/v1");
+        const auto inspected = server.requests.indexOf("/api/v1/namespaces/default/pods/alpha");
+        if (inspected < 0 || discovered <= inspected) {
+            std::fprintf(stderr, "Inspector should precede queued discovery. Requests: %s\n", qPrintable(server.requests.join('\n')));
+            return false;
         }
-        if (listed < 0 || inspected != listed + 1) { std::fprintf(stderr, "Priority order %d -> %d; requests: %s\n", listed, inspected, qPrintable(server.requests.join('\n'))); return false; }
         return true;
     }
-    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
         && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
@@ -2415,13 +2575,13 @@ bool execute(const QString& requestedScenario) {
         if (!correct) std::fprintf(stderr,"Workload table: image=%s; ready=%s; restarts=%s; owner=%s; status=%s\n",qPrintable(value("image")),qPrintable(value("ready")),qPrintable(value("restarts")),qPrintable(value("owner")),qPrintable(value("status")));
         return correct;
     }
-    if (scenario.startsWith("sources_")) {
+    if (scenario.startsWith("quick_open_") || scenario == "sources_invalid") {
         const auto firstSession = workspace.currentSession();
         const auto rows = workspace.table()->rowCount();
         const auto calls = server.requests.size();
-        auto* toggle = item(window,scenario == "sources_narrow" ? "quickOpenDropdown" : "sourcesButton");
+        auto* toggle = item(window,"quickOpenDropdown");
         if (!toggle || item(window,"sourceManagementPanel")) return false;
-        if (scenario == "sources_collapsed") return !window->findChild<QObject*>("quickOpenMenu")->property("visible").toBool();
+        if (scenario == "quick_open_collapsed") return !window->findChild<QObject*>("quickOpenMenu")->property("visible").toBool();
         if (scenario == "sources_invalid") {
             if (!click(window,item(window,"settingsWorkspaceButton")) || !podlord::test::selectSettingsSection(window,"sources")
                 || !type(window,item(window,"settingsSourcePath"),temporary.filePath("missing.config"))
@@ -2429,16 +2589,16 @@ bool execute(const QString& requestedScenario) {
             return waitFor([&] { return !workspace.busy() && !workspace.sourceImportError().isEmpty(); })
                 && workspace.currentSession()==firstSession && workspace.table()->rowCount()==rows && server.requests.size()==calls;
         }
-        if (scenario == "sources_narrow") window->resize(680,480);
-        if (scenario == "sources_keyboard") { toggle->forceActiveFocus(Qt::TabFocusReason); QTest::keyClick(window,Qt::Key_Space); }
+        if (scenario == "quick_open_narrow") window->resize(680,480);
+        if (scenario == "quick_open_keyboard") { toggle->forceActiveFocus(Qt::TabFocusReason); QTest::keyClick(window,Qt::Key_Space); }
         else if (!click(window,toggle)) return false;
         if (!waitFor([&] { return window->findChild<QObject*>("quickOpenMenu")->property("visible").toBool(); })) return false;
-        if (scenario == "sources_open_context") {
+        if (scenario == "quick_open_open_context") {
             const auto next = workspace.contexts().last().toMap()["id"].toString();
             if (!click(window,item(window,"quickContext_"+next))) return false;
             return waitFor([&] { return workspace.currentSession()!=firstSession && !workspace.busy() && workspace.table()->rowCount()>0; });
         }
-        const int repeats = scenario == "sources_repeat" ? 3 : 1;
+        const int repeats = scenario == "quick_open_repeat" ? 3 : 1;
         for (int index=0; index<repeats; ++index) {
             QTest::keyClick(window,Qt::Key_Escape);
             if (!waitFor([&] { return !window->findChild<QObject*>("quickOpenMenu")->property("visible").toBool(); })) return false;
@@ -2446,11 +2606,11 @@ bool execute(const QString& requestedScenario) {
         }
         return workspace.currentSession()==firstSession && workspace.table()->rowCount()==rows && server.requests.size()==calls;
     }
-    if (scenario.startsWith("session_rename_")) {
+    if (scenario.startsWith("context_alias_")) {
         renameStage = "prepare rename";
         if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })) return false;
         const auto id = workspace.currentSession();
-        if (scenario == "session_rename_context_menu") {
+        if (scenario == "context_alias_tab_menu") {
             const auto context = workspace.sessionConfiguration(id).value("contextId").toString();
             QString other;
             for (const auto& entry : workspace.contexts()) {
@@ -2463,23 +2623,26 @@ bool execute(const QString& requestedScenario) {
                 || !click(window,item(window,"activateSession_"+id))
                 || !waitFor([&] { return workspace.currentSession()==id && !workspace.busy() && !workspace.loading(); })) return false;
         }
-        const auto before = podlord::SessionStore(profile).list();
-        if (!std::holds_alternative<podlord::SessionCatalog>(before)) return false;
-        const auto original = std::get<podlord::SessionCatalog>(before);
-        if (scenario == "session_rename_filter" && !type(window, item(window, "resourceFilter"), "alpha")) return false;
+        const auto contextId = workspace.sessionConfiguration(id).value("contextId").toString();
+        auto contextInfo = [&] {
+            for (const auto& value : workspace.contexts()) if (value.toMap().value("id").toString() == contextId) return value.toMap();
+            return QVariantMap{};
+        };
+        const auto originalName = contextInfo().value("name").toString();
+        if (scenario == "context_alias_filter" && !type(window, item(window, "resourceFilter"), "alpha")) return false;
         QString draft;
-        if (scenario == "session_rename_draft") {
+        if (scenario == "context_alias_draft") {
             if (!type(window, item(window, "resourceFilter"), "alpha")
                 || !waitFor([&] { return item(window, "cell_0_0"); }) || !click(window, item(window, "cell_0_0"))
                 || !click(window, item(window, "yamlButton")) || !waitFor([&] { return workspace.canEditYaml(); })
                 || !click(window, item(window, "editYaml"))) return false;
             auto* editor = item(window, "inspectorYaml"); editor->forceActiveFocus();
             QTest::keySequence(window, QKeySequence::MoveToEndOfDocument); QTest::keyClick(window, Qt::Key_Return);
-            for (const auto ch : QString("# preserve rename draft")) QTest::keyClick(window, ch.toLatin1());
+            for (const auto ch : QString("# preserve alias draft")) QTest::keyClick(window, ch.toLatin1());
             draft = workspace.yamlText();
         }
         renameStage = "open initial dialog";
-        if (scenario == "session_rename_context_menu") {
+        if (scenario == "context_alias_tab_menu") {
             if (!click(window, item(window, "activateSession_" + id), Qt::RightButton)
                 || !waitFor([&] { return item(window, "renameTab_" + id) && item(window, "renameTab_" + id)->isVisible(); })
                 ) return false;
@@ -2488,62 +2651,38 @@ bool execute(const QString& requestedScenario) {
             if (qAbs(entry->mapToScene({0,0}).x()-anchor->mapToScene({0,0}).x()) > 220
                 || qAbs(entry->mapToScene({0,0}).y()-anchor->mapToScene({0,0}).y()) > 100
                 || !click(window, item(window, "renameTab_" + id))) return false;
-        } else if (!click(window, item(window, "renameCurrentSession"))) return false;
+        } else if (!click(window, item(window, "renameCurrentContext"))) return false;
         renameStage = "wait initial dialog opened";
-        if (!waitFor([&] { auto* dialog = window->findChild<QObject*>("renameSessionDialog");
-                return dialog && dialog->property("opened").toBool() && item(window, "sessionNameInput")
-                    && item(window, "sessionNameInput")->isVisible(); })) return false;
+        if (!waitFor([&] { auto* dialog = window->findChild<QObject*>("sourceAliasDialog");
+                return dialog && dialog->property("opened").toBool() && item(window, "sourceAliasName")
+                    && item(window, "sourceAliasName")->isVisible(); })) return false;
         renameStage = "type rename";
-        if (scenario == "session_rename_cancel" || scenario == "session_rename_escape") {
-            if (!type(window, item(window, "sessionNameInput"), "Changed")) return false;
-            if (scenario == "session_rename_cancel") { if (!click(window, item(window, "cancelSessionRename"))) return false; }
+        if (scenario == "context_alias_cancel" || scenario == "context_alias_escape") {
+            if (!type(window, item(window, "sourceAliasName"), "Changed")) return false;
+            if (scenario == "context_alias_cancel") { if (!click(window, item(window, "cancelSourceAlias"))) return false; }
             else QTest::keyClick(window, Qt::Key_Escape);
-            return renamePassed = waitFor([&] { return !item(window, "sessionNameInput")->isVisible(); }) && workspace.title() == "Unnamed"
-                && std::get<podlord::SessionCatalog>(podlord::SessionStore(profile).list()) == original;
+            return renamePassed = waitFor([&] { return !item(window, "sourceAliasName")->isVisible(); })
+                && workspace.title() == originalName && contextInfo().value("name").toString() == originalName;
         }
-        if (scenario == "session_rename_unnamed") {
-            renameStage = "first rename and reopen";
-            if (!type(window, item(window, "sessionNameInput"), "Renamed") || !click(window, item(window, "saveSessionRename"))
-                || !waitFor([&] { return !workspace.busy() && workspace.title() == "Renamed"; })
-                || !click(window, item(window, "renameCurrentSession")) || !waitFor([&] {
-                    auto* dialog = window->findChild<QObject*>("renameSessionDialog");
-                    return dialog && dialog->property("opened").toBool() && item(window, "sessionNameInput")->isVisible(); })
-                || !type(window, item(window, "sessionNameInput"), "")) return false;
-        } else if (scenario != "session_rename_repeat" && !type(window, item(window, "sessionNameInput"), scenario == "session_rename_conflict" ? "Taken" : "Renamed")) return false;
-        QLockFile lock(profile + "/sessions.lock");
-        if (scenario == "session_rename_busy" && !lock.tryLock(0)) return false;
-        if (scenario == "session_rename_conflict") {
-            const auto context = workspace.contexts().first().toMap().value("id").toString();
-            if (!std::holds_alternative<podlord::SessionCatalog>(podlord::SessionStore(profile).create({context, {}}, "Taken"))) return false;
-        }
+        if (!type(window, item(window, "sourceAliasName"), "Renamed")) return false;
         const auto calls = server.requests.size();
-        renameStage = "submit rename";
-        if (scenario == "session_rename_keyboard") { item(window, "sessionNameInput")->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return); }
-        else if (!click(window, item(window, "saveSessionRename"))) return false;
-        if (scenario == "session_rename_busy" || scenario == "session_rename_conflict") {
-            return renamePassed = waitFor([&] { return !workspace.busy() && !text(window, "sessionRenameError").isEmpty(); })
-                && item(window, "sessionNameInput")->isVisible() && workspace.title() == "Unnamed" && server.requests.size() == calls;
-        }
-        const auto expected = scenario == "session_rename_repeat" || scenario == "session_rename_unnamed" ? "Unnamed" : "Renamed";
-        renameStage = "wait renamed and closed";
-        if (!waitFor([&] { return !workspace.busy() && workspace.title() == expected && window->title() == QStringLiteral("Podlord - ") + expected
-            && !item(window, "sessionNameInput")->isVisible(); })) {
-            qWarning() << "Session rename did not settle:" << workspace.title() << workspace.error() << workspace.busy()
-                << "input" << item(window, "sessionNameInput")->property("text");
+        renameStage = "submit alias";
+        if (scenario == "context_alias_keyboard") { item(window, "sourceAliasName")->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return); }
+        else if (!click(window, item(window, "saveSourceAlias"))) return false;
+        renameStage = "wait alias updated and dialog closed";
+        if (!waitFor([&] { return !workspace.busy() && workspace.title() == "Renamed"
+            && window->title() == QStringLiteral("Podlord - Renamed") && !item(window, "sourceAliasName")->isVisible(); })) {
+            qWarning() << "Context alias did not settle:" << workspace.title() << workspace.error() << workspace.busy()
+                << "input" << item(window, "sourceAliasName")->property("text");
             return false;
         }
-        renameStage = "verify persisted rename";
+        renameStage = "verify context alias";
         QTest::qWait(50);
         if (workspace.currentSession() != id || server.requests.size() != calls) return false;
-        const auto saved = podlord::SessionStore(profile).list();
-        if (!std::holds_alternative<podlord::SessionCatalog>(saved)) return false;
-        const auto catalog = std::get<podlord::SessionCatalog>(saved);
-        if (catalog.sessions.size() != original.sessions.size() || catalog.sessions.first().usageAt != original.sessions.first().usageAt
-            || catalog.sessions.first().id != original.sessions.first().id || catalog.sessions.first().config != original.sessions.first().config) return false;
-        if (scenario == "session_rename_repeat") return renamePassed = catalog == original;
-        if (scenario == "session_rename_filter") return renamePassed = workspace.filterText() == "alpha" && text(window, "resourceFilter") == "alpha";
-        if (scenario == "session_rename_draft") return renamePassed = workspace.yamlEditing() && workspace.yamlDirty() && workspace.yamlText() == draft;
-        if (scenario == "session_rename_restart") {
+        if (contextInfo().value("name").toString() != "Renamed") return false;
+        if (scenario == "context_alias_filter") return renamePassed = workspace.filterText() == "alpha" && text(window, "resourceFilter") == "alpha";
+        if (scenario == "context_alias_draft") return renamePassed = workspace.yamlEditing() && workspace.yamlDirty() && workspace.yamlText() == draft;
+        if (scenario == "context_alias_restart") {
             window->close(); if (!waitFor([&] { return !window->isVisible(); })) return false;
             podlord::Workspace restored(profile);
             return renamePassed = waitFor([&] { return !restored.busy() && restored.currentSession() == id && restored.title() == "Renamed"; });
@@ -2569,7 +2708,8 @@ bool execute(const QString& requestedScenario) {
         });
         if (context.isEmpty()) return false;
         const auto show=[&] {
-            if (!click(window,item(window,mapRadar ? "mapWorkspaceButton" : "resourcesWorkspaceButton"))) return false;
+            if ((workspace.workspacePage() != (mapRadar ? "map" : "resources") || (mapRadar && workspace.mapOverview()))
+                && !click(window,item(window,mapRadar ? "mapWorkspaceButton" : "resourcesWorkspaceButton"))) return false;
             return waitFor([&] {
                 radar=window->findChild<podlord::RadarIsland*>("resourceRadar");
                 return radar && radar->isVisible() && !workspace.busy() && !workspace.loading() && workspace.totalResourceCount()>=1000;
@@ -2592,19 +2732,15 @@ bool execute(const QString& requestedScenario) {
         stage="original population and camera";
         radar->setViewPose(firstPose);
         if (!waitFor([&] { return radar->tiles()->rowCount()==workspace.totalResourceCount() && workspace.radarView()==firstPose; })) return false;
-        stage="preview capture and session duplication";
+        stage="preview capture and explicit context tab";
         const auto original=points(); const auto preview=radar->previewImage();
-        if (preview.isNull() || original.size()<1000 || !workspace.duplicateSession(first,"Island copy")
-            || !waitFor([&] { return !workspace.busy(); })) return false;
-        stage="locate and open duplicate";
-        QString second;
-        if (!waitFor([&] {
-            for (const auto& value:workspace.sessions()) {
-                const auto id=value.toMap()["id"].toString();
-                if (id!=first && workspace.sessionConfiguration(id)["name"]=="Island copy") second=id;
-            }
-            return !second.isEmpty();
-        })) return false;
+        const auto firstTabCount=workspace.tabs().size();
+        if (preview.isNull() || original.size()<1000 || !workspace.openContext(context,false,true)
+            || !waitFor([&] { return !workspace.busy() && workspace.tabs().size()==firstTabCount+1
+                && workspace.currentSession()!=first; })) return false;
+        stage="locate explicit context tab";
+        const auto second=workspace.currentSession();
+        if (second.isEmpty() || second==first) return false;
         if (workspace.sessionConfiguration(second)["contextId"]!=context || !workspace.activate(second)
             || !waitFor([&] { return workspace.currentSession()==second && !workspace.busy() && !workspace.loading(); },10000)
             || !show()) return false;
@@ -2649,7 +2785,8 @@ bool execute(const QString& requestedScenario) {
                         "reloadFilterPresets","importFilterPresets","renameFilterPreset","deleteFilterPreset",
                         "radarZoomOut","radarZoom","toggleLandscapeFilters"}) {
                         auto* control = item(window,name);
-                        if (!control || !control->isVisible() || control->property("showText").toBool()) continue;
+                        if (!control || !control->isVisible() || !control->property("glyph").isValid()
+                            || control->property("glyph").toString().isEmpty() || control->property("showText").toBool()) continue;
                         auto* content = control->property("contentItem").value<QQuickItem*>();
                         QQuickItem* glyph = nullptr;
                         if (content) for (auto* child : content->childItems())
@@ -2719,7 +2856,8 @@ bool execute(const QString& requestedScenario) {
             }
             if (window->findChild<QObject*>("radarWorkspaceButton")) return false;
             if (!click(window,item(window,"toggleLandscapeFilters")) || !waitFor([&] {
-                return !radar->isVisible() && item(window,"sourcesButton")->isVisible() && host->width()>100;
+                auto* contextName = item(window,"renameCurrentContext");
+                return !radar->isVisible() && contextName && contextName->isVisible() && host->width()>100;
             }) || !saveShellFrame(window,scenario+"-filters")) return false;
             if (!click(window,item(window,"toggleLandscapeFilters")) || !click(window,item(window,"mapWorkspaceButton"))) return false;
             if (!waitFor([&] { return radar->isVisible() && radar->height()>44 && radar->property("viewPose").toMap()==pose; })
@@ -2742,6 +2880,17 @@ bool execute(const QString& requestedScenario) {
                 && server.requests.size() == calls;
         }
         if (scenario == "ui_density_filters") {
+            auto* reset = item(window,"resetResourceFilters");
+            auto* limit = item(window,"resourceLimit");
+            if (!reset || !limit || reset->isEnabled()) {
+                std::fputs("Reset filters must be disabled for the unchanged default view.\n",stderr);
+                return false;
+            }
+            limit->forceActiveFocus(Qt::TabFocusReason);
+            QTest::keyClick(window,Qt::Key_Up);
+            if (!waitFor([&] { return workspace.resourceLimit()==1025 && !workspace.busy() && reset->isEnabled(); })
+                || !click(window,reset)
+                || !waitFor([&] { return workspace.resourceLimit()==1024 && !reset->isEnabled(); })) return false;
             if (!click(window, item(window, "sidebarField_cluster"))) return false;
             auto* editor = item(window, "fieldFiltersInline");
             auto* field = item(window, "sidebarField_cluster");
@@ -2845,11 +2994,64 @@ bool execute(const QString& requestedScenario) {
         return waitFor([&] { return !workspace.busy() && workspace.tabs().size()==1 && !item(window,"sessionTabs")->isVisible(); })
             && workspace.currentSession()==second && server.requests.size()==calls;
     }
+    if (scenario == "context_chooser_tabs") {
+        const auto originalTab = workspace.currentSession();
+        const auto contextId = workspace.sessionConfiguration(originalTab).value("contextId").toString();
+        const auto originalContextName = workspace.title();
+        if (contextId.isEmpty() || !click(window,item(window,"quickOpenDropdown"))) return false;
+        auto* quickMenu = window->findChild<QObject*>("quickOpenMenu");
+        if (!quickMenu || !waitFor([&] { return quickMenu->property("visible").toBool()
+            && item(window,"quickContext_"+contextId) && item(window,"quickContext_"+contextId)->isVisible(); })
+            || item(window,"quickSession_"+originalTab) || item(window,"quickWindowSession_"+originalTab)) return false;
+        if (!window->findChild<QObject*>("quickOpenTabMenu")
+            || quickMenu->property("count").toInt() > workspace.contexts().size() + 5
+            || !saveShellFrame(window,scenario+"-menu")) return false;
+        QTest::keyClick(window,Qt::Key_Escape);
+        if (!click(window,item(window,"settingsWorkspaceButton"))
+            || !podlord::test::selectSettingsSection(window,"sources")
+            || item(window,"settingsManageSessions") || window->findChild<QObject*>("sessionManagementDialog")) return false;
+        const int beforeTabs = workspace.tabs().size();
+        const auto chooserSize = window->size();
+        window->resize(390,844);
+        if (!podlord::test::revealWorkspaceAction(window,"quickOpenDropdown")
+            || !click(window,item(window,"quickOpenDropdown"))
+            || !click(window,item(window,"quickOpenTab"))
+            || !waitFor([&] { auto* menu = window->findChild<QObject*>("quickOpenTabMenu");
+                return menu && menu->property("opened").toBool(); })
+            || !waitFor([&] {
+                const auto* entry = item(window,"quickContextNewTab_"+contextId);
+                return entry && entry->height() >= 44 && QRectF(0,0,window->width(),window->height())
+                    .contains(entry->mapRectToScene(entry->boundingRect()));
+            }) || !saveShellFrame(window,scenario+"-phone-menu")
+            || !click(window,item(window,"quickContextNewTab_"+contextId))
+            || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.tabs().size()==beforeTabs+1; })) return false;
+        const auto newTab = workspace.currentSession();
+        if (newTab.isEmpty() || newTab==originalTab || workspace.sessionConfiguration(newTab).value("contextId").toString()!=contextId
+            || workspace.title()!=originalContextName) return false;
+        window->resize(chooserSize);
+        if (!waitFor([&] { auto* rename = item(window,"renameCurrentContext"); return rename && rename->isVisible(); })) return false;
+        const auto tabWithId = [&](const QString& id) {
+            for (const auto& tab : workspace.tabs()) if (tab.toMap().value("id").toString()==id) return tab.toMap();
+            return QVariantMap{};
+        };
+        if (tabWithId(newTab).value("name").toString()!=originalContextName
+            || !click(window,item(window,"renameCurrentContext"))
+            || !type(window,item(window,"sourceAliasName"),"Chooser alias")
+            || !click(window,item(window,"saveSourceAlias"))
+            || !waitFor([&] { return !workspace.busy() && workspace.title()=="Chooser alias"; })) return false;
+        return saveShellFrame(window,scenario) && workspace.currentSession()==newTab && !tabWithId(newTab).isEmpty()
+            && tabWithId(newTab).value("name").toString()=="Chooser alias"
+            && tabWithId(originalTab).value("id").toString()==originalTab;
+    }
     if (scenario == "view_restore_scope") {
         const auto first = workspace.currentSession();
         if (!type(window, item(window, "resourceFilter"), "alpha")) return false;
+        bool drained = false;
+        if (!waitFor([&] { return drained || (drained = workspace.reloadSavedViews()); })
+            || !waitFor([&] { return !workspace.busy(); })) return false;
+        const auto contextId = workspace.sessionConfiguration(first).value("contextId").toString();
         window->close(); if (!waitFor([&] { return !window->isVisible(); })) return false;
-        const auto path = profile + "/views/" + first + ".json";
+        const auto path = profile + "/views/" + podlord::contextViewName(contextId);
         QFile broken(path); if (!broken.open(QIODevice::WriteOnly) || broken.write("{") != 1) return false; broken.close();
         podlord::Workspace restored(profile); QQmlApplicationEngine secondEngine;
         secondEngine.rootContext()->setContextProperty("workspace", &restored);
@@ -2874,7 +3076,7 @@ bool execute(const QString& requestedScenario) {
             for (int column = 0; column < entry.second->columnCount(); ++column) ids.append(entry.second->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
             schemas[entry.first] = ids;
         }
-        const auto id = restored.currentSession();
+        const auto id = restored.sessionConfiguration(restored.currentSession()).value("contextId").toString();
         const bool saved = waitFor([&] {
             const auto result = podlord::ViewStateStore(profile, schemas).load(id);
             const auto* value = std::get_if<podlord::TableViewStates>(&result);
@@ -2913,7 +3115,8 @@ bool execute(const QString& requestedScenario) {
     if (scenario.startsWith("view_restore_")) {
         if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })) return false;
         const auto session = workspace.currentSession();
-        const auto path = profile + "/views/" + session + ".json";
+        const auto contextId = workspace.sessionConfiguration(session).value("contextId").toString();
+        const auto path = profile + "/views/" + podlord::contextViewName(contextId);
         const bool event = scenario == "view_restore_event_filter" || scenario == "view_restore_event_sort";
         if (event && !click(window, item(window, "eventsWorkspaceButton"))) return false;
         const auto inputName = event ? "eventFilter" : "resourceFilter";
@@ -2936,7 +3139,10 @@ bool execute(const QString& requestedScenario) {
         auto* reopened = qobject_cast<QQuickWindow*>(restoredEngine.rootObjects().first());
         if (!reopened || !waitFor([&] { return !restored.busy() && restored.currentSession() == session; })) return false;
         if ((scenario=="view_restore_corrupt" || scenario=="view_restore_conflict" || scenario.startsWith("view_restore_close_"))
-            && (!click(reopened,item(reopened,"resourcesWorkspaceButton")) || !waitFor([&] { return !restored.busy() && !restored.loading() && restored.totalResourceCount()==3; }))) return false;
+            && (!click(reopened,item(reopened,"quickOpenDropdown"))
+                || !click(reopened,item(reopened,"quickContext_"+restored.sessionConfiguration(session).value("contextId").toString()))
+                || !waitFor([&] { return !restored.busy() && !restored.loading() && restored.totalResourceCount()==3; })
+                || !click(reopened,item(reopened,"resourcesWorkspaceButton")))) return false;
         if (scenario == "view_restore_filter") return restored.filterText() == "alpha" && text(reopened, "resourceFilter") == "alpha";
         if (scenario == "view_restore_clear") return restored.filterText().isEmpty();
         if (scenario == "view_restore_asc") return restored.sortColumnIndex() == 0 && restored.sortDirection() == "ASC";
@@ -3066,6 +3272,8 @@ bool execute(const QString& requestedScenario) {
                 std::fprintf(stderr, "Editing a cached search sent a Kubernetes request\n"); return false;
             }
             const auto session = workspace.currentSession();
+            const auto context = workspace.sessionConfiguration(session).value("contextId").toString();
+            if (context.isEmpty()) return false;
             podlord::TableSchemas schemas;
             for (const auto& entry : {std::pair{QString("resource"), workspace.table()}, std::pair{QString("event"), workspace.eventTable()},
                 std::pair{QString("port"), workspace.portTable()}, std::pair{QString("inspectorEvent"), workspace.inspectorEventTable()},
@@ -3075,7 +3283,7 @@ bool execute(const QString& requestedScenario) {
                 schemas.insert(entry.first, columns);
             }
             if (!waitFor([&] {
-                const auto loaded = podlord::ViewStateStore(profile, schemas).load(session);
+                const auto loaded = podlord::ViewStateStore(profile, schemas).load(context);
                 return std::holds_alternative<podlord::TableViewStates>(loaded) && std::get<podlord::TableViewStates>(loaded).value("resource").filter==expression;
             })) return false;
             podlord::Workspace restored(profile);
@@ -3672,7 +3880,7 @@ bool execute(const QString& requestedScenario) {
             for (const auto& direction : {QString("Earlier"), QString("Later")}) {
                 auto* control = item(window, "resourceColumn" + direction + "_kind");
                 auto* content = control ? control->property("contentItem").value<QQuickItem*>() : nullptr;
-                if (!content || content->rotation() != 90) return false;
+                if (!content || content->property("text").toString() != (direction=="Earlier" ? QStringLiteral("\u2191") : QStringLiteral("\u2193"))) return false;
             }
             if (!click(window, item(window, "resourceColumnEarlier_kind"))) return false;
         } else if (scenario == "columns_width" || scenario == "columns_invalid_width") {
@@ -3917,11 +4125,20 @@ bool execute(const QString& requestedScenario) {
                 + qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE") + "-setup.png", "PNG");
             return false;
         };
+        const auto stopWater = [&] {
+            auto* speed = item(window,"inlineRadarWaterSpeed");
+            if (!speed || !podlord::test::scrollIntoView(window,speed)) return false;
+            speed->forceActiveFocus(Qt::TabFocusReason);
+            for (int step=0; step<20 && speed->property("value").toInt()>0; ++step) {
+                QTest::keyClick(window,Qt::Key_Left);
+                if (!waitFor([&] { return !workspace.busy(); })) return false;
+            }
+            return waitFor([&] { return !workspace.busy() && workspace.radarWaterSpeedPercent()==0; });
+        };
         if (!scenario.startsWith("radar_water_") && scenario!="radar_navigation_water") {
             if (!click(window,item(window,"settingsWorkspaceButton"))) return failed("open settings");
-            if (!podlord::test::selectSettingsSection(window,"graphics")) return failed("open graphics");
-            if (!click(window,item(window,"inlineRadarWaterEnabled"))
-                || !waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); })) return failed("freeze background");
+            if (!podlord::test::selectSettingsSection(window,"appearance")) return failed("open graphics");
+            if (!stopWater()) return failed("freeze background");
             if (!click(window,item(window,"resourcesWorkspaceButton"))) return failed("open resources");
         }
         if (scenario.startsWith("radar_pooled_")) {
@@ -3967,14 +4184,14 @@ bool execute(const QString& requestedScenario) {
             if (detail && detail->isVisible()) return failed("empty resource details must not reserve space");
             if (radar->boundingRect() != radar->parentItem()->boundingRect()) return failed("drawing area must fill its host");
             const auto* history = item(window, "mapBack");
-            if (!mapRadar && history && history->isVisible()) return failed("map history leaked into the resource table Radar");
+            if (history || item(window,"mapForward")) return failed("obsolete map history");
             const auto viewport = radar->mapRectToScene(radar->boundingRect());
             for (const auto* name : {"radarZoomOut", "radarZoom"}) {
                 auto* control = item(window, name);
                 if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
                     return failed("navigation must overlay the drawing area");
             }
-            if (mapRadar) for (const auto* name : {"mapBack", "mapForward", "mapOverview"}) {
+            if (mapRadar) for (const auto* name : {"mapOverview"}) {
                 auto* control = item(window, name);
                 if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
                     return failed("map history must overlay the drawing area");
@@ -4067,14 +4284,14 @@ bool execute(const QString& requestedScenario) {
             if (mapRadar) {
                 auto* host=item(window,"workspaceSidebarHost");
                 auto* toggle=item(window,"toggleLandscapeFilters");
-                const QPointer<QQuickItem> back=item(window,"mapBack");
+                const QPointer<QQuickItem> back=item(window,"mapOverview");
                 const auto compactTools=[&] {
                     auto* zoom=item(window,"radarZoom");
                     if (!host || !toggle || !back || !zoom || host->width()>80
                         || toggle->width()<44 || radar->height()<zoom->height()
                         || std::abs(scene(back).top()-scene(zoom).top())>1) return false;
                     const auto bounds=scene(pane);
-                    for (const auto* name : {"mapBack","mapForward","mapOverview",
+                    for (const auto* name : {"mapOverview",
                             "radarZoomOut","radarZoom"}) {
                         auto* control=item(window,name);
                         if (!control || !control->isVisible() || !bounds.contains(scene(control))
@@ -4086,7 +4303,7 @@ bool execute(const QString& requestedScenario) {
                 const auto camera=radar->property("viewPose");
                 if (!click(window,toggle) || !waitFor([&] { return host->width()>=228; }))
                     return failed("geometry/expanded filter controls unavailable");
-                if (!back || item(window,"mapBack")!=back || radar->property("viewPose")!=camera)
+                if (!back || item(window,"mapOverview")!=back || radar->property("viewPose")!=camera)
                     return failed("geometry/filter expansion replaced navigation or camera");
                 if (!click(window,toggle) || !waitFor(compactTools) || radar->property("viewPose")!=camera
                     || server.requests.size()!=calls)
@@ -4256,7 +4473,7 @@ bool execute(const QString& requestedScenario) {
                 || !workspace.inspectorPath().isEmpty()) return failed("explicit map search navigation");
             chosen=workspace.radarView();
             if (!typeRadarQuery("") || !waitFor([&] { return workspace.resourceCount()==expectedRows; })
-                || workspace.radarView()!=chosen || !click(window,item(window,mapRadar ? "mapWorkspaceButton" : "resourcesWorkspaceButton"))) return false;
+                || workspace.radarView()!=chosen || (!mapRadar && !click(window,item(window,"resourcesWorkspaceButton")))) return false;
             window->resize(760,640); QTest::qWait(30); window->resize(1440,920);
             if (!waitFor([&] { return radar->property("viewPose").toMap()==chosen; }) || server.requests.size()!=calls) return failed("fit preserves resized camera");
             const auto before=server.requests.size();
@@ -4327,6 +4544,20 @@ bool execute(const QString& requestedScenario) {
             const auto firstName=workspace.table()->index(0,0).data(Qt::UserRole+1).toString();
             QTest::mouseMove(window,radar->mapToScene(first->bounds.center()).toPoint());
             if (!waitFor([&] { const auto* heading=item(window,"radarInfoText"); return heading && heading->property("text").toString().contains(firstName); })) return failed("pointer reveals cached details");
+            if (window->width() >= 1000) {
+                const auto point=radar->mapToScene(first->bounds.center());
+                if (!waitFor([&] {
+                    const auto* details=item(window,"radarInfoPanel");
+                    if (!details || !details->isVisible()) return false;
+                    const auto bounds=details->mapRectToScene(details->boundingRect());
+                    const auto nearest=QPointF(std::clamp(point.x(),bounds.left(),bounds.right()),
+                        std::clamp(point.y(),bounds.top(),bounds.bottom()));
+                    return !bounds.contains(point) && QLineF(point,nearest).length()<=20
+                        && QRectF(0,0,window->width(),window->height()).contains(bounds)
+                        && radar->mapRectToScene(QRectF(QPointF{},radar->size()))==initialViewport;
+                })) return failed("wide-screen pointer details stay near the resource without covering it");
+                if (!saveShellFrame(window,requestedScenario+"-pointer")) return false;
+            }
             QTest::mouseMove(window,radar->mapToScene(QPointF(8,8)).toPoint());
             QTest::qWait(60);
             auto* reader=item(window,"radarInfoScroll");
@@ -4480,6 +4711,8 @@ bool execute(const QString& requestedScenario) {
         if (scenario.startsWith("radar_water_")) {
             auto* water = item(window,"radarWater");
             if (!water) { std::fprintf(stderr,"Radar water is missing.\n"); return false; }
+            if ((scenario=="radar_water_motion" || scenario=="radar_water_reopen")
+                && (!workspace.saveRadarWater(true,100) || !waitFor([&] { return !workspace.busy() && water->property("speedPercent").toInt()==100; }))) return false;
             std::fprintf(stderr,"Water surface: visible=%d, playing=%d, speed=%d, window=%d, resources=%d\n",water->isVisible(),water->property("playing").toBool(),water->property("speedPercent").toInt(),int(window->visibility()),radar->property("count").toInt());
             const auto capture = [&](QRectF area) {
                 const auto frame=window->grabWindow();
@@ -4500,9 +4733,8 @@ bool execute(const QString& requestedScenario) {
                 if (scenario.endsWith("_light") && (!workspace.saveAppearance("Imperial Ledger", "light")
                     || !waitFor([&] { return !workspace.busy(); }))) return false;
                 if (!click(window,item(window,"settingsWorkspaceButton"))
-                    || !click(window,item(window,"settingsGraphicsSection"))
-                    || !click(window,item(window,"inlineRadarWaterEnabled"))
-                    || !waitFor([&] { return !workspace.busy() && !workspace.radarWaterEnabled(); })
+                    || !click(window,item(window,"settingsAppearanceSection"))
+                    || !stopWater()
                     || !click(window,item(window,"resourcesWorkspaceButton")) || !still()) return false;
                 const auto image=capture(QRectF(8,8,100,80));
                 int waterPixels=0;
@@ -4586,22 +4818,29 @@ bool execute(const QString& requestedScenario) {
             if (scenario=="radar_water_hidden") return click(window,item(window,"toggleSidebar")) && waitFor([&] { return !radar->isVisible(); }) && still() && server.requests.size()==calls;
             if (scenario=="radar_water_minimized") { window->setVisibility(QWindow::Minimized); return still() && server.requests.size()==calls; }
             if (scenario=="radar_water_reduced") return workspace.alerts()->setPreferences(true,true) && waitFor([&] { return !workspace.alerts()->busy(); }) && still() && server.requests.size()==calls;
-            if (scenario=="radar_water_disabled" || scenario=="radar_water_zero" || scenario=="radar_water_settings") {
-                if (!click(window,item(window,"settingsWorkspaceButton")) || !click(window,item(window,"settingsGraphicsSection"))) return false;
-                if (scenario=="radar_water_zero") {
+            if (scenario=="radar_water_legacy_disabled" || scenario=="radar_water_zero" || scenario=="radar_water_settings") {
+                if (scenario=="radar_water_legacy_disabled"
+                    && (!workspace.saveRadarWater(false,45) || !waitFor([&] { return !workspace.busy(); }))) return false;
+                if (!click(window,item(window,"settingsWorkspaceButton")) || !click(window,item(window,"settingsAppearanceSection"))) return false;
+                if (scenario=="radar_water_legacy_disabled") {
                     auto* speed=item(window,"inlineRadarWaterSpeed"); if (!speed || !podlord::test::scrollIntoView(window,speed)) return false;
+                    if (speed->property("value").toInt()!=0 || item(window,"inlineRadarWaterEnabled")) return false;
                     speed->forceActiveFocus(Qt::TabFocusReason);
-                    for (int step=0; step<20 && workspace.property("radarWaterSpeedPercent").toInt()>0; ++step) {
-                        QTest::keyClick(window,Qt::Key_Left);
-                        if (!waitFor([&] { return !workspace.busy(); })) return false;
-                    }
-                    if (workspace.property("radarWaterSpeedPercent").toInt()!=0) return false;
-                } else if (!click(window,item(window,"inlineRadarWaterEnabled"))) return false;
+                    QTest::keyClick(window,Qt::Key_Right);
+                    return waitFor([&] { return !workspace.busy() && workspace.radarWaterEnabled() && workspace.radarWaterSpeedPercent()==5; })
+                        && server.requests.size()==calls;
+                }
+                if (!stopWater()) return false;
                 if (!waitFor([&] { return !workspace.busy(); }) || !click(window,item(window,"resourcesWorkspaceButton")) || !still()) return false;
                 if (scenario!="radar_water_settings") return server.requests.size()==calls;
                 if (!workspace.reload() || !waitFor([&] { return !workspace.busy(); })) return false;
-                return click(window,item(window,"settingsWorkspaceButton")) && click(window,item(window,"settingsGraphicsSection"))
-                    && !item(window,"inlineRadarWaterEnabled")->property("checked").toBool();
+                if (!click(window,item(window,"settingsWorkspaceButton")) || !click(window,item(window,"settingsAppearanceSection"))) return false;
+                auto* speed=item(window,"inlineRadarWaterSpeed");
+                if (!speed || !podlord::test::scrollIntoView(window,speed) || speed->property("value").toInt()!=0 || item(window,"inlineRadarWaterEnabled")) return false;
+                speed->forceActiveFocus(Qt::TabFocusReason); QTest::keyClick(window,Qt::Key_Right);
+                if (!waitFor([&] { return !workspace.busy() && workspace.radarWaterSpeedPercent()==5 && workspace.radarWaterEnabled(); })
+                    || !workspace.reload() || !waitFor([&] { return !workspace.busy(); })) return false;
+                return workspace.radarWaterSpeedPercent()==5 && workspace.radarWaterEnabled() && server.requests.size()==calls;
             }
             QSignalSpy frames(window,&QQuickWindow::frameSwapped);
             const auto before=capture(QRectF(8,8,100,80));
@@ -4776,20 +5015,29 @@ bool execute(const QString& requestedScenario) {
         if (scenario.startsWith("radar_pooled_")) {
             const bool moving = scenario != "radar_pooled_none" && scenario != "radar_pooled_outline";
             QSignalSpy frames(window, &QQuickWindow::frameSwapped);
+            const auto remainsIdle = [&] {
+                QElapsedTimer quiet; quiet.start();
+                QObject observer;
+                QObject::connect(window, &QQuickWindow::frameSwapped, &observer, [&] { quiet.restart(); });
+                if (!waitFor([&] { return quiet.elapsed() >= 250; })) return false;
+                frames.clear(); QTest::qWait(250);
+                if (frames.size() > 1)
+                    std::fprintf(stderr, "Idle radar caused %lld frames after quiescence.\n", static_cast<long long>(frames.size()));
+                return frames.size() <= 1;
+            };
             if (moving && !waitFor([&] { return frames.size() >= 4; })) return false;
-            if (!moving) { QTest::qWait(250); frames.clear(); QTest::qWait(250); if (frames.size() > 1) return false; }
+            if (!moving && !remainsIdle()) return false;
             radar->forceActiveFocus(); QTest::keyClick(window, Qt::Key_End);
             if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,1000)); })) return false;
             const int panSteps=int(std::ceil(radar->width()/24))+2;
             for (int step=0;step<panSteps;++step) QTest::keyClick(window, Qt::Key_Right);
             if (!waitFor([&] { return !radarPointVisible(radar,0); })) return false;
-            QTest::qWait(250); frames.clear(); QTest::qWait(250);
-            if (frames.size() > 1) { std::fprintf(stderr, "Offscreen-only alarm caused %lld frames after settling.\n", static_cast<long long>(frames.size())); return false; }
+            if (!remainsIdle()) return false;
             QTest::keyClick(window, Qt::Key_Home);
             if (!waitFor([&] { return displayedWithin(radar, radarTarget(window,0)); })) return false;
             QTest::qWait(100); frames.clear();
             if (moving && !waitFor([&] { return frames.size() >= 4; })) return false;
-            if (!moving) { QTest::qWait(250); frames.clear(); QTest::qWait(250); if (frames.size() > 1) return false; }
+            if (!moving && !remainsIdle()) return false;
             return server.requests.size() == calls;
         }
         if (scenario == "radar_initial_population") {
@@ -5254,6 +5502,14 @@ bool execute(const QString& requestedScenario) {
                 const auto* title = item(window, "inspectorResourceName");
                 const auto* overview = item(window, "overviewButton");
                 const auto* field = item(window, "overviewFieldHeader");
+                if (!scenario.endsWith("narrow")) {
+                    const auto* links=item(window,"inspectorLinksButton");
+                    const auto* logs=item(window,"logsButton");
+                    const auto* terminal=item(window,"terminalButton");
+                    if (!links || !logs || !terminal
+                        || qAbs(logs->mapToScene({0,0}).x()-links->mapToScene({links->width(),0}).x())>1
+                        || qAbs(terminal->mapToScene({0,0}).x()-logs->mapToScene({logs->width(),0}).x())>1) return false;
+                }
                 return back && forward && close && title && overview && field
                     && !back->property("showText").toBool() && !forward->property("showText").toBool()
                     && close->property("glyph") == "Close"
@@ -5427,7 +5683,7 @@ bool execute(const QString& requestedScenario) {
         if (!workspace.refresh()) return false;
         return waitFor([&] { return workspace.table()->rowCount() == 0 && text(window, "syncProblemMessage").contains("HTTP 500"); });
     }
-    if (scenario == "sync" || scenario == "periodic_sync" || scenario == "inactive_sync") {
+    if (scenario == "sync" || scenario == "periodic_sync" || scenario == "inactive_sync" || scenario == "adaptive_sync") {
         reference = reference.addSecs(26);
         if (!click(window,item(window,"closeCurrentSession"))
             || !waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); })) return false;
@@ -5440,6 +5696,7 @@ bool execute(const QString& requestedScenario) {
         if (visibleContext == contexts.cend()) return false;
         const auto connection = podlord::KubeconfigStore(profile).connection(visibleContext->id);
         if (!std::holds_alternative<podlord::ClusterConnection>(connection)) return false;
+        const auto firstRequest = server.requests.size();
         client.open("sync", std::get<podlord::ClusterConnection>(connection), {});
         if (scenario == "inactive_sync") {
             client.configure({0, 1}); client.showSession("inactive");
@@ -5459,6 +5716,37 @@ bool execute(const QString& requestedScenario) {
             reference = reference.addSecs(35); client.synchronize();
             return waitFor([&] { return !client.loading("sync") && !client.loading("inactive"); })
                 && server.authorizations.count("Bearer inactive-token") > inactiveCalls;
+        }
+        if (scenario == "adaptive_sync") {
+            const auto pathsSince = [&](qsizetype start) {
+                QStringList paths;
+                for (const auto& request : server.requests.mid(start)) paths.append(QUrl(request).path());
+                return paths;
+            };
+            const QString pods = "/api/v1/pods", events = "/api/v1/events", widgets = "/apis/example.test/v1/widgets";
+            const auto startup = pathsSince(firstRequest);
+            if (!startup.contains(pods) || !startup.contains("/apis/example.test/v1") || startup.indexOf(pods) >= startup.indexOf("/apis/example.test/v1")) return false;
+
+            const auto runSync = [&](int seconds) {
+                reference = reference.addSecs(seconds);
+                const auto start = server.requests.size();
+                if (!client.synchronize() || !waitFor([&] { return !client.loading("sync"); })) return QStringList{};
+                return pathsSince(start);
+            };
+            const auto establishStability = runSync(26);
+            if (!establishStability.contains(widgets) || !establishStability.contains(pods)) return false;
+            const auto liveOnly = runSync(26);
+            if (!liveOnly.contains(pods) || !liveOnly.contains(events) || liveOnly.contains(widgets) || liveOnly.contains("/api")) return false;
+            const auto stableDue = runSync(95);
+            if (!stableDue.contains(widgets) || stableDue.contains("/api")) return false;
+
+            reference = reference.addSecs(26);
+            const auto reopening = server.requests.size();
+            if (!client.close("sync") || !client.open("sync", std::get<podlord::ClusterConnection>(connection), {})
+                || !waitFor([&] { return !client.loading("sync"); })) return false;
+            const auto reopened = pathsSince(reopening);
+            return reopened.contains(pods) && !reopened.contains(widgets) && !reopened.contains("/api")
+                && client.rows("sync").size() == 3;
         }
         reference = reference.addSecs(26);
         const auto roots = server.requests.count("/api");
@@ -5489,7 +5777,7 @@ bool execute(const QString& requestedScenario) {
             otherSession = workspace.currentSession();
             if (!click(window, item(window, "activateSession_" + first)) || !waitFor([&] { return workspace.currentSession() == first && !workspace.busy() && !workspace.loading(); })) return false;
         }
-        const bool secret = scenario.startsWith("inspector_secret_") || scenario == "inspector_edit_secret";
+        const bool secret = scenario.startsWith("inspector_secret_") || scenario == "inspector_edit_secret" || scenario == "inspector_auto_secret";
         if (!type(window, item(window, "resourceFilter"), secret ? "Secret" : scenario == "inspector_custom_secret" ? "custom-secret" : "bravo") || !waitFor([&] { return workspace.table()->rowCount() == 1 && item(window, "cell_0_0"); })) {
             std::fputs("Inspector resource filter did not expose its expected row.\n",stderr); return false;
         }
@@ -5524,8 +5812,101 @@ bool execute(const QString& requestedScenario) {
         if (!waitFor([&] { return !text(window, "inspectorYaml").isEmpty() && !workspace.loading(); })) return false;
         if (text(window, "inspectorReadStatus").contains("Refreshing")) return false;
         const auto oldYaml = text(window, "inspectorYaml");
+        if (scenario == "inspector_auto_uid") {
+            server.inspectorResourceRecreated = true;
+            return workspace.refresh() && waitFor([&] { return server.detailReads == 2 && !workspace.loading(); })
+                && workspace.yamlText().contains("uid-bravo-recreated") && workspace.yamlText().contains("ordinary-value-v2");
+        }
+        if (scenario == "inspector_expiry" || scenario.startsWith("inspector_auto_")) {
+            const auto reads = server.detailReads;
+            const auto callsBeforeRenewal = server.requests.size();
+            QString renewalStage = "policy";
+            bool renewalComplete = false;
+            const auto renewalDiagnostic = qScopeGuard([&] {
+                if (scenario == "inspector_auto_queued" && !renewalComplete)
+                    qWarning() << "Queued renewal:" << renewalStage << "reads" << server.detailReads << "requests" << server.requests.size()
+                        << "limit" << workspace.requestLimit() << "loading" << workspace.loading() << "busy" << workspace.busy();
+            });
+            const auto path = workspace.inspectorPath();
+            const auto draft = oldYaml + "\n# retained local draft\n";
+            if (scenario == "inspector_auto_secret") {
+                if (!workspace.setInspectorPage("values") || !waitFor([&] { return item(window, "reveal_data/alpha"); })
+                    || !click(window, item(window, "reveal_data/alpha"))
+                    || !waitFor([&] { return accessibleName(window, "alpha, Value, alpha-private-value"); })) return false;
+            }
+            if (scenario == "inspector_auto_hidden" && !workspace.setWorkspacePage("settings")) return false;
+            if (scenario == "inspector_auto_inactive" && !workspace.setWindowFocused(false)) return false;
+            if (scenario == "inspector_auto_draft" && (!workspace.beginYamlEdit() || !workspace.setYamlDraft(draft))) return false;
+            if (scenario == "inspector_auto_closed" && !workspace.closeInspector()) return false;
+            if (scenario == "inspector_auto_queued"
+                && (!workspace.saveReadSettings(60, workspace.inactiveSyncMinutes(), "5", workspace.collectionCacheHours())
+                    || !waitFor([&] { return !workspace.busy() && workspace.requestLimit() == 60; }))) return false;
+            reference = reference.addSecs(269);
+            renewalStage = "before renewal";
+            if (!workspace.setWindowFocused(scenario != "inspector_auto_inactive")) return false;
+            QTest::qWait(50);
+            if (server.detailReads != reads) return false;
+            if (scenario == "inspector_auto_queued") {
+                renewalStage = "establish request spacing";
+                if (!workspace.refresh() || !waitFor([&] { return server.requests.size() > callsBeforeRenewal; })) return false;
+            }
+            reference = reference.addSecs(2);
+            renewalStage = "renewal due";
+            if (!workspace.setWindowFocused(scenario != "inspector_auto_inactive")) return false;
+            if (scenario == "inspector_auto_queued") {
+                QTest::qWait(50);
+                renewalStage = "withdraw queued renewal";
+                if (server.detailReads != reads || !workspace.setWindowFocused(true) || !workspace.setWindowFocused(false)) return false;
+                renewalStage = "release request spacing";
+                if (!workspace.saveReadSettings(0, workspace.inactiveSyncMinutes(), "5", workspace.collectionCacheHours())
+                    || !waitFor([&] { return !workspace.busy() && !workspace.loading(); }) || server.detailReads != reads) return false;
+                renewalStage = "reactivate inspector";
+                if (!workspace.setWindowFocused(true)) return false;
+            }
+            const bool quiet = scenario == "inspector_auto_hidden" || scenario == "inspector_auto_inactive"
+                || scenario == "inspector_auto_draft" || scenario == "inspector_auto_closed";
+            if (quiet) {
+                if (!workspace.refresh() || !waitFor([&] { return !workspace.loading(); }) || server.detailReads != reads) return false;
+                if (scenario == "inspector_auto_draft") return workspace.yamlEditing() && workspace.yamlText() == draft;
+                if (scenario == "inspector_auto_closed") return workspace.inspectorPath().isEmpty();
+                if (scenario == "inspector_auto_hidden" && !workspace.setWorkspacePage("resources")) return false;
+                if (scenario == "inspector_auto_inactive" && !workspace.setWindowFocused(true)) return false;
+            }
+            renewalStage = "await renewed detail";
+            if (!waitFor([&] { return server.detailReads == reads + 1; })) return false;
+            if (scenario == "inspector_auto_late") {
+                if (!workspace.closeInspector() || !waitFor([&] { return !workspace.loading(); })) return false;
+                return workspace.inspectorPath().isEmpty() && server.delayedReadDelivered && !server.prematureDisconnect;
+            }
+            if (scenario == "inspector_auto_draft_late") {
+                if (!workspace.beginYamlEdit() || !workspace.setYamlDraft(draft)
+                    || !waitFor([&] { return !workspace.loading(); })) return false;
+                return workspace.yamlEditing() && workspace.yamlText() == draft
+                    && server.detailReads == reads + 1 && server.delayedReadDelivered && !server.prematureDisconnect;
+            }
+            if (!waitFor([&] { return !workspace.loading(); }) || workspace.inspectorPath() != path) return false;
+            if (scenario == "inspector_auto_auth" || scenario == "inspector_auto_failure") {
+                if (workspace.yamlText() != oldYaml || !workspace.inspectorStatus().contains(scenario.endsWith("auth") ? "Authentication" : "HTTP 500", Qt::CaseInsensitive)) return false;
+                if (scenario.endsWith("auth")) {
+                    if (!workspace.authenticationRequired()) return false;
+                    reference = reference.addSecs(600);
+                } else {
+                    reference = reference.addSecs(31);
+                    if (!workspace.setWindowFocused(true) || !workspace.yamlText().isEmpty()) return false;
+                }
+            } else if (scenario == "inspector_auto_secret") {
+                if (!accessibleName(window, "alpha, Value, alpha-private-value") || !accessibleName(window, "alpha, Hide")
+                    || !accessibleName(window, "beta, Value, [hidden]")
+                    || workspace.yamlText().contains("alpha-private-value") || workspace.yamlText().contains("beta-renewed-private-value")
+                    || workspace.yamlText().contains("YWxwaGEtcHJpdmF0ZS12YWx1ZQ==")) return false;
+            } else if (!workspace.yamlText().contains("ordinary-value-v2")) return false;
+            for (int repeat = 0; repeat < 3; ++repeat) if (!workspace.setWindowFocused(true)) return false;
+            QTest::qWait(100);
+            renewalComplete = server.detailReads == reads + 1;
+            return renewalComplete;
+        }
         if (scenario.startsWith("inspector_yaml_expiry_")) {
-            if (!click(window, item(window, "overviewButton"))) return false;
+            if (!click(window, item(window, "inspectorEventsButton"))) return false;
             reference = reference.addSecs(301);
             if (!workspace.refresh()
                 || !waitFor([&] { return !workspace.loading() && text(window, "inspectorYaml").isEmpty(); })) return false;
@@ -5614,6 +5995,8 @@ bool execute(const QString& requestedScenario) {
                 if (!waitFor([&] { return window->isActive(); })) { std::fputs("Discard prompt window did not activate before interaction.\n", stderr); return false; }
             }
             const auto originalSession = workspace.currentSession();
+            const auto originalTabCount = workspace.tabs().size();
+            QString requestedContext;
             if (scenario.startsWith("inspector_edit_resource_")) {
                 if (!type(window, item(window, "resourceFilter"), "charlie") || !waitFor([&] { return workspace.table()->rowCount() == 1; }) || !click(window, item(window, "cell_0_0"))) return false;
             } else if (scenario.startsWith("inspector_edit_window_")) { if (window->close()) return false; }
@@ -5621,8 +6004,11 @@ bool execute(const QString& requestedScenario) {
             else if (scenario.startsWith("inspector_edit_map_history_")) { if (!workspace.setWorkspacePage("map") || workspace.navigateMap(-1)) return false; }
             else if (scenario.startsWith("inspector_edit_session_")) { if (!click(window, item(window, "activateSession_" + otherSession))) return false; }
             else if (scenario.startsWith("inspector_edit_open_context_")) {
-
-                if (workspace.openContext(workspace.contexts().last().toMap()["id"].toString())) return false;
+                const bool duplicate = scenario.startsWith("inspector_edit_open_context_tab_");
+                const auto originalContext = workspace.sessionConfiguration(originalSession).value("contextId").toString();
+                requestedContext = duplicate ? originalContext : workspace.contexts().last().toMap().value("id").toString();
+                if (requestedContext.isEmpty() || (!duplicate && requestedContext == originalContext)
+                    || workspace.openContext(requestedContext, false, duplicate)) return false;
             } else if (!click(window, item(window, "closeInspector"))) return false;
             auto* discardDialog = window->findChild<QObject*>("discardYamlDialog");
             QSignalSpy discarded(discardDialog, SIGNAL(accepted()));
@@ -5681,14 +6067,21 @@ bool execute(const QString& requestedScenario) {
             if (!accept) {
                 const bool retained = text(window, "inspectorYaml") == draft && !yamlView->property("readOnly").toBool() && workspace.currentSession() == originalSession && !workspace.inspectorPath().isEmpty() && window->isVisible() && noWrites();
                 if (!retained) std::fprintf(stderr, "Stay: draft=%d readOnly=%d session=%d inspector=%s visible=%d writes=%d\n", text(window,"inspectorYaml")==draft, yamlView->property("readOnly").toBool(), workspace.currentSession()==originalSession, qPrintable(workspace.inspectorPath()), window->isVisible(), !noWrites());
-                return retained && (!scenario.startsWith("inspector_edit_map_history_") || (!workspace.canMapForward() && workspace.canMapBack()));
+                return retained
+                    && (!scenario.startsWith("inspector_edit_open_context_") || workspace.tabs().size() == originalTabCount)
+                    && (!scenario.startsWith("inspector_edit_map_history_") || (!workspace.canMapForward() && workspace.canMapBack()));
             }
             if (scenario.startsWith("inspector_edit_resource_")) return waitFor([&] { return text(window, "inspectorResourceName") == "ConfigMap/charlie" && !workspace.loading(); }) && !text(window, "inspectorYaml").contains("# operator draft") && yamlView->property("readOnly").toBool() && noWrites();
             if (scenario == "inspector_edit_window_accept") return !window->isVisible() && noWrites();
             if (scenario == "inspector_edit_tab_accept") return waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); }) && noWrites();
             if (scenario == "inspector_edit_map_history_accept") return waitFor([&] { return workspace.currentSession()==otherSession && !workspace.busy(); })
                 && workspace.workspacePage()=="map" && !workspace.mapOverview() && workspace.canMapForward() && noWrites();
-            if (scenario == "inspector_edit_session_accept" || scenario == "inspector_edit_open_context_accept") return waitFor([&] { return workspace.currentSession() != originalSession && !workspace.busy(); }) && noWrites();
+            if (scenario == "inspector_edit_session_accept") return waitFor([&] { return workspace.currentSession() != originalSession && !workspace.busy(); }) && noWrites();
+            if (scenario == "inspector_edit_open_context_accept" || scenario == "inspector_edit_open_context_tab_accept") return waitFor([&] {
+                const auto active = workspace.currentSession();
+                return !active.isEmpty() && active != originalSession && workspace.tabs().size() == originalTabCount + 1
+                    && !workspace.busy() && workspace.sessionConfiguration(active).value("contextId").toString() == requestedContext;
+            }) && noWrites();
             return workspace.inspectorPath().isEmpty() && text(window, "inspectorYaml").isEmpty() && noWrites();
         }
         if (scenario == "inspector_list_wrong_version") {
@@ -5838,11 +6231,6 @@ bool execute(const QString& requestedScenario) {
                 && yamlView->property("readOnly").toBool() && yamlView->property("textFormat").toInt() == 0
                 && server.requests.size() == calls;
         }
-        if (scenario == "inspector_expiry") {
-            reference = reference.addSecs(301);
-            if (!workspace.refresh()) return false;
-            return waitFor([&] { return text(window, "inspectorYaml").isEmpty(); }) && !text(window, "inspectorReadStatus").isEmpty();
-        }
         if (scenario == "inspector_markup") {
             const auto requests = server.requests.size();
             yamlView->forceActiveFocus(); QTest::qWait(100);
@@ -5899,6 +6287,31 @@ bool execute(const QString& requestedScenario) {
             if (!model || model->columnCount() != 5 || model->rowCount() != 4) return false;
             if (!waitFor([&] { return item(window, "valueHeader_0") && item(window, "value_data/alpha"); })) return false;
             if (const auto frame = qEnvironmentVariable("PODLORD_VALUES_FRAME"); !frame.isEmpty()) window->grabWindow().save(frame);
+            if (action == "accessibility") {
+                const auto revealAction=[&](const QString& name) {
+                    auto* cell=item(window,"reveal_data/alpha");
+                    auto* accessible=cell ? QAccessible::queryAccessibleInterface(cell) : nullptr;
+                    return accessible && accessible->text(QAccessible::Name)=="alpha, "+name ? accessible->actionInterface() : nullptr;
+                };
+                const auto matches=[&] {
+                    auto* cell=item(window,"value_data/alpha");
+                    auto* accessible=cell ? QAccessible::queryAccessibleInterface(cell) : nullptr;
+                    const auto identity=model->index(0,0).data(Qt::UserRole+1).toString();
+                    const auto column=cell ? cell->property("column").toInt() : -1;
+                    const auto label=model->headerData(column,Qt::Horizontal).toString();
+                    const auto value=cell ? cell->property("text").toString() : QString{};
+                    const auto expected=(identity.isEmpty() ? model->index(0,0).data(Qt::UserRole).toString() : identity)+", "+label+", "+value;
+                    return accessible && accessible->text(QAccessible::Name)==expected;
+                };
+                if (!waitFor(matches) || text(window,"value_data/alpha")!="[hidden]" || !revealAction("Reveal")) return false;
+                item(window,"reveal_data/alpha")->forceActiveFocus();
+                revealAction("Reveal")->doAction(QAccessibleActionInterface::pressAction());
+                if (!waitFor(matches) || text(window,"value_data/alpha")=="[hidden]" || !revealAction("Hide")
+                    || !window->activeFocusItem() || window->activeFocusItem()->objectName()!="reveal_data/alpha") return false;
+                revealAction("Hide")->doAction(QAccessibleActionInterface::pressAction());
+                return waitFor(matches) && revealAction("Reveal")
+                    && text(window,"value_data/alpha")=="[hidden]" && server.requests.size()==before;
+            }
             if (action == "layout") {
                 const QStringList titles{"Key", "Encoding", "Value", "Copy", "Reveal"};
                 for (int column = 0; column < titles.size(); ++column)
@@ -6111,13 +6524,27 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "inspector_secret_tab_close") {
             const auto session = workspace.currentSession();
-            if (!click(window,item(window,"closeCurrentSession"))
-                || !waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); })) return false;
+            const auto context = workspace.sessionConfiguration(session).value("contextId").toString();
+            const auto path = workspace.inspectorPath();
+            if (context.isEmpty() || path.isEmpty() || server.requests.size() != requests
+                || !click(window,item(window,"closeCurrentSession"))
+                || !waitFor([&] { return workspace.currentSession().isEmpty() && workspace.tabs().isEmpty()
+                    && !workspace.busy() && workspace.inspectorPath().isEmpty(); }) || !noLeak()) return false;
             if (!click(window,item(window,"mapWorkspaceButton"))) return false;
-            const auto card="contextMapCard_"+workspace.contexts().first().toMap()["id"].toString();
+            const auto card="contextMapCard_"+context;
             if (!waitFor([&] { return item(window,card) && item(window,card)->isVisible(); }) || !click(window,item(window,card))) return false;
-            const bool restored=waitFor([&] { return workspace.currentSession() == session && !workspace.busy() && text(window, "value_data/alpha") == "[hidden]"; });
-            if (!restored) std::fprintf(stderr,"Secret tab reopen: active=%d overview=%d inspector=%s page=%s values=%d masked=%d\n",workspace.currentSession()==session,workspace.mapOverview(),qPrintable(workspace.inspectorPath()),qPrintable(workspace.property("inspectorPage").toString()),workspace.valuesTable()->rowCount(),text(window,"value_data/alpha")=="[hidden]");
+            if (!waitFor([&] {
+                const auto active = workspace.currentSession();
+                return !active.isEmpty() && active != session && workspace.tabs().size() == 1 && !workspace.busy() && !workspace.loading()
+                    && workspace.sessionConfiguration(active).value("contextId").toString() == context
+                    && workspace.inspectorPath().isEmpty() && workspace.yamlText().isEmpty() && workspace.valuesTable()->rowCount() == 0;
+            }) || !noLeak() || !click(window,item(window,"resourcesWorkspaceButton"))
+                || !type(window,item(window,"resourceFilter"),"Secret")
+                || !waitFor([&] { return workspace.table()->rowCount() == 1 && item(window,"cell_0_0"); })
+                || !click(window,item(window,"cell_0_0")) || !click(window,item(window,"valuesButton"))) return false;
+            const bool restored=waitFor([&] { return workspace.inspectorPath() == path && !workspace.loading()
+                && text(window, "value_data/alpha") == "[hidden]" && text(window, "value_data/beta") == "[hidden]"; });
+            if (!restored) std::fprintf(stderr,"Secret tab reopen: fresh=%d overview=%d inspector=%s page=%s values=%d masked=%d\n",workspace.currentSession()!=session,workspace.mapOverview(),qPrintable(workspace.inspectorPath()),qPrintable(workspace.property("inspectorPage").toString()),workspace.valuesTable()->rowCount(),text(window,"value_data/alpha")=="[hidden]");
             return restored && noLeak();
         }
         if (scenario == "inspector_secret_session") {
@@ -6570,26 +6997,37 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
         const auto directory = qEnvironmentVariable("PODLORD_THEME_EVIDENCE_DIR");
         if (directory.isEmpty() || !QDir{}.mkpath(directory) || workspace.themeNames().size() != 19) return false;
         QJsonArray captures;
+        QTcpServer portProbe;
+        if (!portProbe.listen(QHostAddress::LocalHost, 0)) return failure("theme loopback port");
+        const auto loopbackPort = QString::number(portProbe.serverPort());
+        portProbe.close();
+        if (!workspace.inspectPath("/api/v1/namespaces/visual-a/pods/visual-multi-container")
+            || !waitFor([&] { return workspace.canPortForward(); })
+            || !workspace.preparePortForward() || !workspace.startPreparedPortForward(loopbackPort, "8080")
+            || !waitFor([&] { return !workspace.portForwards().isEmpty(); }) || !workspace.closeInspector())
+            return failure("theme owned connection");
         const auto choose = [&](const QString& name, int index) {
-            if (!click(window, item(window, name))) return false;
+            if (!podlord::test::clickVisible(window, name)) return false;
             auto* control = item(window, name);
             auto* popup = control ? control->property("popup").value<QObject*>() : nullptr;
             if (!popup || !waitFor([&] { return popup->property("opened").toBool(); })) return false;
             QTest::keyClick(window, Qt::Key_Home);
             for (int row = 0; row < index; ++row) QTest::keyClick(window, Qt::Key_Down);
+#ifdef Q_OS_IOS
+            QQuickItem* option = nullptr;
+            if (!waitFor([&] {
+                QQmlExpression expression(qmlContext(control), control, QString("popup.contentItem.itemAtIndex(%1)").arg(index));
+                option = expression.evaluate().value<QQuickItem*>();
+                return !expression.hasError() && option && !podlord::test::visibleBounds(window, option).isEmpty();
+            })) return false;
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, podlord::test::visibleBounds(window, option).center().toPoint());
+#else
             QTest::keyClick(window, Qt::Key_Return);
+#endif
             return waitFor([&] { return !popup->property("visible").toBool() && !workspace.busy(); });
         };
-        const QList<QPair<QString, QString>> sections{
-            {"alerts", "alertsWorkspaceButton"}, {"appearance", "settingsAppearanceSection"},
-            {"diagnostics", "settingsDiagnosticsSection"}, {"graphics", "settingsGraphicsSection"},
-            {"privacy", "settingsPrivacySection"}, {"sources", "settingsSourcesSection"},
-            {"sync", "settingsSyncSection"}, {"workspace", "settingsWorkspaceSection"}, {"about", "settingsAboutSection"}};
-        const auto section = [&](int index) {
-            auto* picker = item(window, "settingsSectionPicker");
-            return picker && picker->isVisible() ? choose("settingsSectionPicker", index)
-                : click(window, item(window, sections[index].second));
-        };
+        const QStringList sections{"alerts", "appearance", "diagnostics", "sources", "sync", "about"};
+        const auto section = [&](const QString& name) { return podlord::test::selectSettingsSection(window, name); };
         const auto dismissSidebar = [&] { return podlord::test::closeSidebarDrawer(window); };
         const auto capture = [&](const QString& view, int themeIndex, const QString& variant) {
             QSignalSpy frame(window, &QQuickWindow::frameSwapped);
@@ -6607,11 +7045,13 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
         const auto names = workspace.themeNames();
         for (int themeIndex = 0; themeIndex < names.size(); ++themeIndex) {
             for (const auto& variant : QStringList{"dark", "light"}) {
-                if (!click(window, item(window, "settingsWorkspaceButton")) || !section(1)
-                    || !choose("inlineAppearanceTheme", themeIndex) || !choose("inlineAppearanceVariant", variant == "dark" ? 0 : 1)
+                if (!podlord::test::clickVisible(window, "settingsWorkspaceButton")
+                    || !waitFor([&] { return workspace.workspacePage() == "settings"; })) return failure("theme settings navigation");
+                if (!section("appearance")) return failure("theme appearance selection");
+                if (!choose("inlineAppearanceTheme", themeIndex) || !choose("inlineAppearanceVariant", variant == "dark" ? 0 : 1)
                     || !waitFor([&] { return workspace.themeName() == names[themeIndex] && workspace.themeVariant() == variant; })) return failure("theme selection");
-                for (int index = 0; index < sections.size(); ++index)
-                    if (!section(index) || !capture("settings-" + sections[index].first, themeIndex, variant)) return false;
+                for (const auto& name : sections)
+                    if (!section(name) || !capture("settings-" + name, themeIndex, variant)) return failure("theme settings capture");
                 if (!workspace.setWorkspacePage("map") || workspace.mapOverview()
                     || !capture("map-context",themeIndex,variant)) return failure("theme context map capture");
                 if (!workspace.showMapOverview() || !waitFor([&] {

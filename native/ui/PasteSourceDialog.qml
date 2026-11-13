@@ -6,11 +6,13 @@ ModalDialog {
     id: surfaceDialog
     objectName: "pasteSourceDialog"
     parent: Overlay.overlay
-    anchors.centerIn: parent
     modal: true
-    title: "Import pasted kubeconfig"
-    width: Math.min(640, parent ? parent.width - 24 : 640)
-    height: Math.min(620, parent ? parent.height - 24 : 620)
+    title: workspace.uiText["context.pasteTitle"]
+    header: DialogHeader { dialog: surfaceDialog; closeObjectName: "cancelPastedSource"; closeEnabled: !surfaceDialog.awaitingImport }
+    width: Math.min(640, Math.max(0, dialogArea.width - 24))
+    height: Math.min(620, Math.max(0, dialogArea.height - 24))
+    x: dialogArea.x + (dialogArea.width - width) / 2
+    y: dialogArea.y + (dialogArea.height - height) / 2
     property bool awaitingImport: false
     property string errorText: ""
     closePolicy: awaitingImport ? Popup.NoAutoClose : Popup.CloseOnEscape
@@ -30,9 +32,8 @@ ModalDialog {
             else surfaceDialog.errorText = workspace.sourceImportError
         }
     }
-    ColumnLayout {
-        anchors.fill: parent
-        Label { visible: !workspace.appStore; text: "Origin path for relative certificate, token and plugin paths" }
+    contentItem: ColumnLayout {
+        Label { Layout.fillWidth: true; visible: !workspace.appStore; text: workspace.uiText["context.pasteOrigin"]; wrapMode: Text.Wrap }
         TextField {
             id: origin
             objectName: "pasteSourceOrigin"
@@ -48,7 +49,7 @@ ModalDialog {
             TextArea {
                 id: yaml
                 objectName: "pasteSourceYaml"
-                placeholderText: "Paste kubeconfig YAML"
+                placeholderText: workspace.uiText["context.pasteTitle"]
                 wrapMode: TextEdit.NoWrap
                 textFormat: TextEdit.PlainText
                 selectByMouse: true
@@ -62,27 +63,22 @@ ModalDialog {
             visible: text.length > 0
             text: surfaceDialog.errorText
             wrapMode: Text.Wrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
             textFormat: Text.PlainText
+            color: workspace.appearanceColors.danger
             Accessible.name: text
         }
-        RowLayout {
-            Layout.fillWidth: true
-            Item { Layout.fillWidth: true }
-            Button {
-                objectName: "cancelPastedSource"
-                text: workspace.uiText["action.cancel"]
-                enabled: !surfaceDialog.awaitingImport
-                onClicked: surfaceDialog.close()
-            }
-            Button {
-                objectName: "importPastedSource"
-                text: surfaceDialog.awaitingImport ? "Importing..." : workspace.uiText["action.import"]
-                Accessible.description: "Imports privately without connecting or signing in. Maximum 16 MiB."
-                enabled: !workspace.busy && !surfaceDialog.awaitingImport && yaml.text.trim().length > 0 && origin.text.trim().length > 0
-                onClicked: {
-                    surfaceDialog.errorText = ""
-                    surfaceDialog.awaitingImport = workspace.importText(origin.text, yaml.text)
-                }
+    }
+    footer: DialogButtonBox {
+        Button {
+            objectName: "importPastedSource"
+            text: surfaceDialog.awaitingImport ? "Importing..." : workspace.uiText["action.import"]
+            Accessible.description: "Imports privately without connecting or signing in. Maximum 16 MiB."
+            enabled: !workspace.busy && !surfaceDialog.awaitingImport && yaml.text.trim().length > 0 && origin.text.trim().length > 0
+            onClicked: {
+                surfaceDialog.errorText = ""
+                surfaceDialog.awaitingImport = workspace.importText(origin.text, yaml.text)
             }
         }
     }

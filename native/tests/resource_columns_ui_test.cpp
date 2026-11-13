@@ -1,6 +1,7 @@
 #include "kubeconfig_store.h"
 #include "workspace.h"
 #include "ui_input.h"
+#include "kubernetes_auth_boundary.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -30,10 +31,11 @@ bool run(bool customized) {
     QTemporaryDir root;
     if (!root.isValid()) return false;
     const auto profile = root.filePath("profile");
+    podlord::test::Kubernetes api;
+    if (!api.listen(QHostAddress::LocalHost)) return false;
     const auto imported = KubeconfigStore(profile).importText(root.filePath("columns.yaml"),
-        "apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: https://127.0.0.1:9\n"
-        "users:\n- name: local\n  user:\n    exec:\n      apiVersion: client.authentication.k8s.io/v1beta1\n"
-        "      command: podlord-test-never-run\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\n");
+        QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:%1\n"
+        "users:\n- name: local\n  user: {token: local-columns-token}\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\n").arg(api.serverPort()));
     const auto* source = std::get_if<SourceSnapshot>(&imported);
     if (!source) return false;
     if (customized) {
@@ -50,7 +52,7 @@ bool run(bool customized) {
     Workspace workspace(profile);
     if (!QTest::qWaitFor([&] { return !workspace.busy(); }, 5000)
         || !workspace.openContext(source->contexts.first().id)
-        || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); }, 5000)) return false;
+        || !QTest::qWaitFor([&] { return !workspace.busy() && !workspace.syncLoading() && workspace.totalResourceCount()==1; }, 10000)) return false;
     const auto saved = workspace.resourceColumns();
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("workspace", &workspace);
@@ -66,7 +68,7 @@ bool run(bool customized) {
             qWarning() << "First visible resource header at" << width << "was" << firstHeader(window) << "instead of" << expected;
             return false;
         }
-        if (workspace.resourceColumns() != saved || !workspace.authenticationRequired()) return false;
+        if (workspace.resourceColumns() != saved || workspace.authenticationRequired()) return false;
     }
     return true;
 }

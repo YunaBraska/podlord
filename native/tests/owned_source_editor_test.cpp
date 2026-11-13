@@ -1,3 +1,4 @@
+#include <QJsonArray>
 #include "kubeconfig_store.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -25,7 +26,7 @@ QByteArray read(const QString& path) {
 }
 bool run(const QString& scenario) {
     using namespace podlord;
-    require(QStringList{"content","local","repeat","invalid","empty","limit","byte_limit","at_limit","missing","removed","mismatch","snapshot_identity","context_identity","invalid_profile","invalid_session_catalog","tampered","symlink"}.contains(scenario), "Unknown owned-source editor scenario.");
+    require(QStringList{"invalid_tab_catalog","content","local","repeat","invalid","empty","limit","byte_limit","at_limit","missing","removed","mismatch","snapshot_identity","context_identity","invalid_profile","tampered","symlink"}.contains(scenario), "Unknown owned-source editor scenario.");
     QTemporaryDir temporary;
     require(temporary.isValid(), "Private fixture directory unavailable.");
     const auto profile=temporary.filePath("profile"), originalPath=temporary.filePath("original-config");
@@ -43,6 +44,15 @@ bool run(const QString& scenario) {
             {"yamlBase64",QString::fromLatin1(original.toBase64())},{"importedAt","2026-01-01T00:00:00.000Z"}};
         const auto path=profile+"/kubeconfigs/"+id+".json";
         write(path,QJsonDocument(record).toJson());
+        QJsonArray contextIds;
+        const auto entries = QString::fromUtf8(original).section("contexts:", 1).split("- name: ");
+        QStringList ids;
+        for (qsizetype index = 1; index < entries.size(); ++index) {
+            const auto name = entries[index].section('\n', 0, 0).trimmed();
+            ids.append("ctx:" + digest(id.toUtf8() + QByteArray(1, '\0') + name.toUtf8()));
+        }
+        ids.sort();
+        write(profile+"/kubeconfigs/catalog.json", QJsonDocument(QJsonObject{{"version",1},{"sources",QJsonObject{{id,QJsonArray::fromStringList(ids)}}}}).toJson());
         require(QFile::setPermissions(profile,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner)
             && QFile::setPermissions(profile+"/kubeconfigs",QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner)
             && QFile::setPermissions(path,QFile::ReadOwner|QFile::WriteOwner), "Cannot protect owned document fixture.");
@@ -58,15 +68,16 @@ bool run(const QString& scenario) {
     require(std::holds_alternative<QString>(baseline) && std::get<QString>(baseline)==QString::fromUtf8(original), "Owned baseline read failed.");
     const SessionStore sessions(profile);
     for (const auto& value : source.contexts)
-        require(std::holds_alternative<SessionCatalog>(sessions.create({value.id,{}},value.name)), "Cannot create saved session fixture.");
+        require(std::holds_alternative<SessionCatalog>(sessions.openTab(value.id)), "Cannot create saved session fixture.");
     const auto saved=sessions.list();
     require(std::holds_alternative<SessionCatalog>(saved), "Saved sessions unavailable.");
     require(std::holds_alternative<SessionCatalog>(sessions.activate(std::get<SessionCatalog>(saved).sessions.first().id)), "Cannot select saved session fixture.");
     QString draft=QString::fromUtf8(original)+"# edited owned copy\n";
     StoreError expected=StoreError::InvalidData;
-    const bool rejected=QStringList{"invalid","empty","limit","byte_limit","missing","removed","mismatch","snapshot_identity","context_identity","invalid_profile","invalid_session_catalog","tampered","symlink"}.contains(scenario);
+    const bool rejected=QStringList{"invalid","empty","limit","byte_limit","missing","removed","mismatch","snapshot_identity","context_identity","invalid_profile","tampered","symlink"}.contains(scenario);
     constexpr qsizetype limit=16*1024*1024;
-    if (scenario=="content") {
+    if (scenario=="invalid_tab_catalog") {}
+    else if (scenario=="content") {
         const auto pasted=store.importText(source.sourcePath,draft);
         require(std::holds_alternative<Failure>(pasted) && std::get<Failure>(pasted).code==StoreError::InvalidInput, "Public paste accepted a document URI origin.");
     } else if (scenario=="repeat") draft=QString::fromUtf8(original);
@@ -105,9 +116,9 @@ bool run(const QString& scenario) {
     const auto files=ownedDirectory.entryList({"*.json"},QDir::Files|QDir::System,QDir::Name);
     const bool exists=QFileInfo::exists(source.ownedPath);
     const auto envelope=exists ? read(source.ownedPath) : QByteArray{};
-    const auto sessionPath=profile+"/sessions.json";
+    const auto sessionPath=profile+"/tabs.json";
     const auto sessionBytes=read(sessionPath);
-    if (scenario=="invalid_session_catalog") write(sessionPath,"{broken}");
+    if (scenario=="invalid_tab_catalog") write(sessionPath,"{broken}");
     const auto edited=scenario=="invalid_profile" ? KubeconfigStore("relative-profile").editOwnedYaml(snapshot,context,draft)
         : store.editOwnedYaml(snapshot,context,draft);
     if (rejected) {
@@ -132,7 +143,7 @@ bool run(const QString& scenario) {
             require(std::holds_alternative<SourceSnapshot>(pasted) && std::get<SourceSnapshot>(pasted).id==result.id, "Existing local paste behavior changed.");
         }
     }
-    if (scenario=="invalid_session_catalog") {
+    if (scenario=="invalid_tab_catalog") {
         require(read(sessionPath)=="{broken}", "Rejected source edit rewrote damaged sessions.");
         write(sessionPath,sessionBytes);
     }

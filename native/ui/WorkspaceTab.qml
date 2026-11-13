@@ -4,7 +4,13 @@ import QtQuick.Window
 
 TabButton {
     id: tab
-    width: visible ? undefined : 0
+    width: {
+        if (!visible) return 0
+        const bar = TabBar.tabBar
+        if (!bar) return implicitWidth
+        const count = Math.max(1, bar.contentChildren.filter(item => item.visible).length)
+        return Math.max(44, (bar.availableWidth - bar.spacing * (count - 1)) / count)
+    }
     implicitWidth: Math.max(88, implicitContentWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32, implicitContentHeight + topPadding + bottomPadding)
     padding: 8

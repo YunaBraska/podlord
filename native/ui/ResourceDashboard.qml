@@ -25,7 +25,16 @@ Pane {
                 width: metricRows.width
                 spacing: 8
                 Button { objectName: "dashboardResource_" + index; Layout.fillWidth: true; text: resourceKind + " / " + resourceName + " / " + (resourceNamespace || "Cluster-scoped"); Accessible.name: "Inspect " + text; onClicked: workspace.inspectPath(resourcePath) }
-                Repeater { model: resourceMetrics; MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData } }
+                Repeater {
+                    model: resourceMetrics.filter(metric => metric.available || !!metric.presentReferences)
+                    MetricGauge {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        metric: modelData
+                        omitMissing: true
+                        showMeasurement: resourceMetrics.find(value => value.timestamp)?.id === modelData.id
+                    }
+                }
                 Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
             }
             Label { anchors.centerIn: parent; width: Math.min(360, parent.width-24); visible: metricRows.count===0; text: workspace.uiText["dashboard.empty"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter }

@@ -47,7 +47,7 @@ WindowHost::~WindowHost() {
 bool WindowHost::create(Workspace& workspace, bool owned, const Workspace* source, const WindowPlacement* placement) {
     if (!component_.isReady()) return false;
     if (source) {
-        workspace.sources_ = source->sources_; workspace.catalog_ = source->catalog_; workspace.selection_ = source->selection_;
+        workspace.sources_ = source->sources_; workspace.catalog_ = source->catalog_;
         workspace.settings_ = source->settings_; workspace.settingsReady_ = source->settingsReady_; workspace.viewsLoaded_ = true;
         workspace.tableLayouts_ = source->tableLayouts_;
         workspace.publishAppearance();
@@ -128,7 +128,7 @@ bool WindowHost::restore() {
             emit primary_.changed();
         } else if (primary_.windowActionsAvailable()) {
             QSet<QUuid> open;
-            for (const auto& session : primary_.catalog_.sessions) if (session.open) open.insert(session.id);
+            for (const auto& session : primary_.catalog_.sessions) open.insert(session.id);
             WindowLayout desired;
             QSet<QUuid> assigned;
             for (auto placement : std::get<WindowLayout>(*storedLayout_)) {
@@ -160,8 +160,6 @@ bool WindowHost::restore() {
                     for (const auto& session : placement.sessions) {
                         const auto id = session.toString(QUuid::WithoutBraces);
                         target->navigation_.insert(id, primary_.navigation_.value(id));
-                        target->savedViews_.insert(id, primary_.savedViews_.value(id));
-                        if (primary_.viewStateErrors_.contains(id)) target->viewStateErrors_.insert(id, primary_.viewStateErrors_.value(id));
                         primary_.runtime_->owners[id] = target;
                     }
                     target->navigation_[target->active_].workspace = "map";
@@ -174,7 +172,7 @@ bool WindowHost::restore() {
                     }
                     for (const auto& session : placement.sessions) {
                         const auto id = session.toString(QUuid::WithoutBraces);
-                        primary_.navigation_.remove(id); primary_.savedViews_.remove(id); primary_.viewStateErrors_.remove(id);
+                        primary_.navigation_.remove(id);
                     }
                     target->mapNavigating_ = true; target->select(primary_.catalog_, false); target->mapNavigating_ = false;
                 }
@@ -327,13 +325,15 @@ bool WindowHost::detach(Workspace& source, const QString& session) {
     auto* target = new Workspace(source.runtime_, this, false);
     target->detached_ = true;
     target->navigation_.insert(session, source.navigation_.value(session));
-    target->savedViews_.insert(session, source.savedViews_.value(session));
     target->active_ = session;
+    target->mapHistory_.append(session);
+    target->mapHistoryIndex_ = 1;
     for (auto it = source.logPositions_.cbegin(); it != source.logPositions_.cend(); ++it)
         if (it.key().startsWith(session + '\n')) target->logPositions_.insert(it.key(), it.value());
     if (!create(*target, true, &source)) { delete target; return false; }
     const bool selected = session == source.active_;
-    const bool moved = selected ? source.client_.moveSession(source.viewId_, target->viewId_)
+    const bool overview = source.workspacePage() == "map" && source.mapOverview();
+    const bool moved = selected && !overview ? source.client_.moveSession(source.viewId_, target->viewId_)
         : source.client_.showSession(session, target->viewId_);
     if (!moved) {
         target->windowClosed_ = true; retire(*target);
@@ -344,7 +344,7 @@ bool WindowHost::detach(Workspace& source, const QString& session) {
     if (source.preparedSnapshots_.contains(session)) target->preparedSnapshots_.insert(session, source.preparedSnapshots_.take(session));
     if (source.snapshotPreparation_ && source.snapshotPreparation_->session == session) source.snapshotPreparation_->watcher->cancel();
     source.alerts_.transferSession(session, target->alerts_);
-    source.navigation_.remove(session); source.savedViews_.remove(session);
+    source.navigation_.remove(session);
     for (auto it = source.logPositions_.begin(); it != source.logPositions_.end();)
         if (it.key().startsWith(session + '\n')) it = source.logPositions_.erase(it); else ++it;
     if (selected) {

@@ -145,7 +145,6 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantMap appearanceColors READ appearanceColors NOTIFY appearanceChanged)
     Q_PROPERTY(QString sourceImportNotice READ sourceImportNotice NOTIFY changed)
     Q_PROPERTY(QVariantList sourceImportIssues READ sourceImportIssues NOTIFY changed)
-    Q_PROPERTY(QVariantList sessions READ sessions NOTIFY catalogsChanged)
     Q_PROPERTY(QVariantList tabs READ tabs NOTIFY catalogsChanged)
     Q_PROPERTY(bool windowActionsAvailable READ windowActionsAvailable CONSTANT)
     Q_PROPERTY(bool sessionWindowActionsReady READ sessionWindowActionsReady NOTIFY sessionWindowActionsReadyChanged)
@@ -173,17 +172,15 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString syncProblem READ syncProblem NOTIFY changed)
     Q_PROPERTY(QString currentSession READ currentSession NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
-    Q_PROPERTY(QString sessionRenameError READ sessionRenameError NOTIFY changed)
     Q_PROPERTY(QVariantList resourceGuidance READ resourceGuidance NOTIFY inspectorPresentationChanged)
     Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
     Q_PROPERTY(QVariantMap sourceRemoval READ sourceRemoval NOTIFY sourceRemovalChanged)
     Q_PROPERTY(QString defaultSourceOrigin READ defaultSourceOrigin CONSTANT)
-    Q_PROPERTY(QString sessionManagementError READ sessionManagementError NOTIFY changed)
-    Q_PROPERTY(QString sessionManagementNotice READ sessionManagementNotice NOTIFY changed)
     Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
     Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
     Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
     Q_PROPERTY(int resourceLimit READ resourceLimit NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(int defaultResourceLimit READ defaultResourceLimit CONSTANT)
     Q_PROPERTY(int displayedResourceCount READ displayedResourceCount NOTIFY resourcePresentationChanged)
     Q_PROPERTY(QAbstractItemModel* visibleResourceTable READ visibleResourceTable CONSTANT)
     Q_PROPERTY(QString filterPickerField READ filterPickerField NOTIFY filterPickerChanged)
@@ -191,7 +188,9 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString filterError READ filterError NOTIFY changed)
     Q_PROPERTY(QString workspacePage READ workspacePage NOTIFY changed)
     Q_PROPERTY(bool mapOverview READ mapOverview NOTIFY changed)
+    Q_PROPERTY(QVariantList mapContexts READ mapContexts NOTIFY mapContextsChanged)
     Q_PROPERTY(QString mapContextCaption READ mapContextCaption NOTIFY changed)
+    Q_PROPERTY(QVariantMap mapContextIdentity READ mapContextIdentity NOTIFY changed)
     Q_PROPERTY(QString mapCatalogWarning READ mapCatalogWarning NOTIFY changed)
     Q_PROPERTY(bool canMapBack READ canMapBack NOTIFY changed)
     Q_PROPERTY(bool canMapForward READ canMapForward NOTIFY changed)
@@ -213,6 +212,8 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantMap radarView READ radarView NOTIFY changed)
     Q_PROPERTY(bool radarWaterEnabled READ radarWaterEnabled NOTIFY changed)
     Q_PROPERTY(int radarWaterSpeedPercent READ radarWaterSpeedPercent NOTIFY changed)
+    Q_PROPERTY(int musicVolumePercent READ musicVolumePercent NOTIFY audioVolumesChanged)
+    Q_PROPERTY(int alertVolumePercent READ alertVolumePercent NOTIFY audioVolumesChanged)
     Q_PROPERTY(int sortColumnIndex READ sortColumnIndex NOTIFY changed)
     Q_PROPERTY(QString sortDirection READ sortDirection NOTIFY changed)
     Q_PROPERTY(QString inspected READ inspected NOTIFY changed)
@@ -237,6 +238,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool canPortForward READ canPortForward NOTIFY changed)
     Q_PROPERTY(bool canStartTerminal READ canStartTerminal NOTIFY changed)
     Q_PROPERTY(podlord::ContainerTerminal* containerTerminal READ containerTerminal NOTIFY changed)
+    Q_PROPERTY(QString terminalError READ terminalError NOTIFY changed)
     Q_PROPERTY(QVariantMap terminalConnection READ terminalConnection NOTIFY changed)
     Q_PROPERTY(QStringList terminalContainers READ terminalContainers NOTIFY inspectorPresentationChanged)
     Q_PROPERTY(QVariantMap portForwardTarget READ portForwardTarget NOTIFY changed)
@@ -322,6 +324,7 @@ class Workspace final : public QObject {
 public:
     bool canStartTerminal() const;
     ContainerTerminal* containerTerminal() const { return client_.terminal(active_); }
+    QString terminalError() const;
     QVariantMap terminalConnection() const { return client_.terminalConnection(active_); }
     QStringList terminalContainers() const;
     Q_INVOKABLE bool startContainerTerminal(const QString& container, const QString& shell);
@@ -351,7 +354,6 @@ public:
     ~Workspace() override;
     Q_INVOKABLE bool detachSession(const QString& id);
     bool sessionWindowActionsReady() const;
-    Q_INVOKABLE bool openSessionWindow(const QString& id);
     Q_INVOKABLE bool finishWindowClose();
     Q_INVOKABLE bool attachWindow(QObject* window);
     Q_INVOKABLE bool setWindowFocused(bool focused);
@@ -372,8 +374,11 @@ public:
     bool radarWaterEnabled() const { return settings_.radarWaterEnabled; }
     int radarWaterSpeedPercent() const { return settings_.radarWaterSpeedPercent; }
     Q_INVOKABLE bool saveRadarWater(bool enabled, int speedPercent);
+    int musicVolumePercent() const { return settings_.musicVolumePercent; }
+    int alertVolumePercent() const { return settings_.alertVolumePercent; }
+    Q_INVOKABLE bool saveAudioVolumes(int musicPercent, int alertPercent);
+    Q_INVOKABLE bool previewAudioVolume(bool music);
     QVariantList contexts() const;
-    QVariantList sessions() const;
     QVariantList tabs() const;
     bool busy() const;
     bool workspaceRestoreEnabled() const { return settings_.workspaceRestore; }
@@ -387,6 +392,7 @@ public:
     QStringList filterPresets() const;
     QString selectedFilterPreset() const;
     int resourceLimit() const { return currentNavigation().limit; }
+    int defaultResourceLimit() const { return DefaultResourceDisplayLimit; }
     int displayedResourceCount() const { return visibleTable_.rowCount(); }
     QAbstractItemModel* visibleResourceTable() { return &visibleTable_; }
     Q_INVOKABLE bool setResourceLimit(const QString& text);
@@ -410,12 +416,9 @@ public:
     QString syncProblem() const;
     QString currentSession() const;
     QString title() const;
-    QString sessionRenameError() const { return sessionRenameError_; }
     QVariantList resourceGuidance() const;
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;
-    QString sessionManagementError() const { return sessionManagementError_; }
-    QString sessionManagementNotice() const { return sessionManagementNotice_; }
     Q_INVOKABLE bool importText(QString originPath, const QString& yaml);
     Q_INVOKABLE bool importHome();
     Q_INVOKABLE bool refreshSources();
@@ -425,9 +428,6 @@ public:
     Q_INVOKABLE bool confirmSourceRemoval();
     Q_INVOKABLE bool cancelSourceRemoval();
     Q_INVOKABLE QVariantMap sessionConfiguration(const QString& id) const;
-    Q_INVOKABLE bool saveSessionConfiguration(const QString& id, const QString& contextId, const QString& namespaces);
-    Q_INVOKABLE bool duplicateSession(const QString& id, const QString& name);
-    Q_INVOKABLE bool renameSession(const QString& id, const QString& name);
     QString filterText() const;
     QVariantList filterFields() const;
     QVariantMap resourceFieldFilters() const;
@@ -443,6 +443,8 @@ public:
     Q_INVOKABLE bool filterValueSelected(const QString& value) const;
     Q_INVOKABLE bool selectFilterValue(const QString& value, bool selected);
     Q_INVOKABLE bool copyFilterValue(const QString& value);
+    QVariantMap mapContextIdentity() const;
+    Q_INVOKABLE bool copyMapIdentity(const QString& field);
     QString filterError() const { return workspacePage() == "events" ? events_.error() : table_.error(); }
     QString workspacePage() const { return currentNavigation().workspace; }
     QString eventFilterText() const { return currentNavigation().eventFilter; }
@@ -471,6 +473,7 @@ public:
     QVariantMap healthSummary() const { return healthSummary_; }
     QVariantMap radarView() const { return currentNavigation().radarView; }
     bool mapOverview() const;
+    QVariantList mapContexts() const { return mapContexts_; }
     QString mapContextCaption() const;
     QString mapCatalogWarning() const;
     bool canMapBack() const;
@@ -683,7 +686,7 @@ public:
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importFiles(const QStringList& paths);
-    Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false);
+    Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false, bool duplicate = false);
     Q_INVOKABLE bool activate(const QString& id);
     Q_INVOKABLE bool close(const QString& id);
     Q_INVOKABLE bool refresh(bool confirmedAuthentication = false);
@@ -703,13 +706,13 @@ signals:
     void sourceInspectionChanged();
     void sourceDraftChanged();
     void diagnosticsPresentationChanged();
-    void sessionRenamed(const QString& id);
     void sourcesPresentationChanged();
     /** Request scheduler admission; safe metadata only, using the owning client's clock. */
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
     void changed();
     void sessionWindowActionsReadyChanged();
     void catalogsChanged();
+    void mapContextsChanged();
     void resourcePresentationChanged();
     void fieldFiltersChanged();
     void filterPresetsChanged();
@@ -717,6 +720,8 @@ signals:
     void dashboardChanged();
     void inspectorRelatedChanged();
     void appearanceChanged();
+    void audioVolumesChanged();
+    void audioVolumesSaveFinished(bool success);
     void typographyChanged();
     void tableLayoutChanged();
     void resourceColumnsChanged();
@@ -766,15 +771,15 @@ private:
     bool yamlChecking_ = false;
     QString yamlCheckToken_;
     bool bindYamlApply();
-    enum class Leave { Resource, Source, Session, Context, Tab, Inspector, Window, Draft, Reload, History, MapHistory, Detach };
+    enum class Leave { Resource, Source, Session, Context, ContextTab, Tab, Inspector, Window, Draft, Reload, History, MapHistory, Detach };
     struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
     struct Navigation final {
         QString filter, mode;
         QMap<QString, QString> fields;
         int column = -1;
-        int limit = 256;
+        int limit = DefaultResourceDisplayLimit;
         Qt::SortOrder order = Qt::AscendingOrder;
-        QString inspected, page = "overview", workspace = "map";
+        QString inspected, terminalError, page = "overview", workspace = "map";
         QVariantMap radarView;
         QString eventFilter, portFilter;
         int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
@@ -791,6 +796,8 @@ private:
     struct LogPosition final { QString anchor; double offset = 0; bool follow = true, evicted = false; PodLogHistory::Removal removal = PodLogHistory::Removal::None; };
     const QString profile_;
     QStringList mapHistory_{QString{}};
+    QVariantList mapContexts_;
+    void refreshMapContexts(bool reorder);
     int mapHistoryIndex_ = 0;
     bool mapNavigating_ = false;
     QString pendingMapPreview_;
@@ -801,12 +808,16 @@ private:
     QString filterPickerField_, filterPickerSession_;
     QStringList filterPickerValues_;
     bool applyResourceFilters();
-    QMap<QString, TableViewStates> savedViews_, pendingViews_;
-    QFuture<Result<TableViewStates>> viewSaveFuture_;
-    QString viewSaveSession_;
-    QMap<QString, QString> viewStateErrors_;
-    bool viewsLoaded_ = false, viewSaving_ = false, viewClosePending_ = false, viewCloseDiscardApproved_ = false;
+    QMap<QString, TableViewStates>& savedViews_;
+    QMap<QString, TableViewStates>& pendingViews_;
+    QFuture<Result<TableViewStates>>& viewSaveFuture_;
+    QString& viewSaveContext_;
+    QMap<QString, QString>& viewStateErrors_;
+    bool& viewsLoaded_;
+    bool& viewSaving_;
+    bool viewClosePending_ = false, viewCloseDiscardApproved_ = false;
     bool restoreViewStates(const LoadedViewStates& states);
+    void applyContextViews(const QString& context, const TableViewStates& views, bool refresh = true);
     bool queueViewSave(const QString& table);
     bool dispatchViewSave();
     QString viewStateError() const;
@@ -833,16 +844,16 @@ private:
     Appearance appearance_;
     bool publishAppearance();
     QString sourceImportNotice_;
-    QString sourceImportError_, sessionManagementError_, sessionManagementNotice_;
+    QString sourceImportError_;
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
     QFuture<Result<SourceSnapshot>> sourceEditFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
-    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid = false, const QString& credentialContext = {});
+    enum class SourceReload { Configuration, MetadataOnly };
+    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid = false,
+        const QString& credentialContext = {}, SourceReload reload = SourceReload::Configuration);
     bool contextUsable(const QString& id) const;
     QVariantList sourceImportIssues_;
     SessionCatalog catalog_;
-    SessionCatalog selection_;
-    void refreshSessionSelection();
     ResourceClient& client_;
     ReleaseUpdates& releaseUpdates_;
     Alerts alerts_;
@@ -891,14 +902,14 @@ private:
     bool yamlFresh_ = false;
     QMap<QString, Navigation> navigation_;
     QString active_, error_, publishedSession_, credentialImportContext_;
-    QString settingsError_, sessionRenameError_;
+    QString settingsError_;
     ReadSettings settings_;
     bool settingsReady_ = false;
     bool busy_ = false;
     bool windowVisible_ = true;
     bool select(const SessionCatalog& catalog, bool local = true);
     bool resolve(const QString& id, bool retry = false);
-    bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, const QString& renamedSession = {}, const QString& managementNotice = {}, bool inWindow = false);
+    bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, bool inWindow = false, const QString& usedContext = {});
     bool publish();
     QString activeCluster(const QString& session = {}) const;
     bool publishLogs();

@@ -36,6 +36,7 @@ if [ -z "$OPENSSL_PREFIX" ] && command -v brew >/dev/null 2>&1; then
 fi
 PARENT=$(dirname -- "$OUTPUT")
 mkdir -p "$PARENT"
+PARENT=$(CDPATH='' cd -- "$PARENT" && pwd -P)
 WORK=$(mktemp -d "$PARENT/.podlord-package.XXXXXX")
 cleanup() { rm -rf "$WORK"; }
 trap cleanup 0

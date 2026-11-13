@@ -570,7 +570,7 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
                     return workspace.logsVisible() && model->rowCount() == 102 && current && current->isVisible();
                 })) return failed("show");
                 for (int drain = 0; drain < 2; ++drain) {
-                    QSignalSpy rendered(window,&QQuickWindow::frameSwapped); window->requestUpdate();
+                    QSignalSpy rendered(window,&QQuickWindow::frameSwapped); window->update();
                     if (rendered.isEmpty() && !rendered.wait(1000)) return failed("render");
                 }
                 const auto* current = item(window,"podLogEntries");
@@ -600,9 +600,9 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
         input->forceActiveFocus(); QTest::keySequence(window, QKeySequence::SelectAll); QTest::keyClick(window, Qt::Key_Backspace);
         for (const auto c : values.value(scenario)) QTest::keyClick(window, c.toLatin1());
         if (input->property("text").toString() != values.value(scenario)) return false;
-        QTest::qWait(30);
-        if (!click(window, "inlineSaveSync")) return false;
-        if (scenario.startsWith("invalid_")) return workspace.property("logLimitMb").toInt() == 5 && workspace.error().contains("positive whole");
+        if (scenario.startsWith("invalid_")) return waitFor([&] {
+            return workspace.property("logLimitMb").toInt() == 5 && workspace.error().contains("positive whole");
+        });
         if (!waitFor([&] { return !workspace.busy() && workspace.property("logLimitMb").toInt() == values.value(scenario).toInt(); })) return false;
         if (!click(window, "resourcesWorkspaceButton")) return false;
         if (scenario == "eviction") {

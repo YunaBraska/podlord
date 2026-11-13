@@ -247,10 +247,10 @@ void run(const QString& scenario) {
     if (scenario == "store_catalog_corrupt") {
         const auto retained = read(privatePath);
         write(keyPath, QByteArray(keys).replace("IMPORTEDKEY", "REPLACEMENT"));
-        write(profile + "/sessions.json", "{invalid session catalog");
+        write(profile + "/kubeconfigs/catalog.json", "{invalid context catalog");
         require(std::holds_alternative<Failure>(store.importAwsProfile(id, cfgPath, keyPath))
             && !retained.isEmpty() && read(privatePath) == retained,
-            "A corrupt session catalog did not preserve the previously imported AWS identity.");
+            "A corrupt context catalog did not preserve the previously imported AWS identity.");
         return;
     }
     if (scenario == "store_record_limit") {

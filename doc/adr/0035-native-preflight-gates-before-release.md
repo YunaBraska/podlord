@@ -124,6 +124,13 @@ broader UI/runtime code has many independently verified public behaviors but
 does not yet meet the former 90% aggregate branch threshold. This decision
 does not waive missing behavior, package, device, image, or performance evidence.
 
+The current positive context catalog and current-format tab store each enforce
+the same 90% branch floor. Context-use ownership/overview projection, asynchronous
+catalog loading, and terminal lexical/contrast rendering have independent 90%
+function-family checks. Required entrypoints and nonempty branch counts must be
+present. This makes the existing new-logic rule executable for the context-first
+implementation rather than allowing the overall percentage to hide these paths.
+
 Alarm construction and dispatch have a combined 90% function-family branch gate.
 It includes expiry admission, asynchronous result ownership checks, valid-result
 reuse and effect projection, including their nested callbacks. Required family

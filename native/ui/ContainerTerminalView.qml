@@ -12,7 +12,7 @@ ColumnLayout {
     property bool showShell: false
     property var terminal: workspace.containerTerminal
     readonly property bool running: terminal !== null && terminal.active
-    readonly property bool canConfigure: terminal === null || workspace.terminalConnection.path === workspace.inspectorPath
+    readonly property bool canConfigure: !running || workspace.terminalConnection.path === workspace.inspectorPath
     readonly property real controlHeight: root.Window.window ? root.Window.window.controlHeight : 44
     property alias inputSurface: surface
     signal closeRequested()
@@ -22,10 +22,11 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: 4
         Label {
+            id: terminalTarget
             objectName: "terminalTarget"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            visible: !root.inputPriority
+            visible: !root.inputPriority && (root.width >= 480 || root.running)
             text: workspace.terminalConnection.name || workspace.inspectorName
             font.bold: true
             elide: Text.ElideMiddle
@@ -39,7 +40,7 @@ ColumnLayout {
             id: container
             objectName: "terminalContainer"
             visible: !root.inputPriority && !root.running && root.canConfigure
-            Layout.preferredWidth: Math.min(160, root.width * 0.35)
+            Layout.preferredWidth: Math.min(terminalTarget.visible ? 160 : 200, root.width * (terminalTarget.visible ? 0.35 : 0.48))
             Layout.minimumWidth: 64
             Layout.minimumHeight: root.controlHeight
             model: workspace.terminalContainers
@@ -56,7 +57,7 @@ ColumnLayout {
         }
         Label {
             objectName: "terminalStatus"
-            visible: root.terminal !== null
+            visible: root.terminal !== null && (root.running || root.terminal.failed)
             text: root.terminal ? (root.terminal.connected ? "\u2713" : root.terminal.active ? "\u2026" : "!") : ""
             Accessible.name: root.terminal ? root.terminal.target + ": " + root.terminal.status : "Not connected"
             ToolTip.visible: statusHover.hovered
@@ -69,7 +70,8 @@ ColumnLayout {
             visible: !root.inputPriority && !root.running && root.canConfigure
             text: "Connect"
             enabled: workspace.canStartTerminal
-            Accessible.name: "Start interactive shell in selected container"
+            Accessible.name: text
+            Accessible.description: "Start interactive shell in selected container"
             onClicked: {
                 if (workspace.startContainerTerminal(container.currentText, shell.text)) Qt.callLater(function() { surface.forceActiveFocus() })
             }
@@ -107,11 +109,11 @@ ColumnLayout {
     Label {
         objectName: "terminalError"
         Layout.fillWidth: true
-        visible: root.terminal !== null && !root.terminal.active && text !== ""
-        text: root.terminal ? root.terminal.status : ""
+        visible: text !== ""
+        text: workspace.terminalError
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        color: workspace.appearanceColors.muted
+        color: root.terminal && !root.terminal.failed ? workspace.appearanceColors.muted : workspace.appearanceColors.danger
     }
     Flickable {
         id: keyScroll
@@ -144,7 +146,9 @@ ColumnLayout {
                     width: Math.max(44, implicitWidth)
                     height: 44
                     enabled: root.terminal !== null && root.terminal.connected
-                    Accessible.name: modelData.help
+                    Accessible.name: text
+                    Accessible.description: modelData.help
+                    onActiveFocusChanged: if (activeFocus) keyScroll.contentX = Math.max(0, Math.min(x, keyScroll.contentWidth - keyScroll.width))
                     ToolTip.visible: hovered || visualFocus
                     ToolTip.text: modelData.help
                     onClicked: if (root.terminal.key(modelData.key, modelData.input, Qt.NoModifier)) surface.forceActiveFocus()
@@ -175,6 +179,14 @@ ColumnLayout {
     }
     Menu {
         id: actions
+        width: Math.min(360, Math.max(0, root.width - 16))
+        MenuItem {
+            visible: !terminalTarget.visible && text !== ""
+            enabled: false
+            text: terminalTarget.text
+            implicitHeight: Math.max(root.controlHeight, contentItem.implicitHeight + 12)
+            contentItem: Label { text: terminalTarget.text; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.text }
+        }
         MenuItem { implicitHeight: root.controlHeight; objectName: "terminalCopy"; text: "Copy selection"; enabled: root.terminal !== null; onTriggered: surface.copySelection() }
         MenuItem { implicitHeight: root.controlHeight; objectName: "terminalPaste"; text: "Paste..."; enabled: root.terminal !== null && root.terminal.connected; onTriggered: pasteReview.open() }
         MenuItem { implicitHeight: root.controlHeight; objectName: "terminalFollow"; text: "Follow output"; enabled: root.terminal !== null; onTriggered: surface.followOutput() }
@@ -185,9 +197,9 @@ ColumnLayout {
         MenuItem {
             implicitHeight: root.controlHeight
             objectName: "terminalDisconnect"
-            text: root.terminal && !root.terminal.active ? "Dismiss" : "Disconnect"
-            enabled: root.terminal !== null
-            Accessible.description: "Disconnects this stream. Remote processes may continue; exit the shell first to stop it."
+            text: "Disconnect"
+            enabled: root.running
+            Accessible.description: "Remote processes may continue after disconnecting. Exit the shell first to stop it."
             ToolTip.visible: hovered || activeFocus
             ToolTip.text: Accessible.description
             onTriggered: workspace.stopContainerTerminal()
@@ -201,7 +213,7 @@ ColumnLayout {
         modal: true
         width: Math.min(520, root.width)
         contentItem: Label {
-            text: "Control-C interrupts; Escape reaches vi. Shift+Esc focuses controls. Shift + Page Up/Down scrolls history. Shift + drag selects when an application tracks the mouse."
+            text: "Ctrl+C interrupts. Escape goes to the running program.\nShift+Esc moves focus to the controls.\nShift+Page Up/Down scrolls history. Shift+drag selects text."
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
         }

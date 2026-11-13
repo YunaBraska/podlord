@@ -8760,3 +8760,744 @@ Evidence root: `/Users/yuna/.cache/podlord/connection-repro-20261109.zejIiv/orig
 Retained failures are diagnostic evidence, not hidden retries. The first delta suite passed 623/628. Four search expectations used removed sound terms and a translation check compared an older embedded catalog against a newer source file during a build transition. Corrected current-source checks pass. Earlier Android attempts exposed a literal media-session-format assumption and then a real background dispatch problem. The final test accepts the actual Android state format and proves the complete native background transition and Pause. The existing early-Activity-recreation gate remains unchanged in `--startup`; `--music` exercises the ordinary packaged application instead.
 
 Limitations: selected current tests do not replace the complete current-source CI suite, new-code coverage audit, physical-device/audibility review, iOS background lifecycle or whole-product image/performance qualification. The older qualified-candidate evidence keeps its own source boundary. No public release, Store submission, signing-policy change or new performance threshold is authorized by this record.
+
+### 2026-11-10: Compact workspace, alert settings and metric presentation
+
+- Focused native suite: 168/168 executions passed. Basic and Fusion covered
+  empty and loaded Map navigation, overlay controls, settings layouts, sync
+  autosave and its rejection cases, alert sound disclosure, header divider
+  resizing, metric visibility and Radar pulse. This was not a full suite run.
+- The real local Kubernetes health journey passed before the final table-header
+  drag-only change. The disposable K3s fixture applied 1,051 resources and
+  exercised Pending PVC and CrashLoop Pod highlights through the native UI.
+  The fixture container was removed. No user cluster was contacted.
+- One diagnostic image showed 1,842 discovered rows and 93 request starts in
+  the trailing minute during first load. This does not measure steady-state
+  polling or establish an improvement in time to first usable resource.
+- The current metric overlay was inspected from a rendered offscreen test:
+  short local time, rounded measured values, contrasting bars and no routine
+  stale suffix. This evidence does not cover every theme, every popup, native
+  mobile focus behavior or App Store acceptance.
+
+### 2026-11-10: Adaptive list scheduling and Apple UI review
+
+- The adaptive-sync controller case observes real loopback HTTP requests.
+  The first core Pod list precedes remaining group discovery. After identical
+  successful lists, the Widget list is omitted from a normal active pass,
+  becomes eligible again after its longer interval, and is not rediscovered
+  on cached reopen. Pod and Event reads retain their existing eligibility.
+  Request spacing, explicit inspector priority, coalescing, inactive-session
+  policy and already-sent reads are covered in the same targeted cohort.
+- The current desktop cohort passes 145 executions. The macOS Store-channel
+  build compiles and passes 30 selected UI/import executions. The two cohorts
+  are not the full suite and do not establish a signed Store package.
+- The local K3s health journey passes with 1,051 fixture objects and owned
+  container cleanup. That run includes the scheduler change and precedes
+  the final dashboard presentation change. It is not a startup latency or
+  steady-state request-count benchmark for a user's cluster.
+- The original audio catalog audit passes 40 decoded assets and 20 distinct
+  opening themes. Six arrangements have revised rhythm or instrumentation
+  without changing catalog IDs. The separate muted playback case passes.
+  Subjective approval of the revised soundtrack is not claimed.
+- The first iOS simulator journey reproduced a dense dashboard and layout
+  rearrangement warnings. The dashboard now keeps the resource/problem
+  summary short and displays only measurements or configured references.
+  The simulator screenshot matrix is separate from physical-device,
+  VoiceOver and App Review evidence.
+- The iOS 26.4 arm64 simulator matrix then passed with real K3s data:
+  19 themes, dark and light, and 18 current views (684 frames). The matrix
+  includes both maps, Connections with a real owned listener, and the
+  terminal ready form. It replaces captures of three removed Settings tabs
+  with the current six Settings sections. The simulator and its cluster were
+  removed.
+- That matrix revealed obsolete built-in alert instructions and a clipped
+  disconnected terminal caption. The follow-up passes five targeted alert
+  and metric UI executions and eight terminal/connection executions on
+  macOS Basic/Fusion. Those two final visual refinements were not included in
+  the completed iOS matrix. Physical-device, assistive-technology and
+  signed-package qualification remain separate.
+
+### 2026-11-11: Audio volume, targeted UI review and device preparation
+
+- Appearance now has independent music and alert volume sliders from 0 to
+  100 percent. Existing effective defaults remain 35 and 100 percent.
+  Changes apply immediately and save automatically. A coalesced 250 ms
+  preview uses an original bundled cue. Opening Settings does not play it.
+  Global mute and zero volume remain silent. The preview never starts or
+  resumes music. Existing preference records migrate without an implicit
+  write. Separate windows share saved values and separate profiles remain
+  isolated.
+- The current desktop cohort passes 146 executions covering preferences,
+  music and Settings layout. Two additional real-window executions pass
+  with an explicitly loaded local HTTP fixture. Changing volume propagates
+  to both windows without new Kubernetes requests or music autoplay. These
+  counts include repeated platform-style executions, not unique scenarios.
+- The quiet audio cohort passes 46 executions, including complete decoding
+  of all 40 original assets and selected muted audio-device checks. This
+  proves decoding and device behavior, not a human listening assessment.
+- Seven current ARM64 iOS simulator volume cases pass, covering dark and
+  light rendering, pointer input, repeated and interleaved changes, leaving
+  Settings during a write and failure rollback. Native accessibility role,
+  name, range and value assertions pass. Rendered images confirm contrasting
+  slider handles and aligned values.
+  The broader iOS matrix passes 684 frames using an owned real K3s fixture.
+  It precedes the final volume write-ordering fixes, which the seven focused
+  cases cover. The terminal matrix state is the ready form, not proof of
+  a live iOS shell. Both fixture clusters and owned simulators were removed.
+- The resource-table default is now 1,024 rows. Explicit saved limits remain
+  unchanged and legacy records retain their compatibility behavior. The
+  targeted UI cohort covers a 1,301-resource fixture, limit changes, filters,
+  sorting and restart persistence. The default-state optimistic-save conflict
+  found during that cohort is corrected.
+- Targeted review fixes preserve unsaved alert drafts across selection,
+  creation and enable changes, remove nested alert-editor scrolling and
+  improve touch targets. Table and filter long-press copy behavior is
+  covered. Terminal accessibility uses APIs available in pinned Qt 6.11.3.
+- Explicit arrow, Home/End and find-result navigation now updates the alert
+  editor through its existing unsaved-draft guard. Passive focus and model
+  updates do not replace the draft. Manual Radar preview remains available
+  with automatic focus disabled and for read-only built-in rules. Sound
+  preview remains available for an existing nonempty built-in action.
+- Rapid volume changes retain the latest value while a previous write runs.
+  Both sliders remain usable, queued values survive leaving Appearance and
+  failed persistence rolls back without an automatic retry loop. Reset
+  filters compares against the single current default of 1,024 rows.
+- Retired sound-search and duplicate-action UI expectations were removed
+  rather than restoring the deleted controls. Existing restore, language,
+  navigation and metric checks now exercise the approved current behavior.
+  Reference-export negative tests start from a valid reference export.
+- The two changed workflows pass actionlint. Eight package-collection cases
+  pass. Snapshot collection requests only the five desktop package artifacts
+  and avoids recompressing their archives. No hosted CI run or publication
+  was started for these local changes.
+- The standalone macOS package before the final header/help cleanup passes dependency, minimum-system,
+  ad-hoc-signature and package preflight checks. It measures 133,318,250 bytes
+  installed and 78,727,219 bytes as ZIP, above the advisory direct-download
+  size targets. The unsigned ARM64 iPhone production app builds with the
+  local Qt 6.11.3 device SDK. No valid development signing identity is
+  available for installation. The existing installed user app was not
+  replaced or restarted.
+- The current quiet official runner passes 34 preflight and 5,707 remaining
+  CTest executions, including 1,384 style-variant executions. These are not
+  5,741 distinct product behaviors. The main cohort takes 1,731.32 seconds.
+  LLVM reports 97.90% line and 86.54% branch coverage. The existing coverage
+  gates pass, including 107/118 branches (90.68%) for the new WindowHost
+  methods, 11/12 for file events and 20/22 for batch import. Its diagnostic
+  about 49 mismatched functions remains visible and needs separate review.
+  No report filter or threshold was changed to hide it. The profile writer
+  uses LLVM's four-file concurrent merge pool per binary instead of retaining
+  a full raw profile for every execution.
+- The final rendered review adds a failing ConfigMap regression for the empty
+  Metric header. The header now appears only when a row uses its trailing
+  readiness column. Redundant technical help for water animation, speed and
+  reduced motion is no longer shown in Appearance. All 70 affected inspector,
+  readiness, volume and density executions pass after these final QML-only
+  changes. The complete suite and coverage above precede this last cleanup.
+  Fresh narrow/dark and wide/light captures were inspected after it.
+- A freshly staged current macOS executable with the previously qualified
+  matching runtime passes the dependency/minimum-system check and strict deep
+  signature verification using the existing local test identity. Ten isolated
+  LaunchServices/AX startup journeys reach interactive Settings in 1,143.2 ms
+  on first launch and 442.1-461.2 ms on subsequent launches, within the existing
+  1,500/1,000 ms targets. This is a fresh staged-package launch, not a reboot-
+  cold operating-system measurement. No normal user profile is opened.
+- The latest complete native Cocoa/Metal foreground run is valid with no
+  foreground loss through the 60,001 ms idle phase. Filter, sort, session-tab
+  and inspector interaction p95 values are 27.75, 27.52, 24.89 and 28.96 ms.
+  Scroll frame-CPU p95 is 3.58 ms. Maximum resident memory is 256,491,520 bytes
+  and warm growth is 3,358,720 bytes, within the existing targets. Two
+  advisories remain: session-tab frame-CPU p95 is 21.72 ms against 20 ms and
+  idle process CPU is 2.382% of one core against 2%. The protocol assessment
+  is passed with targetsMet=false, not an all-targets pass. Values and the
+  advisory policy were not changed to accept the result.
+- Earlier focus-lost runs remain invalid and are not combined with the valid
+  run. Their original cause is not established. Failure-only diagnostics now
+  distinguish Qt focus from AppKit application/key-window state and whether
+  the test process is frontmost. They record no other app names, window titles
+  or contents and add no native-state query to successful measured frames.
+  A separate native negative control hides the owned test app using the
+  standard system shortcut. The log records inactive Qt and native state,
+  no key window and a different frontmost process, and the assessment rejects
+  the interrupted run. All owned test windows and processes exit through their
+  existing cleanup. The 28 fixture/report checks pass.
+- The C# and C++ ConfigMap/Secret values paths were compared. Twenty current
+  key/raw/decoded/preferred-copy, binary, empty-value, masking, repeat, scope
+  reset and keyboard scenarios pass in Basic and Fusion, 40 executions.
+  The existing inspector Values tab owns this behavior. No duplicate values
+  surface or changed Secret-reveal policy was introduced.
+- The current real local Kubernetes journey passes TLS/client certificates,
+  explicit exec authentication, multi-container logs, source-only editing,
+  local YAML checks, confirmed JSON Patch and reconciliation, masked Secret
+  round trips, PTY/vi/ANSI/resize/interrupts, deletion and UID replacement
+  protection in Basic and Fusion. The authentication driver now waits for
+  discovered resources before opening their navigation and checks the actual
+  inspector outcome rather than the signal of a recycled cell. Seven
+  related desktop authentication cases pass after that driver repair.
+  All owned clusters and their volumes are removed, including failed runs.
+- Release qualification remains incomplete. Current startup and complete
+  native foreground frame/idle measurements are recorded above, with the two
+  performance advisories retained.
+  Native accessibility assertions do not replace physical VoiceOver testing,
+  and iOS teardown emitted
+  accessibility-interface warnings. The unsigned iPhone build cannot be
+  installed without a development signing identity. iOS privacy-manifest
+  packaging and current hosted-platform qualification also remain open.
+  No App Store readiness is claimed. The installed user app was not replaced.
+
+### 2026-11-12: compact Settings, iOS privacy metadata and quiet accessibility
+
+- Diagnostics uses one localized section title. The fixed telemetry, Secret-value
+  masking and request-audit retention rows are removed. Runtime diagnostics and
+  the YAML limit remain available. No telemetry, masking, retention or request
+  policy implementation changed. Unused translations for the removed rows were
+  removed as well.
+- Appearance has a single water-speed slider. Zero disables waves while retaining
+  the required water background. Previously disabled preferences display zero.
+  Increasing that value re-enables waves, and zero/positive preferences survive
+  reload. The obsolete switch scenario is replaced by a legacy-preference
+  regression. Android's existing touch journey now targets the slider.
+- The focused Settings/water run passes 14/14 CTest executions in Basic and Fusion,
+  including dark/light water backgrounds and legacy disabled preferences. The
+  initial regression failed with the old switch still present.
+- The wider quiet regression run passes 191/191 CTest executions in 233.17 seconds.
+  It covers retained Settings controls, runtime/audit interactions, existing
+  accessibility assertions, Sources keyboard/copy/sort/find, Secret-value table
+  behavior, island interactions and water lifecycle. These are executions, not
+  191 newly introduced scenarios. Its privacy subtest contains 19 Node cases.
+- iOS device arm64 and simulator arm64 production builds both succeed. The final
+  built bundles pass the public privacy checker for the app, three static-SDK
+  resource bundles and five FFmpeg frameworks. Before integration, this checker
+  rejected the actual iPhone package because its root manifest was missing.
+  Source-built Qt Core, Qt Gui and OpenSSL declarations are retained separately.
+  FFmpeg declarations enter the SDK before embedding/signing. The iOS CI cache
+  includes their installation inputs, and CI checks the completed application.
+- The 19 privacy cases cover accepted/repeated checks, missing app/vendor/framework
+  manifests, malformed files, symlinks, unexpected tracking/collection/keys/reasons,
+  duplicate categories, invalid resource bundles, SDK version mismatch, missing
+  upstream metadata, incomplete frameworks and refusal to modify signed SDK
+  frameworks. Installer failure precedes metadata writes. Fixtures clean up their
+  own directories and do not alter SDK binaries or signing assets.
+- Four new quiet accessibility executions pass in Basic/Fusion. Shared table-cell
+  names now identify row, column and displayed value, rather than an ambiguous
+  repeated value alone. Sources do not expose credential contents. Secret cells
+  expose the masked projection, update after explicit reveal and return to the
+  masked projection after concealment. The new assertions failed before the fix.
+- VoiceOver was stopped at the user's request because it interrupted their work.
+  Its original off state, speech/sound settings, voice volume and welcome setting
+  were restored. The private test app and its owned Kubernetes fixture were closed.
+  No further foreground, spoken or system-VoiceOver tests were run in that quiet pass.
+  Native accessible-interface assertions are not a completed VoiceOver acceptance.
+- This closes the missing-manifest packaging item above, not App Store submission
+  approval. Device signing/installation, uninterrupted real VoiceOver acceptance
+  and the previously recorded release qualification gaps remain separate. No
+  release gate was relaxed, no Google setup resumed and no user profile replaced.
+
+### 2026-11-12: installed-package accessibility and lifecycle regressions
+
+- The subsequent authorized desktop pass used the stable locally signed native
+  package, isolated application homes and an owned local K3s API. Native file and
+  folder pickers both exposed an obsolete `sourcePath` reference after selection.
+  Their accepted URLs now enter the existing import methods directly. Both public
+  picker-handler regressions and both actual native picker journeys pass.
+- The alert table's `QStandardItemModel` did not supply the required shared
+  `resourceName` role. It now publishes the rule name on every cell and includes
+  name changes in its update comparison. Basic/Fusion tests and the installed
+  native accessibility tree contain the three existing default rules again.
+- Shared table accessibility names identify their row and column without repeating
+  identical values. Action cells name the current action, so a revealed Secret's
+  button is `alpha, Hide`, not the contradictory `alpha, Reveal, Hide`. The Secret
+  regression drives the public accessibility press action, preserves keyboard
+  focus, verifies reveal/conceal transitions and checks that neither action sends
+  an API request. The older filter-cell assertion now expects `alpha, Name`.
+- Request audit timestamps were formatted before entering the table's date
+  formatter. This produced empty dates and exposed a multiline internal ID as
+  the accessibility fallback. The model retains the original ISO timestamp and
+  numeric sort key, and the common table formatter supplies system-local display
+  text once. Native audit cells now expose values such as `12.11.26 17:49, Path,
+  /api`, not internal identifiers. Clipboard and sort behavior are retained.
+- New context windows now initialize their existing map history with the selected
+  session. The public new-context regression checks the full map, overview and
+  return navigation. A second installed-package failure was reproduced when
+  opening the active context in a new window from the overview. That overview has
+  no visible transport view to move. The host now binds the existing session in
+  the new view instead, without closing its connections. The new
+  `native.window.context_window_overview_Basic/Fusion` regressions pass.
+- A hidden Values tab reserved a visible gap between Links and Logs. Shared tabs
+  now retain an explicit width binding based on visible tabs, with a 44-pixel
+  minimum target. Existing wide/narrow inspector journeys in Basic and Fusion
+  check adjacent tab geometry. The current real Kubernetes render also shows
+  contiguous Overview/YAML/Events/Links/Logs/Terminal tabs.
+- Native keyboard journeys exercised resource search, a masked Secret inspector,
+  YAML viewing, multi-container logs, the real interactive shell, Connections,
+  source rename/import, alert drafts, all Settings sections and a separate window.
+  Search found the two fixture Secrets. The initial log selection was all
+  containers, and keyboard selection of beta produced its actual log stream.
+  The shell executed `VOICEOVER_PTY_SECOND_OK`. The earlier installed-package
+  forward returned the fixture HTTP body and released its socket on session close.
+  These are observed journeys, not an exhaustive current desktop picture matrix.
+- Actual system VoiceOver Item Chooser navigation selected Resources and activated
+  it, with its caption changing from unticked to ticked. It selected the inspector's
+  Values tab as item five of five, announced the masked username value and
+  activated its explicit Reveal action. The password remained masked. Captures
+  are retained locally under
+  `/Users/yuna/.cache/podlord/voiceover-evidence-20261112/`, including
+  `05-resources-chooser.png`, `06-resources-selected.png`,
+  `07-values-choice.png` and `12-username-masked.png`.
+- VoiceOver's separate caption window was captured directly, not the whole desktop
+  or unrelated windows. Temporary input drivers accepted only test commands and
+  required the exact private package identity/path. Existing event and System
+  Events permissions were preflighted without requesting new rights. No password,
+  AppleScript-control preference or security setting was changed.
+- Later VoiceOver navigation sometimes targeted Apple's WindowSharingSessionButton
+  rather than the inspector. A fresh native tree still exposed the product
+  controls. Source inspection did not establish a Qt startup/focus defect, so no
+  speculative global accessibility-activation workaround was added. Full
+  VoiceOver acceptance is not claimed from the successful subset.
+- The longer installed run also demonstrated that the five-minute detail expiry
+  clears a still-visible Values view. Manual detail refresh restores the rows.
+  The user approved renewal of visible read-only details through the existing
+  scheduler 30 seconds before expiry. The implementation retains the existing
+  timer, request admission and five-minute TTL. Lifecycle regressions cover
+  hidden, inactive and closed inspectors, local drafts, authentication rejection,
+  failed renewal, dispatched replies after close or draft entry, and withdrawing
+  a rate-delayed unsent read. A failing ingress regression also reproduced a
+  same-name resource replacement: a new Kubernetes UID must acquire fresh
+  details without waiting for the previous object's renewal deadline.
+  Hidden pages and YAML drafts withdraw unsent passive
+  work. Authentication still requires explicit user action.
+- The first complete run passed 5,730/5,750 executions in 1,743.21 seconds. Two
+  failures were outdated accessibility expectations. App-start failures used an
+  incompletely deployed development bundle. It was staged with the matching Qt
+  runtime and QML imports, plus the offscreen plugin for tests only. The unbundled
+  file-event injector additionally receives the SDK plugin/OpenSSL paths using
+  existing test-only configuration conventions. Its failure now reports bounded,
+  fixture-redacted stderr. Both the corrected file-event test and the deliberate
+  missing-TLS-runtime negative control pass. Production TLS checks were not relaxed.
+- The subsequent complete run finished with 5,750/5,752 passing checks. Both
+  failures are the new alert-table accessibility scenario, once per Qt style.
+  Diagnosis found a duplicated identity for actionable name cells. The shared
+  accessible-name expression now retains the column heading when its action
+  text is already the row identity. Both style cases pass after the correction.
+  This run predates automatic inspector renewal and is not a qualification of
+  that additional change. The initial 18 targeted inspector and alert-accessibility
+  checks pass. The subsequent instrumented Inspector lane passes all 140 checks,
+  including the UID-replacement regression. A further Secret-renewal case passes
+  separately: an explicitly revealed key remains visible while a previously
+  hidden key stays masked after its payload changes. Secret YAML remains masked.
+  This preserves SEC-002/SEC-005 and does not impose an unapproved reveal reset.
+  Six existing window-context scenarios also pass in the instrumented build.
+  Together they cover the unregistered-view guard and bring
+  `ResourceClient::watchInspector` to 12/12 covered branches (100 percent).
+  This is focused coverage,
+  not an overall application coverage result. Artifacts are under
+  `~/.cache/podlord/inspector-renewal-coverage-20261112.AGyqbf/`.
+  A subsequent complete run passed 5,761/5,761 checks in 1,746.57 seconds before
+  the UID correction and final two scenarios. The final code then passed all
+  5,763 CTest executions in 907.93 seconds with 12 workers on the 18-logical-CPU,
+  64-GiB host. The earlier run used six workers. These are test-run durations,
+  not application performance measurements. Style variants are repeated
+  configurations, not additional product features. Final log:
+  `/tmp/podlord-voiceover-final-code-full-suite-20261112.log`.
+- Current iPhone arm64 and simulator arm64 production targets both build and pass
+  all nine packaged privacy-declaration checks after these UI/window changes.
+  The 19 privacy-checker/installer Node regressions also pass.
+- The current maintained `native-window-e2e` lane passes against real local
+  Kubernetes with 1,051 defined fixture resources. It verifies retained shell
+  environment across the window transfer, independent forwards, and closure
+  isolation. Evidence is under
+  `/Users/yuna/.cache/podlord/audio-volume-review-20261111/e2e/visual-evidence/`
+  with prefix `podlord-visual-run-nibrmr`. The test removes its container, volumes
+  and profiles, and the owned-container remainder is empty.
+- Both separate installed-package fixture runs exited their cleanup with status
+  zero. Their containers, profiles and kubeconfig copies are removed. The last
+  desktop pass was interrupted by the screen lock before its final native replay.
+  After unlocking, VoiceOver was confirmed off, speech mute was restored off,
+  and its welcome-dialog preference was restored on. VoiceOver Utility was
+  closed and System Settings returned to General. No user profile was opened
+  or replaced. Google remains paused.
+- Both current iOS simulator and device app targets build successfully. Each
+  packaged target passes the nine-manifest check. All 19 installer/checker
+  regressions pass. The declarations were cross-checked against
+  [Apple's required-reason API policy](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
+  and [approved categories and reasons](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype).
+  Local checks do not substitute for App Store Connect validation.
+- A fresh arm64 macOS release package (`BUILD_TESTING=OFF`) passes dependency and
+  ad-hoc signature checks. ZIP: 78,785,385 bytes. Installed regular files:
+  133,400,986 bytes. Both exceed the documented advisory size targets.
+  Final-code evidence: `~/.cache/podlord/voiceover-package-final-20261112/`.
+  The stable private test app uses that release executable and retains its
+  existing test-signing identity. No normal user app is replaced.
+- The final-code local Kubernetes window/terminal/forward lane passes with 1,051
+  defined fixture resources. The owned container and profiles are cleaned on exit.
+  Current evidence prefix:
+  `~/.cache/podlord/audio-volume-review-20261111/e2e/visual-evidence/podlord-visual-run-vohtrm`.
+  The separate clean-profile packaged CLI check reports `Podlord Native 0.1.0`
+  without SDK/plugin path environment overrides.
+- Current hosted-platform qualification, device signing/installation, fresh native
+  desktop picture/performance evidence and changed-logic coverage are not supplied
+  by this accessibility pass. Existing release gaps and gates remain in force.
+
+### 2026-11-13: visible VoiceOver repeat remains unaccepted
+
+- Used the existing signed private package and a fresh disposable profile against
+  the owned local Kubernetes fixture. Native file selection, context opening and
+  loading succeeded. Keyboard Tab moved native accessibility focus from Map to
+  Resources. These observations do not qualify the VoiceOver navigation itself.
+- The actual VoiceOver caption did not reliably follow the app's focused control.
+  Captures showed `WindowSharingSessionButton` and later `Podlord, has new,
+  dialogue`. The failure occurred with speech muted and unmuted, System Events
+  input, the existing HID-event driver and app-targeted key input. The configured
+  modifier was Control-Option or Caps Lock. No new input/automation permission
+  was requested. Secure event input was inactive when checked afterward.
+- A forced full native accessibility snapshot updated the resource controls
+  where earlier differential snapshots still showed the loading state. This is
+  an observation, not proof that the defect belongs to Qt or to the UI tool.
+  No speculative product or Qt patch was applied.
+- Caption/focus captures are retained under
+  `~/.cache/podlord/voiceover-evidence-20261113/`. The test fixture was
+  `/tmp/podlord-voiceover-full-20261112.Qgw9hY`; its cleanup reports exit status 0.
+  VoiceOver was confirmed off, speech mute restored off, welcome dialogue restored
+  on and AppleScript control left off. VoiceOver Utility and the private app were
+  confirmed stopped. System Settings was returned to General.
+- Prepared a minimal standard-AppKit comparison app at
+  `~/.cache/podlord/voiceover-baseline-20261113.CIMUx3/VoiceOver Baseline.app`.
+  It contains a button, text field, checkbox and activation counter, with no
+  networking, credential or file-access flow. It compiles and passes local
+  test-identity signing verification. It has not been launched or runtime-tested.
+  Its purpose is to distinguish an input/caption infrastructure failure from a
+  Qt-specific accessibility failure before requesting another full app walkthrough.
+- Global VoiceOver acceptance remains open. The prior final-code automated suite,
+  Kubernetes E2E and package evidence remain separate evidence, not a substitute
+  for this unsuccessful visible check.
+
+### 2026-11-13: current macOS startup and foreground performance evidence
+
+- Measured a fresh copy of the current release package, signed with the existing
+  local test identity. The production dependency check passes. The startup driver
+  creates and removes a separate disposable profile for each of ten samples.
+  Settings interaction: first 1,093.2 ms, repeat maximum 471.1 ms, overall p50
+  458.0 ms. Both existing targets (first 1,500 ms, repeat 1,000 ms) are met.
+  This is packaged Settings interaction, not isolated cached-resource render time.
+- Current artifacts are under
+  `~/.cache/podlord/macos-final-metrics-20261113.DHvIJc/`, including `startup.log`,
+  `startup-assessment.json`, binary checksums and dependency/signing logs.
+- Four foreground performance attempts did not complete their required protocol.
+  One collected all initial action/frame classes before losing activation during
+  warm-up. Other attempts failed visibility/activation readiness. A one-time
+  explicit activation did not produce a complete run. The directly controlled
+  attempt could not bind through native accessibility and later lost activation.
+  These attempts are not combined into a passing release report.
+- The first partial run reports a tab frame-CPU p95 of 21.379125 ms against the
+  unchanged 20-ms advisory. Other initial interaction p95 values are 23.87-28.62
+  ms, and scroll frame-CPU p95 is 3.648084 ms against 8 ms. These are individual
+  partial-run observations, not complete memory/idle qualification.
+- `incomplete-run-summary.json` records each failed boundary separately. Beeper
+  was frontmost when inspected after a failed run. This does not establish why
+  activation was lost. After the user confirmed an uninterrupted foreground slot,
+  `foreground-confirmed` completed the full protocol successfully. VoiceOver
+  remains excluded from this measurement work, with no new VoiceOver setting change.
+- Preparation removed only unused ODBC/PostgreSQL/Mimer plugins from the owned
+  measurement bundle, matching the existing product package policy. No product
+  code, threshold, result validator or focus-validity guard was changed. The
+  failed attempt to apply the production bundle checker to the differently named
+  measurement executable is retained as setup evidence, not a product defect.
+- Final assessment: `passed: true`, `diagnosticOnly: false`, boundary
+  `foreground-cocoa`. The renderer is Metal on Apple M5 Max, with a 1440x920
+  logical window and 2880x1840 backing surface. The profile contains 5,000
+  resources, three sessions and the normal 1,024-row presentation limit.
+  Every action class retains 30 samples after five warmups. Frame-clock
+  calibration and all measurement-validity checks pass.
+
+| Action | Interaction p95 (ms) | Frame-CPU p95 (ms) | Per-action maximum frame-CPU p95 (ms) | Frame-CPU advisory (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Filter | 29.810250 | 17.585833 | 18.958916 | 20 |
+| Sort | 29.501000 | 18.446666 | 19.671708 | 20 |
+| Cached session tab | 28.605500 | 22.632792 | 24.230709 | 20 |
+| Cached inspector | 29.507375 | 18.852124 | 19.569833 | 20 |
+| Scroll | Not a discrete-action metric | 2.813292 | 3.279166 | 8 |
+
+- All four interaction budgets pass. The tab frame-CPU advisory is exceeded.
+  Frame-CPU percentiles are measured combined GUI/render CPU, not a sum of
+  independently calculated component percentiles.
+- Peak reported process memory: 323,190,784 bytes against the unchanged
+  310,000,000-byte advisory. Warm growth: 3,588,096 bytes against 5,000,000 bytes,
+  which passes. The complete 60,002-ms nonsync idle interval remains foreground,
+  does not time out and reports 2.2684477184 percent of one CPU core against the
+  unchanged 2-percent advisory. One in-flight request is excluded by the existing
+  nonsync-idle protocol.
+- Overall `targetsMet` is false, with exactly three advisories: cached-session-tab
+  frame CPU, peak memory and idle CPU. These are disclosed budget misses under
+  the existing advisory policy. No thresholds or validators were changed, and
+  this result is not described as meeting every optimization target.
+- Complete raw records and assessment are under `foreground-confirmed/`.
+  `final-metrics-summary.json` combines the successful startup and current
+  foreground evidence. The startup and native performance evidence gaps are
+  closed for this measured macOS artifact. This does not qualify VoiceOver or
+  grant App Store signing/submission approval.
+
+## 2026-11-13: Context map controls and pointer details
+
+Implemented independently of the still-pending saved-session migration:
+
+- The map caption exposes separate context-name and cluster-name copy actions by
+  right-click, touch hold and keyboard activation. No caption splitting or API
+  request is involved.
+- The map overview control is icon-only. Repeating the Map action returns to all
+  contexts without closing the current tab.
+- The context-card menu includes rename and local removal. Removal reuses one
+  confirmation dialog from both Map and Sources. Cancel retains the context,
+  confirm removes its owned tabs, and the original kubeconfig is unchanged.
+- Wide-screen pointer details follow the resource, stay inside the window and do
+  not cover its point or reserve layout space. Constrained and keyboard layouts
+  retain the existing reader. The close action preserves selection and camera.
+- Copy actions and removal copy are present in all 21 concrete language catalogs.
+
+The native build passed. The final scoped CTest run passed 210/210 executions in
+108.51 seconds, including both Basic and Fusion styles, touch hold, empty/map
+navigation, preview lifecycle, compact layouts and language tests. Four earlier
+radar-close failures exposed pointer placement being applied to the keyboard
+reader. Restricting nearby placement to the mouse target fixed them without
+loosening assertions. New geometry assertions also verify proximity, containment,
+point visibility and unchanged drawing bounds. Headless screenshots were inspected.
+
+The original 20-track music catalog was rendered with revised chord articulation,
+phrase-level A/B themes and groove variation. Track IDs, authored scores, shuffle,
+Play/Pause and alert cues remain unchanged. The integrated 19/19 music tests
+passed, including muted playback and volume controls. All 20 AAC files decoded
+with the system decoder without opening an audio output device. The audio audit
+reports 2367.893 seconds, 44308060 encoded bytes and peaks below 0.421. This proves
+decodability and lifecycle, not subjective acceptance of the musical style.
+
+Local evidence: `/Users/yuna/.cache/podlord/context-controls-20261113/`, including
+final build/test logs, screenshots, music audit, render plan and scratch cleanup.
+No production context or normal user profile was used. The existing manually
+opened application was not replaced or closed. The task-owned worker is closed.
+This scoped proof is not a new package, mobile, performance or release acceptance.
+The subsequent confirmed migration uses the most recently used context settings
+and retains a byte-exact local metadata backup, as recorded in ADR 0027. Its
+implementation and evidence are tracked below rather than inferred from this
+earlier map-controls run.
+
+## 2026-11-13: Context-owned settings and legacy metadata migration
+
+Historical evidence only. The subsequent confirmed decision below supersedes
+native metadata adoption, migration backups and the removed-context denylist.
+None of those paths remains part of the current native implementation.
+
+The confirmed model replaces the separate saved-session chooser and manager with
+imported contexts and actual tabs. Context aliases label all corresponding tabs.
+Filters, Problems/Activity mode, limits and sort order share one context-owned
+state across windows. Inspector selection, camera, drafts, terminals and port
+forwards remain tab-owned. Explicit new-tab/window actions create a distinct tab.
+Opening an existing context normally reuses its open tab.
+
+ADR 0027 owns the accepted migration. Before adoption, one private, atomic backup
+preserves the original session catalog and legacy view bytes. The greatest usage
+timestamp wins per context, not usage count. Missing winning preferences mean
+defaults rather than another session's older nonempty state. Namespace request
+restrictions survive migration. Version 4 of the internal catalog stores only
+open tab IDs and context references. Version 7 context preferences retain all six
+table schemas. Old names and usage histories are rollback metadata, not another
+live saved-session model. Kubeconfigs and imported credentials are not copied.
+
+The application runtime now owns one coalescing preference writer. Two windows
+cannot overwrite one another through independently stale writer caches. Removing
+a context clears its preference record and excludes late recreation. Corrupt
+settings remain scoped to the affected context. If legacy adoption fails, the
+source-removal inventory remains available while activation stays blocked, so a
+confirmed removal can recover without an unscoped request or automatic login.
+A fresh, quiescent closed-tab cache can move to a new tab of the same identity
+and namespace scope. Already-sent requests keep their original owner. Cache TTL,
+expiration, Secret masking and connection shutdown are unchanged.
+
+### Executable evidence
+
+- `context-settings-20261113/logs/podlord-context-settings-baseline-20261113.log`
+  retains the failing shared-window regression before implementation. The
+  recovery and cache debug logs retain the independently reproduced migration
+  removal-inventory and missing cache-publication failures before their fixes.
+- The final focused run passes 45/45 executions in 17.44 seconds. It includes 37
+  context-setting cases plus UI/style variants. Winner selection, exact backup,
+  retry, malformed/future/oversized input, real file locks, optimistic conflict,
+  namespace wire paths, restart, two windows, deletion, symlinks, cache reuse,
+  identity isolation and expiration are covered through public entrypoints.
+- The complete native run executes 5,772 registered cases in 1,129.89 seconds,
+  including style variants rather than 5,772 independent features. It passes
+  5,769 and fails three. The log-scroll test used an idle-window repaint request
+  that did not guarantee its awaited frame. It now explicitly requests a Quick
+  update. The radar idle test now waits for observed frame quiescence before
+  its unchanged 250-ms observation. The unmodified 5,000-resource metric case
+  also failed during unusually slow host/font startup. All three cases then
+  pass three consecutive targeted executions. This is a full run plus recorded
+  follow-ups, not a claim that one full invocation was entirely green. No product
+  limit, functional timeout or release threshold was relaxed. The metric case's
+  load-sensitive failure remains a test-reliability risk.
+- The real local Kubernetes window lane passes with 1,051 defined resources.
+  Live terminal state and independent forwards survive window transfer and close
+  under the correct tab owner. Evidence prefix is
+  `audio-volume-review-20261111/e2e/visual-evidence/podlord-visual-run-fn1uhr`.
+  The owned cluster and profiles are removed. A separate successful Docker query
+  confirms that exact owned container is absent. No production context is used.
+- Android ARM64, ARM64 iOS simulator and iOS device native builds pass. The Android
+  build uses the existing verified SDK rather than the stale unpatched prefix.
+  The trimmed simulator SDK received existing privacy declarations only after
+  byte-for-byte equality checks of the affected OpenSSL/FFmpeg binaries. Explicit
+  empty defaults fix an Android compiler diagnostic without changing state.
+  These are compilation proofs, not a new device-installation or mobile journey.
+- The fresh ARM64 macOS package passes dependency and local ad-hoc signing
+  preflight. Download: 78,585,643 bytes. Installed: 133,220,538 bytes. Existing
+  50/100-MB size advisories remain reported, not silently raised. Artifact:
+  `~/.cache/podlord/context-settings-package-20261113/podlord-native.zip`.
+- `context-settings-20261113/images/` retains rendered desktop/tab and 390-pixel
+  context-chooser states. The phone-sized new-tab menu has a complete 44-pixel
+  target inside the window. Context aliasing updates both tab labels without
+  changing IDs. The standalone saved-session manager is absent. Desktop images
+  use offscreen Basic/Fusion and do not pretend to be native mobile captures.
+
+All current logs and selected screenshots are retained under
+`~/.cache/podlord/context-settings-20261113/`. The normal running application and
+its profile were neither replaced nor migrated during these tests. Current
+changed-logic coverage, hosted platform CI,
+native foreground performance and global VoiceOver acceptance are not supplied
+by this migration pass. This evidence closes the context-settings implementation
+increment, not the complete App Store release.
+
+## 2026-11-13: Positive context catalog, connection actions and terminal feedback
+
+ADR 0027 and the updated operational specification define the current authority.
+`kubeconfigs/catalog.json` lists imported contexts positively. Owned YAML copies,
+old native metadata and directory contents cannot restore membership. A missing
+catalog is empty. Malformed or symlinked catalogs fail explicitly without
+overwriting their contents. There is no C++ adoption, backup migration or
+removed-context denylist. Existing source copies and credentials stay on disk.
+Their contexts require an explicit import before they are available again.
+
+`tabs.json` contains actual open tab IDs and context references only. Saved
+session names, numbering, ranking, closed presets and migration commands are
+removed. Context preferences remain shared. Selection, camera, terminals and
+forwards remain owned by their actual tabs. Existing C# import support is not
+replaced with another native compatibility layer.
+
+### Observable behavior and regressions
+
+- Source listing, reading, editing, connection lookup and preference writes use
+  positive membership. Orphaned source files and removed contexts cannot regain
+  access through old tabs. Explicit reimport can register a context again.
+- Removal commits membership before dependent cleanup. A reproduced tab-file
+  write failure no longer skips private credential and preference cleanup.
+  The removal stays authoritative even when cleanup reports an error.
+- Public window journeys cover shared context settings, isolated contexts,
+  close/reopen, unchanged-cache reuse without new requests, malformed current
+  formats and absence of old native adoption. Fifty focused catalog/settings
+  executions pass before the complete suite.
+- Connections expose a stop X on each row. Endpoint opening and copying remain
+  available from the row menu. The old selection-dependent global action bar is
+  gone. Desktop, touch-target, large-text, keyboard accessibility and endpoint
+  tooltip cases pass in the existing Basic/Fusion lanes.
+- Failed terminal configuration is local to the inspected resource. Another Pod
+  can connect immediately. Resource change and Inspector close clear the local
+  failure without a Dismiss action. Active shells retain their tab ownership.
+- A reproduced visible-feedback regression now has coverage: validation errors
+  appear in the terminal surface, while a successful connection does not add a
+  redundant body message. Successful process exit is not a failure icon. The
+  machine-readable terminal outcome distinguishes success from failure.
+- Display-only terminal hints cover strings, simple variables and standalone
+  error/warning words. Single quotes suppress variable hints. Remote ANSI colors,
+  selection and copied bytes are preserved. Alternate-screen programs and
+  scrollback retain their original terminal rendering without lexical hints.
+- The UI review also fixes stale preset input after changing context and removes
+  a duplicate settings error display. Suggestions requiring new product choices
+  were not silently implemented.
+
+### Current executed evidence
+
+Evidence root: `~/.cache/podlord/context-connections-20261113/`.
+
+- `full-suite.log`: 5,632/5,632 CTest executions pass in 912.59 seconds. This
+  includes 1,381 style-variant executions, not 5,632 independent features.
+  Obsolete saved-session and generated-source compatibility tests are removed
+  together with the behaviors they asserted. Product limits are unchanged.
+- `kubernetes.log`: real local Kubernetes shell, vi, controls, interrupt,
+  touch interrupt, Connections reopening and window transfer with isolated
+  forwards pass. No production context is used.
+- `kubernetes-forward.log`: real Pod and Service forwards, context removal and
+  draft handling pass. Both owned stacks, `podlord-visual-run-xah9en` and
+  `podlord-visual-run-bkcfsz`, are cleaned up. A subsequent Docker query confirms
+  no matching containers or networks remain. No owned test process remains.
+- `android-build.log` and `ios-build.log`: Android ARM64 and ARM64 iOS simulator
+  native app builds pass with the existing verified SDKs. These are compilation
+  proofs, not fresh APK installation, physical-device or mobile journey proofs.
+- `images/`: reviewed desktop and touch-sized connection rows, scoped terminal
+  failure and dark/light terminal color evidence. These captures use offscreen
+  Qt software rendering. The light-color case changes the terminal palette,
+  not the entire application theme. No fresh C#/C++ image parity is inferred.
+- `syntax_timing.log`: same-content raster paint, five warmups and 50 samples.
+  Live hints measure p50 1.773 ms / p95 2.491 ms. ANSI-only alternate-screen
+  rendering measures p50 1.630 ms / p95 1.654 ms. The measured p95 hint cost is
+  0.837 ms. This is a software raster comparison, not native frame-CPU evidence.
+- `package.log`: the fresh standalone ARM64 macOS package passes dependency and
+  local ad-hoc signing preflight. ZIP: 78,563,224 bytes. Installed: 133,155,066
+  bytes. The 50/100-MB advisories remain visible. Artifact:
+  `~/.cache/podlord/context-connections-20261113/package/podlord-native.zip`.
+
+The normal manual-review application and profile remain untouched. The current
+increment has no new changed-logic coverage audit, hosted Windows/Linux run,
+foreground Metal/startup/RSS measurement, physical-device acceptance or manual
+VoiceOver proof. It therefore does not establish complete release readiness.
+
+## 2026-11-13: Context overview usage order
+
+CTX-009 through CTX-011 and ADR 0027 own the confirmed behavior. Context cards
+rank by explicit use count, then most recent use. Each visible overview freezes
+the order of its surviving cards. Reopening it applies the current ranking,
+including use in another window and returning after the active tab is closed.
+Actual tab order is unchanged. Only a count and UTC last-use time are retained
+per context in the existing positive catalog. There is no separate history file,
+saved-session adoption or C++ migration. Removal prunes both persisted and
+in-memory usage, including pending completions.
+
+### Executed acceptance evidence
+
+`native/tests/context_usage_test.cpp` drives real imports, window navigation,
+tabs and the rendered overview model. Its local HTTP fixture represents only
+the external Kubernetes API, not owned product behavior.
+
+- Frequency and recency determine the expected visible card order.
+- Repeated selection of the displayed context does not increase its rank.
+  Explicit tab switching does, without rearranging tabs.
+- Use in a second window does not move cards in the first visible overview.
+  Reopening that overview applies the new order.
+- Restart retains rank without contacting a cluster or counting restored tabs.
+- Removal and explicit reimport reset the removed context's rank, both within
+  the running app and after restart. Usage accounting itself changes neither
+  source content nor credentials. Existing removal cleanup remains in force.
+- A locked catalog preserves existing data, reports the failed save and retains
+  unsaved increments for the next explicit use. Fractional counts, invalid times
+  and references to absent members fail without overwriting the file.
+- An invalid open action does not affect rank. Reopening the overview itself
+  starts no cluster request.
+
+The original frequency regression fails before implementation. Additional
+red-to-green tests reproduce stale in-memory rank after removal/reimport and
+the missing refresh when closing back to the overview. The test harness also
+corrects its temporary catalog lifetime and observes the actual error signal
+instead of assuming a transient error remains indefinitely visible.
+
+Final affected run: 812/812 CTest executions in 122.27 seconds, including the
+30 new non-scale executions and existing import, source, preference, window and
+map cases. Two separate scale executions also pass. The 32 new executions cover
+16 scenarios in Basic and Fusion, not 32 separate features. No release limit or
+watchdog is changed. These are targeted checks, not a new complete-suite run.
+
+With 1,000 imported contexts, five warmups and 30 samples measure the public
+overview-opening action at p50 8.827 ms / p95 14.004 ms in Basic and p50 8.821 ms /
+p95 13.971 ms in Fusion. All iterations make zero cluster requests and preserve
+the same tied ordering. This measures the action and synchronous model updates,
+not first-frame latency or a native renderer performance gate.
+
+Evidence: `~/.cache/podlord/context-usage-20261113/` contains `affected.log`,
+`scale.log`, before-fix failures and reviewed `images/frequency.png` and
+`images/scale_1000.png`. The images are offscreen software-rendered Qt windows.
+They show card ordering and unchanged tab placement, not a new mobile or theme
+matrix. All owned test processes have exited. Audio stays disabled and the
+normal running app/profile remain untouched.

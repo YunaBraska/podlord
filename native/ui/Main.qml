@@ -24,13 +24,18 @@ ApplicationWindow {
         terminalDialog.open()
     }
     ContainerTerminalDialog { id: terminalDialog; hostWindow: window }
+    ContextRemovalDialog {}
     function focusSearchIfOpen() {
         if (!window.searchOpen || !searchToggle.enabled) return
         if (workspace.workspacePage === "ports") portsView.item.focusSearch()
         else if (workspace.workspacePage === "events") eventFilterInput.forceActiveFocus()
         else resourceFilterInput.forceActiveFocus()
     }
-    readonly property var mapContexts: workspace.contexts.filter(entry => entry.current)
+    readonly property bool hasResources: workspace.currentSession !== "" && (workspace.totalResourceCount > 0 || ["resources", "dashboard"].includes(workspace.workspacePage))
+    readonly property bool hasEvents: workspace.currentSession !== "" && (workspace.totalEventCount > 0 || workspace.workspacePage === "events")
+    readonly property bool hasConnections: workspace.currentSession !== "" && (workspace.portForwards.length > 0 || !!workspace.terminalConnection.active || workspace.workspacePage === "ports")
+    readonly property real contentRightMargin: sidebarHost.visible ? sidebarHost.width + 6 : 0
+    readonly property var mapContexts: workspace.mapContexts
     readonly property bool wideLayout: width >= 900
     readonly property bool compactLandscape: width >= 600 && height < 600 && width > height
     readonly property bool touchLayout: !wideLayout || compactLandscape
@@ -60,17 +65,20 @@ ApplicationWindow {
         Rectangle { anchors.fill: parent; visible: configDrop.containsDrag; color: "transparent"; border.width: 2; border.color: workspace.appearanceColors.accent }
     }
     property string ociImportConfigPath: ""
-    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: workspace.uiText["nav.savedViews"], header: true}]
-        .concat(workspace.sessions.map(entry => ({id: entry.id, name: entry.name, context: false})),
-            [{name: workspace.uiText["nav.contexts"], header: true}],
-            workspace.contexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
-    Action { id: mapCommand; text: "Open Map"; checkable: true; checked: workspace.workspacePage === "map"; onTriggered: workspace.setWorkspacePage("map") }
-    Action { id: resourcesCommand; enabled: workspace.currentSession !== ""; text: "Open Resources"; checkable: true; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard"; onTriggered: workspace.setWorkspacePage("resources") }
-    Action { id: eventsCommand; enabled: workspace.currentSession !== ""; text: "Open Events"; checkable: true; checked: workspace.workspacePage === "events"; onTriggered: workspace.setWorkspacePage("events") }
+    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: workspace.uiText["nav.contexts"], header: true}]
+        .concat(window.mapContexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
+    function editTabContextAlias(tabId) {
+        const contextId = workspace.sessionConfiguration(tabId).contextId
+        const context = workspace.contexts.find(entry => entry.id === contextId)
+        if (context) sourceAliasDialog.edit(context)
+    }
+    Action { id: mapCommand; text: "Open Map"; checkable: true; checked: workspace.workspacePage === "map"; onTriggered: workspace.workspacePage === "map" && !workspace.mapOverview ? workspace.showMapOverview() : workspace.setWorkspacePage("map") }
+    Action { id: resourcesCommand; enabled: window.hasResources; text: "Open Resources"; checkable: true; checked: workspace.workspacePage === "resources" || workspace.workspacePage === "dashboard"; onTriggered: workspace.setWorkspacePage("resources") }
+    Action { id: eventsCommand; enabled: window.hasEvents; text: "Open Events"; checkable: true; checked: workspace.workspacePage === "events"; onTriggered: workspace.setWorkspacePage("events") }
     Action { id: sourcesCommand; text: "Open Sources Settings"; onTriggered: { if (workspace.setWorkspacePage("settings")) settingsLoader.item.section = "sources" } }
     Action { id: portCommand; text: "Open Port Forwards"; enabled: workspace.canPortForward; onTriggered: workspace.preparePortForward() }
     Action { id: settingsCommand; text: "Open Settings"; checkable: true; checked: workspace.workspacePage === "settings" || workspace.workspacePage === "alerts"; onTriggered: workspace.setWorkspacePage("settings") }
-    Action { id: connectionsCommand; enabled: workspace.currentSession !== ""; text: workspace.uiText["nav.ports"]; checkable: true; checked: workspace.workspacePage === "ports"; onTriggered: workspace.setWorkspacePage("ports") }
+    Action { id: connectionsCommand; enabled: window.hasConnections; text: workspace.uiText["nav.ports"]; checkable: true; checked: workspace.workspacePage === "ports"; onTriggered: workspace.setWorkspacePage("ports") }
     ActionGroup {
         id: workspaceNavigationActions
         actions: [mapCommand, resourcesCommand, eventsCommand, connectionsCommand, settingsCommand]
@@ -101,8 +109,8 @@ ApplicationWindow {
     CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand] }
     Shortcut { sequences: ["Ctrl+K", "Meta+K"]; onActivated: commands.open() }
     Shortcut { sequences: [StandardKey.Find]; enabled: workspace.workspacePage === "map" && !workspace.mapOverview; onActivated: { window.searchOpen = true; Qt.callLater(window.focusSearchIfOpen) } }
-    Shortcut { sequences: [StandardKey.Back]; enabled: workspace.workspacePage === "map" ? workspace.canMapBack : workspace.canInspectBack; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(-1) : workspace.navigateInspector(-1) }
-    Shortcut { sequences: [StandardKey.Forward]; enabled: workspace.workspacePage === "map" ? workspace.canMapForward : workspace.canInspectForward; onActivated: workspace.workspacePage === "map" ? workspace.navigateMap(1) : workspace.navigateInspector(1) }
+    Shortcut { sequences: [StandardKey.Back]; enabled: workspace.workspacePage !== "map" && workspace.canInspectBack; onActivated: workspace.navigateInspector(-1) }
+    Shortcut { sequences: [StandardKey.Forward]; enabled: workspace.workspacePage !== "map" && workspace.canInspectForward; onActivated: workspace.navigateInspector(1) }
     onVisibilityChanged: function(visibility) { workspace.setWindowVisible(visibility !== Window.Hidden && visibility !== Window.Minimized) }
     Component.onCompleted: workspace.attachWindow(window)
     onActiveChanged: workspace.setWindowFocused(active)
@@ -263,8 +271,9 @@ ApplicationWindow {
 
     FileDialog {
         id: chooser
+        objectName: "kubeconfigFileDialog"
         title: "Import kubeconfig"
-        onAccepted: { sourcePath.text = selectedFile.toString(); workspace.importFile(sourcePath.text) }
+        onAccepted: workspace.importFile(selectedFile.toString())
     }
     ModalDialog {
         id: ociImportDialog
@@ -333,8 +342,9 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Open]; enabled: !workspace.busy; onActivated: quickChooser.open() }
     FolderDialog {
         id: folderChooser
+        objectName: "kubeconfigFolderDialog"
         title: "Import kubeconfig folder"
-        onAccepted: { sourcePath.text = selectedFolder.toString(); workspace.importFile(sourcePath.text) }
+        onAccepted: workspace.importFile(selectedFolder.toString())
     }
     ModalDialog {
         id: sourceImportDetails
@@ -485,30 +495,7 @@ ApplicationWindow {
         }
         onAccepted: { if (session === workspace.currentSession) workspace.refresh(true) }
     }
-    ModalDialog {
-        id: renameSessionDialog
-        header: DialogHeader { dialog: renameSessionDialog; closeObjectName: "cancelSessionRename"; closeEnabled: !workspace.busy }
-        objectName: "renameSessionDialog"
-        title: workspace.uiText["session.rename"]
-        width: Math.min(440, window.width - 32)
-        anchors.centerIn: parent
-        modal: true
-        closePolicy: workspace.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        property string targetSession: ""
-        property bool attempted: false
-        function openFor(id, name) { targetSession = id; sessionNameInput.text = name; attempted = false; open() }
-        function save() { if (!workspace.busy) { attempted = true; workspace.renameSession(targetSession, sessionNameInput.text) } }
-        onOpened: { sessionNameInput.forceActiveFocus(Qt.TabFocusReason); sessionNameInput.selectAll() }
-        Connections { target: workspace; function onSessionRenamed(id) { if (id === renameSessionDialog.targetSession) renameSessionDialog.close() } }
-        contentItem: ColumnLayout {
-            Label { text: workspace.uiText["session.name"] }
-            TextField { id: sessionNameInput; objectName: "sessionNameInput"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: "Session name"; onAccepted: renameSessionDialog.save() }
-            Label { objectName: "sessionRenameError"; Layout.fillWidth: true; text: renameSessionDialog.attempted ? workspace.sessionRenameError : ""; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-        }
-        footer: DialogButtonBox {
-            IconButton { glyph: "Save"; showText: true; objectName: "saveSessionRename"; text: workspace.busy ? workspace.uiText["action.saving"] : workspace.uiText["action.save"]; enabled: !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: renameSessionDialog.save() }
-        }
-    }
+    SourceAliasDialog { id: sourceAliasDialog; objectName: "sourceAliasDialog" }
     component NavButton: IconButton {
         showText: false
         font.bold: true
@@ -564,20 +551,19 @@ ApplicationWindow {
                         Accessible.name: "Show or hide current search"
                         Accessible.description: "Search this view. Hiding search keeps the filter."
                     }
-                    IconButton { id: quickOpenControl; readonly property bool available: workspace.contexts.length > 0 || workspace.sessions.length > 0; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; action: quickOpenCommand; visible: available && navigationRow.fits(this) }
+                    IconButton { id: quickOpenControl; readonly property bool available: window.mapContexts.length > 0; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; action: quickOpenCommand; visible: available && navigationRow.fits(this) }
                     NavButton { id: mapControl; readonly property bool available: true; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: available && navigationRow.fits(this) }
-                    NavButton { id: resourcesControl; readonly property bool available: workspace.currentSession !== ""; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: available && navigationRow.fits(this) }
-                    NavButton { id: eventsControl; readonly property bool available: workspace.currentSession !== ""; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: available && navigationRow.fits(this) }
-                    NavButton { id: connectionsControl; readonly property bool available: workspace.currentSession !== ""; objectName: "portForwardTasksButton"; glyph: "Service"; action: connectionsCommand; Accessible.name: "Connections in this session"; visible: available && navigationRow.fits(this) }
+                    NavButton { id: resourcesControl; readonly property bool available: window.hasResources; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: available && navigationRow.fits(this) }
+                    NavButton { id: eventsControl; readonly property bool available: window.hasEvents; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: available && navigationRow.fits(this) }
+                    NavButton { id: connectionsControl; readonly property bool available: window.hasConnections; objectName: "portForwardTasksButton"; glyph: "Service"; action: connectionsCommand; Accessible.name: "Connections in this tab"; visible: available && navigationRow.fits(this) }
                     NavButton { id: settingsControl; objectName: "settingsWorkspaceButton"; glyph: "Settings"; action: settingsCommand; text: workspace.uiText["nav.settings"]; visible: navigationRow.fits(this) }
                     IconButton {
                         id: musicControl
-                        readonly property bool available: !sidebar.musicButtonVisible
                         objectName: "workspaceMusicButton"
                         glyph: workspace.music.playing ? "Pause" : "Play"
                         action: musicCommand
                         activeIndicator: workspace.music.playing
-                        visible: available && navigationRow.fits(this)
+                        visible: navigationRow.fits(this)
                     }
 
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
@@ -620,7 +606,7 @@ ApplicationWindow {
                 Accessible.name: metricEntry ? text : modelData.Accessible.name
                 implicitHeight: window.controlHeight
                 ToolTip.visible: metricEntry && (hovered || activeFocus)
-                ToolTip.text: metricEntry ? modelData.metric.usage + "\n" + modelData.metric.description : ""
+                ToolTip.text: metricEntry ? modelData.metric.description : ""
                 onTriggered: if (metricEntry) headerMetrics.detailsRequested()
             }
             onObjectAdded: (index, object) => workspaceActions.insertItem(index, object)
@@ -657,16 +643,45 @@ ApplicationWindow {
             delegate: MenuItem {
                 required property var modelData
                 implicitHeight: window.controlHeight
-                objectName: modelData.header ? "" : (modelData.context ? "quickContext_" : "quickSession_") + modelData.id
+                objectName: modelData.header ? "" : "quickContext_" + modelData.id
                 text: modelData.name
                 enabled: !modelData.header && !workspace.busy
-                checkable: !modelData.header && !modelData.context
-                checked: checkable && modelData.id === workspace.currentSession
-                Accessible.name: modelData.header ? text : (modelData.context ? "Open context " : "Open session ") + text
-                onTriggered: modelData.context ? workspace.openContext(modelData.id) : workspace.activate(modelData.id)
+                checkable: false
+                Accessible.name: modelData.header ? text : "Open context " + text
+                onTriggered: if (!modelData.header) workspace.openContext(modelData.id)
             }
             onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + (workspace.windowActionsAvailable ? 4 : 3), object)
             onObjectRemoved: (index, object) => quickOpenMenu.removeItem(object)
+        }
+        Instantiator {
+            model: 1
+            delegate: Menu {
+                id: quickTabMenu
+                objectName: "quickOpenTabMenu"
+                title: workspace.uiText["action.openInTab"]
+                width: Math.min(360, window.width - 24)
+                height: Math.min(implicitHeight, window.height - 48)
+                Instantiator {
+                    active: quickTabMenu.visible
+                    model: window.mapContexts
+                    delegate: MenuItem {
+                        required property var modelData
+                        objectName: "quickContextNewTab_" + modelData.id
+                        text: modelData.name
+                        implicitHeight: window.controlHeight
+                        enabled: !workspace.busy
+                        Accessible.name: text
+                        onTriggered: workspace.openContext(modelData.id, false, true)
+                    }
+                    onObjectAdded: (index, object) => quickTabMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => quickTabMenu.removeItem(object)
+                }
+            }
+            onObjectAdded: (index, object) => {
+                quickOpenMenu.insertMenu(1, object)
+                quickOpenMenu.itemAt(1).objectName = "quickOpenTab"
+            }
+            onObjectRemoved: (index, object) => quickOpenMenu.removeMenu(object)
         }
     }
     Instantiator {
@@ -683,11 +698,11 @@ ApplicationWindow {
             delegate: MenuItem {
                 required property var modelData
                 implicitHeight: window.controlHeight
-                objectName: modelData.header ? "" : (modelData.context ? "quickWindowContext_" : "quickWindowSession_") + modelData.id
+                objectName: modelData.header ? "" : "quickWindowContext_" + modelData.id
                 text: modelData.name
                 enabled: !modelData.header && workspace.sessionWindowActionsReady
                 Accessible.name: "Open " + text + " in a separate window"
-                onTriggered: modelData.context ? workspace.openContext(modelData.id, true) : workspace.openSessionWindow(modelData.id)
+                onTriggered: if (!modelData.header) workspace.openContext(modelData.id, true)
             }
             onObjectAdded: (index, object) => quickWindowMenu.insertItem(index, object)
             onObjectRemoved: (index, object) => quickWindowMenu.removeItem(object)
@@ -818,6 +833,7 @@ ApplicationWindow {
                                 }
                             }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: tabMenu.popup(sessionTab, 0, sessionTab.height) }
+                            TapHandler { acceptedDevices: PointerDevice.TouchScreen; onLongPressed: tabMenu.popup(sessionTab, 0, sessionTab.height) }
                             Keys.priority: Keys.BeforeItem
                             Keys.onPressed: function(event) {
                                 if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
@@ -831,7 +847,7 @@ ApplicationWindow {
                             }
                             Menu {
                                 id: tabMenu
-                                MenuItem { objectName: "renameTab_" + modelData.id; text: "Rename session..."; enabled: !workspace.busy; onTriggered: renameSessionDialog.openFor(modelData.id, modelData.name) }
+                                MenuItem { objectName: "renameTab_" + modelData.id; text: workspace.uiText["context.rename"] + "..."; enabled: !workspace.busy; onTriggered: window.editTabContextAlias(modelData.id) }
                                 MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onTriggered: workspace.detachSession(modelData.id) }
                             }
                             ToolTip.visible: hovered || activeFocus
@@ -842,6 +858,7 @@ ApplicationWindow {
         }
         RowLayout {
             id: queryRow
+            Layout.rightMargin: window.contentRightMargin
             readonly property var activeGrid: workspace.workspacePage === "events" ? eventGridLoader.item : workspace.workspacePage === "map" ? sidebar : resourceGrid
             readonly property bool navigating: window.searchOpen && (["resources", "events"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
             readonly property bool hasQuery: (workspace.workspacePage === "events" ? workspace.eventFilterText : workspace.filterText).trim() !== ""
@@ -937,10 +954,10 @@ ApplicationWindow {
                 Label { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
             }
         }
-        Label { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
-        Label { objectName: "errorMessage"; Layout.fillWidth: true; text: workspace.error; textFormat: Text.PlainText; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
+        Label { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
+        Label { objectName: "errorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.error || workspace.uiText[workspace.music.error] || ""; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
         Label {
-            objectName: "syncProblemMessage"
+            objectName: "syncProblemMessage"; Layout.rightMargin: window.contentRightMargin
             Layout.fillWidth: true; Layout.minimumWidth: 0
             text: workspace.syncProblem; textFormat: Text.PlainText
             visible: text !== ""; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight
@@ -1002,23 +1019,24 @@ ApplicationWindow {
                     }
                     RowLayout {
                         id: mapNavigationRow
-                        visible: workspace.workspacePage === "map" && (!workspace.mapOverview || workspace.canMapBack || workspace.canMapForward || workspace.mapCatalogWarning !== "")
+                        visible: workspace.workspacePage === "map"
                         parent: workspace.mapOverview ? mapNavigationSlot : sidebar.mapNavigationHost
                         Layout.fillWidth: true
-                        IconButton { objectName: "mapBack"; visible: !workspace.mapOverview || workspace.canMapBack; glyph: "Previous"; text: "Back in map"; enabled: workspace.canMapBack && !workspace.busy; onClicked: workspace.navigateMap(-1) }
-                        IconButton { objectName: "mapForward"; visible: !workspace.mapOverview || workspace.canMapForward; glyph: "Next"; text: "Forward in map"; enabled: workspace.canMapForward && !workspace.busy; onClicked: workspace.navigateMap(1) }
-                        IconButton { objectName: "mapOverview"; visible: !workspace.mapOverview; glyph: "Cluster"; text: "All contexts"; enabled: !workspace.mapOverview && !workspace.busy; onClicked: workspace.showMapOverview() }
                         Label {
                             id: mapCaption
                             objectName: "mapTitle"
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
+                            Layout.minimumHeight: workspace.mapOverview ? implicitHeight : window.touchLayout ? 44 : 24
+                            verticalAlignment: Text.AlignVCenter
                             text: workspace.mapOverview ? (workspace.mapCatalogWarning || "Contexts") : workspace.mapContextCaption
                             color: workspace.mapCatalogWarning ? "#FFE866" : "#DDE7EC"
                             leftPadding: 4; rightPadding: 4
                             background: Rectangle {
                                 width: Math.min(mapCaption.width, mapCaption.contentWidth + 8)
                                 color: "#061621"
+                                border.width: mapCaption.activeFocus ? 1 : 0
+                                border.color: mapCaption.color
                             }
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
@@ -1028,6 +1046,24 @@ ApplicationWindow {
                             ToolTip.visible: mapTitleHover.hovered && workspace.mapCatalogWarning !== ""
                             ToolTip.text: workspace.mapCatalogWarning
                             HoverHandler { id: mapTitleHover }
+                            activeFocusOnTab: !workspace.mapOverview
+                            Accessible.role: workspace.mapOverview ? Accessible.StaticText : Accessible.Button
+                            Accessible.onPressAction: if (!workspace.mapOverview) mapIdentityMenu.popup(mapCaption, 0, mapCaption.height)
+                            TapHandler { acceptedButtons: Qt.RightButton; enabled: !workspace.mapOverview; onTapped: mapIdentityMenu.popup(mapCaption, 0, mapCaption.height) }
+                            TapHandler { acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus; enabled: !workspace.mapOverview; onLongPressed: mapIdentityMenu.popup(mapCaption, 0, mapCaption.height) }
+                            Keys.onPressed: function(event) {
+                                if (!workspace.mapOverview && (event.key === Qt.Key_Menu || event.key === Qt.Key_Return
+                                    || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier)))) {
+                                    mapIdentityMenu.popup(mapCaption, 0, mapCaption.height)
+                                    event.accepted = true
+                                }
+                            }
+                            Menu {
+                                id: mapIdentityMenu
+                                objectName: "mapIdentityMenu"
+                                MenuItem { objectName: "copyMapContextName"; text: workspace.uiText["context.copyName"]; onTriggered: workspace.copyMapIdentity("name") }
+                                MenuItem { objectName: "copyMapClusterName"; text: workspace.uiText["context.copyCluster"]; onTriggered: workspace.copyMapIdentity("cluster") }
+                            }
                         }
                     }
                     Item {
@@ -1085,6 +1121,7 @@ ApplicationWindow {
                     active: opened
                     onVisibleChanged: if (visible) opened = true
                     sourceComponent: SettingsView {
+                        onRenameContextRequested: context => sourceAliasDialog.edit(context)
                         onFileRequested: chooser.open()
                         onFolderRequested: folderChooser.open()
                         onOciImportRequested: ociImportDialog.open()
@@ -1117,7 +1154,9 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             objectName: "workspaceFooter"
-            visible: !window.inputPriority && window.width >= 600 && window.height >= 600 && (workspace.totalResourceCount > 0 || (workspace.mapOverview && window.mapContexts.length > 0))
+            visible: !window.inputPriority && window.width >= 600 && window.height >= 600
+                && !["settings", "alerts"].includes(workspace.workspacePage)
+                && (workspace.totalResourceCount > 0 || (workspace.workspacePage === "map" && workspace.mapOverview && window.mapContexts.length > 0))
             Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
             Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
@@ -1126,7 +1165,6 @@ ApplicationWindow {
     }
     ResourceSidebar {
         id: sidebar
-        musicAction: musicCommand
         parent: window.sidebarDocked ? sidebarHost : sidebarDrawer.contentItem
         expandedRadarHost: workspace.workspacePage === "map" && !workspace.mapOverview && !window.compactInspector ? resourceMapHost : null
         radarVisible: workspace.workspacePage !== "map" || !workspace.mapOverview
@@ -1134,7 +1172,6 @@ ApplicationWindow {
         suppressSmallRadar: window.compactLandscape
         anchors.fill: parent
         visible: window.sidebarDocked ? sidebarHost.visible : sidebarDrawer.visible
-        onSourcesRequested: { quickOpenCommand.trigger(); if (!window.sidebarDocked) sidebarDrawer.close() }
-        onRenameRequested: renameSessionDialog.openFor(workspace.currentSession, workspace.title)
+        onRenameRequested: window.editTabContextAlias(workspace.currentSession)
     }
 }

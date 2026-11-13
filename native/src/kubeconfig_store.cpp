@@ -1,3 +1,4 @@
+#include "context_catalog.h"
 #include "kubeconfig_store.h"
 #include "native_eks.h"
 #include "native_gke.h"
@@ -23,11 +24,6 @@
 namespace podlord {
 namespace {
 constexpr qint64 maximumKubeconfigBytes = 16 * 1024 * 1024;
-bool generatedSource(const QString& path) {
-    // Historical virtual origins are stored identities, not executable providers.
-    static const QRegularExpression pattern("\\Apodlord-generated://[A-Za-z0-9][A-Za-z0-9_.-]{0,127}/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z");
-    return pattern.match(path).hasMatch();
-}
 bool contentSource(const QString& path) {
     return path.startsWith("content://", Qt::CaseInsensitive);
 }
@@ -133,8 +129,6 @@ Result<SourceSnapshot> parse(QString path, const QByteArray& bytes, QDateTime im
             else {
                 const auto cluster = clusters.values.value(context.cluster);
                 QUrl url(text(cluster, "server"));
-                if (generatedSource(result.sourcePath) && (url.host() == "0.0.0.0" || url.host() == "localhost"))
-                    url.setHost("127.0.0.1");
                 if (!url.isValid() || url.host().isEmpty() || (url.scheme() != "http" && url.scheme() != "https")
                     || !url.userInfo().isEmpty() || url.hasQuery() || url.hasFragment()) context.brokenReferences.append("server");
                 context.server = url.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment);
@@ -186,7 +180,7 @@ Result<SourceSnapshot> readOwned(const QString& filePath, QByteArray* originalOu
     const QString path = row["sourcePath"].toString();
     const QDateTime time = QDateTime::fromString(row["importedAt"].toString(), Qt::ISODateWithMs);
     const auto canonical = sourcePath(path);
-    if ((!generatedSource(path) && (!std::holds_alternative<QString>(canonical) || std::get<QString>(canonical) != path)) || !time.isValid())
+    if (!std::holds_alternative<QString>(canonical) || std::get<QString>(canonical) != path || !time.isValid())
         return Failure{StoreError::InvalidData, "Invalid owned source identity or import time."};
     const auto encoded = row["yamlBase64"].toString();
     const auto original = QByteArray::fromBase64(encoded.toLatin1());
@@ -248,9 +242,9 @@ Result<SourceSnapshot> readOwnedContext(const QString& profile, const QString& s
         return Failure{StoreError::InvalidInput, "A valid owned snapshot and context are required."};
     const auto directory=sourceDirectory(profile,false);
     if (const auto* failure=std::get_if<Failure>(&directory)) return *failure;
-    const auto sessions=SessionStore(profile).list();
-    if (const auto* failure=std::get_if<Failure>(&sessions)) return *failure;
-    if (std::get<SessionCatalog>(sessions).removedContexts.contains(contextId))
+    const auto catalog=readContextCatalog(profile);
+    if (const auto* failure=std::get_if<Failure>(&catalog)) return *failure;
+    if (!std::get<ContextCatalog>(catalog).sources.value(snapshot).contains(contextId))
         return Failure{StoreError::NotFound, "The imported context was removed."};
     const auto loaded=readOwned(QDir(std::get<QString>(directory)).filePath(snapshot+".json"),original);
     if (const auto* failure=std::get_if<Failure>(&loaded)) return *failure;
@@ -681,23 +675,26 @@ Result<SourceSnapshot> KubeconfigStore::importContent(QString path, const QByteA
         "Cannot lock owned kubeconfigs; import was not applied."};
     auto& source = std::get<SourceSnapshot>(parsed);
     source.ownedPath = QDir(std::get<QString>(directory)).filePath(source.id + ".json");
-    const auto sessions = SessionStore(profile_).list();
-    if (const auto* failure = std::get_if<Failure>(&sessions)) return *failure;
+    auto catalog = readContextCatalog(profile_);
+    if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
     if (QFileInfo(source.ownedPath).exists() || QFileInfo(source.ownedPath).isSymLink()) {
         const auto previous = readOwned(source.ownedPath);
-        if (std::holds_alternative<Failure>(previous)) return std::get<Failure>(previous);
-        source.contexts = std::get<SourceSnapshot>(previous).contexts;
-        QStringList restored;
-        for (const auto& context : source.contexts)
-            if (std::get<SessionCatalog>(sessions).removedContexts.contains(context.id)) restored.append(context.id);
-        if (!restored.isEmpty()) {
-            const auto result = SessionStore(profile_).restoreContexts(restored);
-            if (const auto* failure = std::get_if<Failure>(&result)) return *failure;
-            // Reavailability and deleted-session retention need only the catalog commit.
-            return previous;
-        }
+        if (const auto* failure = std::get_if<Failure>(&previous)) return *failure;
+        for (auto& context : source.contexts) for (const auto& old : std::get<SourceSnapshot>(previous).contexts)
+            if (context.id == old.id) context.displayName = old.displayName;
     }
-    return publishSource(source, bytes);
+    const auto saved = publishSource(source, bytes);
+    if (const auto* failure = std::get_if<Failure>(&saved)) return *failure;
+    QStringList ids;
+    for (const auto& context : source.contexts) ids.append(context.id);
+    ids.sort();
+    auto& membership = std::get<ContextCatalog>(catalog);
+    if (!membership.sources.contains(source.id) || membership.sources.value(source.id) != ids) {
+        membership.sources.insert(source.id, ids);
+        const auto published = writeContextCatalog(profile_, membership);
+        if (const auto* failure = std::get_if<Failure>(&published)) return *failure;
+    }
+    return saved;
 }
 Result<SourceSnapshot> KubeconfigStore::renameContext(const QString& contextId, QString displayName) const {
     displayName = displayName.trimmed();
@@ -751,17 +748,35 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
     for (const auto& source : std::get<SourceCatalog>(catalog).sources)
         if (std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; })) {
-            const auto removed = SessionStore(profile_).removeContext(contextId, expectedSessions);
-            if (std::holds_alternative<SessionCatalog>(removed)) {
+            const auto preferences = QDir(profile_).filePath("views");
+            if (const auto failure = profileFailure(preferences)) return *failure;
+            const auto settingsPath = QDir(preferences).filePath(contextViewName(contextId));
+            std::unique_ptr<QLockFile> settingsLock;
+            if (QFileInfo::exists(preferences)) {
+                if (QFileInfo(settingsPath + ".lock").isSymLink() || QFileInfo(settingsPath + ".lock").isDir())
+                    return Failure{StoreError::WriteFailed, "Cannot safely lock the context settings."};
+                settingsLock = std::make_unique<QLockFile>(settingsPath + ".lock");
+                settingsLock->setStaleLockTime(0);
+                if (!settingsLock->tryLock(0)) return Failure{settingsLock->error() == QLockFile::LockFailedError ? StoreError::Busy : StoreError::WriteFailed,
+                    "Cannot lock context settings. Try again when saving finishes."};
+            }
+            auto membership = readContextCatalog(profile_);
+            if (const auto* failure = std::get_if<Failure>(&membership)) return *failure;
+            auto& entries = std::get<ContextCatalog>(membership);
+            entries.sources[source.id].removeAll(contextId);
+            const auto removed = SessionStore(profile_).removeContext(contextId, expectedSessions,
+                [&] { return writeContextCatalog(profile_, entries); });
+            const auto* failure = std::get_if<Failure>(&removed);
+            if (std::holds_alternative<SessionCatalog>(removed) || (failure && failure->code == StoreError::CleanupFailed)) {
                 bool deleted = true;
-                for (const auto& path : {ociCredentialPath(std::get<QString>(directory), contextId),
+                for (const auto& path : {settingsPath, ociCredentialPath(std::get<QString>(directory), contextId),
                                          gkeCredentialPath(std::get<QString>(directory), contextId),
                                          awsCredentialPath(std::get<QString>(directory), contextId)}) {
                     const QFileInfo credential(path);
                     if ((credential.exists() || credential.isSymLink()) && !QFile::remove(path)) deleted = false;
                 }
                 if (!deleted) return Failure{StoreError::CleanupFailed,
-                    "The context and sessions were removed, but a private credential could not be deleted. Check the protected profile before discarding backups."};
+                    "Context removed. A private credential or settings file could not be deleted."};
             }
             return removed;
         }
@@ -810,21 +825,31 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
 Result<SourceCatalog> KubeconfigStore::list() const {
     const auto directory = sourceDirectory(profile_, false);
     if (std::holds_alternative<Failure>(directory)) return std::get<Failure>(directory);
-    const auto sessions = SessionStore(profile_).list();
-    if (const auto* failure = std::get_if<Failure>(&sessions)) return *failure;
-    const auto& removed = std::get<SessionCatalog>(sessions).removedContexts;
+    const auto membership = readContextCatalog(profile_);
+    if (const auto* failure = std::get_if<Failure>(&membership)) return *failure;
+    const auto& entries = std::get<ContextCatalog>(membership).sources;
     SourceCatalog catalog;
+    catalog.usage = std::get<ContextCatalog>(membership).usage;
     QList<SourceSnapshot> snapshots;
     const QDir owned(std::get<QString>(directory));
     if (owned.exists() && !readableDirectory(owned.absolutePath()))
         return Failure{StoreError::ReadFailed, "Cannot read owned kubeconfig directory."};
-    for (const auto& path : owned.entryInfoList({"*.json"}, QDir::Files | QDir::System, QDir::Name)) {
+    for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
+        const QFileInfo path(owned.filePath(entry.key() + ".json"));
         const auto source = readOwned(path.absoluteFilePath());
         if (std::holds_alternative<Failure>(source)) {
             catalog.errors.append({path.absoluteFilePath(), std::get<Failure>(source)});
             continue;
         }
-        snapshots.append(std::get<SourceSnapshot>(source));
+        const auto& snapshot = std::get<SourceSnapshot>(source);
+        const auto& wanted = entry.value();
+        if (std::any_of(wanted.begin(), wanted.end(), [&](const auto& id) {
+            return std::none_of(snapshot.contexts.begin(), snapshot.contexts.end(), [&](const auto& context) { return context.id == id; });
+        })) {
+            catalog.errors.append({path.absoluteFilePath(), {StoreError::InvalidData, "A catalog context does not belong to its source."}});
+            continue;
+        }
+        snapshots.append(snapshot);
     }
     std::sort(snapshots.begin(), snapshots.end(), [](const auto& a, const auto& b) {
         return a.importedAt != b.importedAt ? a.importedAt > b.importedAt : a.id < b.id;
@@ -834,7 +859,7 @@ Result<SourceCatalog> KubeconfigStore::list() const {
         snapshot.current = !currentPaths.contains(snapshot.sourcePath);
         currentPaths.insert(snapshot.sourcePath);
         snapshot.contexts.erase(std::remove_if(snapshot.contexts.begin(), snapshot.contexts.end(),
-            [&](const auto& context) { return removed.contains(context.id); }), snapshot.contexts.end());
+            [&](const auto& context) { return !entries.value(snapshot.id).contains(context.id); }), snapshot.contexts.end());
         if (!snapshot.contexts.isEmpty()) catalog.sources.append(std::move(snapshot));
     }
     return catalog;
@@ -888,8 +913,6 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
 #ifdef PODLORD_MAC_APP_STORE
                     return Failure{StoreError::UnsupportedVersion, "The App Store build requires embedded certificates and tokens. Import keys explicitly through Sources instead of referencing external files."};
 #endif
-                    if (generatedSource(source.sourcePath) && QDir::isRelativePath(path))
-                        return Failure{StoreError::InvalidInput, "Generated kubeconfigs require embedded credentials/certificates or absolute file references."};
                     if (contentSource(source.sourcePath) && QDir::isRelativePath(path))
                         return Failure{StoreError::InvalidInput, "Document kubeconfigs require embedded credentials/certificates or absolute file references."};
                     QFile file(QDir(QFileInfo(source.sourcePath).absolutePath()).absoluteFilePath(path));
@@ -974,10 +997,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                     command.program = text(node, "command");
                     if (command.program.isEmpty() || std::any_of(command.program.cbegin(), command.program.cend(), [](QChar c) { return c.category() == QChar::Other_Control; }))
                         return Failure{StoreError::InvalidData, "Invalid exec command."};
-                    const bool generated = generatedSource(source.sourcePath);
-                    command.workingDirectory = QFileInfo(generated ? source.ownedPath : source.sourcePath).absolutePath();
-                    if (generated && QDir::isRelativePath(command.program) && (command.program.contains('/') || command.program.contains('\\')))
-                        return Failure{StoreError::InvalidInput, "Generated kubeconfigs require an absolute or PATH-resolved credential command."};
+                    command.workingDirectory = QFileInfo(source.sourcePath).absolutePath();
                     if (QDir::isRelativePath(command.program) && (command.program.contains('/') || command.program.contains('\\')))
                         command.program = QDir::cleanPath(QDir(command.workingDirectory).absoluteFilePath(command.program));
                     const auto args = node["args"];
@@ -989,7 +1009,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         command.arguments.append(value);
                     }
                     const auto env = node["env"];
-                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, "Exec env must be a list."};
+                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env."};
                     QSet<QString> names;
                     if (env) for (const auto& entry : env) {
                         const auto name = text(entry, "name");

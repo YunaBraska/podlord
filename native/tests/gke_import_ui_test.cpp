@@ -124,7 +124,7 @@ bool run(const QString& scenario) {
         const auto* failure = std::get_if<Failure>(&removed);
         const auto catalog = SessionStore(profile).list();
         return failure && failure->code == StoreError::CleanupFailed && QFileInfo(privateCopy.filePath()).isDir()
-            && std::holds_alternative<SessionCatalog>(catalog) && std::get<SessionCatalog>(catalog).removedContexts.contains(contextId);
+            && std::holds_alternative<SessionCatalog>(catalog) && std::holds_alternative<Failure>(store.connection(contextId));
     }
     const auto removed = store.removeContext(contextId, {});
     const auto after = store.hasGkeServiceAccount(contextId);

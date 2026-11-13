@@ -43,8 +43,8 @@ bool Workspace::filterField(const QString& field, const QString& expression) {
 bool Workspace::resetResourceFilters() {
     if (active_.isEmpty() || busy_) return false;
     auto& nav = navigation_[active_];
-    if (nav.filter.isEmpty() && nav.fields.isEmpty() && nav.mode.isEmpty() && nav.limit == 256) return true;
-    nav.filter.clear(); nav.fields.clear(); nav.mode.clear(); nav.limit = 256;
+    if (nav.filter.isEmpty() && nav.fields.isEmpty() && nav.mode.isEmpty() && nav.limit == DefaultResourceDisplayLimit) return true;
+    nav.filter.clear(); nav.fields.clear(); nav.mode.clear(); nav.limit = DefaultResourceDisplayLimit;
     return applyResourceFilters();
 }
 bool Workspace::filterInspectorField(const QString& field) {

@@ -391,7 +391,7 @@ jobs:
         id: ios-toolchain-cache
         uses: actions/cache@v6
         with:
-          key: native-ios-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/build-native-ios-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
+          key: native-ios-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/build-native-ios-toolchain.sh', 'scripts/install-native-ios-privacy.cmake', 'native/ios/*Privacy.xcprivacy', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
           path: |
             ${{ runner.temp }}/native-toolchain/qt
             ${{ runner.temp }}/native-toolchain/qt-sdk
@@ -421,7 +421,11 @@ jobs:
             test -f "$target/media/lib/lib$library.dylib"
             test -f "$target/media/frameworks/lib$library.framework/lib$library"
             test -d "$target/media/lib/lib$library.xcframework"
+            find "$target/qt/lib/ffmpeg/lib$library.xcframework" -name PrivacyInfo.xcprivacy | grep -q .
           done
+          test -f "$target/ssl/share/podlord/PrivacyInfo.xcprivacy"
+          test -f "$target/qt/lib/QtCore.framework/PrivacyInfo.xcprivacy"
+          test -f "$target/qt/lib/QtGui.framework/PrivacyInfo.xcprivacy"
           grep -F 'Qt: 6.11.3' "$target/build-inputs.txt"
           grep -F 'OpenSSL: 3.5.9' "$target/build-inputs.txt"
           grep -F 'FFmpeg: 7.1.5' "$target/build-inputs.txt"
@@ -472,6 +476,7 @@ jobs:
           for library in libavcodec libavformat libavutil libswresample libswscale; do
             [ -f "$app/Frameworks/$library.framework/$library" ]
           done
+          node scripts/check-native-ios-privacy.cjs "$app" | tee -a "$log"
           printf 'iPhoneOS arm64 compile and iPhone/iPad bundle checks passed. Device runtime was not tested.\n' | tee -a "$log"
       - name: Retain native iOS preflight evidence
         if: always()

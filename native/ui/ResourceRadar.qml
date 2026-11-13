@@ -65,6 +65,15 @@ Pane {
                     Layout.fillWidth: !radarPane.expanded
                     Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
                     Item { Layout.fillWidth: true }
+                    IconButton {
+                        objectName: "mapOverview"
+                        visible: radarPane.expanded && !workspace.mapOverview
+                        glyph: "Cluster"
+                        text: workspace.uiText["nav.allContexts"]
+                        showText: false
+                        enabled: !workspace.busy
+                        onClicked: workspace.showMapOverview()
+                    }
                     IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
                     IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
                 }
@@ -381,7 +390,7 @@ Pane {
             Popup {
                 id: infoPopup
                 objectName: "radarInfoPopup"
-                parent: radarPane.detailsHost ?? grid
+                parent: nearResource ? radarPane.Window.window.contentItem : radarPane.detailsHost ?? grid
                 popupType: Popup.Item
                 padding: 0
                 margins: 0
@@ -390,6 +399,12 @@ Pane {
                 focus: false
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                 background: null
+                readonly property bool nearResource: radarPane.Window.window !== null
+                    && radarPane.Window.window.width >= 1000 && !radarPane.shortLandscape
+                    && radarInfo.target === hoverTarget
+                readonly property point resourcePosition: nearResource
+                    ? grid.mapToItem(parent, radarInfo.target.x + radarInfo.target.width / 2,
+                        radarInfo.target.y + radarInfo.target.height / 2) : Qt.point(0, 0)
                 readonly property point radarPosition: {
                     radarPane.width; grid.width; grid.height
                     if (!radarPane.Window.window) return Qt.point(0, 0)
@@ -400,13 +415,16 @@ Pane {
                 readonly property real rightSpace: radarPane.Window.window ? Math.max(0, radarPane.Window.window.contentItem.width - radarPosition.x - grid.width - 16) : 0
                 readonly property bool adjacent: !radarPane.detailsHost && !radarPane.expanded && Math.max(leftSpace, rightSpace) >= 180
                 readonly property bool onLeft: leftSpace >= rightSpace
-                width: radarPane.detailsHost ? parent.width : adjacent ? Math.min(360, Math.max(leftSpace, rightSpace)) : Math.max(0, Math.min(360, parent.width - 16))
+                width: nearResource ? Math.min(360, parent.width - 32) : radarPane.detailsHost ? parent.width : adjacent ? Math.min(360, Math.max(leftSpace, rightSpace)) : Math.max(0, Math.min(360, parent.width - 16))
                 height: Math.max(0, Math.min(infoHeader.implicitHeight + infoLayout.spacing + infoContents.implicitHeight + radarInfo.topPadding + radarInfo.bottomPadding,
-                    radarPane.detailsHost ? parent.height : adjacent ? grid.height : Math.min(320,
+                    nearResource ? Math.min(360, parent.height - 32) : radarPane.detailsHost ? parent.height : adjacent ? grid.height : Math.min(320,
                         Math.max(grid.height * 0.45, infoHeader.implicitHeight + infoLayout.spacing + 24 + radarInfo.topPadding + radarInfo.bottomPadding),
                         grid.height - radarNavigation.height - 8)))
-                x: radarPane.detailsHost ? 0 : adjacent ? (onLeft ? -width - 8 : grid.width + 8) : parent.width - width - 8
-                y: radarPane.detailsHost || adjacent ? 0 : parent.height - height - 8
+                x: nearResource ? Math.max(16, Math.min(parent.width - width - 16,
+                    resourcePosition.x + width + 28 <= parent.width ? resourcePosition.x + 12 : resourcePosition.x - width - 12))
+                    : radarPane.detailsHost ? 0 : adjacent ? (onLeft ? -width - 8 : grid.width + 8) : parent.width - width - 8
+                y: nearResource ? Math.max(16, Math.min(parent.height - height - 16, resourcePosition.y - height / 2))
+                    : radarPane.detailsHost || adjacent ? 0 : parent.height - height - 8
                 visible: radarPane.visible && grid.renderActive && radarInfo.hasDetails && width > 0 && height > 0
                 onClosed: Qt.callLater(radarInfo.clearClosedTarget)
                 contentItem: Pane {
@@ -523,6 +541,8 @@ Pane {
                                     text: workspace.uiText["alert.field.issue"] + ": " + (radarInfo.resourceDetails.issue || "")
                                     textFormat: Text.PlainText
                                     wrapMode: Text.Wrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
                                 }
                                 Label {
                                     objectName: "radarInfoReadiness"
@@ -543,12 +563,19 @@ Pane {
                                         Layout.fillWidth: true
                                         text: modelData.label + ": " + modelData.value
                                         textFormat: Text.PlainText
-                                        wrapMode: Text.Wrap
+                                        maximumLineCount: 1
+                                        elide: Text.ElideRight
                                     }
                                 }
                                 Repeater {
                                     model: radarInfo.hasDetails ? radarInfo.target.resourceMetrics.filter(metric => metric.available || !!metric.presentReferences) : []
-                                    MetricGauge { required property var modelData; Layout.fillWidth: true; metric: modelData; omitMissing: true }
+                                    MetricGauge {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        metric: modelData
+                                        omitMissing: true
+                                        showMeasurement: radarInfo.target && radarInfo.target.resourceMetrics.find(value => value.timestamp)?.id === modelData.id
+                                    }
                                 }
                             }
                         }

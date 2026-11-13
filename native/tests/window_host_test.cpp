@@ -2,6 +2,8 @@
 #include "window_layout.h"
 #include "read_settings.h"
 #include "workspace.h"
+#include "view_state.h"
+#include "music.h"
 #include "ui_input.h"
 #include <QGuiApplication>
 #include <QDir>
@@ -25,6 +27,7 @@
 #include <QThreadPool>
 #include <QUrlQuery>
 #include <QtTest/QTest>
+#include <algorithm>
 #include <qpa/qplatformnativeinterface.h>
 #include <cstdio>
 #include <memory>
@@ -143,15 +146,39 @@ bool run(const QString& scenario) {
     const auto imported = podlord::KubeconfigStore(profile.path()).importText(profile.filePath("source.yaml"), yaml);
     const auto* source = std::get_if<podlord::SourceSnapshot>(&imported); REQUIRE(source && source->contexts.size() == 2);
     podlord::SessionStore store(profile.path());
-    const auto first = store.create({source->contexts[0].id, {}}, "First");
+    const auto first = store.openTab(source->contexts[0].id);
     REQUIRE(std::holds_alternative<podlord::SessionCatalog>(first));
     const auto firstId = std::get<podlord::SessionCatalog>(first).sessions.last().id;
-    const auto second = store.create({source->contexts[1].id, {}}, "Second");
+    const auto second = store.openTab(source->contexts[1].id);
     REQUIRE(std::holds_alternative<podlord::SessionCatalog>(second));
     const auto secondId = std::get<podlord::SessionCatalog>(second).sessions.last().id;
     const auto a = firstId.toString(QUuid::WithoutBraces), b = secondId.toString(QUuid::WithoutBraces);
     REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.activate(secondId)));
     REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.activate(firstId)));
+    if (scenario == "audio_volumes") {
+        podlord::Workspace primary(profile.path());
+        REQUIRE(waitFor([&] { return !primary.busy() && !primary.filterPresetsBusy(); }));
+        podlord::WindowHost host(primary);
+        REQUIRE(host.open() && waitFor([&] { return host.restorationReady(); }));
+        REQUIRE(host.detach(primary, b));
+        REQUIRE(waitFor([&] { return host.windows().size() == 2; }));
+        podlord::Workspace* detached = nullptr;
+        for (auto* window : host.windows()) {
+            auto* owner = qobject_cast<podlord::Workspace*>(qmlContext(window)->contextProperty("workspace").value<QObject*>());
+            if (owner != &primary) detached = owner;
+        }
+        REQUIRE(detached && waitFor([&] { return !primary.busy() && !detached->busy(); }));
+        REQUIRE(detached->activate(b));
+        REQUIRE(waitFor([&] { return !detached->busy() && !detached->syncLoading()
+            && detached->totalResourceCount() == api.names.size(); }));
+        const int requests = api.requests;
+        REQUIRE(primary.saveAudioVolumes(48, 19));
+        REQUIRE(waitFor([&] { return !primary.busy() && detached->musicVolumePercent() == 48 && detached->alertVolumePercent() == 19; }));
+        REQUIRE(detached->music()->volumePercent() == 48 && detached->alerts()->volumePercent() == 19);
+        QTest::qWait(1000);
+        REQUIRE(!primary.music()->playing() && !detached->music()->playing() && api.requests == requests);
+        return true;
+    }
     if (scenario.startsWith("batch_")) {
         const auto before = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(before));
         const auto ids = scenario == "batch_empty" ? QList<QUuid>{} : scenario == "batch_null" ? QList<QUuid>{firstId, {}}
@@ -164,9 +191,9 @@ bool run(const QString& scenario) {
         }
         REQUIRE(std::holds_alternative<podlord::SessionCatalog>(closed));
         const auto catalog = std::get<podlord::SessionCatalog>(closed);
-        REQUIRE(!catalog.sessions[0].open && catalog.sessions[1].open && !catalog.activeSession);
-        REQUIRE(catalog.sessions[0].usageAt == std::get<podlord::SessionCatalog>(before).sessions[0].usageAt);
-        REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.closeSessions(ids))); return true;
+        REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == secondId && !catalog.activeSession);
+        REQUIRE(catalog.sessions[0] == std::get<podlord::SessionCatalog>(before).sessions[1]);
+        REQUIRE(std::holds_alternative<podlord::Failure>(store.closeSessions(ids))); return true;
     }
     if (scenario == "layout_restore_tiny_screen" || scenario == "layout_restore_screen_removed") {
         REQUIRE(QGuiApplication::platformName() == "offscreen");
@@ -188,7 +215,7 @@ bool run(const QString& scenario) {
         podlord::Workspace restored(profile.path());
         REQUIRE(waitFor([&] { return !restored.busy() && !restored.filterPresetsBusy() && restored.tabs().size() == 2; }));
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         const auto layoutBytes = fileBytes(profile.filePath("window-layout.json"));
         const auto sourceBytes = fileBytes(source->ownedPath);
         auto* pool = QThreadPool::globalInstance();
@@ -223,7 +250,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return tiny ? window->screen() && window->screen()->availableGeometry().size() == QSize(1, 1)
             : QGuiApplication::screens().isEmpty() && !window->screen() && removed.size() == 1; }));
         if (tiny) REQUIRE(window->screen()->availableGeometry().marginsRemoved(window->frameMargins()).isEmpty());
-        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(profile.filePath("window-layout.json")) == layoutBytes && fileBytes(source->ownedPath) == sourceBytes
             && api.requests == 0 && api.upgrades == 0);
         release->release(); blocked = false; pool->setMaxThreadCount(previousMaximum);
@@ -240,7 +267,7 @@ bool run(const QString& scenario) {
             && window->windowState() == Qt::WindowNoState && geometry.isValid());
         if (tiny) REQUIRE(geometry.size() == QSize(1, 1) && window->frameGeometry().topLeft() == QPoint(0, 0));
         else REQUIRE(!window->screen() && geometry == layout.first().geometry);
-        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(profile.filePath("window-layout.json")) == layoutBytes && fileBytes(source->ownedPath) == sourceBytes
             && api.requests == 0 && api.upgrades == 0);
         configure(originalConfiguration, offscreen);
@@ -255,7 +282,7 @@ bool run(const QString& scenario) {
         const auto value = std::get<podlord::WindowLayout>(saved);
         REQUIRE(value.size() == 1 && value.first().id == "main" && value.first().sessions == QSet<QUuid>({firstId, secondId})
             && value.first().activeSession == secondId && value.first().geometry == finalGeometry && !value.first().maximized
-            && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
         return true;
     }
@@ -270,7 +297,7 @@ bool run(const QString& scenario) {
         podlord::WindowLayout layout{{"main", {secondId}, secondId, QRect(20, 20, 640, 480), false},
             {peerId, {firstId}, firstId, QRect(50, 50, 600, 420), false}};
         if (fallback) {
-            const auto third = store.create({source->contexts[0].id, {}}, "Third");
+            const auto third = store.openTab(source->contexts[0].id);
             REQUIRE(std::holds_alternative<podlord::SessionCatalog>(third));
             peerSession = std::get<podlord::SessionCatalog>(third).sessions.last().id;
             REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.activate(peerSession)));
@@ -281,7 +308,7 @@ bool run(const QString& scenario) {
             REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.closeSessions({firstId, secondId})));
             layout = {{"main", {}, {}, QRect(20, 20, 640, 480), false}};
         }
-        const QString viewPath = profile.filePath("views/" + a + ".json");
+        const QString viewPath = profile.filePath("views/" + podlord::contextViewName(source->contexts[0].id));
         const QByteArray invalidViews("{invalid views}");
         if (viewError) {
             REQUIRE(QDir().mkpath(profile.filePath("views")));
@@ -291,7 +318,7 @@ bool run(const QString& scenario) {
         }
         REQUIRE(std::holds_alternative<podlord::WindowLayout>(podlord::WindowLayoutStore(profile.path()).save(layout, {})));
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         const auto savedBytes = fileBytes(profile.filePath("window-layout.json"));
         const auto sourceBytes = fileBytes(source->ownedPath);
         REQUIRE(!sessionBytes.isEmpty() && !savedBytes.isEmpty() && !sourceBytes.isEmpty());
@@ -304,7 +331,7 @@ bool run(const QString& scenario) {
             REQUIRE(QThreadPool::globalInstance()->waitForDone(15000));
             QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents();
             REQUIRE(restoredHost.windows().isEmpty() && opened.isEmpty() && !restoredHost.applicationClosing()
-                && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes
                 && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
             REQUIRE(restoredHost.open() && restoredHost.windows().size() == 2 && opened.size() == 2);
@@ -331,10 +358,10 @@ bool run(const QString& scenario) {
         REQUIRE(rootWindow && bool(peerOwner) == !empty && !restored.viewStateFailed() && restored.error().isEmpty());
         if (fallback) REQUIRE(restored.tabs()[0].toMap()["id"].toString() == a && restored.tabs()[1].toMap()["id"].toString() == b);
         REQUIRE(unchanged(store, before) && api.requests == 0 && api.upgrades == 0
-            && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(source->ownedPath) == sourceBytes);
         if (viewError) {
-            REQUIRE(peerOwner->viewStateFailed() && peerOwner->error().contains(a) && peerOwner->error().contains("Invalid saved views"));
+            REQUIRE(peerOwner->viewStateFailed() && peerOwner->error().contains("Invalid saved views"));
             const auto error = peerOwner->error();
             QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
             REQUIRE(!quit.isAccepted() && waitFor([&] { return peerOwner->viewCloseNeedsDecision(); })
@@ -343,7 +370,7 @@ bool run(const QString& scenario) {
             REQUIRE(!restoredHost.applicationClosing() && !peerOwner->viewCloseNeedsDecision()
                 && peerOwner->viewStateFailed() && peerOwner->error() == error && !restored.viewStateFailed()
                 && restoredHost.windows().size() == 2 && unchanged(store, before)
-                && fileBytes(viewPath) == invalidViews && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && fileBytes(viewPath) == invalidViews && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes
                 && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
         } else if (empty) {
@@ -355,7 +382,7 @@ bool run(const QString& scenario) {
             const auto value = std::get<podlord::WindowLayout>(saved);
             REQUIRE(value.size() == 1 && value.first().id == "main" && value.first().sessions.isEmpty()
                 && !value.first().activeSession && value.first().geometry == geometry && !value.first().maximized
-                && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
         } else if (scenario == "layout_decision_repeat_quit" || scenario == "layout_stay_preserves_import_error") {
             const bool preserveImportError = scenario == "layout_stay_preserves_import_error";
@@ -380,7 +407,7 @@ bool run(const QString& scenario) {
                 REQUIRE(!imported.first().first().toBool() && !importError.isEmpty()
                     && !restored.authenticationRequired() && !restored.authenticationRunning()
                     && !peerOwner->authenticationRequired() && !peerOwner->authenticationRunning()
-                    && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                    && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                     && fileBytes(profile.filePath("window-layout.json")) == savedBytes
                     && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
             }
@@ -399,7 +426,7 @@ bool run(const QString& scenario) {
                 && restored.currentSession() == b && peerOwner->currentSession() == a
                 && !peerOwner->confirmViewClose(false) && unchanged(store, before)
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes
-                && fileBytes(profile.filePath("sessions.json")) == sessionBytes && fileBytes(source->ownedPath) == sourceBytes
+                && fileBytes(profile.filePath("tabs.json")) == sessionBytes && fileBytes(source->ownedPath) == sourceBytes
                 && api.requests == 0 && api.upgrades == 0);
             REQUIRE(podlord::test::clickVisible(rootWindow, "stayViewClose"));
             if (preserveImportError && restored.error() != importError)
@@ -416,7 +443,7 @@ bool run(const QString& scenario) {
                     && catalog.sources.first().contexts.size() == 2 && restored.currentSession() == b && peerOwner->currentSession() == a
                     && !restored.authenticationRequired() && !restored.authenticationRunning()
                     && !peerOwner->authenticationRequired() && !peerOwner->authenticationRunning()
-                    && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                    && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                     && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
                 return true;
             }
@@ -434,7 +461,7 @@ bool run(const QString& scenario) {
                     && placement.activeSession == (root ? secondId : firstId));
                 if (root) REQUIRE(placement.geometry == geometry);
             }
-            REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
         }
         return true;
@@ -453,7 +480,7 @@ bool run(const QString& scenario) {
         REQUIRE(std::holds_alternative<podlord::Failure>(rejected));
         const auto error = std::get<podlord::Failure>(rejected).message;
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         const auto savedBytes = fileBytes(profile.filePath("window-layout.json"));
         const auto sourceBytes = fileBytes(source->ownedPath);
         {
@@ -466,13 +493,13 @@ bool run(const QString& scenario) {
             QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents();
             REQUIRE(restoredHost.windows().size() == 1 && opened.size() == 1 && restoredHost.windows().first()->isVisible()
                 && restored.mapOverview() && restored.totalResourceCount() == 0 && restored.error() == error
-                && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes
                 && fileBytes(profile.filePath("read-settings.json")) == invalidSettings
                 && fileBytes(profile.filePath("foreign.json")) == foreignBytes && fileBytes(source->ownedPath) == sourceBytes
                 && api.requests == 0 && api.upgrades == 0);
         }
-        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+        REQUIRE(unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(profile.filePath("window-layout.json")) == savedBytes
             && fileBytes(profile.filePath("read-settings.json")) == invalidSettings
             && fileBytes(profile.filePath("foreign.json")) == foreignBytes && fileBytes(source->ownedPath) == sourceBytes
@@ -487,7 +514,7 @@ bool run(const QString& scenario) {
         const auto sourceBytes = fileBytes(source->ownedPath);
         const QByteArray invalidSessions("{invalid session catalog}");
         {
-            QFile file(profile.filePath("sessions.json"));
+            QFile file(profile.filePath("tabs.json"));
             REQUIRE(file.open(QIODevice::WriteOnly | QIODevice::Truncate)
                 && file.write(invalidSessions) == invalidSessions.size());
         }
@@ -504,7 +531,7 @@ bool run(const QString& scenario) {
         REQUIRE(restoredHost.open() && restoredHost.windows().size() == 1 && restored.tabs().isEmpty()
             && restored.currentSession().isEmpty() && restored.totalResourceCount() == 0 && restored.mapOverview()
             && restored.error() == startupError && !restored.authenticationRequired() && !restored.authenticationRunning()
-            && fileBytes(profile.filePath("sessions.json")) == invalidSessions
+            && fileBytes(profile.filePath("tabs.json")) == invalidSessions
             && fileBytes(profile.filePath("window-layout.json")) == layoutBytes
             && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
         return true;
@@ -523,7 +550,7 @@ bool run(const QString& scenario) {
             && std::get<podlord::SourceCatalog>(catalog).sources.size() == 1
             && std::get<podlord::SourceCatalog>(catalog).errors.size() == 1);
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         const auto sourceBytes = fileBytes(source->ownedPath);
         podlord::Workspace restored(profile.path());
         REQUIRE(waitFor([&] { return !restored.busy() && !restored.filterPresetsBusy() && restored.tabs().size() == 2; }));
@@ -542,7 +569,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return restored.error() == startupError + "\n" + layoutError; }));
         REQUIRE(restoredHost.windows().size() == 1 && restored.tabs().size() == 2 && restored.currentSession() == a
             && restored.mapOverview() && restored.totalResourceCount() == 0 && unchanged(store, before)
-            && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(profile.filePath("window-layout.json")) == invalidLayout
             && fileBytes(brokenPath) == invalidSource && fileBytes(source->ownedPath) == sourceBytes
             && api.requests == 0 && api.upgrades == 0);
@@ -550,7 +577,7 @@ bool run(const QString& scenario) {
     }
     if (scenario == "layout_no_pending_decision") {
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         podlord::Workspace restored(profile.path());
         REQUIRE(waitFor([&] { return !restored.busy() && !restored.filterPresetsBusy() && restored.tabs().size() == 2; }));
         podlord::WindowHost restoredHost(restored);
@@ -562,7 +589,7 @@ bool run(const QString& scenario) {
                 && restoredHost.layoutCloseError().isEmpty() && restored.error().isEmpty()
                 && restoredHost.windows().size() == 1 && restoredHost.windows().first()->isVisible()
                 && restored.tabs().size() == 2 && restored.currentSession() == a
-                && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && !QFileInfo::exists(profile.filePath("window-layout.json"))
                 && api.requests == 0 && api.upgrades == 0);
         }
@@ -573,7 +600,7 @@ bool run(const QString& scenario) {
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {secondId}, secondId, QRect(50, 50, 600, 420), false}};
         REQUIRE(std::holds_alternative<podlord::WindowLayout>(podlord::WindowLayoutStore(profile.path()).save(layout, {})));
         REQUIRE(QDir().mkpath(profile.filePath("views")));
-        const auto brokenView = profile.filePath("views/" + b + ".json");
+        const auto brokenView = profile.filePath("views/" + podlord::contextViewName(source->contexts[1].id));
         const QByteArray invalidViews("{invalid saved views}");
         {
             QFile file(brokenView);
@@ -581,7 +608,7 @@ bool run(const QString& scenario) {
         }
         const auto before = store.list();
         const auto layoutBytes = fileBytes(profile.filePath("window-layout.json"));
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         podlord::Workspace restored(profile.path());
         podlord::WindowHost restoredHost(restored);
         REQUIRE(restoredHost.open());
@@ -597,7 +624,7 @@ bool run(const QString& scenario) {
         }
         REQUIRE(peers == 1 && unchanged(store, before)
             && fileBytes(profile.filePath("window-layout.json")) == layoutBytes
-            && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(brokenView) == invalidViews && api.requests == 0 && api.upgrades == 0);
         return true;
     }
@@ -633,15 +660,15 @@ bool run(const QString& scenario) {
         REQUIRE(value.size() == 1 && value.first().id == "main"
             && value.first().sessions == QSet<QUuid>({firstId}) && value.first().activeSession == firstId);
         const auto catalog = std::get<podlord::SessionCatalog>(sessions);
-        REQUIRE(catalog.sessions.size() == 2 && catalog.sessions[0].open && !catalog.sessions[1].open
+        REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == firstId
             && api.requests == 0 && api.upgrades == 0);
         return true;
     }
     if (scenario == "layout_restore_active_missing") {
-        const auto third = store.create({source->contexts[0].id, {}}, "Third");
+        const auto third = store.openTab(source->contexts[0].id);
         REQUIRE(std::holds_alternative<podlord::SessionCatalog>(third));
         const auto thirdId = std::get<podlord::SessionCatalog>(third).sessions.last().id;
-        const auto fourth = store.create({source->contexts[1].id, {}}, "Fourth");
+        const auto fourth = store.openTab(source->contexts[1].id);
         REQUIRE(std::holds_alternative<podlord::SessionCatalog>(fourth));
         const auto fourthId = std::get<podlord::SessionCatalog>(fourth).sessions.last().id;
         REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.activate(thirdId)));
@@ -654,7 +681,7 @@ bool run(const QString& scenario) {
         REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.close(firstId)));
         const auto before = store.list();
         const auto savedBytes = fileBytes(profile.filePath("window-layout.json"));
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         podlord::Workspace restored(profile.path());
         podlord::WindowHost restoredHost(restored);
         REQUIRE(restoredHost.open());
@@ -673,7 +700,7 @@ bool run(const QString& scenario) {
         }
         REQUIRE(peers == 1 && unchanged(store, before) && api.requests == 0 && api.upgrades == 0);
         REQUIRE(!savedBytes.isEmpty() && !sessionBytes.isEmpty()
-            && fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(profile.filePath("sessions.json")) == sessionBytes);
+            && fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(profile.filePath("tabs.json")) == sessionBytes);
         return true;
     }
     if (scenario == "layout_quit_load_pending" || scenario == "layout_detach_load_pending") {
@@ -684,7 +711,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return !pending.busy() && !pending.filterPresetsBusy() && pending.tabs().size() == 2; }));
         const auto before = store.list();
         const auto savedBytes = fileBytes(profile.filePath("window-layout.json"));
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         auto* pool = QThreadPool::globalInstance();
         REQUIRE(pool->waitForDone(15000));
         const int previousMaximum = pool->maxThreadCount();
@@ -710,13 +737,13 @@ bool run(const QString& scenario) {
             const bool detachedWhilePending = pending.detachSession(b);
             const bool unchangedPending = !detachedWhilePending && pendingHost->windows().size() == 1 && opened.size() == 1
                 && pending.currentSession() == a && pending.tabs() == tabsBefore
-                && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(source->ownedPath) == sourceBytes
                 && !pending.authenticationRequired() && !pending.authenticationRunning() && api.requests == 0 && api.upgrades == 0;
             if (!unchangedPending)
                 std::fprintf(stderr, "Pending layout detach: detached=%d windows=%d opened=%d tabs=%d tabs_same=%d session=%s catalog_same=%d sessions_same=%d layout_same=%d source_same=%d auth=%d/%d requests=%d upgrades=%d\n",
                     detachedWhilePending, int(pendingHost->windows().size()), int(opened.size()), int(pending.tabs().size()), pending.tabs() == tabsBefore,
-                    qPrintable(pending.currentSession()), unchanged(store, before), fileBytes(profile.filePath("sessions.json")) == sessionBytes,
+                    qPrintable(pending.currentSession()), unchanged(store, before), fileBytes(profile.filePath("tabs.json")) == sessionBytes,
                     fileBytes(profile.filePath("window-layout.json")) == savedBytes, fileBytes(source->ownedPath) == sourceBytes,
                     pending.authenticationRequired(), pending.authenticationRunning(), api.requests, api.upgrades);
             REQUIRE(unchangedPending);
@@ -733,7 +760,7 @@ bool run(const QString& scenario) {
             }
             REQUIRE(restoredPeer && restoredPeer->currentSession() == a
                 && restoredPeer->tabs()[0].toMap()["id"].toString() == a
-                && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+                && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes
                 && fileBytes(source->ownedPath) == sourceBytes && api.requests == 0 && api.upgrades == 0);
             REQUIRE(pending.activate(b));
@@ -741,7 +768,7 @@ bool run(const QString& scenario) {
                 && pending.currentSession() == b && pending.totalResourceCount() == firstCount; }));
             const auto beforeDetach = store.list();
             REQUIRE(std::holds_alternative<podlord::SessionCatalog>(beforeDetach));
-            const auto detachSessionBytes = fileBytes(profile.filePath("sessions.json"));
+            const auto detachSessionBytes = fileBytes(profile.filePath("tabs.json"));
             const int requestsBeforeDetach = api.requests, upgradesBeforeDetach = api.upgrades;
             REQUIRE(pending.detachSession(b));
             REQUIRE(waitFor([&] { return opened.size() == 3 && pending.tabs().isEmpty(); }));
@@ -758,7 +785,7 @@ bool run(const QString& scenario) {
                 }
             }
             REQUIRE(assigned == QSet<QString>({a, b}) && restoredPeer->currentSession() == a
-                && unchanged(store, beforeDetach) && fileBytes(profile.filePath("sessions.json")) == detachSessionBytes
+                && unchanged(store, beforeDetach) && fileBytes(profile.filePath("tabs.json")) == detachSessionBytes
                 && fileBytes(profile.filePath("window-layout.json")) == savedBytes
                 && fileBytes(source->ownedPath) == sourceBytes && api.requests == requestsBeforeDetach && api.upgrades == upgradesBeforeDetach);
             return true;
@@ -770,7 +797,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return pendingHost->windows().isEmpty(); }));
         REQUIRE(pool->waitForDone(15000)); QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents();
         REQUIRE(opened.size() == 2 && pendingHost->windows().isEmpty() && unchanged(store, before));
-        REQUIRE(fileBytes(profile.filePath("sessions.json")) == sessionBytes && api.requests == 0 && api.upgrades == 0);
+        REQUIRE(fileBytes(profile.filePath("tabs.json")) == sessionBytes && api.requests == 0 && api.upgrades == 0);
         const auto retained = podlord::WindowLayoutStore(profile.path()).load();
         REQUIRE(std::holds_alternative<podlord::WindowLayout>(retained) && std::get<podlord::WindowLayout>(retained) == layout);
         return true;
@@ -1046,12 +1073,18 @@ bool run(const QString& scenario) {
         REQUIRE(primary.alerts()->setPreferences(true, true));
         REQUIRE(waitFor([&] { return !primary.alerts()->busy() && primary.alerts()->muted(); }));
     }
+    QString openedContextId;
+    const auto retainedContextTabs = primary.tabs();
+    const auto retainedContextActive = primary.currentSession();
     if (scenario == "reopen") {
+        openedContextId = primary.sessionConfiguration(a).value("contextId").toString();
         REQUIRE(primary.close(a)); REQUIRE(waitFor([&] { return !primary.busy(); }));
         REQUIRE(primary.activate(b)); REQUIRE(waitFor([&] { return !primary.busy() && primary.resourceCount() == 2; }));
-        REQUIRE(primary.openSessionWindow(a));
-    } else if (scenario == "context_window") {
-        REQUIRE(primary.openContext(source->contexts[0].id, true));
+        REQUIRE(primary.openContext(openedContextId, true));
+    } else if (scenario == "context_window" || scenario == "context_window_overview") {
+        openedContextId = source->contexts[0].id;
+        if (scenario == "context_window_overview") REQUIRE(primary.showMapOverview() && primary.mapOverview());
+        REQUIRE(primary.openContext(openedContextId, true));
     } else if (scenario == "menu_window") {
         const auto click = [&](const QString& name) {
             return podlord::test::clickVisible(main, name);
@@ -1063,11 +1096,12 @@ bool run(const QString& scenario) {
             auto* menu = main->findChild<QObject*>("quickOpenWindowMenu");
             return menu && menu->property("opened").toBool();
         }));
-        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "quickWindowSession_" + a) != nullptr; }));
-        const QPointer<QQuickItem> entry(podlord::test::visibleItem(main->contentItem(), "quickWindowSession_" + a));
+        openedContextId = primary.sessionConfiguration(a).value("contextId").toString();
+        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "quickWindowContext_" + openedContextId) != nullptr; }));
+        const QPointer<QQuickItem> entry(podlord::test::visibleItem(main->contentItem(), "quickWindowContext_" + openedContextId));
         QSignalSpy triggered(entry, SIGNAL(triggered()));
         REQUIRE(triggered.isValid());
-        REQUIRE(click("quickWindowSession_" + a));
+        REQUIRE(click("quickWindowContext_" + openedContextId));
         if (!waitFor([&] { return !triggered.isEmpty(); }, 2000)) {
             if (entry) std::fprintf(stderr, "Separate-window menu did not receive the pointer: position=(%g,%g) size=%gx%g sameWindow=%d enabled=%d\n",
                 entry->mapToScene({entry->width()/2, entry->height()/2}).x(), entry->mapToScene({entry->width()/2, entry->height()/2}).y(),
@@ -1075,16 +1109,21 @@ bool run(const QString& scenario) {
             return false;
         }
     } else if (scenario == "new_context_window") {
+        openedContextId = source->contexts[1].id;
         REQUIRE(primary.close(b)); REQUIRE(waitFor([&] { return !primary.busy(); }));
         const auto current = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(current));
-        REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.remove(secondId)));
+        REQUIRE(std::none_of(std::get<podlord::SessionCatalog>(current).sessions.cbegin(),
+            std::get<podlord::SessionCatalog>(current).sessions.cend(), [&](const auto& tab) { return tab.id == secondId; }));
         REQUIRE(primary.reload()); REQUIRE(waitFor([&] { return !primary.busy(); }));
         REQUIRE(primary.beginYamlEdit() && primary.setYamlDraft(primary.yamlText() + "\n# existing editor remains here\n"));
-        REQUIRE(primary.openContext(source->contexts[1].id, true));
+        REQUIRE(primary.openContext(openedContextId, true));
         REQUIRE(waitFor([&] { return host.windows().size() == 2; }));
         auto* opened = qobject_cast<podlord::Workspace*>(QQmlEngine::contextForObject(host.windows().last())->contextProperty("workspace").value<QObject*>());
         REQUIRE(opened && opened->currentSession() != a && primary.currentSession() == a && primary.tabs().size() == 1 && primary.yamlDirty() && !primary.discardPending());
-        REQUIRE(waitFor([&] { return !opened->busy() && opened->resourceCount() == 2; })); return true;
+        REQUIRE(waitFor([&] { return !opened->busy() && opened->resourceCount() == 2; }));
+        REQUIRE(!opened->mapOverview() && opened->workspacePage() == "map");
+        REQUIRE(opened->showMapOverview() && opened->mapOverview());
+        REQUIRE(opened->navigateMap(-1) && !opened->mapOverview()); return true;
     } else
     if (scenario == "dirty_stay" || scenario == "dirty_discard") {
         REQUIRE(primary.beginYamlEdit() && primary.setYamlDraft(primary.yamlText() + "\n# local draft\n"));
@@ -1139,20 +1178,37 @@ bool run(const QString& scenario) {
     }
     auto* window = host.windows().last();
     auto* detached = qobject_cast<podlord::Workspace*>(QQmlEngine::contextForObject(window)->contextProperty("workspace").value<QObject*>());
-    REQUIRE(detached && detached != &primary && detached->currentSession() == a);
+    REQUIRE(detached && detached != &primary);
+    REQUIRE(waitFor([&] { return !detached->busy() && !detached->currentSession().isEmpty(); }));
+    const bool openedFreshContextWindow = scenario == "reopen" || scenario == "context_window"
+        || scenario == "context_window_overview" || scenario == "menu_window" || scenario == "new_context_window";
+    if (openedFreshContextWindow)
+        REQUIRE(detached->currentSession() != a
+            && detached->sessionConfiguration(detached->currentSession()).value("contextId").toString() == openedContextId);
+    else REQUIRE(detached->currentSession() == a);
+    if (scenario == "context_window" || scenario == "context_window_overview")
+        REQUIRE(detached->workspacePage() == "map" && !detached->mapOverview());
     if (scenario == "alerts_initial") {
         REQUIRE(detached->alerts()->muted() && detached->alerts()->reducedMotion());
         REQUIRE(waitFor([&] { return !detached->alerts()->busy(); }));
         REQUIRE(detached->alerts()->muted() && detached->alerts()->reducedMotion()); return true;
     }
-    if (scenario == "reopen") REQUIRE(waitFor([&] { return !detached->busy() && detached->canEditYaml(); }));
-    REQUIRE(primary.tabs().size() == 1 && primary.tabs()[0].toMap()["id"].toString() == b);
-    REQUIRE(detached->tabs().size() == 1 && detached->tabs()[0].toMap()["id"].toString() == a);
-    REQUIRE(primary.currentSession() == b && detached->loadingProgress() == 1 && api.authorized);
+    REQUIRE(waitFor([&] { return !detached->busy() && detached->resourceCount() == (scenario == "filter" ? 1 : 2)
+        && detached->loadingProgress() == 1; }));
+    if (scenario == "reopen") {
+        REQUIRE(detached->inspectorPath().isEmpty() && detached->inspectPath(path));
+        REQUIRE(waitFor([&] { return detached->canEditYaml(); }));
+    }
+    if (openedFreshContextWindow && scenario != "reopen")
+        REQUIRE(primary.tabs() == retainedContextTabs && primary.currentSession() == retainedContextActive);
+    else REQUIRE(primary.tabs().size() == 1 && primary.tabs()[0].toMap()["id"].toString() == b);
+    REQUIRE(detached->tabs().size() == 1 && detached->tabs()[0].toMap()["id"].toString() == detached->currentSession());
+    REQUIRE(primary.currentSession() == (openedFreshContextWindow && scenario != "reopen" ? retainedContextActive : b)
+        && detached->loadingProgress() == 1 && api.authorized);
     REQUIRE(waitFor([&] { return !primary.busy() && primary.resourceCount() == 2; }));
     if (scenario == "focus_minimized_windowed") {
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         const auto sourceBytes = fileBytes(source->ownedPath);
         const auto savedBytes = fileBytes(profile.filePath("window-layout.json"));
         const bool savedExists = QFileInfo::exists(profile.filePath("window-layout.json"));
@@ -1180,7 +1236,7 @@ bool run(const QString& scenario) {
             && primary.tabs().size() == 1 && primary.tabs()[0].toMap()["id"].toString() == b
             && detached->tabs().size() == 1 && detached->tabs()[0].toMap()["id"].toString() == a
             && primary.resourceCount() == 2 && detached->resourceCount() == 2 && unchanged(store, before)
-            && fileBytes(profile.filePath("sessions.json")) == sessionBytes && fileBytes(source->ownedPath) == sourceBytes
+            && fileBytes(profile.filePath("tabs.json")) == sessionBytes && fileBytes(source->ownedPath) == sourceBytes
             && fileBytes(profile.filePath("window-layout.json")) == savedBytes
             && QFileInfo::exists(profile.filePath("window-layout.json")) == savedExists
             && api.requests == requests && api.upgrades == upgrades);
@@ -1207,7 +1263,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
         const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
         const auto catalog = std::get<podlord::SessionCatalog>(saved);
-        REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open);
+        REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == firstId);
         return true;
     }
     if (scenario == "layout_quit_save_pending") {
@@ -1216,7 +1272,7 @@ bool run(const QString& scenario) {
         REQUIRE(pool->waitForDone(15000));
         const auto before = store.list();
         const auto savedBytes = fileBytes(profile.filePath("window-layout.json"));
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         REQUIRE(!savedBytes.isEmpty() && !sessionBytes.isEmpty());
         const int requests = api.requests, upgrades = api.upgrades;
         const int previousMaximum = pool->maxThreadCount();
@@ -1234,12 +1290,12 @@ bool run(const QString& scenario) {
         REQUIRE(primary.sessionWindowActionsReady() && detached->sessionWindowActionsReady());
         QEvent repeated(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &repeated);
         REQUIRE(!repeated.isAccepted() && host.windows().size() == 2 && unchanged(store, before));
-        REQUIRE(fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(profile.filePath("sessions.json")) == sessionBytes);
+        REQUIRE(fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(profile.filePath("tabs.json")) == sessionBytes);
         release->release(); blocked = false; pool->setMaxThreadCount(previousMaximum);
         REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
         REQUIRE(pool->waitForDone(15000)); QCoreApplication::sendPostedEvents(); QCoreApplication::processEvents();
         REQUIRE(host.windows().isEmpty() && !primary.viewCloseNeedsDecision() && unchanged(store, before)
-            && fileBytes(profile.filePath("sessions.json")) == sessionBytes && api.requests == requests && api.upgrades == upgrades);
+            && fileBytes(profile.filePath("tabs.json")) == sessionBytes && api.requests == requests && api.upgrades == upgrades);
         const auto saved = podlord::WindowLayoutStore(profile.path()).load();
         REQUIRE(std::holds_alternative<podlord::WindowLayout>(saved) && std::get<podlord::WindowLayout>(saved).size() == 2
             && fileBytes(profile.filePath("window-layout.json")) != savedBytes);
@@ -1258,7 +1314,7 @@ bool run(const QString& scenario) {
         window->setGeometry(geometry);
         REQUIRE(waitFor([&] { return window->geometry() == geometry; }));
         const auto before = store.list();
-        const auto sessionBytes = fileBytes(profile.filePath("sessions.json"));
+        const auto sessionBytes = fileBytes(profile.filePath("tabs.json"));
         const int requests = api.requests, upgrades = api.upgrades;
         QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
         REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
@@ -1278,7 +1334,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return restoredHost.windows().isEmpty(); }));
         const auto repeated = podlord::WindowLayoutStore(profile.path()).load();
         REQUIRE(std::holds_alternative<podlord::WindowLayout>(repeated) && std::get<podlord::WindowLayout>(repeated) == layout
-            && unchanged(store, before) && fileBytes(profile.filePath("sessions.json")) == sessionBytes
+            && unchanged(store, before) && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && api.requests == requests && api.upgrades == upgrades);
         return true;
     }
@@ -1459,7 +1515,7 @@ bool run(const QString& scenario) {
             REQUIRE(waitFor([&] { return host.windows().isEmpty(); }) && requested);
             const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
             const auto catalog = std::get<podlord::SessionCatalog>(saved);
-            REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open);
+            REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == firstId);
             return true;
         }
         if (scenario == "application_quit_tab_prompt" || scenario == "application_quit_cancel_retry"
@@ -1488,7 +1544,7 @@ bool run(const QString& scenario) {
             main->close(); REQUIRE(waitFor([&] { return host.windows().size() == 1; }));
             const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
             const auto catalog = std::get<podlord::SessionCatalog>(saved);
-            REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open && detached->yamlDirty());
+            REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == firstId && detached->yamlDirty());
             return true;
         }
         if (scenario == "application_quit_stay" || scenario == "application_quit_discard") {
@@ -1502,7 +1558,7 @@ bool run(const QString& scenario) {
                 main->close(); REQUIRE(waitFor([&] { return host.windows().size() == 1; }));
                 const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
                 const auto catalog = std::get<podlord::SessionCatalog>(saved);
-                REQUIRE(catalog.sessions[0].open && !catalog.sessions[1].open && detached->yamlDirty());
+                REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == firstId && detached->yamlDirty());
                 return true;
             }
         } else if (scenario == "application_quit_wait") {
@@ -1530,7 +1586,8 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return host.windows().isEmpty(); }));
         const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
         const auto catalog = std::get<podlord::SessionCatalog>(saved);
-        REQUIRE(catalog.sessions[0].open && catalog.sessions[1].open);
+        REQUIRE(catalog.sessions.size() == 2
+            && QSet<QUuid>({catalog.sessions[0].id, catalog.sessions[1].id}) == QSet<QUuid>({firstId, secondId}));
         const int requests = api.requests;
         podlord::Workspace restored(profile.path());
         REQUIRE(waitFor([&] { return !restored.busy() && restored.tabs().size() == 2; }));
@@ -1538,18 +1595,15 @@ bool run(const QString& scenario) {
         return true;
     }
     if (scenario == "nested") {
-        REQUIRE(detached->duplicateSession(a, "Third window"));
-        QString third;
-        REQUIRE(waitFor([&] {
-            for (const auto& row : detached->sessions()) if (row.toMap()["name"].toString() == "Third window") third = row.toMap()["id"].toString();
-            return !third.isEmpty() && !detached->busy();
-        }));
-        REQUIRE(detached->activate(third));
-        REQUIRE(waitFor([&] { return !detached->busy() && detached->tabs().size() == 2 && detached->resourceCount() == 2; }));
-        REQUIRE(detached->openSessionWindow(third) && host.windows().size() == 3);
+        const auto contextId = detached->sessionConfiguration(a).value("contextId").toString();
+        REQUIRE(detached->openContext(contextId, true));
+        REQUIRE(waitFor([&] { return !detached->busy() && host.windows().size() == 3; }));
         auto* thirdWindow = host.windows().last();
         auto* thirdWorkspace = qobject_cast<podlord::Workspace*>(QQmlEngine::contextForObject(thirdWindow)->contextProperty("workspace").value<QObject*>());
-        REQUIRE(thirdWorkspace && thirdWorkspace->currentSession() == third && detached->currentSession() == a && primary.currentSession() == b);
+        REQUIRE(thirdWorkspace && waitFor([&] { return !thirdWorkspace->busy() && !thirdWorkspace->currentSession().isEmpty(); })
+            && thirdWorkspace->currentSession() != a
+            && thirdWorkspace->sessionConfiguration(thirdWorkspace->currentSession()).value("contextId").toString() == contextId
+            && detached->currentSession() == a && primary.currentSession() == b);
         thirdWindow->close(); REQUIRE(waitFor([&] { return host.windows().size() == 2; }));
         REQUIRE(detached->tabs().size() == 1 && primary.tabs().size() == 1); return true;
     }
@@ -1564,15 +1618,19 @@ bool run(const QString& scenario) {
             return !primary.busy() && std::holds_alternative<podlord::SessionCatalog>(saved)
                 && std::get<podlord::SessionCatalog>(saved).activeSession == secondId;
         }));
-        const auto selected = std::get<podlord::SessionCatalog>(store.list());
-        REQUIRE(selected.sessions[1].usageAt.size() == prior.sessions[1].usageAt.size() + 1);
+        REQUIRE(primary.tabs().size() == 1 && detached->tabs().size() == 1
+            && primary.tabs().first().toMap()["id"].toString() == b
+            && detached->tabs().first().toMap()["id"].toString() == a);
         REQUIRE(detached->activate(a));
         REQUIRE(waitFor([&] {
             const auto saved = store.list();
+            const auto primaryTabs = primary.tabs();
+            const auto detachedTabs = detached->tabs();
             return !detached->busy() && std::holds_alternative<podlord::SessionCatalog>(saved)
                 && std::get<podlord::SessionCatalog>(saved).activeSession == firstId
-                && primary.sessions().first().toMap()["id"].toString() == a
-                && detached->sessions().first().toMap()["id"].toString() == a;
+                && primaryTabs.size() == 1 && detachedTabs.size() == 1
+                && primaryTabs.first().toMap()["id"].toString() == b
+                && detachedTabs.first().toMap()["id"].toString() == a;
         }));
         const auto repeated = store.list();
         REQUIRE(primary.activate(a) && unchanged(store, repeated)); return true;
@@ -1584,7 +1642,7 @@ bool run(const QString& scenario) {
     }
     if (scenario == "filter") { REQUIRE(detached->filterText() == "=alpha" && detached->resourceCount() == 1 && primary.filterText().isEmpty()); return true; }
     if (scenario == "rename") {
-        REQUIRE(primary.renameSession(a, "Detached renamed"));
+        REQUIRE(primary.renameSourceContext(primary.sessionConfiguration(a).value("contextId").toString(), "Detached renamed"));
         REQUIRE(waitFor([&] { return !primary.busy() && detached->title().contains("Detached renamed"); })); return true;
     }
     if (scenario == "settings") {
@@ -1594,17 +1652,11 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return !primary.busy() && !detached->radarWaterEnabled() && detached->radarWaterSpeedPercent() == 77; })); return true;
     }
     if (scenario == "preset" || scenario == "columns") {
-        REQUIRE(detached->duplicateSession(a,"Transfer guard"));
-        QString extra;
-        REQUIRE(waitFor([&] {
-            if (detached->busy()) return false;
-            for (const auto& entry:detached->sessions()) {
-                const auto session=entry.toMap();
-                if (session["name"]=="Transfer guard") extra=session["id"].toString();
-            }
-            return !extra.isEmpty();
-        }));
-        REQUIRE(detached->activate(extra) && waitFor([&] { return !detached->busy() && detached->tabs().size()==2; }));
+        const auto contextId = detached->sessionConfiguration(a).value("contextId").toString();
+        REQUIRE(detached->openContext(contextId,false,true));
+        REQUIRE(waitFor([&] { return !detached->busy() && detached->tabs().size()==2; }));
+        const auto extra = detached->currentSession();
+        REQUIRE(extra != a);
         REQUIRE(detached->activate(a) && waitFor([&] { return detached->currentSession()==a && detached->sessionWindowActionsReady(); }));
     }
     if (scenario == "preset") {
@@ -1672,7 +1724,7 @@ bool run(const QString& scenario) {
     if (scenario == "close_locked") {
         REQUIRE(waitFor([&] { return !detached->busy(); }));
         const auto before = store.list();
-        QLockFile lock(profile.filePath("sessions.lock")); REQUIRE(lock.tryLock(0));
+        QLockFile lock(profile.filePath("tabs.lock")); REQUIRE(lock.tryLock(0));
         REQUIRE(!window->close());
         REQUIRE(waitFor([&] { return !detached->busy() && !detached->error().isEmpty(); }));
         REQUIRE(host.windows().size() == 2 && detached->currentSession() == a && detached->tabs().size() == 1 && unchanged(store, before));
@@ -1684,10 +1736,11 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return host.windows().size() == 1; }));
         const auto saved = store.list(); REQUIRE(std::holds_alternative<podlord::SessionCatalog>(saved));
         const auto catalog = std::get<podlord::SessionCatalog>(saved);
-        REQUIRE(catalog.sessions[0].open == (scenario == "main_close") && catalog.sessions[1].open == (scenario == "close"));
+        const auto expectedRemaining = scenario == "main_close" ? firstId : secondId;
+        REQUIRE(catalog.sessions.size() == 1 && catalog.sessions[0].id == expectedRemaining);
         REQUIRE(scenario == "main_close" ? detached->resourceCount() == 2 : primary.resourceCount() == 2); return true;
     }
-    REQUIRE(scenario == "active" || scenario == "background" || scenario == "dirty_discard" || scenario == "reopen" || scenario == "context_window" || scenario == "menu_window"); return true;
+    REQUIRE(scenario == "active" || scenario == "background" || scenario == "dirty_discard" || scenario == "reopen" || scenario == "context_window" || scenario == "context_window_overview" || scenario == "menu_window"); return true;
 }
 
 bool realTransfer(const QString& configPath) {
@@ -1718,12 +1771,11 @@ bool realTransfer(const QString& configPath) {
     };
     REQUIRE(forward());
     const auto firstTask = primary.portForwards().first().toMap(); const auto firstPort = firstTask["localPort"].toUInt();
-    REQUIRE(primary.duplicateSession(a, "Independent")); REQUIRE(waitFor([&] { return !primary.busy(); }));
-    QString b;
-    REQUIRE(waitFor([&] {
-        for (const auto& row : primary.sessions()) if (row.toMap()["name"].toString() == "Independent") b = row.toMap()["id"].toString();
-        return !b.isEmpty() && !primary.busy();
-    }));
+    const auto contextId = primary.sessionConfiguration(a).value("contextId").toString();
+    REQUIRE(primary.openContext(contextId,false,true));
+    REQUIRE(waitFor([&] { return !primary.busy() && primary.tabs().size()==2; }));
+    const auto b = primary.currentSession();
+    REQUIRE(b != a);
     REQUIRE(primary.activate(b));
     REQUIRE(waitFor([&] { return !primary.busy() && primary.loadingProgress() == 1; }, 120000)); REQUIRE(forward());
     const auto secondTask = primary.portForwards().first().toMap(); const auto secondPort = secondTask["localPort"].toUInt();

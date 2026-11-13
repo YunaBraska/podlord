@@ -27,7 +27,7 @@ Pane {
                 : editor.controller.filterPickerField === "restarts" ? '>=3 =0 (alternatives), /regex/'
                 : 'Alternatives, "exact", ~prefix, suffix~, /regex/'
             Accessible.name: "Field filter expression"
-            Accessible.description: editor.quantityField ? "Numeric filters use actual measurements. CPU uses cores, c, milliCPU or millicores. Memory/storage units are case-insensitive: m or MB means megabytes, mi or MiB means mebibytes. Ranges all match; exact numeric alternatives use OR. Without numeric terms, exact text, prefix, suffix and regex match the displayed value, including unavailable, stale or incomplete markers." : "Edit the complete expression, including custom values. Filtering does not start requests."
+            Accessible.description: editor.quantityField ? "Numeric filters use actual measurements. CPU uses cores, c, milliCPU or millicores. Memory/storage units are case-insensitive: m or MB means megabytes, mi or MiB means mebibytes. Ranges all match; exact numeric alternatives use OR. Without numeric terms, exact text, prefix, suffix and regex match the displayed value, including unavailable or incomplete values." : "Edit the complete expression, including custom values. Filtering does not start requests."
             onTextEdited: editor.controller.filterField(editor.controller.filterPickerField, text)
         }
         Label {
@@ -85,6 +85,7 @@ Pane {
                     rightPadding: valueControl.mirrored && valueControl.indicator ? valueControl.indicator.width + valueControl.spacing : 0
                 }
                 onClicked: editor.controller.selectFilterValue(modelData, checked)
+                onPressAndHold: copyMenu.popup(valueControl, 0, valueControl.height)
                 ToolTip {
                     visible: valueControl.hovered || valueControl.activeFocus
                     contentItem: Label {

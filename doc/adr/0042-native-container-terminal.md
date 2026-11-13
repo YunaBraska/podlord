@@ -105,3 +105,12 @@ and warns that remote processes may continue. Explicit shell exit remains
 available. This is also a [documented runtime limitation](https://github.com/opencontainers/runc/issues/3359).
 Controlled termination of only the owned shell and its foreground processes
 requires a separate lifecycle decision; no blind kill or extra exec is implied.
+
+## Contextual feedback
+
+The terminal owns a machine-readable failure classification. Rendering does not
+infer failure from the fact that a connection ended or from its human-readable
+status text. Successful exits and failures therefore remain distinct. Validation
+feedback belongs to the inspected resource, not the workspace-wide error banner.
+Changing the resource or closing its Inspector clears inactive feedback without
+requiring a Dismiss action. An active shell retains its original owner and target.

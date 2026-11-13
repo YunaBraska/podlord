@@ -1,6 +1,12 @@
 #include "workspace.h"
 
 namespace podlord {
+QString Workspace::terminalError() const {
+    if (!currentNavigation().terminalError.isEmpty()) return currentNavigation().terminalError;
+    const auto* terminal = containerTerminal();
+    return terminal && !terminal->active() && client_.terminalConnection(active_).value("path").toString() == inspectorPath()
+        ? terminal->status() : QString{};
+}
 bool Workspace::canStartTerminal() const {
     const auto row = client_.resource(active_, inspectorPath()); const auto* existing = containerTerminal();
     return !busy_ && !authenticationRequired() && !authenticationRunning() && (!existing || !existing->active())
@@ -14,9 +20,10 @@ QStringList Workspace::terminalContainers() const {
 }
 bool Workspace::startContainerTerminal(const QString& container, const QString& shell) {
     if (!canStartTerminal()) return false;
+    navigation_[active_].terminalError.clear();
     const auto result = client_.startTerminal(active_, inspectorPath(), container, shell);
-    if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; emit changed(); return false; }
-    error_.clear(); return setInspectorPage("terminal");
+    if (const auto* failure = std::get_if<Failure>(&result)) { navigation_[active_].terminalError = failure->message; emit changed(); return false; }
+    return setInspectorPage("terminal");
 }
 bool Workspace::stopContainerTerminal() { return client_.stopTerminal(active_); }
 }

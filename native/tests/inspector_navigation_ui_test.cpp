@@ -87,8 +87,8 @@ bool run(const QString& scenario, const QString& configPath) {
     if (!window || !waitFor([&] { return !workspace.busy(); }) || !workspace.openContext(source->contexts.first().id)
         || !waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })) return false;
     if (scenario == "narrow") window->resize(720, 620);
-    if (scenario == "keyboard" && !podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return false;
     if (!waitFor([&] { return workspace.table()->rowCount() > 1 && !workspace.loading(); }, real ? 120000 : 10000)) return false;
+    if (scenario == "keyboard" && !podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return false;
     const QString prefix = real ? "/api/v1/namespaces/visual-a/configmaps/visual-config-" : "/api/v1/namespaces/default/configmaps/entry-";
     const auto target = [&](int n) { return prefix + QString("%1").arg(real ? n + 1 : n, real ? 4 : 2, 10, QLatin1Char('0')); };
     const auto open = [&](int n) {
@@ -118,7 +118,10 @@ bool run(const QString& scenario, const QString& configPath) {
         const int step = scenario == "invalid_positive" ? 2 : scenario == "invalid_negative" ? -2 : 0;
         return !workspace.navigateInspector(step) && workspace.inspectorPath() == target(0) && requests == before && !back() && !forward();
     }
-    if (scenario == "initial") return !back() && !forward() && writes == 0;
+    if (scenario == "initial") {
+        const auto* metricHeader = named("overviewMetricHeader");
+        return metricHeader && !metricHeader->isVisible() && !back() && !forward() && writes == 0;
+    }
     if (scenario == "repeat") return open(0) && !back() && !forward() && writes == 0;
     if (!open(1)) return false;
     if (scenario == "missing") {

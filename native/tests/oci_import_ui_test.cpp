@@ -233,9 +233,9 @@ bool run(const QString& scenario) {
             || !QTest::qWaitFor([&] { return !workspace.busy() && workspace.sourceRemoval().isEmpty() && workspace.contexts().isEmpty(); }, 5000)) {
             qWarning() << "OCI removal did not settle" << workspace.busy() << workspace.contexts().size() << workspace.sourceRemoval() << workspace.sourceImportError(); return false;
         }
-        const bool removed=workspace.sessions().isEmpty() && workspace.sourceImportError().contains("private credential")
+        const bool removed=workspace.tabs().isEmpty() && workspace.sourceImportError().contains("private credential")
             && QFileInfo(privateCopy).isDir() && QFileInfo::exists(keyPath) && requests == 0;
-        if (!removed) qWarning() << "OCI removal outcome" << workspace.sessions().size() << workspace.sourceImportError() << QFileInfo(privateCopy).isDir() << QFileInfo::exists(keyPath) << requests;
+        if (!removed) qWarning() << "OCI removal outcome" << workspace.tabs().size() << workspace.sourceImportError() << QFileInfo(privateCopy).isDir() << QFileInfo::exists(keyPath) << requests;
         return removed;
     }
     if (!workspace.refresh(true) || !QTest::qWaitFor([&] { return requests > 0 && !workspace.authenticationRunning(); }, 5000)

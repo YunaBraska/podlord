@@ -407,7 +407,7 @@ assert.equal(stdout.split(/\r?\n/).filter(line=>line===expected).length,1,'Expec
 assert.deepEqual((stdout+'\n'+stderr).split(/\r?\n/).filter(line=>/UI scenario (?:passed|failed):/.test(line)),[expected],'Unexpected iOS UI completion markers.');
 const matrix=JSON.parse(fs.readFileSync(process.argv[4],'utf8'));
 assert.equal(matrix.platform,'ios');
-const views=[...['alerts','appearance','diagnostics','graphics','privacy','sources','sync','workspace','about'].map(section=>'settings-'+section),
+const views=[...['alerts','appearance','diagnostics','sources','sync','about'].map(section=>'settings-'+section),
     'map-context','map-overview','resources','radar','events','ports',
     ...['overview','yaml','events','links','values','terminal'].map(section=>'inspector-'+section)].sort();
 assert.equal(matrix.captures.length,19*2*views.length);
@@ -415,7 +415,7 @@ const themes=new Set(matrix.captures.map(frame=>frame.theme));
 assert.equal(themes.size,19);
 for(const theme of themes) for(const variant of ['dark','light'])
     assert.deepEqual(matrix.captures.filter(frame=>frame.theme===theme&&frame.variant===variant).map(frame=>frame.view).sort(),views);
-console.log('iOS real Kubernetes theme matrix passed: 19 themes, two variants, 21 views including both maps and the terminal ready form.');
+console.log('iOS real Kubernetes theme matrix passed: 19 themes, two variants, 18 current views including both maps, connections and the terminal ready form.');
 JS
     printf 'iOS review completed; cleaning up owned simulator, cluster and profiles.\n'
     exit 0

@@ -290,6 +290,7 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
     auto roles = ruleRows_.roleNames();
     roles.insert(Qt::UserRole, "resourcePath"); roles.insert(Qt::UserRole + 1, "identityColor");
     roles.insert(Qt::UserRole + 2, "valueDetail"); roles.insert(Qt::UserRole + 3, "encodedValue");
+    roles.insert(Qt::UserRole + 4, "resourceName");
     roles.insert(Qt::UserRole + 6, "sortValue"); ruleRows_.setItemRoleNames(roles);
     table_.setSourceModel(&ruleRows_); table_.setSortRole(Qt::UserRole + 6);
     connect(this, &Alerts::rulesChanged, this, &Alerts::publishTable);
@@ -308,10 +309,9 @@ bool Alerts::publishTableMatches() {
         const auto index = ruleRows_.index(row, 1);
         const auto identity = ruleRows_.index(row, 0).data(Qt::UserRole).toString();
         const int count = counts.value(identity);
-        const bool hasMatches = counts.contains(identity);
         const auto rule=std::find_if(catalog_.rules.cbegin(), catalog_.rules.cend(), [&](const auto& candidate) { return candidate.value["id"] == identity; });
         const bool notEvaluated=rule==catalog_.rules.cend() || rule->value["draft"].toBool() || !rule->value["enabled"].toBool() || !evaluated;
-        const auto text=notEvaluated ? presentationText_.value("alert.notEvaluated").toString() : hasMatches ? presentationText_.value("alert.triggeredState").toString() + " (" + QString::number(count) + ')' : presentationText_.value("alert.notTriggeredState").toString();
+        const auto text = notEvaluated ? QString("-") : QString::number(count);
         if (index.data(Qt::UserRole + 6).toInt() == count && index.data(Qt::DisplayRole).toString() == text) continue;
         ruleRows_.setItemData(index, {{Qt::DisplayRole, text}, {Qt::UserRole + 2, text}, {Qt::UserRole + 6, count}});
     }
@@ -343,24 +343,25 @@ bool Alerts::publishTable() {
         if (rule["color"] != "none") actions.append("color: " + rule["color"].toString());
         if (rule["animation"] != "none") actions.append("animation: " + rule["animation"].toString());
         if (rule["zoom"].toInt() > 0) actions.append("zoom: " + QString::number(rule["zoom"].toInt()) + '%');
-        QString soundLabel = rule["sound"].toString();
+        QString soundLabel = rule["sound"] == "none" ? QString("-") : rule["sound"].toString();
         for (const auto& sound : sounds) {
             const auto value = sound.toMap();
-            if (value["id"] == rule["sound"].toVariant()) { soundLabel = value["name"].toString() + " (" + value["license"].toString() + ')'; break; }
+            if (rule["sound"] != "none" && value["id"] == rule["sound"].toVariant()) { soundLabel = value["name"].toString(); break; }
         }
         const bool isDraft=rule["draft"].toBool(), enabled=rule["enabled"].toBool();
         const QString enabledLabel=presentationText_.value(isDraft ? "alert.draft" : enabled ? "alert.enabledState" : "alert.disabledState").toString();
-        const QString triggeredLabel=!enabled || isDraft || !evaluated ? presentationText_.value("alert.notEvaluated").toString()
-            : counts.contains(identity) ? presentationText_.value("alert.triggeredState").toString() + " (" + QString::number(counts.value(identity)) + ')' : presentationText_.value("alert.notTriggeredState").toString();
+        const QString triggeredLabel = !enabled || isDraft || !evaluated ? QString("-") : QString::number(counts.value(identity));
         const QVariantList values{enabledLabel, triggeredLabel, rule["name"].toString(), groups.join(" " + presentationText_.value("alert.any").toString() + " "), actions.join(", "), soundLabel};
         for (int column = 0; column < values.size(); ++column) {
             const QVariant sorting = column == 0 ? QVariant(isDraft ? 0 : enabled ? 2 : 1) : column == 1 ? QVariant(counts.value(identity)) : values[column];
             const auto* previous = ruleRows_.item(row, column);
             if (previous && previous->data(Qt::DisplayRole) == values[column] && previous->data(Qt::UserRole) == identity
+                && previous->data(Qt::UserRole + 4) == rule["name"].toString()
                 && previous->data(Qt::UserRole + 6) == sorting) continue;
             auto* item = new QStandardItem(values[column].toString());
             item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
             item->setData(identity, Qt::UserRole); item->setData(QColor(Qt::transparent), Qt::UserRole + 1);
+            item->setData(rule["name"].toString(), Qt::UserRole + 4);
             item->setData(values[column], Qt::UserRole + 2); item->setData(false, Qt::UserRole + 3); item->setData(sorting, Qt::UserRole + 6);
             ruleRows_.setItem(row, column, item);
         }
@@ -654,9 +655,9 @@ bool Alerts::dispatch() {
         return evaluate(snapshot, catalog, changes, now);
     })); return true;
 }
-bool Alerts::play(const QString& id) {
+bool Alerts::play(const QString& id, int previewPercent) {
     for (const auto& value : sounds()) { const auto sound=value.toMap(); if (sound["id"].toString()!=id) continue;
-        if (id=="none" || qEnvironmentVariableIntValue("PODLORD_DISABLE_AUDIO") != 0) return true;
+        if (id=="none" || qEnvironmentVariableIntValue("PODLORD_DISABLE_AUDIO") != 0 || (previewPercent >= 0 ? previewPercent : volumePercent_) == 0) return true;
         if (!player_) { output_=std::make_unique<QAudioOutput>(); player_=std::make_unique<QMediaPlayer>(); player_->setAudioOutput(output_.get());
             connect(player_.get(), &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) { error_="Local alert sound could not be played. Visual alarms remain active."; emit rulesChanged(); });
             connect(player_.get(), &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
@@ -666,10 +667,21 @@ bool Alerts::play(const QString& id) {
                     player_.reset(); output_.reset();
                 });
             }); }
+        output_->setVolume(static_cast<float>(previewPercent >= 0 ? previewPercent : volumePercent_) / 100.0F);
         player_->stop(); player_->setSource(QUrl(sound["asset"].toString())); player_->play(); return true;
     } return false;
 }
 bool Alerts::previewSound(const QString& id) { return !muted() && play(id); }
+bool Alerts::setVolumePercent(int percent) {
+    if (percent < 0 || percent > 100) return false;
+    if (volumePercent_ == percent) return true;
+    volumePercent_ = percent;
+    if (output_) output_->setVolume(static_cast<float>(percent) / 100.0F);
+    return true;
+}
+bool Alerts::previewVolume(int percent) {
+    return percent >= 0 && percent <= 100 && !muted() && play("gentle-change", percent);
+}
 bool Alerts::previewZoom(const QVariantMap& draft, const QStringList& visiblePaths) {
     if (zoomPreviewBusy_) return false;
     const auto reject = [this](const QString& message) { zoomPreviewError_ = message; emit zoomPreviewChanged(); return false; };

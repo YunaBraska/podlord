@@ -707,7 +707,8 @@ void RadarIsland::paint(QPainter* painter) {
         }
         const auto elapsed=now-entry.started;
         const double scale=entry.animation==RadarTiles::Animation::Pulse ? oscillation(elapsed,400,.8) : 1;
-        const double opacity=entry.animation==RadarTiles::Animation::Blink ? oscillation(elapsed,350,.35) : 1;
+        const double opacity=entry.animation==RadarTiles::Animation::Blink ? oscillation(elapsed,350,.35)
+            : entry.animation==RadarTiles::Animation::Pulse ? oscillation(elapsed,400,.4) : 1;
         const auto outline=[&](const QRectF& bounds,const QColor& color,double width) {
             painter->fillRect(QRectF(bounds.left(),bounds.top(),bounds.width(),width),color);
             painter->fillRect(QRectF(bounds.left(),bounds.bottom()-width,bounds.width(),width),color);
@@ -779,7 +780,7 @@ bool RadarWater::noteRequest() {
 }
 int RadarWater::interval() {
     while (!requests_.isEmpty() && requests_.head()<=clock_.elapsed()-60000) requests_.dequeue();
-    return std::clamp(qRound(460-speed_*.01*380-requests_.size()/240.*40),60,520);
+    return std::clamp(qRound(1400-speed_*.01*1320-requests_.size()/240.*40),60,1400);
 }
 void RadarWater::syncTimer() {
     if (!playing_ || !isVisible() || !window() || !window()->isExposed() || speed_<=0) { timer_.stop(); return; }

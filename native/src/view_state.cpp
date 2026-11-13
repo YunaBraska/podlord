@@ -1,3 +1,4 @@
+#include "context_catalog.h"
 #include "view_state.h"
 #include <QDir>
 #include <QFile>
@@ -5,12 +6,13 @@
 #include <QJsonDocument>
 #include <QLockFile>
 #include <QSaveFile>
+#include <QRegularExpression>
 
 namespace podlord {
 int resourceDisplayLimit(const QString& text) {
     bool valid = false;
     const int value = text.trimmed().toInt(&valid);
-    return !valid || value <= 0 ? 256 : std::min(value, 5000);
+    return !valid || value <= 0 ? DefaultResourceDisplayLimit : std::min(value, 5000);
 }
 namespace {
 bool validLimit(const QJsonValue& value) {
@@ -18,10 +20,14 @@ bool validLimit(const QJsonValue& value) {
 }
 bool validSession(const QString& session) {
     const auto id = QUuid::fromString(session);
-    return !id.isNull() && id.toString(QUuid::WithoutBraces) == session;
+    static const QRegularExpression context("\\Actx:[0-9a-f]{64}\\z");
+    return (!id.isNull() && id.toString(QUuid::WithoutBraces) == session) || context.match(session).hasMatch();
 }
 bool validState(const TableViewState& value, const QStringList& columns) {
     if (value.limit < 1 || value.limit > 5000) return false;
+    static const QRegularExpression name("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$");
+    for (qsizetype index = 0; index < value.namespaces.size(); ++index)
+        if (!name.match(value.namespaces[index]).hasMatch() || (index > 0 && value.namespaces[index] <= value.namespaces[index-1])) return false;
     if (!QStringList{"", "problems", "activity"}.contains(value.mode)) return false;
     if (value.column.isEmpty() ? value.descending : !columns.contains(value.column)) return false;
     for (auto field = value.fields.cbegin(); field != value.fields.cend(); ++field)
@@ -40,10 +46,11 @@ Result<TableViewStates> ViewStateStore::load(const QString& session) const {
     const auto folder = QDir(profile_).filePath("views");
     if (const auto failure = profileFailure(profile_)) return *failure;
     if (const auto failure = profileFailure(folder)) return *failure;
-    const auto path = QDir(folder).filePath(session + ".json");
+    const auto path = QDir(folder).filePath(session.startsWith("ctx:") ? contextViewName(session) : session + ".json");
     if (QFileInfo(path).isSymLink()) return Failure{StoreError::InvalidData, "Saved views must not be symbolic links."};
     TableViewStates result;
-    for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) result.insert(table.key(), {});
+    for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table)
+        result.insert(table.key(), table.key() == "resource" ? TableViewState{.limit = DefaultResourceDisplayLimit} : TableViewState{});
     if (!QFileInfo::exists(path)) return result;
     QFile file(path);
     if (!QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > 65536)
@@ -55,8 +62,11 @@ Result<TableViewStates> ViewStateStore::load(const QString& session) const {
     const auto root = document.object();
     if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || !root["version"].isDouble() || !root["views"].isObject())
         return Failure{StoreError::InvalidData, "Invalid saved views; existing data was retained."};
+    if (session.startsWith("ctx:") && root["version"] != 7)
+        return Failure{StoreError::UnsupportedVersion, "Unsupported context settings format. Existing data was retained."};
     const bool legacy = root["version"] == 1;
-    const bool limits = root["version"] == 6;
+    const bool scoped = session.startsWith("ctx:") && root["version"] == 7;
+    const bool limits = root["version"] == 6 || scoped;
     const bool modes = root["version"] == 3 || root["version"] == 4 || root["version"] == 5 || limits;
     if (!legacy && root["version"] != 2 && !modes) return Failure{StoreError::UnsupportedVersion, "Unsupported saved-view version; existing data was retained."};
     const auto views = root["views"].toObject();
@@ -70,19 +80,26 @@ Result<TableViewStates> ViewStateStore::load(const QString& session) const {
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) {
         if (added.contains(table.key())) continue;
         const auto value = views[table.key()].toObject();
-        if (!views[table.key()].isObject() || value.size() != (limits ? 6 : legacy ? 3 : modes ? 5 : 4) || !value["filter"].isString() || !value["column"].isString() || !value["descending"].isBool()
+        if (!views[table.key()].isObject() || value.size() != (scoped ? 7 : limits ? 6 : legacy ? 3 : modes ? 5 : 4) || !value["filter"].isString() || !value["column"].isString() || !value["descending"].isBool()
             || (!legacy && !value["fields"].isObject()) || (modes && !value["mode"].isString()) || (limits && !validLimit(value["limit"])))
             return Failure{StoreError::InvalidData, "Invalid saved filter or sort; existing data was retained."};
         TableViewState state{value["filter"].toString(), value["column"].toString(), value["descending"].toBool(), {}};
         state.mode = value["mode"].toString();
         if (limits) state.limit = value["limit"].toInt();
+        if (scoped) {
+            if (!value["namespaces"].isArray()) return Failure{StoreError::InvalidData, "Invalid namespace access scope."};
+            for (const auto& name : value["namespaces"].toArray()) {
+                if (!name.isString()) return Failure{StoreError::InvalidData, "Invalid namespace access scope."};
+                state.namespaces.append(name.toString());
+            }
+        }
         const auto fields = value["fields"].toObject();
         for (auto field = fields.begin(); field != fields.end(); ++field) {
             if (!field.value().isString() || field.value().toString().isEmpty() || !table.value().contains(field.key()))
                 return Failure{StoreError::InvalidData, "Invalid saved field filter; existing data was retained."};
             state.fields.insert(field.key(), field.value().toString());
         }
-        if (!validState(state, table.value()) || (table.key() != "resource" && (!state.mode.isEmpty() || state.limit != 256))) return Failure{StoreError::InvalidData, "Unsupported saved column, mode or resource limit."};
+        if (!validState(state, table.value()) || (table.key() != "resource" && (!state.mode.isEmpty() || state.limit != 256 || !state.namespaces.isEmpty()))) return Failure{StoreError::InvalidData, "Unsupported saved column, mode or resource limit."};
         result[table.key()] = state;
     }
     return result;
@@ -91,6 +108,8 @@ Result<TableViewStates> ViewStateStore::save(const QString& session, const QStri
     const TableViewState& value, const TableViewState& expected) const {
     if (!validSession(session) || !schemas_.contains(table) || !validState(value, schemas_.value(table)) || (table != "resource" && (!value.mode.isEmpty() || value.limit != 256)))
         return Failure{StoreError::InvalidInput, "Choose a valid session, table and sort column."};
+    if ((!session.startsWith("ctx:") || table != "resource") && !value.namespaces.isEmpty())
+        return Failure{StoreError::InvalidInput, "Namespace access scope belongs to context resources."};
     const auto folder = QDir(profile_).filePath("views");
     if (const auto failure = profileFailure(profile_)) return *failure;
     if (const auto failure = profileFailure(folder)) return *failure;
@@ -100,11 +119,18 @@ Result<TableViewStates> ViewStateStore::save(const QString& session, const QStri
         || (profileCreated && !QFile::setPermissions(profile_, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner))
         || (folderCreated && !QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner)))
         return Failure{StoreError::WriteFailed, "Cannot create private saved-view storage."};
-    const auto path = QDir(folder).filePath(session + ".json");
+    const auto path = QDir(folder).filePath(session.startsWith("ctx:") ? contextViewName(session) : session + ".json");
     if (QFileInfo(path + ".lock").isDir() || QFileInfo(path + ".lock").isSymLink())
         return Failure{StoreError::WriteFailed, "Saved-view lock path is not a regular lock file."};
     QLockFile lock(path + ".lock"); lock.setStaleLockTime(0);
     if (!lock.tryLock(0)) return Failure{lock.error() == QLockFile::LockFailedError ? StoreError::Busy : StoreError::WriteFailed, "Cannot lock saved views; reload before retrying."};
+    if (session.startsWith("ctx:")) {
+        const auto catalog = readContextCatalog(profile_);
+        if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
+        const auto& sources = std::get<ContextCatalog>(catalog).sources;
+        if (std::none_of(sources.begin(), sources.end(), [&](const auto& ids) { return ids.contains(session); }))
+            return Failure{StoreError::NotFound, "This context was removed. Its settings were not recreated."};
+    }
     const auto current = load(session);
     if (const auto* failure = std::get_if<Failure>(&current)) return *failure;
     auto states = std::get<TableViewStates>(current);
@@ -112,8 +138,16 @@ Result<TableViewStates> ViewStateStore::save(const QString& session, const QStri
     if (states.value(table) == value) return states;
     states[table] = value;
     QJsonObject encoded;
-    for (auto state = states.cbegin(); state != states.cend(); ++state) encoded[state.key()] = encode(state.value());
-    const auto bytes = QJsonDocument(QJsonObject{{"version", 6}, {"views", encoded}}).toJson(QJsonDocument::Indented);
+    for (auto state = states.cbegin(); state != states.cend(); ++state) {
+        auto record = encode(state.value());
+        if (session.startsWith("ctx:")) {
+            QJsonArray namespaces;
+            for (const auto& name : state->namespaces) namespaces.append(name);
+            record.insert("namespaces", namespaces);
+        }
+        encoded[state.key()] = record;
+    }
+    const auto bytes = QJsonDocument(QJsonObject{{"version", session.startsWith("ctx:") ? 7 : 6}, {"views", encoded}}).toJson(QJsonDocument::Indented);
     if (bytes.size() > 65536) return Failure{StoreError::InvalidInput, "The saved session view exceeds the 64 KiB document boundary."};
     QSaveFile file(path); file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
@@ -149,8 +183,11 @@ Result<TableViewStates> decodePresets(const QJsonObject& root, const QStringList
         if (!validState(state, columns)) return Failure{StoreError::InvalidData, "Unsupported preset field or mode."};
         result.insert(name, state);
     }
-    if (!result.contains("default") || result.value("default") != TableViewState{})
+    auto defaultPreset = result.value("default");
+    if (defaultPreset.limit == 256) defaultPreset.limit = DefaultResourceDisplayLimit;
+    if (!result.contains("default") || defaultPreset != TableViewState{.limit = DefaultResourceDisplayLimit})
         return Failure{StoreError::InvalidData, "The default filter preset cannot be renamed, replaced or deleted."};
+    result["default"] = defaultPreset;
     return result;
 }
 Result<TableViewStates> decodeLegacyPresets(const QJsonArray& source, const QStringList& columns) {
@@ -180,7 +217,7 @@ Result<TableViewStates> decodeLegacyPresets(const QJsonArray& source, const QStr
             record["activityOnly"].toBool() ? "activity" : record["problemsOnly"].toBool() ? "problems" : ""};
         for (auto field = fields.cbegin(); field != fields.cend(); ++field)
             if (const auto expression = record[field.key()].toString(); !expression.isEmpty()) value.fields[field.value()] = expression;
-        value.limit = resourceDisplayLimit(record["limit"].toString());
+        value.limit = record.contains("limit") ? resourceDisplayLimit(record["limit"].toString()) : 256;
         // The reference clears Id on load; Limit is a display cap, not a cache predicate.
         result[name.compare("default", Qt::CaseInsensitive) == 0 ? QString("default") : name] = value;
     }
@@ -203,7 +240,8 @@ Result<TableViewStates> readPresets(const QString& path, const QStringList& colu
 Result<TableViewStates> ViewStateStore::loadPresets() const {
     if (const auto failure = profileFailure(profile_)) return *failure;
     const auto path = QDir(profile_).filePath("filter-presets.json");
-    if (!QFileInfo::exists(path) && !QFileInfo(path).isSymLink()) return TableViewStates{{"default", {}}};
+    if (!QFileInfo::exists(path) && !QFileInfo(path).isSymLink())
+        return TableViewStates{{"default", TableViewState{.limit = DefaultResourceDisplayLimit}}};
     return readPresets(path, schemas_.value("resource"));
 }
 Result<TableViewStates> ViewStateStore::importPresets(const QString& path, const TableViewStates& expected) const {

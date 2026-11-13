@@ -1,5 +1,7 @@
 # 0011 Session-Scoped Filtered Resource Presentation
 
+Context ownership supersedes the session-specific preference ownership below as of 2026-11-13. [ADR 0027](0027-session-filter-and-sort-persistence.md) owns that migration. Tab-local selection, source bindings and live transport lifetimes remain separate.
+
 ## Status
 
 Accepted on 2026-10-02. Implementation conformance remains to be reviewed.

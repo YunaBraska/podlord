@@ -55,7 +55,7 @@ void run(const QString& scenario) {
 #endif
     require(workspace.openContext(contexts.first().id)
         && QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); }, 5000), "Opening context did not await explicit login.");
-    require(test::clickVisible(window, "resourcesWorkspaceButton"), "Cannot select the resource view before authentication.");
+    require(!test::visibleItem(window->contentItem(), "resourcesWorkspaceButton"), "An unauthenticated empty context must not expose empty resource navigation.");
     require(test::revealWorkspaceAction(window, "authenticationButton") && test::clickVisible(window, "authenticationButton")
         && QTest::qWaitFor([&] { return test::visibleItem(window->contentItem(), "authenticationAccept"); }, 2000)
         && test::clickVisible(window, "authenticationAccept"), "Cannot confirm native login through production controls.");
@@ -79,12 +79,14 @@ void run(const QString& scenario) {
         const auto other = workspace.authenticationChallenge().value("id").toString();
         require(!other.isEmpty() && other != challenge, "Contexts shared an MFA challenge.");
         test::visibleItem(window->contentItem(), "authenticationMfaCode")->setProperty("text", "654321");
-        require(workspace.openContext(contexts.first().id) && QTest::qWaitFor([&] { return workspace.authenticationChallenge().value("id") == challenge; }, 3000), "Cannot return to first pending MFA.");
+        require(workspace.openContext(contexts.first().id) && QTest::qWaitFor([&] { return !workspace.busy()
+            && workspace.authenticationChallenge().value("id") == challenge; }, 3000), "Cannot return to first pending MFA.");
         auto* restored = test::visibleItem(window->contentItem(), "authenticationMfaCode");
         require(restored && restored->property("text").toString().isEmpty() && boundary.connections == 0, "MFA code crossed context/challenge boundaries.");
-        workspace.cancelAuthentication();
-        require(workspace.openContext(contexts.last().id) && QTest::qWaitFor([&] { return workspace.authenticationChallenge().value("id") == other; }, 3000), "Second challenge was affected by first cancellation.");
-        workspace.cancelAuthentication();
+        require(workspace.cancelAuthentication(), "First challenge did not accept cancellation.");
+        require(workspace.openContext(contexts.last().id) && QTest::qWaitFor([&] { return !workspace.busy()
+            && workspace.authenticationChallenge().value("id") == other; }, 3000), "Second challenge was affected by first cancellation.");
+        require(workspace.cancelAuthentication(), "Second challenge did not accept cancellation.");
     } else if (scenario == "context_switch" || scenario == "replacement" || scenario == "cancel") {
         if (scenario == "context_switch") require(workspace.openContext(contexts.last().id), "Cannot switch MFA context.");
         else if (scenario == "replacement") require(workspace.importAwsProfile(contexts.first().id, config, keys), "Cannot replace imported MFA identity.");

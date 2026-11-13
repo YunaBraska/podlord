@@ -350,7 +350,7 @@ function target(id){
   const distance=!settings&&!inspector?Math.min(reverse?b[3]-inset-start:start-b[1]-inset,desiredDistance):desiredDistance;
   run('shell','input','swipe',String(x),String(start),String(x),String(start+(reverse?distance:-distance)),settings&&!sourceRow?'150':'350');state();
   if(!settings&&!inspector)fs.appendFileSync(path.join(out,'input-events.jsonl'),JSON.stringify({action:'sidebar-scroll',id,attempt,x,viewport:b,reverse,targetBounds:nodes.find(n=>n['resource-id']?.endsWith('.'+id))?.bounds})+'\n');
-  if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,distance,targetBounds:currentBounds,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterEnabled|inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
+  if(settings)fs.appendFileSync(path.join(out,'settings-scroll-events.jsonl'),JSON.stringify({id,attempt,viewport:b,reverse,distance,targetBounds:currentBounds,firstVisible,visibleFields:nodes.filter(n=>/\.(inlineRadarWaterSpeed|inlineReducedMotion)$/.test(n['resource-id']||'')).map(n=>({id:n['resource-id'].split('.').at(-1),bounds:n.bounds}))})+'\n');
  }
  capture('unreachable-'+id);throw Error('Public UI target unavailable after scrolling: '+id);
 }
@@ -656,8 +656,8 @@ function mapTouchRoundtrip(){
  assert.match(density,/Physical density:\s*160/);assert.doesNotMatch(density,/Override density:/);
  click('settingsWorkspaceButton');click('settingsSectionPicker');
  const graphics=nodes.find(n=>value(n)==='Graphics'&&n.enabled==='true'&&n.bounds&&rect(n)[2]>rect(n)[0]);assert.ok(graphics,'Graphics must be selected through the public settings picker');tap(graphics);
- if(target('inlineRadarWaterEnabled').checked==='true')click('inlineRadarWaterEnabled');
- waitNode('inlineRadarWaterEnabled',n=>n.checked==='false');
+ const waterSpeedTarget=target('inlineRadarWaterSpeed'),waterSpeed=rect(waterSpeedTarget);
+ tap({...waterSpeedTarget,bounds:`[${waterSpeed[0]},${waterSpeed[1]}][${waterSpeed[0]+2},${waterSpeed[3]}]`});
  if(target('inlineReducedMotion').checked!=='true')click('inlineReducedMotion');
  waitNode('inlineReducedMotion',n=>n.checked==='true');capture('roundtrip-frozen-settings');
  const mapResourceQuery='"visual-config-0001"';
@@ -786,7 +786,7 @@ if(!waitTerminalOutput('PODLORD_ANDROID_REOPEN_OK'))throw Error('The reopened sh
 if(nodes.some(n=>n['resource-id']?.endsWith('.portContextStop')))throw Error('A Connections context menu remained exposed over the terminal');
 run('shell','input','keyevent','4');state();capture('container-terminal-reopened');
 click('terminalSurface');run('shell','input','text','exit');run('shell','input','keyevent','66');state();
-waitNode('terminalStatus',n=>/\b(closed|exited|disconnected)\b/i.test(n.text+' '+n['content-desc']));
+waitNode('terminalSurface',()=>!nodes.some(n=>n['resource-id']?.endsWith('.terminalStatus')&&n.bounds!=='[0,0][0,0]'));
 steps.push({step:'Native Kubernetes PTY executes echo, reopens its retained shell from Connections, accepts more input and exits without kubectl'});
 click('collapseTerminal');
 click('resourcesWorkspaceButton');

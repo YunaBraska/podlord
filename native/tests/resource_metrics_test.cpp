@@ -128,8 +128,8 @@ bool run(const QString& scenario) {
         if (scenario=="summary_missing") return usage.startsWith("Unavailable") && !usage.startsWith("0");
         if (scenario=="summary_zero") return usage.startsWith("0 mCPU");
         if (scenario=="summary_partial") return usage.contains("incomplete");
-        if (scenario=="summary_stale") return usage.contains("stale")
-            && summary[0].toMap()["description"].toString().contains(measured.toUTC().toString(Qt::ISODateWithMs));
+        if (scenario=="summary_stale") return !usage.contains("stale")
+            && !summary[0].toMap()["description"].toString().contains(measured.toUTC().toString(Qt::ISODateWithMs));
         if (scenario=="summary_node") return usage.startsWith("1000 mCPU / 4000 mCPU") && summary[3].toMap()["usage"]=="1" && summary[4].toMap()["usage"]=="1";
         if (scenario=="summary_overflow") return usage.startsWith("Unavailable (overflow)");
         if (scenario=="summary_storage") return summary[2].toMap()["usage"]=="Unavailable / 3 GiB";
@@ -141,10 +141,10 @@ bool run(const QString& scenario) {
     if (QStringList{"attach_recreated","attach_future","attach_no_uid","attach_no_creation","attach_missing","attach_missing_cpu"}.contains(scenario)) return !result.contains("cpu") && cpu["usage"]=="Unavailable";
     if (scenario=="attach_zero") return result.contains("cpu") && result["cpu"].toDouble()==0 && cpu["usage"]=="0 mCPU";
     if (scenario=="attach_partial") return result["cpu"].toDouble()==25 && cpu["usage"].toString().contains("incomplete");
-    if (scenario=="attach_stale") return cpu["usage"].toString().contains("stale") && cpu["timestamp"].toString()==measured.toString(Qt::ISODateWithMs);
+    if (scenario=="attach_stale") return result["metricStale"].toBool() && !cpu["usage"].toString().contains("stale") && cpu["timestamp"].toString()==measured.toString(Qt::ISODateWithMs);
     if (scenario=="attach_repeat") return result==podlord::withResourceMetrics(result,normalized,measured);
     if (scenario=="attach_storage") return views.last().toMap()["usage"]=="Unavailable";
-    return cpu["usage"]=="25 mCPU" && cpu["references"].toString().contains("250% of request") && cpu["markers"].toList().size()==2 && views[1].toMap()["usage"]=="32 MiB";
+    return cpu["usage"]=="25 mCPU" && cpu["references"].toString().contains("request: 10 mCPU") && !cpu["references"].toString().contains("%") && cpu["markers"].toList().size()==2 && views[1].toMap()["usage"]=="32 MiB";
 }
 }
 int main(int argc,char** argv) {

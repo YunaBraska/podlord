@@ -34,7 +34,7 @@ QVariantList runtimeDiagnostics() {
     if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vm), &count) == KERN_SUCCESS && count >= TASK_VM_INFO_REV1_COUNT)
         memory = mb(vm.phys_footprint);
     memoryLabel = "Physical footprint";
-    memoryDescription = "Kernel-accounted physical footprint; not private virtual memory.";
+    memoryDescription = "Physical memory used by Podlord.";
     thread_act_array_t ports = nullptr;
     mach_msg_type_number_t portCount = 0;
     if (task_threads(mach_task_self(), &ports, &portCount) == KERN_SUCCESS) {

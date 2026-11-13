@@ -26,6 +26,8 @@ public:
     bool close(const QString& id);
     bool refresh(const QString& id, bool confirmedAuthentication = false);
     bool inspect(const QString& id, const QString& path);
+    /** Visible read-only inspector interest. Empty paths withdraw only unsent passive work. */
+    bool watchInspector(const QString& id, const QString& path, const QString& view = {});
     bool dismissInspector(const QString& id);
     QJsonArray rows(const QString& id) const;
     bool collectionSnapshotAvailable(const QString& id) const;
@@ -143,7 +145,7 @@ private:
     bool failForward(const QString& token, const QString& message);
     void consumeForward(const Task& task, const QJsonObject& document);
     void forwardHandshakeFinished(const QString& token, const QString& stream, bool accepted, bool authenticationRequired);
-    struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; };
+    struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; bool unchanged = false; };
     struct Detail final { QJsonObject value; QDateTime at; QJsonObject document; quint64 revision = 0; };
     struct CachedResource final { QJsonObject value; qint64 received = 0; };
     struct State final {
@@ -204,6 +206,7 @@ private:
         QString session, logKey;
         bool focused = true;
         qint64 activityAt = 0;
+        struct Inspector final { QString path, uid; QDateTime retryAfter; } inspector;
     };
     QMap<QString, View> views_{{QString{}, View{}}};
     const std::function<QDateTime()> now_;

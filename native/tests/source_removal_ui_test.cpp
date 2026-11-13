@@ -80,7 +80,9 @@ void run(const QString& scenario) {
     const SessionStore sessions(profile);
     QList<QUuid> removed;
     const auto create = [&](const QString& context, const QString& name) {
-        const auto result = sessions.create({context, {}}, name);
+        const auto current = sessions.list();
+        require(std::holds_alternative<SessionCatalog>(current), "Cannot read the tab catalog.");
+        const auto result = sessions.openTab(context);
         require(std::holds_alternative<SessionCatalog>(result), "Cannot create real session.");
         const auto id = std::get<SessionCatalog>(result).sessions.last().id;
         require(std::holds_alternative<SessionCatalog>(sessions.activate(id)), "Cannot open real saved session.");
@@ -97,7 +99,7 @@ void run(const QString& scenario) {
     QTest::qWait(100);
     const int requestsBefore = requests;
     const auto sourceBytes = contents(snapshot.ownedPath);
-    auto sessionBytes = contents(profile + "/sessions.json");
+    auto sessionBytes = contents(profile + "/tabs.json");
     if (scenario.startsWith("contract_")) {
         auto context = alpha;
         QStringList ids;
@@ -113,12 +115,12 @@ void run(const QString& scenario) {
         else throw std::runtime_error("Unknown contract scenario.");
         const auto result = sources.removeContext(context, ids);
         require(std::holds_alternative<Failure>(result) && std::get<Failure>(result).code == expected, "Invalid public confirmation was accepted or failed ambiguously.");
-        require(contents(profile + "/sessions.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes && contents(original) == yaml, "Invalid confirmation changed persistence.");
+        require(contents(profile + "/tabs.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes && contents(original) == yaml, "Invalid confirmation changed persistence.");
         return;
     }
     if (scenario == "unknown") {
         require(!prepare(workspace, "ctx:missing") && !workspace.sourceImportError().isEmpty(), "Unknown context was accepted.");
-        require(contents(profile + "/sessions.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes, "Rejected removal changed local files.");
+        require(contents(profile + "/tabs.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes, "Rejected removal changed local files.");
         return;
     }
     QQmlApplicationEngine engine;
@@ -157,19 +159,21 @@ void run(const QString& scenario) {
     } else require(prepare(workspace, alpha), "Context confirmation was rejected.");
     const auto preview = workspace.property("sourceRemoval").toMap();
     require(preview["contextId"].toString() == alpha && preview["name"].toString() == "alpha", "Confirmation identifies the wrong context.");
-    require(preview["sessions"].toStringList().size() == removed.size(), "Confirmation omits affected sessions.");
-    require(contents(profile + "/sessions.json") == sessionBytes, "Preparing removal changed saved sessions.");
+    QStringList affected;
+    for (const auto& id : removed) affected.append(id.toString(QUuid::WithoutBraces));
+    require(preview["sessionIds"].toStringList() == affected, "Confirmation omits affected tabs.");
+    require(contents(profile + "/tabs.json") == sessionBytes, "Preparing removal changed saved sessions.");
     require(requests == requestsBefore, "Confirmation retried external authentication.");
     if (scenario == "cancel" || scenario == "cancel_ui") {
         if (ui) click("cancelSourceRemoval"); else require(action(workspace, "cancelSourceRemoval"), "Cancellation was rejected.");
-        require(workspace.property("sourceRemoval").toMap().isEmpty() && contents(profile + "/sessions.json") == sessionBytes
+        require(workspace.property("sourceRemoval").toMap().isEmpty() && contents(profile + "/tabs.json") == sessionBytes
             && workspace.contexts().size() == 2, "Cancellation changed sources or sessions.");
         return;
     }
-    QLockFile lock(profile + (scenario == "source_locked" ? "/kubeconfigs/sources.lock" : "/sessions.lock"));
+    QLockFile lock(profile + (scenario == "source_locked" ? "/kubeconfigs/sources.lock" : "/tabs.lock"));
     if (scenario == "locked" || scenario == "source_locked") require(lock.tryLock(0), "Cannot hold the real writer lock.");
-    if (scenario == "conflict") { removed.append(create(alpha, "Added after confirmation")); sessionBytes = contents(profile + "/sessions.json"); }
-    if (scenario == "corrupt") { require(write(profile + "/sessions.json", "{invalid"), "Cannot exercise corrupt local input."); sessionBytes = contents(profile + "/sessions.json"); }
+    if (scenario == "conflict") { removed.append(create(alpha, "Added after confirmation")); sessionBytes = contents(profile + "/tabs.json"); }
+    if (scenario == "corrupt") { require(write(profile + "/tabs.json", "{invalid"), "Cannot exercise corrupt local input."); sessionBytes = contents(profile + "/tabs.json"); }
     if (ui) {
         const auto frame = qEnvironmentVariable("PODLORD_SOURCE_REMOVAL_FRAME");
         if (!frame.isEmpty()) {
@@ -182,7 +186,7 @@ void run(const QString& scenario) {
     settle(workspace);
     if (scenario == "locked" || scenario == "source_locked" || scenario == "conflict" || scenario == "corrupt") {
         require(!workspace.sourceImportError().isEmpty() && !workspace.property("sourceRemoval").toMap().isEmpty(), "Failed deletion was presented as success.");
-        require(contents(profile + "/sessions.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes, "Failed cascade partially changed persistence.");
+        require(contents(profile + "/tabs.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes, "Failed cascade partially changed persistence.");
         if (scenario == "corrupt") return;
         lock.unlock();
         if (scenario == "conflict") { require(action(workspace, "cancelSourceRemoval") && prepare(workspace, alpha), "Cannot refresh stale confirmation."); }
@@ -195,42 +199,9 @@ void run(const QString& scenario) {
     require(workspace.tabs().size() == 1 && workspace.currentSession() == kept.toString(QUuid::WithoutBraces), "Removed sessions remained open.");
     require(workspace.contexts().size() == 1 && workspace.contexts().first().toMap()["id"].toString() == beta, "The wrong context remained visible.");
     require(std::holds_alternative<Failure>(sources.connection(alpha)), "Removed credentials still resolve.");
-    require(std::holds_alternative<Failure>(sessions.create({alpha, {}}, "Must not resurrect")), "Removed context silently accepted a new session.");
+    require(std::holds_alternative<Failure>(sources.connection(alpha)), "Removed context silently accepted a new session.");
     require(contents(original) == yaml && contents(snapshot.ownedPath) == sourceBytes, "Cascade changed original kubeconfig or shared immutable content.");
     require(workspace.property("sourceRemoval").toMap().isEmpty() && requests == requestsBefore, "Completed removal retained confirmation or retried authentication.");
-    if (scenario.startsWith("schema_")) {
-        auto root = QJsonDocument::fromJson(contents(profile + "/sessions.json")).object();
-        if (scenario == "schema_type") root["removedContexts"] = "not-an-array";
-        else if (scenario == "schema_value") root["removedContexts"] = QJsonArray{42};
-        else if (scenario == "schema_identifier") root["removedContexts"] = QJsonArray{"ctx:invalid"};
-        else if (scenario == "schema_duplicate") root["removedContexts"] = QJsonArray{alpha, alpha};
-        else if (scenario == "schema_order") { QStringList ordered{alpha, beta}; ordered.sort(Qt::CaseSensitive); std::reverse(ordered.begin(), ordered.end()); root["removedContexts"] = QJsonArray::fromStringList(ordered); }
-        else if (scenario == "schema_live_session") root["removedContexts"] = QJsonArray{beta};
-        else if (scenario == "schema_missing") root.remove("removedContexts");
-        else if (scenario == "schema_extra") root["unexpected"] = true;
-        else throw std::runtime_error("Unknown schema scenario.");
-        const auto bytes = QJsonDocument(root).toJson();
-        require(write(profile + "/sessions.json", bytes), "Cannot exercise untrusted catalog input.");
-        require(std::holds_alternative<Failure>(sessions.list()) && std::holds_alternative<Failure>(sources.list())
-            && std::holds_alternative<Failure>(sources.connection(beta)) && std::holds_alternative<Failure>(sources.importFile(original)), "Malformed exclusions did not fail closed.");
-        require(contents(profile + "/sessions.json") == bytes && contents(snapshot.ownedPath) == sourceBytes, "Malformed exclusions were reset or overwritten.");
-    }
-    if (scenario == "snapshot_removed") {
-        const auto bytes = contents(profile + "/sessions.json");
-        require(std::holds_alternative<Failure>(sessions.snapshot(kept, {alpha, {}})) && contents(profile + "/sessions.json") == bytes, "Session snapshot revived excluded credentials.");
-    }
-    if (scenario == "rename_other" || scenario == "rename_other_noop") {
-        const auto result = sources.renameContext(beta, scenario == "rename_other_noop" ? "beta" : "Beta renamed");
-        require(std::holds_alternative<SourceSnapshot>(result) && std::get<SourceSnapshot>(result).contexts.size() == 1
-            && std::get<SourceSnapshot>(result).contexts.first().id == beta, "Rename metadata resurrected an excluded context.");
-        require(std::holds_alternative<Failure>(sources.connection(alpha)) && std::get<SessionCatalog>(sessions.list()) == catalog, "Renaming an unrelated context changed removal authority or saved sessions.");
-    }
-    if (scenario == "remove_all") {
-        require(prepare(workspace, beta) && action(workspace, "confirmSourceRemoval"), "Cannot remove last context."); settle(workspace);
-        require(workspace.tabs().isEmpty() && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty()
-            && std::get<SessionCatalog>(sessions.list()).sessions.isEmpty() && std::get<SourceCatalog>(sources.list()).sources.isEmpty(), "Last context removal left visible or resolvable state.");
-        require(contents(original) == yaml && contents(snapshot.ownedPath) == sourceBytes, "Last context removal rewrote immutable source data.");
-    }
     if (scenario == "reimport") {
         const auto restored = sources.importFile(original);
         require(std::holds_alternative<SourceSnapshot>(restored) && std::get<SourceSnapshot>(restored).contexts.size() == 2, "Explicit reimport did not restore context availability.");

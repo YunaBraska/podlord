@@ -1,6 +1,7 @@
 #include "workspace.h"
 #include "ui_language.h"
 #include "ui_input.h"
+#include "kubernetes_auth_boundary.h"
 #include <QDir>
 #include <QFile>
 #include <QImage>
@@ -96,7 +97,7 @@ bool scenario(const QStringList& args) {
         original.requestHardLimitPerMinute = 120; original.logLimitMb = 7;
         require(std::holds_alternative<podlord::ReadSettings>(store.save(original, {})), "Cannot establish the settings boundary.");
         auto root = QJsonDocument::fromJson(read(path)).object();
-        if (mode == "store_old_read" || mode == "store_old_upgrade") { root["version"] = 6; root.remove("language"); root.remove("collectionCacheHours"); root["themeIntensity"] = "subtle"; }
+        if (mode == "store_old_read" || mode == "store_old_upgrade") { root["version"] = 6; root.remove("language"); root.remove("collectionCacheHours"); root.remove("musicVolumePercent"); root.remove("alertVolumePercent"); root["themeIntensity"] = "subtle"; }
         else if (mode == "store_missing") root.remove("language");
         else if (mode == "store_type") root["language"] = 3;
         else if (mode == "store_empty") root["language"] = "";
@@ -119,7 +120,7 @@ bool scenario(const QStringList& args) {
         auto desired = original; desired.language = "de";
         return require(std::holds_alternative<podlord::ReadSettings>(store.save(desired, original))
             && std::get<podlord::ReadSettings>(store.load()) == desired
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 9, "Language upgrade lost unrelated settings.");
+            && QJsonDocument::fromJson(read(path)).object()["version"] == 10, "Language upgrade lost unrelated settings.");
     }
     podlord::Workspace workspace(profile);
     QQmlApplicationEngine engine;
@@ -153,18 +154,21 @@ bool scenario(const QStringList& args) {
     }
     require(workspace.uiLanguage() == code, "Public selector did not apply the chosen language.");
     require(workspace.currentSession().isEmpty() && workspace.contexts().isEmpty(),"Language selection changed the empty workspace.");
-    require(workspace.importText(temporary.filePath("language.yaml"),QString::fromUtf8("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: https://127.0.0.1:9}\nusers:\n- name: local\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1beta1, command: podlord-test-never-run}\ncontexts:\n- name: local\n  context: {cluster: local, user: local}\n"))
+    podlord::test::Kubernetes api;
+    require(api.listen(QHostAddress::LocalHost), "Cannot start the local language fixture.");
+    require(workspace.importText(temporary.filePath("language.yaml"),QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: http://127.0.0.1:%1}\nusers:\n- name: local\n  user: {token: local-language-token}\ncontexts:\n- name: local\n  context: {cluster: local, user: local}\n").arg(api.serverPort()))
         && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; },5000)
         && workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
-        && QTest::qWaitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); },5000),"Cannot prepare the explicit-auth language fixture.");
+        && QTest::qWaitFor([&] { return !workspace.busy() && !workspace.syncLoading() && workspace.totalResourceCount()==1; },10000),"Cannot load the local language fixture through the Kubernetes API.");
     const auto languageSession=workspace.currentSession();
     const auto languageContexts=workspace.contexts();
     require(click(window,"settingsWorkspaceButton") && click(window,"settingsAppearanceSection"),"Cannot return to translated settings.");
-    for (const auto& pair : QList<QPair<QString, QString>>{{"resourcesWorkspaceButton", "nav.resources"}, {"eventsWorkspaceButton", "nav.events"},
+    for (const auto& pair : QList<QPair<QString, QString>>{{"resourcesWorkspaceButton", "nav.resources"},
         {"settingsWorkspaceButton", "nav.settings"}, {"settingsAppearanceSection", "settings.appearance"}}) {
         auto* target = podlord::test::visibleItem(window->contentItem(), pair.first);
         require(target && target->property("text") == podlord::uiText(code)[pair.second], "Visible chrome did not update its translated label.");
     }
+    require(!podlord::test::visibleItem(window->contentItem(), "eventsWorkspaceButton"), "An empty Events view must not occupy navigation space.");
     require(click(window, "resourcesWorkspaceButton"), "Cannot reach translated resource filters.");
     if (mode == "narrow") {
         window->setWidth(720); window->setHeight(720);

@@ -8,52 +8,60 @@ Pane {
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
     PasteSourceDialog { id: pasteSourceDialog }
-    SessionManager { id: sessionManager }
     AwsProfileDialog { id: awsProfileDialog }
-    ModalDialog {
-        id: sourceRemovalDialog
-        objectName: "sourceRemovalDialog"
-        title: workspace.uiText["settings.removeContextTitle"]
-        modal: true
-        focus: true
-        parent: Overlay.overlay
-        width: Math.min(520, parent.width - 24)
-        x: (parent.width - width) / 2; y: Math.max(12, (parent.height - height) / 2)
-        closePolicy: workspace.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: workspace.sourceRemoval.name || ""; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
-            Label { Layout.fillWidth: true; text: workspace.uiText["settings.removeContextHelp"]; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            ListView {
-                Layout.fillWidth: true; Layout.preferredHeight: Math.min(180 * workspace.textScale, count * Math.max(28, workspace.textSizes.body * 1.3))
-                clip: true; reuseItems: true; model: workspace.sourceRemoval.sessions || []
-                ScrollBar.vertical: ScrollBar {}
-                delegate: Label { required property string modelData; width: ListView.view.width; height: Math.max(28, implicitHeight); text: modelData; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: modelData }
-            }
-            Label { visible: !(workspace.sourceRemoval.sessions || []).length; text: workspace.uiText["settings.noSessionsForContext"]; textFormat: Text.PlainText }
-            Label { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
-        }
-        footer: DialogButtonBox {
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "cancelSourceRemoval"; text: workspace.uiText["action.cancel"]; enabled: !workspace.busy; onClicked: sourceRemovalDialog.close() }
-            IconButton { glyph: ""; showText: true; font.bold: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? workspace.uiText["settings.removing"] : workspace.uiText["settings.remove"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.removeContextAccessible"]; onClicked: workspace.confirmSourceRemoval() }
-        }
-        onAboutToHide: workspace.cancelSourceRemoval()
-        Connections {
-            target: workspace
-            function onSourceRemovalChanged() {
-                if (workspace.sourceRemoval.contextId) sourceRemovalDialog.open()
-                else if (sourceRemovalDialog.visible) sourceRemovalDialog.close()
-            }
-        }
-    }
-    SourceAliasDialog { id: sourceAliasDialog }
     signal fileRequested()
     signal folderRequested()
     signal ociImportRequested()
     signal gkeImportRequested()
     signal sourceFailuresRequested()
+    signal renameContextRequested(var context)
     property string section: "alerts"
-    readonly property var sections: ["alerts", "appearance", "diagnostics", "graphics", "privacy", "sources", "sync", "workspace", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
+    readonly property var sections: ["alerts", "appearance", "diagnostics", "sources", "sync", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
     property string diagnosticTimestamp: ""
+    property int pendingMusicVolume: -1
+    property int pendingAlertVolume: -1
+    property bool audioSaving: false
+    Timer {
+        id: volumeFeedback
+        property bool music: false
+        property int percent: 0
+        interval: 250
+        onTriggered: {
+            if (!settings.visible || settings.section !== "appearance") return
+            if (workspace.busy || settings.audioSaving || settings.pendingMusicVolume >= 0 || settings.pendingAlertVolume >= 0) { restart(); return }
+            if (percent === (music ? workspace.musicVolumePercent : workspace.alertVolumePercent)) workspace.previewAudioVolume(music)
+        }
+    }
+    function saveAudioVolume(music, value, commit) {
+        const percent = Math.round(value)
+        if (music) pendingMusicVolume = percent
+        else pendingAlertVolume = percent
+        if (commit === false) { volumeFeedback.stop(); return }
+        volumeFeedback.music = music
+        volumeFeedback.percent = percent
+        volumeFeedback.restart()
+        flushAudioVolumes()
+    }
+    function flushAudioVolumes() {
+        if (audioSaving || (pendingMusicVolume < 0 && pendingAlertVolume < 0) || workspace.busy
+            || musicVolumeSetting.adjusting || alertVolumeSetting.adjusting) return
+        if (pendingMusicVolume === workspace.musicVolumePercent) pendingMusicVolume = -1
+        if (pendingAlertVolume === workspace.alertVolumePercent) pendingAlertVolume = -1
+        if (pendingMusicVolume < 0 && pendingAlertVolume < 0) return
+        const music = pendingMusicVolume < 0 ? workspace.musicVolumePercent : pendingMusicVolume
+        const alerts = pendingAlertVolume < 0 ? workspace.alertVolumePercent : pendingAlertVolume
+        workspace.music.setVolumePercent(music)
+        workspace.alerts.setVolumePercent(alerts)
+        audioSaving = true
+        if (!workspace.saveAudioVolumes(music, alerts)) {
+            audioSaving = false
+            pendingMusicVolume = -1
+            pendingAlertVolume = -1
+            volumeFeedback.stop()
+            workspace.music.setVolumePercent(workspace.musicVolumePercent)
+            workspace.alerts.setVolumePercent(workspace.alertVolumePercent)
+        }
+    }
     function refreshDiagnostics() { diagnosticTimestamp = workspace.refreshSettingsDiagnostics() }
     Timer {
         objectName: "diagnosticsRefreshTimer"
@@ -63,6 +71,16 @@ Pane {
             && settings.Window.window.visibility !== Window.Hidden
         onTriggered: settings.refreshDiagnostics()
     }
+    Timer {
+        id: syncAutosave
+        interval: 450
+        onTriggered: {
+            if (workspace.busy) { restart(); return }
+            if (requests.value !== workspace.requestLimit || inactive.value !== workspace.inactiveSyncMinutes
+                || logs.text !== workspace.logLimitMb.toString() || cacheHours.value !== workspace.collectionCacheHours)
+                workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value)
+        }
+    }
     function synchronizeAppearance() {
         theme.currentIndex = workspace.themeNames.indexOf(workspace.themeName)
         variant.currentIndex = variant.model.indexOf(workspace.themeVariant)
@@ -71,21 +89,37 @@ Pane {
     function synchronize() {
         synchronizeAppearance()
         if (visible && section === "sources") workspace.refreshSourceTable()
-        requests.value = workspace.requestLimit
-        inactive.value = workspace.inactiveSyncMinutes
-        cacheHours.value = workspace.collectionCacheHours
+        if (!syncAutosave.running && !workspace.busy) {
+            requests.value = workspace.requestLimit
+            inactive.value = workspace.inactiveSyncMinutes
+            cacheHours.value = workspace.collectionCacheHours
+            logs.text = workspace.logLimitMb.toString()
+        }
         if (visible && section === "sync") workspace.refreshCacheUsage()
-        logs.text = workspace.logLimitMb.toString()
         yaml.text = workspace.yamlLimitMiB.toString()
     }
-    onSectionChanged: { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
-    onVisibleChanged: if (visible) { synchronize(); if (section === "diagnostics") refreshDiagnostics() }
+    onSectionChanged: { synchronize(); if (section !== "appearance") volumeFeedback.stop(); if (section === "diagnostics") refreshDiagnostics() }
+    onVisibleChanged: { if (visible) { synchronize(); if (section === "diagnostics") refreshDiagnostics() } else volumeFeedback.stop() }
     Component.onCompleted: synchronize()
     Connections {
         target: workspace
         function onAppearanceChanged() { settings.synchronizeAppearance() }
         function onLanguageChanged() { settings.synchronizeAppearance() }
         function onCatalogsChanged() { if (settings.visible && settings.section === "sources") workspace.refreshSourceTable() }
+        function onChanged() { settings.flushAudioVolumes() }
+        function onAudioVolumesSaveFinished(success) {
+            if (!settings.audioSaving) return
+            settings.audioSaving = false
+            if (!success) {
+                settings.pendingMusicVolume = -1
+                settings.pendingAlertVolume = -1
+                volumeFeedback.stop()
+                return
+            }
+            if (settings.pendingMusicVolume >= 0) workspace.music.setVolumePercent(settings.pendingMusicVolume)
+            if (settings.pendingAlertVolume >= 0) workspace.alerts.setVolumePercent(settings.pendingAlertVolume)
+            settings.flushAudioVolumes()
+        }
     }
     padding: 14
     background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
@@ -93,6 +127,77 @@ Pane {
         required property string destination
         checked: settings.section === destination
         onClicked: { settings.section = destination; if (destination === "alerts") workspace.setWorkspacePage("alerts") }
+    }
+    component PreferenceSlider: Slider {
+        id: preferenceSlider
+        Layout.minimumHeight: 44
+        background: Rectangle {
+            x: preferenceSlider.leftPadding
+            y: preferenceSlider.topPadding + (preferenceSlider.availableHeight - height) / 2
+            width: preferenceSlider.availableWidth
+            implicitHeight: 4
+            height: implicitHeight
+            radius: 2
+            color: workspace.appearanceColors.border
+            Rectangle {
+                width: preferenceSlider.position * parent.width
+                height: parent.height
+                x: preferenceSlider.mirrored ? parent.width - width : 0
+                radius: 2
+                color: workspace.appearanceColors.text
+            }
+        }
+        handle: Rectangle {
+            x: preferenceSlider.leftPadding + preferenceSlider.visualPosition * (preferenceSlider.availableWidth - width)
+            y: preferenceSlider.topPadding + (preferenceSlider.availableHeight - height) / 2
+            implicitWidth: 24; implicitHeight: 24; radius: 12
+            color: workspace.appearanceColors.text
+            border.color: workspace.appearanceColors.panel
+            border.width: 2
+            antialiasing: true
+            Rectangle {
+                anchors.fill: parent; anchors.margins: -4
+                visible: preferenceSlider.visualFocus
+                color: "transparent"; radius: 16
+                border.width: 2; border.color: workspace.appearanceColors.text
+            }
+        }
+    }
+    component VolumeSetting: SettingRow {
+        id: audioRow
+        required property bool music
+        property alias adjusting: volume.pressed
+        label: workspace.uiText[music ? "settings.musicVolume" : "settings.alertVolume"]
+        help: ""
+        RowLayout {
+            Layout.fillWidth: true
+            PreferenceSlider {
+                id: volume
+                objectName: audioRow.music ? "settingsMusicVolume" : "settingsAlertVolume"
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.minimumHeight: 44
+                from: 0; to: 100; stepSize: 1
+                value: audioRow.music
+                    ? (settings.pendingMusicVolume < 0 ? workspace.musicVolumePercent : settings.pendingMusicVolume)
+                    : (settings.pendingAlertVolume < 0 ? workspace.alertVolumePercent : settings.pendingAlertVolume)
+                Accessible.name: audioRow.label
+                onMoved: {
+                    if (audioRow.music) workspace.music.setVolumePercent(Math.round(value))
+                    else workspace.alerts.setVolumePercent(Math.round(value))
+                    settings.saveAudioVolume(audioRow.music, value, !pressed)
+                }
+                onPressedChanged: if (!pressed && enabled) settings.saveAudioVolume(audioRow.music, value)
+            }
+            Label {
+                id: volumeText
+                text: Math.round(volume.value) + "%"
+                Layout.preferredWidth: Math.max(54, percentWidth.advanceWidth)
+                horizontalAlignment: Text.AlignRight
+                Accessible.ignored: true
+                TextMetrics { id: percentWidth; text: "100%"; font: volumeText.font }
+            }
+        }
     }
     component SettingRow: GridLayout {
         required property string label
@@ -108,8 +213,6 @@ Pane {
         ,Rectangle { Layout.row: parent.narrow ? 3 : 2; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
         ]
     }
-    TableColumnsDialog { id: resourceColumns; tableType: "resource"; columns: workspace.resourceColumns }
-    TableColumnsDialog { id: eventColumns; tableType: "event"; columns: workspace.eventColumns }
     contentItem: ColumnLayout {
         spacing: 12
         Label { text: workspace.uiText["settings.title"]; font.pixelSize: workspace.textSizes.heading; font.bold: true; color: workspace.appearanceColors.accent }
@@ -126,12 +229,9 @@ Pane {
             visible: settings.width >= 650 * workspace.textScale
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
-            SectionButton { objectName: "settingsDiagnosticsSection"; text: workspace.uiText["settings.diagnostics"]; destination: "diagnostics" }
-            SectionButton { objectName: "settingsGraphicsSection"; text: workspace.uiText["settings.graphics"]; destination: "graphics" }
-            SectionButton { objectName: "settingsPrivacySection"; text: workspace.uiText["settings.privacy"]; destination: "privacy" }
+            SectionButton { objectName: "settingsDiagnosticsSection"; text: settings.sections[2].label; destination: "diagnostics" }
             SectionButton { objectName: "settingsSourcesSection"; text: workspace.uiText["settings.sources"]; destination: "sources" }
             SectionButton { objectName: "settingsSyncSection"; text: workspace.uiText["settings.sync"]; destination: "sync" }
-            SectionButton { objectName: "settingsWorkspaceSection"; text: workspace.uiText["settings.workspace"]; destination: "workspace" }
             SectionButton { objectName: "settingsAboutSection"; text: workspace.uiText["settings.about"]; destination: "about" }
         }
         ComboBox {
@@ -158,39 +258,26 @@ Pane {
                 width: scroll.availableWidth; spacing: 10
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
-                    SettingRow { label: workspace.uiText["settings.theme"]; help: workspace.uiText["settings.themeHelp"]; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.theme"]; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant) } }
-                    SettingRow { label: workspace.uiText["settings.variant"]; help: workspace.uiText["settings.variantHelp"]; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText) } }
-                    SettingRow { label: workspace.uiText["settings.language"]; help: workspace.uiText["settings.languageHelp"]; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true; visible: settings.section === "graphics"
-                    SettingRow { label: workspace.uiText["settings.radarWater"]; help: workspace.uiText["settings.radarWaterHelp"]; WrappingCheckBox { objectName: "inlineRadarWaterEnabled"; text: workspace.uiText["alert.enabledState"]; checked: workspace.radarWaterEnabled; enabled: !workspace.busy; onClicked: workspace.saveRadarWater(checked, workspace.radarWaterSpeedPercent) } }
-                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: workspace.uiText["settings.radarWaterSpeedHelp"]; RowLayout { Layout.fillWidth: true; Slider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterSpeedPercent; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(workspace.radarWaterEnabled, Math.round(value)) } Label { text: workspace.radarWaterSpeedPercent + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
-                    SettingRow { label: workspace.uiText["settings.reducedMotion"]; help: workspace.uiText["settings.reducedMotionHelp"]; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
+                    VolumeSetting { id: musicVolumeSetting; music: true }
+                    VolumeSetting { id: alertVolumeSetting; music: false }
+                    SettingRow { label: workspace.uiText["settings.theme"]; help: ""; ComboBox { id: theme; objectName: "inlineAppearanceTheme"; Layout.fillWidth: true; model: workspace.themeNames; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.theme"]; onActivated: workspace.saveAppearance(currentText, workspace.themeVariant) } }
+                    SettingRow { label: workspace.uiText["settings.variant"]; help: ""; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText) } }
+                    SettingRow { label: workspace.uiText["settings.language"]; help: ""; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
+                    SettingRow { label: workspace.uiText["settings.workspaceRestore"]; help: ""; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: workspace.uiText["settings.restoreTabsOnLaunch"]; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.workspaceRestore"] + ": " + text; onClicked: workspace.saveWorkspaceRestore(checked) } }
+                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: ""; RowLayout { Layout.fillWidth: true; PreferenceSlider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)) } Label { text: (workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0) + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
+                    SettingRow { label: workspace.uiText["settings.reducedMotion"]; help: ""; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; Accessible.name: workspace.uiText["settings.reducedMotion"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sync"
-                    SettingRow { label: workspace.uiText["settings.inactiveSessionSync"]; help: workspace.uiText["settings.inactiveSessionSyncHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.inactiveSessionSyncMinutes"] } }
-                    SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
-                    SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceCacheTtlHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
+                    SettingRow { label: workspace.uiText["settings.inactiveSessionSync"]; help: workspace.uiText["settings.inactiveSessionSyncHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.inactiveSessionSyncMinutes"] } }
+                    SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
+                    SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceCacheTtlHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
                     Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.cachedPayloadDescription"] }
-                    SettingRow { label: workspace.uiText["settings.retainedLogsPerPod"]; help: workspace.uiText["settings.retainedLogsPerPodHelp"]; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.retainedLogsPerPodMb"] } }
-                    IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveSync"; text: workspace.busy ? workspace.uiText["settings.saving"] : workspace.uiText["settings.saveSyncSettings"]; enabled: !workspace.busy; onClicked: workspace.saveReadSettings(requests.value, inactive.value, logs.text, cacheHours.value) }
+                    SettingRow { label: workspace.uiText["settings.retainedLogsPerPod"]; help: workspace.uiText["settings.retainedLogsPerPodHelp"]; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; inputMethodHints: Qt.ImhDigitsOnly; onTextEdited: syncAutosave.restart(); Accessible.name: workspace.uiText["settings.retainedLogsPerPodMb"] } }
                 }
                 ColumnLayout {
-                    Layout.fillWidth: true; visible: settings.section === "privacy"
-                    SettingRow { label: workspace.uiText["settings.telemetry"]; help: workspace.uiText["settings.telemetryHelp"]; Label { objectName: "privacyTelemetry"; text: workspace.uiText["settings.off"]; font.bold: true } }
-                    SettingRow { label: workspace.uiText["settings.secretValues"]; help: workspace.uiText["settings.secretValuesHelp"]; Label { text: workspace.uiText["settings.maskedByDefault"] } }
+                    Layout.fillWidth: true; visible: settings.section === "diagnostics"
                     SettingRow { label: workspace.uiText["settings.yamlLimit"]; help: workspace.uiText["settings.yamlLimitHelp"]; RowLayout { Layout.fillWidth: true; TextField { id: yaml; objectName: "inlineYamlLimit"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.yamlLimitMiB"] } IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "inlineSaveYamlLimit"; text: workspace.uiText["action.save"]; enabled: !workspace.busy; onClicked: workspace.saveYamlLimit(yaml.text) } } }
-                    SettingRow { label: workspace.uiText["settings.requestAuditRetention"]; help: workspace.uiText["settings.requestAuditRetentionHelp"]; Label { text: workspace.uiText["settings.inMemoryOnly"] } }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true; visible: settings.section === "workspace"
-                    SettingRow { label: workspace.uiText["settings.workspaceRestore"]; help: workspace.uiText["settings.workspaceRestoreHelp"]; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: workspace.uiText["settings.restoreTabsOnLaunch"]; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.restoreTabsOnLaunch"]; onClicked: workspace.saveWorkspaceRestore(checked) } }
-                    SettingRow { label: workspace.uiText["settings.sessionConfiguration"]; help: workspace.uiText["settings.sessionConfigurationHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsManageSessions"; text: workspace.uiText["settings.manageSessions"]; enabled: !workspace.busy && workspace.sessions.length > 0; onClicked: sessionManager.open() } }
-                    SettingRow { label: workspace.uiText["settings.resourceColumns"]; help: workspace.uiText["settings.resourceColumnsHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsResourceColumns"; text: workspace.uiText["settings.configureResourceColumns"]; onClicked: resourceColumns.open() } }
-                    SettingRow { label: workspace.uiText["settings.eventColumns"]; help: workspace.uiText["settings.eventColumnsHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsEventColumns"; text: workspace.uiText["settings.configureEventColumns"]; onClicked: eventColumns.open() } }
-                    SettingRow { label: workspace.uiText["nav.savedViews"]; help: workspace.uiText["settings.reloadViewsHelp"]; IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsReloadViews"; text: workspace.uiText["settings.reloadViews"]; enabled: !workspace.busy; onClicked: { workspace.reloadSavedViews(); workspace.reloadTableLayouts() } } }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
@@ -257,7 +344,7 @@ Pane {
                         onActionRequested: (identity,column) => {
                             if (workspace.busy) return
                             if (column === 9) workspace.requestSourceRemoval(identity)
-                            else { const context = workspace.contexts.find(context => context.id === identity); if (context) sourceAliasDialog.edit(context) }
+                            else { const context = workspace.contexts.find(context => context.id === identity); if (context) settings.renameContextRequested(context) }
                         }
                         cellAccessory: Component {
                             IconButton {
@@ -270,7 +357,7 @@ Pane {
                                 enabled: !workspace.busy
                                 onClicked: {
                                     if (sourceAction.isRemoval) workspace.requestSourceRemoval(sourceAction.identity)
-                                    else { const context = workspace.contexts.find(context => context.id === sourceAction.identity); if (context) sourceAliasDialog.edit(context) }
+                                    else { const context = workspace.contexts.find(context => context.id === sourceAction.identity); if (context) settings.renameContextRequested(context) }
                                 }
                             }
                         }
@@ -318,7 +405,6 @@ Pane {
                     Layout.topMargin: 14
                     visible: settings.section === "about"
                 }
-                Label { objectName: "inlineSettingsError"; Layout.fillWidth: true; visible: workspace.error !== ""; text: workspace.error; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap }
             }
         }
     }

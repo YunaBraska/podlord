@@ -10,14 +10,16 @@ struct ReadSettings final {
     QString themeName = "Sirocco Command";
     QString themeVariant = "dark";
     bool radarWaterEnabled = true;
-    int radarWaterSpeedPercent = 45;
+    int radarWaterSpeedPercent = 5;
     bool workspaceRestore = true;
     QString language = "system";
     int collectionCacheHours = 24;
+    int musicVolumePercent = 35;
+    int alertVolumePercent = 100;
     bool operator==(const ReadSettings&) const = default;
     bool valid() const;
 };
-/** Owns the private profile's read policy; no source or session index is duplicated. */
+/** Owns local application preferences and read policy without duplicating source or session indexes. */
 class ReadSettingsStore final {
 public:
     explicit ReadSettingsStore(QString profile);

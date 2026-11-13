@@ -2,6 +2,7 @@
 #include <QPointer>
 #include "ui_input.h"
 #include <QAbstractItemModel>
+#include <QAccessible>
 #include <QClipboard>
 #include <QLocale>
 #include <QDateTime>
@@ -19,6 +20,7 @@ bool require(bool accepted, const char* message) {
 }
 bool run(const QString& scenario) {
     using namespace podlord;
+    if (scenario=="accessibility") QAccessible::setActive(true);
     QTemporaryDir directory;
     require(directory.isValid(), "Private source profile unavailable.");
     const auto profile = directory.filePath("profile");
@@ -37,7 +39,7 @@ bool run(const QString& scenario) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     require(window != nullptr, "Sources window is not native.");
     if (scenario == "narrow") window->setWidth(360);
-    if (scenario == "sort" || scenario == "copy_keyboard") window->setWidth(900);
+    if (scenario == "sort" || scenario == "copy_keyboard" || scenario == "accessibility") window->setWidth(900);
     const auto control = [&](const QString& name) {
         if (name.startsWith("sourceCell_")) {
             const auto parts=name.split('_');
@@ -142,6 +144,13 @@ bool run(const QString& scenario) {
     } else if (scenario == "table" || scenario == "narrow") {
         require(control("sourceColumnsButton") && control("renameSource_"+identity) && control("removeSource_"+identity), "Source row actions missing.");
         if (scenario == "table") require(QTest::qWaitFor([&] { auto* cell=control("sourceCell_0_2"); return cell && cell->property("text")==firstUser; }), "Canonical User name is not rendered in the Sources table.");
+    } else if (scenario == "accessibility") {
+        firstRow(); navigateColumn(2);
+        const auto expected=firstName+", User, "+firstUser;
+        auto* accessible=QAccessible::queryAccessibleInterface(control("sourceCell_0_2"));
+        require(accessible && accessible->text(QAccessible::Name)==expected,
+            "Accessible source cells must identify their row and column, not only a repeated value.");
+        require(!accessible->text(QAccessible::Name).contains("fixture-private-"), "Accessible source cell leaked credentials.");
     } else if (scenario == "sort") {
         click("sourceHeader_0");
         require(model->index(0,0).data() == "alpha" && workspace.property("sourceSortDirection") == "ASC", "Ascending source sort failed.");
@@ -308,7 +317,7 @@ bool run(const QString& scenario) {
             require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount()==0 && control("sourceEmpty"); }), "Sources empty state missing after confirmed removal.");
         }
     } else throw std::runtime_error("Unknown Sources scenario.");
-    require(workspace.sessions().isEmpty() && workspace.settingsDiagnostics()["requests"].toList().isEmpty(), "Source table contacted Kubernetes or opened a session.");
+    require(workspace.tabs().isEmpty() && workspace.settingsDiagnostics()["requests"].toList().isEmpty(), "Source table contacted Kubernetes or opened a session.");
     const auto screenshot = qEnvironmentVariable("PODLORD_SOURCES_SCREENSHOT");
     return screenshot.isEmpty() || window->grabWindow().save(screenshot);
 }

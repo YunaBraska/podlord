@@ -64,6 +64,9 @@ public:
     bool busy() const { return busy_; }
     bool muted() const { return catalog_.muted; }
     bool reducedMotion() const { return catalog_.reducedMotion; }
+    int volumePercent() const { return volumePercent_; }
+    Q_INVOKABLE bool setVolumePercent(int percent);
+    bool previewVolume(int percent);
     int revision() const { return revision_; }
     QStringList fields() const;
     QVariantList sounds() const;
@@ -141,10 +144,11 @@ private:
     QTimer expiry_;
     std::unique_ptr<QAudioOutput> output_;
     std::unique_ptr<QMediaPlayer> player_;
+    int volumePercent_ = 100;
     bool persist(AlertCatalog desired);
     bool queue(const QString& session);
     bool dispatch();
-    bool play(const QString& id);
+    bool play(const QString& id, int previewPercent = -1);
     bool publishTable();
     QVariantMap presentationText_;
     bool publishTableMatches();

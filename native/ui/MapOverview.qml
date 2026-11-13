@@ -12,8 +12,12 @@ Pane {
     Menu {
         id: contextOpenMenu
         property string contextId: ""
+        readonly property var selectedContext: overview.contexts.find(context => context.id === contextId)
         MenuItem { objectName: "openMapContextInTab"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInTab"]; onTriggered: workspace.openContext(contextOpenMenu.contextId) }
         MenuItem { objectName: "openMapContextInWindow"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInWindow"]; visible: workspace.windowActionsAvailable; height: visible ? implicitHeight : 0; onTriggered: workspace.openContext(contextOpenMenu.contextId, true) }
+        MenuSeparator {}
+        MenuItem { objectName: "renameMapContextMenu"; enabled: !workspace.busy && !!contextOpenMenu.selectedContext; text: workspace.uiText["context.rename"]; onTriggered: aliases.edit(contextOpenMenu.selectedContext) }
+        MenuItem { objectName: "removeMapContextMenu"; enabled: !workspace.busy && !!contextOpenMenu.selectedContext; text: workspace.uiText["settings.remove"]; onTriggered: workspace.requestSourceRemoval(contextOpenMenu.contextId) }
     }
     ColumnLayout {
         anchors.fill: parent

@@ -671,7 +671,7 @@ bool run(const QString& scenario, const QString& configPath) {
                 auto layout = workspace.property("portColumns").toList(); auto first = layout.first().toMap(); first["width"] = 40; layout[0] = first;
                 if (!workspace.saveTableLayout("port", layout) || !waitFor([&] { return !workspace.tableLayoutSaving(); }) || !workspace.tableLayoutError().isEmpty()) return false;
                 auto* cell = named("portCell_0_0"); if (!cell || !podlord::test::scrollIntoView(window, cell)) return false;
-                QTest::mouseMove(window, cell->mapToScene({cell->width()/2,cell->height()/2}).toPoint());
+                QTest::mouseMove(window, cell->mapToScene({6,cell->height()/2}).toPoint());
                 return waitFor([&] { const auto* tip = window->findChild<QObject*>("portValueTooltip"); return tip && tip->property("visible").toBool() && tip->property("text").toString() == endpoint; }) && requests == calls;
             }
             if (scenario == "ports_table_filter_restore") {
@@ -765,14 +765,21 @@ bool run(const QString& scenario, const QString& configPath) {
             }
             if (scenario == "ports_open_stopped") return workspace.stopPortForward(token) && !open(token, false) && browser.urls.isEmpty() && requests == calls;
             const bool secure = scenario == "ports_open_https";
-            if (!click("openPortForwardTask") || !click(secure ? "openPortForwardHttps" : "openPortForwardHttp")) return false;
-            if (scenario == "ports_open_repeat" && (!click("openPortForwardTask") || !click("openPortForwardHttp"))) return false;
+            auto* endpointCell = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"), 0, 0);
+            if (!endpointCell) return false;
+            QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, endpointCell->mapToScene(QPointF(8, endpointCell->height()/2)).toPoint());
+            if (!click(secure ? "portContextOpenHttps" : "portContextOpenHttp")) return false;
+            if (scenario == "ports_open_repeat" && (!open(token, false))) return false;
             const auto expected = QUrl(QString(secure ? "https://127.0.0.1:%1/" : "http://127.0.0.1:%1/").arg(localPort));
             const int count = scenario == "ports_open_repeat" ? 2 : 1;
             return browser.urls.size() == count && std::all_of(browser.urls.cbegin(), browser.urls.cend(), [&](const auto& url) { return url == expected; })
                 && workspace.portForwards().size() == 1 && requests == calls;
         }
-        if (scenario=="ports_copy") return click("copyPortForwardTask") && QGuiApplication::clipboard()->text()==endpoint && requests==calls;
+        if (scenario=="ports_copy") {
+            auto* cell = named("portCell_0_0"); if (!cell) return false;
+            QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, cell->mapToScene(QPointF(6, cell->height()/2)).toPoint());
+            return click("portContextCopyEndpoint") && QGuiApplication::clipboard()->text()==endpoint && requests==calls;
+        }
         if (scenario=="ports_invalid_copy") {
             QGuiApplication::clipboard()->setText("retained");
             return !workspace.copyPortForwardEndpoint("not-an-active-token") && QGuiApplication::clipboard()->text()=="retained" && requests==calls;
@@ -790,7 +797,7 @@ bool run(const QString& scenario, const QString& configPath) {
         }
         if (scenario=="ports_inspect") return workspace.closeInspector() && click("portCell_0_0") && waitFor([&] { return workspace.inspectorPath()==selected; });
         if (scenario=="ports_stop") {
-            if (!click("stopPortForwardTask") || !waitFor([&] { return workspace.portForwards().isEmpty() && workspace.portTable()->rowCount() == 0; })) return false;
+            if (!click(qPrintable("stopConnection_" + token)) || !waitFor([&] { return workspace.portForwards().isEmpty() && workspace.portTable()->rowCount() == 0; })) return false;
             QTcpServer reusable; return reusable.listen(QHostAddress::LocalHost,localPort);
         }
         return false;

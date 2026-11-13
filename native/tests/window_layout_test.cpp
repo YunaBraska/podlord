@@ -1,3 +1,4 @@
+#include <QCryptographicHash>
 #include "window_layout.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -13,6 +14,10 @@
 
 using namespace podlord;
 namespace {
+QString fixtureContext(const QString& name) {
+    return "ctx:" + QString::fromLatin1(QCryptographicHash::hash(name.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
 bool failure(const Result<WindowLayout>& result, StoreError expected) {
     const auto* error = std::get_if<Failure>(&result);
     if (!error || error->code != expected || error->message.isEmpty()) {
@@ -70,14 +75,14 @@ bool scenario(const QString& name) {
         const SessionStore sessions(profile);
         SessionCatalog catalog;
         for (int i = 0; i < 3; ++i) {
-            const auto created = sessions.create({"window-layout-context-" + QString::number(i), {"default"}}, "Placement fixture " + QString::number(i));
+            const auto created = sessions.openTab(fixtureContext("window-layout-context-" + QString::number(i)));
             if (!std::holds_alternative<SessionCatalog>(created)) return false;
             catalog = std::get<SessionCatalog>(created);
         }
         value[0].sessions = {catalog.sessions[1].id, catalog.sessions[0].id};
         value[0].activeSession = catalog.sessions[0].id;
         value[1].sessions = {catalog.sessions[2].id};
-        const QString sessionPath = QDir(profile).filePath("sessions.json");
+        const QString sessionPath = QDir(profile).filePath("tabs.json");
         const auto sessionBytes = read(sessionPath);
         if (sessionBytes.isEmpty() || !matches(store.save(value, {}), value) || !matches(store.load(), value)) return false;
         const auto after = sessions.list();
@@ -279,14 +284,14 @@ bool scenario(const QString& name) {
     }
     if (name == "lock_symlink") {
         const SessionStore sessions(profile);
-        const auto created = sessions.create({"window-layout-lock-context", {"default"}}, "Lock fixture");
+        const auto created = sessions.openTab(fixtureContext("window-layout-lock-context"));
         if (!std::holds_alternative<SessionCatalog>(created)) return false;
         const auto catalog = std::get<SessionCatalog>(created);
         value[0].sessions = {catalog.sessions.first().id};
         value[0].activeSession = catalog.sessions.first().id;
         value[1].sessions.clear();
         if (!matches(store.save(value, {}), value)) return false;
-        const QString sessionPath = QDir(profile).filePath("sessions.json");
+        const QString sessionPath = QDir(profile).filePath("tabs.json");
         const QString target = temporary.filePath("retained-lock-target");
         const auto layoutBytes = read(path), sessionBytes = read(sessionPath);
         const QByteArray targetBytes("Retained lock target.\n");

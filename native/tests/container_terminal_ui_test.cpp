@@ -1,3 +1,7 @@
+#include <QAccessible>
+#include <QImage>
+#include <QPainter>
+#include <QFontMetricsF>
 #include "workspace.h"
 #include "window_host.h"
 #include "ui_input.h"
@@ -19,6 +23,7 @@
 #include <QWebSocketServer>
 #include <QtTest/QTest>
 #include <cstdio>
+#include <cmath>
 #include <functional>
 #include <memory>
 
@@ -62,7 +67,7 @@ bool run(const QString& scenario, const QString& configPath) {
                 if (url.path() == "/api") body = {{"versions", QJsonArray{"v1"}}};
                 else if (url.path() == "/apis") body = {{"groups", QJsonArray{}}};
                 else if (url.path() == "/api/v1") body = {{"resources", QJsonArray{QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list", "get"}}}}}};
-                else if (url.path() == "/api/v1/pods") body = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{}}, {"items", scenario == "connections_retained_target" ? QJsonArray{pod,otherPod} : QJsonArray{pod}}};
+                else if (url.path() == "/api/v1/pods") body = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{}}, {"items", (scenario == "connections_retained_target" || scenario.startsWith("failure_")) ? QJsonArray{pod,otherPod} : QJsonArray{pod}}};
                 else if (url.path() == path || url.path() == otherPath) {
                     body = url.path() == otherPath ? otherPod : pod;
                     if (armed) {
@@ -70,6 +75,7 @@ bool run(const QString& scenario, const QString& configPath) {
                         if (scenario == "close_pending_target") { heldTarget = socket; return; }
                         if (scenario == "recreated") { auto metadata = body["metadata"].toObject(); metadata["uid"] = "replacement"; body["metadata"] = metadata; }
                         if (scenario == "container_removed") body["spec"] = QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "beta"}}}}};
+                        if (scenario.startsWith("failure_") && freshReads == 1) status = 500;
                         if (scenario == "target_auth") status = 401;
                         if (scenario == "target_forbidden") status = 403;
                         if (scenario == "target_rate") status = 429;
@@ -180,7 +186,7 @@ bool run(const QString& scenario, const QString& configPath) {
     }
     if (scenario == "completed") { REQUIRE(!workspace.canStartTerminal()); REQUIRE(!workspace.startContainerTerminal("alpha", "/bin/sh")); return true; }
     if (scenario == "invalid_container" || scenario == "invalid_shell" || scenario == "empty_shell" || scenario == "relative_shell") {
-        REQUIRE(!workspace.startContainerTerminal(scenario == "invalid_container" ? "missing" : "alpha", scenario == "empty_shell" ? "" : scenario == "relative_shell" ? "sh" : scenario == "invalid_shell" ? "/bin/sh;id" : "/bin/sh")); REQUIRE(upgrades == 0); return true;
+        REQUIRE(!workspace.startContainerTerminal(scenario == "invalid_container" ? "missing" : "alpha", scenario == "empty_shell" ? "" : scenario == "relative_shell" ? "sh" : scenario == "invalid_shell" ? "/bin/sh;id" : "/bin/sh")); REQUIRE(upgrades == 0); REQUIRE(waitFor([&] { const auto* message = podlord::test::visibleItem(window->contentItem(), "terminalError"); return message && !message->property("text").toString().isEmpty(); }, 2000)); REQUIRE(workspace.error().isEmpty()); return true;
     }
     armed = true; REQUIRE(click("terminalConnect"));
     if (scenario == "close_pending_target") {
@@ -199,6 +205,22 @@ bool run(const QString& scenario, const QString& configPath) {
     }
     REQUIRE(waitFor([&] { return workspace.containerTerminal() && (workspace.containerTerminal()->connected() || !workspace.containerTerminal()->active()); }, real ? 60000 : 15000));
     auto* terminal = workspace.containerTerminal(); REQUIRE(terminal);
+    if (scenario.startsWith("failure_")) {
+        REQUIRE(!terminal->active() && !workspace.terminalError().isEmpty());
+        const auto failureFrame = qEnvironmentVariable("PODLORD_TERMINAL_FRAME");
+        if (!failureFrame.isEmpty()) REQUIRE(window->grabWindow().save(failureFrame));
+        REQUIRE(podlord::test::visibleItem(window->contentItem(), "terminalConnect"));
+        if (scenario == "failure_reopen") {
+            REQUIRE(workspace.closeInspector() && !workspace.containerTerminal() && workspace.terminalError().isEmpty());
+            REQUIRE(workspace.inspectPath(path) && workspace.setInspectorPage("terminal"));
+        } else REQUIRE(workspace.inspectPath(otherPath));
+        REQUIRE(waitFor([&] { return !workspace.containerTerminal() && workspace.terminalError().isEmpty(); }));
+        REQUIRE(workspace.canStartTerminal() && click("terminalConnect"));
+        REQUIRE(waitFor([&] { return workspace.containerTerminal() && workspace.containerTerminal()->connected(); }));
+        REQUIRE(workspace.terminalConnection().value("path").toString() == (scenario == "failure_reopen" ? path : otherPath));
+        REQUIRE(workspace.stopContainerTerminal());
+        return true;
+    }
     if (scenario == "recreated" || scenario == "container_removed" || scenario.startsWith("target_") || scenario.startsWith("upgrade_") || scenario == "protocol") {
         REQUIRE(!terminal->connected() && !terminal->active()); const int sent = upgrades; QTest::qWait(1300); REQUIRE(upgrades == sent && freshReads == 1);
         REQUIRE(!scenario.startsWith("target_") && scenario != "recreated" && scenario != "container_removed" ? upgrades == 1 : upgrades == 0); return true;
@@ -246,6 +268,109 @@ bool run(const QString& scenario, const QString& configPath) {
         return true;
     }
     const auto output = [&](const QByteArray& value) { peer->sendBinaryMessage(QByteArray(1, char(1)) + value); };
+    if (scenario.startsWith("syntax_colors") || scenario == "syntax_timing") {
+        const bool light = scenario.endsWith("light");
+        surface->setForeground(QColor(light ? "#101418" : "#e8edf0"));
+        surface->setBackground(QColor(light ? "#ffffff" : "#101418"));
+        const QByteArray sample = "echo '$VAR' \"$VAR ${HOME}\" \\$VAR\r\nERROR warn terror warning\r\n\033[38;2;201;11;183merror\033[0m";
+        output("\033[2J\033[H" + sample);
+        REQUIRE(waitFor([&] { return surface->visibleText().contains("ERROR warn terror warning"); }));
+        QFont font(surface->property("fontFamily").toString()); font.setPixelSize(surface->property("fontPixelSize").toInt());
+        const QFontMetricsF metrics(font);
+        const double cellWidth = std::max(1.0, metrics.horizontalAdvance('M')), cellHeight = std::max(1.0, metrics.height());
+        const auto image = [&] { QImage value(qCeil(surface->width()), qCeil(surface->height()), QImage::Format_ARGB32); value.fill(Qt::transparent); QPainter painter(&value); surface->paint(&painter); return value; }();
+        const auto hasColor = [&](const QImage& frame, const QColor& color, QRect region) {
+            region = region.intersected(frame.rect());
+            for (int y = region.top(); y <= region.bottom(); ++y) for (int x = region.left(); x <= region.right(); ++x)
+                if (frame.pixelColor(x, y).rgb() == color.rgb()) return true;
+            return false;
+        };
+        const QColor string(light ? "#246b31" : "#91cf96"), variable(light ? "#175e82" : "#86c9ef"),
+            error(light ? "#a22c35" : "#f08b8b"), warning(light ? "#765700" : "#e2c178");
+        REQUIRE(hasColor(image, string, QRect(int(5 * cellWidth), 0, int(6 * cellWidth), qCeil(cellHeight))));
+        REQUIRE(!hasColor(image, variable, QRect(int(5 * cellWidth), 0, int(6 * cellWidth), qCeil(cellHeight))));
+        REQUIRE(hasColor(image, variable, QRect(int(13 * cellWidth), 0, int(12 * cellWidth), qCeil(cellHeight))));
+        REQUIRE(hasColor(image, error, image.rect()) && hasColor(image, warning, image.rect()));
+        REQUIRE(!hasColor(image, error, QRect(int(11 * cellWidth), qCeil(cellHeight), int(6 * cellWidth), int(cellHeight))));
+        REQUIRE(hasColor(image, QColor(201, 11, 183), image.rect()));
+        REQUIRE(surface->visibleText().contains("'$VAR' \"$VAR ${HOME}\" \\$VAR"));
+        REQUIRE(!hasColor(image, variable, QRect(int(26 * cellWidth), 0, int(5 * cellWidth), qCeil(cellHeight))));
+        if (scenario == "syntax_colors_edges") {
+            QByteArray edges = QStringLiteral("'$SINGLE' \"$DOUBLE ${BRACED}\" '\\$Q'\r\nerr ERROR WARN warning terror ERROR_ 1error xERROR _WARN warning_\r\n$ ${} ${9} ${open $9 $_ $a_b9 $A-foo $- $[ $z. $Z_0 $\u00e9\r\n\"escaped \\\" quote $V\" \\$ESCAPED \\\\ \"done\" \U0001f680\r\n").toUtf8();
+            edges += QByteArray(terminal->columns() - 1, ' ') + "$\r\n";
+            edges += QByteArray(terminal->columns() - 2, ' ') + "${\r\n";
+            edges += "$" + QByteArray(terminal->columns() - 1, 'A') + "\r\n";
+            edges += "${" + QByteArray(terminal->columns() - 2, 'a') + "\r\n";
+            edges += QByteArray(terminal->columns(), 'a') + "\r\nEDGE_CASE_END";
+            output("\033[2J\033[H" + edges);
+            REQUIRE(waitFor([&] { return surface->visibleText().contains("EDGE_CASE_END"); }));
+            QImage frame(image.size(), QImage::Format_ARGB32); frame.fill(Qt::transparent);
+            { QPainter painter(&frame); surface->paint(&painter); }
+            REQUIRE(surface->visibleText().contains("'$SINGLE' \"$DOUBLE ${BRACED}\""));
+            const QRect single(0, 0, int(9 * cellWidth), qCeil(cellHeight));
+            REQUIRE(hasColor(frame, string, single) && !hasColor(frame, variable, single));
+            REQUIRE(hasColor(frame, variable, frame.rect()) && hasColor(frame, error, frame.rect()) && hasColor(frame, warning, frame.rect()));
+            const auto wrapped = "'" + QByteArray(terminal->columns() + 5, 'a') + " $WRAPPED'\r\n\""
+                + QByteArray(terminal->columns() - 2, 'a') + "\\$ESCAPED\"\r\nWRAP_CASE_END";
+            output("\033[2J\033[H" + wrapped);
+            REQUIRE(waitFor([&] { return surface->visibleText().contains("WRAP_CASE_END"); }));
+            frame.fill(Qt::transparent);
+            { QPainter painter(&frame); surface->paint(&painter); }
+            REQUIRE(hasColor(frame, string, frame.rect()) && !hasColor(frame, variable, frame.rect()));
+            REQUIRE(surface->visibleText().contains("$WRAPPED") && surface->visibleText().contains("$ESCAPED"));
+        }
+        if (scenario == "syntax_colors_midtones") {
+            const auto luminance = [](const QColor& color) {
+                const auto linear = [](double channel) { return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4); };
+                return 0.2126 * linear(color.redF()) + 0.7152 * linear(color.greenF()) + 0.0722 * linear(color.blueF());
+            };
+            for (const auto& gray : {QString("#707070"), QString("#757575"), QString("#767676"), QString("#808080"), QString("#888888")}) {
+                const QColor background(gray);
+                surface->setBackground(background);
+                surface->setForeground(luminance(background) > 0.179 ? QColor(Qt::black) : QColor(Qt::white));
+                QImage frame(image.size(), QImage::Format_ARGB32); frame.fill(Qt::transparent);
+                { QPainter painter(&frame); surface->paint(&painter); }
+                const auto contrast = [&](QRect area) {
+                    double strongest = 0;
+                    const auto base = luminance(background);
+                    area = area.intersected(frame.rect());
+                    for (int y = area.top(); y <= area.bottom(); ++y) for (int x = area.left(); x <= area.right(); ++x) {
+                        const auto lightness = luminance(frame.pixelColor(x, y));
+                        strongest = std::max(strongest, (std::max(lightness, base) + 0.05) / (std::min(lightness, base) + 0.05));
+                    }
+                    return strongest;
+                };
+                REQUIRE(contrast(QRect(int(5 * cellWidth), 0, int(6 * cellWidth), qCeil(cellHeight))) >= 4.5);
+                REQUIRE(contrast(QRect(int(13 * cellWidth), 0, int(4 * cellWidth), qCeil(cellHeight))) >= 4.5);
+                REQUIRE(contrast(QRect(0, qCeil(cellHeight), int(5 * cellWidth), int(cellHeight))) >= 4.5);
+                REQUIRE(contrast(QRect(int(6 * cellWidth), qCeil(cellHeight), int(4 * cellWidth), int(cellHeight))) >= 4.5);
+            }
+        }
+        const auto measure = [&](const char* label) {
+            QList<double> samples;
+            QImage target(image.size(), QImage::Format_ARGB32);
+            for (int index = -5; index < 50; ++index) {
+                QElapsedTimer timer; timer.start();
+                { QPainter painter(&target); surface->paint(&painter); }
+                if (index >= 0) samples.append(timer.nsecsElapsed() / 1000000.0);
+            }
+            std::sort(samples.begin(), samples.end());
+            std::fprintf(stderr, "Terminal raster paint %s: p50=%.3f ms p95=%.3f ms rows=%d columns=%d\n", label, samples[24], samples[47], terminal->rows(), terminal->columns());
+        };
+        if (scenario == "syntax_timing") measure("live hints");
+        output("\033[?1049h\033[2J\033[H" + sample);
+        REQUIRE(waitFor([&] { return terminal->alternateScreen() && surface->visibleText().contains("ERROR warn terror warning"); }));
+        QImage alternate(image.size(), QImage::Format_ARGB32); alternate.fill(Qt::transparent);
+        { QPainter painter(&alternate); surface->paint(&painter); }
+        REQUIRE(!hasColor(alternate, variable, alternate.rect()) && !hasColor(alternate, error, alternate.rect()));
+        if (scenario == "syntax_timing") measure("ANSI only, same content");
+        output("\033[?1049l");
+        REQUIRE(waitFor([&] { return !terminal->alternateScreen(); }));
+        const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FRAME");
+        if (!frame.isEmpty()) { REQUIRE(image.save(frame)); REQUIRE(window->grabWindow().save(frame + ".window.png")); }
+        REQUIRE(workspace.stopContainerTerminal());
+        return true;
+    }
     if (real) {
         type("printf '\\033[32mPODLORD_NATIVE_PTY_OK\\033[0m\\n'; stty size");
         REQUIRE(waitFor([&] { return surface->visibleText().contains("PODLORD_NATIVE_PTY_OK") && surface->visibleText().contains(QString::number(terminal->columns())); }, 15000));
@@ -307,6 +432,48 @@ bool run(const QString& scenario, const QString& configPath) {
         REQUIRE(waitFor([&] { return workspace.portTable()->rowCount() == 1 && podlord::test::visibleItem(window->contentItem(), "portTable"); }));
         REQUIRE(workspace.portTable()->data(workspace.portTable()->index(0, 0)).toString() == terminal->target());
         REQUIRE(workspace.portTable()->data(workspace.portTable()->index(0, 2)).toString() == "Terminal");
+        if (scenario == "connections_accessible_open") {
+            auto* cell = podlord::test::tableCell(podlord::test::visibleItem(window->contentItem(), "portTable"), 0, 0); REQUIRE(cell);
+            auto* accessible = QAccessible::queryAccessibleInterface(cell);
+            REQUIRE(accessible && accessible->role() == QAccessible::Button && accessible->actionInterface());
+            accessible->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+            REQUIRE(waitFor([&] { return window->property("terminalExpanded").toBool(); }));
+            REQUIRE(workspace.containerTerminal() == terminal && terminal->connected());
+            REQUIRE(workspace.stopContainerTerminal());
+            return true;
+        }
+        if (scenario.startsWith("connections_quick_stop")) {
+            const auto originalFont = QGuiApplication::font();
+            const auto restoreFont = qScopeGuard([&] { QGuiApplication::setFont(originalFont); });
+            if (scenario.endsWith("large_text")) { auto font = originalFont; font.setPixelSize(39); QGuiApplication::setFont(font); }
+            if (scenario.endsWith("touch")) { window->setMinimumSize(QSize(200,200)); window->resize(320,640); }
+            const auto token = connection["id"].toString();
+            auto* endpoint = podlord::test::visibleItem(window->contentItem(), "connectionEndpoint_" + token);
+            REQUIRE(endpoint && endpoint->property("text").toString() == terminal->target());
+            if (scenario.endsWith("large_text")) {
+                REQUIRE(waitFor([&] { return workspace.textSizes().value("cell").toInt() >= 30; }));
+                const bool fits = waitFor([&] { window->update(); return endpoint->height() + 0.5 >= endpoint->implicitHeight(); }, 2000);
+                if (!fits) std::fprintf(stderr, "Large Connections text: height=%.1f implicit=%.1f row=%.1f rowImplicit=%.1f control=%.1f cellFont=%d\n",
+                    endpoint->height(), endpoint->implicitHeight(), endpoint->parentItem()->parentItem()->parentItem()->height(),
+                    endpoint->parentItem()->parentItem()->parentItem()->implicitHeight(), window->property("controlHeight").toDouble(), workspace.textSizes().value("cell").toInt());
+                REQUIRE(fits);
+            }
+            auto* button = podlord::test::visibleItem(window->contentItem(), "stopConnection_" + token); REQUIRE(button);
+            const auto* accessible = QAccessible::queryAccessibleInterface(button);
+            REQUIRE(accessible && accessible->text(QAccessible::Name).contains(terminal->target()));
+            REQUIRE(waitFor([&] { return button->width() >= window->property("controlHeight").toDouble() && button->height() >= window->property("controlHeight").toDouble(); }));
+            REQUIRE(QRectF(0,0,window->width(),window->height()).contains(button->mapRectToScene(QRectF(QPointF{}, button->size()))));
+            const auto frame = qEnvironmentVariable("PODLORD_TERMINAL_FRAME");
+            if (!frame.isEmpty()) REQUIRE(window->grabWindow().save(frame));
+            if (scenario.endsWith("touch")) {
+                REQUIRE(waitFor([&] { return button->width() >= 44 && button->height() >= 44; }));
+                const auto point = button->mapToScene(QPointF(button->width()/2, button->height()/2)).toPoint();
+                QTest::touchEvent(window, touchDevice()).press(0, point, window).commit();
+                QTest::touchEvent(window, touchDevice()).release(0, point, window).commit();
+            } else REQUIRE(click(qPrintable("stopConnection_" + token)));
+            REQUIRE(waitFor([&] { return !workspace.containerTerminal() && workspace.portTable()->rowCount() == 0; }));
+            return true;
+        }
         if (scenario == "connections_overview") {
             REQUIRE(workspace.filterPorts("absent-connection") && workspace.portTable()->rowCount() == 0);
             REQUIRE(workspace.filterPorts("alpha") && workspace.portTable()->rowCount() == 1);
@@ -314,10 +481,10 @@ bool run(const QString& scenario, const QString& configPath) {
             REQUIRE(!workspace.stopPortForward(connection["id"].toString()));
             REQUIRE(terminal->connected() && upgrades == 1 && freshReads == 1);
         } else if (scenario == "connections_window") {
-            REQUIRE(workspace.duplicateSession(owner, "Other window"));
+            REQUIRE(workspace.openContext(workspace.sessionConfiguration(owner).value("contextId").toString(), false, true));
             QString other;
             REQUIRE(waitFor([&] {
-                for (const auto& value : workspace.sessions()) if (value.toMap()["name"] == "Other window") other=value.toMap()["id"].toString();
+                for (const auto& value : workspace.tabs()) if (value.toMap()["id"].toString() != owner) other=value.toMap()["id"].toString();
                 return !workspace.busy() && !other.isEmpty();
             }));
             REQUIRE(workspace.activate(other));
@@ -333,11 +500,11 @@ bool run(const QString& scenario, const QString& configPath) {
             REQUIRE(!workspace.containerTerminal() && workspace.portTable()->rowCount() == 0);
             return true;
         } else if (scenario == "connections_session") {
-            REQUIRE(workspace.duplicateSession(owner, "Independent connections"));
+            REQUIRE(workspace.openContext(workspace.sessionConfiguration(owner).value("contextId").toString(), false, true));
             REQUIRE(waitFor([&] { return !workspace.busy(); }));
             QString other;
             REQUIRE(waitFor([&] {
-                for (const auto& value : workspace.sessions()) if (value.toMap()["name"] == "Independent connections") other=value.toMap()["id"].toString();
+                for (const auto& value : workspace.tabs()) if (value.toMap()["id"].toString() != owner) other=value.toMap()["id"].toString();
                 return !other.isEmpty();
             }));
             REQUIRE(workspace.activate(other));
@@ -356,10 +523,8 @@ bool run(const QString& scenario, const QString& configPath) {
             REQUIRE(workspace.inspectPath(otherPath) && waitFor([&] { return !workspace.loading() && workspace.inspectorName() == "other-pod"; }));
             REQUIRE(workspace.setInspectorPage("terminal"));
             REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(),"terminalTarget") != nullptr; }));
-            REQUIRE(workspace.terminalConnection()["path"] == path && workspace.canStartTerminal());
-            REQUIRE(!podlord::test::visibleItem(window->contentItem(),"terminalConnect"));
-            REQUIRE(!podlord::test::visibleItem(window->contentItem(),"terminalContainer"));
-            REQUIRE(click("terminalDisconnect"));
+            REQUIRE(workspace.terminalConnection().isEmpty() && workspace.canStartTerminal());
+            REQUIRE(podlord::test::visibleItem(window->contentItem(),"terminalContainer"));
             REQUIRE(waitFor([&] { return !workspace.containerTerminal() && podlord::test::visibleItem(window->contentItem(),"terminalConnect"); }));
             REQUIRE(click("terminalConnect"));
             REQUIRE(waitFor([&] { return workspace.containerTerminal() && workspace.containerTerminal()->connected(); }));
@@ -395,7 +560,7 @@ bool run(const QString& scenario, const QString& configPath) {
             REQUIRE(terminalMenuReady);
             REQUIRE(!podlord::test::visibleItem(window->contentItem(), "connectionOpenTerminal"));
             QTest::keyClick(window,Qt::Key_Escape);
-            REQUIRE(click("stopPortForwardTask"));
+            REQUIRE(click(qPrintable("stopConnection_" + connection["id"].toString())));
             REQUIRE(waitFor([&] { return !workspace.containerTerminal() && workspace.portTable()->rowCount() == 1; }));
             REQUIRE(workspace.portForwards().size() == 1 && !reservation.listen(QHostAddress::LocalHost,port));
             REQUIRE(workspace.stopPortForward(forward) && reservation.listen(QHostAddress::LocalHost,port));
@@ -422,7 +587,7 @@ bool run(const QString& scenario, const QString& configPath) {
             }
             REQUIRE(expanded);
             REQUIRE(!podlord::test::visibleItem(window->contentItem(), "portContextStop"));
-            auto* backgroundStop=podlord::test::visibleItem(window->contentItem(),"stopPortForwardTask");
+            auto* backgroundStop=podlord::test::visibleItem(window->contentItem(),"stopConnection_" + connection["id"].toString());
             REQUIRE(backgroundStop && !backgroundStop->isEnabled());
             if (scenario.startsWith("compact_")) {
                 window->setMinimumSize(QSize(200,200));
@@ -797,9 +962,9 @@ bool run(const QString& scenario, const QString& configPath) {
         REQUIRE(waitFor([&] { return !workspace.busy() && (!peer || peer->state() == QAbstractSocket::UnconnectedState); }));
         REQUIRE(workspace.currentSession().isEmpty() && !workspace.containerTerminal()); return true;
     } else if (scenario == "session_switch") {
-        const auto original = workspace.currentSession(); REQUIRE(workspace.duplicateSession(original, "Independent")); REQUIRE(waitFor([&] { return !workspace.busy(); }));
+        const auto original = workspace.currentSession(); REQUIRE(workspace.openContext(workspace.sessionConfiguration(original).value("contextId").toString(), false, true)); REQUIRE(waitFor([&] { return !workspace.busy(); }));
         QString other;
-        REQUIRE(waitFor([&] { for (const auto& entry : workspace.sessions()) { const auto session = entry.toMap(); if (session["name"] == "Independent") other = session["id"].toString(); } return !other.isEmpty(); }));
+        REQUIRE(waitFor([&] { for (const auto& entry : workspace.tabs()) { const auto session = entry.toMap(); if (session["id"].toString() != original) other = session["id"].toString(); } return !other.isEmpty(); }));
         REQUIRE(workspace.activate(other)); REQUIRE(waitFor([&] { return !workspace.busy() && workspace.currentSession() == other; }));
         REQUIRE(!workspace.containerTerminal() && peer && peer->state() == QAbstractSocket::ConnectedState);
         REQUIRE(workspace.activate(original)); REQUIRE(waitFor([&] { return !workspace.busy() && workspace.currentSession() == original; }));
@@ -812,6 +977,12 @@ bool run(const QString& scenario, const QString& configPath) {
     else if (scenario == "narrow") { window->resize(640, 680); REQUIRE(waitFor([&] { return terminal->columns() > 1 && terminal->rows() > 1; })); REQUIRE(surface->width() > 0 && surface->height() > 0); }
     else if (scenario == "hidden") { REQUIRE(workspace.setInspectorPage("overview")); output("hidden output"); REQUIRE(waitFor([&] { return terminal->text().contains("hidden output"); })); REQUIRE(workspace.setInspectorPage("terminal")); REQUIRE(waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "terminalSurface") != nullptr; })); }
     else REQUIRE(scenario == "connect");
+    if (scenario == "connect") REQUIRE(waitFor([&] { return !podlord::test::visibleItem(window->contentItem(), "terminalError"); }, 2000));
+    if (scenario == "status_success" || scenario == "status_empty" || scenario == "status_output_first") {
+        REQUIRE(!terminal->QObject::property("failed").toBool());
+        REQUIRE(waitFor([&] { return !podlord::test::visibleItem(window->contentItem(), "terminalStatus"); }, 2000));
+    }
+    if (scenario == "status_failure" || scenario == "status_malformed" || scenario == "status_other_failure") REQUIRE(terminal->QObject::property("failed").toBool());
     if (terminal->active()) { REQUIRE(click("terminalDisconnect")); REQUIRE(waitFor([&] { return !peer || peer->state() == QAbstractSocket::UnconnectedState; })); REQUIRE(!workspace.containerTerminal()); }
     return true;
 }

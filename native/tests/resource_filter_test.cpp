@@ -29,7 +29,7 @@ bool tableScenario(const QString& scenario) {
         rows.publish({row});
         if (rows.data(rows.index(0, 0)) != "alpha" || rows.data(rows.index(0, 0)) != "alpha"
             || !rows.data(rows.index(0, 1)).toString().contains("incomplete")
-            || !rows.data(rows.index(0, 1), Qt::ToolTipRole).toString().contains("stale")) return false;
+            || rows.data(rows.index(0, 1), Qt::ToolTipRole).toString().contains("stale")) return false;
         row["name"] = "new<one>\nline"; row["cpu"] = 3000;
         row["metricComplete"] = QJsonObject{{"cpu", true}}; row["metricStale"] = false;
         rows.publish({row});
@@ -137,28 +137,38 @@ bool tableScenario(const QString& scenario) {
             {"createdAt", QDateTime::currentDateTimeUtc().addDays(1).toString(Qt::ISODateWithMs)},
             {"ready", "1/2"}, {"readyCount", 1}, {"containerCount", 2}}});
         const bool unchanged = rows.data(rows.index(0, 0)).toString().contains("incomplete")
-            && rows.data(rows.index(0, 0)).toString().contains("stale")
+            && !rows.data(rows.index(0, 0)).toString().contains("stale")
             && !rows.data(rows.index(0, 1)).toString().contains("incomplete")
             && rows.data(rows.index(0, 2)) == "-" && rows.data(rows.index(0, 3)) == "-"
             && !rows.data(rows.index(0, 3), Qt::UserRole + 6).isValid()
             && rows.data(rows.index(0, 4), Qt::UserRole + 6).toDouble() == 0.5
             && rows.data(rows.index(0, 5)) == "-";
         podlord::ResourceDisplayModel display(&rows);
-        if (!unchanged || display.data(display.index(0, 0)) != "0.25m (incomplete) (stale)"
-            || display.data(display.index(0, 1)) != "1Ki (stale)" || display.data(display.index(0, 2)) != "-"
-            || display.data(display.index(0, 0), Qt::ToolTipRole) != "<span>0.25 mCPU (incomplete) (stale)</span>"
-            || display.data(display.index(0, 0), Qt::UserRole + 6).toDouble() != 0.25) return false;
+        if (!unchanged || display.data(display.index(0, 0)) != "0.25m (incomplete)"
+            || display.data(display.index(0, 1)) != "1Ki" || display.data(display.index(0, 2)) != "-"
+            || display.data(display.index(0, 0), Qt::ToolTipRole) != "<span>0.25 mCPU (incomplete)</span>"
+            || display.data(display.index(0, 0), Qt::UserRole + 6).toDouble() != 0.25) {
+            std::fprintf(stderr,"Initial metric display: raw=%s compact=%s memory=%s tooltip=%s age=%s unchanged=%d\n",
+                qPrintable(rows.data(rows.index(0,0)).toString()),qPrintable(display.data(display.index(0,0)).toString()),
+                qPrintable(display.data(display.index(0,1)).toString()),qPrintable(display.data(display.index(0,0),Qt::ToolTipRole).toString()),
+                qPrintable(rows.data(rows.index(0,3)).toString()),unchanged);
+            return false;
+        }
         rows.publish({QJsonObject{{"path", "a"}, {"cpu", 1234.56789}, {"memory", 1073741824.0}, {"storage", 123456789.0},
             {"metricComplete", QJsonObject{{"cpu", true}, {"memory", true}, {"storage", true}}}},
             QJsonObject{{"path", "b"}, {"cpu", 0}, {"memory", 0}, {"storage", 0},
                 {"metricComplete", QJsonObject{{"cpu", true}, {"memory", true}, {"storage", true}}}}});
-        return display.data(display.index(0, 0)) == "1.23c" && display.data(display.index(0, 1)) == "1Gi"
+        const bool formatted = display.data(display.index(0, 0)) == "1.23c" && display.data(display.index(0, 1)) == "1Gi"
             && display.data(display.index(0, 2)) == "118Mi"
             && display.data(display.index(0, 0), Qt::UserRole + 6).toDouble() == 1234.56789
             && display.data(display.index(0, 2), Qt::UserRole + 6).toDouble() == 123456789.0
-            && display.data(display.index(0, 0), Qt::ToolTipRole) == "<span>1234.5679 mCPU</span>"
+            && display.data(display.index(0, 0), Qt::ToolTipRole) == "<span>1235 mCPU</span>"
             && display.data(display.index(1, 0)) == "0m" && display.data(display.index(1, 1)) == "0B"
             && display.data(display.index(1, 2)) == "0B";
+        if (!formatted) std::fprintf(stderr,"Metric display: cpu=%s memory=%s storage=%s tooltip=%s\n",
+            qPrintable(display.data(display.index(0,0)).toString()),qPrintable(display.data(display.index(0,1)).toString()),
+            qPrintable(display.data(display.index(0,2)).toString()),qPrintable(display.data(display.index(0,0),Qt::ToolTipRole).toString()));
+        return formatted;
     }
     if (scenario == "table_safe_tooltip") {
         ResourceTable rows(nullptr, {"name"}, {"Name"});

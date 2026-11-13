@@ -1,5 +1,6 @@
 #pragma once
 #include "session_store.h"
+#include "context_catalog.h"
 #include <QSslConfiguration>
 #include <QUrl>
 
@@ -29,6 +30,7 @@ struct SourceIssue final { QString ownedPath; Failure failure; };
 struct SourceCatalog final {
     QList<SourceSnapshot> sources;
     QList<SourceIssue> errors;
+    ContextUsageMap usage;
 };
 struct SourceImportIssue final { QString sourcePath; Failure failure; };
 struct SourceImportReport final {

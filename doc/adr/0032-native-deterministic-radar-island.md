@@ -235,7 +235,7 @@ The background has no resource-model binding, resource traversal or per-Event
 animation. Event filtering therefore does not cause background repaint work.
 
 Water settings reuse the authoritative ReadSettingsStore (version 5); versions
-1 through 4 load without rewriting, with enabled/45% defaults. Saving upgrades
+1 through 4 load without rewriting, with enabled/5% defaults. Saving upgrades
 atomically and retains existing conflict detection. Older executables reject
 version 5 explicitly; rollback requires retaining the previous profile file.
 There is no new settings file or resource persistence.
@@ -259,3 +259,23 @@ Keyboard focus retains a resource path, not a proxy row number. Filtering out
 that identity makes Enter unavailable until the user explicitly selects another
 resource. Sorting can change its proxy index without changing the identity or
 world coordinate. Inspector selection remains owned by Workspace.
+
+## Context names and pointer details (2026-11-13)
+
+The map caption presents the local context display name and its referenced cluster
+name. The separator is typography, not a parent relationship. Copy actions use
+these separate catalog fields, never parsing the caption. Right-click, touch hold
+and keyboard activation expose both actions without a request or storage read.
+
+Activating Map again while viewing a context returns to the context overview
+without closing its tab. The overview action on the map is icon-only and retains
+an accessible name. The context card menu includes local rename and removal.
+Removal uses the same application-level confirmation from Map and Sources. It
+never deletes a remote cluster or changes the original kubeconfig.
+
+On windows at least 1000 logical pixels wide, mouse-hover details appear next to
+the resource and remain within the window. They do not reserve layout space or
+cover the resource point. Constrained layouts retain the existing filter-area or
+adjacent overlay. Keyboard details retain their external, scrollable reader and
+stable close control. Leaving the radar dismisses mouse-only details. Neither
+placement changes the camera or initiates a network request.

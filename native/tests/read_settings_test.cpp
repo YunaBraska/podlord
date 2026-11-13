@@ -42,6 +42,29 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile");
     const auto path = QDir(profile).filePath("read-settings.json");
     const ReadSettingsStore store(profile);
+    if (name.startsWith("audio_volume_")) {
+        const ReadSettings defaults;
+        if (name == "audio_volume_default") return defaults.musicVolumePercent == 35 && defaults.alertVolumePercent == 100
+            && value(store.load(), defaults) && !QFileInfo::exists(profile);
+        auto desired = defaults;
+        desired.musicVolumePercent = 62; desired.alertVolumePercent = 27;
+        if (name == "audio_volume_zero") desired.musicVolumePercent = desired.alertVolumePercent = 0;
+        if (name == "audio_volume_maximum") desired.musicVolumePercent = desired.alertVolumePercent = 100;
+        if (name == "audio_volume_music_invalid") { desired.musicVolumePercent = -1; return failure(store.save(desired, defaults), StoreError::InvalidInput); }
+        if (name == "audio_volume_alert_invalid") { desired.alertVolumePercent = 101; return failure(store.save(desired, defaults), StoreError::InvalidInput); }
+        if (!value(store.save(desired, defaults), desired)) return false;
+        if (name == "audio_volume_save" || name == "audio_volume_zero" || name == "audio_volume_maximum") return value(store.load(), desired);
+        auto root = QJsonDocument::fromJson(read(path)).object();
+        if (name == "audio_volume_upgrade") { root["version"] = 9; root.remove("musicVolumePercent"); root.remove("alertVolumePercent"); }
+        else if (name == "audio_volume_fraction") root["musicVolumePercent"] = 12.5;
+        else if (name == "audio_volume_string") root["alertVolumePercent"] = "27";
+        else if (name == "audio_volume_missing") root.remove("musicVolumePercent");
+        else return false;
+        const auto bytes = QJsonDocument(root).toJson();
+        if (!write(path, bytes)) return false;
+        const auto loaded = store.load();
+        return (name == "audio_volume_upgrade" ? value(loaded, defaults) : failure(loaded, StoreError::InvalidData)) && read(path) == bytes;
+    }
     if (name == "collection_cache_default")
         return require(ReadSettings{}.collectionCacheHours == 24, "Collection cache default is not 24 hours.")
             && value(store.load(), {}) && !QFileInfo::exists(profile);
@@ -55,7 +78,7 @@ bool scenario(const QString& name) {
         if (!value(store.save(desired, {}), desired) || !value(store.load(), desired)) return false;
         const auto bytes = read(path);
         const auto saved = QJsonDocument::fromJson(bytes).object();
-        if (saved["version"] != 9 || saved["collectionCacheHours"].toInt() != desired.collectionCacheHours) return false;
+        if (saved["version"] != 10 || saved["collectionCacheHours"].toInt() != desired.collectionCacheHours) return false;
         if (name != "collection_cache_conflict") return value(store.save(desired, desired), desired) && value(store.load(), desired);
         auto stale = ReadSettings{}; stale.logLimitMb = 7;
         return failure(store.save(stale, {}), StoreError::Conflict) && read(path) == bytes && value(store.load(), desired);
@@ -83,7 +106,7 @@ bool scenario(const QString& name) {
         auto desired = expected; desired.collectionCacheHours = 48;
         if (!value(store.save(desired, expected), desired) || !value(store.load(), desired)) return false;
         const auto saved = QJsonDocument::fromJson(read(path)).object();
-        return saved["version"] == 9 && saved["collectionCacheHours"] == 48 && !saved.contains("themeIntensity");
+        return saved["version"] == 10 && saved["collectionCacheHours"] == 48 && !saved.contains("themeIntensity");
     }
     if (name.startsWith("collection_cache_schema_")) {
         if (!value(store.save({}, {}), {})) return false;
@@ -114,7 +137,7 @@ bool scenario(const QString& name) {
         expected.radarWaterEnabled = false; expected.radarWaterSpeedPercent = 25; expected.workspaceRestore = false; expected.language = "de";
         if (!value(store.load(), expected) || read(path) != bytes || !value(store.save(expected, expected), expected)) return false;
         const auto saved = QJsonDocument::fromJson(read(path)).object();
-        return value(store.load(), expected) && saved["version"] == 9 && !saved.contains("themeIntensity");
+        return value(store.load(), expected) && saved["version"] == 10 && !saved.contains("themeIntensity");
     }
     if (name == "appearance_removed_field") {
         if (!value(store.save({}, {}), {})) return false;
@@ -179,7 +202,7 @@ bool scenario(const QString& name) {
     if (!QDir().mkpath(profile)) return false;
     if (name == "schema_v3_upgrade") {
         if (!write(path, "{\"version\":3,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6,\"yamlLimitMiB\":4}")) return false;
-        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 9;
+        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 10;
     }
     if (name == "version_two_yaml_upgrade") {
         if (!write(path, "{\"version\":2,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6}")) return false;
@@ -187,7 +210,7 @@ bool scenario(const QString& name) {
     }
     if (name == "version_one_upgrade") {
         if (!write(path, "{\"version\":1,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2}")) return false;
-        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 9;
+        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 10;
     }
     if (name == "conflict" || name == "repeat") {
         if (!value(store.save({120, 1}, {}), {120, 1})) return false;

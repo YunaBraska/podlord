@@ -13,12 +13,14 @@ ModalDialog {
     header: DialogHeader { dialog: sourceAliasDialog; closeObjectName: "cancelSourceAlias"; closeEnabled: !workspace.busy }
     focus: true
     parent: Overlay.overlay
-    width: Math.min(520, parent.width - 24)
-    x: (parent.width - width) / 2; y: Math.max(12, (parent.height - height) / 2)
+    width: Math.min(520, Math.max(0, dialogArea.width - 24))
+    height: Math.min(implicitHeight, Math.max(0, dialogArea.height - 24))
+    x: dialogArea.x + (dialogArea.width - width) / 2
+    y: dialogArea.y + (dialogArea.height - height) / 2
     closePolicy: workspace.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
     contentItem: ColumnLayout {
         TextField { id: sourceAliasName; objectName: "sourceAliasName"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["context.name"]; placeholderText: sourceAliasDialog.canonicalName; onAccepted: sourceAliasDialog.save() }
-        Label { objectName: "sourceAliasError"; Layout.fillWidth: true; visible: text !== ""; text: sourceAliasDialog.failure; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
+        Label { objectName: "sourceAliasError"; Layout.fillWidth: true; visible: text !== ""; text: sourceAliasDialog.failure; maximumLineCount: 3; elide: Text.ElideRight; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
     }
     footer: DialogButtonBox {
         IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "saveSourceAlias"; text: workspace.busy ? workspace.uiText["action.saving"] : workspace.uiText["action.save"]; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }

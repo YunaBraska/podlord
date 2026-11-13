@@ -175,7 +175,7 @@ bool importedCredential(const QString& scenario, const QByteArray& key) {
         const auto catalog = SessionStore(profile).list();
         const auto* failure = std::get_if<Failure>(&removed);
         return failure && failure->code == StoreError::CleanupFailed && errorName(failure->code) == "CleanupFailed"
-            && std::holds_alternative<SessionCatalog>(catalog) && std::get<SessionCatalog>(catalog).removedContexts.contains(contextId)
+            && std::holds_alternative<SessionCatalog>(catalog) && std::holds_alternative<Failure>(store.connection(contextId))
             && QFileInfo(credentialPath).isDir() && QFileInfo(keyPath).isFile();
     }
     if (scenario == "import_corrupt") {

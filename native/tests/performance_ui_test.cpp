@@ -30,6 +30,9 @@
 #include <cstdio>
 #include <ctime>
 #include <optional>
+#ifdef Q_OS_MACOS
+#import <AppKit/AppKit.h>
+#endif
 
 namespace {
 struct FrameTiming final { double renderedMs, actionMs; quint64 token; };
@@ -61,6 +64,24 @@ bool report(const QJsonObject& value) {
         record["applicationState"]=int(QGuiApplication::applicationState());
         record["ownedFocusWindowType"]=focus ? int(focus->type()) : -1;
         record["ownedFocusWindowHasTransientParent"]=focus && focus->transientParent();
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == "cocoa" && [NSThread isMainThread]) {
+            NSApplication* application = NSApp;
+            NSWindow* keyWindow = application.keyWindow;
+            NSWindow* mainWindow = application.mainWindow;
+            NSRunningApplication* frontmost = NSWorkspace.sharedWorkspace.frontmostApplication;
+            record["nativeFrontmostKnown"] = frontmost != nil;
+            record["nativeOwnProcessFrontmost"] = frontmost && frontmost.processIdentifier == QCoreApplication::applicationPid();
+            record["nativeApplicationActive"] = bool(application.active);
+            record["nativeKeyWindowPresent"] = keyWindow != nil;
+            record["nativeKeyWindowIsMain"] = keyWindow && keyWindow == mainWindow;
+            record["nativeMainWindowPresent"] = mainWindow != nil;
+            record["nativeMainWindowVisible"] = bool(mainWindow.visible);
+            record["nativeMainWindowMiniaturized"] = bool(mainWindow.miniaturized);
+            record["nativeMainWindowCanBecomeKey"] = bool(mainWindow.canBecomeKeyWindow);
+            record["nativeModalWindowPresent"] = application.modalWindow != nil;
+        }
+#endif
     }
     record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
     const bool diagnostic = QCoreApplication::arguments().contains("--background-metal-diagnostic");

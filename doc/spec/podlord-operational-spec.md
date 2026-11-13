@@ -4,7 +4,7 @@
 
 Podlord is a desktop Kubernetes operations console for people who need to understand cluster state quickly without trusting shell context, stale views, or namespace-first navigation.
 
-It turns Kubernetes from scattered YAML and terminal state into one cache-backed, multi-session control surface.
+It turns Kubernetes from scattered YAML and terminal state into one cache-backed, multi-context control surface.
 
 ## Problems Solved
 
@@ -20,8 +20,8 @@ It turns Kubernetes from scattered YAML and terminal state into one cache-backed
 - K3d belongs only to local/CI Kubernetes test infrastructure. The native product has no K3d discovery command, importer, executable lookup or installation requirement. Historical stored source identities remain readable without invoking a generator.
 - Store app-owned kubeconfig snapshots with content hashes to avoid duplicates.
 - Detect changed kubeconfig files and create new snapshots while preserving existing session bindings.
-- Open sessions in tabs or detached windows while sharing the same cache.
-- Keep each session open only once across all tabs and windows.
+- Open contexts in tabs or detached windows while sharing context preferences and the same cache.
+- Keep each actual tab in one window. A context may be open in several tabs or windows.
 - List Kubernetes resources in a flat, sortable, filterable table.
 - Filter by kind, namespace, status, name, image, node, owner, age, restarts, CPU, memory, storage, problems, and activity.
 - Inspect resources with overview data, YAML, events, links, logs, values, and actions.
@@ -75,6 +75,35 @@ The remaining interview uses `Question x/y` numbering, initially estimated at 12
 | 14/14 | Final scope/gap reconciliation and the rewrite/test review plan | Confirmed; RWT-009 through RWT-015 require independently runnable old/new comparison and evidenced parity before retirement. |
 
 Questions 1 through 3 were confirmed on 2026-10-01; questions 4 through 14 were confirmed on 2026-10-02. This interview round is complete. Their owning requirements are referenced in the table above. Question 13 confirms Qt Quick with thin QML presentation and the tightened performance contract. Question 14 confirms the rewrite sequence and adds continuous old/new comparability as a retirement gate. Concrete module/distribution obligations, exact tested OS/architecture support, supported-action inventory, and outstanding behavioral details remain explicit reconciliation/evidence work, not assumed passes. Implementation sequencing is owned by [the roadmap](../ROADMAP.md); comparison scenarios and evidence are tracked in [the existing test map](k3d-test-map.md).
+
+## Context model clarification (2026-11-13)
+
+The user-facing model is contexts with settings and actual open tabs. Saved
+sessions, independently named session copies and their selection list are removed.
+This supersedes the saved-session naming, replacement and ranking behavior in
+SES-004 through SES-019. SES-001 through SES-003 retain their source-snapshot
+invariants. SES-020 through SES-028 continue to govern actual tab lifetimes,
+streams, cached data and accessible tab presentation.
+
+| ID | Required observable behavior |
+|---|---|
+| CTX-001 | Podlord MUST present contexts and actual tabs, not a separate saved-session or saved-view catalog. Context aliases MUST label every tab displaying that context. |
+| CTX-002 | Changing a context's filters or sort order MUST immediately update all tabs/windows displaying that context. Other contexts, inspector selections, cameras, drafts and live connections MUST remain independent. |
+| CTX-003 | Closing the last tab for a context MUST preserve its settings. Reopening it MUST restore those settings without restoring old terminals or port-forwards. |
+| CTX-004 | Explicit new-tab or new-window actions MUST open a separate tab for the chosen context. Moving an existing tab MUST retain its identity and streams. Unsaved-draft confirmation MUST retain the requested navigation action. |
+| CTX-005 | The positive context catalog MUST be the sole membership authority. Unlisted source files MUST NOT be rediscovered. Explicit import may re-register contexts. No removed-context list is maintained. |
+| CTX-006 | Native pre-release formats MUST NOT be migrated or backed up automatically. Current tabs and context settings use only their current formats. Old files remain untouched. C# migration is separately scoped. |
+| CTX-007 | Locked, malformed or unwritable current metadata MUST fail explicitly without resetting existing files. Removing catalog membership MUST prevent access even if dependent cleanup fails. |
+| CTX-008 | Removing a context MUST remove its current preference record and close its owned tabs/connections. Late preference writes MUST NOT recreate a removed context. Original kubeconfig files remain unchanged. |
+| CTX-009 | The context overview MUST sort by explicit context usage count descending, then last-use time descending. Opening a context from the overview or switching to another context tab counts. Re-selecting a context already displayed in the active tab, restoring tabs and background refresh MUST NOT count. These are current per-context totals, not old saved-session histories. |
+| CTX-010 | The overview MUST freeze the order of existing cards while visible, including uses in other windows. It MUST apply updated ranking only when opened again. Imports may add cards and removal may remove cards without reshuffling the surviving cards. Equal usage and timestamps MUST preserve the existing deterministic source/context order. |
+| CTX-011 | Context usage MUST persist locally without credentials, resource data or per-use history. Removing membership MUST remove its usage record. A pending use MUST NOT recreate a removed context. Opening the overview MUST NOT contact clusters or read storage synchronously. |
+| CTX-012 | An asynchronous catalog read started before a committed source import, edit or removal MUST NOT republish its superseded membership or usage in another window. It MUST read the current local catalog before publishing, without starting cluster requests or authentication on behalf of the overview. |
+
+The persistence decision is owned by [ADR 0027](../adr/0027-session-filter-and-sort-persistence.md).
+The source snapshot, credential and tab-stream decisions remain in their existing
+owners. The [test map](k3d-test-map.md) records executed evidence rather than
+assuming that legacy saved-session tests prove this new contract.
 
 ## Confirmed Source And Session Requirements
 
@@ -139,7 +168,7 @@ inspector. Context-menu and keyboard copy use the visible cell value; truncated
 values use the existing plain-text popup. Kind, namespace and status use the
 same theme/identity color owner as Resources, never a second color algorithm.
 
-Search and sorting remain independent per open session and cannot stop its
+Search and sorting are shared per context and cannot stop any tab's
 forwards. Column layouts are global per table type. Endpoint copy, explicit
 HTTP/HTTPS opening and stopping remain available in the toolbar and context
 menu; stale or foreign-session tokens cannot operate another session's forward.
@@ -279,7 +308,7 @@ These requirements are confirmed product behavior. Implementation conformance ha
 | INS-001 | Clicking a resource row MUST open that resource in the inspector. |
 | INS-002 | The resource-row context menu MUST provide an `Open in inspector` action that opens that resource. |
 | INS-003 | Activating a cell action such as copying a value MUST NOT additionally open the inspector. |
-| INS-004 | When opening a resource, the inspector MUST display available cached data immediately and request fresh details with foreground priority. Entering the YAML view after its detail cache has expired MUST request fresh details with the same priority when no editing draft exists. Re-selecting the already active YAML view MUST NOT enqueue another read. |
+| INS-004 | When opening a resource, the inspector MUST display available cached data immediately and request fresh details with foreground priority. Entering the YAML view after its detail cache has expired MUST request fresh details with the same priority when no editing draft exists. Re-selecting the already active YAML view MUST NOT enqueue another read. While the app is active, a visible read-only Overview, YAML or Values page MUST renew its selected resource details through the existing background scheduler, targeting 30 seconds before the five-minute expiry. Hidden pages and YAML drafts MUST withdraw unsent passive renewals. Already dispatched reads MUST finish normally. Passive renewal MUST NOT initiate authentication, write resources, extend cache retention or bypass request limits. |
 | INS-005 | When no cache is available, the inspector MUST immediately display the resource name and a loading state while fresh details are requested. |
 | INS-006 | If a fresh-detail request fails, the inspector MUST retain available cached data and visibly indicate both the failure and the data's freshness. |
 | INS-007 | When fresh data replaces cached data for the same inspected resource, the inspector MUST preserve the user's scroll position. |
@@ -526,12 +555,12 @@ option MUST be searchable and accessible through its translated label. It is
 not invented for a cache that contains neither such resources nor a retained
 explicit selection. Opening or selecting it MUST NOT issue Kubernetes requests.
 
-These requirements were confirmed on 2026-10-02. Implementation conformance has not yet been reviewed. Per-table-type column layout remains owned by TBL-007; filter and sort state below is session-specific. Decision rationale is owned by [ADR 0011](../adr/0011-session-scoped-filtered-resource-presentation.md).
+These requirements were confirmed on 2026-10-02. Implementation conformance has not yet been reviewed. Per-table-type column layout remains owned by TBL-007; filter and sort state below is context-owned as confirmed on 2026-11-13. Decision rationale is owned by [ADR 0011](../adr/0011-session-scoped-filtered-resource-presentation.md).
 
 | ID | Required observable behavior |
 |---|---|
-| FLT-001 | Filters MUST be retained per session and restored when returning to that session. |
-| FLT-002 | Sort state MUST be retained per session and table type and restored when returning to that session and table type. |
+| FLT-001 | Filters MUST be retained per context and shared immediately by all tabs and windows displaying that context. Returning to a context MUST restore its filters. |
+| FLT-002 | Sort state MUST be retained per context and table type, shared by its open tabs/windows and restored when returning to that context and table type. |
 | FLT-003 | The resource table, radar, and corresponding match counts MUST represent the same filtered resource set. The radar and counts MUST NOT be limited to the currently visible or rendered table rows. |
 | FLT-004 | Changing filters MUST evaluate available cached data without initiating an API request because of the filter change. |
 | FLT-005 | Filter changes MUST update the visible table, radar, and match counts immediately from available cached data rather than waiting for background synchronization. |
@@ -544,8 +573,8 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | FLT-012 | A field value picker MUST read the complete current session cache. Its open option snapshot MUST stay stable until an explicit reload, preserve selected values absent from a refreshed cache, and close on a session change. |
 | FLT-013 | CPU, memory and storage quantity filters MUST compare actual cached measurements only. Missing measurements MUST NOT match a numeric comparison or be substituted with zero, requests, limits or capacity. References remain separate from measured usage. |
 | FLT-014 | Wide-window sidebar fields MUST open a nonmodal, viewport-bounded flyout at the selected field, leaving workspace navigation operable. Escape, outside presses, session changes and an anchor leaving or being reused in the list MUST close it. The complete field picker and narrow-window selection MUST remain centered and operable. Checkbox state, borders and keyboard focus MUST remain visible in the selected theme. |
-| FLT-015 | The reference row Limit MUST remain available, default to 256 and accept 1 through 5,000 rows. It MUST cap table presentation after filtering and sorting, not discovery, synchronization, the complete filtered match count, Radar, field-picker values or alarm evaluation. Invalid/nonpositive textual input uses the reference default; positive values above the maximum clamp to 5,000. Changing the Limit MUST NOT initiate a Kubernetes request or replay alerts. |
-| FLT-016 | The row Limit MUST follow its session across tab/window changes and restart, be retained by saved presets and legacy preset import, and return to 256 when resource filters are reset or the protected default preset is loaded. Earlier native view/preset records MUST read as 256 without an implicit write. Invalid current records MUST be retained and rejected explicitly. |
+| FLT-015 | The reference row Limit MUST remain available, default to 1,024 and accept 1 through 5,000 rows. It MUST cap table presentation after filtering and sorting, not discovery, synchronization, the complete filtered match count, Radar, field-picker values or alarm evaluation. Invalid/nonpositive textual input uses the reference default; positive values above the maximum clamp to 5,000. Changing the Limit MUST NOT initiate a Kubernetes request or replay alerts. |
+| FLT-016 | The row Limit MUST follow its session across tab/window changes and restart, be retained by saved presets and legacy preset import, and return to 1,024 when resource filters are reset or the protected default preset is loaded. Earlier native records without a stored Limit MUST retain 256 without an implicit write. Explicit saved resource and preset limits MUST remain unchanged. The protected default preset MUST use 1,024 when read, including older default records, without an implicit write. Invalid current records MUST be retained and rejected explicitly. |
 
 Filter and sort retention across app restarts is governed by STR-003 and STR-004,
 with the native storage boundary recorded in [ADR 0027](../adr/0027-session-filter-and-sort-persistence.md).
@@ -583,7 +612,7 @@ is zero. That compatibility difference needs an explicit decision before
 Restarts is accepted as equivalent. FLT-013 applies to CPU, Memory and Storage,
 not an inferred change to other counters. These quantities use actual measurements
 under FLT-013; quantity ranges use AND and exact numeric alternatives use OR.
-Display-text filters can explicitly match unavailable/stale/incomplete labels
+Display-text filters can explicitly match unavailable and incomplete labels
 without inventing a measurement. Problems/Activity and native saved presets now
 have the scoped contracts below. Age, UID and explicit legacy preset import have
 public-boundary coverage. The row Limit now retains reference display semantics
@@ -707,8 +736,10 @@ the reference. Unknown kinds use grass. Retained alert colors override terrain,
 without an additional health classifier. Tiny tiles remain solid; at least 9
 pixels of tile width enables a dark-filled, terrain/alert-stroked kind glyph.
 
-Appearance settings MUST expose water enablement and a whole-number speed from
-0 through 100, default enabled/45. Zero disables waves. The C# 18-pixel water
+Appearance settings MUST expose one whole-number water speed from 0 through 100,
+default 5. Zero disables waves. There is no separate enable switch. Previously
+disabled settings display zero, and increasing the speed enables waves again.
+The C# 18-pixel water
 pattern and activity-dependent drift are retained. Events retain ordinary
 terrain/alert tiles without additional water effects. The background MUST NOT
 traverse resources or trigger API requests.
@@ -770,7 +801,7 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | MET-004 | Values above 100 percent of the stated reference MUST remain observable rather than silently clipped to 100 percent. |
 | MET-005 | Absent configured requests or limits MUST be identified as not set. |
 | MET-006 | Missing observed metrics MUST be identified as unavailable rather than replaced with zero. |
-| MET-007 | Retained stale metrics MUST be visibly identifiable as stale and show their measurement timestamp or age. |
+| MET-007 | Retained measurements MUST keep their original timestamp. Detailed metric views show that timestamp or age without a routine stale label. Retrieval failures remain visible separately. |
 | MET-008 | Aggregated metrics MUST be identified as incomplete when constituent container measurements are missing. Missing measurements MUST NOT be silently treated as observed zero usage. |
 | MET-009 | Storage presentations MUST distinguish requested size, provisioned capacity, and actual measured usage. Capacity MUST NOT be presented as measured usage. |
 | MET-010 | A recommendation marker MUST be shown only when a substantiated recommendation is available; it MUST NOT be generated from an invented estimate. |
@@ -786,7 +817,7 @@ Applicable metric sources, reference quantities, aggregation membership, freshne
 | MET-003, MET-004 | Display observed usage exceeding a configured request while remaining below a different limit. | Percentages identify their denominator; the value exceeding 100 percent of the request remains observable. | Planned check; implementation review pending. |
 | MET-005 | Display a resource without a configured request or limit. | Each absent setting is identified as not set rather than represented as a measured zero. | Planned check; implementation review pending. |
 | MET-006 | Withhold an observed metric or make its source unavailable, then separately return a valid zero measurement. | Missing data is marked unavailable; a genuine observed zero remains distinguishable from missing data. | Planned check; implementation review pending. |
-| MET-007 | Retain an older measurement while fresh retrieval is delayed or fails. | The retained value is visibly stale and its measurement timestamp or age remains available. | Planned check; implementation review pending. |
+| MET-007 | Retain an older measurement while fresh retrieval is delayed or fails. | The retained value keeps its original measurement timestamp or age. A failed retrieval has separate error feedback. | Planned check; implementation review pending. |
 | MET-008 | Display an aggregate whose contributing containers include both available and missing measurements. | The aggregate is marked incomplete and missing measurements are not presented as observed zero usage. | Planned check; implementation review pending. |
 | MET-009 | Display storage with requested size and provisioned capacity but no usage measurement. | Requested size and capacity are separately identified; actual usage is unavailable rather than inferred from either value. | Planned check; implementation review pending. |
 | MET-009 | Display storage with a real usage measurement different from its requested size and capacity. | All available quantities retain their distinct meaning and labels. | Planned check; implementation review pending. |
@@ -810,7 +841,7 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | SYN-010 | Session synchronization MUST have central ownership rather than be independently driven by each visible or hidden surface. Log-view visibility and pause behavior remain governed by SES-026, SES-027, and LOG-016 through LOG-017. |
 | SYN-011 | Settings MUST present a stable snapshot refreshed through explicit user action or bounded TTL refresh, rather than continuously rebuilding large lists. |
 | SYN-012 | Discovery metadata MUST have a longer cache freshness TTL than live measurements. |
-| SYN-013 | A refresh failure MUST preserve available cached presentation and identify affected data as stale rather than clear the view. |
+| SYN-013 | A refresh failure MUST preserve available cached presentation, retain the last successful update time, and report the failure separately rather than clear the view. |
 | SYN-CACHE-01 | Resource collection retention MUST default to 24 hours and be configurable in Sync settings as positive whole hours. Changing retention MUST use the existing atomic settings owner and MUST NOT initiate requests. Sync settings MUST show a captured estimate of cached payload size alongside this setting, not label it as allocated process memory. Detail freshness, metrics, logs and credential lifetimes remain governed by their existing policies. Persistent visual map previews do not extend resource retention. |
 
 Read coalescing does not authorize coalescing writes. Cancellation rules above concern changes in view relevance, not transport failure handling or application shutdown. TTL values, discovery membership, sync cadence, and the existing request-limit configuration remain for later scope reconciliation; no numeric defaults are invented here. SYN-013 does not extend cache retention or override its existing TTL rules.
@@ -831,7 +862,7 @@ Read coalescing does not authorize coalescing writes. Cancellation rules above c
 | SYN-009, SYN-010 | Hide surfaces while central session synchronization continues. | Hidden surfaces do not issue their own periodic refresh requests; central session sync retains ownership, and hidden log polling remains paused. | Planned check; implementation review pending. |
 | SYN-011 | Open Settings, leave its snapshot unchanged while background data changes, and then explicitly refresh or reach the applicable refresh TTL. | Large lists are not continuously rebuilt; an authorized bounded refresh updates the snapshot. | Planned check; implementation review pending. |
 | SYN-012 | Observe discovery metadata and live measurements across their configured freshness intervals. | Discovery metadata has a longer freshness TTL than live measurements. | Planned check; implementation review pending. |
-| SYN-013 | Fail a fresh request while the view's cached content remains available. | The content remains visible with an indication that affected data is stale. | Planned check; implementation review pending. |
+| SYN-013 | Fail a fresh request while the view's cached content remains available. | The content and its last successful update time remain available. The refresh error is shown separately. | Planned check; implementation review pending. |
 
 ## Confirmed Error And Recovery Requirements
 
@@ -882,10 +913,10 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 
 | ID | Required observable behavior |
 |---|---|
-| STR-001 | Workspace restoration MUST default to enabled. When enabled, restart MUST restore saved sessions, open session tabs, their order, and the active session. Users MUST be able to disable restoration in Settings for the next launch. Disabling MUST NOT close current tabs or forwards, delete saved sessions or their history/configuration, or discard saved filters and sorts. On the next launch, saved sessions remain available but no session tab is automatically opened. Explicitly reopening a saved session MUST remain possible. |
+| STR-001 | Workspace restoration MUST default to enabled. When enabled, restart MUST restore actual open context tabs, their order and active selection. Users MUST be able to disable restoration for the next launch without closing current tabs or connections or deleting context preferences. With restoration disabled, the next launch MUST open no context tab. Imported contexts and their settings remain available. |
 | STR-002 | When workspace restoration is enabled, restart MUST restore the saved separate windows with their owning session tabs, each window's saved position and size, and its maximized state. After monitor changes, restored windows MUST remain within a visible workspace insofar as the platform supports it. Restored tabs MUST retain their existing session identities and follow metadata-only startup under STR-005. These user clarifications were confirmed on 2026-11-03. |
-| STR-003 | Session-specific filters MUST persist across restarts and be restored for their owning session. |
-| STR-004 | Session/table-type-specific sort state MUST persist across restarts and be restored for its owning context. |
+| STR-003 | Context filters MUST persist across restarts and be restored when that context is explicitly opened. |
+| STR-004 | Context/table-type sort state MUST persist across restarts and be restored for its owning context. |
 | STR-005 | Workspace restoration MUST restore tab metadata without initiating cluster requests, synchronization or authentication. Startup shows the context-card overview. The first explicit opening of a context or resource-facing saved tab MUST use the ordinary loading and authentication flow. Opening Settings or browsing the overview MUST NOT connect restored tabs. If login is needed and supported, it MUST be available through the visible, confirmation-gated action in ERR-013. This user clarification on 2026-10-29 supersedes automatic loading of the restored active session. |
 | STR-006 | Restarting Podlord MUST NOT automatically recreate port-forwards. |
 | STR-007 | Restarting or restoring the workspace MUST NOT automatically apply YAML changes. |
@@ -1348,7 +1379,7 @@ records presentation ownership and non-duplicated cache summary semantics.
 | --- | --- |
 | SHL-001 | Primary navigation starts with Map. Resources, Events and Connections are shown only after a context is opened. Settings remains available without a context. Alerts belong to Settings; usage details open from header cards. No separate Radar workspace or dead navigation route remains. |
 | SHL-002 | Wide windows retain one right-hand Radar/filter sidebar while changing the central workspace. Narrow windows expose that same surface through an accessible drawer, without duplicating camera or filter ownership. |
-| SHL-003 | CPU, Memory, Storage, Pods and Nodes summarize the filtered cached snapshot. Header cards omit missing observed measurements and zero Pod/Node counts. Genuine observed zero usage remains visible and capacity never substitutes for usage. Node/Pod and claim/volume quantities are not double-counted. Staleness and partial coverage remain disclosed in accessible details. Distinct symbols identify metric types while full names remain accessible. Cards have equal widths measured from their values and current font, display values and units without truncation on one line, remain right-aligned, and move to the existing workspace menu when the header cannot fit them. Detailed metric views retain their explicit missing-data presentation. |
+| SHL-003 | CPU, Memory, Storage, Pods and Nodes summarize the filtered cached snapshot. Header cards omit missing observed measurements and zero Pod/Node counts. Genuine observed zero usage remains visible and capacity never substitutes for usage. Node/Pod and claim/volume quantities are not double-counted. Measurement time and partial coverage remain disclosed in accessible details, without routine staleness suffixes or explanatory text walls. Refresh failures appear as errors while retaining observed values. Distinct symbols identify metric types while full names remain accessible. Cards have equal widths measured from their values and current font, display values and units without truncation on one line, remain right-aligned, and move to the existing workspace menu when the header cannot fit them. Detailed metric views retain their explicit missing-data presentation. |
 | SHL-004 | Source/session controls, explicit authentication, table controls and the resource inspector retain their real producers and existing safeguards. Navigation, hover, scroll and painting do not perform Kubernetes requests. |
 | SHL-005 | Missing functions are explicitly disabled and explained, not simulated. Settings navigation remains reachable when the inspector narrows the central pane. |
 | SHL-006 | Ports lists only forwards owned by the active session. Search and copying are cache-only. Inspect targets the owned resource; Stop releases the selected forward. Unknown/inactive tokens cannot overwrite the clipboard. Closing the owner still stops its forwards. |
@@ -1460,7 +1491,7 @@ UI-TBL-02: Status text follows reference semantics with the selected theme's hea
 - RAD-DET-03: Actual Namespace resources MUST remain selectable at their district anchor. Decorative cluster/district labels MUST NOT become synthetic Kubernetes resources or change resource counts.
 - RAD-DET-04: Input enumeration, table sorting, presentation filters and camera changes MUST NOT change world coordinates. Filtering retains noninteractive grey excluded terrain. Geometry, projection and painting read public cache models and MUST NOT initiate transport.
 - RAD-DET-05: Exact native geometry comparisons MUST use the same recorded cache projection, context identity and camera settings. C#/C++ comparisons retain behavior, colors and controls while recording the newly approved geometry difference. Comparing changing API snapshots or aggregate counts is insufficient. Isolated renderer captures MUST identify their boundary and MUST NOT be presented as full installed-window, water, animation, every-theme or release-parity evidence.
-- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Connections (including port-forwards) remain available. The small context Radar MUST remain available outside Map except in the compact landscape layout governed by SHL-012. Automatic hiding MUST preserve the session, query, cache and camera, release its keyboard focus and stop its visual effects. The full Map remains reachable. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. Map MUST provide backward and forward navigation, retaining the existing dirty-YAML Stay/Discard protection when changing sessions. On both Map and the small Radar, existing navigation, zoom and back/forward controls MUST overlay the drawing area rather than occupy separate reserved rows or sections. Their existing keyboard, touch and focus access MUST remain available. This replaces the earlier menu-only, Table-default target.
+- RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Connections are offered when the open session has corresponding unfiltered data. An already selected destination stays visible if it becomes empty. The small context Radar MUST remain available outside Map except in the compact landscape layout governed by SHL-012. Automatic hiding MUST preserve the session, query, cache and camera, release its keyboard focus and stop its visual effects. The full Map remains reachable. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. The context Map MUST offer All Contexts beside the zoom controls, without map history buttons. Changing sessions retains the existing dirty-YAML Stay/Discard protection. Map and small Radar controls MUST overlay the drawing area rather than reserve a separate section. Keyboard, touch and focus access MUST remain available. This replaces the earlier menu-only, Table-default target.
 - RAD-VIEW-02: Cluster names MUST be visible at overview scale; namespace labels appear when zooming in; existing resource glyphs and interactive details remain available at closer scales. Label work MUST be viewport-bounded, theme-aware and decluttered. Existing wheel/trackpad zoom, drag, focused arrow keys, selection and alert focus remain unchanged. This increment adds no per-cluster status/age panel. Guidance for selection hidden by filters is lower priority, not part of this increment.
 
 ## What Does The Approved Context Overview Read?
@@ -1488,7 +1519,7 @@ previously accepted preview with an empty or fabricated map.
 
 - UI-ALT-05: Sound selection for built-ins remains locked, but an existing nonempty sound can be previewed. Mute disables preview. The existing engine owns playback and its failures.
 
-- UI-ALT-06: Radar zoom preview evaluates the current editor draft against the existing session cache, without saving or playing sound. It focuses the first visible matching resource, otherwise the first visible resource, with a minimum zoom of 100 percent. A disabled rule can be previewed without enabling it. No session, initial loading, invalid criteria, bounded-regex failure or an empty visible projection reports an inline error. Results from a changed session or cache cannot move the current camera. Explicit preview reveals the Radar sidebar, including its narrow-screen drawer, without navigating away from the draft.
+- UI-ALT-06: Radar zoom preview evaluates the current editor draft against the existing session cache, without saving or playing sound. It focuses the first visible matching resource, otherwise the first visible resource, with a minimum zoom of 100 percent. Manual preview remains available when automatic focus is off and for read-only built-in rules. Only the zoom setting is hidden when automatic focus is off. A disabled rule can be previewed without enabling it. No session, initial loading, invalid criteria, bounded-regex failure or an empty visible projection reports an inline error. Results from a changed session or cache cannot move the current camera. Explicit preview reveals the Radar sidebar, including its narrow-screen drawer, without navigating away from the draft.
 
 This increment aligns the Alerts arrangement and reachable editing controls. It does not certify all Settings capabilities, populated C#/native framebuffer equality or release readiness. Native default descriptions explain the three retained rules; recent changes explicitly describe the agreed green highlight rather than the reference's outdated cyan description. Matcher summaries use the selected language's existing field labels rather than persistence identifiers; language changes update presentation without changing evaluation or saved criteria. The editor groups color and hold mode, then animation and hold mode, in two columns on desktop and one column in narrow panes. Sound-source and zoom-preview controls have executable focused evidence; installed visual and assistive-technology evidence remain separate. The existing real-cache alarm tests continue to govern behavior independently of this layout.
 
@@ -1608,15 +1639,17 @@ A fresh resource returned after a write must retain the original UID before an a
 
 A confirmed YAML mutation must also use the API version of its current cached target. Matching UID, kind, name and namespace do not permit a draft prepared against a different API version to enter the write queue. Reject it before sending; refresh and prepare a target-correct preview explicitly.
 
-Session configuration keeps its Close action in a fixed dialog footer, outside scrollable fields. At a narrow viewport, labels wrap and Close must remain mouse- and keyboard-accessible without scrolling to the bottom. Responsive evidence is captured after the real Qt Quick scene reaches the requested size, not before resizing. A component rendering at phone-sized dimensions does not establish an iOS or Android release.
+Session configuration keeps its X Close action in the fixed upper-right header, outside scrollable fields. At a narrow viewport, labels wrap and Close remains mouse- and keyboard-accessible without scrolling. Responsive evidence is captured after the real Qt Quick scene reaches the requested size, not before resizing. A component rendering at phone-sized dimensions does not establish an iOS or Android release.
 
 ### How are the native alert sounds selected and packaged?
 
-The native catalog must preserve all 117 existing reference entries, including the silent action, stable persisted IDs, descriptions, attribution, source URLs and music flags. The first release adds six original modern notification cues under the project MIT license, making 123 entries and 122 embedded sound assets. Existing defaults and saved rules remain unchanged. User-provided audio import is explicitly deferred. Selection, search and preview use the existing local playback/mute paths and never download media or contact Kubernetes. The local catalog is built once and reused.
+The native release bundles twenty original short cues and twenty original instrumental tracks. Removed reference sounds map to suitable original cues when existing rules load. Rules retain their identity and activation state. No third-party sound samples or sound credits remain. Dependency license notices remain available. User-provided audio import is deferred. Music uses one Play/Pause toggle in navigation with automatic shuffle and no selection menu. It never starts on launch, continues in the background after explicit Play and remains paused after Pause. Audio selection and preview never download media or contact Kubernetes. The local catalog is built once and reused.
 
-Sound search matches the existing reference metadata case-insensitively and trims surrounding whitespace. Filtering the chooser must not change an alert's chosen sound, including when no options match. Only explicit selection changes the draft. Saving an unrelated edit must retain that chosen sound. Locked built-in definitions remain locked, and muted preferences disable preview. The editor shows the chosen sound's name, purpose, author, license and source as plain text.
+Global settings provide separate music and alert volume sliders from 0 through 100 percent. Preferences persist in the existing private settings file and synchronize between windows. Older settings retain the previous effective gains of 35 percent for music and 100 percent for alerts without an implicit write. Adjusting either slider updates that channel and, after release or settled keyboard adjustment, plays one short original cue at its saved level. Rapid adjustments coalesce for 250 ms. Sliders remain responsive during saving and preserve the latest input for both channels, including when the user leaves Appearance immediately. A failed write restores the saved values and reports the failure without an automatic retry loop. Opening settings, restoring preferences and changing pages do not play feedback. Leaving Appearance cancels pending feedback, not pending preference saves. Global mute and zero volume remain silent. Preview does not resume paused music, change its track or replace its playback position.
 
-Audio release evidence must use real embedded assets and the actual platform backend. All 122 real assets must decode completely to valid PCM without an audio output device. Separate muted device checks must complete representative mono/stereo repeats, a bundled modern MP3 repeat, and a source switch on the same player. A device failure remains a failure, not a skipped check. The device checks retain their existing deadlines. An offscreen backend timeout or an advertised codec list alone does not prove whether native playback works. Silent automated playback is not a claim of human-observed audibility. Confirmed on 2026-11-02 to avoid repeatedly occupying the user's audio device.
+The compact sound chooser lists the twenty original cues without a separate search field or credit block. Only explicit selection changes an alert's chosen sound. Saving an unrelated edit retains that choice. Locked built-in definitions remain locked, and muted preferences disable preview.
+
+Audio release evidence uses real embedded assets and the actual platform backend. All forty original assets decode completely to valid PCM without an audio output device. Separate muted device checks complete representative mono/stereo repeats, original music playback and a source switch on the same player. A device failure remains a failure, not a skipped check. Device checks retain their existing deadlines. An offscreen backend timeout or an advertised codec list alone does not prove native playback. Silent automated playback is not a claim of human-observed audibility.
 
 ### Can referenced credential files block context resolution?
 
@@ -1867,3 +1900,65 @@ The alert document version becomes 2 only when saved. Version 1 loads with draft
 - Source and Event table timestamps display and copy the system-local short date/time. Canonical stored timestamps and sorting remain independent of presentation. Raw YAML and log content remain unchanged.
 - Alert editor dismissal uses a close glyph at the upper-right edge. It preserves the confirmed clean/dirty draft guard. Missing context and no-match states use concise translated text without cache terminology.
 - The complete standalone package owns its TLS backend. A missing bundled OpenSSL backend stops startup clearly instead of silently changing TLS implementation. No certificate-validation bypass is authorized. Native file events reuse batch import. Unsupported web/auth callback URLs are left to the platform handler, not imported as sources.
+
+### Compact workspace controls and metric presentation
+
+The main navigation owns the music toggle. The sidebar session label opens
+Rename and shares its row with Reset Filters and alert mute. Connection
+actions require a selected connection. Settings groups graphics and tab restore
+under Appearance, and groups Privacy with Diagnostics under the single localized
+label "Diagnostics". Table columns are edited
+at their tables. Valid Sync edits are saved automatically after a short pause.
+An invalid or failed save keeps the last valid settings and reports the error.
+
+Diagnostics does not present fixed telemetry, Secret-masking or request-audit
+retention rules as settings. Removing those informational rows does not enable
+telemetry, weaken masking or change the existing in-memory request-audit retention.
+
+### iOS privacy metadata
+
+The iOS app carries its required-reason API declarations at the bundle root.
+File timestamps are used for app-owned and explicitly selected files, and
+preferences remain app-local. The pinned Qt Core, Qt Gui and OpenSSL manifests
+are preserved unchanged in separate resource bundles for the static SDKs.
+Each embedded FFmpeg framework carries its own manifest before Xcode embeds
+and signs it. Its file-timestamp declarations cover bundled audio files only.
+There is no tracking or developer-side data collection. This records existing
+behavior, not a new permission or a relaxation of the privacy policy.
+
+The source-built iOS SDK cache includes this metadata and is invalidated when
+its installation inputs change. Package qualification checks the actual built
+application, including missing, malformed and unexpected declarations, rather
+than accepting checked-in templates alone. Local checks do not establish App
+Store acceptance or replace final signing and App Store privacy disclosures.
+
+Table accessibility names include the existing row identity, column title and
+displayed value. Concealed Secret cells expose only the masked projection.
+Explicit reveal and subsequent concealment update that same accessible value.
+
+A metric surface must distinguish a missing measurement from a measured zero.
+Keep internal measurement times and freshness state without labeling routine
+metric values "stale". Show rounded values, configured references and visible
+reference markers. Use a short local date and time where the measurement
+timestamp is shown. Radar quick details show a shared timestamp once and
+truncate long ancillary fields. Full values remain available in the inspector.
+
+### Contextual connection feedback and terminal hints
+
+Confirmed on 2026-11-13. Each connection row provides its own stop or disconnect
+action. Copy and endpoint actions remain available through the row context menu.
+A failed terminal attempt must not block another Pod. Its feedback clears when
+the resource changes or the Inspector closes, without a Dismiss action. An active
+shell remains attached to its original tab and Pod.
+
+The normal live terminal may add lightweight display hints for quoted strings,
+ASCII shell variables and standalone Error/Err/Warning/Warn words. Single-quoted
+variables remain string literals. Explicit ANSI colors, selection, input bytes
+and alternate-screen applications take precedence. These are display hints, not
+a shell parser. Scrollback retains the remote ANSI presentation.
+
+Terminal feedback uses the actual outcome. A successful exit has no warning
+indicator. Failed negotiation, invalid input, protocol errors and nonzero exits
+remain visible as contextual failures. A connected shell does not add a redundant
+status-message row beneath its header. Starting another attempt clears the prior
+local validation message before publishing its connecting state.

@@ -36,6 +36,10 @@ bool WorkspaceRuntime::publishCatalog(const SessionCatalog& catalog, Workspace* 
         if (open.contains(it.key())) { ++it; continue; }
         it.value()->alerts_.closeSession(it.key());
         it.value()->preparedSnapshots_.remove(it.key());
+        it.value()->navigation_.remove(it.key());
+        for (auto position = it.value()->logPositions_.begin(); position != it.value()->logPositions_.end();)
+            if (position.key().startsWith(it.key() + '\n')) position = it.value()->logPositions_.erase(position);
+            else ++position;
         if (it.value()->snapshotPreparation_ && it.value()->snapshotPreparation_->session == it.key())
             it.value()->snapshotPreparation_->watcher->cancel();
         client.close(it.key()); it = owners.erase(it);
@@ -44,7 +48,6 @@ bool WorkspaceRuntime::publishCatalog(const SessionCatalog& catalog, Workspace* 
     for (auto* window : windows) {
         if (window == source || window->windowClosed_) continue;
         window->sources_ = source->sources_;
-        window->selection_ = source->selection_;
         window->select(catalog, false);
     }
     return true;
@@ -88,19 +91,6 @@ bool Workspace::detachSession(const QString& id) {
     }
     return runtime_->host->detach(*this, id);
 }
-bool Workspace::openSessionWindow(const QString& id) {
-    if (!windowActionsAvailable() || windowClosed_ || busy_ || pendingLeave_ || id.isEmpty()) return false;
-    if (auto* owner = runtime_->owners.value(id)) {
-        if (owner == this) return detachSession(id);
-        return owner->activate(id) && runtime_->host->focus(*owner);
-    }
-    const auto found = std::find_if(catalog_.sessions.cbegin(), catalog_.sessions.cend(), [&](const auto& session) {
-        return session.id.toString(QUuid::WithoutBraces) == id;
-    });
-    if (found == catalog_.sessions.cend() || viewSaving_ || !pendingViews_.isEmpty() || viewStateFailed()) return false;
-    return mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); }, {}, {}, {}, true);
-}
-
 bool Workspace::prepareWindowClose() {
     if (windowCloseReady_ || windowClosed_) return true;
     if (!runtime_->host || (!detached_ && runtime_->windows.size() == 1)) return true;

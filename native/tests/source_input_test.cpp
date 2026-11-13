@@ -100,9 +100,8 @@ bool ui(const QString& profile, const QString& directory, bool partial, int widt
     return true;
 }
 bool management(const QString& scenario, const QString& root, const QString& profile) {
-    const bool session = scenario.startsWith("session_manage_");
     const bool alias = scenario.startsWith("source_alias_");
-    const QString mode = scenario.mid(alias ? 13 : session ? 15 : 14);
+    const QString mode = scenario.mid(alias ? 13 : 14);
     const QString origin = root + "/external/config";
     const QString home = root + "/isolated-home";
     qputenv("HOME", home.toUtf8());
@@ -110,19 +109,19 @@ bool management(const QString& scenario, const QString& root, const QString& pro
     const QByteArray yaml = config() + "- name: second\n  context:\n    cluster: local\n    user: local\n";
     const podlord::KubeconfigStore sources(profile);
     const podlord::SessionStore sessions(profile);
-    const bool seeded = session || alias || mode.startsWith("refresh") || mode == "paste_busy";
+    const bool seeded = alias || mode.startsWith("refresh") || mode == "paste_busy";
     if (seeded) {
         write(origin, yaml);
         require(std::holds_alternative<podlord::SourceSnapshot>(sources.importFile(origin)), "Cannot prepare owned source");
     }
     QString sessionId, contextId, otherContext;
-    if (session || alias) {
+    if (alias) {
         const auto catalog = sources.list();
         require(std::holds_alternative<podlord::SourceCatalog>(catalog), "Cannot read prepared source");
         const auto contexts = std::get<podlord::SourceCatalog>(catalog).sources.first().contexts;
         contextId = contexts.first().id;
         otherContext = contexts.last().id;
-        const auto created = sessions.create({contextId, {}});
+        const auto created = sessions.openTab(contextId);
         require(std::holds_alternative<podlord::SessionCatalog>(created), "Cannot prepare closed session");
         sessionId = std::get<podlord::SessionCatalog>(created).sessions.first().id.toString(QUuid::WithoutBraces);
     }
@@ -190,9 +189,10 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         return true;
     }
     press("settingsWorkspaceButton");
-    press(session ? "settingsWorkspaceSection" : "settingsSourcesSection");
+    press("settingsSourcesSection");
     if (alias) {
         const auto original = catalog();
+        const auto activeBeforeRename = workspace.currentSession();
         const auto connection = sources.connection(contextId);
         require(std::holds_alternative<podlord::ClusterConnection>(connection), "Cannot resolve original context");
         require(QTest::qWaitFor([&] { return item(("renameSource_" + contextId).toUtf8().constData()) != nullptr; }, 2000), "Source context rows did not appear");
@@ -243,12 +243,12 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         require(std::holds_alternative<podlord::ClusterConnection>(after), "Renaming broke connection resolution");
         const auto beforeConnection = std::get<podlord::ClusterConnection>(connection), afterConnection = std::get<podlord::ClusterConnection>(after);
         require(beforeConnection.server == afterConnection.server && beforeConnection.authorization == afterConnection.authorization
-            && beforeConnection.credentialId == afterConnection.credentialId && catalog() == original && workspace.currentSession().isEmpty(), "Source alias changed credentials, sessions or activation");
+            && beforeConnection.credentialId == afterConnection.credentialId && catalog() == original && workspace.currentSession() == activeBeforeRename, "Source alias changed credentials, tabs or activation");
         require(!workspace.sourceImportError().contains("source-input-secret"), "Alias error exposed credentials");
         require(!bindingLoop, "Alias UI emitted a binding loop");
         return true;
     }
-    if (!session) {
+    {
         if (mode == "home") {
             write(home + "/.kube/config", yaml);
             press("importHomeButton"); settle();
@@ -263,11 +263,12 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         } else {
             press("pasteSourceButton");
             require(QTest::qWaitFor([&] { return item("pasteSourceYaml") != nullptr; }, 2000), "Paste dialog did not open");
-            if (mode == "paste_empty") {
+            if (workspace.appStore()) require(!item("pasteSourceOrigin"), "Store import exposes an external origin path");
+            if (mode == "paste_empty" || (workspace.appStore() && mode == "paste_origin_invalid")) {
                 require(!item("importPastedSource")->isEnabled(), "Empty paste can be submitted");
                 press("cancelPastedSource");
             } else {
-                fill("pasteSourceOrigin", (mode == "paste_origin_invalid" ? QString("https://invalid.example/config") : origin).toUtf8());
+                if (!workspace.appStore()) fill("pasteSourceOrigin", (mode == "paste_origin_invalid" ? QString("https://invalid.example/config") : origin).toUtf8());
                 const QByteArray input = mode == "paste_invalid" ? QByteArray("apiVersion: [\n") : yaml;
                 fill("pasteSourceYaml", input);
                 if (mode == "paste_cancel" || mode == "paste_escape") {
@@ -291,7 +292,7 @@ bool management(const QString& scenario, const QString& root, const QString& pro
                         require(QTest::qWaitFor([&] { return item("pasteSourceYaml") == nullptr; }, 2000), "Successful paste did not close the editor");
                         if (mode == "paste_repeat" || mode == "paste_changed") {
                             press("pasteSourceButton");
-                            fill("pasteSourceOrigin", origin.toUtf8());
+                            if (!workspace.appStore()) fill("pasteSourceOrigin", origin.toUtf8());
                             fill("pasteSourceYaml", mode == "paste_changed" ? yaml + "# changed\n" : yaml);
                             press("importPastedSource"); settle();
                             require(sourceCount() == (mode == "paste_changed" ? 2 : 1), "Pasted content identity did not preserve immutable deduplication");
@@ -305,79 +306,8 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         require(workspace.currentSession().isEmpty() && catalog().sessions.isEmpty(), "Import unexpectedly opened a session");
         return true;
     }
-    press("settingsManageSessions");
-    require(QTest::qWaitFor([&] { return item("sessionManageNamespaces") != nullptr; }, 2000), "Session manager did not open");
-    if (mode == "narrow") {
-        window->setWidth(390); window->setHeight(720);
-        require(QTest::qWaitFor([&] { return window->contentItem()->width() == 390
-            && window->contentItem()->height() == 720; }, 2000), "Narrow scene did not resize to the actual viewport");
-    }
-    const QString evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
-    if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/" + scenario + ".png"), "Cannot save actual session-manager frame");
-    if (mode == "narrow") {
-        auto* namespaces = item("sessionManageNamespaces");
-        require(namespaces && namespaces->mapToScene(QPointF()).x() >= 0
-            && namespaces->mapToScene(QPointF(namespaces->width(), 0)).x() <= window->width(), "Narrow session editor overflows the screen");
-        press("cancelSessionManagement");
-        require(QTest::qWaitFor([&] { return item("sessionManageNamespaces") == nullptr; }, 2000), "Narrow Close button is clipped or inaccessible");
-        require(!bindingLoop, "Narrow management emitted a layout binding loop");
-        return true;
-    }
-    if (mode == "cancel" || mode == "escape") {
-        fill("sessionManageNamespaces", "team-a");
-        if (mode == "escape") QTest::keyClick(window, Qt::Key_Escape);
-        else press("cancelSessionManagement");
-        require(QTest::qWaitFor([&] { return item("sessionManageNamespaces") == nullptr; }, 2000), "Cancelled session editor remained visible");
-        require(catalog().sessions.size() == 1, "Cancelled editing mutated sessions");
-        return true;
-    }
-    if (mode == "missing") {
-        require(!workspace.saveSessionConfiguration("missing", contextId, "team-a") && !workspace.sessionManagementError().isEmpty(), "Missing session was not rejected explicitly");
-    } else if (mode == "invalid_context") {
-        require(!workspace.saveSessionConfiguration(sessionId, "missing", "team-a") && !workspace.sessionManagementError().isEmpty(), "Missing context was not rejected explicitly");
-    } else if (mode.startsWith("duplicate")) {
-        fill("sessionManageNamespaces", "unsaved-scope");
-        if (mode != "duplicate_unnamed") fill("sessionCopyName", "Independent copy");
-        press("duplicateSessionConfiguration"); settle();
-        const auto saved = catalog();
-        require(saved.sessions.size() == 2 && !saved.activeSession, "Copy did not create a closed independent session");
-        require(saved.sessions.last().sequenceId != saved.sessions.first().sequenceId
-            && saved.sessions.last().config == saved.sessions.first().config && saved.sessions.last().usageAt.isEmpty(), "Copy inherited sequence/history or unsaved draft fields");
-        require(saved.sessions.last().name == (mode == "duplicate_unnamed" ? QString{} : QString("Independent copy")), "Copy did not preserve the requested name");
-    } else {
-        QLockFile lock(profile + "/sessions.lock");
-        if (mode == "busy") { lock.setStaleLockTime(0); require(lock.tryLock(0), "Cannot lock session store"); }
-        if (mode != "unchanged") fill("sessionManageNamespaces", mode == "invalid_namespace" ? "INVALID!" : " team-b, team-a, team-b ");
-        if (mode == "context") {
-            auto* context = item("sessionManageContext"); context->forceActiveFocus();
-            QTest::keyClick(window, Qt::Key_End); QTest::keyClick(window, Qt::Key_Return);
-        }
-        press("saveSessionConfiguration"); settle();
-        const auto saved = catalog();
-        const bool rejected = mode == "busy" || mode == "invalid_namespace";
-        require(saved.sessions.size() == ((rejected || mode == "unchanged") ? 1 : 2), "Configuration save did not respect snapshot identity");
-        if (rejected) {
-            require(!workspace.sessionManagementError().isEmpty(), "Rejected session save has no inline error");
-            require(item("sessionManageNamespaces")->property("text").toString().contains(mode == "busy" ? "team-a" : "INVALID!"), "Rejected session save lost the draft");
-        } else {
-            require(!workspace.sessionManagementNotice().isEmpty(), "Successful session save has no outcome");
-            if (mode != "unchanged") {
-                require(saved.sessions.first().config == podlord::SessionConfig{contextId, {}}, "Original session configuration changed");
-                require(saved.sessions.last().config.namespaces == QStringList{"team-a", "team-b"}
-                    && saved.sessions.last().sequenceId == saved.sessions.first().sequenceId && saved.sessions.last().ordinal == 2
-                    && !saved.sessions.last().open && saved.sessions.last().usageAt.isEmpty(), "Snapshot lost namespace canonicalization or closed-series semantics");
-                require(saved.sessions.last().config.contextId == (mode == "context" ? otherContext : contextId), "Snapshot used the wrong context");
-            }
-            if (mode == "repeat") { press("saveSessionConfiguration"); settle(); require(catalog().sessions.size() == 2, "Repeated snapshot created a duplicate"); }
-            if (mode == "restart") {
-                podlord::Workspace restored(profile);
-                require(QTest::qWaitFor([&] { return !restored.busy(); }, 5000) && restored.sessions().size() == 2
-                    && restored.currentSession().isEmpty(), "Restart did not restore closed configuration snapshots");
-            }
-        }
-    }
-    require(workspace.currentSession().isEmpty() && !catalog().activeSession, "Managing sessions unexpectedly activated a cluster");
-    return true;
+    return false;
+
 }
 } // namespace
 
@@ -394,46 +324,6 @@ int main(int argc, char* argv[]) {
         const QString directory = root + "/sources";
         const QString home = root + "/home";
         require(QDir().mkpath(directory) && QDir().mkpath(home), "Cannot create isolated inputs");
-        if (scenario.startsWith("generated_snapshot_")) {
-            const auto mode=scenario.mid(QString("generated_snapshot_").size());
-            require(QStringList{"v1","v2","zero","localhost","relative_credential","relative_exec","invalid_origin","file_endpoint"}.contains(mode),"Unknown historical snapshot scenario");
-            const auto origin=mode=="file_endpoint" ? directory+"/config" : mode=="invalid_origin" ? QString("podlord-generated://k3d/local/extra") : QString("podlord-generated://k3d/local");
-            auto yaml=config(mode=="zero" ? "https://0.0.0.0:9" : mode=="localhost" || mode=="file_endpoint" ? "https://localhost:9" : "https://127.0.0.1:9");
-            if (mode=="relative_credential") yaml.replace("token: source-input-secret", "tokenFile: relative-token");
-            if (mode=="relative_exec") yaml.replace("token: source-input-secret", "exec:\n      apiVersion: client.authentication.k8s.io/v1\n      command: ./credential-helper\n      interactiveMode: Never");
-            const auto digest=[](const QByteArray& value) { return QString::fromLatin1(QCryptographicHash::hash(value,QCryptographicHash::Sha256).toHex()); };
-            const auto contentHash=digest(yaml), id=digest(origin.toUtf8())+"-"+contentHash;
-            const auto context="ctx:"+digest(id.toUtf8()+'\0'+QByteArray("local"));
-            // Historical storage input. No generator or credential program is invoked.
-            QJsonObject record{{"version",mode=="v2" ? 2 : 1},{"sourcePath",origin},{"contentHash",contentHash},
-                {"yamlBase64",QString::fromLatin1(yaml.toBase64())},{"importedAt","2026-01-01T00:00:00.000Z"}};
-            if (mode=="v2") record.insert("contextAliases",QJsonObject{{context,"Operations"}});
-            const auto stored=QJsonDocument(record).toJson(QJsonDocument::Compact);
-            const auto path=profile+"/kubeconfigs/"+id+".json";
-            write(path,stored);
-            require(QFile::setPermissions(profile,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner)
-                && QFile::setPermissions(profile+"/kubeconfigs",QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner)
-                && QFile::setPermissions(path,QFile::ReadOwner|QFile::WriteOwner),"Cannot protect historical snapshot fixture");
-            const podlord::KubeconfigStore sources(profile);
-            const auto loaded=sources.list();
-            require(std::holds_alternative<podlord::SourceCatalog>(loaded),"Historical snapshot catalog cannot be read");
-            const auto catalog=std::get<podlord::SourceCatalog>(loaded);
-            if (mode=="invalid_origin") {
-                require(catalog.sources.isEmpty() && catalog.errors.size()==1,"Invalid generated origin was accepted");
-            } else {
-                require(catalog.errors.isEmpty() && catalog.sources.size()==1 && catalog.sources.first().id==id
-                    && catalog.sources.first().contexts.first().id==context,"Historical source or context identity changed");
-                require(catalog.sources.first().contexts.first().displayName==(mode=="v2" ? "Operations" : "local"),"Historical display alias changed");
-                const auto connection=sources.connection(context);
-                if (mode.startsWith("relative_")) require(std::holds_alternative<podlord::Failure>(connection),"Historical generated source resolved a relative credential path");
-                else require(std::holds_alternative<podlord::ClusterConnection>(connection)
-                    && std::get<podlord::ClusterConnection>(connection).server.host()==(mode=="file_endpoint" ? "localhost" : "127.0.0.1"),"Stored endpoint changed unexpectedly");
-                require(std::holds_alternative<podlord::SessionCatalog>(podlord::SessionStore(profile).create({context,{}})),"Historical context cannot retain a session binding");
-            }
-            QFile retained(path);
-            require(retained.open(QIODevice::ReadOnly) && retained.readAll()==stored,"Reading a historical snapshot rewrote its bytes");
-            return 0;
-        }
         if (scenario.startsWith("source_alias_contract_")) {
             const QString mode = scenario.mid(22);
             const QString origin = directory + "/config";
@@ -506,7 +396,7 @@ int main(int argc, char* argv[]) {
             }
             return 0;
         }
-        if (scenario.startsWith("source_manage_") || scenario.startsWith("session_manage_") || scenario.startsWith("source_alias_"))
+        if (scenario.startsWith("source_manage_") || scenario.startsWith("source_alias_"))
             return management(scenario, root, profile) ? 0 : 1;
         const QString first = directory + "/config";
         if (scenario == "content_uri_missing" || scenario == "content_uri_quick" || scenario == "content_uri_invalid") {

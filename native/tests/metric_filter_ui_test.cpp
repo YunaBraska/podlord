@@ -221,8 +221,8 @@ std::optional<Case> testcase(const QString& scenario) {
         {"display_contains", {"memory", "MiB", {"half", "one"}}},
         {"display_unavailable", {"storage", "\"-\"", {"half", "one", "zero", "missing", "capacity-only"}}},
         {"display_regex_unavailable", {"storage", "/^-$/", {"half", "one", "zero", "missing", "capacity-only"}}},
-        {"display_stale", {"cpu", "stale", {"half", "one", "zero"}}},
-        {"display_stale_exact", {"cpu", "\"500 mCPU (stale)\"", {"half"}}},
+        {"display_stale", {"cpu", "stale", {}}},
+        {"display_stale_exact", {"cpu", "\"500 mCPU (stale)\"", {}}},
         {"display_incomplete", {"cpu", "incomplete", {"half"}}},
         {"display_mixed", {"cpu", ">=.5 /no-match/", {"half", "one"}}},
         {"inline", {"cpu", "500m", {"half"}}},
@@ -273,7 +273,7 @@ bool execute(const QString& scenario) {
             if (model->data(model->index(index, 0)) == "half") row = index;
         auto* view = item(window, "resourceTable");
         if (row < 0 || !view) return false;
-        const QString qualifier = scenario == "stale" ? " (stale)" : scenario == "incomplete" ? " (incomplete)" : "";
+        const QString qualifier = scenario == "incomplete" ? " (incomplete)" : "";
         for (const auto& metric : QList<QPair<QString, QString>>{{"500m", "500 mCPU"}, {"64Mi", "64 MiB"}}) {
             const int column = metric.first == "500m" ? 7 : 8;
             QQmlExpression position(qmlContext(view), view,

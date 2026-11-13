@@ -60,13 +60,15 @@ Row {
                     ProgressBar {
                         objectName: "pulse_" + metricCard.modelData.id + "_bar"
                         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 3
+                        id: usageBar
                         visible: metricCard.modelData.bar
                         value: metricCard.modelData.fraction; from: 0; to: 1
                         background: Rectangle { color: workspace.appearanceColors.border }
+                        contentItem: Item { Rectangle { height: parent.height; width: parent.width * usageBar.visualPosition; color: workspace.appearanceColors.accent } }
                     }
                 }
                 ToolTip.visible: hovered || activeFocus
-                ToolTip.text: modelData.usage + "\n" + modelData.description
+                ToolTip.text: modelData.description
             }
         }
 }
