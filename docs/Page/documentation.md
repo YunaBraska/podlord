@@ -12,9 +12,10 @@ description: Help for importing clusters, exploring resources and acting safely.
 
 <section class="section">
   <ul class="doc-list">
-    <li><a href="{{ '/help/index.html' | relative_url }}">Use PodLord</a><p>Import a kubeconfig and establish a focused cluster workspace.</p></li>
+    <li><a href="{{ '/help/index.html' | relative_url }}">Use PodLord</a><p>Import a kubeconfig and choose a context.</p></li>
     <li><a href="{{ '/help/index.html#explore' | relative_url }}">Explore resources</a><p>Search across namespaces and narrow the view with filters.</p></li>
     <li><a href="{{ '/help/index.html#inspect-and-act' | relative_url }}">Inspect and act</a><p>Read details before opening logs, forwarding ports or changing a resource.</p></li>
+    <li><a href="{{ '/help/index.html#terminal' | relative_url }}">Container terminal</a><p>Connect to a container and return to its shell from Connections.</p></li>
     <li><a href="{{ '/install.html' | relative_url }}">Install PodLord</a><p>Choose the native package for macOS, Linux or Windows.</p></li>
   </ul>
 </section>

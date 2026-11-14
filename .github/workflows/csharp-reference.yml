@@ -1,0 +1,49 @@
+name: CSharp comparison reference
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csharp-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference:
+    name: CSharp reference tests and catalog comparison
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout comparison reference
+        uses: actions/checkout@v6
+      - name: Set up reference SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Run reference tests and unchanged coverage gates
+        shell: sh
+        run: scripts/test.sh --configuration Release
+      - name: Verify reference coverage report boundaries
+        if: ${{ !cancelled() }}
+        shell: sh
+        run: python3 scripts/test-coverage-gates.py
+      - name: Compare native language catalog with CSharp reference
+        if: ${{ !cancelled() }}
+        shell: sh
+        run: sh scripts/export-native-locales.sh --check
+      - name: Check reference exporter regressions
+        if: ${{ !cancelled() }}
+        run: node --test scripts/test-native-locales-export.cjs
+      - name: Retain reference coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: csharp-reference-coverage-${{ github.sha }}
+          path: |
+            /tmp/podlord-test.*/results/**/coverage.cobertura.xml
+          if-no-files-found: error
+          retention-days: 14

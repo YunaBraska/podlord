@@ -1,0 +1,351 @@
+{
+  "version": 1,
+  "sounds": [
+    {
+      "id": "soft-confirm",
+      "name": "Soft Confirm",
+      "purpose": "Quiet acknowledgement of an accepted action",
+      "asset": "qrc:/podlord/audio/sfx/soft-confirm.wav"
+    },
+    {
+      "id": "gentle-change",
+      "name": "Gentle Change",
+      "purpose": "A setting or selection changed",
+      "asset": "qrc:/podlord/audio/sfx/gentle-change.wav"
+    },
+    {
+      "id": "attention",
+      "name": "Attention",
+      "purpose": "A nonurgent item needs attention",
+      "asset": "qrc:/podlord/audio/sfx/attention.wav"
+    },
+    {
+      "id": "complete",
+      "name": "Complete",
+      "purpose": "A requested operation finished",
+      "asset": "qrc:/podlord/audio/sfx/complete.wav"
+    },
+    {
+      "id": "soft-warning",
+      "name": "Soft Warning",
+      "purpose": "A recoverable condition needs review",
+      "asset": "qrc:/podlord/audio/sfx/soft-warning.wav"
+    },
+    {
+      "id": "new-activity",
+      "name": "New Activity",
+      "purpose": "Fresh activity arrived without requiring interruption",
+      "asset": "qrc:/podlord/audio/sfx/new-activity.wav"
+    },
+    {
+      "id": "panel-tick",
+      "name": "Panel Tick",
+      "purpose": "A compact panel interaction",
+      "asset": "qrc:/podlord/audio/sfx/panel-tick.wav"
+    },
+    {
+      "id": "radar-ready",
+      "name": "Radar Ready",
+      "purpose": "The resource overview is ready",
+      "asset": "qrc:/podlord/audio/sfx/radar-ready.wav"
+    },
+    {
+      "id": "critical",
+      "name": "Critical",
+      "purpose": "An important failure requires prompt attention",
+      "asset": "qrc:/podlord/audio/sfx/critical.wav"
+    },
+    {
+      "id": "disconnect",
+      "name": "Disconnect",
+      "purpose": "A connection became unavailable",
+      "asset": "qrc:/podlord/audio/sfx/disconnect.wav"
+    },
+    {
+      "id": "connect",
+      "name": "Connect",
+      "purpose": "A connection became available",
+      "asset": "qrc:/podlord/audio/sfx/connect.wav"
+    },
+    {
+      "id": "save",
+      "name": "Save",
+      "purpose": "Changes were saved successfully",
+      "asset": "qrc:/podlord/audio/sfx/save.wav"
+    },
+    {
+      "id": "open",
+      "name": "Open",
+      "purpose": "A requested surface opened",
+      "asset": "qrc:/podlord/audio/sfx/open.wav"
+    },
+    {
+      "id": "close",
+      "name": "Close",
+      "purpose": "A requested surface closed",
+      "asset": "qrc:/podlord/audio/sfx/close.wav"
+    },
+    {
+      "id": "notice",
+      "name": "Notice",
+      "purpose": "An informational notification arrived",
+      "asset": "qrc:/podlord/audio/sfx/notice.wav"
+    },
+    {
+      "id": "recover",
+      "name": "Recover",
+      "purpose": "A previously unhealthy operation recovered",
+      "asset": "qrc:/podlord/audio/sfx/recover.wav"
+    },
+    {
+      "id": "resource-added",
+      "name": "Resource Added",
+      "purpose": "A resource appeared in the current view",
+      "asset": "qrc:/podlord/audio/sfx/resource-added.wav"
+    },
+    {
+      "id": "resource-removed",
+      "name": "Resource Removed",
+      "purpose": "A resource left the current view",
+      "asset": "qrc:/podlord/audio/sfx/resource-removed.wav"
+    },
+    {
+      "id": "capacity",
+      "name": "Capacity",
+      "purpose": "A capacity boundary is approaching",
+      "asset": "qrc:/podlord/audio/sfx/capacity.wav"
+    },
+    {
+      "id": "heartbeat",
+      "name": "Heartbeat",
+      "purpose": "An explicitly requested health acknowledgement",
+      "asset": "qrc:/podlord/audio/sfx/heartbeat.wav"
+    }
+  ],
+  "tracks": [
+    {
+      "id": "quiet-perimeter",
+      "name": "Quiet Perimeter",
+      "asset": "qrc:/podlord/audio/music/quiet-perimeter.m4a"
+    },
+    {
+      "id": "copper-horizon",
+      "name": "Copper Horizon",
+      "asset": "qrc:/podlord/audio/music/copper-horizon.m4a"
+    },
+    {
+      "id": "signal-weave",
+      "name": "Signal Weave",
+      "asset": "qrc:/podlord/audio/music/signal-weave.m4a"
+    },
+    {
+      "id": "night-logistics",
+      "name": "Night Logistics",
+      "asset": "qrc:/podlord/audio/music/night-logistics.m4a"
+    },
+    {
+      "id": "glass-relay",
+      "name": "Glass Relay",
+      "asset": "qrc:/podlord/audio/music/glass-relay.m4a"
+    },
+    {
+      "id": "low-orbit",
+      "name": "Low Orbit",
+      "asset": "qrc:/podlord/audio/music/low-orbit.m4a"
+    },
+    {
+      "id": "amber-vector",
+      "name": "Amber Vector",
+      "asset": "qrc:/podlord/audio/music/amber-vector.m4a"
+    },
+    {
+      "id": "iron-rain",
+      "name": "Iron Rain",
+      "asset": "qrc:/podlord/audio/music/iron-rain.m4a"
+    },
+    {
+      "id": "silent-cartography",
+      "name": "Silent Cartography",
+      "asset": "qrc:/podlord/audio/music/silent-cartography.m4a"
+    },
+    {
+      "id": "clockwork-tide",
+      "name": "Clockwork Tide",
+      "asset": "qrc:/podlord/audio/music/clockwork-tide.m4a"
+    },
+    {
+      "id": "field-memory",
+      "name": "Field Memory",
+      "asset": "qrc:/podlord/audio/music/field-memory.m4a"
+    },
+    {
+      "id": "mesh-transit",
+      "name": "Mesh Transit",
+      "asset": "qrc:/podlord/audio/music/mesh-transit.m4a"
+    },
+    {
+      "id": "distant-machinery",
+      "name": "Distant Machinery",
+      "asset": "qrc:/podlord/audio/music/distant-machinery.m4a"
+    },
+    {
+      "id": "northern-array",
+      "name": "Northern Array",
+      "asset": "qrc:/podlord/audio/music/northern-array.m4a"
+    },
+    {
+      "id": "steady-watch",
+      "name": "Steady Watch",
+      "asset": "qrc:/podlord/audio/music/steady-watch.m4a"
+    },
+    {
+      "id": "basalt-channel",
+      "name": "Basalt Channel",
+      "asset": "qrc:/podlord/audio/music/basalt-channel.m4a"
+    },
+    {
+      "id": "silver-switchyard",
+      "name": "Silver Switchyard",
+      "asset": "qrc:/podlord/audio/music/silver-switchyard.m4a"
+    },
+    {
+      "id": "blue-foundation",
+      "name": "Blue Foundation",
+      "asset": "qrc:/podlord/audio/music/blue-foundation.m4a"
+    },
+    {
+      "id": "radar-garden",
+      "name": "Radar Garden",
+      "asset": "qrc:/podlord/audio/music/radar-garden.m4a"
+    },
+    {
+      "id": "first-light-protocol",
+      "name": "First Light Protocol",
+      "asset": "qrc:/podlord/audio/music/first-light-protocol.m4a"
+    }
+  ],
+  "legacySounds": {
+    "panel-segment-load": "panel-tick",
+    "radar-activated": "radar-ready",
+    "activity-tick": "new-activity",
+    "warning-ping": "attention",
+    "electro-warning": "soft-warning",
+    "bell-alert": "notice",
+    "metal-impact": "capacity",
+    "critical-klaxon": "critical",
+    "power-up": "connect",
+    "power-down": "disconnect",
+    "three-tone": "complete",
+    "metal-click": "panel-tick",
+    "book-open": "open",
+    "command-ambient-loop": "heartbeat",
+    "steel-command-jingle": "notice",
+    "bit-command-jingle": "recover",
+    "modern-soft-confirm": "soft-confirm",
+    "modern-gentle-change": "gentle-change",
+    "modern-attention": "attention",
+    "modern-complete": "complete",
+    "modern-soft-warning": "soft-warning",
+    "modern-new-activity": "new-activity",
+    "kenney-interface-back-001": "soft-warning",
+    "kenney-interface-back-002": "soft-warning",
+    "kenney-interface-back-003": "soft-warning",
+    "kenney-interface-back-004": "soft-warning",
+    "kenney-interface-bong-001": "gentle-change",
+    "kenney-interface-click-001": "soft-confirm",
+    "kenney-interface-click-002": "soft-confirm",
+    "kenney-interface-click-003": "soft-confirm",
+    "kenney-interface-click-004": "soft-confirm",
+    "kenney-interface-click-005": "soft-confirm",
+    "kenney-interface-close-001": "close",
+    "kenney-interface-close-002": "close",
+    "kenney-interface-close-003": "close",
+    "kenney-interface-close-004": "close",
+    "kenney-interface-confirmation-001": "soft-confirm",
+    "kenney-interface-confirmation-002": "soft-confirm",
+    "kenney-interface-confirmation-003": "soft-confirm",
+    "kenney-interface-confirmation-004": "soft-confirm",
+    "kenney-interface-drop-001": "soft-warning",
+    "kenney-interface-drop-002": "soft-warning",
+    "kenney-interface-drop-003": "soft-warning",
+    "kenney-interface-drop-004": "soft-warning",
+    "kenney-interface-error-001": "soft-warning",
+    "kenney-interface-error-002": "soft-warning",
+    "kenney-interface-error-003": "soft-warning",
+    "kenney-interface-error-004": "soft-warning",
+    "kenney-interface-error-005": "soft-warning",
+    "kenney-interface-error-006": "soft-warning",
+    "kenney-interface-error-007": "soft-warning",
+    "kenney-interface-error-008": "soft-warning",
+    "kenney-interface-glass-001": "gentle-change",
+    "kenney-interface-glass-002": "gentle-change",
+    "kenney-interface-glass-003": "gentle-change",
+    "kenney-interface-glass-004": "gentle-change",
+    "kenney-interface-glass-005": "gentle-change",
+    "kenney-interface-glass-006": "gentle-change",
+    "kenney-interface-glitch-001": "gentle-change",
+    "kenney-interface-glitch-002": "gentle-change",
+    "kenney-interface-glitch-003": "gentle-change",
+    "kenney-interface-glitch-004": "gentle-change",
+    "kenney-interface-maximize-001": "open",
+    "kenney-interface-maximize-002": "open",
+    "kenney-interface-maximize-003": "open",
+    "kenney-interface-maximize-004": "open",
+    "kenney-interface-maximize-005": "open",
+    "kenney-interface-maximize-006": "open",
+    "kenney-interface-maximize-007": "open",
+    "kenney-interface-maximize-008": "open",
+    "kenney-interface-maximize-009": "open",
+    "kenney-interface-minimize-001": "close",
+    "kenney-interface-minimize-002": "close",
+    "kenney-interface-minimize-003": "close",
+    "kenney-interface-minimize-004": "close",
+    "kenney-interface-minimize-005": "close",
+    "kenney-interface-minimize-006": "close",
+    "kenney-interface-minimize-007": "close",
+    "kenney-interface-minimize-008": "close",
+    "kenney-interface-minimize-009": "close",
+    "kenney-interface-open-001": "open",
+    "kenney-interface-open-002": "open",
+    "kenney-interface-open-003": "open",
+    "kenney-interface-open-004": "open",
+    "kenney-interface-pluck-001": "gentle-change",
+    "kenney-interface-pluck-002": "gentle-change",
+    "kenney-interface-question-001": "gentle-change",
+    "kenney-interface-question-002": "gentle-change",
+    "kenney-interface-question-003": "gentle-change",
+    "kenney-interface-question-004": "gentle-change",
+    "kenney-interface-scratch-001": "gentle-change",
+    "kenney-interface-scratch-002": "gentle-change",
+    "kenney-interface-scratch-003": "gentle-change",
+    "kenney-interface-scratch-004": "gentle-change",
+    "kenney-interface-scratch-005": "gentle-change",
+    "kenney-interface-scroll-001": "panel-tick",
+    "kenney-interface-scroll-002": "panel-tick",
+    "kenney-interface-scroll-003": "panel-tick",
+    "kenney-interface-scroll-004": "panel-tick",
+    "kenney-interface-scroll-005": "panel-tick",
+    "kenney-interface-select-001": "soft-confirm",
+    "kenney-interface-select-002": "soft-confirm",
+    "kenney-interface-select-003": "soft-confirm",
+    "kenney-interface-select-004": "soft-confirm",
+    "kenney-interface-select-005": "soft-confirm",
+    "kenney-interface-select-006": "soft-confirm",
+    "kenney-interface-select-007": "soft-confirm",
+    "kenney-interface-select-008": "soft-confirm",
+    "kenney-interface-switch-001": "open",
+    "kenney-interface-switch-002": "open",
+    "kenney-interface-switch-003": "open",
+    "kenney-interface-switch-004": "open",
+    "kenney-interface-switch-005": "open",
+    "kenney-interface-switch-006": "open",
+    "kenney-interface-switch-007": "open",
+    "kenney-interface-tick-001": "panel-tick",
+    "kenney-interface-tick-002": "panel-tick",
+    "kenney-interface-tick-004": "panel-tick",
+    "kenney-interface-toggle-001": "gentle-change",
+    "kenney-interface-toggle-002": "gentle-change",
+    "kenney-interface-toggle-003": "gentle-change",
+    "kenney-interface-toggle-004": "gentle-change"
+  }
+}

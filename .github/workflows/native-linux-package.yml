@@ -1,0 +1,200 @@
+name: Native Linux distribution trial
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-linux-trial-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'latest' }}
+  cancel-in-progress: true
+
+jobs:
+  distribution:
+    name: Linux ${{ matrix.arch }} standalone trial
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build fresh system dependencies and identify the SDK ABI
+        id: sdk-inputs
+        shell: bash
+        run: |
+          set -eu
+          out="$RUNNER_TEMP/linux-distribution"
+          mkdir "$out"
+          tar -cf - native/tests/linux-package.Dockerfile native/tests/qt_shutdown scripts/build-native-linux-toolchain.sh scripts/qt-quick-shutdown.cmake scripts/patches/qtdeclarative-6.11.3-shutdown.diff |
+            docker build --pull --no-cache --target toolchain-dependencies \
+              --tag "podlord-linux-sdk-dependencies:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+              --file native/tests/linux-package.Dockerfile - > "$out/toolchain-dependencies.log" 2>&1
+          docker run --rm --network none -i "podlord-linux-sdk-dependencies:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            sh > "$out/toolchain-abi.txt" <<'ABI'
+          set -eu
+          uname -m
+          clang --version
+          clang++ -dumpmachine
+          getconf GNU_LIBC_VERSION
+          cmake --version
+          ninja --version
+          nasm -v
+          dpkg-query -W -f='${binary:Package} ${Version}\n' libc6 libgcc-s1 libstdc++6 '*-dev' | LC_ALL=C sort
+          /opt/sbom/bin/pip freeze | LC_ALL=C sort
+          ABI
+          abi=$(sha256sum "$out/toolchain-abi.txt" | cut -d ' ' -f 1)
+          recipe=${{ hashFiles('native/tests/linux-package.Dockerfile', 'scripts/build-native-linux-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
+          key="linux-sdk-v1-${{ matrix.arch }}-$abi-$recipe"
+          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$key" > "$out/toolchain-cache-key.txt"
+          docker image inspect --format 'Fresh dependency image: {{.Id}} architecture: {{.Architecture}}' \
+            "podlord-linux-sdk-dependencies:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" > "$out/toolchain-dependencies.txt"
+      - name: Restore only an exact public SDK prefix
+        id: sdk-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/linux-sdk-cache
+          key: ${{ steps.sdk-inputs.outputs.key }}
+      - name: Build and validate the source or cached SDK
+        shell: bash
+        env:
+          SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
+          SDK_CACHE_KEY: ${{ steps.sdk-inputs.outputs.key }}
+        run: |
+          set -eu
+          out="$RUNNER_TEMP/linux-distribution"
+          cache="$RUNNER_TEMP/linux-sdk-cache"
+          set -- --build-arg "SDK_CACHE_KEY=$SDK_CACHE_KEY"
+          if [ "$SDK_CACHE_HIT" = true ]; then
+            [ -d "$cache" ] && [ ! -L "$cache" ]
+            set -- "$@" --build-arg SDK_STAGE=cached-sdk --build-context "toolchain-cache=$cache"
+          fi
+          tar -cf - native/tests/linux-package.Dockerfile native/tests/qt_shutdown scripts/build-native-linux-toolchain.sh scripts/qt-quick-shutdown.cmake scripts/patches/qtdeclarative-6.11.3-shutdown.diff |
+            docker build --tag "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$@" \
+              --file native/tests/linux-package.Dockerfile - > "$out/toolchain.log" 2>&1
+          docker image inspect --format '{{join .RootFS.Layers "\n"}}' \
+            "podlord-linux-sdk-dependencies:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" > "$out/toolchain-system-layers.txt"
+          docker image inspect --format '{{join .RootFS.Layers "\n"}}' \
+            "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" > "$out/toolchain-sdk-layers.txt"
+          head -n "$(wc -l < "$out/toolchain-system-layers.txt")" "$out/toolchain-sdk-layers.txt" |
+            cmp - "$out/toolchain-system-layers.txt"
+          docker run --rm "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            cat /opt/podlord-toolchain/build-inputs.txt > "$out/toolchain-inputs.txt"
+          docker image inspect --format 'SDK image: {{.Id}} architecture: {{.Architecture}}' \
+            "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$out/toolchain-inputs.txt"
+          docker run --rm --network none -i "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            sh > "$out/toolchain-runtime-openssl.txt" <<'SSL'
+          set -eu
+          openssl version -a
+          dpkg-query -W -f='${binary:Package} ${Version}\n' libssl-dev libssl3t64
+          ssl_libdir=$(pkg-config --variable=libdir libcrypto)
+          sha256sum "$ssl_libdir/libcrypto.so.3" "$ssl_libdir/libssl.so.3"
+          SSL
+          if [ "$SDK_CACHE_HIT" != true ]; then
+            # Discard any non-exact restoration. Only this validated source prefix is published.
+            if [ -e "$cache" ] || [ -L "$cache" ]; then rm -r -- "$cache"; fi
+            mkdir "$cache"
+            docker create --cidfile "$out/sdk-export.cid" \
+              "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" > "$out/toolchain-export.log"
+            id=$(cat "$out/sdk-export.cid")
+            docker cp "$id:/opt/podlord-toolchain/." "$cache"
+            docker rm "$id" >> "$out/toolchain-export.log"
+          fi
+      - name: Save the validated public SDK prefix
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/linux-sdk-cache
+          key: ${{ steps.sdk-inputs.outputs.key }}
+      - name: Run complete native behavior and coverage checks
+        shell: bash
+        run: |
+          set -eu
+          out="$RUNNER_TEMP/linux-distribution"
+          docker run --rm --cidfile "$out/tests.cid" --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/source:ro" -v "$out:/output" \
+            -e HOME=/tmp/podlord-home -e PODLORD_NATIVE_BUILD_DIR=/output/tests \
+            -e PODLORD_BUILD_JOBS=4 -e PODLORD_TEST_JOBS=6 \
+            -e QT_QPA_PLATFORM=offscreen -e QT_QUICK_BACKEND=software \
+            "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            sh -c 'set -eu; mkdir -p "$HOME"; sh scripts/test-native.sh' > "$out/tests.log" 2>&1
+      - name: Construct the standalone archive and enforce its size
+        shell: bash
+        run: |
+          set -eu
+          out="$RUNNER_TEMP/linux-distribution"
+          docker run --rm --cidfile "$out/package.cid" --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/source:ro" -v "$out:/output" \
+            "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            sh scripts/check-native-linux-package.sh /output/package > "$out/package.log" 2>&1
+      - name: Exercise current Ubuntu and Debian without installed Qt
+        shell: bash
+        run: |
+          set -eu
+          out="$RUNNER_TEMP/linux-distribution"
+          for os in debian ubuntu; do
+            base=debian:13.7-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+            if [ "$os" = ubuntu ]; then
+              base=ubuntu:26.10@sha256:262df65c0ec6bf8d9dcc87454f4330a05fae4b97825f45854af3b136666584c2
+            fi
+            image="podlord-linux-runtime-$os:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker build --tag "$image" --build-arg "RUNTIME_IMAGE=$base" \
+              - < native/tests/linux-runtime.Dockerfile > "$out/runtime-image-$os.log" 2>&1
+            docker run --rm --cidfile "$out/runtime-$os.cid" --user "$(id -u):$(id -g)" \
+              -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" -v "$out:/output" "$image" \
+              sh /scripts/test-native-linux-package.sh \
+                "/output/package/podlord-native-linux-${{ matrix.arch }}.tar.gz" \
+                "/output/runtime-$os" > "$out/runtime-$os.log" 2>&1
+          done
+          printf '%s\n' 'Standalone Linux trial, not release approval.' \
+            'The ICU experiment still needs its recorded product decisions and comparison evidence.' \
+            'No tag, public release, signing or Store upload is performed.' > "$out/SCOPE.txt"
+      - name: Stop and remove only owned containers and images
+        if: always()
+        shell: bash
+        run: |
+          for file in "$RUNNER_TEMP/linux-distribution/"*.cid; do
+            [ -f "$file" ] || continue
+            id=$(cat "$file")
+            case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
+            docker rm --force "$id" >/dev/null 2>&1 || true
+          done
+          for image in podlord-linux-sdk-dependencies podlord-linux-sdk podlord-linux-runtime-debian podlord-linux-runtime-ubuntu; do
+            docker image rm "$image:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >/dev/null 2>&1 || true
+          done
+      - name: Retain successful trial archive
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-trial-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/linux-distribution/package/podlord-native-linux-*.tar.gz
+            ${{ runner.temp }}/linux-distribution/package/package-evidence.txt
+            ${{ runner.temp }}/linux-distribution/SCOPE.txt
+          retention-days: 7
+          if-no-files-found: error
+      - name: Retain verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-trial-evidence-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/linux-distribution/*.log
+            ${{ runner.temp }}/linux-distribution/toolchain-*.txt
+            ${{ runner.temp }}/linux-distribution/tests/coverage/
+            !${{ runner.temp }}/linux-distribution/tests/coverage/run.*/**
+            ${{ runner.temp }}/linux-distribution/tests/Testing/Temporary/
+            ${{ runner.temp }}/linux-distribution/package/package-evidence.txt
+            ${{ runner.temp }}/linux-distribution/package/elf-dependencies.txt
+            ${{ runner.temp }}/linux-distribution/runtime-*/*.txt
+            ${{ runner.temp }}/linux-distribution/runtime-*/*.log
+          retention-days: 7
+          if-no-files-found: ignore

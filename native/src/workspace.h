@@ -1,0 +1,922 @@
+#pragma once
+#include <QImage>
+#include "resource_client.h"
+#include "container_terminal.h"
+#include "credential_process.h"
+#include "yaml_apply.h"
+#include "appearance.h"
+#include "table_layout.h"
+#include "view_state.h"
+#include "resource_display_model.h"
+#include "resource_metrics.h"
+#include "release_updates.h"
+#include <QFuture>
+#include <QFutureWatcher>
+#include <QPromise>
+#include "alerts.h"
+#include "music.h"
+#include <QAbstractListModel>
+#include <QAbstractTableModel>
+#include <QSortFilterProxyModel>
+#include <QVariantList>
+#include <QPointer>
+#include <memory>
+#include <optional>
+
+namespace podlord {
+class WorkspaceRuntime;
+class WindowHost;
+/** The inspector's sole metadata projection, retaining unchanged field delegates. */
+class InspectorFields final : public QAbstractListModel {
+public:
+    int rowCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    QHash<int, QByteArray> roleNames() const override;
+    void publish(QVariantList fields);
+    const QVariantList& fields() const { return fields_; }
+private:
+    QVariantList fields_;
+};
+class ResourceTable final : public QAbstractTableModel {
+    Q_OBJECT
+    struct Row {
+        QJsonObject document;
+        mutable QList<std::optional<QString>> display;
+        std::shared_ptr<const ResourceMetricContribution> metrics = {};
+        QString identity = {};
+        quint8 metadataStrings = 0;
+        quint64 populated = 0;
+        bool prepared = false;
+        bool operator==(const Row& other) const { return document == other.document; }
+    };
+public:
+    /** Immutable completed projection. Only canonical snapshot equality permits reuse. */
+    class PreparedSnapshot final {
+        friend class ResourceTable;
+        friend class Workspace;
+        QJsonArray source, events;
+        QString cluster;
+        QStringList fields;
+        QString identity;
+        QList<Row> rows;
+        QList<QVariant> sortValues;
+        int sortColumn = -1;
+        QVariantMap health;
+    };
+    explicit ResourceTable(QObject* parent = nullptr,
+                           QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"},
+                           QStringList captions = {"Name", "Kind", "Namespace", "Status", "Node", "Image", "Cluster", "CPU", "Memory", "Storage", "Age", "Ready", "Restarts", "Owner", "Issue", "UID"}, QString identityField = "path", bool preserveInputOrder = false);
+    int rowCount(const QModelIndex& parent = {}) const override;
+    int columnCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+    bool publish(const QJsonArray& rows, const QString& cluster = {}, bool replace = false);
+    static void prepare(QPromise<PreparedSnapshot>& promise, QJsonArray source, QString cluster, int sortColumn);
+    bool publishPrepared(const PreparedSnapshot& snapshot, bool replace = false);
+    bool retainPreparedSort(PreparedSnapshot& snapshot) const;
+    ResourceMetricSummary& accumulateMetrics(int row, ResourceMetricSummary& summary) const;
+    /** Nonempty source fields, preserving numeric zero and excluding display placeholders. */
+    quint64 populatedColumns(int row) const;
+    QJsonObject row(int index) const;
+    /** Identity/name/kind/namespace/status roles without a QVariant conversion. */
+    QString metadata(int row, int role) const;
+    bool setAppearance(const Appearance& appearance);
+private:
+    friend class ResourceFilter;
+    void prepareSort(int column);
+    const QStringList fields_, captions_;
+    const QString identityField_;
+    const bool preserveInputOrder_;
+    QList<Row> rows_;
+    QList<QVariant> sortValues_;
+    int sortValueColumn_ = -1;
+    Appearance appearance_;
+    QString cluster_;
+};
+class ResourceFilter : public QSortFilterProxyModel {
+    Q_OBJECT
+    Q_PROPERTY(QString error READ error NOTIFY filterStateChanged)
+public:
+    explicit ResourceFilter(QObject* parent = nullptr);
+    void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
+    Q_INVOKABLE bool filter(const QString& text, const QMap<QString, QString>& fields = {}, const QString& mode = {});
+    static QStringList exactValues(const QString& expression);
+    static Result<QString> selectValue(const QString& expression, const QString& value, bool selected);
+    QString error() const { return error_; }
+signals:
+    void filterStateChanged();
+protected:
+    bool filterAcceptsRow(int row, const QModelIndex& parent) const override;
+    bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
+private:
+    QString text_, mode_;
+    struct Token final {
+        enum Kind { Contains, Exact, Prefix, Suffix, Number, Regex, Quantity } kind = Contains;
+        QString value, operation, raw;
+        double number = 0;
+        QRegularExpression pattern;
+    };
+    static Result<QList<Token>> compileQuantity(const QString& text, bool cpu);
+    static Result<QList<Token>> compileDuration(const QString& text);
+    bool matchesQuantity(const QVariant& value, const QList<Token>& tokens) const;
+    QList<Token> tokens_;
+    QMap<QString, QString> fields_;
+    QMap<int, QList<Token>> fieldTokens_;
+    static Result<QList<Token>> compile(const QString& text);
+    bool matches(const QString& value, const QList<Token>& tokens) const;
+    bool compiled_ = false;
+    mutable QString error_;
+    mutable bool errorNotificationPending_ = false;
+    bool refreshFilter();
+};
+/** UI reads snapshots only. Public actions schedule real stores/transport work. */
+class Workspace final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(bool appStore READ appStore CONSTANT)
+    Q_PROPERTY(QVariantList contexts READ contexts NOTIFY catalogsChanged)
+    Q_PROPERTY(podlord::Alerts* alerts READ alerts CONSTANT)
+    Q_PROPERTY(podlord::Music* music READ music CONSTANT)
+    Q_PROPERTY(podlord::ReleaseUpdates* releaseUpdates READ releaseUpdates CONSTANT)
+    Q_PROPERTY(QStringList themeNames READ themeNames CONSTANT)
+    Q_PROPERTY(QString themeName READ themeName NOTIFY appearanceChanged)
+    Q_PROPERTY(QString themeVariant READ themeVariant NOTIFY appearanceChanged)
+    Q_PROPERTY(QPalette appearancePalette READ appearancePalette NOTIFY appearanceChanged)
+    Q_PROPERTY(QVariantMap appearanceColors READ appearanceColors NOTIFY appearanceChanged)
+    Q_PROPERTY(QString sourceImportNotice READ sourceImportNotice NOTIFY changed)
+    Q_PROPERTY(QVariantList sourceImportIssues READ sourceImportIssues NOTIFY changed)
+    Q_PROPERTY(QVariantList tabs READ tabs NOTIFY catalogsChanged)
+    Q_PROPERTY(bool windowActionsAvailable READ windowActionsAvailable CONSTANT)
+    Q_PROPERTY(bool sessionWindowActionsReady READ sessionWindowActionsReady NOTIFY sessionWindowActionsReadyChanged)
+    Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool workspaceRestoreEnabled READ workspaceRestoreEnabled NOTIFY changed)
+    Q_PROPERTY(bool loading READ loading NOTIFY changed)
+    Q_PROPERTY(bool syncLoading READ syncLoading NOTIFY changed)
+    Q_PROPERTY(double loadingProgress READ loadingProgress NOTIFY changed)
+    Q_PROPERTY(bool problemsOnly READ problemsOnly NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(bool activityOnly READ activityOnly NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(QStringList filterPresets READ filterPresets NOTIFY filterPresetsChanged)
+    Q_PROPERTY(QString selectedFilterPreset READ selectedFilterPreset NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(bool filterPresetsBusy READ filterPresetsBusy NOTIFY filterPresetsChanged)
+    Q_PROPERTY(QString filterPresetsError READ filterPresetsError NOTIFY filterPresetsChanged)
+    Q_PROPERTY(bool authenticationRequired READ authenticationRequired NOTIFY changed)
+    Q_PROPERTY(bool authenticationRunning READ authenticationRunning NOTIFY changed)
+    Q_PROPERTY(QString authenticationPrompt READ authenticationPrompt NOTIFY changed)
+    Q_PROPERTY(QString authenticationInstruction READ authenticationInstruction NOTIFY changed)
+    Q_PROPERTY(QVariantMap authenticationChallenge READ authenticationChallenge NOTIFY changed)
+    Q_PROPERTY(QString error READ error NOTIFY changed)
+    Q_PROPERTY(bool viewStateFailed READ viewStateFailed NOTIFY changed)
+    Q_PROPERTY(bool viewCloseNeedsDecision READ viewCloseNeedsDecision NOTIFY changed)
+    Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString syncSummary READ syncSummary NOTIFY changed)
+    Q_PROPERTY(QString syncProblem READ syncProblem NOTIFY changed)
+    Q_PROPERTY(QString currentSession READ currentSession NOTIFY changed)
+    Q_PROPERTY(QString title READ title NOTIFY changed)
+    Q_PROPERTY(QVariantList resourceGuidance READ resourceGuidance NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
+    Q_PROPERTY(QVariantMap sourceRemoval READ sourceRemoval NOTIFY sourceRemovalChanged)
+    Q_PROPERTY(QString defaultSourceOrigin READ defaultSourceOrigin CONSTANT)
+    Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
+    Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
+    Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(int resourceLimit READ resourceLimit NOTIFY fieldFiltersChanged)
+    Q_PROPERTY(int defaultResourceLimit READ defaultResourceLimit CONSTANT)
+    Q_PROPERTY(int displayedResourceCount READ displayedResourceCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* visibleResourceTable READ visibleResourceTable CONSTANT)
+    Q_PROPERTY(QString filterPickerField READ filterPickerField NOTIFY filterPickerChanged)
+    Q_PROPERTY(QStringList filterPickerValues READ filterPickerValues NOTIFY filterPickerChanged)
+    Q_PROPERTY(QString filterError READ filterError NOTIFY changed)
+    Q_PROPERTY(QString workspacePage READ workspacePage NOTIFY changed)
+    Q_PROPERTY(bool mapOverview READ mapOverview NOTIFY changed)
+    Q_PROPERTY(QVariantList mapContexts READ mapContexts NOTIFY mapContextsChanged)
+    Q_PROPERTY(QString mapContextCaption READ mapContextCaption NOTIFY changed)
+    Q_PROPERTY(QVariantMap mapContextIdentity READ mapContextIdentity NOTIFY changed)
+    Q_PROPERTY(QString mapCatalogWarning READ mapCatalogWarning NOTIFY changed)
+    Q_PROPERTY(quint64 mapPreviewRevision READ mapPreviewRevision NOTIFY mapPreviewsChanged)
+    Q_PROPERTY(QString mapPreviewError READ mapPreviewError NOTIFY mapPreviewsChanged)
+    Q_PROPERTY(bool mapPreviewNeeded READ mapPreviewNeeded NOTIFY changed)
+    Q_PROPERTY(QString eventFilterText READ eventFilterText NOTIFY changed)
+    Q_PROPERTY(int eventSortColumnIndex READ eventSortColumnIndex NOTIFY changed)
+    Q_PROPERTY(QString eventSortDirection READ eventSortDirection NOTIFY changed)
+    Q_PROPERTY(QAbstractItemModel* eventTable READ eventTable CONSTANT)
+    Q_PROPERTY(int eventCount READ eventCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int totalEventCount READ totalEventCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int resourceCount READ resourceCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int totalResourceCount READ totalResourceCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(QVariantMap healthSummary READ healthSummary NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* dashboardTable READ dashboardTable CONSTANT)
+    Q_PROPERTY(QString dashboardSummary READ dashboardSummary NOTIFY dashboardChanged)
+    Q_PROPERTY(QVariantList pulseMetrics READ pulseMetrics NOTIFY dashboardChanged)
+    Q_PROPERTY(QVariantMap radarView READ radarView NOTIFY changed)
+    Q_PROPERTY(bool radarWaterEnabled READ radarWaterEnabled NOTIFY changed)
+    Q_PROPERTY(int radarWaterSpeedPercent READ radarWaterSpeedPercent NOTIFY changed)
+    Q_PROPERTY(int musicVolumePercent READ musicVolumePercent NOTIFY audioVolumesChanged)
+    Q_PROPERTY(int alertVolumePercent READ alertVolumePercent NOTIFY audioVolumesChanged)
+    Q_PROPERTY(int sortColumnIndex READ sortColumnIndex NOTIFY changed)
+    Q_PROPERTY(QString sortDirection READ sortDirection NOTIFY changed)
+    Q_PROPERTY(QString inspected READ inspected NOTIFY changed)
+    Q_PROPERTY(QVariantList overviewFields READ overviewFields NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* overviewFieldModel READ overviewFieldModel CONSTANT)
+    Q_PROPERTY(QVariantList inspectorEvents READ inspectorEvents NOTIFY inspectorRelatedChanged)
+    Q_PROPERTY(QVariantList inspectorLinks READ inspectorLinks NOTIFY inspectorRelatedChanged)
+    Q_PROPERTY(QAbstractItemModel* inspectorEventTable READ inspectorEventTable CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* inspectorLinkTable READ inspectorLinkTable CONSTANT)
+    Q_PROPERTY(QVariantList inspectorEventColumns READ inspectorEventColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QVariantList inspectorLinkColumns READ inspectorLinkColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int inspectorEventSortColumn READ inspectorEventSortColumn NOTIFY changed)
+    Q_PROPERTY(int inspectorLinkSortColumn READ inspectorLinkSortColumn NOTIFY changed)
+    Q_PROPERTY(QString inspectorEventSortDirection READ inspectorEventSortDirection NOTIFY changed)
+    Q_PROPERTY(QString inspectorLinkSortDirection READ inspectorLinkSortDirection NOTIFY changed)
+    Q_PROPERTY(QString inspectorPage READ inspectorPage NOTIFY changed)
+    Q_PROPERTY(QString inspectorPath READ inspectorPath NOTIFY changed)
+    Q_PROPERTY(QString inspectorName READ inspectorName NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QString inspectorScope READ inspectorScope NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QString inspectorStatus READ inspectorStatus NOTIFY changed)
+    Q_PROPERTY(bool canInspectBack READ canInspectBack NOTIFY changed)
+    Q_PROPERTY(bool canPortForward READ canPortForward NOTIFY changed)
+    Q_PROPERTY(bool canStartTerminal READ canStartTerminal NOTIFY changed)
+    Q_PROPERTY(podlord::ContainerTerminal* containerTerminal READ containerTerminal NOTIFY changed)
+    Q_PROPERTY(QString terminalError READ terminalError NOTIFY changed)
+    Q_PROPERTY(QVariantMap terminalConnection READ terminalConnection NOTIFY changed)
+    Q_PROPERTY(QStringList terminalContainers READ terminalContainers NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QVariantMap portForwardTarget READ portForwardTarget NOTIFY changed)
+    Q_PROPERTY(QVariantList portForwards READ portForwards NOTIFY changed)
+    Q_PROPERTY(QAbstractItemModel* portTable READ portTable CONSTANT)
+    Q_PROPERTY(QVariantList portColumns READ portColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QString portFilterText READ portFilterText NOTIFY changed)
+    Q_PROPERTY(int portSortColumnIndex READ portSortColumnIndex NOTIFY changed)
+    Q_PROPERTY(QString portSortDirection READ portSortDirection NOTIFY changed)
+    Q_PROPERTY(QString portForwardError READ portForwardError NOTIFY changed)
+    Q_PROPERTY(bool canInspectForward READ canInspectForward NOTIFY changed)
+    Q_PROPERTY(bool canDeleteResource READ canDeleteResource NOTIFY deletionAvailabilityChanged)
+    Q_PROPERTY(bool deletionPending READ deletionPending NOTIFY changed)
+    Q_PROPERTY(bool deletionRunning READ deletionRunning NOTIFY changed)
+    Q_PROPERTY(bool canReadBackDeletion READ canReadBackDeletion NOTIFY changed)
+    Q_PROPERTY(QString deletionTarget READ deletionTarget NOTIFY changed)
+    Q_PROPERTY(QString deletionStatus READ deletionStatus NOTIFY changed)
+    Q_PROPERTY(QString yamlText READ yamlText NOTIFY yamlTextChanged)
+    Q_PROPERTY(bool canEditYaml READ canEditYaml NOTIFY yamlEditChanged)
+    Q_PROPERTY(bool yamlEditing READ yamlEditing NOTIFY yamlEditChanged)
+    Q_PROPERTY(bool yamlDraftCredentialsCurrent READ yamlDraftCredentialsCurrent NOTIFY yamlEditChanged)
+    Q_PROPERTY(bool yamlDirty READ yamlDirty NOTIFY yamlEditChanged)
+    Q_PROPERTY(QString yamlDraftStatus READ yamlDraftStatus NOTIFY yamlEditChanged)
+    Q_PROPERTY(QString yamlCheckStatus READ yamlCheckStatus NOTIFY yamlCheckChanged)
+    Q_PROPERTY(bool yamlChecking READ yamlChecking NOTIFY yamlCheckChanged)
+    Q_PROPERTY(bool yamlApplyLocked READ yamlApplyLocked NOTIFY yamlApplyChanged)
+    Q_PROPERTY(bool yamlApplyPreview READ yamlApplyPreview NOTIFY yamlApplyChanged)
+    Q_PROPERTY(bool yamlReconcilePending READ yamlReconcilePending NOTIFY yamlApplyChanged)
+    Q_PROPERTY(QString yamlApplyTarget READ yamlApplyTarget NOTIFY yamlApplyChanged)
+    Q_PROPERTY(QString yamlApplyDiff READ yamlApplyDiff NOTIFY yamlApplyChanged)
+    Q_PROPERTY(QString yamlComparison READ yamlComparison NOTIFY yamlApplyChanged)
+    Q_PROPERTY(QString yamlApplyStatus READ yamlApplyStatus NOTIFY yamlApplyChanged)
+    Q_PROPERTY(bool canReconcileYaml READ canReconcileYaml NOTIFY yamlApplyChanged)
+    Q_PROPERTY(bool canReadBackYaml READ canReadBackYaml NOTIFY yamlApplyChanged)
+    Q_PROPERTY(QVariantList yamlConflicts READ yamlConflicts NOTIFY yamlConflictsChanged)
+    Q_PROPERTY(bool yamlReconcileReady READ yamlReconcileReady NOTIFY yamlApplyChanged)
+    Q_PROPERTY(int yamlLimitMiB READ yamlLimitMiB NOTIFY changed)
+    Q_PROPERTY(bool discardPending READ discardPending NOTIFY changed)
+    Q_PROPERTY(QString discardPrompt READ discardPrompt NOTIFY changed)
+    Q_PROPERTY(QVariantList resourceValues READ resourceValues NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(QAbstractItemModel* valuesTable READ valuesTable CONSTANT)
+    Q_PROPERTY(QVariantList valuesColumns READ valuesColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int valuesSortColumn READ valuesSortColumn NOTIFY changed)
+    Q_PROPERTY(QString valuesSortDirection READ valuesSortDirection NOTIFY changed)
+    Q_PROPERTY(bool yamlVisible READ yamlVisible NOTIFY changed)
+    Q_PROPERTY(bool valuesVisible READ valuesVisible NOTIFY changed)
+    Q_PROPERTY(bool valuesAvailable READ valuesAvailable NOTIFY changed)
+    Q_PROPERTY(QString monospaceFamily READ monospaceFamily CONSTANT)
+    Q_PROPERTY(QVariantMap textSizes READ textSizes NOTIFY typographyChanged)
+    Q_PROPERTY(qreal textScale READ textScale NOTIFY typographyChanged)
+    Q_PROPERTY(QAbstractItemModel* table READ table CONSTANT)
+    Q_PROPERTY(QVariantList resourceColumns READ resourceColumns NOTIFY resourceColumnsChanged)
+    Q_PROPERTY(QAbstractItemModel* sourceTable READ sourceTable CONSTANT)
+    Q_PROPERTY(QVariantMap sourceInspection READ sourceInspection NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(QString sourceYaml READ sourceYaml NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(QString sourceInspectionError READ sourceInspectionError NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(bool sourceInspectionLoading READ sourceInspectionLoading NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(bool sourceEditing READ sourceEditing NOTIFY sourceDraftChanged)
+    Q_PROPERTY(bool canEditSourceYaml READ canEditSourceYaml NOTIFY sourceInspectionChanged)
+    Q_PROPERTY(QString sourceDraft READ sourceDraft NOTIFY sourceDraftChanged)
+    Q_PROPERTY(QVariantList sourceColumns READ sourceColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int sourceSortColumn READ sourceSortColumn NOTIFY sourcesPresentationChanged)
+    Q_PROPERTY(QString sourceSortDirection READ sourceSortDirection NOTIFY sourcesPresentationChanged)
+    Q_PROPERTY(QVariantList eventColumns READ eventColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QString tableLayoutError READ tableLayoutError NOTIFY tableLayoutStatusChanged)
+    Q_PROPERTY(bool tableLayoutSaving READ tableLayoutSaving NOTIFY tableLayoutStatusChanged)
+    Q_PROPERTY(int requestLimit READ requestLimit NOTIFY changed)
+    Q_PROPERTY(int inactiveSyncMinutes READ inactiveSyncMinutes NOTIFY changed)
+    Q_PROPERTY(int collectionCacheHours READ collectionCacheHours NOTIFY changed)
+    Q_PROPERTY(qint64 cachePayloadBytes READ cachePayloadBytes NOTIFY cacheUsageChanged)
+    Q_PROPERTY(bool podInspected READ podInspected NOTIFY changed)
+    Q_PROPERTY(bool logsVisible READ logsVisible NOTIFY changed)
+    Q_PROPERTY(bool logsPaused READ logsPaused NOTIFY changed)
+    Q_PROPERTY(QVariantList logContainers READ logContainers NOTIFY changed)
+    Q_PROPERTY(QString logSelection READ logSelection NOTIFY changed)
+    Q_PROPERTY(QString logStatus READ logStatus NOTIFY changed)
+    Q_PROPERTY(int logLimitMb READ logLimitMb NOTIFY changed)
+    Q_PROPERTY(QAbstractItemModel* logRows READ logRows CONSTANT)
+    Q_PROPERTY(QString logAnchor READ logAnchor NOTIFY logViewChanged)
+    Q_PROPERTY(double logOffset READ logOffset NOTIFY logViewChanged)
+    Q_PROPERTY(bool logFollow READ logFollow NOTIFY logViewChanged)
+    Q_PROPERTY(QString logPositionNotice READ logPositionNotice NOTIFY logViewChanged)
+public:
+    bool canStartTerminal() const;
+    ContainerTerminal* containerTerminal() const { return client_.terminal(active_); }
+    QString terminalError() const;
+    QVariantMap terminalConnection() const { return client_.terminalConnection(active_); }
+    QStringList terminalContainers() const;
+    Q_INVOKABLE bool startContainerTerminal(const QString& container, const QString& shell);
+    Q_INVOKABLE bool stopContainerTerminal();
+    bool canPortForward() const;
+    QVariantMap portForwardTarget() const { return portForwardTarget_; }
+    QVariantList portForwards() const { return client_.portForwards(active_); }
+    QAbstractItemModel* portTable() { return &ports_; }
+    QVariantList portColumns() const;
+    QString portFilterText() const { return currentNavigation().portFilter; }
+    int portSortColumnIndex() const { return currentNavigation().portColumn; }
+    QString portSortDirection() const { return currentNavigation().portOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    Q_INVOKABLE bool filterPorts(const QString& text);
+    Q_INVOKABLE bool sortPortColumn(int column);
+    Q_INVOKABLE bool copyPortValue(const QString& token, int column);
+    QString portForwardError() const { return client_.portForwardError(active_); }
+    Q_INVOKABLE bool preparePortForward();
+    Q_INVOKABLE bool cancelPreparedPortForward();
+    Q_INVOKABLE bool startPreparedPortForward(const QString& localPort, const QString& remotePort);
+    Q_INVOKABLE bool stopPreparedPortForward();
+    Q_INVOKABLE bool stopPortForward(const QString& token);
+    Q_INVOKABLE bool copyPortForwardEndpoint(const QString& token);
+    /** Explicitly open an active session's loopback endpoint. Never accepts an arbitrary URL. */
+    Q_INVOKABLE bool openPortForwardEndpoint(const QString& token, bool secure);
+    explicit Workspace(QString profile, QObject* parent = nullptr, std::function<QDateTime()> now = QDateTime::currentDateTimeUtc,
+        QUrl releaseEndpoint = ReleaseUpdates::officialEndpoint());
+    ~Workspace() override;
+    Q_INVOKABLE bool detachSession(const QString& id);
+    bool sessionWindowActionsReady() const;
+    Q_INVOKABLE bool finishWindowClose();
+    Q_INVOKABLE bool attachWindow(QObject* window);
+    Q_INVOKABLE bool setWindowFocused(bool focused);
+    bool windowActionsAvailable() const;
+    Alerts* alerts() { return &alerts_; }
+    Music* music();
+    ReleaseUpdates* releaseUpdates() { return &releaseUpdates_; }
+    Q_INVOKABLE int alertResourceIndex(const QString& path) const;
+    Q_INVOKABLE bool previewAlertZoom(const QVariantMap& draft);
+    QString sourceImportNotice() const { return sourceImportNotice_; }
+    QVariantList sourceImportIssues() const { return sourceImportIssues_; }
+    QStringList themeNames() const { return podlord::themeNames(); }
+    QString themeName() const { return settings_.themeName; }
+    QString themeVariant() const { return settings_.themeVariant; }
+    QPalette appearancePalette() const { return appearance_.palette; }
+    QVariantMap appearanceColors() const { return appearance_.colors; }
+    Q_INVOKABLE bool saveAppearance(const QString& name, const QString& variant);
+    bool radarWaterEnabled() const { return settings_.radarWaterEnabled; }
+    int radarWaterSpeedPercent() const { return settings_.radarWaterSpeedPercent; }
+    Q_INVOKABLE bool saveRadarWater(bool enabled, int speedPercent);
+    int musicVolumePercent() const { return settings_.musicVolumePercent; }
+    int alertVolumePercent() const { return settings_.alertVolumePercent; }
+    Q_INVOKABLE bool saveAudioVolumes(int musicPercent, int alertPercent);
+    Q_INVOKABLE bool previewAudioVolume(bool music);
+    QVariantList contexts() const;
+    QVariantList tabs() const;
+    bool busy() const;
+    bool workspaceRestoreEnabled() const { return settings_.workspaceRestore; }
+    Q_INVOKABLE bool saveWorkspaceRestore(bool enabled);
+    bool loading() const;
+    bool syncLoading() const { return authenticationRunning() || client_.syncLoading(active_); }
+    double loadingProgress() const { return authenticationRunning() && !client_.initialSyncComplete(active_) ? 0 : client_.loadingProgress(active_); }
+    bool problemsOnly() const { return currentNavigation().mode == "problems"; }
+    bool activityOnly() const { return currentNavigation().mode == "activity"; }
+    Q_INVOKABLE bool setFilterMode(const QString& mode);
+    QStringList filterPresets() const;
+    QString selectedFilterPreset() const;
+    int resourceLimit() const { return currentNavigation().limit; }
+    int defaultResourceLimit() const { return DefaultResourceDisplayLimit; }
+    int displayedResourceCount() const { return visibleTable_.rowCount(); }
+    QAbstractItemModel* visibleResourceTable() { return &visibleTable_; }
+    Q_INVOKABLE bool setResourceLimit(const QString& text);
+    bool filterPresetsBusy() const { return presetsBusy_; }
+    QString filterPresetsError() const { return presetsError_; }
+    Q_INVOKABLE bool reloadFilterPresets();
+    Q_INVOKABLE bool importFilterPresets(const QUrl& source);
+    Q_INVOKABLE bool loadFilterPreset(const QString& name);
+    Q_INVOKABLE bool saveFilterPreset(const QString& name);
+    Q_INVOKABLE bool renameFilterPreset(const QString& name, const QString& replacement);
+    Q_INVOKABLE bool deleteFilterPreset(const QString& name);
+    bool authenticationRequired() const;
+    bool authenticationRunning() const;
+    QString authenticationPrompt() const;
+    QString authenticationInstruction() const;
+    QVariantMap authenticationChallenge() const;
+    Q_INVOKABLE bool submitAuthenticationCode(const QString& challengeId, const QString& code);
+    QString error() const;
+    QString status() const;
+    QString syncSummary() const { return client_.syncSummary(active_); }
+    QString syncProblem() const;
+    QString currentSession() const;
+    QString title() const;
+    QVariantList resourceGuidance() const;
+    QString sourceImportError() const { return sourceImportError_; }
+    QString defaultSourceOrigin() const;
+    Q_INVOKABLE bool importText(QString originPath, const QString& yaml);
+    Q_INVOKABLE bool importHome();
+    Q_INVOKABLE bool refreshSources();
+    Q_INVOKABLE bool renameSourceContext(const QString& contextId, const QString& displayName);
+    QVariantMap sourceRemoval() const { return sourceRemoval_; }
+    Q_INVOKABLE bool requestSourceRemoval(const QString& contextId);
+    Q_INVOKABLE bool confirmSourceRemoval();
+    Q_INVOKABLE bool cancelSourceRemoval();
+    Q_INVOKABLE QVariantMap sessionConfiguration(const QString& id) const;
+    QString filterText() const;
+    QVariantList filterFields() const;
+    QVariantMap resourceFieldFilters() const;
+    QString filterPickerField() const { return filterPickerField_; }
+    QStringList filterPickerValues() const { return filterPickerValues_; }
+    Q_INVOKABLE bool filterField(const QString& field, const QString& expression);
+    /** Filter the active cache by an exact metadata value from its inspected resource. */
+    Q_INVOKABLE bool filterInspectorField(const QString& field);
+    /** Reuse the active theme's identity/status colors for cached inspector metadata. */
+    Q_INVOKABLE QColor inspectorFieldColor(const QString& field) const;
+    Q_INVOKABLE bool resetResourceFilters();
+    Q_INVOKABLE bool prepareFilterPicker(const QString& field);
+    Q_INVOKABLE bool filterValueSelected(const QString& value) const;
+    Q_INVOKABLE bool selectFilterValue(const QString& value, bool selected);
+    Q_INVOKABLE bool copyFilterValue(const QString& value);
+    QVariantMap mapContextIdentity() const;
+    Q_INVOKABLE bool copyMapIdentity(const QString& field);
+    QString filterError() const { return workspacePage() == "events" ? events_.error() : table_.error(); }
+    QString workspacePage() const { return currentNavigation().workspace; }
+    QString eventFilterText() const { return currentNavigation().eventFilter; }
+    int eventSortColumnIndex() const { return currentNavigation().eventColumn; }
+    QString eventSortDirection() const { return currentNavigation().eventOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QAbstractItemModel* eventTable() { return &events_; }
+    int eventCount() const { return events_.rowCount(); }
+    int totalEventCount() const { return eventRows_.rowCount(); }
+    Q_INVOKABLE bool filterEvents(const QString& text);
+    Q_INVOKABLE bool sortEventColumn(int column);
+    Q_INVOKABLE bool inspectEventPath(const QString& path);
+    Q_INVOKABLE bool copyEventCell(int row, int column);
+    Q_INVOKABLE bool copyPathCell(const QString& path, int column, bool event);
+    int resourceCount() const { return table_.rowCount(); }
+    bool appStore() const {
+#ifdef PODLORD_MAC_APP_STORE
+        return true;
+#else
+        return false;
+#endif
+    }
+    int totalResourceCount() const { return rows_.rowCount(); }
+    QAbstractItemModel* dashboardTable() { return &dashboardRows_; }
+    QString dashboardSummary() const { return dashboardSummary_; }
+    QVariantList pulseMetrics() const { return pulseMetrics_; }
+    QVariantMap healthSummary() const { return healthSummary_; }
+    QVariantMap radarView() const { return currentNavigation().radarView; }
+    bool mapOverview() const;
+    QVariantList mapContexts() const { return mapContexts_; }
+    QString mapContextCaption() const;
+    QString mapCatalogWarning() const;
+    quint64 mapPreviewRevision() const;
+    QString mapPreviewError() const;
+    bool mapPreviewNeeded() const;
+    Q_INVOKABLE QString mapPreviewUrl(const QString& context) const;
+    Q_INVOKABLE bool captureMapPreview(const QString& session, const QImage& image);
+    Q_INVOKABLE bool showMapOverview();
+    Q_INVOKABLE bool setWorkspacePage(const QString& page);
+    Q_INVOKABLE bool rememberRadarView(const QVariantMap& view);
+    int sortColumnIndex() const;
+    QString sortDirection() const;
+    QString inspected() const;
+    QVariantList overviewFields() const { return overviewFields_.fields(); }
+    QAbstractItemModel* overviewFieldModel() { return &overviewFields_; }
+    QVariantList inspectorEvents() const { return inspectorEvents_; }
+    QVariantList inspectorLinks() const { return inspectorLinks_; }
+    QAbstractItemModel* inspectorEventTable() { return &inspectorEventsTable_; }
+    QAbstractItemModel* inspectorLinkTable() { return &inspectorLinksTable_; }
+    QVariantList inspectorEventColumns() const { return tableColumns("inspectorEvent", inspectorEventRows_); }
+    QVariantList inspectorLinkColumns() const { return tableColumns("inspectorLink", inspectorLinkRows_); }
+    int inspectorEventSortColumn() const { return currentNavigation().inspectorEventColumn; }
+    int inspectorLinkSortColumn() const { return currentNavigation().inspectorLinkColumn; }
+    QString inspectorEventSortDirection() const { return currentNavigation().inspectorEventOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QString inspectorLinkSortDirection() const { return currentNavigation().inspectorLinkOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    Q_INVOKABLE bool sortInspectorColumn(const QString& table, int column);
+    Q_INVOKABLE bool copyInspectorCell(const QString& table, const QString& identity, int column);
+    QString inspectorPage() const { return currentNavigation().page; }
+    /** Open a listed cache identity, never an arbitrary URL supplied by presentation. */
+    Q_INVOKABLE bool inspectPath(const QString& path);
+    QString inspectorPath() const;
+    QString inspectorName() const;
+    QString inspectorScope() const;
+    QString inspectorStatus() const;
+    bool canInspectBack() const;
+    bool canInspectForward() const;
+    /** Move one available cached history entry in this session. Invalid steps do nothing. */
+    Q_INVOKABLE bool navigateInspector(int step);
+    bool canDeleteResource() const;
+    bool deletionPending() const;
+    bool deletionRunning() const;
+    bool canReadBackDeletion() const;
+    QString deletionTarget() const;
+    QString deletionStatus() const;
+    /** Freeze the listed resource identity and show confirmation. Does not send a request. */
+    Q_INVOKABLE bool previewDeletion();
+    /** Authorize only the frozen identity; a changed UI target cancels instead of retargeting. */
+    Q_INVOKABLE bool confirmDeletion(bool confirmed);
+    /** Observe an unresolved deletion target. Never retries a mutation or initiates authentication. */
+    Q_INVOKABLE bool readBackDeletion();
+    QString yamlText() const;
+    bool canEditYaml() const;
+    bool yamlEditing() const;
+    bool yamlDraftCredentialsCurrent() const;
+    bool yamlDirty() const;
+    QString yamlDraftStatus() const;
+    bool discardPending() const;
+    QString discardPrompt() const;
+    /** Begin a local draft only after a successful current-scope fresh GET. */
+    Q_INVOKABLE bool beginYamlEdit();
+    /** Schedule a local syntax check; accepted work never dispatches a request or changes the draft. */
+    Q_INVOKABLE bool checkYamlDraft();
+    QString yamlCheckStatus() const { return yamlCheckStatus_; }
+    bool yamlChecking() const { return yamlChecking_; }
+    bool yamlApplyLocked() const;
+    bool yamlApplyPreview() const;
+    bool yamlReconcilePending() const;
+    QString yamlApplyTarget() const;
+    QString yamlApplyDiff() const;
+    QString yamlComparison() const;
+    QString yamlApplyStatus() const;
+    bool canReconcileYaml() const;
+    bool canReadBackYaml() const;
+    QVariantList yamlConflicts() const;
+    bool yamlReconcileReady() const;
+    int yamlLimitMiB() const { return settings_.yamlLimitMiB; }
+    Q_INVOKABLE bool previewYamlApply();
+    Q_INVOKABLE bool confirmYamlApply(bool confirmed);
+    Q_INVOKABLE bool readBackYaml();
+    Q_INVOKABLE bool reconcileYaml();
+    Q_INVOKABLE bool chooseYamlConflict(int index, bool mine);
+    Q_INVOKABLE QString yamlConflictChoice(int index) const;
+    Q_INVOKABLE bool finishYamlReconcile(bool confirmed);
+    Q_INVOKABLE bool saveYamlLimit(const QString& value);
+    /** Free-form local text; validation and server writes are not implicit side effects. */
+    Q_INVOKABLE bool setYamlDraft(const QString& text);
+    Q_INVOKABLE bool leaveYamlEdit();
+    Q_INVOKABLE bool confirmDiscard(bool discard);
+    Q_INVOKABLE bool requestWindowClose();
+    Q_INVOKABLE bool reloadSavedViews();
+    Q_INVOKABLE bool confirmViewClose(bool discard);
+    bool viewStateFailed() const;
+    bool viewCloseNeedsDecision() const;
+    QVariantList resourceValues() const;
+    QAbstractItemModel* valuesTable() { return &valuesTable_; }
+    QVariantList valuesColumns() const { return tableColumns("value", valueRows_); }
+    int valuesSortColumn() const { return currentNavigation().valueColumn; }
+    QString valuesSortDirection() const { return currentNavigation().valueOrder == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    bool yamlVisible() const;
+    bool valuesVisible() const;
+    bool valuesAvailable() const;
+    QString monospaceFamily() const;
+    QVariantMap textSizes() const;
+    qreal textScale() const;
+    /** Explicit, stable diagnostics snapshot; contains no credentials or response bodies. */
+    Q_INVOKABLE QVariantMap settingsDiagnostics() const;
+    Q_INVOKABLE QString refreshSettingsDiagnostics();
+    Q_PROPERTY(QAbstractItemModel* diagnosticTable READ diagnosticTable CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* requestAuditTable READ requestAuditTable CONSTANT)
+    Q_PROPERTY(QVariantList diagnosticColumns READ diagnosticColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(QVariantList auditColumns READ auditColumns NOTIFY tableLayoutChanged)
+    Q_PROPERTY(int diagnosticSortColumn READ diagnosticSortColumn NOTIFY diagnosticsPresentationChanged)
+    Q_PROPERTY(int auditSortColumn READ auditSortColumn NOTIFY diagnosticsPresentationChanged)
+    Q_PROPERTY(QString diagnosticSortDirection READ diagnosticSortDirection NOTIFY diagnosticsPresentationChanged)
+    Q_PROPERTY(QString auditSortDirection READ auditSortDirection NOTIFY diagnosticsPresentationChanged)
+    QAbstractItemModel* diagnosticTable() { return &diagnosticTable_; }
+    QAbstractItemModel* requestAuditTable() { return &requestAuditTable_; }
+    QVariantList diagnosticColumns() const { return tableColumns("diagnostic", diagnosticRows_); }
+    QVariantList auditColumns() const { return tableColumns("audit", requestAuditRows_); }
+    int diagnosticSortColumn() const { return diagnosticTable_.sortColumn(); }
+    int auditSortColumn() const { return requestAuditTable_.sortColumn(); }
+    QString diagnosticSortDirection() const { return diagnosticTable_.sortOrder()==Qt::AscendingOrder ? "ASC" : "DESC"; }
+    QString auditSortDirection() const { return requestAuditTable_.sortOrder()==Qt::AscendingOrder ? "ASC" : "DESC"; }
+    Q_INVOKABLE bool sortDiagnosticColumn(const QString& table, int column);
+    Q_INVOKABLE bool copyDiagnosticCell(const QString& table, const QString& identity, int column);
+    /** Read the immutable bundled license only on an explicit About action. */
+    Q_INVOKABLE QString applicationLicense() const;
+    /** Read immutable dependency notices only on an explicit About action. */
+    Q_INVOKABLE QString dependencyNotices() const;
+    Q_INVOKABLE bool setInspectorPage(const QString& page);
+    Q_INVOKABLE bool closeInspector();
+    Q_INVOKABLE bool refreshInspector();
+    Q_INVOKABLE bool copyYaml();
+    Q_INVOKABLE bool revealValue(const QString& id, bool revealed);
+    Q_INVOKABLE bool copyValue(const QString& id, const QString& representation = "preferred");
+    QAbstractItemModel* table();
+    QVariantList resourceColumns() const;
+    QAbstractItemModel* sourceTable() { return &sourceTable_; }
+    QVariantList sourceColumns() const;
+    int sourceSortColumn() const { return sourceTable_.sortColumn(); }
+    QString sourceSortDirection() const { return sourceTable_.sortColumn() < 0 ? "NONE" : sourceTable_.sortOrder() == Qt::AscendingOrder ? "ASC" : "DESC"; }
+    /** Publishes imported context metadata only; never reads files or requests cluster data. */
+    Q_INVOKABLE bool refreshSourceTable();
+    QVariantMap sourceInspection() const { return sourceInspection_ ? sourceInspection_->metadata : QVariantMap{}; }
+    QString sourceYaml() const { return sourceInspection_ ? sourceInspection_->yaml : QString{}; }
+    QString sourceInspectionError() const { return sourceInspection_ ? sourceInspection_->error : QString{}; }
+    bool sourceInspectionLoading() const { return sourceInspection_ && sourceInspection_->loading; }
+    bool sourceEditing() const { return sourceInspection_ && sourceInspection_->editing; }
+    bool canEditSourceYaml() const;
+    QString sourceDraft() const { return sourceInspection_ ? sourceInspection_->draft : QString{}; }
+    Q_INVOKABLE bool inspectSourceContext(const QString& contextId);
+    Q_INVOKABLE bool beginSourceEdit();
+    Q_INVOKABLE bool setSourceDraft(const QString& text);
+    Q_INVOKABLE bool applySourceDraft();
+    Q_INVOKABLE bool sortSourceColumn(int column);
+    Q_INVOKABLE bool copySourceCell(const QString& identity, int column);
+    Q_PROPERTY(QVariantList alertColumns READ alertColumns NOTIFY tableLayoutChanged)
+    QVariantList alertColumns() const;
+    QVariantList eventColumns() const;
+    Q_INVOKABLE QVariantList defaultTableColumns(const QString& table) const;
+    QString tableLayoutError() const { return tableLayoutError_; }
+    bool tableLayoutSaving() const { return tableLayoutSaving_; }
+    Q_INVOKABLE bool saveTableLayout(const QString& table, const QVariantList& columns);
+    Q_INVOKABLE bool reloadTableLayouts();
+    int requestLimit() const;
+    int inactiveSyncMinutes() const;
+    int collectionCacheHours() const;
+    qint64 cachePayloadBytes() const { return cachePayloadBytes_; }
+    Q_INVOKABLE void refreshCacheUsage();
+    bool podInspected() const;
+    bool logsVisible() const;
+    bool logsPaused() const;
+    QVariantList logContainers() const;
+    QString logSelection() const;
+    QString logStatus() const;
+    int logLimitMb() const;
+    QAbstractItemModel* logRows();
+    QString logAnchor() const;
+    double logOffset() const;
+    bool logFollow() const;
+    QString logPositionNotice() const;
+    Q_INVOKABLE bool setLogsVisible(bool visible);
+    Q_INVOKABLE bool setWindowVisible(bool visible);
+    Q_INVOKABLE bool selectLogContainer(const QString& container);
+    Q_INVOKABLE bool pauseLogs(bool paused);
+    Q_INVOKABLE bool rememberLogPosition(const QString& anchor, double offset, bool follow);
+    Q_INVOKABLE bool followLogs();
+    Q_INVOKABLE bool reportLogEviction();
+    Q_INVOKABLE QString logEntry(int index) const;
+    Q_INVOKABLE bool copyLogEntry(int index);
+    Q_INVOKABLE bool saveReadSettings(int requestLimit, int inactiveMinutes, const QString& logLimit, int collectionCacheHours);
+    Q_PROPERTY(QString uiLanguage READ uiLanguage NOTIFY languageChanged)
+    Q_PROPERTY(QVariantList uiLanguages READ uiLanguages CONSTANT)
+    Q_PROPERTY(QVariantMap uiText READ uiText NOTIFY languageChanged)
+    Q_PROPERTY(bool uiRightToLeft READ uiRightToLeft NOTIFY languageChanged)
+    QString uiLanguage() const { return settings_.language; }
+    QVariantList uiLanguages() const;
+    QVariantMap uiText() const;
+    Q_INVOKABLE QString displayDateTime(const QString& value) const;
+    bool uiRightToLeft() const;
+    Q_INVOKABLE bool saveUiLanguage(const QString& language);
+    Q_INVOKABLE bool reload();
+    Q_INVOKABLE bool importFile(const QString& path);
+    Q_INVOKABLE bool importOciCredentials(const QString& contextId, const QString& configPath, const QString& keyPath);
+    Q_INVOKABLE bool importGkeServiceAccount(const QString& contextId, const QString& keyPath);
+    Q_INVOKABLE bool importAwsProfile(const QString& contextId, const QString& configPath, const QString& credentialsPath);
+    /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
+    Q_INVOKABLE bool quickImportFile(const QString& path);
+    Q_INVOKABLE bool importFiles(const QStringList& paths);
+    Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false, bool duplicate = false);
+    Q_INVOKABLE bool activate(const QString& id);
+    Q_INVOKABLE bool close(const QString& id);
+    Q_INVOKABLE bool refresh(bool confirmedAuthentication = false);
+    Q_INVOKABLE bool cancelAuthentication();
+    Q_INVOKABLE bool filter(const QString& text);
+    Q_INVOKABLE bool sortColumn(int column);
+    Q_INVOKABLE bool inspectRow(int row);
+    Q_INVOKABLE bool copyCell(int row, int column);
+signals:
+    void mapPreviewsChanged();
+    void mapPreviewRequested(const QString& session);
+    void cacheUsageChanged();
+    void languageChanged();
+    void deletionAvailabilityChanged();
+    void sourceImportFinished(bool success);
+    void sourceRemovalChanged();
+    void sourceInspectionChanged();
+    void sourceDraftChanged();
+    void diagnosticsPresentationChanged();
+    void sourcesPresentationChanged();
+    /** Request scheduler admission; safe metadata only, using the owning client's clock. */
+    void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
+    void changed();
+    void sessionWindowActionsReadyChanged();
+    void catalogsChanged();
+    void mapContextsChanged();
+    void resourcePresentationChanged();
+    void fieldFiltersChanged();
+    void filterPresetsChanged();
+    void filterPickerChanged();
+    void dashboardChanged();
+    void inspectorRelatedChanged();
+    void appearanceChanged();
+    void audioVolumesChanged();
+    void audioVolumesSaveFinished(bool success);
+    void typographyChanged();
+    void tableLayoutChanged();
+    void resourceColumnsChanged();
+    void tableLayoutStatusChanged();
+    void logViewChanging();
+    void logViewChanged();
+    void inspectorPresentationChanging();
+    void inspectorPresentationChanged();
+    void yamlTextChanged();
+    void yamlEditChanged();
+    void yamlCheckChanged();
+    void yamlApplyChanged();
+    void yamlConflictsChanged();
+    void windowCloseApproved();
+    void windowCloseCancelled();
+    void windowClosed();
+private:
+    friend class WorkspaceRuntime;
+    friend class WindowHost;
+    explicit Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent, bool restore);
+    std::shared_ptr<WorkspaceRuntime> runtime_;
+    const QString viewId_;
+    QPointer<QObject> window_;
+    bool windowFocused_ = true, detached_ = false, windowClosed_ = false, windowCloseReady_ = false;
+    bool prepareWindowClose();
+    QVariantMap portForwardTarget_;
+    TableViewStates presets_;
+    QString presetsError_;
+    bool presetsBusy_ = false, presetsReady_ = false;
+    QFuture<Result<TableViewStates>> presetsFuture_;
+    bool persistFilterPresets(const TableViewStates& desired);
+    bool updateFilterPresets(const std::function<Result<TableViewStates>(const ViewStateStore&)>& operation, bool reload = false);
+    struct Deletion final { QString token, session, path, target, phase, status; QJsonObject baseline; QUrl server; };
+    std::optional<Deletion> deletion_;
+    bool bindDeletion();
+    bool cancelPendingDeletion();
+    struct YamlDraft final { QString session, path; QJsonObject document; QString baseline, text; QJsonObject hiddenDraft = {}; quint64 revision = 0; };
+    struct YamlApply final {
+        QString token, session, path, target, text, phase, status, comparison;
+        PreparedYaml prepared;
+        QJsonObject baseline, current;
+        QStringList conflicts;
+        QMap<QString, bool> choices;
+        quint64 revision = 0;
+    };
+    std::optional<YamlApply> yamlApply_;
+    bool yamlChecking_ = false;
+    QString yamlCheckToken_;
+    bool bindYamlApply();
+    enum class Leave { Resource, Source, Session, Context, ContextTab, Tab, Inspector, Window, Draft, Reload, History, Detach };
+    struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
+    struct Navigation final {
+        QString filter, mode;
+        QMap<QString, QString> fields;
+        int column = -1;
+        int limit = DefaultResourceDisplayLimit;
+        Qt::SortOrder order = Qt::AscendingOrder;
+        QString inspected, terminalError, page = "overview", workspace = "map";
+        QVariantMap radarView;
+        QString eventFilter, portFilter;
+        int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
+        Qt::SortOrder eventOrder = Qt::AscendingOrder, portOrder = Qt::AscendingOrder,
+            inspectorEventOrder = Qt::AscendingOrder, inspectorLinkOrder = Qt::AscendingOrder, valueOrder = Qt::AscendingOrder;
+        QStringList history;
+        int historyIndex = -1;
+    };
+    const Navigation& currentNavigation() const {
+        const auto found = navigation_.constFind(active_);
+        return found == navigation_.cend() ? emptyNavigation_ : found.value();
+    }
+    const Navigation emptyNavigation_;
+    struct LogPosition final { QString anchor; double offset = 0; bool follow = true, evicted = false; PodLogHistory::Removal removal = PodLogHistory::Removal::None; };
+    const QString profile_;
+    bool mapOverview_ = true;
+    QVariantList mapContexts_;
+    void refreshMapContexts(bool reorder);
+    bool restoringMap_ = false;
+    QString pendingMapPreview_;
+    qint64 cachePayloadBytes_ = 0;
+    void rememberMapSession(bool visit = true);
+    void reconcileMapPreviews();
+    QString filterPickerField_, filterPickerSession_;
+    QStringList filterPickerValues_;
+    bool applyResourceFilters();
+    QMap<QString, TableViewStates>& savedViews_;
+    QMap<QString, TableViewStates>& pendingViews_;
+    QFuture<Result<TableViewStates>>& viewSaveFuture_;
+    QString& viewSaveContext_;
+    QMap<QString, QString>& viewStateErrors_;
+    bool& viewsLoaded_;
+    bool& viewSaving_;
+    bool viewClosePending_ = false, viewCloseDiscardApproved_ = false;
+    bool restoreViewStates(const LoadedViewStates& states);
+    void applyContextViews(const QString& context, const TableViewStates& views, bool refresh = true);
+    bool queueViewSave(const QString& table);
+    bool dispatchViewSave();
+    QString viewStateError() const;
+    TableLayouts tableLayouts_;
+    quint64 resourcePopulatedColumns_ = 0;
+    QString tableLayoutError_;
+    bool tableLayoutSaving_ = false;
+    TableSchemas tableSchemas(bool includeAuxiliary = false) const;
+    TableSchemas layoutSchemas() const;
+    QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
+    void publishResourceColumns();
+    SourceCatalog sources_;
+    struct SourceInspection final {
+        QVariantMap metadata;
+        QString yaml, draft, error;
+        bool loading=true, editing=false;
+    };
+    std::optional<SourceInspection> sourceInspection_;
+    QFutureWatcher<Result<QString>>* sourceRead_ = nullptr;
+    void clearSourceInspection();
+    bool reloadCatalogs(bool reconnect);
+    bool sourceCatalogFailed_ = false;
+    QVariantMap sourceRemoval_;
+    Appearance appearance_;
+    bool publishAppearance();
+    QString sourceImportNotice_;
+    QString sourceImportError_;
+    QFuture<Result<SourceImportReport>> sourceImportFuture_;
+    QFuture<Result<SourceSnapshot>> sourceEditFuture_;
+    QFuture<Result<SessionCatalog>> sessionMutationFuture_;
+    enum class SourceReload { Configuration, MetadataOnly };
+    bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid = false,
+        const QString& credentialContext = {}, SourceReload reload = SourceReload::Configuration);
+    bool contextUsable(const QString& id) const;
+    QVariantList sourceImportIssues_;
+    SessionCatalog catalog_;
+    ResourceClient& client_;
+    ReleaseUpdates& releaseUpdates_;
+    Alerts alerts_;
+    CredentialProcess& credentials_;
+    ResourceTable rows_;
+    QMap<QString, ResourceTable::PreparedSnapshot> preparedSnapshots_;
+    struct SnapshotPreparation final {
+        QString session, cluster;
+        QJsonArray source;
+        QFutureWatcher<ResourceTable::PreparedSnapshot>* watcher;
+    };
+    std::optional<SnapshotPreparation> snapshotPreparation_;
+    void prepareSnapshot();
+    ResourceFilter table_;
+    ResourceDisplayModel visibleTable_{&table_};
+    ResourceTable eventRows_;
+    ResourceFilter events_;
+    ResourceTable portRows_;
+    QSortFilterProxyModel ports_;
+    ResourceTable inspectorEventRows_, inspectorLinkRows_;
+    QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
+    ResourceTable valueRows_;
+    QSortFilterProxyModel valuesTable_;
+    ResourceTable sourceRows_{nullptr, {"name", "cluster", "user", "context", "auth", "source", "imported", "status", "rename", "remove"},
+        {"Name", "Cluster", "User", "Context", "Authentication", "Source", "Imported", "Status", "Rename", "Remove"}, "id"};
+    QSortFilterProxyModel sourceTable_;
+    ResourceTable diagnosticRows_, requestAuditRows_;
+    QSortFilterProxyModel diagnosticTable_, requestAuditTable_;
+    bool publishPorts();
+    LogRows logs_;
+    QMap<QString, LogPosition> logPositions_;
+    QString logScope_;
+    QString inspectorScope_, overview_, yaml_;
+    QJsonObject inspectorDocument_, inspectorSummary_;
+    InspectorFields overviewFields_;
+    QVariantList inspectorEvents_, inspectorLinks_;
+    QSortFilterProxyModel dashboardRows_;
+    QString dashboardSummary_;
+    QVariantList pulseMetrics_;
+    QVariantMap healthSummary_;
+    bool dashboardDirty_ = true;
+    bool publishDashboard();
+    QSet<QString> revealedValues_;
+    std::optional<YamlDraft> yamlDraft_;
+    std::optional<PendingLeave> pendingLeave_;
+    bool yamlFresh_ = false;
+    QMap<QString, Navigation> navigation_;
+    QString active_, error_, publishedSession_, credentialImportContext_;
+    QString settingsError_;
+    ReadSettings settings_;
+    bool settingsReady_ = false;
+    bool busy_ = false;
+    bool windowVisible_ = true;
+    bool select(const SessionCatalog& catalog, bool local = true);
+    bool resolve(const QString& id, bool retry = false);
+    bool mutate(const std::function<Result<SessionCatalog>(const SessionStore&)>& operation, const QString& target = {}, bool inWindow = false, const QString& usedContext = {});
+    bool publish();
+    QString activeCluster(const QString& session = {}) const;
+    bool publishLogs();
+    bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);
+    bool publishRelated();
+    bool inspectResource(const QString& path);
+    bool openInspector(const QString& path, int historyIndex = -1);
+    int inspectorHistoryTarget(int step) const;
+    bool inspectHistory(const QString& path, int index);
+    bool allowLeave(Leave action, const QString& target = {}, int historyIndex = -1);
+    bool clearYamlDraft();
+    bool clearYamlCheck();
+    QString yamlCheckStatus_;
+    bool savePolicy(ReadSettings desired);
+    bool eventFilter(QObject* watched, QEvent* event) override;
+};
+} // namespace podlord

@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Superseded for the native release on 2026-10-29 by the confirmed standalone
+product boundary. K3d remains test infrastructure, not a production integration.
+The decision below describes historical records and the preserved C# reference.
+Existing records remain readable under [ADR 0017](0017-native-kubeconfig-snapshot-records.md).
 
 ## Context
 

@@ -10,18 +10,52 @@ Podlord uses date-based release tags in the form `YYYY.M.D`.
 
 - Runtime diagnostics in Settings now show cache footprint, process memory, managed heap, GC heap, UI rows, radar blocks, audit rows, request pressure, and thread count.
 - Diagnostics table cells support full-value hover and right-click/long-press copy, matching the other data tables.
+- Added slow-loading tab/radar/health/inspector regression coverage plus a real k3d-backed UI workflow test for multi-session loading and switching.
+- Added cache-only redraw/performance regression tests for unchanged refreshes, local filters, scoped namespace caches, and tiny offscreen cache deltas.
+- Added real k3d-backed UI coverage for deployment/radar/inspector rendering, limited RBAC namespace scope, and native port-forward start/stop behavior.
 
 ### Changed
 
 - Radar and idle screensaver rendering now use custom drawn layers instead of thousands of generated controls, reducing visual churn and memory pressure.
+- Radar source selector now shows only sources whose session is not already open in any tab or detached window.
+- Session tab switches now restore rendered table state from cache, defer heavier secondary panels, preserve quick-search state, and skip immediate Kubernetes refreshes while the list cache is fresh.
+- Open session tabs/windows now have lightweight per-session workspace view models while still sharing the same Kubernetes cache service.
+- Restored session tabs now show their resource table first and defer cached graph, events, pulse, and radar restoration to a background UI pass.
+- Source tab switches no longer synchronously repaint rows while restoring the tab's saved filter, and invisible graph/events panes are materialized only when opened.
+- Session tabs now keep their own radar zoom/pan/size state, refresh/restore lifecycle, Kubernetes request queue, request pacing, and cache pipeline.
+- Inactive session tabs start loading in the background when opened, so switching to them can attach to existing work instead of starting over.
+- Active session/source tabs now use the same highlighted command styling as the main navigation.
+- Session tabs no longer show the extra deterministic source color stripe beside the tab title.
+- Kubeconfig source lists now sort by most recent source activity, using last opened time or last imported/updated time.
+- Tab/cache restores now load cached snapshots off the UI thread and defer filter option rebuilding until after the visible table can render.
+- Background refreshes now render visible rows first, then update heavier secondary views and filter option lists at background priority.
 - Footer status updates are deduplicated so unchanged sync/progress text does not keep invalidating the UI.
 - Hot command panels use lighter non-tiled surfaces and debug trace logging is limited to debug builds.
+- Kubernetes list fan-out now allows up to six queued requests at once while still respecting pacing, backoff, hard request limits, and telemetry.
+- Identical in-flight Kubernetes cache warm-ups now join one shared request sweep instead of duplicating work across tabs/windows.
+- Session tab/window pipelines now share one live cache and in-flight warm-up ledger while keeping separate request pacing, so detached windows and loading tabs can reuse freshly loaded data immediately.
+- Pod and node metrics are fetched in parallel during pulse enrichment.
 
 ### Fixed
 
 - Cached update checks are now revalidated against the installed app version so upgraded users do not keep seeing a stale download button.
+- Cached non-empty session restores no longer keep the startup/loading state or radar screensaver active after resources are available.
+- In-flight refreshes and async cache restores from one tab no longer leak loading state or stale rows into another active tab.
+- Restored session tabs now replace radar and pulse content immediately instead of briefly showing the previous tab's minimap.
+- Radar auto-follow now refreshes entering viewport blocks during and after zoom so off-screen targets do not remain invisible until the next sync.
+- Switching session tabs no longer restores alert state twice or restarts active-view radar/table pulse animations for rows that were already visible.
+- Opening an already warm session in another tab/window reuses the shared completed sync state instead of duplicating the same Kubernetes sweep.
+- Partial cached rows shown during tab restore no longer mark the session as loaded; Podlord keeps refresh state visible and continues the background sync until the session cache is actually warm.
+- Session tabs with partial cache now keep the loading health bar active instead of showing a completed health state while the first sync is still running.
+- First load no longer renders partial resource rows or radar blocks before the first session sync completes.
+- Namespace-scoped refreshes now render rows from the scoped cache instead of reading only the broad all-namespace cache key.
+- Background tab refresh failures now record diagnostics on the tab's own request pipeline instead of the currently active tab.
+- Pending secondary-view restores are now cleared when the user switches tabs before the posted restore work runs.
+- Disposing the app view model now stops active port-forward tasks so failed tests and closing windows do not leave local listeners behind.
+- Window titles now include the currently selected session.
 - Diagnostics cache rows no longer truncate important values without a readable hover/copy path.
 - Radar item clicks, hover hit testing, and custom layer tests now cover the drawn radar path.
+- k3d integration setup no longer tries to own built-in default service accounts and now retries node readiness while the apiserver finishes booting.
 
 ## [2026.6.19] - 2026-06-19
 

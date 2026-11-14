@@ -1,0 +1,40 @@
+#pragma once
+#include "table_layout.h"
+
+namespace podlord {
+inline constexpr int DefaultResourceDisplayLimit = 1024;
+/** Invalid/nonpositive input uses the current display default; positive values cap at 5000. */
+int resourceDisplayLimit(const QString& text);
+struct TableViewState final {
+    QString filter = {};
+    QString column = {};
+    bool descending = false;
+    QMap<QString, QString> fields = {};
+    QString mode = {};
+    // Compatibility value for older records and tables without a resource limit.
+    int limit = 256;
+    /** Existing namespace request scope, owned by the resource view. */
+    QStringList namespaces = {};
+    bool operator==(const TableViewState&) const = default;
+};
+using TableViewStates = QMap<QString, TableViewState>;
+using LoadedViewStates = QMap<QString, Result<TableViewStates>>;
+/** Context-owned filters and sorts. */
+class ViewStateStore final {
+public:
+    ViewStateStore(QString profile, TableSchemas schemas);
+    /** Missing state returns empty filters and NONE sorts without creating files. */
+    Result<TableViewStates> load(const QString& session) const;
+    /** Atomically merges one table. A stale same-table writer conflicts rather than overwriting. */
+    Result<TableViewStates> save(const QString& session, const QString& table,
+        const TableViewState& value, const TableViewState& expected) const;
+    /** Profile-wide named resource filters; the default filter is protected. */
+    Result<TableViewStates> loadPresets() const;
+    Result<TableViewStates> savePresets(const TableViewStates& desired, const TableViewStates& expected) const;
+    /** Import explicit JSON input without overwriting existing names or modifying the selected source. */
+    Result<TableViewStates> importPresets(const QString& path, const TableViewStates& expected) const;
+private:
+    const QString profile_;
+    const TableSchemas schemas_;
+};
+}

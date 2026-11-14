@@ -188,6 +188,9 @@ public sealed class KindGlyph : Control
             case "Play":
                 DrawPlay(context, rect, pen);
                 break;
+            case "OpenExternal":
+                DrawOpenExternal(context, rect, pen);
+                break;
             case "Add":
                 DrawAdd(context, rect);
                 break;
@@ -495,6 +498,15 @@ public sealed class KindGlyph : Control
         context.DrawLine(stroke, P(r, 0.48, 0.18), P(r, 0.84, 0.18));
         context.DrawLine(stroke, P(r, 0.84, 0.18), P(r, 0.84, 0.54));
         context.DrawLine(stroke, P(r, 0.84, 0.18), P(r, 0.44, 0.58));
+    }
+
+    private void DrawOpenExternal(DrawingContext context, Rect r, Pen pen)
+    {
+        var stroke = FillPen(r);
+        context.DrawRectangle(null, stroke, R(r, 0.16, 0.24, 0.5, 0.56));
+        context.DrawLine(stroke, P(r, 0.46, 0.54), P(r, 0.84, 0.16));
+        context.DrawLine(stroke, P(r, 0.58, 0.16), P(r, 0.84, 0.16));
+        context.DrawLine(stroke, P(r, 0.84, 0.16), P(r, 0.84, 0.42));
     }
 
     private Pen FillPen(Rect r)

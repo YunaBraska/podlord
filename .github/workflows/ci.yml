@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - 'feat/**'
+    paths-ignore:
+      - doc/ROADMAP.md
+      - doc/spec/k3d-test-map.md
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'latest' }}
+  cancel-in-progress: true
+
+jobs:
+  native-preflight:
+    uses: ./.github/workflows/release.yml
+  build:
+    if: ${{ always() }}
+    needs: native-preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the complete native candidate
+        shell: sh
+        env:
+          NATIVE_RESULT: ${{ needs.native-preflight.result }}
+        run: |
+          set -eu
+          [ "$NATIVE_RESULT" = success ] || {
+            printf 'Native qualification did not succeed: %s\n' "$NATIVE_RESULT" >&2
+            exit 1
+          }

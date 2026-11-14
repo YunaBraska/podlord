@@ -1,0 +1,69 @@
+name: Native macOS toolchain
+description: Install, validate and cache the pinned public macOS SDK inputs.
+runs:
+  using: composite
+  steps:
+    - name: Install native build dependencies
+      shell: sh
+      run: |
+        mkdir -p "$RUNNER_TEMP/native-radar-failures"
+        printf 'PODLORD_RADAR_ACTION_EVIDENCE=%s/native-radar-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+        brew install cmake ninja python
+        node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs
+        {
+          printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP"
+          printf 'CMAKE_PREFIX_PATH=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain"
+          printf 'OPENSSL_ROOT_DIR=%s/native-toolchain/openssl\n' "$RUNNER_TEMP"
+        } >> "$GITHUB_ENV"
+        printf '%s/qt-sdk/bin\n' "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_PATH"
+        cmake --version
+        xcrun clang --version
+    - name: Resolve exact macOS toolchain cache identity
+      id: macos-toolchain-key
+      shell: sh
+      run: |
+        set -eu
+        xcode=$(xcodebuild -version)
+        sdk_path=$(xcrun --sdk macosx --show-sdk-path)
+        sdk_version=$(xcrun --sdk macosx --show-sdk-version)
+        compiler=$(xcrun --sdk macosx clang --version)
+        cmake_version=$(cmake --version)
+        abi=$(printf '%s\n%s\n%s\n%s\n%s\n' "$xcode" "$sdk_path" "$sdk_version" "$compiler" "$cmake_version" | shasum -a 256 | awk '{print $1}')
+        printf 'xcode=%s\nmacos-sdk=%s (%s)\ncompiler=%s\ncmake=%s\nabi=%s\n' \
+          "$xcode" "$sdk_version" "$sdk_path" "$compiler" "$cmake_version" "$abi" | tee "$RUNNER_TEMP/native-macos-cache-inputs.log"
+        printf 'abi=%s\n' "$abi" >> "$GITHUB_OUTPUT"
+    - name: Restore exact public macOS toolchain
+      id: macos-toolchain-cache
+      uses: actions/cache/restore@v6
+      with:
+        key: native-macos-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
+        path: |
+          ${{ runner.temp }}/native-toolchain/qt
+          ${{ runner.temp }}/native-toolchain/qt-sdk
+          ${{ runner.temp }}/native-toolchain/yaml-cpp
+          ${{ runner.temp }}/native-toolchain/openssl
+          ${{ runner.temp }}/native-toolchain/build-inputs.txt
+    - name: Install public macOS toolchain on cache miss
+      if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
+      shell: sh
+      run: |
+        /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
+    - name: Validate pinned macOS toolchain
+      shell: sh
+      run: |
+        /bin/sh scripts/install-native-macos-toolchain.sh --check "$RUNNER_TEMP/native-toolchain" >> "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 35 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
+        cat "$RUNNER_TEMP/native-toolchain/build-inputs.txt"
+        cmake -S native/tests/qt_shutdown -B "$RUNNER_TEMP/qt-shutdown-check" -G Ninja -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk"
+        cmake --build "$RUNNER_TEMP/qt-shutdown-check" --parallel 2
+        ctest --test-dir "$RUNNER_TEMP/qt-shutdown-check" --output-on-failure
+    - name: Retain validated public macOS toolchain
+      if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        key: ${{ steps.macos-toolchain-cache.outputs.cache-primary-key }}
+        path: |
+          ${{ runner.temp }}/native-toolchain/qt
+          ${{ runner.temp }}/native-toolchain/qt-sdk
+          ${{ runner.temp }}/native-toolchain/yaml-cpp
+          ${{ runner.temp }}/native-toolchain/openssl
+          ${{ runner.temp }}/native-toolchain/build-inputs.txt

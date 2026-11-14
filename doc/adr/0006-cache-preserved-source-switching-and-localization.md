@@ -23,3 +23,22 @@ Store the selected UI language in app settings using a `system` default. Add a l
 - Old but useful cache remains visible for operator context, marked stale by existing freshness metadata.
 - Localization can expand key-by-key without changing cluster data or persistence shape again.
 - Table headers and deeper inspector strings still need follow-up localization passes.
+
+## How Does The Native Runtime Retain The Reference Catalog?
+
+The native compiled catalog is exported through the retained C# localizer's public
+entrypoint. The real inventory is twenty translated languages plus English and
+the system selection. English fallback is exported once; language-specific
+differences are merged into immutable presentation maps. Native startup and
+language changes do not load .NET, fetch cluster data, change Kubernetes values,
+or run a translation timer. The reference CI regenerates and compares the shipped
+catalog, so its source cannot silently diverge.
+
+The existing private settings owner stores the selected canonical code. Reading
+versions 1 through 6 supplies `system` without rewriting; the next explicit save
+atomically writes version 7 with unchanged read, appearance, water and restoration
+settings. Invalid language data and concurrent writers retain the old document.
+Rollback uses a preserved profile or a compatible binary, not deletion of the
+new field. Navigation, sidebar filter modes, settings section names and resource
+empty/loading chrome are the first migrated surfaces. Other inspector/help/action
+strings remain explicit localization work, not an implied whole-product pass.
