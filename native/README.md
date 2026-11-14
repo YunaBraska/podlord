@@ -39,7 +39,7 @@ cmake -S native -B "$ANDROID_BUILD_DIR" -G Ninja \
   "-DCMAKE_PREFIX_PATH=$QT_ANDROID_PREFIX;$ANDROID_YAML_PREFIX" \
   -DPODLORD_ANDROID_OPENSSL_ROOT="$ANDROID_OPENSSL_PREFIX" \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
-cmake --build "$ANDROID_BUILD_DIR" --target apk --parallel 4
+cmake --build "$ANDROID_BUILD_DIR" --target aab --parallel 4
 ```
 
 The helper verifies the upstream archive and patch, rebuilds Quick and its
@@ -48,7 +48,12 @@ configuration rejects a missing or mismatched manifest at the actual
 `Qt6Quick_DIR` prefix. It never downloads or modifies an SDK automatically.
 Host build tools are not runtime dependencies of the installed application.
 
-The private Android download is `podlord-native-android-arm64.apk.zip`. Extract the complete signed APK before installing it. All runtime dependencies remain embedded. The 50 MB download and 100 MB installed-footprint figures are separate advisory targets, not uniform cross-platform release gates.
+The local test package is `podlord-native-android-arm64.apk.zip`. A release build
+uses the `aab` target and a monotonically increasing Android version code derived
+from the same three-part PodLord release version. An AAB is uploaded to Google
+Play and is not installed directly. All runtime dependencies remain embedded.
+The 50 MB download and 100 MB installed-footprint figures are separate advisory
+targets, not uniform cross-platform release gates.
 
 Linux standalone packaging is being verified separately in the
 [distribution trial](../.github/workflows/native-linux-package.yml). It builds

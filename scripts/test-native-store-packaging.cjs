@@ -564,6 +564,15 @@ test('Store entitlement grants only client networking and selected-file access',
     assert.doesNotMatch(entitlements, /com\.apple\.security\.files\.user-selected\.read-write/);
 });
 
+test('Android release packaging derives one valid code from the shared release version', async () => {
+    const cmake = await fs.readFile(path.join(root, 'native/CMakeLists.txt'), 'utf8');
+    const readme = await fs.readFile(path.join(root, 'native/README.md'), 'utf8');
+    assert.match(cmake, /PROJECT_VERSION_MINOR GREATER 999 OR PROJECT_VERSION_PATCH GREATER 999/);
+    assert.match(cmake, /math\(EXPR podlord_android_version_code "\$\{PROJECT_VERSION_MAJOR\} \* 1000000 \+ \$\{PROJECT_VERSION_MINOR\} \* 1000 \+ \$\{PROJECT_VERSION_PATCH\}"\)/);
+    assert.match(cmake, /QT_ANDROID_VERSION_CODE "\$\{podlord_android_version_code\}"/);
+    assert.match(readme, /cmake --build "\$ANDROID_BUILD_DIR" --target aab --parallel 4/);
+});
+
 test('Store signing seals nested code before the app executable', {skip: !mac}, async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-store-signing-'));
     t.after(() => fs.rm(directory, {recursive: true, force: true}));

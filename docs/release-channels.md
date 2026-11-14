@@ -64,6 +64,11 @@ an app record with that exact package identifier, Play App Signing, a signed
 Android App Bundle, and a strictly increasing Android `versionCode`. None of
 those publisher credentials are stored in this repository today.
 
+The Android package derives `versionCode` from the same three-part release
+version as every other PodLord package: `major * 1,000,000 + minor * 1,000 +
+patch`. This keeps `2026.10.27` as code `2026010027` and makes Google reject an
+accidental downgrade before any upload is attempted.
+
 Before CI can upload, create the Play app and store only these release-specific
 values as repository secrets:
 

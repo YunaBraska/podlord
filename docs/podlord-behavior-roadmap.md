@@ -1594,11 +1594,10 @@ Behavior:
 
 ### macOS Notes
 
-Until notarized signing exists:
-
-- release docs explain right-click Open
-- release docs explain Privacy & Security approval
-- release docs explain quarantine removal fallback
+For legacy unsigned archives only, release docs explain right-click Open,
+Privacy & Security approval and quarantine removal. Current direct macOS
+releases are Developer ID signed and notarized by CI. Gatekeeper verification
+is part of the stable release workflow.
 
 ### Acceptance Criteria
 

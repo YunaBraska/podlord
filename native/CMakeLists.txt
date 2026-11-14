@@ -322,6 +322,13 @@ if(IOS)
     target_compile_definitions(podlord_sources PRIVATE PODLORD_GKE_IOS_CLIENT_ID="${PODLORD_GKE_IOS_CLIENT_ID}")
 endif()
 if(ANDROID)
+    if(PROJECT_VERSION_MINOR GREATER 999 OR PROJECT_VERSION_PATCH GREATER 999)
+        message(FATAL_ERROR "Android release versions require minor and patch components below 1000.")
+    endif()
+    math(EXPR podlord_android_version_code "${PROJECT_VERSION_MAJOR} * 1000000 + ${PROJECT_VERSION_MINOR} * 1000 + ${PROJECT_VERSION_PATCH}")
+    if(podlord_android_version_code LESS 1 OR podlord_android_version_code GREATER 2100000000)
+        message(FATAL_ERROR "PODLORD_VERSION cannot produce a valid Android version code.")
+    endif()
     set(PODLORD_ANDROID_OPENSSL_ROOT "" CACHE PATH "Directory containing per-ABI Android OpenSSL 3 libraries")
     if(NOT IS_ABSOLUTE "${Qt6Quick_DIR}")
         message(FATAL_ERROR "Android Qt Quick must resolve to an absolute SDK package directory.")
@@ -527,6 +534,7 @@ if(ANDROID)
         QT_ANDROID_APP_NAME "Podlord"
         QT_ANDROID_APP_ICON "@drawable/podlord_icon"
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+        QT_ANDROID_VERSION_CODE "${podlord_android_version_code}"
         QT_ANDROID_EXTRA_LIBS "${android_openssl_dir}/libcrypto_3.so;${android_openssl_dir}/libssl_3.so"
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
     # These static libraries are internal to the application module.
