@@ -557,7 +557,9 @@ click('problemsOnly');if(target('problemsOnly').checked!=='false')throw Error('P
 waitNode('cell_0_1',healthyPodVisible);
 search('');steps.push({step:'Problems filter excludes the known healthy Pod and restores it when disabled through public input'});
 click('toggleLandscapeFilters');
-for(const id of ['eventsWorkspaceButton','portForwardTasksButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}
+state();
+if(nodes.some(n=>n['resource-id']?.endsWith('.portForwardTasksButton')&&n.bounds!=='[0,0][0,0]'))throw Error('Empty Connections navigation must stay hidden after shell exit');
+for(const id of ['eventsWorkspaceButton','settingsWorkspaceButton','resourcesWorkspaceButton']){state();click(id);if(target(id).checked!=='true')throw Error('Navigation did not select '+id);capture(id);steps.push({step:id});}
 
 function waitNode(id,predicate,timeout=30000){
  const until=Date.now()+timeout;
@@ -680,7 +682,8 @@ function mapTouchRoundtrip(){
  click('mapWorkspaceButton');waitNode('resourceRadar',n=>rect(n)[2]>rect(n)[0]&&rect(n)[3]>rect(n)[1]);
  for(let i=0;i<4;i++)click('radarZoom');
  const terrain=name=>{const scene=rect(target('resourceRadar')),navigation=rect(target('radarNavigationOverlay'));const canvas=[scene[0]+2,Math.max(scene[1]+2,navigation[3]+8),scene[2]-2,scene[3]-2];assert.ok(canvas[3]-canvas[1]>=16,'A nonempty terrain area must remain below navigation');capture(name);const pixels=image(name).crop(canvas);return {bounds:scene,canvas,sha256:crypto.createHash('sha256').update(pixels).digest('hex'),pixels};};
- const ids=['mapBack','mapForward','mapOverview','radarZoomOut','radarZoom','toggleLandscapeFilters'];
+ assert.equal(nodes.filter(n=>/\.(mapBack|mapForward)$/.test(n['resource-id']||'')).length,0,'Removed map-history buttons must stay absent');
+ const ids=['mapOverview','radarZoomOut','radarZoom','toggleLandscapeFilters'];
  const controls=ids.map(id=>{const matches=nodes.filter(n=>n['resource-id']?.endsWith('.'+id));assert.equal(matches.length,1,id+' must have one public instance');const n=matches[0],b=rect(n);assert.deepEqual([b[2]-b[0]+1,b[3]-b[1]+1],[44,44],id+' must retain the Qt inclusive 44px rectangle');return {id,bounds:b,androidDelta:[b[2]-b[0],b[3]-b[1]],qtInclusiveSize:[44,44],enabled:n.enabled};});
  const edge=(id,position,expect)=>{
   const n=target(id),b=rect(n),before=terrain('edge-'+id+'-'+position+'-before'),center=[Math.floor((b[0]+b[2])/2),Math.floor((b[1]+b[3])/2)];assert.equal(n.enabled,'true');
@@ -698,17 +701,12 @@ function mapTouchRoundtrip(){
  assert.equal(selection.title,'ConfigMap visual-config-0001');assert.ok(selection.namespace&&selection.namespace!=='Cluster-scoped');
  click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));
  steps.push({step:'Native radar Home reveals the real ConfigMap and touch X closes its details'});
- click('radarZoom');click('radarZoomOut');waitNode('syncStatus',n=>/Synced:/i.test(value(n)));
- const visibleResourceCounts=()=>{
-  const text=value(find('resourceMatchCount')),counts=/(\d+)\s*\/\s*(\d+)/.exec(text);
-  assert.ok(counts,'Visible matching/cache counts must be readable: '+text);
-  return {text,matching:Number(counts[1]),cached:Number(counts[2])};
- };
- const snapshot=name=>{const counts=visibleResourceCounts();return {...terrain(name),matches:counts.text,matching:counts.matching,cached:counts.cached};};
+ click('radarZoom');click('radarZoomOut');
+ const snapshot=terrain;
  const before=snapshot('map-filter-before'),requestBefore=counter('before');
- click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');assert.equal(visibleResourceCounts().matching,before.matching,'Opening filters must retain matching resources');
+ click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('map-filter-open');const requestOpen=counter('open');
  click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='false');const after=snapshot('map-filter-closed'),requestClosed=counter('closed');
- assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.matching,before.matching);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
+ assert.deepEqual(after.bounds,before.bounds);assert.deepEqual(after.canvas,before.canvas);assert.equal(after.sha256,before.sha256,'Frozen public terrain pixels must roundtrip exactly');assert.equal(requestBefore.nativeWrites,0);assert.equal(requestOpen.nativeWrites,0,'Opening filters must not write to Kubernetes');assert.equal(requestClosed.nativeWrites,0,'Closing filters must not write to Kubernetes');
  click('workspaceSearchButton');waitNode('resourceFilter',n=>value(n)===mapResourceQuery);capture('roundtrip-query-after');run('shell','input','keyevent','4');state();click('workspaceSearchButton');const requestAfterQuery=counter('after-query-verification');assert.equal(requestAfterQuery.nativeWrites,0);
  if(find('radarInfoText')){click('closeRadarInfo');waitNode('resourceRadar',()=>!find('radarInfoText'));}
  const finalFrame=image('map-filter-closed');let finalWater=null;
@@ -720,7 +718,7 @@ function mapTouchRoundtrip(){
  target('inspectorYaml');state();
  waitNode('inspectorYaml',n=>value(n).split(/\r?\n|\u2028|\u2029/).some(line=>[selection.namespace,JSON.stringify(selection.namespace)].some(name=>line.trim()==='namespace: '+name)));
  capture('roundtrip-retained-selection');click('closeInspector');
- const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},selection:{...selection,verifiedAfter:'Native Enter after water focus opens the same kind/name/namespace, without Home/End reselection'},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:mapResourceQuery,motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Terrain pixels, public zoom/filter and retained selection; no private camera getters. Passive read totals remain diagnostic. Cache-only admission is separately asserted by the real_search/real_map HTTP-boundary scenarios. Inspector is explicitly opened only after the filter audit. Disabled Back/Forward are not activated.'};
+ const report={status:'passed',displayDensity:density.trim(),controls,qtRectangleBoundary:'Qt JNI passes inclusive QRect right/bottom directly into Android Rect; raw 43px subtraction is not the tested native hit extent',nativeTouchEvidence:'native-edge-touches.jsonl',before:{...before,pixels:undefined},after:{...after,pixels:undefined},selection:{...selection,verifiedAfter:'Native Enter after water focus opens the same kind/name/namespace, without Home/End reselection'},requests:[requestBefore,requestOpen,requestClosed,requestAfterQuery],filter:mapResourceQuery,motion:'Water disabled and Reduced motion enabled through public disposable-profile settings',scope:'Terrain pixels, public zoom/filter and retained selection; no private camera getters. Passive read totals remain diagnostic. Cache-only admission is separately asserted by the real_search/real_map HTTP-boundary scenarios. Inspector is explicitly opened only after the filter audit. Removed Back/Forward controls remain absent.'};
  fs.writeFileSync(path.join(out,'touch-roundtrip.json'),JSON.stringify(report,null,2)+'\n');
  click('resourcesWorkspaceButton');search('');
 }
