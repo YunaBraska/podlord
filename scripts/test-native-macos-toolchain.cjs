@@ -9,8 +9,10 @@ const { test } = require('node:test');
 const http = require('node:http');
 const execute = promisify(execFile);
 const installer = path.join(__dirname, 'install-native-macos-toolchain.sh');
-for (const [version, fixed] of [['6.11.2', false], ['6.11.3', false], ['6.11.3', true]]) {
-    test(`toolchain cache requires the pinned Qt version and upstream fix: ${version}, fixed=${fixed}`, async () => {
+for (const [version, fixed, rootPackage] of [
+    ['6.11.2', false, false], ['6.11.3', false, false], ['6.11.3', true, true], ['6.11.3', true, false]
+]) {
+    test(`toolchain cache requires the pinned Qt version, root package and upstream fix: ${version}, fixed=${fixed}, rootPackage=${rootPackage}`, async () => {
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-qt-patch-'));
         const target = path.join(directory, 'toolchain');
         try {
@@ -18,6 +20,7 @@ for (const [version, fixed] of [['6.11.2', false], ['6.11.3', false], ['6.11.3',
                 'qt/plugins/platforms/libqcocoa.dylib', 'qt/plugins/tls/libqopensslbackend.dylib',
                 'qt/qml/QtQuick/Controls/qmldir', 'yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake',
                 'yaml-cpp/lib/libyaml-cpp.dylib',
+                ...(rootPackage ? ['qt/lib/cmake/Qt6/Qt6Config.cmake'] : []),
                 ...['Multimedia', 'WebSockets', 'ShaderTools'].map(module => `qt/lib/cmake/Qt6${module}/Qt6${module}Config.cmake`)
             ];
             for (const file of files) {
@@ -37,7 +40,7 @@ for (const [version, fixed] of [['6.11.2', false], ['6.11.3', false], ['6.11.3',
                 await fs.writeFile(path.join(target, 'qt/podlord-qtquick-patch.txt'), `Qt Quick patch SHA256: ${digest}\n`);
                 await fs.appendFile(path.join(target, 'build-inputs.txt'), `Qt Quick patch SHA256: ${digest}\n`);
             }
-            if (version === '6.11.3' && fixed) {
+            if (version === '6.11.3' && fixed && rootPackage) {
                 const result = await execute('/bin/sh', [installer, '--check', target]);
                 assert.match(result.stdout, /Pinned public macOS toolchain validated/);
             } else {
