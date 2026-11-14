@@ -21,17 +21,6 @@ runs:
         printf '%s/qt-sdk/bin\n' "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_PATH"
         cmake --version
         xcrun clang --version
-    - name: Expose validated toolchain locations
-      id: toolchain-path
-      shell: sh
-      run: |
-        set -eu
-        prefix="$RUNNER_TEMP/native-toolchain"
-        test -f "$prefix/qt-sdk/lib/cmake/Qt6/Qt6Config.cmake"
-        test -f "$prefix/yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
-        test -x "$prefix/openssl/bin/openssl"
-        printf 'cmake-prefix-path=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$prefix" "$prefix" "$prefix" >> "$GITHUB_OUTPUT"
-        printf 'openssl-root-dir=%s/openssl\n' "$prefix" >> "$GITHUB_OUTPUT"
     - name: Resolve exact macOS toolchain cache identity
       id: macos-toolchain-key
       shell: sh
@@ -70,6 +59,17 @@ runs:
         cmake -S native/tests/qt_shutdown -B "$RUNNER_TEMP/qt-shutdown-check" -G Ninja -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk"
         cmake --build "$RUNNER_TEMP/qt-shutdown-check" --parallel 2
         ctest --test-dir "$RUNNER_TEMP/qt-shutdown-check" --output-on-failure
+    - name: Expose validated toolchain locations
+      id: toolchain-path
+      shell: sh
+      run: |
+        set -eu
+        prefix="$RUNNER_TEMP/native-toolchain"
+        test -f "$prefix/qt-sdk/lib/cmake/Qt6/Qt6Config.cmake"
+        test -f "$prefix/yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
+        test -x "$prefix/openssl/bin/openssl"
+        printf 'cmake-prefix-path=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$prefix" "$prefix" "$prefix" >> "$GITHUB_OUTPUT"
+        printf 'openssl-root-dir=%s/openssl\n' "$prefix" >> "$GITHUB_OUTPUT"
     - name: Retain validated public macOS toolchain
       if: steps.macos-toolchain-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6

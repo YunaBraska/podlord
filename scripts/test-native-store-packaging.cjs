@@ -475,6 +475,8 @@ test('macOS package jobs share pinned setup and retain every package scenario', 
     assert.match(action, /using: composite/);
     for (const output of ['cmake-prefix-path:', 'openssl-root-dir:', 'Expose validated toolchain locations',
         'test -f "$prefix\/qt-sdk\/lib\/cmake\/Qt6\/Qt6Config.cmake"']) assert.ok(action.includes(output), `Missing toolchain output: ${output}`);
+    assert.ok(action.indexOf('Validate pinned macOS toolchain') < action.indexOf('Expose validated toolchain locations'),
+        'Toolchain outputs must be emitted only after cache restore or installation is validated.');
     for (const command of ['brew install cmake ninja python',
         'node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs',
         'xcodebuild -version', 'xcrun --sdk macosx --show-sdk-path', 'xcrun --sdk macosx --show-sdk-version',
