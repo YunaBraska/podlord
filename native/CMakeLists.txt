@@ -1526,7 +1526,10 @@ endif()
 if(BUILD_TESTING)
     add_executable(view_state_test tests/view_state_test.cpp)
     target_link_libraries(view_state_test PRIVATE podlord_workspace)
-    set(view_state_cases preset_default_limit preset_limit_invalid limit_saved limit_conflict limit_other_table limit_invalid_input limit_event_input limit_missing limit_zero limit_negative limit_large limit_fraction limit_string limit_null
+    set(view_state_cases empty_schema namespace_saved namespace_event_input version_type mode_type stored_mode_unknown namespaces_type namespace_item_type
+        event_scope_mode event_scope_limit event_scope_namespaces record_type views_type legacy_preset_default legacy_preset_default_invalid
+        preset_shape_filter preset_shape_column preset_shape_descending preset_shape_fields preset_shape_mode preset_shape_missing preset_shape_entry preset_shape_root preset_shape_extra_root
+        preset_default_limit preset_limit_invalid limit_saved limit_conflict limit_other_table limit_invalid_input limit_event_input limit_missing limit_zero limit_negative limit_large limit_fraction limit_string limit_null
         missing empty_profile relative_profile invalid_id noncanonical_id empty_id unknown_table unknown_column
         descending_none profile_file file_directory busy lock_directory oversized_input save repeat clear conflict other_table
         other_session stable_ids version root_extra missing_table unknown_table_stored missing_field extra_field filter_type

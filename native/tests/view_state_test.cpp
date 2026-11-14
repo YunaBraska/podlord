@@ -40,6 +40,41 @@ bool run(const QString& scenario) {
     const ViewStateStore store(profile, schemas);
     const TableViewState resourceDefault{.limit = 1024};
     const TableViewState value{"alpha", "name", true};
+    if (scenario == "empty_schema") return fails(ViewStateStore(profile, {}).load(session), StoreError::InvalidInput) && !QFile::exists(profile);
+    if (scenario == "namespace_saved" || scenario == "namespace_event_input") {
+        if (!prepareContext()) return false;
+        auto scoped = value; scoped.namespaces = {"team"};
+        if (scenario == "namespace_event_input") {
+            scoped.column.clear(); scoped.descending = false;
+            return fails(store.save(session, "event", scoped, {}), StoreError::InvalidInput) && !QFile::exists(path);
+        }
+        return equals(store.save(session, "resource", scoped, resourceDefault), {{"resource", scoped}, {"event", {}}})
+            && equals(store.load(session), {{"resource", scoped}, {"event", {}}});
+    }
+    if (scenario.startsWith("preset_shape_")) {
+        const TableViewStates empty{{"default", resourceDefault}};
+        auto desired = empty; desired["Problems"] = {"", "", false, {{"namespace", "team"}}, "problems"};
+        if (!equals(store.savePresets(desired, empty), desired)) return false;
+        const auto presetPath = profile + "/filter-presets.json";
+        QFile file(presetPath); if (!file.open(QIODevice::ReadOnly)) return false;
+        auto root = QJsonDocument::fromJson(file.readAll()).object(); file.close();
+        auto presets = root["presets"].toObject(), record = presets["Problems"].toObject();
+        const auto shape = scenario.mid(QString("preset_shape_").size());
+        if (shape == "filter") record["filter"] = false;
+        else if (shape == "column") record["column"] = "name";
+        else if (shape == "descending") record["descending"] = true;
+        else if (shape == "fields") record["fields"] = false;
+        else if (shape == "mode") record["mode"] = false;
+        else if (shape == "missing") record.remove("filter");
+        else if (shape != "entry" && shape != "root" && shape != "extra_root") return false;
+        presets["Problems"] = shape == "entry" ? QJsonValue(false) : QJsonValue(record);
+        root["presets"] = shape == "root" ? QJsonValue(QJsonArray{}) : QJsonValue(presets);
+        if (shape == "extra_root") root["unexpected"] = true;
+        const auto bytes = QJsonDocument(root).toJson();
+        return write(presetPath, bytes) && fails(store.loadPresets(), StoreError::InvalidData)
+            && fails(store.savePresets(empty, desired), StoreError::InvalidData)
+            && file.open(QIODevice::ReadOnly) && file.readAll() == bytes;
+    }
     if (scenario == "preset_default_immutable") {
         const QJsonObject oldDefault{{"filter", ""}, {"column", ""}, {"descending", false},
             {"fields", QJsonObject{}}, {"mode", ""}, {"limit", 256}};
@@ -111,6 +146,18 @@ bool run(const QString& scenario) {
         if (!original.open(QIODevice::ReadOnly) || original.readAll() != bytes) return false;
         if (scenario == "preset_import_repeat") return equals(store.importPresets(source, actual), actual);
         return scenario == "preset_import_success";
+    }
+    if (scenario == "legacy_preset_default" || scenario == "legacy_preset_default_invalid") {
+        const TableViewStates empty{{"default", resourceDefault}};
+        const bool invalid = scenario == "legacy_preset_default_invalid";
+        const auto source = temporary.filePath("reference-filters.json");
+        const auto bytes = QJsonDocument(QJsonArray{QJsonObject{{"name", "default"}, {"limit", invalid ? "7" : "256"}}}).toJson();
+        if (!write(source, bytes)) return false;
+        const auto imported = store.importPresets(source, empty);
+        QFile original(source);
+        return (invalid ? fails(imported, StoreError::InvalidData) && !QFile::exists(profile + "/filter-presets.json")
+            : equals(imported, empty) && equals(store.loadPresets(), empty))
+            && original.open(QIODevice::ReadOnly) && original.readAll() == bytes;
     }
     if (scenario.startsWith("legacy_preset_")) {
         const auto presetPath = profile + "/filter-presets.json";
@@ -258,23 +305,37 @@ bool run(const QString& scenario) {
     auto document = QJsonDocument::fromJson(input.readAll()).object(); input.close();
     auto states = document["views"].toObject(), resource = states["resource"].toObject();
     if (scenario == "version") document["version"] = 8;
+    else if (scenario == "version_type") document["version"] = "7";
     else if (scenario == "field_type") resource["fields"] = true;
     else if (scenario == "field_value_type") resource["fields"] = QJsonObject{{"name", 3}};
     else if (scenario == "field_empty") resource["fields"] = QJsonObject{{"name", ""}};
     else if (scenario == "field_unknown") resource["fields"] = QJsonObject{{"removed", "alpha"}};
     else if (scenario == "root_extra") document["unexpected"] = true;
     else if (scenario == "missing_table") states.remove("event");
-    else if (scenario == "unknown_table_stored") states["unknown"] = resource;
+    else if (scenario == "unknown_table_stored") { states.remove("event"); states["unknown"] = resource; }
     else if (scenario == "missing_field") resource.remove("filter");
     else if (scenario == "extra_field") resource["unexpected"] = true;
     else if (scenario == "filter_type") resource["filter"] = 3;
     else if (scenario == "column_type") resource["column"] = true;
     else if (scenario == "direction_type") resource["descending"] = "DESC";
+    else if (scenario == "mode_type") resource["mode"] = false;
+    else if (scenario == "stored_mode_unknown") resource["mode"] = "unsupported";
+    else if (scenario == "namespaces_type") resource["namespaces"] = false;
+    else if (scenario == "namespace_item_type") resource["namespaces"] = QJsonArray{7};
+    else if (scenario.startsWith("event_scope_")) {
+        auto event = states["event"].toObject();
+        if (scenario == "event_scope_mode") event["mode"] = "problems";
+        else if (scenario == "event_scope_limit") event["limit"] = 7;
+        else if (scenario == "event_scope_namespaces") event["namespaces"] = QJsonArray{"team"};
+        else return false;
+        states["event"] = event;
+    }
     else if (scenario == "column_unknown") resource["column"] = "removed";
     else if (scenario == "none_descending") resource["column"] = "";
-    else if (scenario != "malformed" && scenario != "oversized_file" && scenario != "root_array") return false;
+    else if (scenario != "malformed" && scenario != "oversized_file" && scenario != "root_array" && scenario != "record_type" && scenario != "views_type") return false;
     if (scenario != "missing_table") states["resource"] = resource;
-    document["views"] = states;
+    if (scenario == "record_type") states["resource"] = false;
+    document["views"] = scenario == "views_type" ? QJsonValue(QJsonArray{}) : QJsonValue(states);
     const auto bytes = scenario == "malformed" ? QByteArray("{") : scenario == "oversized_file" ? QByteArray(65537, ' ')
         : scenario == "root_array" ? QByteArray("[]") : QJsonDocument(document).toJson(QJsonDocument::Compact);
     if (!write(path, bytes)) return false;

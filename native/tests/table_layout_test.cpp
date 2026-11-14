@@ -192,7 +192,7 @@ bool scenario(const QString& name) {
         if (name.startsWith("input_")) return failure(store.save("resource", value, layout), StoreError::InvalidInput) && !QFileInfo::exists(path);
     }
     QJsonObject encoded{{"resource", value}, {"event", input(defaults.value("event"))}};
-    QJsonObject root{{"version", 1}, {"layouts", encoded}};
+    QJsonObject root{{"version", 10}, {"layouts", encoded}};
     if (name == "version") root["version"] = 11;
     else if (name == "extra_root") root["extra"] = 1;
     else if (name == "layout_type") root["layouts"] = QJsonArray{};
