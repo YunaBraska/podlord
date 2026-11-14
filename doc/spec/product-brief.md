@@ -1,6 +1,6 @@
 # Podlord Product Brief
 
-Podlord is a standalone desktop Kubernetes control center built with C#/.NET and Avalonia UI. It replaces namespace-first Kubernetes GUIs with a flat, real-time, multi-context, IDE-like workspace.
+Podlord is a standalone native Kubernetes control center. The existing C#/.NET and Avalonia application is the functional and visual reference for the C++/Qt migration. It replaces namespace-first Kubernetes GUIs with a flat, cache-first, multi-context, IDE-like workspace. The native migration is not yet release-approved; its acceptance requirements and evidence live in [the operational specification](podlord-operational-spec.md) and [the capability inventory](legacy-capability-inventory.md).
 
 Tagline:
 
@@ -28,7 +28,7 @@ The user should always know:
 5. Watch-first state: list-watch, object store, freshness metadata, batching, reconnects, and event history.
 6. Tactical map: a serious 2D pixel-art operational map, not a toy dashboard.
 
-## MVP Milestones
+## Reference capability groups
 
 1. App shell and config
    - Avalonia native app shell
@@ -81,7 +81,7 @@ The user should always know:
 
 ## Operation Guardrails
 
-The C# core and Kubernetes service layer own all sensitive operations:
+Each implementation's core and Kubernetes service layer own all sensitive operations:
 
 - Context binding
 - Kubeconfig isolation
@@ -91,7 +91,7 @@ The C# core and Kubernetes service layer own all sensitive operations:
 
 Secrets are metadata-only by default. Raw secret values, kubeconfig tokens, and certificates are not logged or persisted unless a later explicit feature makes that safe.
 
-## Architecture Modules
+## C# reference architecture modules
 
 - `Podlord.Core`: domain, errors, time, kubeconfig import/store/export, sessions, settings, filters, health
 - `Podlord.Kubernetes`: Kubernetes API adapter, discovery, future watch supervisor, object store, health, events, relationships, logs, port forwarding
@@ -101,6 +101,6 @@ Secrets are metadata-only by default. Raw secret values, kubeconfig tokens, and 
 
 ## Current Boundaries
 
-The current app uses cache-first list/detail/log requests. Watch supervision and embedded terminal support are planned separately so the existing request queue and source model stay explicit.
+The native app uses cache-first list/detail/log requests and implements an interactive container terminal through the Kubernetes streaming API, without kubectl. Current platform evidence and remaining gaps belong to the test map. Watch supervision remains planned separately so the existing request queue and source model stay explicit.
 
 Animated radar alerts belong in the rule system, where users can enable, disable, and customize them.

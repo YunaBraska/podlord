@@ -1,0 +1,27 @@
+--- a/src/android/jar/src/org/qtproject/qt/android/QtActivityBase.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtActivityBase.java
+@@ -135,9 +135,12 @@
+ 
+                 if (result == QtLoader.LoadingResult.Succeeded) {
+                     loader.appendApplicationParameters(m_applicationParams);
+-                    final String params = loader.getApplicationParameters();
+-                    m_delegate.startNativeApplication(params, loader.getMainLibraryPath());
++                } else {
++                    QtNative.updateNativeActivity();
+                 }
++                // Resume early Activity recreation even when the libraries are already loaded.
++                final String params = loader.getApplicationParameters();
++                m_delegate.startNativeApplication(params, loader.getMainLibraryPath());
+             }
+         } catch (IllegalArgumentException e) {
+             e.printStackTrace();
+@@ -218,8 +221,8 @@
+         if (!m_onCreateSucceeded)
+             System.exit(-1);
+ 
++        QtNative.unregisterAppStateListener(m_delegate);
+         if (!m_retainNonConfigurationInstance) {
+-            QtNative.unregisterAppStateListener(m_delegate);
+             QtNative.terminateQtNativeApplication();
+             QtNative.setActivity(null);
+             System.exit(0);

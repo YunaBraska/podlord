@@ -1,0 +1,122 @@
+#include "workspace.h"
+#include "workspace_runtime.h"
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
+
+namespace podlord {
+TableSchemas Workspace::tableSchemas(bool includeAuxiliary) const {
+    TableSchemas result;
+    for (const auto& entry : QList<QPair<QString, const QAbstractItemModel*>>{{"resource", &rows_}, {"event", &eventRows_}, {"port", &portRows_},
+        {"inspectorEvent", &inspectorEventRows_}, {"inspectorLink", &inspectorLinkRows_}, {"value", &valueRows_}}) {
+        if (!includeAuxiliary && entry.first != "resource" && entry.first != "event") continue;
+        QStringList ids;
+        for (int column = 0; column < entry.second->columnCount(); ++column)
+            ids.append(entry.second->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
+        result.insert(entry.first, ids);
+    }
+    return result;
+}
+TableSchemas Workspace::layoutSchemas() const {
+    auto result = tableSchemas(true);
+    QStringList ids;
+    const auto* model = alerts_.tableModel();
+    for (int column = 0; column < model->columnCount(); ++column)
+        ids.append(model->headerData(column, Qt::Horizontal, Qt::UserRole).toString());
+    result.insert("alert", ids);
+    for (const auto& entry:QList<QPair<QString,const QAbstractItemModel*>>{{"diagnostic",&diagnosticRows_},{"audit",&requestAuditRows_},{"source",&sourceRows_}}) {
+        QStringList columns;
+        for (int column=0;column<entry.second->columnCount();++column)
+            columns.append(entry.second->headerData(column,Qt::Horizontal,Qt::UserRole).toString());
+        result.insert(entry.first,columns);
+    }
+    return result;
+}
+QVariantList Workspace::tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults) const {
+    QVariantList result;
+    const auto schemas = layoutSchemas();
+    const auto ids = schemas.value(table);
+    static const QStringList optionalResourceFields{"namespace", "node", "image", "cpu", "memory", "storage", "ready", "restarts", "owner"};
+    bool anyShown = false;
+    for (const auto& entry : defaults ? defaultTableLayouts(schemas).value(table) : tableLayouts_.value(table)) {
+        const int column = static_cast<int>(ids.indexOf(entry.id));
+        const bool shown = entry.visible && (table != "resource" || entry.pinned || !optionalResourceFields.contains(entry.id)
+            || (column >= 0 && column < 64 && (resourcePopulatedColumns_ & (quint64{1} << column))));
+        anyShown |= shown;
+        result.append(QVariantMap{{"id", entry.id}, {"column", column}, {"title", model.headerData(column, Qt::Horizontal, Qt::DisplayRole)},
+            {"visible", entry.visible}, {"shown", shown}, {"pinned", entry.pinned}, {"width", entry.width}});
+    }
+    if (table == "resource" && !anyShown) {
+        // Preserve the existing minimum-one-column guarantee without changing the saved layout.
+        for (auto& value : result) {
+            auto entry = value.toMap();
+            if (!entry["visible"].toBool()) continue;
+            entry["shown"] = true;
+            value = entry;
+            break;
+        }
+    }
+    return result;
+}
+QVariantList Workspace::resourceColumns() const { return tableColumns("resource", rows_); }
+void Workspace::publishResourceColumns() {
+    quint64 populated = 0;
+    for (int row = 0; row < visibleTable_.rowCount(); ++row)
+        populated |= rows_.populatedColumns(table_.mapToSource(table_.index(row, 0)).row());
+    if (resourcePopulatedColumns_ == populated) return;
+    resourcePopulatedColumns_ = populated;
+    emit resourceColumnsChanged();
+}
+QVariantList Workspace::alertColumns() const { return tableColumns("alert", *alerts_.tableModel()); }
+QVariantList Workspace::eventColumns() const { return tableColumns("event", eventRows_); }
+QVariantList Workspace::portColumns() const { return tableColumns("port", portRows_); }
+QVariantList Workspace::defaultTableColumns(const QString& table) const {
+    return table=="resource" ? tableColumns(table,rows_,true) : table=="event" ? tableColumns(table,eventRows_,true) : table=="port" ? tableColumns(table,portRows_,true)
+        : table=="inspectorEvent" ? tableColumns(table,inspectorEventRows_,true) : table=="inspectorLink" ? tableColumns(table,inspectorLinkRows_,true)
+        : table=="value" ? tableColumns(table,valueRows_,true) : table=="alert" ? tableColumns(table,*alerts_.tableModel(),true)
+        : table=="diagnostic" ? tableColumns(table,diagnosticRows_,true) : table=="audit" ? tableColumns(table,requestAuditRows_,true)
+        : table=="source" ? tableColumns(table,sourceRows_,true) : QVariantList{};
+}
+bool Workspace::reloadTableLayouts() {
+    if (tableLayoutSaving_) return false;
+    const auto schemas = layoutSchemas();
+    if (tableLayouts_.isEmpty()) tableLayouts_ = defaultTableLayouts(schemas);
+    const auto result = TableLayoutStore(profile_, schemas).load();
+    if (const auto* failure = std::get_if<Failure>(&result)) {
+        tableLayoutError_ = failure->message; emit tableLayoutStatusChanged(); return false;
+    }
+    const auto layouts = std::get<TableLayouts>(result);
+    if (layouts != tableLayouts_) { tableLayouts_ = layouts; emit tableLayoutChanged(); }
+    tableLayoutError_.clear(); emit tableLayoutStatusChanged(); return true;
+}
+bool Workspace::saveTableLayout(const QString& table, const QVariantList& columns) {
+    if (tableLayoutSaving_) return false;
+    const auto schemas = layoutSchemas();
+    if (!schemas.contains(table) || columns.size() != schemas.value(table).size()) {
+        tableLayoutError_ = "Choose a supported table and its complete column layout.";
+        emit tableLayoutStatusChanged(); return false;
+    }
+    QJsonArray value;
+    for (const auto& entry : columns) {
+        const auto column = entry.toMap();
+        value.append(QJsonObject::fromVariantMap({{"id", column.value("id")}, {"visible", column.value("visible")}, {"pinned", column.value("pinned")}, {"width", column.value("width")}}));
+    }
+    tableLayoutSaving_ = true; tableLayoutError_.clear(); emit tableLayoutStatusChanged();
+    auto* watcher = new QFutureWatcher<Result<TableLayouts>>(this);
+    connect(watcher, &QFutureWatcher<Result<TableLayouts>>::finished, this, [this, watcher] {
+        const auto result = watcher->result(); watcher->deleteLater();
+        tableLayoutSaving_ = false;
+        if (const auto* failure = std::get_if<Failure>(&result)) tableLayoutError_ = failure->message;
+        else if (const auto& layouts = std::get<TableLayouts>(result); layouts != tableLayouts_) {
+            tableLayouts_ = layouts; emit tableLayoutChanged();
+            for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_) {
+                other->tableLayouts_ = layouts; emit other->tableLayoutChanged();
+            }
+        }
+        emit tableLayoutStatusChanged();
+    });
+    watcher->setFuture(QtConcurrent::run([profile = profile_, schemas, table, value, expected = tableLayouts_.value(table)] {
+        return TableLayoutStore(profile, schemas).save(table, value, expected);
+    }));
+    return true;
+}
+} // namespace podlord

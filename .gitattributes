@@ -11,3 +11,6 @@
 *.tar.gz binary
 *.dmg binary
 *.msi binary
+
+# Blank diff context lines are immutable supplier data, not source whitespace.
+scripts/patches/qtdeclarative-6.11.3-shutdown.diff -whitespace

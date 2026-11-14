@@ -1,0 +1,630 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQml.Models
+import Podlord.Graphics 1.0
+
+ColumnLayout {
+    id: grid
+    Layout.minimumHeight: implicitHeight
+    readonly property var colors: workspace.appearanceColors
+    readonly property font cellFont: Qt.font({family: workspace.monospaceFamily, pixelSize: workspace.textSizes.cell, weight: Font.Normal})
+    required property var tableModel
+    required property int sortColumn
+    required property string sortDirection
+    property string prefix: "resource"
+    required property string emptyText
+    property string emptyObjectName: prefix === "resource" ? "emptyResources" : prefix === "event" ? "emptyEvents" : prefix + "Empty"
+    property var columns: prefix === "resource" ? workspace.resourceColumns : workspace.eventColumns
+    readonly property int identityColumn: {
+        const identity = columns.find(state => state.id === "name" || state.id === "key")
+        return identity ? identity.column : 0
+    }
+    readonly property string layoutSignature: JSON.stringify([rowHeight, workspace.textSizes.body, columns.map(function(column) {
+        return [column.column, column.width, grid.columnShown(column), column.pinned]
+    })])
+    function columnShown(column) { return column && column.visible && column.shown !== false }
+    property var visualOrder: []
+    property bool inspectable: true
+    property int sortableColumns: -1
+    property int rowHeight: Math.max(32, Math.ceil(workspace.textSizes.cell * 1.3) + 12)
+    property bool wrapCells: false
+    property var actionColumns: []
+    property var accessoryColumns: []
+    property Component cellAccessory: null
+    property bool accessibleAccessoryCells: false
+    property var cellName: null
+    property alias contentY: table.contentY
+    readonly property real contentHeight: table.contentHeight
+    readonly property real viewportHeight: table.height
+    readonly property int count: table.rows
+    readonly property int navigationIndex: selection.currentIndex.valid && selection.currentIndex.row >= 0 && selection.currentIndex.row < count ? selection.currentIndex.row : -1
+    function navigateRows(offset) {
+        if (count === 0) return
+        const row = offset === 0 ? 0 : ((navigationIndex < 0 ? 0 : navigationIndex) + offset + count) % count
+        const column = columns.find(column => grid.columnShown(column)).column
+        selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+        if (visible) table.positionViewAtRow(row, TableView.Contain)
+        grid.rowNavigationRequested(grid.pathAt(row))
+    }
+    readonly property string contextScope: workspace.currentSession + (prefix === "value" ? "\n" + workspace.inspectorScope : "")
+    onContextScopeChanged: {
+        cellMenu.close(); valueTip.target = null
+        if (table) table.clearInput()
+        if (pinnedTable) pinnedTable.clearInput()
+        if (selection) selection.clear()
+    }
+    signal actionRequested(string identity, int column, string label)
+    signal currentRequested(string identity)
+    signal rowNavigationRequested(string identity)
+    function focusCell(row, column, owner) {
+        const index = tableModel.index(row, column)
+        selection.setCurrentIndex(index, ItemSelectionModel.NoUpdate)
+        owner.positionViewAtIndex(index, TableView.Contain)
+    }
+    function selectIdentity(identity, column) {
+        const current = selection.currentIndex
+        if (current.valid && pathAt(current.row) === identity) column = current.column
+        if (!columnShown(columns.find(state => state.column === column))) column = columns.find(state => grid.columnShown(state)).column
+        for (let row = 0; row < tableModel.rowCount(); ++row) {
+            if (pathAt(row) !== identity) continue
+            selection.setCurrentIndex(tableModel.index(row, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+            if (visible) {
+                table.forceLayout()
+                table.positionViewAtIndex(selection.currentIndex, TableView.Contain)
+            }
+            return true
+        }
+        selection.clear()
+        return false
+    }
+    function activateCell(row, column) {
+        if (actionColumns.indexOf(column) >= 0) {
+            const label = tableModel.data(tableModel.index(row, column), Qt.DisplayRole)
+            if (label !== "") actionRequested(pathAt(row), column, label)
+        } else if (inspectable) inspectRequested(endpointAt(row, column))
+    }
+    function handleCellKey(event, row, column, anchor) {
+        const current = selection.currentIndex
+        if (current.valid) { row = current.row; column = current.column }
+        if (event.key === Qt.Key_Home || event.key === Qt.Key_End
+            || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down) && event.modifiers === Qt.NoModifier)) {
+            const target = event.key === Qt.Key_Home ? 0 : event.key === Qt.Key_End ? table.rows - 1
+                : Math.max(0, Math.min(table.rows - 1, row + (event.key === Qt.Key_Down ? 1 : -1)))
+            if (target >= 0) {
+                selection.setCurrentIndex(tableModel.index(target, column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+                table.positionViewAtRow(target, TableView.Contain)
+                table.forceActiveFocus(Qt.TabFocusReason)
+                grid.rowNavigationRequested(grid.pathAt(target))
+            }
+        } else if (event.matches(StandardKey.Copy)) grid.copyRequested(row, column)
+        else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
+            cellMenu.path = grid.pathAt(row); cellMenu.endpoint = grid.endpointAt(row, column); cellMenu.column = column
+            cellMenu.popup(anchor, 0, anchor.height)
+        } else return false
+        return true
+    }
+    function revealFocusedCell() {
+        let control = grid.Window.window ? grid.Window.window.activeFocusItem : null
+        while (control) {
+            if (control === table || control === pinnedTable) {
+                if (selection.currentIndex.valid) control.positionViewAtIndex(selection.currentIndex, TableView.Contain)
+                return
+            }
+            control = control.parent
+        }
+    }
+    Keys.onPressed: function(event) {
+        if (findInput.activeFocus) return
+        if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+            const column = selection.currentIndex.valid ? selection.currentIndex.column : columns.find(column => grid.columnShown(column)).column
+            event.accepted = handleCellKey(event, 0, column, grid)
+        } else if (selection.currentIndex.valid) {
+            event.accepted = handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, grid.Window.window.activeFocusItem)
+        }
+    }
+    property bool findOpen: false
+    property bool inlineTools: true
+    property bool findShortcutEnabled: true
+    readonly property bool containsActiveFocus: {
+        let target = grid.Window.window ? grid.Window.window.activeFocusItem : null
+        while (target) { if (target === grid) return true; target = target.parent }
+        return false
+    }
+    property int findCount: 0
+    property int findIndex: -1
+    property bool findValid: true
+    function updateFindCount(reset) {
+        findCount = findValid && findInput.text.trim() !== "" ? findMatches.rowCount() : 0
+        findIndex = findCount === 0 ? -1 : reset ? 0 : Math.max(0, Math.min(findIndex, findCount - 1))
+        if (!reset && findCount > 0 && !findMatches.mapFromSource(selection.currentIndex).valid) selectFindMatch(0)
+    }
+    function selectFindMatch(offset) {
+        if (findCount === 0) return
+        findIndex = (findIndex + offset + findCount) % findCount
+        const source = findMatches.mapToSource(findMatches.index(findIndex, 0))
+        selection.setCurrentIndex(tableModel.index(source.row, columns.find(column => grid.columnShown(column)).column), ItemSelectionModel.ClearAndSelect | ItemSelectionModel.Rows)
+        table.positionViewAtRow(source.row, TableView.Contain)
+        if (offset !== 0) grid.rowNavigationRequested(grid.pathAt(source.row))
+    }
+    function openFind() { findOpen = true; findInput.forceActiveFocus(); findInput.selectAll() }
+    function openColumns() { columnsDialog.open() }
+    readonly property var scrollingColumns: columns.filter(column => columnShown(column) && !column.pinned)
+    readonly property real scrollingWidth: scrollingColumns.reduce((width, column) => width + column.width, 0)
+    readonly property var stretchColumn: scrollingColumns.find(column => ["name", "message", "reason"].includes(column.id))
+        || scrollingColumns.find(column => !actionColumns.includes(column.column)) || scrollingColumns[0]
+    readonly property real extraColumnWidth: Math.max(0, table.width - scrollingWidth - 2)
+    onExtraColumnWidthChanged: Qt.callLater(table.forceLayout)
+    readonly property real pinnedWidth: columns.filter(function(column) { return grid.columnShown(column) && column.pinned }).reduce(function(width, column) { return width + column.width }, 0)
+    readonly property bool hasScrollingColumns: columns.some(function(column) { return grid.columnShown(column) && !column.pinned })
+    signal sortRequested(int column)
+    signal inspectRequested(string path)
+    signal copyRequested(int row, int column)
+    signal copyPathRequested(string path, int column)
+    signal contextRequested(string path)
+    property string contextOpenText: workspace.uiText["ref.menuOpen"]
+    property list<Action> contextActions
+    function pathAt(row) { return tableModel.data(tableModel.index(row, 0), Qt.UserRole) || "" }
+    function endpointAt(row, column) { return tableModel.data(tableModel.index(row, column), Qt.UserRole + 12) || pathAt(row) }
+    function stateAt(visual) {
+        const logical = visualOrder.length > visual ? visualOrder[visual] : visual
+        return columns.find(function(column) { return column.column === logical })
+    }
+    function synchronizeColumns() {
+        if (!visible || table.columns !== columns.length) return
+        const selected = selection.currentIndex
+        if (selected.valid && !columnShown(columns.find(column => column.column === selected.column)))
+            selection.setCurrentIndex(tableModel.index(selected.row, columns.find(column => grid.columnShown(column)).column), ItemSelectionModel.NoUpdate)
+        scrollingHeader.forceLayout()
+        pinnedHeader.forceLayout()
+        const wanted = columns.filter(function(column) { return grid.columnShown(column) && column.pinned }).concat(columns.filter(function(column) { return !grid.columnShown(column) || !column.pinned })).map(function(column) { return column.column })
+        if (table.rows > 0 && wanted.every(function(column, position) { return table.columnAtIndex(tableModel.index(0, column)) === position })) {
+            visualOrder = wanted
+            table.forceLayout()
+            pinnedTable.forceLayout()
+            return
+        }
+        const current = columns.map(function(column) { return column.column }).sort(function(a, b) { return a - b })
+        table.clearColumnReordering()
+        visualOrder = current.slice()
+        for (let position = 0; position < wanted.length; ++position) {
+            const from = current.indexOf(wanted[position])
+            if (from === position) continue
+            current.splice(position, 0, current.splice(from, 1)[0])
+            visualOrder = current.slice()
+            table.moveColumn(from, position)
+        }
+        table.forceLayout()
+        pinnedTable.forceLayout()
+    }
+    onLayoutSignatureChanged: { cellMenu.close(); valueTip.target = null; Qt.callLater(synchronizeColumns) }
+    onVisibleChanged: {
+        if (visible) Qt.callLater(synchronizeColumns)
+        else { cellMenu.close(); valueTip.target = null }
+    }
+    Component.onCompleted: synchronizeColumns()
+    spacing: 0
+    ItemSelectionModel {
+        id: selection; model: grid.tableModel
+        onCurrentChanged: (current, previous) => { if (current.valid) grid.currentRequested(grid.pathAt(current.row)) }
+    }
+    ResourceFindFilter { id: findMatches; sourceModel: grid.findOpen && grid.visible ? grid.tableModel : null }
+    Connections {
+        target: grid.visible ? grid.tableModel : null
+        // Column reordering also seeds Qt's row map; membership changes must not retain it.
+        function onRowsInserted() { table.clearRowReordering() }
+        function onRowsRemoved() { table.clearRowReordering() }
+    }
+    Connections {
+        target: findMatches
+        function onRowsInserted() { Qt.callLater(grid.updateFindCount, false) }
+        function onRowsRemoved() { Qt.callLater(grid.updateFindCount, false) }
+        function onModelReset() { Qt.callLater(grid.updateFindCount, false) }
+        function onLayoutChanged() { Qt.callLater(grid.updateFindCount, false) }
+    }
+    Shortcut { sequences: [StandardKey.Find]; enabled: grid.visible && grid.findShortcutEnabled; onActivated: grid.openFind() }
+    TableColumnsDialog { id: columnsDialog; tableType: grid.prefix; columns: grid.columns }
+    PlainToolTip { id: valueTip; objectName: grid.prefix + "ValueTooltip" }
+    RowLayout {
+        Layout.fillWidth: true
+        visible: grid.inlineTools
+        Item { Layout.fillWidth: true }
+        IconButton { objectName: grid.prefix + "FindButton"; glyph: "Search"; text: workspace.uiText["nav.search"]; Accessible.name: workspace.uiText["table.findRows"]; onClicked: grid.openFind() }
+        IconButton { objectName: grid.prefix + "ColumnsButton"; glyph: "Columns"; text: "Columns"; Accessible.name: "Columns for " + grid.prefix + " table"; onClicked: grid.openColumns() }
+    }
+    RowLayout {
+        Layout.fillWidth: true
+        visible: grid.findOpen
+        TextField {
+            id: findInput
+            objectName: grid.prefix + "FindInput"
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            placeholderText: workspace.uiText["table.findRows"]
+            Accessible.name: workspace.uiText["table.findRows"]
+            onTextChanged: { grid.findValid = findMatches.filter(text); grid.updateFindCount(true) }
+            onAccepted: grid.selectFindMatch(1)
+            Keys.onEscapePressed: { grid.findOpen = false; table.forceActiveFocus() }
+        }
+        Label { objectName: grid.prefix + "FindCount"; text: (grid.findIndex + 1) + "/" + grid.findCount; textFormat: Text.PlainText; Accessible.name: "Search match " + text }
+        IconButton { objectName: grid.prefix + "FindPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(-1) }
+        IconButton { objectName: grid.prefix + "FindNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(1) }
+        IconButton { objectName: grid.prefix + "FindClose"; glyph: "Close"; text: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
+    }
+    Label { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: grid.colors.danger; Accessible.name: text }
+    Label { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+    Menu {
+        id: cellMenu
+        property string path: ""
+        property int column: -1
+        onAboutToShow: grid.contextRequested(path)
+        property string endpoint: ""
+        MenuItem { objectName: grid.prefix === "resource" ? "menuInspector" : grid.prefix + "MenuInspector"; text: grid.contextOpenText; visible: grid.inspectable; enabled: visible; onTriggered: grid.inspectRequested(cellMenu.endpoint) }
+        MenuItem { objectName: grid.prefix === "resource" ? "menuCopy" : grid.prefix + "MenuCopy"; text: workspace.uiText["copy.value"]; onTriggered: grid.copyPathRequested(cellMenu.path, cellMenu.column) }
+        Instantiator {
+            model: grid.contextActions
+            delegate: MenuItem { required property var modelData; action: modelData; objectName: modelData.objectName }
+            onObjectAdded: (index, object) => cellMenu.insertItem(index + 2, object)
+            onObjectRemoved: (index, object) => cellMenu.removeItem(object)
+        }
+    }
+    Component {
+        id: headerDelegate
+        Button {
+            required property var model
+            required property int column
+            hoverEnabled: true
+            readonly property bool pinned: TableView.view === pinnedHeader
+            readonly property bool sortable: grid.sortableColumns < 0 || column < grid.sortableColumns
+            objectName: (pinned ? "pinnedHeader_" : grid.prefix === "resource" ? "header_" : grid.prefix + "Header_") + column
+            text: model.display
+            implicitWidth: 170
+            implicitHeight: Math.max(38, Math.ceil(workspace.textSizes.body * 1.3) + 12)
+            font.pixelSize: workspace.textSizes.body
+            font.bold: true
+            leftPadding: 10; rightPadding: 10
+            background: Rectangle {
+                color: parent.down || parent.hovered ? grid.colors.raised : grid.colors.panel
+                border.color: parent.activeFocus ? grid.colors.accent : grid.colors.border
+            }
+            contentItem: RowLayout {
+                spacing: 6
+                KindGlyph {
+                    Accessible.ignored: true
+                    visible: ["alert", "diagnostic", "audit"].indexOf(grid.prefix) < 0
+                    Layout.preferredWidth: 12; Layout.preferredHeight: 12
+                    kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
+                    fill: grid.colors.accent
+                }
+                Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
+                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small; Accessible.ignored: true }
+            }
+            focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
+            Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
+            onClicked: if (sortable) grid.sortRequested(column)
+            MouseArea {
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                z: 1
+                width: 8
+                enabled: visualColumn >= 0 && !grid.stateAt(visualColumn)?.pinned
+                    && !(grid.Window.window && grid.Window.window.touchLayout)
+                cursorShape: Qt.SizeHorCursor
+                preventStealing: true
+                readonly property int visualColumn: grid.visualOrder.indexOf(column)
+                property real originX: 0
+                property real originWidth: 0
+                onPressed: mouse => {
+                    originX = mapToItem(null, mouse.x, mouse.y).x
+                    originWidth = table.columnWidth(visualColumn)
+                }
+                onPositionChanged: mouse => {
+                    if (!pressed) return
+                    const width = originWidth + mapToItem(null, mouse.x, mouse.y).x - originX
+                    table.setColumnWidth(visualColumn, Math.max(48, Math.min(width, 2000)))
+                }
+            }
+            ToolTip.visible: (hovered || activeFocus) && contentItem.implicitWidth > availableWidth
+            ToolTip.text: text
+            TapHandler { acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen; acceptedButtons: Qt.RightButton; onTapped: grid.openColumns() }
+            Keys.onPressed: event => {
+                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                    grid.openColumns(); event.accepted = true
+                }
+            }
+        }
+    }
+    component ResourceTableView: TableView {
+        id: surface
+        property Item hoveredCell: null
+        readonly property Item pressedCell: leftTap.pressed && leftTap.origin ? leftTap.origin.cell : null
+
+        function cellAtScene(position) {
+            const viewport = mapFromItem(null, position.x, position.y)
+            if (!visible || !model || viewport.x < 0 || viewport.y < 0 || viewport.x >= width || viewport.y >= height) return null
+            if (childAt(viewport.x, viewport.y) instanceof ScrollBar) return null
+            const content = contentItem.mapFromItem(null, position.x, position.y)
+            const cell = itemAtCell(cellAtPosition(content))
+            if (!cell) return null
+            let point = cell.mapFromItem(null, position.x, position.y)
+            let child = cell.childAt(point.x, point.y)
+            while (child) {
+                if (child instanceof AbstractButton) return null
+                point = child.mapFromItem(null, position.x, position.y)
+                child = child.childAt(point.x, point.y)
+            }
+            return cell
+        }
+        function updateHover() {
+            const cell = pointer && pointer.hovered ? cellAtScene(pointer.point.scenePosition) : null
+            hoveredCell = cell && cell.hoverEnabled ? cell : null
+        }
+        function pressOrigin(position) {
+            const cell = cellAtScene(position)
+            return cell ? {cell: cell, path: cell.resourcePath, column: cell.column, scope: grid.contextScope} : null
+        }
+        function activateOrigin(origin, position, menu) {
+            const cell = cellAtScene(position)
+            if (!origin || !cell || cell !== origin.cell || cell.resourcePath !== origin.path || cell.column !== origin.column || grid.contextScope !== origin.scope) return
+            if (menu) {
+                cellMenu.path = grid.pathAt(cell.row)
+                cellMenu.endpoint = grid.endpointAt(cell.row, cell.column)
+                cellMenu.column = cell.column
+                cellMenu.popup(cell, 0, cell.height)
+            } else cell.clicked()
+        }
+        function forgetCell(cell) {
+            if (hoveredCell === cell) hoveredCell = null
+            if (leftTap && leftTap.origin && leftTap.origin.cell === cell) leftTap.origin = null
+            if (rightTap && rightTap.origin && rightTap.origin.cell === cell) rightTap.origin = null
+        }
+        function clearInput() {
+            hoveredCell = null
+            if (leftTap) leftTap.origin = null
+            if (rightTap) rightTap.origin = null
+        }
+        onContentXChanged: updateHover()
+        onContentYChanged: updateHover()
+        onLayoutChanged: updateHover()
+        onModelChanged: clearInput()
+        onVisibleChanged: if (!visible) clearInput()
+        HoverHandler {
+            id: pointer
+            onPointChanged: surface.updateHover()
+            onHoveredChanged: surface.updateHover()
+        }
+        TapHandler {
+            id: leftTap
+            property var origin: null
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.DragThreshold
+            onPressedChanged: if (pressed) origin = surface.pressOrigin(point.scenePosition)
+            onCanceled: origin = null
+            onLongPressed: { surface.activateOrigin(origin, point.scenePosition, true); origin = null }
+            onTapped: (eventPoint) => surface.activateOrigin(origin, eventPoint.scenePosition, false)
+        }
+        TapHandler {
+            id: rightTap
+            property var origin: null
+            acceptedDevices: PointerDevice.AllDevices & ~PointerDevice.TouchScreen
+            acceptedButtons: Qt.RightButton
+            gesturePolicy: TapHandler.DragThreshold
+            onPressedChanged: if (pressed) origin = surface.pressOrigin(point.scenePosition)
+            onCanceled: origin = null
+            onTapped: (eventPoint) => surface.activateOrigin(origin, eventPoint.scenePosition, true)
+        }
+    }
+    component ResourceCell: Rectangle {
+        id: cell
+        property bool hoverEnabled: true
+        readonly property bool hovered: TableView.view && TableView.view.hoveredCell === cell
+        readonly property bool highlighted: selected
+        property bool keyboardPressed: false
+        readonly property bool down: (TableView.view && TableView.view.pressedCell === cell) || keyboardPressed
+        property string text: display
+        property font font: grid.cellFont
+        property real padding: grid.accessoryColumns.indexOf(column) >= 0 ? 0 : 6
+        readonly property Item contentItem: cellText
+        property bool textTruncated: cellText.truncated
+        signal clicked()
+        activeFocusOnTab: true
+        required property int row
+        required property int column
+        required property string display
+        required property string resourcePath
+        required property string resourceName
+        required property color identityColor
+        required property bool selected
+        readonly property bool current: selection.currentIndex.valid && selection.currentIndex.row === row && selection.currentIndex.column === column
+        readonly property bool pinned: TableView.view === pinnedTable
+        objectName: grid.cellName ? grid.cellName(row, column, resourcePath) : (pinned ? "pinnedCell_" : grid.prefix === "resource" ? "cell_" : grid.prefix + "Cell_") + row + "_" + column
+        implicitWidth: 170
+        implicitHeight: grid.rowHeight
+        onActiveFocusChanged: {
+            if (activeFocus) grid.focusCell(row, column, TableView.view)
+            else keyboardPressed = false
+        }
+        Accessible.ignored: grid.accessoryColumns.indexOf(column) >= 0 && !grid.accessibleAccessoryCells
+        Accessible.role: grid.inspectable || (grid.actionColumns.indexOf(column) >= 0 && text !== "") ? Accessible.Button : Accessible.Cell
+        Accessible.name: {
+            const heading = grid.columns.find(state => state.column === column)
+            const identity = resourceName || grid.tableModel.data(grid.tableModel.index(row, grid.identityColumn), Qt.DisplayRole) || resourcePath
+            const action = grid.actionColumns.indexOf(column) >= 0 && text !== "" && text !== identity
+            const parts = [identity, action ? text : heading ? heading.title : ""]
+            if (!action && text !== identity && (!heading || text !== heading.title)) parts.push(text)
+            return parts.filter(part => part !== "").join(", ")
+        }
+        Accessible.focusable: true
+        Accessible.focused: activeFocus
+        Accessible.selected: selected
+        Accessible.onPressAction: cell.clicked()
+        Text {
+            id: cellText
+            Accessible.ignored: true
+            anchors.fill: parent
+            anchors.margins: cell.padding
+            text: grid.accessoryColumns.indexOf(cell.column) < 0 ? cell.text : ""
+            textFormat: Text.PlainText
+            font: cell.font
+            color: identityColor.a > 0 ? identityColor : grid.colors.text
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap
+            maximumLineCount: grid.wrapCells ? 3 : 1
+        }
+        color: highlighted || current ? grid.colors.selection : hovered ? grid.colors.raised : grid.colors.inset
+        border.color: activeFocus || (current && TableView.view.activeFocus) ? grid.colors.accent : grid.colors.border
+        border.width: 1
+        onClicked: { forceActiveFocus(Qt.MouseFocusReason); grid.activateCell(row, column) }
+        Keys.onReturnPressed: grid.activateCell(row, column)
+        Keys.onEnterPressed: grid.activateCell(row, column)
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                if (!event.isAutoRepeat) keyboardPressed = true
+                event.accepted = true
+            } else event.accepted = grid.handleCellKey(event, row, column, cell)
+        }
+        Keys.onReleased: function(event) {
+            if (event.key === Qt.Key_Space && !event.isAutoRepeat) {
+                const activate = keyboardPressed
+                keyboardPressed = false
+                if (activate) cell.clicked()
+                event.accepted = true
+            }
+        }
+        property string tipText: text
+        readonly property bool wantsTip: (hovered || activeFocus) && (textTruncated || tipText.length > text.length)
+        onWantsTipChanged: if (wantsTip) valueTip.target=cell
+        Component.onDestruction: {
+            if (valueTip.target === cell) valueTip.target = null
+            if (TableView.view) TableView.view.forgetCell(cell)
+        }
+        TableView.onPooled: {
+            keyboardPressed = false
+            if (valueTip.target === cell) valueTip.target = null
+            if (TableView.view) TableView.view.forgetCell(cell)
+        }
+    }
+    Component { id: cellDelegate; ResourceCell {} }
+    Component {
+        id: accessoryCellDelegate
+        ResourceCell {
+            id: accessoryCell
+            required property var model
+            textTruncated: accessoryLoader.item ? accessoryLoader.item.truncated === true : false
+            tipText: grid.prefix === "value" && column === 2 ? model.valueDetail : text
+            Loader {
+                id: accessoryLoader
+                anchors.fill: parent
+                anchors.margins: accessoryCell.padding
+                active: accessoryCell.width > 0 && grid.accessoryColumns.indexOf(accessoryCell.column) >= 0
+                visible: active
+                sourceComponent: grid.cellAccessory
+                property string identity: accessoryCell.resourcePath
+                property string resourceName: active ? grid.tableModel.data(grid.tableModel.index(accessoryCell.row,0),Qt.UserRole+1) || "" : ""
+                property int row: accessoryCell.row
+                property int column: accessoryCell.column
+                property var tableView: accessoryCell.TableView.view
+                property bool encodedValue: active && accessoryCell.model.encodedValue
+            }
+        }
+    }
+    Item {
+        implicitHeight: scrollingHeader.implicitHeight + grid.rowHeight + horizontalScroll.implicitHeight
+        Layout.fillHeight: true
+        Layout.fillWidth: true
+        RowLayout {
+            anchors.fill: parent
+            spacing: 0
+            visible: grid.prefix !== "resource" || workspace.currentSession !== ""
+            ColumnLayout {
+                visible: grid.pinnedWidth > 0
+                Layout.preferredWidth: Math.min(grid.pinnedWidth, Math.max(0, grid.width - (grid.hasScrollingColumns ? 120 : 0)))
+                Layout.fillHeight: true
+                spacing: 0
+                HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; resizableColumns: false; delegate: headerDelegate }
+                ResourceTableView {
+                    id: pinnedTable
+                    animate: false
+                    activeFocusOnTab: true
+                    objectName: grid.prefix + "PinnedTable"
+                    Layout.fillWidth: true; Layout.fillHeight: true
+                    onWidthChanged: Qt.callLater(grid.revealFocusedCell)
+                    clip: true
+                    model: grid.visible && grid.pinnedWidth > 0 ? grid.tableModel : null
+                    selectionModel: model ? selection : null
+                    selectionBehavior: TableView.SelectRows
+                    selectionMode: TableView.SingleSelection
+                    syncView: grid.visible && grid.pinnedWidth > 0 ? table : null
+                    syncDirection: Qt.Vertical
+                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return grid.columnShown(state) && state.pinned ? state.width : 0 }
+                    rowHeightProvider: function() { return grid.rowHeight }
+                    ScrollBar.horizontal: ScrollBar {}
+                    delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
+                    Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
+                    Keys.onPressed: event => { if (selection.currentIndex.valid) event.accepted = grid.handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, pinnedTable) }
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                spacing: 0
+                HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; resizableColumns: false; delegate: headerDelegate }
+                ResourceTableView {
+                    id: table
+                    animate: false
+                    activeFocusOnTab: true
+                    objectName: grid.prefix + "Table"
+                    Layout.fillWidth: true; Layout.fillHeight: true
+                    onWidthChanged: Qt.callLater(grid.revealFocusedCell)
+                    clip: true
+                    model: grid.visible ? grid.tableModel : null
+                    selectionModel: model ? selection : null
+                    onColumnsChanged: Qt.callLater(grid.synchronizeColumns)
+                    selectionBehavior: TableView.SelectRows
+                    selectionMode: TableView.SingleSelection
+                    columnWidthProvider: function(column) { const state = grid.stateAt(column); if (!grid.columnShown(state) || state.pinned) return 0
+                        const resized = table.explicitColumnWidth(column)
+                        if (resized >= 0) return Math.max(48, resized)
+                        if (state.column !== grid.stretchColumn?.column || grid.extraColumnWidth <= 0) return state.width
+                        const hasManualWidths = grid.scrollingColumns.some(entry => {
+                            const index = grid.visualOrder.indexOf(entry.column)
+                            return index >= 0 && table.explicitColumnWidth(index) >= 0
+                        })
+                        return state.width + (hasManualWidths ? 0 : grid.extraColumnWidth) }
+                    rowHeightProvider: function() { return grid.rowHeight }
+                    ScrollBar.vertical: ScrollBar {}
+                    ScrollBar.horizontal: ScrollBar { id: horizontalScroll }
+                    delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
+                    Keys.onReturnPressed: if (selection.currentIndex.valid) grid.activateCell(selection.currentIndex.row, selection.currentIndex.column)
+                    Keys.onPressed: event => { if (selection.currentIndex.valid) event.accepted = grid.handleCellKey(event, selection.currentIndex.row, selection.currentIndex.column, table) }
+                }
+            }
+        }
+        GridLayout {
+            anchors.centerIn: parent; width: Math.min(420, parent.width - 24)
+            visible: table.rows === 0; columns: grid.Window.window && grid.Window.window.compactLandscape ? 2 : 1
+            columnSpacing: 10; rowSpacing: columns === 2 ? 4 : 10
+            Image {
+                objectName: grid.prefix + "EmptyLogo"
+                visible: grid.prefix === "resource"
+                Layout.rowSpan: parent.columns === 2 ? 2 : 1
+                Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: parent.columns === 2 ? 52 : Math.min(220, parent.width)
+                Layout.preferredHeight: parent.columns === 2 ? 52 : Math.min(210, Math.max(0, grid.height - emptyTitle.implicitHeight - emptyMessage.implicitHeight - 110))
+                source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit
+                sourceSize.width: 440; sourceSize.height: 420; asynchronous: true
+                Accessible.ignored: true
+            }
+            Label {
+                id: emptyTitle; visible: grid.prefix === "resource"
+                Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                text: workspace.uiText[workspace.totalResourceCount > 0 ? "resource.noMatchingTitle" : workspace.loading ? "resource.loadingTitle" : "resource.emptyTitle"]
+                textFormat: Text.PlainText; font.pixelSize: parent.columns === 2 ? workspace.textSizes.subheading : workspace.textSizes.title; font.bold: true
+                color: grid.colors.accent; wrapMode: Text.Wrap
+            }
+            Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: grid.colors.muted }
+        }
+    }
+}

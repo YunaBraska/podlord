@@ -2,11 +2,210 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Avalonia.Media;
 using Podlord.Core;
-using Podlord.Kubernetes;
 
 namespace Podlord.App;
+
+public sealed record SessionTabViewModel(
+    string Id,
+    string DisplayName,
+    bool IsActive,
+    string SourceName,
+    string SourceColorKey,
+    string Tooltip);
+
+internal enum ResourceSortDirection
+{
+    None,
+    Descending,
+    Ascending
+}
+
+internal sealed record SessionWorkspaceSearchState(
+    bool IsResourceSearchOpen,
+    bool IsEventSearchOpen,
+    string ResourceQuickSearch,
+    string EventQuickSearch,
+    int ResourceSearchIndex,
+    int EventSearchIndex)
+{
+    public static SessionWorkspaceSearchState Empty { get; } = new(false, false, string.Empty, string.Empty, -1, -1);
+}
+
+internal sealed record SessionWorkspaceAlertState(
+    IReadOnlySet<string> PreviousVisibleRadarAlertIds,
+    IReadOnlySet<string> PreviousVisibleResourceAlertIds,
+    IReadOnlyDictionary<string, DateTimeOffset> RadarAlertBlinkUntil,
+    IReadOnlyDictionary<string, DateTimeOffset> ResourceAlertBlinkUntil,
+    IReadOnlyDictionary<(string RuleId, string RowId), DateTimeOffset> AlertDurationUntilByRuleResource,
+    IReadOnlyDictionary<(string RuleId, string RowId), DateTimeOffset> AlertColorUntilByRuleResource,
+    IReadOnlyDictionary<(string RuleId, string RowId), DateTimeOffset> AlertAnimationUntilByRuleResource,
+    IReadOnlyDictionary<string, string> AlertSoundKeysByRuleId,
+    IReadOnlySet<(string RuleId, string RowId)> PreviousAlertRuleMatches,
+    IReadOnlyDictionary<(string RuleId, string RowId), string> PreviousAlertRuleRowStates,
+    string LastRadarAutoFollowAlertKey)
+{
+    public static SessionWorkspaceAlertState Empty { get; } = new(
+        new HashSet<string>(StringComparer.Ordinal),
+        new HashSet<string>(StringComparer.Ordinal),
+        new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal),
+        new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal),
+        new Dictionary<(string RuleId, string RowId), DateTimeOffset>(),
+        new Dictionary<(string RuleId, string RowId), DateTimeOffset>(),
+        new Dictionary<(string RuleId, string RowId), DateTimeOffset>(),
+        new Dictionary<string, string>(StringComparer.Ordinal),
+        new HashSet<(string RuleId, string RowId)>(),
+        new Dictionary<(string RuleId, string RowId), string>(),
+        string.Empty);
+}
+
+internal sealed record SessionWorkspaceRadarState(
+    double Zoom,
+    double PanX,
+    double PanY,
+    double CanvasWidth,
+    double CanvasHeight,
+    double PanelHeight)
+{
+    public static SessionWorkspaceRadarState Default { get; } = new(1d, 0d, 0d, 480d, 200d, 184d);
+}
+
+internal sealed record SessionWorkspaceRenderedState(
+    ResourceQuery LocalQuery,
+    string ResourceSortColumn,
+    ResourceSortDirection ResourceSortDirection,
+    string EventSortColumn,
+    ResourceSortDirection EventSortDirection,
+    IReadOnlyList<FlatResourceRow> CachedRows,
+    IReadOnlyList<ResourceListFailure> Failures,
+    string? SelectedResourceId,
+    string? SelectedResourceRowId,
+    DateTimeOffset? LastSyncedAt,
+    string StatusLine);
+
+internal sealed class SessionWorkspaceViewModel : INotifyPropertyChanged
+{
+    private PodlordSession session;
+    private bool isActive;
+    private bool isRefreshing;
+    private bool isCacheWarm;
+
+    public SessionWorkspaceViewModel(PodlordSession session, IKubernetesApplicationPort service)
+    {
+        this.session = session;
+        Service = service;
+    }
+
+    public string Id => session.Id;
+
+    public PodlordSession Session => session;
+
+    public IKubernetesApplicationPort Service { get; }
+
+    public string DisplayName => session.DisplayName;
+
+    public bool IsActive
+    {
+        get => isActive;
+        set
+        {
+            if (isActive == value)
+            {
+                return;
+            }
+
+            isActive = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public SessionWorkspaceSearchState SearchState { get; set; } = SessionWorkspaceSearchState.Empty;
+
+    public SessionWorkspaceAlertState AlertState { get; set; } = SessionWorkspaceAlertState.Empty;
+
+    public SessionWorkspaceRadarState RadarState { get; set; } = SessionWorkspaceRadarState.Default;
+
+    public SessionWorkspaceRenderedState? RenderedState { get; set; }
+
+    public string FilterOptionSignature { get; set; } = string.Empty;
+
+    public DateTimeOffset? LastSyncedAt { get; set; }
+
+    public DateTimeOffset LastBroadRefreshAt { get; set; } = DateTimeOffset.MinValue;
+
+    public DateTimeOffset InitialLoadStartedAt { get; set; } = DateTimeOffset.MinValue;
+
+    public int InitialLoadExpectedTotal { get; set; }
+
+    public bool RefreshInFlight { get; set; }
+
+    public bool RefreshAgainRequested { get; set; }
+
+    public CancellationTokenSource? CacheRestore { get; set; }
+
+    public bool IsRefreshing
+    {
+        get => isRefreshing;
+        set
+        {
+            if (isRefreshing == value)
+            {
+                return;
+            }
+
+            isRefreshing = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsCacheWarm
+    {
+        get => isCacheWarm;
+        set
+        {
+            if (isCacheWarm == value)
+            {
+                return;
+            }
+
+            isCacheWarm = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public void CancelCacheRestore()
+    {
+        CacheRestore?.Cancel();
+        CacheRestore?.Dispose();
+        CacheRestore = null;
+    }
+
+    public void UpdateSession(PodlordSession updated)
+    {
+        if (!session.Id.Equals(updated.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (session.Equals(updated))
+        {
+            return;
+        }
+
+        session = updated;
+        OnPropertyChanged(nameof(Session));
+        OnPropertyChanged(nameof(DisplayName));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
 
 public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
 {
@@ -19,9 +218,18 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
         Action<ImportedContextRowViewModel> removeAction,
         Action<ImportedContextRowViewModel, string> renameAction,
         Action<ImportedContextRowViewModel>? activateAction = null,
+        Action<ImportedContextRowViewModel>? openTabAction = null,
+        Action<ImportedContextRowViewModel>? openWindowAction = null,
         bool isActive = false,
         string sourceName = "",
-        string hash = "")
+        string hash = "",
+        string useLabel = "OPEN",
+        string activeLabel = "ACTIVE",
+        string useTooltip = "",
+        string openTabTooltip = "",
+        string openWindowTooltip = "",
+        string renameTooltip = "",
+        string deleteTooltip = "")
     {
         ContextId = contextId;
         SourcePath = sourcePath;
@@ -29,9 +237,18 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
         RemoveCommand = new RelayCommand(() => removeAction(this));
         RenameCommand = new RelayCommand(() => renameAction(this, this.displayName));
         ActivateCommand = new RelayCommand(() => activateAction?.Invoke(this));
+        OpenTabCommand = new RelayCommand(() => openTabAction?.Invoke(this));
+        OpenWindowCommand = new RelayCommand(() => openWindowAction?.Invoke(this));
         IsActive = isActive;
         SourceName = sourceName;
         Hash = hash;
+        UseLabel = useLabel;
+        ActiveLabel = activeLabel;
+        UseTooltip = useTooltip;
+        OpenTabTooltip = openTabTooltip;
+        OpenWindowTooltip = openWindowTooltip;
+        RenameTooltip = renameTooltip;
+        DeleteTooltip = deleteTooltip;
     }
 
     public string ContextId { get; }
@@ -40,11 +257,25 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
 
     public bool IsActive { get; }
 
-    public string ActiveMark => IsActive ? "ACTIVE" : "USE";
+    public string ActiveMark => IsActive ? ActiveLabel : UseLabel;
 
     public string SourceName { get; }
 
     public string Hash { get; }
+
+    public string UseLabel { get; }
+
+    public string ActiveLabel { get; }
+
+    public string UseTooltip { get; }
+
+    public string OpenTabTooltip { get; }
+
+    public string OpenWindowTooltip { get; }
+
+    public string RenameTooltip { get; }
+
+    public string DeleteTooltip { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -68,6 +299,10 @@ public sealed class ImportedContextRowViewModel : INotifyPropertyChanged
     public System.Windows.Input.ICommand RenameCommand { get; }
 
     public System.Windows.Input.ICommand ActivateCommand { get; }
+
+    public System.Windows.Input.ICommand OpenTabCommand { get; }
+
+    public System.Windows.Input.ICommand OpenWindowCommand { get; }
 }
 
 public sealed class SourceStatusRow : INotifyPropertyChanged
@@ -435,130 +670,6 @@ public sealed record HealthSegmentViewModel(
     double Height,
     IBrush Brush);
 
-public sealed class GraphNodeViewModel : INotifyPropertyChanged
-{
-    private bool isSearchMatch;
-    private bool isCurrentSearchMatch;
-
-    public GraphNodeViewModel(string kind, string name, string ns, string status, FlatResourceRow? resource = null)
-    {
-        Kind = kind;
-        Name = name;
-        Namespace = ns;
-        Status = status;
-        Resource = resource;
-    }
-
-    public string Kind { get; }
-
-    public string Name { get; }
-
-    public string Namespace { get; }
-
-    public string Status { get; }
-
-    public FlatResourceRow? Resource { get; }
-
-    public bool HasResource => Resource is not null;
-
-    public ObservableCollection<GraphNodeViewModel> Children { get; } = [];
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public bool IsSearchMatch
-    {
-        get => isSearchMatch;
-        set
-        {
-            if (isSearchMatch == value)
-            {
-                return;
-            }
-
-            isSearchMatch = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(BorderBrush));
-            OnPropertyChanged(nameof(BackgroundBrush));
-        }
-    }
-
-    public bool IsCurrentSearchMatch
-    {
-        get => isCurrentSearchMatch;
-        set
-        {
-            if (isCurrentSearchMatch == value)
-            {
-                return;
-            }
-
-            isCurrentSearchMatch = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(BorderBrush));
-            OnPropertyChanged(nameof(BackgroundBrush));
-        }
-    }
-
-    public IBrush BorderBrush => IsCurrentSearchMatch
-        ? AppThemeCatalog.StatusBrush("WARNING")
-        : IsSearchMatch ? AppThemeCatalog.StatusBrush("HEALTHY")
-        : Resource is { AlertColor.Length: > 0 } row && !row.AlertColor.Equals("none", StringComparison.OrdinalIgnoreCase) ? AlertBrush(row)
-        : Resource is { IsAnnouncing: true } ? AppThemeCatalog.StatusBrush("HEALTHY")
-        : AppThemeCatalog.StatusBrush("UNKNOWN");
-
-    public IBrush BackgroundBrush => IsCurrentSearchMatch
-        ? SolidColorBrush.Parse("#20190F")
-        : IsSearchMatch ? SolidColorBrush.Parse("#132119")
-        : Resource is { IsAnnouncing: true } ? SolidColorBrush.Parse("#111C14")
-        : SolidColorBrush.Parse("#060707");
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    private static IBrush AlertBrush(FlatResourceRow row)
-    {
-        if (row.AlertColor.StartsWith('#') && row.AlertColor.Length is 7 or 9)
-        {
-            try
-            {
-                return SolidColorBrush.Parse(row.AlertColor);
-            }
-            catch (FormatException)
-            {
-                return AppThemeCatalog.StatusBrush(row.Status);
-            }
-        }
-
-        return row.AlertColor.ToLowerInvariant() switch
-        {
-            "fresh" or "cyan" or "green" => AppThemeCatalog.StatusBrush("HEALTHY"),
-            "amber" or "yellow" => AppThemeCatalog.StatusBrush("WARNING"),
-            "red" => AppThemeCatalog.StatusBrush("CRITICAL"),
-            "status" => ProblemAwareStatusBrush(row),
-            _ => AppThemeCatalog.StatusBrush(row.Status)
-        };
-    }
-
-    private static IBrush ProblemAwareStatusBrush(FlatResourceRow row)
-    {
-        var problem = ResourceFilterMatcher.ProblemReason(row);
-        if (problem.Length == 0)
-        {
-            return AppThemeCatalog.StatusBrush(row.Status);
-        }
-
-        return row.Status is "CrashLoopBackOff" or "CreateContainerConfigError" or "CreateContainerError" or "ErrImagePull" or "Error" or "Failed" or "ImagePullBackOff" or "NotReady" or "OOMKilled" or "Unavailable"
-               || problem.Contains("Crash", StringComparison.OrdinalIgnoreCase)
-               || problem.Contains("Error", StringComparison.OrdinalIgnoreCase)
-               || problem.Contains("Failed", StringComparison.OrdinalIgnoreCase)
-               || problem.Contains("Unavailable", StringComparison.OrdinalIgnoreCase)
-            ? AppThemeCatalog.StatusBrush("CRITICAL")
-            : AppThemeCatalog.StatusBrush("WARNING");
-    }
-}
-
 public sealed class RadarIdleCellViewModel(double x, double y, double width, double height, IBrush brush) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -610,7 +721,11 @@ public sealed class RadarBlockViewModel(
     bool isAnnouncing = false,
     string alertAnimation = "",
     string alertColor = "",
-    bool isDimmed = false) : INotifyPropertyChanged
+    bool isDimmed = false,
+    double? worldX = null,
+    double? worldY = null,
+    double? worldWidth = null,
+    double? worldHeight = null) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -625,6 +740,14 @@ public sealed class RadarBlockViewModel(
     public double Width { get; private set; } = width;
 
     public double Height { get; private set; } = height;
+
+    public double WorldX { get; private set; } = worldX ?? x;
+
+    public double WorldY { get; private set; } = worldY ?? y;
+
+    public double WorldWidth { get; private set; } = worldWidth ?? width;
+
+    public double WorldHeight { get; private set; } = worldHeight ?? height;
 
     public IBrush Brush { get; private set; } = brush;
 
@@ -682,6 +805,10 @@ public sealed class RadarBlockViewModel(
             && Y.Equals(source.Y)
             && Width.Equals(source.Width)
             && Height.Equals(source.Height)
+            && WorldX.Equals(source.WorldX)
+            && WorldY.Equals(source.WorldY)
+            && WorldWidth.Equals(source.WorldWidth)
+            && WorldHeight.Equals(source.WorldHeight)
             && ReferenceEquals(Brush, source.Brush)
             && ReferenceEquals(BorderBrush, source.BorderBrush)
             && ReferenceEquals(AnnounceBrush, source.AnnounceBrush)
@@ -702,12 +829,23 @@ public sealed class RadarBlockViewModel(
             return;
         }
 
+        var borderThicknessChanged = IsSelected != source.IsSelected
+                                     || IsDimmed != source.IsDimmed
+                                     || IsEventShallow != source.IsEventShallow
+                                     || Problem.Length != source.Problem.Length;
+        var animationStateChanged = IsAnnouncing != source.IsAnnouncing
+                                    || !AlertAnimation.Equals(source.AlertAnimation, StringComparison.Ordinal);
+
         Resource = source.Resource;
         Group = source.Group;
         X = source.X;
         Y = source.Y;
         Width = source.Width;
         Height = source.Height;
+        WorldX = source.WorldX;
+        WorldY = source.WorldY;
+        WorldWidth = source.WorldWidth;
+        WorldHeight = source.WorldHeight;
         Brush = source.Brush;
         BorderBrush = source.BorderBrush;
         AnnounceBrush = source.AnnounceBrush;
@@ -724,7 +862,46 @@ public sealed class RadarBlockViewModel(
         AlertAnimation = source.AlertAnimation;
         AlertColor = source.AlertColor;
         IsDimmed = source.IsDimmed;
-        OnPropertyChanged(string.Empty);
+        OnPropertyChanged(nameof(Resource));
+        OnPropertyChanged(nameof(Group));
+        OnPropertyChanged(nameof(X));
+        OnPropertyChanged(nameof(Y));
+        OnPropertyChanged(nameof(Width));
+        OnPropertyChanged(nameof(Height));
+        OnPropertyChanged(nameof(WorldX));
+        OnPropertyChanged(nameof(WorldY));
+        OnPropertyChanged(nameof(WorldWidth));
+        OnPropertyChanged(nameof(WorldHeight));
+        OnPropertyChanged(nameof(Brush));
+        OnPropertyChanged(nameof(BorderBrush));
+        OnPropertyChanged(nameof(AnnounceBrush));
+        OnPropertyChanged(nameof(Problem));
+        OnPropertyChanged(nameof(Metrics));
+        OnPropertyChanged(nameof(IsPlaceholder));
+        OnPropertyChanged(nameof(IsSelected));
+        OnPropertyChanged(nameof(DisplayKind));
+        OnPropertyChanged(nameof(DisplayName));
+        OnPropertyChanged(nameof(ShowProblemGlyph));
+        OnPropertyChanged(nameof(IsEventShallow));
+        OnPropertyChanged(nameof(IsClickable));
+        OnPropertyChanged(nameof(IsAnnouncing));
+        OnPropertyChanged(nameof(AlertAnimation));
+        OnPropertyChanged(nameof(AlertColor));
+        OnPropertyChanged(nameof(IsDimmed));
+        OnPropertyChanged(nameof(ToolTipTitle));
+        OnPropertyChanged(nameof(ToolTipNamespace));
+        if (borderThicknessChanged)
+        {
+            OnPropertyChanged(nameof(BorderThickness));
+        }
+
+        if (animationStateChanged)
+        {
+            OnPropertyChanged(nameof(IsBlinkAnimation));
+            OnPropertyChanged(nameof(IsPulseAnimation));
+            OnPropertyChanged(nameof(IsSweepAnimation));
+            OnPropertyChanged(nameof(IsOutlineAnimation));
+        }
     }
 
     public void SetSelected(bool value)
@@ -755,7 +932,7 @@ public sealed class PortForwardTaskViewModel : INotifyPropertyChanged
 {
     private string status;
     private Process? process;
-    private PodlordPortForward? forwarder;
+    private IPodlordPortForward? forwarder;
 
     public PortForwardTaskViewModel(
         string id,
@@ -822,7 +999,7 @@ public sealed class PortForwardTaskViewModel : INotifyPropertyChanged
         }
     }
 
-    public PodlordPortForward? Forwarder
+    public IPodlordPortForward? Forwarder
     {
         get => forwarder;
         set

@@ -1,0 +1,496 @@
+name: Native preflight
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Native Linux ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build isolated Linux toolchain
+        run: docker build --tag "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" - < native/tests/linux.Dockerfile
+      - name: Execute native tests and coverage report without host Qt
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-linux"
+          docker run --rm --init --name "podlord-native-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/source,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/native-linux,dst=/output" \
+            "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            sh -c 'dpkg-query -W > /output/packages.txt; sh scripts/test-native.sh > /output/tests.log 2>&1; status=$?; tail -45 /output/tests.log; exit "$status"'
+      - name: Retain Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-${{ matrix.runner }}-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-linux/packages.txt
+            ${{ runner.temp }}/native-linux/tests.log
+            ${{ runner.temp }}/native-linux/build/coverage/report.txt
+            ${{ runner.temp }}/native-linux/build/Testing/Temporary/LastTest.log
+      - name: Remove owned Linux test resources
+        if: always()
+        run: |
+          name="podlord-native-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if docker container inspect "$name" >/dev/null 2>&1; then docker rm -f "$name"; fi
+          if docker image inspect "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1; then
+            docker image rm "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+  windows:
+    name: Native Windows x64 build and smoke
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install official Qt and verified yaml-cpp
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # aqtinstall 3.3.0 assumes the pre-6.11 Qt archive layout.
+          python -m pip install git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the Qt installer.' }
+          aqt install-qt windows desktop 6.11.3 win64_msvc2022_64 -m qtmultimedia qtwebsockets qtshadertools -O "$env:RUNNER_TEMP\qt"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Qt 6.11.3 for MSVC 2022.' }
+          $archive = Join-Path $env:RUNNER_TEMP 'yaml-cpp-0.9.0.tar.gz'
+          Invoke-WebRequest 'https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '25cb043240f828a8c51beb830569634bc7ac603978e0f69d6b63558dadefd49a') {
+            throw 'yaml-cpp archive checksum mismatch.'
+          }
+          $source = Join-Path $env:RUNNER_TEMP 'yaml-cpp-source'
+          New-Item -ItemType Directory -Path $source | Out-Null
+          tar -xzf $archive --strip-components=1 -C $source
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract yaml-cpp.' }
+          $install = Join-Path $env:RUNNER_TEMP 'yaml-cpp-install'
+          cmake -S $source -B "$env:RUNNER_TEMP\yaml-cpp-build" -G 'Visual Studio 17 2022' -A x64 -DCMAKE_INSTALL_PREFIX="$install" -DYAML_BUILD_SHARED_LIBS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure yaml-cpp.' }
+          cmake --build "$env:RUNNER_TEMP\yaml-cpp-build" --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build yaml-cpp.' }
+          cmake --install "$env:RUNNER_TEMP\yaml-cpp-build" --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install yaml-cpp.' }
+      - name: Install and exercise the upstream Qt Quick shutdown correction
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vs)) { throw 'MSVC 2022 development tools are required.' }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          $null = Get-Command cl, ninja -ErrorAction Stop
+          # Preserve the official SDK's Vulkan-enabled RHI during the source rebuild.
+          $archive = Join-Path $env:RUNNER_TEMP 'vulkan-headers-1.4.363.0.tar.gz'
+          Invoke-WebRequest 'https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4a078be12bef21cfebc09d878b77a63cff9d68f899254a0b00d0e37ef73e7f7e') {
+            throw 'Vulkan headers archive checksum mismatch.'
+          }
+          $headers = Join-Path $env:RUNNER_TEMP 'vulkan-headers'
+          New-Item -ItemType Directory -Path $headers | Out-Null
+          tar -xzf $archive --strip-components=1 -C $headers
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract Vulkan development headers.' }
+          $env:INCLUDE = "$headers/include;$env:INCLUDE"
+          $qt = Join-Path $env:RUNNER_TEMP 'qt/6.11.3/msvc2022_64'
+          cmake "-DQT_SDK_PREFIX=$qt" "-DWORK_ROOT=$env:RUNNER_TEMP/qt-quick-fix" -P scripts/qt-quick-shutdown.cmake
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the pinned Qt Quick shutdown correction.' }
+          cmake -S native/tests/qt_shutdown -B "$env:RUNNER_TEMP/qt-shutdown-check" -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_PREFIX_PATH=$qt"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure the Qt shutdown regression.' }
+          cmake --build "$env:RUNNER_TEMP/qt-shutdown-check" --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the Qt shutdown regression.' }
+          ctest --test-dir "$env:RUNNER_TEMP/qt-shutdown-check" -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'The Qt image-thread shutdown regression failed.' }
+      - name: Build native Windows application and tests
+        env:
+          PODLORD_TEST_MACHINE_ROOT: '1'
+        run: |
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.3\msvc2022_64'
+          $yaml = Join-Path $env:RUNNER_TEMP 'yaml-cpp-install'
+          $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
+          cmake -S native -B $build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH="$qt;$yaml" -DBUILD_TESTING=ON -DPODLORD_COVERAGE=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure the native Windows app.' }
+          # Check the same disposable store fixture before spending time compiling.
+          # This does not replace the extracted application's full TLS probes below.
+          $sslEntry = @(Select-String -LiteralPath (Join-Path $build 'CMakeCache.txt') -Pattern '^OPENSSL_INCLUDE_DIR:[^=]+=(.+)$')
+          if ($sslEntry.Count -ne 1) { throw 'Expected one actual OpenSSL include directory.' }
+          $openssl = Join-Path (Split-Path -Parent $sslEntry[0].Matches[0].Groups[1].Value) 'bin\openssl.exe'
+          node scripts/test-native-tls.cjs --check-system-store $openssl *> "$env:RUNNER_TEMP\podlord-windows-certificate-store.log"
+          $storeStatus = $LASTEXITCODE
+          Get-Content -LiteralPath "$env:RUNNER_TEMP\podlord-windows-certificate-store.log"
+          if ($storeStatus -ne 0) { throw 'The disposable Windows certificate-store fixture failed before compilation.' }
+          cmake --build $build --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the native Windows app and tests.' }
+          if (!(Test-Path "$build\Release\podlord-native.exe")) { throw 'The native Windows app is missing.' }
+      - name: Exercise public Windows smoke paths
+        run: |
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.3\msvc2022_64'
+          $env:PATH = "$qt\bin;$env:PATH"
+          $env:QT_PLUGIN_PATH = "$qt\plugins"
+          $env:QML_IMPORT_PATH = "$qt\qml"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QUICK_BACKEND = 'software'
+          $env:QT_QUICK_CONTROLS_STYLE = 'Basic'
+          ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --parallel 4 --output-on-failure -R '^native\.(metrics\.|window\.(active|close_isolation)_Basic$|ui\.empty_brand_Basic$|sessions\.empty_profile$|sources\.success$)'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows public smoke tests failed.' }
+          ctest --test-dir "$env:RUNNER_TEMP\podlord-windows-build" -C Release --output-on-failure -L 'audio_decode|audio_failure'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows silent audio tests failed.' }
+      - name: Deploy and start isolated native Windows package
+        env:
+          PODLORD_TEST_MACHINE_ROOT: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $qt = Join-Path $env:RUNNER_TEMP 'qt\6.11.3\msvc2022_64'
+          $build = Join-Path $env:RUNNER_TEMP 'podlord-windows-build'
+          $package = Join-Path $env:RUNNER_TEMP 'podlord-windows-package'
+          $evidence = Join-Path $env:RUNNER_TEMP 'podlord-windows-package-evidence'
+          $archive = Join-Path $env:RUNNER_TEMP 'podlord-windows-x64.zip'
+          node --test scripts/test-native-windows-package.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Windows package CLI checks failed.' }
+          & ./scripts/check-native-windows-package.ps1 `
+            -BuildDirectory $build -QtDirectory $qt `
+            -PackageDirectory $package -ArchivePath $archive `
+            -EvidenceDirectory $evidence
+          Copy-Item "$evidence\software-Fusion.stderr.log" "$env:RUNNER_TEMP\podlord-windows-package-stderr.log"
+      - name: Retain Windows smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-windows-x64-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/podlord-windows-build/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/podlord-windows-package-stderr.log
+            ${{ runner.temp }}/podlord-windows-certificate-store.log
+            ${{ runner.temp }}/podlord-windows-package-evidence/
+            ${{ runner.temp }}/podlord-windows-x64.zip
+  macos:
+    name: Native ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    defaults:
+      run:
+        shell: sh
+    env:
+      PODLORD_TEST_JOBS: '6'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up pinned public macOS toolchain
+        uses: ./.github/actions/native-macos-toolchain
+      - name: Native tests, benchmarks and coverage report
+        id: tests
+        run: |
+          status=0
+          touch "$RUNNER_TEMP/native-tests.started"
+          /bin/sh scripts/test-native.sh > "$RUNNER_TEMP/native-tests.log" 2>&1 || status=$?
+          tail -n 45 "$RUNNER_TEMP/native-tests.log"
+          if [ "$status" -ne 0 ]; then
+            profiles=$(mktemp -d "$RUNNER_TEMP/native-failure-profiles.XXXXXX")
+            trap 'find "$profiles" -maxdepth 1 -type f -name "*.profraw" -delete; rmdir "$profiles"' 0
+            # Excluding preflight tests changes ordinals; repeat the recorded names, not their numbers.
+            failed=""
+            if [ -f "$PODLORD_NATIVE_BUILD_DIR/Testing/Temporary/LastTestsFailed.log" ]; then
+              failed=$(sed 's/^[0-9]*://; s/\./\\./g' "$PODLORD_NATIVE_BUILD_DIR/Testing/Temporary/LastTestsFailed.log" | paste -sd '|' -)
+            fi
+            if [ -n "$failed" ]; then
+              PODLORD_TRACE_PLATFORM_TLS=1 LLVM_PROFILE_FILE="$profiles/%p-%m.profraw" ctest --test-dir "$PODLORD_NATIVE_BUILD_DIR" \
+                --tests-regex "^($failed)$" --parallel 1 --output-on-failure > "$RUNNER_TEMP/native-failure-reproduction.log" 2>&1 || :
+              tail -n 45 "$RUNNER_TEMP/native-failure-reproduction.log"
+            fi
+            reports="$HOME/Library/Logs/DiagnosticReports"
+            if [ -d "$reports" ]; then
+              mkdir -p "$RUNNER_TEMP/native-crash-reports"
+              find "$reports" -maxdepth 1 -type f -newer "$RUNNER_TEMP/native-tests.started" \
+                \( -name 'workspace_ui_test-*.ips' -o -name 'workspace_ui_test-*.crash' \
+                   -o -name 'alert_ui_test-*.ips' -o -name 'alert_ui_test-*.crash' \) \
+                -exec sh -c 'destination=$1; shift; cp "$@" "$destination"' sh "$RUNNER_TEMP/native-crash-reports" {} + \
+                || printf 'Warning: owned crash-report collection was incomplete.\n' >&2
+            fi
+          fi
+          exit "$status"
+      - name: Retain native preflight evidence, not release binaries
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-preflight-${{ matrix.runner }}-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-tests.log
+            ${{ runner.temp }}/native-failure-reproduction.log
+            ${{ runner.temp }}/native-crash-reports
+            ${{ runner.temp }}/native-radar-failures
+            ${{ runner.temp }}/native-toolchain.log
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-macos-cache-inputs.log
+            ${{ runner.temp }}/podlord-native-build/coverage/report.txt
+            ${{ runner.temp }}/podlord-native-build/coverage/native.profdata
+            ${{ runner.temp }}/podlord-native-build/coverage/benchmark.json
+            ${{ runner.temp }}/podlord-native-build/coverage/source-benchmark.json
+
+  macos-package:
+    name: Native package ${{ matrix.channel }} ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+        channel: [direct, store]
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up pinned public macOS toolchain
+        uses: ./.github/actions/native-macos-toolchain
+      - name: Build direct package test drivers
+        if: ${{ !cancelled() && matrix.channel == 'direct' }}
+        run: |
+          status=0
+          {
+            cmake -S native -B "$PODLORD_NATIVE_BUILD_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_COVERAGE=OFF &&
+            cmake --build "$PODLORD_NATIVE_BUILD_DIR" --target application_startup_test tls-connection-test --parallel 3
+          } > "$RUNNER_TEMP/native-package-drivers.log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/native-package-drivers.log"; else tail -n 25 "$RUNNER_TEMP/native-package-drivers.log"; fi
+          exit "$status"
+      - name: Verify native Mac App Store boundaries
+        if: ${{ !cancelled() && matrix.channel == 'store' }}
+        run: |
+          store="$RUNNER_TEMP/native-store"
+          export PODLORD_SHELL_EVIDENCE="$RUNNER_TEMP/native-store-frames"
+          status=0
+          {
+            cmake -S native -B "$store" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPODLORD_MAC_APP_STORE=ON &&
+            cmake --build "$store" --target store-boundary-test podlord-native native-eks-test native-gke-test native-oci-test gke-import-ui-test oci-import-ui-test workspace_ui_test --parallel 3 &&
+            ctest --test-dir "$store" --tests-regex '^native\.(store\.|authentication\.(eks|gke|oci)_|source_import\.(gke|oci)_|ui\.gke_prompt_)' --no-tests=error --output-on-failure --parallel 2
+          } > "$RUNNER_TEMP/native-store.log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/native-store.log"; else tail -n 25 "$RUNNER_TEMP/native-store.log"; fi
+          exit "$status"
+      - name: Build and inspect the native Store slice
+        if: ${{ !cancelled() && matrix.channel == 'store' }}
+        run: |
+          status=0
+          PODLORD_MAC_APP_STORE=ON /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-store-package" > "$RUNNER_TEMP/native-store-package.log" 2>&1 || status=$?
+          tail -n 25 "$RUNNER_TEMP/native-store-package.log"
+          exit "$status"
+      - name: Build and inspect the native macOS package
+        id: package
+        if: ${{ !cancelled() && matrix.channel == 'direct' }}
+        run: |
+          status=0
+          /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-package" > "$RUNNER_TEMP/native-package.log" 2>&1 || status=$?
+          tail -n 25 "$RUNNER_TEMP/native-package.log"
+          exit "$status"
+      - name: Verify packaged dependency boundaries
+        if: ${{ !cancelled() && matrix.channel == 'direct' && steps.package.outcome == 'success' }}
+        env:
+          PODLORD_NATIVE_PACKAGE: ${{ runner.temp }}/native-package/podlord-native.app
+        run: |
+          node --test scripts/test-native-macos-dependencies.cjs > "$RUNNER_TEMP/native-package-boundaries.log" 2>&1
+          cat "$RUNNER_TEMP/native-package-boundaries.log"
+      - name: Verify packaged Cocoa startup and command-line metadata
+        if: ${{ !cancelled() && matrix.channel == 'direct' && steps.package.outcome == 'success' }}
+        env:
+          PODLORD_TEST_QPA_PLATFORM: cocoa
+        run: |
+          for scenario in default ambient_kubeconfig ambient_exec profile_file profile_symlink explicit_override explicit_empty; do
+            "$PODLORD_NATIVE_BUILD_DIR/application_startup_test" "$RUNNER_TEMP/native-package/podlord-native.app/Contents/MacOS/podlord-native" "$scenario"
+            printf 'Packaged startup: %s PASS\n' "$scenario"
+          done > "$RUNNER_TEMP/native-package-startup.log" 2>&1
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/native-package/podlord-native.app/Contents/Info.plist")
+          for scenario in help version help_invalid_profile version_invalid_profile unknown_option; do
+            "$PODLORD_NATIVE_BUILD_DIR/application_startup_test" "$RUNNER_TEMP/native-package/podlord-native.app/Contents/MacOS/podlord-native" "$scenario" "$version"
+            printf 'Packaged command-line metadata: %s PASS\n' "$scenario"
+          done >> "$RUNNER_TEMP/native-package-startup.log" 2>&1
+          cat "$RUNNER_TEMP/native-package-startup.log"
+      - name: Verify packaged mutual TLS and certificate rejection
+        if: ${{ !cancelled() && matrix.channel == 'direct' && steps.package.outcome == 'success' }}
+        run: |
+          profiles=$(mktemp -d "$RUNNER_TEMP/native-package-tls.XXXXXX")
+          trap 'find "$profiles" -maxdepth 1 -type f -name "*.profraw" -delete; rmdir "$profiles"' 0
+          export LLVM_PROFILE_FILE="$profiles/%p-%m.profraw"
+          for scenario in trusted untrusted_ca untrusted_client; do
+            node scripts/test-native-tls.cjs "$PODLORD_NATIVE_BUILD_DIR/tls-connection-test" "$RUNNER_TEMP/native-toolchain/openssl/bin/openssl" "$scenario" "$RUNNER_TEMP/native-package/podlord-native.app"
+          done > "$RUNNER_TEMP/native-package-tls.log" 2>&1
+          cat "$RUNNER_TEMP/native-package-tls.log"
+      - name: Retain native package evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-package-${{ matrix.channel }}-${{ matrix.runner }}-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-toolchain.log
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-macos-cache-inputs.log
+            ${{ runner.temp }}/native-store.log
+            ${{ runner.temp }}/native-store-frames
+            ${{ runner.temp }}/native-store-package.log
+            ${{ runner.temp }}/native-store-package/podlord-native.zip
+            ${{ runner.temp }}/native-store-package/package-evidence.txt
+            ${{ runner.temp }}/native-store/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/native-store-package/runtime-dependencies.txt
+            ${{ runner.temp }}/native-store-package/libraries.txt
+            ${{ runner.temp }}/native-package-drivers.log
+            ${{ runner.temp }}/native-package.log
+            ${{ runner.temp }}/native-package-startup.log
+            ${{ runner.temp }}/native-package-boundaries.log
+            ${{ runner.temp }}/native-package-tls.log
+            ${{ runner.temp }}/native-package/package-evidence.txt
+            ${{ runner.temp }}/native-package/runtime-dependencies.txt
+            ${{ runner.temp }}/native-package/libraries.txt
+            ${{ runner.temp }}/native-package/podlord-native.zip
+
+  ios:
+    name: Native iOS ARM64 build and bundle checks
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install public iOS build dependencies
+        run: |
+          brew install cmake ninja python
+      - name: Verify iOS installer contracts before building the SDK
+        run: node --test scripts/test-native-ios-toolchain.cjs
+      - name: Resolve exact iOS toolchain cache identity
+        id: toolchain-key
+        run: |
+          set -eu
+          xcode=$(xcodebuild -version)
+          sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          compiler=$(xcrun --sdk iphoneos clang --version)
+          cmake_version=$(cmake --version)
+          abi=$(printf '%s\n%s\n%s\n%s\n%s\n' "$xcode" "$sdk_path" "$sdk_version" "$compiler" "$cmake_version" | shasum -a 256 | awk '{print $1}')
+          printf 'xcode=%s\niphoneos-sdk=%s (%s)\ncompiler=%s\ncmake=%s\nabi=%s\n' \
+            "$xcode" "$sdk_version" "$sdk_path" "$compiler" "$cmake_version" "$abi" | tee "$RUNNER_TEMP/native-ios-cache-inputs.log"
+          printf 'abi=%s\n' "$abi" >> "$GITHUB_OUTPUT"
+      - name: Restore exact public iOS toolchain
+        id: ios-toolchain-cache
+        uses: actions/cache@v6
+        with:
+          key: native-ios-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/build-native-ios-toolchain.sh', 'scripts/install-native-ios-privacy.cmake', 'native/ios/*Privacy.xcprivacy', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
+          path: |
+            ${{ runner.temp }}/native-toolchain/qt
+            ${{ runner.temp }}/native-toolchain/qt-sdk
+            ${{ runner.temp }}/native-toolchain/yaml-cpp
+            ${{ runner.temp }}/native-toolchain/openssl
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-ios-toolchain/qt
+            ${{ runner.temp }}/native-ios-toolchain/ssl
+            ${{ runner.temp }}/native-ios-toolchain/yaml
+            ${{ runner.temp }}/native-ios-toolchain/media
+            ${{ runner.temp }}/native-ios-toolchain/build-inputs.txt
+      - name: Validate restored public iOS toolchain
+        if: steps.ios-toolchain-cache.outputs.cache-hit == 'true'
+        run: |
+          set -eu
+          host="$RUNNER_TEMP/native-toolchain"
+          target="$RUNNER_TEMP/native-ios-toolchain"
+          /bin/sh scripts/install-native-macos-toolchain.sh --check "$host"
+          test -f "$target/qt/plugins/tls/libqopensslbackend.a"
+          test ! -e "$target/qt/plugins/tls/libqsecuretransportbackend.a"
+          test -x "$target/qt/bin/qt-cmake"
+          test "$("$target/qt/bin/qmake" -query QT_VERSION)" = 6.11.3
+          test -f "$target/ssl/lib/libssl.a"
+          test -f "$target/ssl/lib/libcrypto.a"
+          test -f "$target/yaml/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
+          for library in avcodec avformat avutil swresample swscale; do
+            test -f "$target/media/lib/lib$library.dylib"
+            test -f "$target/media/frameworks/lib$library.framework/lib$library"
+            test -d "$target/media/lib/lib$library.xcframework"
+            find "$target/qt/lib/ffmpeg/lib$library.xcframework" -name PrivacyInfo.xcprivacy | grep -q .
+          done
+          test -f "$target/ssl/share/podlord/PrivacyInfo.xcprivacy"
+          test -f "$target/qt/lib/QtCore.framework/PrivacyInfo.xcprivacy"
+          test -f "$target/qt/lib/QtGui.framework/PrivacyInfo.xcprivacy"
+          grep -F 'Qt: 6.11.3' "$target/build-inputs.txt"
+          grep -F 'OpenSSL: 3.5.9' "$target/build-inputs.txt"
+          grep -F 'FFmpeg: 7.1.5' "$target/build-inputs.txt"
+          grep -F 'yaml-cpp: 0.9.0' "$target/build-inputs.txt"
+          patch_sha=$(shasum -a 256 scripts/patches/qtdeclarative-6.11.3-shutdown.diff | awk '{print $1}')
+          grep -Fx "Qt Quick patch SHA256: $patch_sha" "$target/qt/podlord-qtquick-patch.txt"
+          printf 'Exact public toolchain cache validated.\n' | tee "$RUNNER_TEMP/native-toolchain.log" "$RUNNER_TEMP/native-ios-toolchain.log"
+      - name: Install native host toolchain on cache miss
+        if: steps.ios-toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
+      - name: Build iOS toolchain on cache miss
+        if: steps.ios-toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          CMAKE_BUILD_PARALLEL_LEVEL=4 sh scripts/build-native-ios-toolchain.sh iphoneos \
+            "$RUNNER_TEMP/native-toolchain/qt-sdk" "$RUNNER_TEMP/native-ios-toolchain" > "$RUNNER_TEMP/native-ios-toolchain.log" 2>&1 || { tail -40 "$RUNNER_TEMP/native-ios-toolchain.log"; exit 1; }
+      - name: Cross-build unsigned iPhone and iPad application
+        env:
+          PODLORD_GKE_IOS_CLIENT_ID: ${{ vars.PODLORD_GKE_IOS_CLIENT_ID }}
+        run: |
+          set -eu
+          if [ -n "$PODLORD_GKE_IOS_CLIENT_ID" ]; then
+            printf '::add-mask::%s\n' "$PODLORD_GKE_IOS_CLIENT_ID"
+          fi
+          log="$RUNNER_TEMP/native-ios.log"
+          sdk="$RUNNER_TEMP/native-ios-toolchain"
+          build="$RUNNER_TEMP/native-ios-build"
+          "$sdk/qt/bin/qt-cmake" -S native -B "$build" -G Xcode \
+            -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO -DQT_HOST_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk" \
+            -DOPENSSL_ROOT_DIR="$sdk/ssl" -DFFMPEG_DIR="$sdk/media" \
+            -Dyaml-cpp_DIR="$sdk/yaml/lib/cmake/yaml-cpp" -DBUILD_TESTING=OFF \
+            -DPODLORD_GKE_IOS_CLIENT_ID="$PODLORD_GKE_IOS_CLIENT_ID" \
+            -DQT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY=ON >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          cmake --build "$build" --config Release --target podlord-native --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          app="$build/Release-iphoneos/podlord-native.app"
+          plist="$app/Info.plist"
+          [ -x "$app/podlord-native" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist")" = '17.0' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$plist")" = '1' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:1' "$plist")" = '2' ]
+          if [ -n "$PODLORD_GKE_IOS_CLIENT_ID" ]; then
+            [ "$(/usr/libexec/PlistBuddy -c 'Print :GIDClientID' "$plist")" = "$PODLORD_GKE_IOS_CLIENT_ID" ]
+            prefix=${PODLORD_GKE_IOS_CLIENT_ID%.apps.googleusercontent.com}
+            /usr/bin/plutil -extract CFBundleURLTypes xml1 -o - "$plist" | grep -F -q "<string>com.googleusercontent.apps.$prefix</string>"
+            printf 'Registered Google iOS client and callback scheme are included.\n' >> "$log"
+          fi
+          for library in libavcodec libavformat libavutil libswresample libswscale; do
+            [ -f "$app/Frameworks/$library.framework/$library" ]
+          done
+          node scripts/check-native-ios-privacy.cjs "$app" | tee -a "$log"
+          printf 'iPhoneOS arm64 compile and iPhone/iPad bundle checks passed. Device runtime was not tested.\n' | tee -a "$log"
+      - name: Retain native iOS preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-ios-arm64-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-toolchain.log
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-ios-cache-inputs.log
+            ${{ runner.temp }}/native-ios.log
+            ${{ runner.temp }}/native-ios-toolchain.log
+            ${{ runner.temp }}/native-ios-toolchain/build-inputs.txt

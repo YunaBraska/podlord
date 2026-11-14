@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+BASE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export LD_LIBRARY_PATH="$BASE/lib"
+export QT_PLUGIN_PATH="$BASE/plugins"
+export QT_QPA_PLATFORM_PLUGIN_PATH="$BASE/plugins/platforms"
+export QML_IMPORT_PATH="$BASE/qml"
+exec "$BASE/bin/podlord-native" "$@"

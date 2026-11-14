@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Podlord.App;
 using Podlord.Core;
 using Podlord.Kubernetes;
 using Xunit;
@@ -463,8 +464,12 @@ spec:
     [Fact]
     public async Task Test_map_scenarios_are_present_in_cluster()
     {
-        var snapshot = await cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(Search: "podlord"));
-        var map = snapshot.Rows
+        var rows = await WaitForRowsWithCondition(
+            () => cluster.AdminService.ListClusterResourcesAsync(new ResourceQuery(Search: "podlord", Limit: 5_000, ForceRefresh: true)),
+            rows => new[] { "podlord-healthy", "podlord-broken", "podlord-success", "podlord-fail", "podlord-cron", "podlord-config", "podlord-secret", "podlord-data" }
+                .All(name => rows.Any(row => row.Name == name)),
+            TimeSpan.FromMinutes(4));
+        var map = rows
             .GroupBy(row => row.Kind)
             .ToDictionary(group => group.Key, group => group.Select(row => row.Name).ToHashSet(StringComparer.Ordinal));
 
@@ -476,6 +481,276 @@ spec:
         Assert.Contains("podlord-config", map["ConfigMap"]);
         Assert.Contains("podlord-secret", map["Secret"]);
         Assert.Contains("podlord-data", map["PersistentVolumeClaim"]);
+    }
+
+    [Fact]
+    public async Task Podlord_ui_state_survives_real_k3d_loading_tabs_radar_health_and_inspector()
+    {
+        var stateDirectory = Path.Combine(Path.GetTempPath(), $"podlord-k3d-ui-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stateDirectory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(stateDirectory);
+            state.SaveSettings(state.Settings() with
+            {
+                RadarWaterEnabled = false,
+                RadarWaterSpeed = 0,
+                RequestHardLimitPerMinute = 0
+            });
+            state.ImportKubeconfig(cluster.KubeconfigPath);
+            var first = state.ListSessions().Single();
+            state.SetSessionDisplayName(first.Id, "k3d-primary");
+            var second = state.DuplicateSession(first.Id);
+            state.SetSessionDisplayName(second.Id, "k3d-secondary");
+            var primarySession = state.ListSessions().Single(session => session.DisplayName == "k3d-primary");
+            var secondarySession = state.ListSessions().Single(session => session.DisplayName == "k3d-secondary");
+            var service = new KubernetesResourceService(state);
+            using var viewModel = new MainWindowViewModel(
+                state,
+                service,
+                new NoOpAlertSoundPlayer(),
+                new NoOpReleaseUpdateChecker(),
+                () => "test");
+            viewModel.ReloadSessions(openDefaultSession: false);
+            viewModel.SetRadarViewport(520, 240);
+            viewModel.ProblemsOnly = false;
+            viewModel.KindPicker.SetExpression("\"Pod\"");
+
+            viewModel.OpenSessionTab(primarySession.Id, activate: true);
+            var firstLoad = viewModel.RefreshResourcesAsync(force: true);
+            await Task.Delay(75);
+            viewModel.OpenSessionTab(secondarySession.Id, activate: false);
+            await Task.Delay(75);
+            var switchDuration = Measure(() => viewModel.ActivateSessionTab(secondarySession.Id));
+
+            if (switchDuration >= TimeSpan.FromMilliseconds(750))
+            {
+                Console.Error.WriteLine($"Tab switch took {switchDuration.TotalMilliseconds:0.0} ms. Target is 750.0 ms.");
+            }
+            Assert.True(viewModel.IsRefreshing || viewModel.IsInitialLoading);
+            Assert.Contains(viewModel.HealthSegments, segment => segment.State is "LOADING" or "PENDING");
+
+            await WaitUntilAsync(
+                () => viewModel.Resources.Any(row => row.Kind == "Pod" && row.Namespace == "payments")
+                      && viewModel.RadarBlocks.Any(block => block.DisplayKind == "Pod" && block.Resource.Namespace == "payments")
+                      && !viewModel.IsRadarIdle,
+                TimeSpan.FromMinutes(3),
+                "Secondary k3d tab did not render payments pods into resources and radar.");
+
+            var pod = viewModel.Resources.First(row => row.Kind == "Pod" && row.Namespace == "payments");
+            viewModel.SelectedResourceRow = pod;
+            await viewModel.OpenSelectedResourceAsync();
+
+            Assert.True(viewModel.IsInspectorVisible);
+            Assert.Contains(viewModel.Summary, item => item.Label == "Kind" && item.Value == "Pod");
+            Assert.Contains(viewModel.Summary, item => item.Label == "Namespace" && item.Value == "payments");
+            Assert.Contains($"name: {pod.Name}", viewModel.EditableYaml, StringComparison.Ordinal);
+
+            viewModel.ActivateSessionTab(primarySession.Id);
+            await firstLoad;
+            await WaitUntilAsync(
+                () => viewModel.SelectedSession?.Id == primarySession.Id
+                      && viewModel.Resources.Any(row => row.Kind == "Pod" && row.Namespace == "payments")
+                      && viewModel.RadarBlocks.Any(block => block.DisplayKind == "Pod" && block.Resource.Namespace == "payments")
+                      && !viewModel.IsRadarIdle,
+                TimeSpan.FromMinutes(3),
+                "Primary k3d tab did not restore populated resources and radar after switching back.");
+
+            Assert.True(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == primarySession.Id).IsActive);
+            Assert.False(viewModel.OpenWorkspaces.Single(workspace => workspace.Id == secondarySession.Id).IsActive);
+            Assert.NotEmpty(viewModel.HealthSegments);
+        }
+        finally
+        {
+            if (Directory.Exists(stateDirectory))
+            {
+                Directory.Delete(stateDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Podlord_ui_drives_real_k3d_events_deployments_metrics_and_inspector()
+    {
+        var stateDirectory = Path.Combine(Path.GetTempPath(), $"podlord-k3d-ui-flow-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stateDirectory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(stateDirectory);
+            state.SaveSettings(state.Settings() with
+            {
+                RadarWaterEnabled = false,
+                RadarWaterSpeed = 0,
+                RequestHardLimitPerMinute = 0
+            });
+            state.ImportKubeconfig(cluster.KubeconfigPath);
+            var adminSession = state.ListSessions().Single();
+            state.SetSessionDisplayName(adminSession.Id, "k3d-admin");
+            adminSession = state.ListSessions().Single(session => session.DisplayName == "k3d-admin");
+            var service = new KubernetesResourceService(state);
+            var realSnapshot = await service.WarmResourceCacheAsync(
+                new ResourceQuery(
+                    SessionId: adminSession.Id,
+                    Kind: "\"Deployment\" \"Event\"",
+                    Namespace: "\"payments\"",
+                    Limit: 5_000,
+                    ForceRefresh: true),
+                KubernetesRequestPriority.UserVisible).WaitAsync(TimeSpan.FromSeconds(60));
+
+            Assert.Contains(realSnapshot.Rows, row => row.Kind == "Deployment" && row.Namespace == "payments" && row.Name == "podlord-healthy");
+            using var viewModel = new MainWindowViewModel(
+                state,
+                service,
+                new NoOpAlertSoundPlayer(),
+                new NoOpReleaseUpdateChecker(),
+                () => "test");
+            viewModel.ReloadSessions(openDefaultSession: false);
+            viewModel.SetRadarViewport(520, 240);
+            viewModel.ProblemsOnly = false;
+            viewModel.KindPicker.SetExpression("\"Deployment\"");
+            viewModel.NamespacePicker.SetExpression("\"payments\"");
+
+            viewModel.OpenSessionTab(adminSession.Id, activate: true);
+            await viewModel.RefreshResourcesAsync(force: false).WaitAsync(TimeSpan.FromSeconds(30));
+
+            Assert.False(viewModel.IsInitialLoading);
+            Assert.Contains(viewModel.Resources, row => row.Kind == "Deployment" && row.Namespace == "payments" && row.Name == "podlord-healthy");
+            Assert.Contains(viewModel.RadarBlocks, block => block.DisplayKind == "Deployment" && block.Resource.Name == "podlord-healthy");
+            Assert.DoesNotContain(viewModel.HealthSegments, segment => segment.State is "LOADING" or "PENDING");
+
+            viewModel.SelectWorkspace("resources");
+            var deployment = viewModel.Resources.First(row => row.Kind == "Deployment" && row.Name == "podlord-healthy");
+            viewModel.SelectedResourceRow = deployment;
+            await viewModel.OpenSelectedResourceAsync();
+
+            Assert.True(viewModel.IsInspectorVisible);
+            Assert.Contains(viewModel.Summary, item => item.Label == "Kind" && item.Value == "Deployment");
+            Assert.Contains("name: podlord-healthy", viewModel.EditableYaml, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(stateDirectory))
+            {
+                Directory.Delete(stateDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Podlord_ui_starts_and_stops_real_k3d_port_forward()
+    {
+        var stateDirectory = Path.Combine(Path.GetTempPath(), $"podlord-k3d-ui-port-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stateDirectory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(stateDirectory);
+            state.SaveSettings(state.Settings() with
+            {
+                RadarWaterEnabled = false,
+                RadarWaterSpeed = 0,
+                RequestHardLimitPerMinute = 0
+            });
+            state.ImportKubeconfig(cluster.KubeconfigPath);
+            var session = state.ListSessions().Single();
+            state.SetSessionDisplayName(session.Id, "k3d-port");
+            session = state.ListSessions().Single(candidate => candidate.DisplayName == "k3d-port");
+            var service = new KubernetesResourceService(state);
+            using var viewModel = new MainWindowViewModel(
+                state,
+                service,
+                new NoOpAlertSoundPlayer(),
+                new NoOpReleaseUpdateChecker(),
+                () => "test");
+            viewModel.ReloadSessions(openDefaultSession: false);
+            viewModel.SetRadarViewport(520, 240);
+            viewModel.KindPicker.SetExpression("\"Service\"");
+
+            viewModel.OpenSessionTab(session.Id, activate: true);
+            await viewModel.RefreshResourcesAsync(force: true).WaitAsync(TimeSpan.FromMinutes(3));
+
+            var serviceRow = viewModel.Resources.First(row => row.Kind == "Service" && row.Namespace == "payments" && row.Name == "podlord-healthy");
+            var localPort = FreeTcpPort();
+            try
+            {
+                viewModel.SelectedResourceRow = serviceRow;
+                viewModel.PrepareSelectedResourcePortForward();
+                viewModel.PortContainerPort = "80";
+                viewModel.PortLocalPort = localPort.ToString();
+                await viewModel.StartPreparedPortForwardAsync().WaitAsync(TimeSpan.FromSeconds(45));
+                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                var html = await WaitForHttp(client, new Uri($"http://127.0.0.1:{localPort}/"), TimeSpan.FromSeconds(20));
+
+                Assert.True(viewModel.IsPortForwardStopMode);
+                Assert.Equal("STOP", viewModel.PortForwardActionLabel);
+                Assert.Contains("nginx", html, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains(viewModel.VisiblePortForwards, forward => forward.Name == "podlord-healthy" && forward.LocalPort == localPort);
+            }
+            finally
+            {
+                if (viewModel.SelectedPortForward is not null)
+                {
+                    viewModel.StopSelectedPortForward();
+                }
+            }
+
+            Assert.DoesNotContain(viewModel.VisiblePortForwards, forward => forward.LocalPort == localPort);
+        }
+        finally
+        {
+            if (Directory.Exists(stateDirectory))
+            {
+                Directory.Delete(stateDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Podlord_ui_drives_real_k3d_limited_rbac_namespace_scope()
+    {
+        var stateDirectory = Path.Combine(Path.GetTempPath(), $"podlord-k3d-ui-rbac-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stateDirectory);
+        try
+        {
+            var state = AppState.InMemoryWithConfigDirectory(stateDirectory);
+            state.SaveSettings(state.Settings() with
+            {
+                RadarWaterEnabled = false,
+                RadarWaterSpeed = 0,
+                RequestHardLimitPerMinute = 0
+            });
+            state.ImportKubeconfig(cluster.LimitedKubeconfigPath);
+            var limitedSession = state.ListSessions().Single();
+            state.SetSessionDisplayName(limitedSession.Id, "k3d-limited");
+            limitedSession = state.ListSessions().Single(session => session.DisplayName == "k3d-limited");
+            var service = new KubernetesResourceService(state);
+            using var viewModel = new MainWindowViewModel(
+                state,
+                service,
+                new NoOpAlertSoundPlayer(),
+                new NoOpReleaseUpdateChecker(),
+                () => "test");
+            viewModel.ReloadSessions(openDefaultSession: false);
+            viewModel.SetRadarViewport(520, 240);
+            viewModel.ProblemsOnly = false;
+
+            viewModel.OpenSessionTab(limitedSession.Id, activate: true);
+            await viewModel.RefreshResourcesAsync(force: true).WaitAsync(TimeSpan.FromSeconds(90));
+
+            Assert.Equal(limitedSession.Id, viewModel.SelectedSession?.Id);
+            Assert.Contains(viewModel.Failures, failure => failure.Freshness == FreshnessState.Forbidden);
+
+            viewModel.NamespacePicker.SetExpression("\"payments\"");
+            await viewModel.RefreshResourcesAsync(force: true).WaitAsync(TimeSpan.FromSeconds(90));
+
+            Assert.Contains(viewModel.Resources, row => row.Kind == "Pod" && row.Namespace == "payments");
+        }
+        finally
+        {
+            if (Directory.Exists(stateDirectory))
+            {
+                Directory.Delete(stateDirectory, recursive: true);
+            }
+        }
     }
 
     private static async Task<string> WaitForHttp(HttpClient client, Uri uri, TimeSpan timeout)
@@ -537,6 +812,30 @@ spec:
         throw new TimeoutException($"Timed out waiting for rows matching condition.{failures}", last);
     }
 
+    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout, string failure)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (predicate())
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+        }
+
+        Assert.True(predicate(), failure);
+    }
+
+    private static TimeSpan Measure(Action action)
+    {
+        var watch = Stopwatch.StartNew();
+        action();
+        watch.Stop();
+        return watch.Elapsed;
+    }
+
     private static int FreeTcpPort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -549,7 +848,9 @@ public sealed class K3dClusterFixture : IAsyncLifetime
 {
     private readonly string tempDirectory = Path.Combine(Path.GetTempPath(), $"podlord-k3d-{Guid.NewGuid():N}");
     private readonly string clusterName = $"podlord-it-{Guid.NewGuid():N}"[..23];
+    private readonly string testRunOwner = Environment.GetEnvironmentVariable("PODLORD_TEST_RUN_OWNER") ?? Guid.NewGuid().ToString("N");
     private bool clusterCreated;
+    private string createdToolsContainerId = string.Empty;
 
     public KubernetesResourceService AdminService { get; private set; } = null!;
 
@@ -557,33 +858,70 @@ public sealed class K3dClusterFixture : IAsyncLifetime
 
     public string KubeconfigPath { get; private set; } = string.Empty;
 
+    public string LimitedKubeconfigPath { get; private set; } = string.Empty;
+
     public async Task InitializeAsync()
     {
         Directory.CreateDirectory(tempDirectory);
         RequireTool("docker");
         RequireTool("k3d");
         RequireTool("kubectl");
+        if (testRunOwner.Length == 0 || testRunOwner.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
+        {
+            throw new InvalidOperationException("Invalid local test-run owner.");
+        }
+        await Run("/bin/sh", [Path.Combine(AppContext.BaseDirectory, "cleanup-k3d-test-run.sh"), testRunOwner, clusterName], TimeSpan.FromMinutes(2));
         EnsureDockerAvailable();
-        await DeleteStaleTestClusters();
-        await Run("k3d", ["cluster", "create", clusterName, "--servers", "1", "--agents", "0", "--wait", "--timeout", "180s", "--kubeconfig-update-default=false", "--kubeconfig-switch-context=false"], TimeSpan.FromMinutes(5));
+        var existing = await Capture("k3d", ["cluster", "list", "-o", "json"], TimeSpan.FromMinutes(1));
+        using (var document = JsonDocument.Parse(existing))
+        {
+            if (document.RootElement.EnumerateArray().Any(cluster => cluster.GetProperty("name").GetString() == clusterName))
+            {
+                throw new InvalidOperationException("The private test-cluster identity already exists; it was not modified.");
+            }
+        }
+        var existingContainers = await Capture("docker", ["container", "ls", "-aq", "--filter", $"label=k3d.cluster={clusterName}"], TimeSpan.FromSeconds(30));
+        if (!string.IsNullOrWhiteSpace(existingContainers))
+        {
+            throw new InvalidOperationException("The private test-cluster container identity already exists; it was not modified.");
+        }
         clusterCreated = true;
-        KubeconfigPath = Path.Combine(tempDirectory, "kubeconfig.yaml");
-        var kubeconfig = await Capture("k3d", ["kubeconfig", "get", clusterName], TimeSpan.FromMinutes(1));
-        await File.WriteAllTextAsync(KubeconfigPath, kubeconfig.Replace("https://0.0.0.0:", "https://127.0.0.1:", StringComparison.Ordinal));
-        await Run("kubectl", ["--kubeconfig", KubeconfigPath, "wait", "--for=condition=Ready", "node", "--all", "--timeout=240s"], TimeSpan.FromMinutes(5));
-        await EnsureScenarioImagesAvailable();
-        await ApplyScenarioManifest();
-        await WaitForScenario();
-        AdminService = ServiceFromKubeconfig(KubeconfigPath);
-        var limited = await CreateLimitedKubeconfig();
-        LimitedService = ServiceFromKubeconfig(limited);
+        try
+        {
+            try
+            {
+                await Run("k3d", ["cluster", "create", clusterName, "--image", "rancher/k3s:v1.35.5-k3s1", "--servers", "1", "--agents", "0", "--wait", "--timeout", "180s", "--runtime-label", $"podlord.test.run={testRunOwner}@all", "--k3s-arg", "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<512Mi,imagefs.available<512Mi,nodefs.inodesFree<5%,imagefs.inodesFree<5%@server:*", "--kubeconfig-update-default=false", "--kubeconfig-switch-context=false"], TimeSpan.FromMinutes(5));
+            }
+            finally
+            {
+                var tools = await RunProcess("docker", ["container", "ls", "-aq", "--no-trunc", "--filter", $"label=k3d.cluster={clusterName}", "--filter", $"name=^/k3d-{clusterName}-tools$"], TimeSpan.FromSeconds(30), throwOnError: false);
+                if (tools.ExitCode == 0) createdToolsContainerId = tools.Stdout.Trim();
+            }
+            KubeconfigPath = Path.Combine(tempDirectory, "kubeconfig.yaml");
+            var kubeconfig = await Capture("k3d", ["kubeconfig", "get", clusterName], TimeSpan.FromMinutes(1));
+            await File.WriteAllTextAsync(KubeconfigPath, kubeconfig.Replace("https://0.0.0.0:", "https://127.0.0.1:", StringComparison.Ordinal));
+            await WaitForNodesReady();
+            await EnsureScenarioImagesAvailable();
+            await ApplyScenarioManifest();
+            await WaitForScenario();
+            AdminService = ServiceFromKubeconfig(KubeconfigPath);
+            LimitedKubeconfigPath = await CreateLimitedKubeconfig();
+            LimitedService = ServiceFromKubeconfig(LimitedKubeconfigPath);
+        }
+        catch (Exception initializationFailure)
+        {
+            try { await DisposeAsync(); }
+            catch (Exception cleanupFailure) { throw new AggregateException("Cluster initialization and owned cleanup both failed.", initializationFailure, cleanupFailure); }
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
     {
         if (clusterCreated)
         {
-            await Run("k3d", ["cluster", "delete", clusterName], TimeSpan.FromMinutes(2), throwOnError: false);
+            await Run("/bin/sh", [Path.Combine(AppContext.BaseDirectory, "cleanup-k3d-test-run.sh"), testRunOwner, clusterName, createdToolsContainerId], TimeSpan.FromMinutes(2));
+            clusterCreated = false;
         }
 
         if (Directory.Exists(tempDirectory))
@@ -697,6 +1035,24 @@ public sealed class K3dClusterFixture : IAsyncLifetime
         }
     }
 
+    private async Task WaitForNodesReady()
+    {
+        var arguments = new[] { "--kubeconfig", KubeconfigPath, "wait", "--for=condition=Ready", "node", "--all", "--timeout=240s" };
+        ProcessResult? last = null;
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            last = await RunProcess("kubectl", arguments, TimeSpan.FromMinutes(5), throwOnError: false);
+            if (last.ExitCode == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(attempt * 2));
+        }
+
+        throw new InvalidOperationException(ProcessFailureMessage("kubectl", arguments, last!));
+    }
+
     private async Task ApplyManifestTextInternal(string manifestText, bool delete)
     {
         var manifest = Path.Combine(tempDirectory, $"manifest-{Guid.NewGuid():N}.yaml");
@@ -768,33 +1124,12 @@ public sealed class K3dClusterFixture : IAsyncLifetime
         await Run("k3d", importArguments, TimeSpan.FromMinutes(4));
     }
 
-    private async Task DeleteStaleTestClusters()
-    {
-        var existing = await RunProcess("k3d", ["cluster", "list", "-o", "json"], TimeSpan.FromMinutes(1), throwOnError: true);
-        using var document = JsonDocument.Parse(existing.Stdout);
-        foreach (var cluster in document.RootElement.EnumerateArray())
-        {
-            if (!cluster.TryGetProperty("name", out var nameProperty))
-            {
-                continue;
-            }
-
-            var existingName = nameProperty.GetString();
-            if (string.IsNullOrWhiteSpace(existingName)
-                || existingName == clusterName
-                || !existingName.StartsWith("podlord-it-", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            await Run("k3d", ["cluster", "delete", existingName], TimeSpan.FromMinutes(2), throwOnError: false);
-        }
-    }
 
     private async Task<string> CaptureScenarioDiagnostics()
     {
         var commands = new (string FileName, IReadOnlyList<string> Arguments, string Label)[]
         {
+            ("kubectl", ["--kubeconfig", KubeconfigPath, "describe", "nodes"], "node conditions and scheduling taints"),
             ("kubectl", ["--kubeconfig", KubeconfigPath, "get", "pods", "-A", "-o", "wide"], "pods"),
             ("kubectl", ["--kubeconfig", KubeconfigPath, "-n", "payments", "describe", "deployment", "podlord-healthy"], "healthy deployment"),
             ("kubectl", ["--kubeconfig", KubeconfigPath, "-n", "payments", "describe", "pods"], "payments pod descriptions"),
@@ -1016,24 +1351,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: batch
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: default
-  namespace: payments
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: default
-  namespace: broken-zone
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: default
-  namespace: batch
 ---
 apiVersion: v1
 kind: ConfigMap

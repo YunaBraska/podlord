@@ -1,0 +1,394 @@
+#include "alerts.h"
+#include <QGuiApplication>
+#include <QElapsedTimer>
+#include <QHostAddress>
+#include <QJsonDocument>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QTemporaryDir>
+#include <QTest>
+#include <QSignalSpy>
+#include <QSemaphore>
+#include <QThreadPool>
+#include <QScopeGuard>
+#include <QtConcurrent/QtConcurrentRun>
+#include <algorithm>
+#include <ctime>
+#include <cstdio>
+
+namespace {
+// Only Kubernetes is replaced; discovery, HTTP, the session cache, rules and evaluation are real.
+class Kubernetes final : public QTcpServer {
+public:
+    int requests = 0;
+    int version = 1;
+    int restarts = 0;
+    int extraPods = 0;
+    int peerRestarts = 0;
+    QString name = "worker";
+    QString phase = "Running";
+    QDateTime created;
+    explicit Kubernetes(QDateTime now) : created(now.addSecs(-60)) {
+        connect(this, &QTcpServer::newConnection, this, [this] {
+            while (hasPendingConnections()) {
+                auto* socket = nextPendingConnection();
+                auto input = std::make_shared<QByteArray>();
+                connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                connect(socket, &QTcpSocket::readyRead, socket, [this, socket, input] {
+                    input->append(socket->readAll());
+                    if (!input->contains("\r\n\r\n")) return;
+                    ++requests;
+                    const auto path = QUrl(QString::fromUtf8(input->split(' ').value(1))).path();
+                    QJsonObject result;
+                    if (path == "/api") result = {{"versions", QJsonArray{"v1"}}};
+                    else if (path == "/apis") result = {{"groups", QJsonArray{}}};
+                    else if (path == "/api/v1") result = {{"groupVersion", "v1"}, {"resources", QJsonArray{
+                        QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}}}};
+                    else if (path == "/api/v1/pods" || path == "/api/v1/namespaces/default/pods") result = {{"apiVersion", "v1"}, {"kind", "PodList"}, {"metadata", QJsonObject{{"resourceVersion", QString::number(version)}}}, {"items", QJsonArray{
+                        QJsonObject{{"apiVersion", "v1"}, {"kind", "Pod"},
+                            {"metadata", QJsonObject{{"name", name}, {"namespace", "default"}, {"uid", "worker-uid"},
+                                {"resourceVersion", QString::number(version)}, {"creationTimestamp", created.toString(Qt::ISODateWithMs)}}},
+                            {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "worker"}, {"image", "local:test"}}}}}},
+                            {"status", QJsonObject{{"phase", phase}, {"containerStatuses", QJsonArray{
+                                QJsonObject{{"name", "worker"}, {"ready", false}, {"restartCount", restarts}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}}}}}}};
+                    else result = {{"kind", "Status"}, {"status", "Failure"}, {"reason", "NotFound"}, {"code", 404}};
+                    if (extraPods && (path == "/api/v1/pods" || path == "/api/v1/namespaces/default/pods")) {
+                        auto items = result["items"].toArray();
+                        for (int index = 0; index < extraPods; ++index) {
+                            auto peer = items.first().toObject();
+                            auto metadata = peer["metadata"].toObject();
+                            metadata["name"] = QString("peer-%1").arg(index);
+                            metadata["uid"] = QString("peer-uid-%1").arg(index);
+                            peer["metadata"] = metadata;
+                            auto status = peer["status"].toObject();
+                            auto container = status["containerStatuses"].toArray().first().toObject();
+                            container["restartCount"] = peerRestarts;
+                            status["containerStatuses"] = QJsonArray{container};
+                            peer["status"] = status;
+                            items.append(peer);
+                        }
+                        result["items"] = items;
+                    }
+                    const auto body = QJsonDocument(result).toJson(QJsonDocument::Compact);
+                    const auto status = result["code"] == 404 ? QByteArray("404 Not Found") : QByteArray("200 OK");
+                    socket->write("HTTP/1.1 " + status + "\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
+                        + QByteArray::number(body.size()) + "\r\n\r\n" + body);
+                    socket->disconnectFromHost();
+                });
+            }
+        });
+    }
+};
+template<class Predicate> bool waitFor(Predicate predicate) {
+    QElapsedTimer timer; timer.start();
+    while (!predicate() && timer.elapsed() < 10000) QTest::qWait(5);
+    return predicate();
+}
+bool run(const QString& scenario) {
+    using namespace podlord;
+    struct CriterionCase final { QString field, expression; int count; };
+    const QMap<QString, CriterionCase> criteria{
+        {"criterion_text_prefix", {"name", "~wor", 1}},
+        {"criterion_text_suffix", {"name", "ker~", 1}},
+        {"criterion_text_alternative", {"name", "absent worker", 1}},
+        {"criterion_text_miss", {"name", "absent", 0}},
+        {"criterion_regex_miss", {"name", "/^absent$/", 0}},
+        {"criterion_image", {"image", "local:test", 1}},
+        {"criterion_problem_true", {"problems", "true", 1}},
+        {"criterion_problem_false", {"problems", "false", 0}},
+        {"criterion_activity_true", {"activity", "true", 1}},
+        {"criterion_activity_false", {"activity", "false", 0}},
+        {"criterion_numeric_gt_miss", {"restarts", ">0", 0}},
+        {"criterion_numeric_gte", {"restarts", ">=0", 1}},
+        {"criterion_numeric_lte", {"restarts", "<=0", 1}},
+        {"criterion_numeric_exact", {"restarts", "=0", 1}},
+        {"criterion_multi_exact", {"restarts", "=0 =4", 2}},
+        {"criterion_age_minutes", {"age", ">=1m", 1}},
+        {"criterion_age_missing", {"age", ">0", 0}},
+        {"criterion_p95", {"restarts", "p95", 1}},
+        {"criterion_outlier", {"restarts", "outlier", 1}}
+    };
+    QTemporaryDir profile;
+    if (!profile.isValid()) return false;
+    auto now = QDateTime::currentDateTimeUtc();
+    Kubernetes server(now);
+    server.phase = scenario == "duration_survives_unmatch" ? "Running" : "Failed";
+    if (scenario == "criterion_p95" || scenario == "criterion_multi_exact") { server.extraPods = 1; server.peerRestarts = 4; }
+    if (scenario == "criterion_outlier") { server.restarts = 4; server.extraPods = 5; }
+    if (scenario == "view_snapshot_cpu") server.extraPods = 14999;
+    if (scenario == "view_snapshot_pending") server.extraPods = 1;
+    if (scenario == "criterion_age_missing") server.created = {};
+    if (!server.listen(QHostAddress::LocalHost, 0)) return false;
+    ResourceClient client(nullptr, [&] { return now; });
+    Alerts alerts(profile.path(), &client, nullptr, [&] { return now; });
+    QSignalSpy focuses(&alerts, &Alerts::focusRequested);
+    QSignalSpy sounds(&alerts, &Alerts::soundRequested);
+    if (!waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
+    const auto builtins = alerts.rules();
+    for (int index = 1; index < builtins.size(); ++index) {
+        auto disabled = builtins[index].toMap(); disabled["enabled"] = false;
+        if (!alerts.saveRule(disabled) || !waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
+    }
+    auto rule = alerts.rules().first().toMap();
+    rule["id"] = "view-rule"; rule["name"] = "View rule"; rule["builtIn"] = false;
+    rule["sound"] = "none"; rule["zoom"] = scenario.endsWith("animation") || scenario == "expiry_unowned" ? 125 : 0; rule["color"] = "#123456"; rule["animation"] = "pulse";
+    const bool view = scenario.startsWith("view_") || scenario == "reuse_notifications";
+    rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", view ? "newInView" : "name"},
+        {"expression", view ? (scenario == "view_false" ? "false" : "true") : "worker"}}})}.toVariantList();
+    if (scenario == "duration_survives_unmatch") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "status"}, {"expression", "Running"}}})}.toVariantList();
+    if (scenario == "criterion_search_regex") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "search"}, {"expression", "/worker/"}}})}.toVariantList();
+    if (scenario == "criterion_namespace_exact") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "namespace"}, {"expression", "\"default\""}}})}.toVariantList();
+    if (scenario == "criterion_or_fallback") rule["groups"] = QJsonArray{
+        QJsonValue(QJsonArray{QJsonObject{{"field", "status"}, {"expression", "\"Succeeded\""}}}),
+        QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "/worker/"}}})}.toVariantList();
+    if (scenario == "criterion_restart_limit") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "restarts"}, {"expression", "<1"}}})}.toVariantList();
+    if (scenario == "recent_change_baseline") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "recentlyChanged"}, {"expression", "true"}}})}.toVariantList();
+    if (scenario == "reuse_freshness_expiry" || scenario == "reuse_clock_back") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "recentlyChanged"}, {"expression", "true"}}})}.toVariantList();
+    if (scenario == "reuse_age_forward" || scenario == "reuse_age_backward") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "age"}, {"expression", scenario == "reuse_age_forward" ? "<65s" : ">65s"}}})}.toVariantList();
+    if (scenario == "view_snapshot_pending") rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+        QJsonObject{{"field", "restarts"}, {"expression", "=2"}}})}.toVariantList();
+    if (const auto it = criteria.constFind(scenario); it != criteria.cend())
+        rule["groups"] = QJsonArray{QJsonValue(QJsonArray{
+            QJsonObject{{"field", it->field}, {"expression", it->expression}}})}.toVariantList();
+    rule["colorMode"] = view ? "new-in-view" : scenario.startsWith("once_") ? "once" : "duration";
+    rule["animationMode"] = rule["colorMode"];
+    if (scenario.startsWith("reuse_") && !view) { rule["colorMode"] = "no-match"; rule["animationMode"] = "no-match"; }
+    rule["colorSeconds"] = 2; rule["animationSeconds"] = 2;
+    if (!alerts.saveRule(rule) || !waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
+    ClusterConnection connection;
+    connection.contextId = "local-context";
+    connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort()));
+    if (!client.open("session", connection, {"default"}) || !alerts.showSession("session")) return false;
+    const QString path = "/api/v1/namespaces/default/pods/worker";
+    if (!waitFor([&] { return client.initialSyncComplete("session") && !alerts.matches().isEmpty(); })) {
+        std::fprintf(stderr, "Initial cache: requests=%d rows=%lld status=%s alert-error=%s\n", server.requests,
+            static_cast<long long>(client.rows("session").size()), qPrintable(client.status("session")), qPrintable(alerts.error()));
+        return false;
+    }
+    if (!alerts.setVisibleResources("session", {path})) return false;
+    QTest::qWait(30);
+    const auto countForRule = [&] {
+        for (const auto& entry : alerts.matches()) if (entry.toMap()["id"] == "view-rule") return entry.toMap()["count"].toInt();
+        return 0;
+    };
+    const auto effect = [&] { return alerts.effect(path); };
+    const int requests = server.requests;
+    if (scenario == "reuse_age_forward" || scenario == "reuse_age_backward") {
+        const bool forward = scenario == "reuse_age_forward";
+        if (countForRule() != (forward ? 1 : 0)) return false;
+        now = now.addSecs(6);
+        if (!alerts.setVisibleResources("session", {})
+            || !waitFor([&] { return countForRule() == (forward ? 0 : 1); })) return false;
+        if (forward) return effect()["color"] != "#123456" && server.requests == requests;
+        now = now.addSecs(-6);
+        return alerts.setVisibleResources("session", {path}) && waitFor([&] { return countForRule() == 0; })
+            && effect()["color"] != "#123456" && server.requests == requests;
+    }
+    if (scenario == "reuse_freshness_expiry" || scenario == "reuse_clock_back" || scenario == "reuse_notifications") {
+        if (scenario != "reuse_notifications" && countForRule() != 0) return false;
+        ++server.version; ++server.restarts; now = now.addSecs(1);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.resource("session", path)["restarts"].toInt() == 1 && countForRule() == 1; })) return false;
+        const int refreshedRequests = server.requests;
+        if (scenario == "reuse_notifications") {
+            if (!waitFor([&] { return !focuses.isEmpty() && !sounds.isEmpty(); })) return false;
+            const auto focusCount = focuses.size(), soundCount = sounds.size();
+            return alerts.setVisibleResources("session", {}) && alerts.setVisibleResources("session", {path})
+                && waitFor([&] { return effect()["color"] == "#123456" && effect()["animation"] == "pulse"; })
+                && focuses.size() == focusCount && sounds.size() == soundCount && server.requests == refreshedRequests;
+        }
+        now = now.addSecs(31);
+        if (!alerts.setVisibleResources("session", {}) || !waitFor([&] { return countForRule() == 0; })
+            || effect()["color"] == "#123456") return false;
+        if (scenario == "reuse_freshness_expiry") return server.requests == refreshedRequests;
+        now = now.addSecs(-30);
+        return alerts.setVisibleResources("session", {path}) && waitFor([&] { return countForRule() == 1; })
+            && effect()["color"] == "#123456" && server.requests == refreshedRequests;
+    }
+    if (scenario == "reuse_catalog") {
+        if (countForRule() != 1) return false;
+        rule["groups"] = QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "name"}, {"expression", "absent"}}})}.toVariantList();
+        return alerts.saveRule(rule) && waitFor([&] { return !alerts.busy() && countForRule() == 0; })
+            && alerts.setVisibleResources("session", {}) && effect()["color"] != "#123456" && server.requests == requests;
+    }
+    if (scenario == "view_snapshot_cpu") {
+#ifdef CLOCK_THREAD_CPUTIME_ID
+        if (!waitFor([&] { return countForRule() == 15000; }) || effect()["color"] == "#123456") return false;
+        if (!alerts.setVisibleResources("session", {}) || !alerts.setVisibleResources("session", {path})
+            || !waitFor([&] { return effect()["color"] == "#123456"; })) return false;
+        QList<double> samples;
+        for (int index = 0; index < 35; ++index) {
+            const bool visible = index % 2 != 0;
+            timespec before{}, after{};
+            if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &before) != 0) return false;
+            const bool accepted = alerts.setVisibleResources("session", visible ? QStringList{path} : QStringList{});
+            if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &after) != 0 || !accepted) return false;
+            const auto cpuMilliseconds = (double(after.tv_sec - before.tv_sec) * 1000000000.0 + after.tv_nsec - before.tv_nsec) / 1000000.0;
+            if (cpuMilliseconds < 0) return false;
+            if (index >= 5) samples.append(cpuMilliseconds);
+            if (!waitFor([&] { return (effect()["color"] == "#123456") == visible; }) || countForRule() != 15000) return false;
+        }
+        std::sort(samples.begin(), samples.end());
+        std::printf("Visibility-only alert action: 15000 real cached Pods, 5 warmups, 30 GUI thread CPU samples, p95=%.3f ms max=%.3f ms; advisory CPU target=8 ms. This is not foreground frame evidence.\n", samples[28], samples.last());
+        if (samples[28] > 8) std::fprintf(stderr, "WARNING: CPU target advisory: alert_visibility p95_ms=%.3f target_ms=8\n", samples[28]);
+        return server.requests == requests;
+#else
+        std::fprintf(stderr, "GUI thread CPU clock is unavailable on this platform.\n");
+        return false;
+#endif
+    }
+    if (scenario == "view_snapshot_pending") {
+        if (countForRule() != 0 || effect()["color"] == "#123456") return false;
+        auto* pool = QThreadPool::globalInstance();
+        pool->waitForDone();
+        const int maximum = pool->maxThreadCount();
+        pool->setMaxThreadCount(1);
+        QSemaphore entered, release;
+        auto held = QtConcurrent::run([&] { entered.release(); release.acquire(); });
+        const auto restore = qScopeGuard([&] { release.release(); held.waitForFinished(); pool->setMaxThreadCount(maximum); });
+        if (!entered.tryAcquire(1, 1000) || !alerts.setVisibleResources("session", {})) return false;
+        for (int version = 2; version <= 3; ++version) {
+            server.version = version; server.restarts = version - 1; now = now.addMSecs(1000);
+            if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                    && client.resource("session", path)["restarts"].toInt() == version - 1; })
+                || !alerts.setVisibleResources("session", {path})) return false;
+        }
+        const QString peer = "/api/v1/namespaces/default/pods/peer-0";
+        if (!alerts.setVisibleResources("session", {peer})) return false;
+        release.release(); held.waitForFinished();
+        if (!waitFor([&] { return countForRule() == 1; }) || effect()["color"] == "#123456"
+            || !alerts.setVisibleResources("session", {path}) || !waitFor([&] { return effect()["color"] == "#123456"; })) return false;
+        ++server.version; ++server.restarts; now = now.addMSecs(1000);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.resource("session", path)["restarts"].toInt() == 3; })) return false;
+        return waitFor([&] { return countForRule() == 0 && effect()["color"] != "#123456"; });
+    }
+    if (const auto it = criteria.constFind(scenario); it != criteria.cend())
+        return waitFor([&] { return countForRule() == it->count; }) && server.requests == requests;
+    if (scenario == "recent_change_baseline") {
+        if (countForRule() != 0 || effect()["color"] == "#123456") return false;
+        ++server.version; ++server.restarts;
+        now = now.addMSecs(1000);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
+        return waitFor([&] { return countForRule() == 1 && effect()["color"] == "#123456"; });
+    }
+    if (scenario == "criterion_search_regex" || scenario == "criterion_namespace_exact" || scenario == "criterion_or_fallback")
+        return countForRule() == 1 && server.requests == requests;
+    if (scenario == "criterion_restart_limit") {
+        if (countForRule() != 1) return false;
+        ++server.version; ++server.restarts;
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
+        return waitFor([&] { return countForRule() == 0; });
+    }
+    if (scenario == "view_invalid") return !alerts.setVisibleResources("missing", {path}) && server.requests == requests;
+    if (scenario == "session_close") return alerts.closeSession("session") && !alerts.setVisibleResources("session", {path}) && effect().isEmpty();
+    if (view) {
+        if (scenario == "view_false") return countForRule() == 0 && effect()["color"] != "#123456" && server.requests == requests;
+        if (countForRule() != 1) return false;
+        if (!alerts.setVisibleResources("session", {}) || !waitFor([&] { return effect()["color"] != "#123456"; })) return false;
+        if (scenario == "view_hidden" || scenario == "view_global") return countForRule() == 1 && server.requests == requests;
+        if (!alerts.setVisibleResources("session", {path}) || !waitFor([&] { return effect()["color"] == "#123456" && effect()["animation"] == "pulse"; })) return false;
+        if (scenario == "view_entry") return countForRule() == 1 && server.requests == requests;
+        if (scenario == "view_repeat") {
+            now = now.addMSecs(1500);
+            if (!alerts.setVisibleResources("session", {path})) return false;
+        }
+        now = now.addSecs(3);
+        QTest::qWait(2100);
+        if (!waitFor([&] { return effect()["color"] != "#123456" && effect()["animation"] != "pulse"; })) return false;
+        if (scenario == "view_reentry") {
+            if (!alerts.setVisibleResources("session", {}) || !alerts.setVisibleResources("session", {path})) return false;
+            return waitFor([&] { return effect()["color"] == "#123456"; }) && server.requests == requests;
+        }
+        return (scenario == "view_expiry" || scenario == "view_repeat") && countForRule() == 1 && server.requests == requests;
+    }
+    if (!waitFor([&] { return effect()["color"] == "#123456"; })) return false;
+    ++server.version; ++server.restarts;
+    now = now.addMSecs(1000);
+    if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 1; })) return false;
+    if (!waitFor([&] { return effect()["animation"] == "pulse"; })) return false;
+    if (scenario == "expiry_unowned") {
+        if (!waitFor([&] { return !focuses.isEmpty() && focuses.last().value(2).toInt() == 125; })) {
+            std::fprintf(stderr, "Ownership setup did not receive the refreshed rule focus\n");
+            return false;
+        }
+        auto* pool = QThreadPool::globalInstance();
+        pool->waitForDone();
+        const int maximum = pool->maxThreadCount();
+        pool->setMaxThreadCount(1);
+        QSemaphore entered, release;
+        auto held = QtConcurrent::run([&] { entered.release(); release.acquire(); });
+        const auto restore = qScopeGuard([&] { release.release(); held.waitForFinished(); pool->setMaxThreadCount(maximum); });
+        if (!entered.tryAcquire(1, 1000)) return false;
+        const auto owned = std::make_shared<bool>(true);
+        if (!alerts.setSessionOwnership([owned](const QString&) { return *owned; })) return false;
+        const auto before = effect();
+        const int ownershipRequests = server.requests;
+        QSignalSpy updates(&alerts, &Alerts::presentationChanged);
+        now = now.addSecs(3);
+        if (!alerts.setVisibleResources("session", {})) return false;
+        *owned = false;
+        release.release();
+        held.waitForFinished();
+        QTest::qWait(2100);
+        if (effect() != before || !updates.isEmpty() || server.requests != ownershipRequests) {
+            std::fprintf(stderr, "Unowned expiry changed effect=%d notifications=%lld requests=%d/%d\n",
+                effect()!=before, static_cast<long long>(updates.size()), server.requests, ownershipRequests);
+            return false;
+        }
+        *owned = true;
+        const int restoredRequests = server.requests;
+        if (!alerts.setVisibleResources("session", {path})
+            || !waitFor([&] { return effect()["color"] != "#123456" && effect()["animation"] != "pulse"; })) {
+            std::fprintf(stderr, "Restored ownership did not expire the prior effects\n");
+            return false;
+        }
+        return server.requests == restoredRequests;
+    }
+    if (scenario == "transfer_hold") {
+        Alerts target(profile.path(), &client, nullptr, [&] { return now; });
+        QSignalSpy targetFocuses(&target, &Alerts::focusRequested);
+        if (!waitFor([&] { return !target.busy(); }) || !target.error().isEmpty()
+            || !target.showSession("session") || !alerts.transferSession("session", target)) return false;
+        if (!waitFor([&] { return target.effect(path)["color"] == "#123456"
+                && target.effect(path)["animation"] == "pulse"; })
+            || !alerts.effect(path).isEmpty() || !targetFocuses.isEmpty()) return false;
+        now = now.addSecs(3); QTest::qWait(2100);
+        return waitFor([&] { return target.effect(path)["color"] != "#123456"
+            && target.effect(path)["animation"] != "pulse"; }) && targetFocuses.isEmpty();
+    }
+    if (scenario == "duration_survives_unmatch") {
+        server.phase = "Succeeded"; ++server.version;
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session"); })) return false;
+        if (!waitFor([&] { return countForRule() == 0 && effect()["color"] == "#123456"; })) return false;
+        now = now.addMSecs(1100); QTest::qWait(2100);
+        return waitFor([&] { return effect()["color"] != "#123456"; });
+    }
+    now = now.addMSecs(scenario.startsWith("once_") ? 400 : 1100);
+    QTest::qWait(2100);
+    const auto action = scenario.endsWith("animation") ? QString("animation") : QString("color");
+    if (action == "animation") {
+        // Animation starts after the silent initial baseline; another status change must not extend it.
+        focuses.clear();
+        ++server.version; ++server.restarts;
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session") && client.rows("session").first().toObject()["restarts"].toInt() == 2; })) return false;
+        if (!waitFor([&] { return !focuses.isEmpty() && focuses.last().value(2).toInt() == 125; })) return false;
+        now = now.addSecs(1); QTest::qWait(2100);
+    }
+    return waitFor([&] { return !effect().contains(action) || effect()[action] != (action == "color" ? "#123456" : "pulse"); });
+}
+}
+int main(int argc, char** argv) {
+    const QGuiApplication application(argc, argv);
+    if (argc == 2 && run(QString::fromLocal8Bit(argv[1]))) return 0;
+    std::fprintf(stderr, "Alert lifecycle behavior failed: %s\n", argc == 2 ? argv[1] : "missing scenario");
+    return 1;
+}

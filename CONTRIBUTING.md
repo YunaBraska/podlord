@@ -28,12 +28,12 @@ scripts/test.sh
 
 The full suite creates a disposable k3d cluster. It is intentionally slower than pure unit tests because Kubernetes behavior is the thing being proved.
 
-Coverage gates:
+Coverage targets:
 
 - Line coverage: 95%
 - Branch coverage: 80%
 
-The coverage gate targets domain/runtime behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric gate and should be covered with focused behavior or layout tests when they carry logic.
+Coverage is diagnostic and does not fail CI. The report targets domain/runtime behavior. Thin Avalonia presentation adapters and native UI/audio wrappers are excluded from the numeric target and should be covered with focused behavior or layout tests when they carry logic.
 
 ## Architecture Rules
 
@@ -51,6 +51,14 @@ The coverage gate targets domain/runtime behavior. Thin Avalonia presentation ad
 - Avoid adding dependencies unless they clearly reduce risk or complexity.
 - Update documentation when a user-visible workflow changes.
 - Keep release artifacts, kubeconfigs, and local IDE state out of git.
+
+## Documentation Rules
+
+- README is the 30-second index: what Podlord is, how to start, and where to look next.
+- One doc answers one question. Extend an existing table row before creating another file.
+- Keep volatile values out of prose when the app, test scripts, or release workflow can print them.
+- Reference docs describe current behavior. Planned work belongs in [doc/ROADMAP.md](doc/ROADMAP.md) or GitHub issues.
+- Prefer deleting duplicated text over adding clarifying copies.
 
 ## Commit Style
 

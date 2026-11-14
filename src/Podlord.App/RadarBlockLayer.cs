@@ -15,6 +15,15 @@ public sealed class RadarBlockLayer : Control
     public static readonly StyledProperty<IEnumerable<RadarBlockViewModel>?> BlocksProperty =
         AvaloniaProperty.Register<RadarBlockLayer, IEnumerable<RadarBlockViewModel>?>(nameof(Blocks));
 
+    public static readonly StyledProperty<double> PanXProperty =
+        AvaloniaProperty.Register<RadarBlockLayer, double>(nameof(PanX));
+
+    public static readonly StyledProperty<double> PanYProperty =
+        AvaloniaProperty.Register<RadarBlockLayer, double>(nameof(PanY));
+
+    public static readonly StyledProperty<double> ZoomProperty =
+        AvaloniaProperty.Register<RadarBlockLayer, double>(nameof(Zoom), 1d);
+
     private readonly DispatcherTimer animationTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private IEnumerable<RadarBlockViewModel>? subscribedBlocks;
     private INotifyCollectionChanged? subscribedCollection;
@@ -24,7 +33,7 @@ public sealed class RadarBlockLayer : Control
 
     static RadarBlockLayer()
     {
-        AffectsRender<RadarBlockLayer>(BlocksProperty);
+        AffectsRender<RadarBlockLayer>(BlocksProperty, PanXProperty, PanYProperty, ZoomProperty);
     }
 
     public RadarBlockLayer()
@@ -44,6 +53,24 @@ public sealed class RadarBlockLayer : Control
         set => SetValue(BlocksProperty, value);
     }
 
+    public double PanX
+    {
+        get => GetValue(PanXProperty);
+        set => SetValue(PanXProperty, value);
+    }
+
+    public double PanY
+    {
+        get => GetValue(PanYProperty);
+        set => SetValue(PanYProperty, value);
+    }
+
+    public double Zoom
+    {
+        get => GetValue(ZoomProperty);
+        set => SetValue(ZoomProperty, value);
+    }
+
     public RadarBlockViewModel? HitTestBlock(Point point)
     {
         if (Blocks is null)
@@ -58,7 +85,7 @@ public sealed class RadarBlockLayer : Control
                 continue;
             }
 
-            var rect = new Rect(block.X, block.Y, block.Width, block.Height);
+            var rect = Project(block);
             if (rect.Contains(point))
             {
                 return block;
@@ -240,7 +267,7 @@ public sealed class RadarBlockLayer : Control
 
     private void DrawBlock(DrawingContext context, RadarBlockViewModel block)
     {
-        var rect = new Rect(block.X, block.Y, block.Width, block.Height);
+        var rect = Project(block);
         if (rect.Width <= 0 || rect.Height <= 0 || !Bounds.Intersects(rect))
         {
             return;
@@ -261,6 +288,16 @@ public sealed class RadarBlockLayer : Control
         {
             DrawKindGlyph(context, block.DisplayKind, CenterRect(rect, Math.Min(rect.Width, 14), Math.Min(rect.Height, 14)), ThemeBrush("PlBgPanelInsetBrush", "#050806"), block.Brush);
         }
+    }
+
+    private Rect Project(RadarBlockViewModel block)
+    {
+        var zoom = Math.Clamp(Zoom, 0.05, 20);
+        return new Rect(
+            Bounds.Width / 2d + (block.WorldX + PanX) * zoom,
+            Bounds.Height / 2d + (block.WorldY + PanY) * zoom,
+            block.WorldWidth * zoom,
+            block.WorldHeight * zoom);
     }
 
     private void DrawAnnouncement(DrawingContext context, RadarBlockViewModel block, Rect rect)

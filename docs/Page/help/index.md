@@ -2,41 +2,53 @@
 layout: default
 help: true
 title: Podlord help
-description: Explore Kubernetes resources and take explicit, informed actions.
+description: Open contexts, find resources and work with container shells.
 ---
 
 # Podlord help
 
-Podlord is a desktop console for understanding a Kubernetes cluster without living in a namespace tree. It imports kubeconfigs into its own workspace, so the source file is not modified during normal use.
+## Open a context
 
-## Import a cluster
+Open or drop a kubeconfig into Podlord, or paste its contents. The original file stays unchanged. Each context gets its own card. Choose a card to open it and connect.
 
-Start by importing a kubeconfig from the usual location, a file, a directory, or pasted YAML. Podlord keeps an app-owned snapshot and makes the selected cluster visible before it requests data.
+The overview uses saved map previews. It does not sign in to every cluster. Frequently used contexts appear first when you return to the overview. Use a card's menu to rename it locally, open another tab or window, or remove it.
 
-Treat imported kubeconfigs as sensitive. The app does not send them to a hosted service.
+Treat kubeconfigs as sensitive. Podlord does not send them to a hosted Podlord service.
 
 ### Mac App Store edition
 
-The Mac App Store edition imports a kubeconfig only through the file picker or pasted YAML, then keeps an app-owned copy. Use embedded token or certificate data. Configs that need a separate credential file or run an `exec` login command are supported by the direct download, not by the sandboxed Store edition.
+Choose an individual file or paste a kubeconfig. The Store edition does not scan folders or run external login programs. Use a supported built-in sign-in flow, embedded credentials or an explicit supported key import.
 
 ## Explore resources
 
 <a id="explore"></a>
 
-The resource explorer is flat across namespaces by default. Search, sort and filter until the table answers the question you came with. Columns can be reordered, resized or hidden without changing the cluster.
+Use Map for the cluster's namespace islands, or Resources for a sortable table. Namespace and cluster filters narrow the same resource set in the table and radar. Problems and Activity help focus the view. Save useful filters to reuse them for that context.
 
-![Podlord resource explorer]({{ '/assets/help/resource-explorer.png' | relative_url }})
+Click Map again to return to All Contexts. Context settings are shared when you open the same context elsewhere. Selection, camera position and running connections belong to each tab.
+
+![Resource table, minimap and filters]({{ '/assets/screenshots/native-resources.png' | relative_url }})
 
 ## Inspect and act
 
 <a id="inspect-and-act"></a>
 
-Select a resource to open the inspector. It brings together metrics, related events, YAML, supported logs, ConfigMap or Secret keys, and links. Secret values stay hidden by default and require an explicit reveal or copy action.
+Select a resource to inspect its details, events, YAML, logs and supported actions. ConfigMap and Secret keys are listed separately. Secret values stay hidden until you explicitly reveal or copy them.
 
-![Podlord inspector and filters]({{ '/assets/help/inspector-settings.png' | relative_url }})
+Wait for current YAML before editing. Applying YAML and deleting resources require confirmation. Changing a filter or column does not change the cluster.
 
-Actions such as applying YAML, deleting a resource or starting a port forward stay explicit. Podlord shows the current context rather than assuming a shell configuration or calling `kubectl` behind your back.
+![YAML inspector for the selected resource]({{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }})
 
-## When data is incomplete
+## Open a container shell
 
-Cluster roles decide what can be read. If metrics, logs or a resource kind are unavailable, Podlord reports visibility and freshness rather than presenting a guess as current data. Check your cluster access before changing an app setting.
+<a id="terminal"></a>
+
+Open Terminal in a Pod's inspector, choose the container and connect. The shell supports ANSI colors, keyboard input and interactive programs. Podlord does not need kubectl to connect.
+
+Use Connections to return to an open shell or stop a port forward. Closing its tab stops those connections.
+
+![Connected container terminal with colored shell output]({{ '/assets/screenshots/native-terminal.png' | relative_url }})
+
+## Resolve a connection problem
+
+Errors identify the affected context or resource. Authentication failures do not trigger automatic sign-in attempts. Choose Sign in when you want to retry. Access to resources, logs and metrics depends on the cluster's permissions and installed APIs. Missing measurements are not reported as zero usage.

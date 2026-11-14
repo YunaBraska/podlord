@@ -16,9 +16,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="..\..\scripts\cleanup-k3d-test-run.sh" Link="cleanup-k3d-test-run.sh" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Podlord.App\Podlord.App.csproj" />
     <ProjectReference Include="..\..\src\Podlord.Core\Podlord.Core.csproj" />
     <ProjectReference Include="..\..\src\Podlord.Kubernetes\Podlord.Kubernetes.csproj" />
   </ItemGroup>
