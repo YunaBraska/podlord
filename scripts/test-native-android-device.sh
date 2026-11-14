@@ -376,7 +376,7 @@ function healthyPodVisible(){
   return row&&cellMatches(n,'Kind','Pod')&&nodes.some(status=>status['resource-id']?.endsWith('.cell_'+row[1]+'_3')&&cellMatches(status,'Status','Running'));
  });
 }
-function healthCount(){const text=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'))?.['content-desc']||'';const values=/^(?:Session health:|Loading session\.)\s*(\d+) healthy, (\d+) warnings, (\d+) errors/.exec(text);return values?values.slice(1).reduce((sum,value)=>sum+Number(value),0):0;}
+function healthCount(){const text=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'))?.['content-desc']||'';const values=/^(?:Context health:|Loading context\.)\s*(\d+) healthy, (\d+) warnings, (\d+) errors/.exec(text);return values?values.slice(1).reduce((sum,value)=>sum+Number(value),0):0;}
 function capture(name){const frame=runAdb(['exec-out','screencap','-p'],null);fs.writeFileSync(path.join(out,name+'.xml'),xml);fs.writeFileSync(path.join(out,name+'.png'),frame);return frame;}
 function completeJourney(){const status=journeyFailures.length?'failed':'passed';fs.writeFileSync(path.join(out,'journey.json'),JSON.stringify({status,mode:terminalOnly==='1'?'terminal-only':mapOnly==='1'?'map-only':sourceOnly==='1'?'sources-only':'full',scope:'Real installed product, owned K3s TLS source and public Android accessibility/touch actions; scoped diagnostics do not replace the full journey or live cloud OAuth',steps,failures:journeyFailures,transportIncidentObserved:firstCommandFailure},null,2)+'\n');console.log(JSON.stringify({androidRealJourney:status,resources:count,steps:steps.length}));if(journeyFailures.length)process.exitCode=1;}
 process.on('uncaughtException',error=>{
@@ -467,7 +467,7 @@ waitNode('resourcesWorkspaceButton',n=>n.enabled==='true',120000);
 click('resourcesWorkspaceButton');
 run('shell','settings','put','system','accelerometer_rotation','0');rotate(1);state();
 const deadline=Date.now()+120000;let count=0;
-do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):healthCount();const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Session health:'))break;count=0;}while(Date.now()<deadline);
+do{state();const match=nodes.map(n=>n['content-desc']||n.text||'').join('\n').match(/visible: \d+\/(\d+)/);count=match?Number(match[1]):healthCount();const health=nodes.find(n=>n['resource-id']?.endsWith('.sessionHealthStrip'));if(count>=1000&&health?.['content-desc']?.startsWith('Context health:'))break;count=0;}while(Date.now()<deadline);
 if(count<1000){capture('load-failure');throw Error('Real cluster cache did not fill');}steps.push({step:'Real TLS source import and cached resources',resources:count});rotate(0);state();capture('loaded-portrait');
 if(sourceOnly==='1'){search('visual-multi-container');sourceJourney();completeJourney();process.exit(0);}
 run('shell','settings','put','system','accelerometer_rotation','0');rotate(1);state();capture('loaded-landscape');
@@ -548,7 +548,7 @@ state();if(nodes.some(n=>n['resource-id']?.endsWith('.resourceRadar')&&n.bounds!
 steps.push({step:'Same-session Map overview, namespace zoom and return to Table share the live cache'});
 click('toggleLandscapeFilters');waitNode('toggleLandscapeFilters',n=>n.checked==='true');capture('compact-filters');
 click('problemsOnly');if(target('problemsOnly').checked!=='true')throw Error('Problems filter did not enable');capture('problems-filter');
-// The footer is intentionally hidden here. Session health is not a filtered row count.
+// The footer is intentionally hidden here. Context health is not a filtered row count.
 search('visual-multi-container');
 const filterDeadline=Date.now()+30000;
 do{state();if(!nodes.some(n=>/\.cell_\d+_1$/.test(n['resource-id']||'')&&cellMatches(n,'Kind','Pod')))break;}while(Date.now()<filterDeadline);

@@ -88,6 +88,8 @@ Confirmed on 2026-11-10: 20 original cues and 20 independently composed instrume
 
 Known legacy sound IDs map by purpose during rule decoding. This does not change enablement or save on read. The existing explicit atomic writer publishes canonical IDs. Removed attribution UI and its obsolete tests are deleted rather than retained as empty compatibility controls. The frozen C# reference may retain its own assets, but the C++ package does not embed them.
 
+Clarified on 2026-11-14: keep this replacement mapping, not the old recordings. It resolves cue identities inside the current alert schema. It does not admit obsolete native document versions, copy old audio files or create a settings migration. Unknown cue IDs remain explicit errors.
+
 On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. No manual track-selection UI ships. Each full cycle visits all 20 pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
 
 ## Why Can Android Music Receive Commands In The Background?

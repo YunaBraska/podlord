@@ -14,7 +14,7 @@ An alert is built from a guided top-to-bottom inspector flow:
 | Color | Optional radar block color with `none`, `once`, `no-match`, duration or `new-in-view` hold behavior. |
 | Animation | Optional radar animation with the same hold modes. |
 | Zoom | Optional radar zoom percentage when the rule fires. |
-| Sound | Select one of 20 original bundled cues or silence. Existing choices migrate by purpose. User-file import is deferred beyond the first release. |
+| Sound | Select one of 20 original bundled cues or silence. Known old cue IDs map by purpose to these original cues. Old recordings are neither imported nor bundled. This value mapping does not enable obsolete native settings formats. User-file import is deferred beyond the first release. |
 
 Default alerts are built in, enabled by default, and locked against editing. Users can enable or disable built-in alerts in the rules table and add custom alerts. The editor does not offer a duplicate action.
 
