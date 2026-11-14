@@ -1,8 +1,28 @@
 # Podlord Behavior Roadmap
 
-This document describes Podlord as a buildable product specification: what the app does, how each behavior should work, what order to build it in, and which tests prove it.
+This document indexes the current native implementation and retains earlier C# behavior notes for comparison.
 
-It is intentionally more detailed than the README. The README is the 30-second entry point. This file is the behavior map.
+## Current C++ Implementation
+
+The maintained product is the native C++ application. Its current behavior and
+approved changes are defined in the
+[operational specification](../doc/spec/podlord-operational-spec.md).
+The [test map](../doc/spec/k3d-test-map.md) records executable evidence, measured
+results and remaining qualification gaps. Build and platform checks are owned
+by [native/CMakeLists.txt](../native/CMakeLists.txt) and the
+[native release workflow](../.github/workflows/release.yml).
+
+The user-facing model is contexts and their settings, not separately managed
+saved sessions. Tabs retain independent selection, cameras and connections.
+The context catalog is authoritative. There is no C++ prerelease-data migration
+or removed-context blacklist.
+
+## Historical C# Behavior Notes
+
+The remaining sections were written for the C# reference. They explain earlier
+behavior, not additional C++ requirements or current release status. In
+particular, old Graph workspace, session-management, first-load and coverage
+statements must not override the approved native specification or test map.
 
 ## Evidence Base
 

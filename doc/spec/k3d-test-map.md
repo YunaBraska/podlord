@@ -1,5 +1,44 @@
 # k3d And Performance Test Map
 
+## Native candidate qualification: 2026-11-14
+
+Status: current code, coverage, mobile journeys and platform CI pass. Final release qualification still awaits a valid foreground frame/idle receipt for the current UI. No merge, tag, Store submission or release publication has occurred.
+
+The tested implementation is `52ad41583d7e780780e194667ab1899aa782d86e` on `feat/session-tabs-detachable-windows`. Its C++ source tree is `d2273077c62fa8fdcb058c69bf49a522aaf67782` and UI tree is `d98a36409029a9105f5f1ea01d8c101aff18cc01`. Subsequent documentation-only commits do not change that implementation.
+
+| Area | Current evidence | Result |
+| --- | --- | --- |
+| Hosted qualification | [Run 43548380597](https://github.com/YunaBraska/podlord/actions/runs/43548380597), exact tested commit | All 13 jobs pass. Includes macOS ARM64/Intel tests and direct/Store package checks, Windows x64, Linux x64/ARM64, clean Ubuntu/Debian package trials, iOS ARM64 and candidate assembly. |
+| Local complete suite | `full-filter-final.log` | 5,699 CTest executions, including 34 canaries and Qt-style permutations. These are not 5,699 distinct user journeys. Line coverage 97.76%, branch coverage 86.43%. All audited new-logic families retain at least 90% branch coverage. |
+| iOS appearance | `ios-matrix-filter-final` | 19 themes x 2 variants x 18 current views = 684 captures against real local Kubernetes. Removed or merged views are not counted as current coverage. |
+| iOS input and shell | `ios-input-filter-final` | Actual keyboard/IME input, saved-filter save/load/rename/delete, retained query, Kubernetes PTY input/echo, controls restoration and shell exit pass. This is separate from the theme matrix's terminal-ready image. |
+| iOS packaging | `ios-device-filter-release-build.log`, `ios-*-filter-privacy.log` | Release device build passes. Privacy declarations pass in all nine packaged app/vendor bundles for device and simulator. |
+| Android 4 KB / 16 KB | `android-filter-4k`, `android-filter-16k` | Both actual signed-APK journeys pass, with 1,847 and 1,851 observed Kubernetes objects. Includes terminal, filters, YAML draft protection, logs and Sources. The 4-KB journey additionally checks map hit boundaries and retained selection. Both cleanup receipts report success. |
+| Standalone macOS | `macos-filter-final`, `universal-filter-final` | Package/dependency guards pass. Store slices from the same CI commit merge to native x86_64 + ARM64 with matching resources and macOS 13 minimum. The merged app is unsigned and is not a Store distribution. |
+| Packaged startup | `startup-filter-final.log` | Fresh local test copy, signed with the existing local test identity: first Settings interaction 1,391.8 ms, subsequent maximum 430.9 ms. Ten launches, disposable profiles, audio disabled. |
+
+Evidence root: `$HOME/.cache/podlord/release-qualification-20261113`. `qualification-current.json` indexes the exact implementation and receipts. Local mobile evidence uses a simulator/emulator, not physical devices. Test-only Kubernetes fixtures remain outside production source and UI.
+
+### UI regressions closed during qualification
+
+- The Fusion columns dialog placed its 44-pixel actions six pixels outside the background. The shared footer now derives its height from the actual controls. The new public bounds checks cover 1440x948, 640x320 and 320x640. Ten affected resource/Sources layout cases pass.
+- The narrow filter limit clipped localized values such as `1.024`. Its grid now uses the actual Qt implicit widths rather than a fixed 110-pixel editor assumption. Six affected density/alignment cases pass, including 1,024/5,000 in German formatting and a real resize/frame transition.
+- The existing iOS input journey is now exposed by the maintained `ios-input-e2e` runner, with scenario-specific completion and capture validation. Its real PTY/IME journey passes. No product behavior or release threshold changed for this runner correction.
+- Four unscaled C#/C++ menu pairs remain under `desktop-final/comparison` and `desktop-columns-r2/comparison`. The columns pair captures the discovered pre-fix overflow, not the corrected footer. Corrected wide/narrow images are under `columns-corrected`, with failing/passing geometry receipts. The final iOS matrix and Android journeys include the corrected UI.
+
+### Remaining desktop receipt and measured advisories
+
+The current startup receipt is valid. Three current foreground frame/idle attempts were rejected before fixture loading because the window was exposed but the native application was inactive. macOS reported `com.apple.UserNotificationCenter` as frontmost. AX Raise and a normal title-bar click did not resolve it. These attempts are failures of measurement admission, not passing performance evidence.
+
+The recurring `Family` crash belongs to Apple's simulator process. Its crash parent matches the already-cleaned test simulator. Desktop automation cannot control that protected notification app. Next step: close the existing macOS crash dialogs, then run the unchanged foreground measurement once with its test window active. No complete suite rerun or new feature work is required for that environment step.
+
+`performance-final/assessment.json` retains the earlier valid native baseline for the unchanged C++ core, but predates the final small UI corrections. It is not relabeled as a current-UI run. Its advisories include 319,520,768-byte peak physical footprint, 2.3235% one-core idle CPU and cached-tab frame CPU above the advisory target. Package targets are also advisory per the approved platform policy: current macOS ARM64 is 78,577,902 bytes downloaded / 133,205,226 installed, Android is 81,892,650 bytes as APK.zip / at most 144,877,175 observed installed, and merged Universal2 is 264,767,938 installed bytes. No checks were weakened to conceal these values.
+
+The tested Android APK SHA-256 is `84777b7979b8a7dd4321f4eb10fc9dcee3f70521bde45088b37919681628746a`. The private download ZIP was integrity-checked and contains that exact APK. Local owned test containers, private emulator ports and desktop test processes are absent after cleanup. Existing user files and shared services were not removed. Signing/notarization and Store publication remain separate, deferred delivery steps.
+
+Earlier dated entries below retain historical evidence. Their old open/closed states do not supersede this section or the operational specification.
+
+
 Podlord's Kubernetes integration tests use a disposable k3d cluster. The suite is intentionally slow and proof-oriented.
 
 Not every behavior belongs in k3d. Real Kubernetes proves API truth, RBAC, metrics, port-forwarding, and object lifecycle behavior. UI freeze and redraw behavior must be verified with deterministic headless/UI budget tests because cluster startup, Docker, image pulls, and API latency would hide the actual regression. Fog machine, wrong room.
