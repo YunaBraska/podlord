@@ -7,11 +7,12 @@ umask 077
 BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
 NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
 MODE=${1:-desktop}
-[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, mobile, ios-themes, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
-case "$MODE" in desktop|mobile|ios-themes|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, mobile, ios-themes, ios-input-e2e, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
+case "$MODE" in desktop|mobile|ios-themes|ios-input-e2e|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+case "$MODE" in ios-themes) IOS_SCENARIO=real_themes ;; ios-input-e2e) IOS_SCENARIO=real_input ;; *) IOS_SCENARIO= ;; esac
 METADATA_AUDIT=${PODLORD_KUBERNETES_METADATA_AUDIT:-0}
 case "$METADATA_AUDIT" in 0|1) ;; *) printf 'Metadata audit must be 0 or 1.\n' >&2; exit 1 ;; esac
-if [ "$MODE" = ios-themes ]; then
+if [ -n "$IOS_SCENARIO" ]; then
     [ "$(uname -s)" = Darwin ] || { printf 'iOS simulator evidence requires macOS.\n' >&2; exit 1; }
     IOS_APP="${PODLORD_IOS_BUILD_DIR:-}/Release-iphonesimulator/workspace_ui_test.app"
     [ -x "$IOS_APP/workspace_ui_test" ] || { printf 'Required iOS simulator UI test application is missing; set PODLORD_IOS_BUILD_DIR.\n' >&2; exit 1; }
@@ -28,7 +29,7 @@ DESKTOP_TIMEOUT=${PODLORD_DESKTOP_TIMEOUT_SECONDS:-3600}
 case "$DESKTOP_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
 [ "${#DESKTOP_TIMEOUT}" -le 5 ] && [ "$DESKTOP_TIMEOUT" -ge 60 ] && [ "$DESKTOP_TIMEOUT" -le 21600 ] || { printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
 LEGACY=${PODLORD_LEGACY_APP:-}
-if [ "$MODE" != mobile ] && [ "$MODE" != ios-themes ] && [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
+if [ "$MODE" != mobile ] && [ -z "$IOS_SCENARIO" ] && [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
     printf 'Required native field filter UI test executable is missing.\n' >&2
     exit 1
 fi
@@ -80,7 +81,7 @@ fi
 for tool in docker kubectl node rg; do
     command -v "$tool" >/dev/null 2>&1 || { printf 'Missing tool: %s\n' "$tool" >&2; exit 1; }
 done
-if [ "$(uname -s)" = Darwin ] && [ "$MODE" != mobile ] && [ "$MODE" != ios-themes ]; then
+if [ "$(uname -s)" = Darwin ] && [ "$MODE" != mobile ] && [ -z "$IOS_SCENARIO" ]; then
     # Standalone drivers need the configured SSL runtime after the shell has started.
     ssl=$(awk '/^OPENSSL_SSL_LIBRARY:FILEPATH=/ {sub(/^[^=]*=/, ""); print; exit}' "$BUILD/CMakeCache.txt")
     [ -n "$ssl" ] && [ -f "$ssl" ] || { printf 'The built native OpenSSL runtime is unavailable.\n' >&2; exit 1; }
@@ -118,6 +119,9 @@ cleanup() {
     if [ -n "$IOS_DATA" ]; then
         if [ -d "$IOS_DATA/Documents/theme-matrix" ] && [ ! -L "$IOS_DATA/Documents/theme-matrix" ]; then
             mkdir -p "$EVIDENCE/$NAME-ios-themes" && cp -R "$IOS_DATA/Documents/theme-matrix/." "$EVIDENCE/$NAME-ios-themes/" || status=1
+        fi
+        if [ -d "$IOS_DATA/Documents/input-journey" ] && [ ! -L "$IOS_DATA/Documents/input-journey" ]; then
+            mkdir -p "$EVIDENCE/$NAME-ios-input" && cp -R "$IOS_DATA/Documents/input-journey/." "$EVIDENCE/$NAME-ios-input/" || status=1
         fi
         if [ -f "$IOS_DATA/Documents/failure.png" ] && [ ! -L "$IOS_DATA/Documents/failure.png" ]; then
             cp "$IOS_DATA/Documents/failure.png" "$EVIDENCE/$NAME-ios-failure.png" || status=1
@@ -376,7 +380,7 @@ fi
 kubectl --kubeconfig "$RUN/kubeconfig" rollout status -n visual-a deployment/visual-worker-1 --timeout=120s
 kubectl --kubeconfig "$RUN/kubeconfig" get configmap,secret,deployment,statefulset,daemonset,cronjob,pvc,service,serviceaccount,job,pod -A -l "podlord.visual.owner=$NAME" -o json | node -e '
 let input="";process.stdin.on("data",b=>input+=b);process.stdin.on("end",()=>{const items=JSON.parse(input).items,counts={};for(const item of items)counts[item.kind]=(counts[item.kind]||0)+1;if(counts.ConfigMap!==512||counts.Secret!==256||counts.Deployment!==64)throw Error("Resource count mismatch");console.log(JSON.stringify({boundary:"real local Kubernetes API",total:items.length,counts},null,2));});'
-if [ "$MODE" = ios-themes ]; then
+if [ -n "$IOS_SCENARIO" ]; then
     IOS_DEVICE=$(xcrun simctl create 'Podlord Kubernetes Theme Test' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-26-4)
     printf 'Owned iOS simulator: %s\n' "$IOS_DEVICE"
     xcrun simctl boot "$IOS_DEVICE" --arch="$(uname -m)"
@@ -388,24 +392,34 @@ if [ "$MODE" = ios-themes ]; then
     cp "$RUN/kubeconfig" "$IOS_DATA/Documents/kubeconfig"
     chmod 600 "$IOS_DATA/Documents/kubeconfig"
     SIMCTL_CHILD_PODLORD_THEME_EVIDENCE_DIR="$IOS_DATA/Documents/theme-matrix" \
+        SIMCTL_CHILD_PODLORD_INPUT_EVIDENCE_DIR="$IOS_DATA/Documents/input-journey" \
         SIMCTL_CHILD_PODLORD_UI_FAILURE_FRAME="$IOS_DATA/Documents/failure.png" \
         SIMCTL_CHILD_QT_QUICK_CONTROLS_STYLE=Basic SIMCTL_CHILD_QT_QPA_PLATFORM=ios \
-        xcrun simctl launch --console "$IOS_DEVICE" berlin.yuna.podlord.tests real_themes "$IOS_DATA/Documents/kubeconfig" > "$RUN/ios.log" 2> "$RUN/ios-stderr.log" &
+        xcrun simctl launch --console "$IOS_DEVICE" berlin.yuna.podlord.tests "$IOS_SCENARIO" "$IOS_DATA/Documents/kubeconfig" > "$RUN/ios.log" 2> "$RUN/ios-stderr.log" &
     NATIVE_PID=$!
     wait_for_native_process "$DESKTOP_TIMEOUT"
-    if [ ! -f "$IOS_DATA/Documents/theme-matrix/matrix.json" ]; then
+    if [ "$IOS_SCENARIO" = real_themes ] && [ ! -f "$IOS_DATA/Documents/theme-matrix/matrix.json" ]; then
         cat "$RUN/ios.log" "$RUN/ios-stderr.log" >&2
         printf 'iOS view matrix did not complete. Its application log and partial captures are retained.\n' >&2
         exit 1
     fi
-    node - "$RUN/ios.log" "$RUN/ios-stderr.log" "$IOS_DATA/Documents/theme-matrix/matrix.json" <<'JS'
+    node - "$RUN/ios.log" "$RUN/ios-stderr.log" "$IOS_DATA/Documents" "$IOS_SCENARIO" <<'JS'
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const stdout=fs.readFileSync(process.argv[2],'utf8'),stderr=fs.readFileSync(process.argv[3],'utf8');
-const output=stdout+stderr,expected='UI scenario passed: real_themes';
+const output=stdout+stderr,scenario=process.argv[5],expected='UI scenario passed: '+scenario;
 assert.doesNotMatch(output,/UI scenario failed:|Binding\s+loop|ReferenceError|TypeError/i,output);
-assert.equal(stdout.split(/\r?\n/).filter(line=>line===expected).length,1,'Expected one exact real_themes completion marker in stdout.');
+assert.equal(stdout.split(/\r?\n/).filter(line=>line===expected).length,1,'Expected one exact '+scenario+' completion marker in stdout.');
 assert.deepEqual((stdout+'\n'+stderr).split(/\r?\n/).filter(line=>/UI scenario (?:passed|failed):/.test(line)),[expected],'Unexpected iOS UI completion markers.');
-const matrix=JSON.parse(fs.readFileSync(process.argv[4],'utf8'));
+if(scenario==='real_input') {
+    for(const name of ['search-keyboard','preset-save-keyboard','preset-rename-keyboard','preset-deleted-search-retained','terminal-keyboard','terminal-restored']) {
+        const bytes=fs.readFileSync(process.argv[4]+'/input-journey/'+name+'.png');
+        assert.ok(bytes.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex')),'Missing PNG capture: '+name);
+    }
+    console.log('iOS real Kubernetes input journey passed: search, saved filters, keyboard geometry, connected PTY, IME echo and shell exit.');
+    process.exit(0);
+}
+assert.equal(scenario,'real_themes');
+const matrix=JSON.parse(fs.readFileSync(process.argv[4]+'/theme-matrix/matrix.json','utf8'));
 assert.equal(matrix.platform,'ios');
 const views=[...['alerts','appearance','diagnostics','sources','sync','about'].map(section=>'settings-'+section),
     'map-context','map-overview','resources','radar','events','ports',

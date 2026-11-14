@@ -199,14 +199,15 @@ Pane {
             }
             GridLayout {
                 Layout.fillWidth: true
-                columns: sidebarControls.width >= 340 ? 3 : 2
+                columns: width >= problemsMode.implicitWidth + activityMode.implicitWidth + rowLimit.implicitWidth + 2 * columnSpacing ? 3 : 2
                 columnSpacing: 4; rowSpacing: 4
-                ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; Layout.fillWidth: true; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
-                ScopeCheckBox { objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; Layout.fillWidth: true; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
+                ScopeCheckBox { id: problemsMode; objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; Layout.fillWidth: true; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
+                ScopeCheckBox { id: activityMode; objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; Layout.fillWidth: true; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
                 SpinBox {
+                    id: rowLimit
                     objectName: "resourceLimit"
                     Layout.columnSpan: parent.columns === 2 ? 2 : 1
-                    Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 110
+                    Layout.fillWidth: true; Layout.minimumWidth: implicitWidth
                     from: 1; to: 5000; editable: true
                     value: workspace.resourceLimit
                     enabled: workspace.currentSession !== "" && !workspace.busy

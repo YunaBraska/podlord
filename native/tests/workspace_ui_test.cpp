@@ -2891,20 +2891,53 @@ bool execute(const QString& requestedScenario) {
             if (!waitFor([&] { return workspace.resourceLimit()==1025 && !workspace.busy() && reset->isEnabled(); })
                 || !click(window,reset)
                 || !waitFor([&] { return workspace.resourceLimit()==1024 && !reset->isEnabled(); })) return false;
-            if (!click(window, item(window, "sidebarField_cluster"))) return false;
+            const auto originalSize = window->size();
+            window->resize(402,778);
+            if (!waitFor([&] { auto* toggle=item(window,"toggleSidebar"); return toggle
+                && !podlord::test::visibleBounds(window,toggle).isEmpty(); })
+                || !click(window,item(window,"toggleSidebar"))) { std::fputs("Row-limit drawer action unavailable.\n",stderr); return false; }
+            auto* drawer = window->findChild<QObject*>("sidebarDrawer");
+            if (!drawer || !waitFor([&] { return drawer->property("opened").toBool(); })) { std::fputs("Row-limit drawer did not open.\n",stderr); return false; }
+            limit = item(window,"resourceLimit");
+            if (!limit || !limit->setProperty("locale",QVariant::fromValue(QLocale(QLocale::German,QLocale::Germany)))) { std::fputs("Row-limit locale was not available.\n",stderr); return false; }
+            for (const auto value : {QString("1024"),QString("5000")}) {
+                if (!workspace.setResourceLimit(value) || !waitFor([&] { return !workspace.busy(); })) { qWarning() << "Row-limit value rejected" << value << workspace.error(); return false; }
+                auto* number = limit->property("contentItem").value<QQuickItem*>();
+                if (!number || !waitFor([&] {
+                    return number->property("contentWidth").toReal() <= number->width()
+                        - number->property("leftPadding").toReal() - number->property("rightPadding").toReal() + 0.5;
+                })) {
+                    qWarning() << "Resource row limit is clipped:" << value << "control" << limit->width()
+                        << "text" << (number ? number->property("contentWidth").toReal() : 0)
+                        << "editor" << (number ? number->width() : 0);
+                    saveShellFrame(window,scenario+"-limit-clipped");
+                    return false;
+                }
+            }
+            QTest::keyClick(window,Qt::Key_Escape);
+            if (!waitFor([&] { return !drawer->property("visible").toBool(); })) { std::fputs("Row-limit drawer did not close.\n",stderr); return false; }
+            QSignalSpy restoredFrames(window,&QQuickWindow::frameSwapped);
+            window->resize(originalSize);
+            window->update();
+            if (!waitFor([&] { return !restoredFrames.isEmpty(); })) return false;
+            if (!workspace.setResourceLimit("1024") || !waitFor([&] { return !workspace.busy(); })) { std::fputs("Row-limit default restoration failed.\n",stderr); return false; }
+            if (!click(window, item(window, "sidebarField_cluster"))) { std::fputs("Cluster field is unavailable after restoring the window.\n",stderr); return false; }
             auto* editor = item(window, "fieldFiltersInline");
             auto* field = item(window, "sidebarField_cluster");
             if (!editor || !field || !waitFor([&] { return editor->isVisible()
                 && editor->mapToScene(QPointF{}).y() >= field->mapToScene(QPointF(0, field->height())).y(); })
-                || window->findChild<QObject*>("fieldFiltersPopup") || item(window, "refreshFieldFilterValues")) return false;
+                || window->findChild<QObject*>("fieldFiltersPopup") || item(window, "refreshFieldFilterValues")) { std::fputs("Inline cluster field did not open.\n",stderr); return false; }
             if (!saveShellFrame(window, scenario + "-open")
                 || !type(window, item(window, "fieldFilterExpression"), "__absent__")
                 || !waitFor([&] { return workspace.resourceCount() == 0; })
                 || !click(window, field) || !waitFor([&] { return !item(window, "fieldFiltersInline"); })
-                || !click(window, field)) return false;
+                || !click(window, field)) { std::fputs("Inline cluster filter could not roundtrip.\n",stderr); return false; }
             const auto* input = item(window, "fieldFilterExpression");
-            return input && input->property("text").toString() == "__absent__"
+            const bool retained = input && input->property("text").toString() == "__absent__"
                 && server.requests.size() == calls && saveShellFrame(window, scenario);
+            if (!retained) qWarning() << "Inline cluster filter changed after reopening:" << (input ? input->property("text").toString() : QString{})
+                << "requests" << calls << server.requests.size();
+            return retained;
         }
         if (scenario == "ui_density_tabs") {
             if (!click(window,item(window,"cell_0_0")) || !waitFor([&] { return !workspace.inspectorPath().isEmpty(); })) return false;
@@ -6880,8 +6913,13 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
         input->hide();
         if (!waitFor([&] { return !input->isVisible(); })) return failure("search keyboard closure");
         auto* filterToggle=item(window,window->width()<600 ? "toggleSidebar" : "toggleLandscapeFilters");
-        if (!filterToggle || !click(window,filterToggle)
-            || !waitFor([&] { auto* field=item(window,"filterPresetName"); return field && field->isVisible(); })) return failure("preset filters disclosure");
+        if (!filterToggle || !click(window,filterToggle)) return failure("preset filters disclosure");
+        if (window->width()<600) {
+            auto* drawer=window->findChild<QObject*>("sidebarDrawer");
+            if (!drawer || !waitFor([&] { return drawer->property("opened").toBool(); })) return failure("preset drawer readiness");
+        }
+        if (!click(window,item(window,"filterPreset"))
+            || !waitFor([&] { auto* field=item(window,"filterPresetName"); return field && field->isVisible(); })) return failure("saved filters disclosure");
         if (!type(window,item(window,"filterPresetName"),"iOS-preset")) return failure("preset name entry");
         input->show();
         if (!waitFor([&] { return aboveKeyboard("filterPresetName",16); },10000)
@@ -6889,8 +6927,8 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
         input->hide();
         if (!waitFor([&] { return !input->isVisible(); }) || !click(window,item(window,"saveFilterPreset"))
             || !waitFor([&] { return !workspace.filterPresetsBusy() && workspace.filterPresets().contains("iOS-preset"); })) return failure("preset save");
-        if (!click(window,item(window,"resetResourceFilters")) || !waitFor([&] { return workspace.filterText().isEmpty(); })
-            || !click(window,item(window,"filterPreset"))) return failure("preset reset and disclosure");
+        if (!click(window,item(window,"resetResourceFilters")) || !waitFor([&] { return workspace.filterText().isEmpty(); })) return failure("preset reset");
+        if (!item(window,"filterPreset")->property("checked").toBool() && !click(window,item(window,"filterPreset"))) return failure("preset reset and disclosure");
         const auto choice="filterPresetOption_"+QString::number(workspace.filterPresets().indexOf("iOS-preset"));
         if (!waitFor([&] { auto* option=item(window,choice); return option && option->isVisible(); })
             || !click(window,item(window,choice)) || !waitFor([&] { return workspace.filterText()=="visual-multi-container"; })) return failure("preset restores search");

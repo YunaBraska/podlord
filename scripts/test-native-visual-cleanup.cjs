@@ -175,9 +175,10 @@ test('mobile review setup and owned cleanup need no desktop applications', { tim
 test('mobile fixture Metadata audit is opt-in and preserves owned cleanup', { timeout: 20000 }, () => exercise('after_create', 'mobile', true));
 test('failed Metadata audit export still removes the started owned fixture and volumes', { timeout: 20000 }, () => exercise('audit_export_failure', 'mobile', true));
 
-test('iOS theme review rejects a missing simulator app before Docker access', { timeout: 5000, skip: process.platform !== 'darwin' }, async () => {
+for (const mode of ['ios-themes', 'ios-input-e2e']) {
+test(`${mode} rejects a missing simulator app before Docker access`, { timeout: 5000, skip: process.platform !== 'darwin' }, async () => {
     const result = await new Promise((resolve, reject) => {
-        const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), 'ios-themes'], {
+        const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), mode], {
             env: { ...process.env, PODLORD_NATIVE_BUILD_DIR: build, PODLORD_IOS_BUILD_DIR: '/missing/podlord-ios-build',
                 DOCKER_CONTEXT: '', DOCKER_HOST: 'tcp://127.0.0.1:1' }, stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -189,6 +190,7 @@ test('iOS theme review rejects a missing simulator app before Docker access', { 
     assert.match(result.output, /Required iOS simulator UI test application is missing/);
     assert.doesNotMatch(result.output, /Only a local Docker daemon/);
 });
+}
 
 async function iosCompletion(scenario) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-ios-completion-'));
