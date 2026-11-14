@@ -2,41 +2,93 @@
 
 ## Native candidate qualification: 2026-11-14
 
-Status: current code, coverage, mobile journeys and platform CI pass. Final release qualification still awaits a valid foreground frame/idle receipt for the current UI. No merge, tag, Store submission or release publication has occurred.
+Status: the private native technical candidate is qualified. Current platform CI,
+local Kubernetes journeys, coverage, package structure, startup and a valid
+foreground frame/idle receipt are complete. Size and runtime advisories below
+are not presented as met. No merge, tag, release upload or Store submission has
+occurred. Distribution signing, notarization and formal Store review remain
+separate, previously deferred work.
 
-The tested implementation is `52ad41583d7e780780e194667ab1899aa782d86e` on `feat/session-tabs-detachable-windows`. Its C++ source tree is `d2273077c62fa8fdcb058c69bf49a522aaf67782` and UI tree is `d98a36409029a9105f5f1ea01d8c101aff18cc01`. Subsequent documentation-only commits do not change that implementation.
+Tested implementation: `56021bcc94fa19c25722873b0b2c732a094f02ba`.
+The source, UI and asset trees are respectively
+`536ba0c7a54d2b38af7dadd5e2be6acf045354e0`,
+`34a225fc2c9573937ae71c429779560e41a4ca02` and
+`45dc7382fa2d5690608ea6653df041f461a155da`.
+Production inputs have not changed since `a70ee355`. Later changes correct
+and extend tests, their registration, and decision documentation. Evidence-only
+updates to this map do not change those tested inputs.
 
-| Area | Current evidence | Result |
-| --- | --- | --- |
-| Hosted qualification | [Run 43548380597](https://github.com/YunaBraska/podlord/actions/runs/43548380597), exact tested commit | All 13 jobs pass. Includes macOS ARM64/Intel tests and direct/Store package checks, Windows x64, Linux x64/ARM64, clean Ubuntu/Debian package trials, iOS ARM64 and candidate assembly. |
-| Local complete suite | `full-filter-final.log` | 5,699 CTest executions, including 34 canaries and Qt-style permutations. These are not 5,699 distinct user journeys. Line coverage 97.76%, branch coverage 86.43%. All audited new-logic families retain at least 90% branch coverage. |
-| iOS appearance | `ios-matrix-filter-final` | 19 themes x 2 variants x 18 current views = 684 captures against real local Kubernetes. Removed or merged views are not counted as current coverage. |
-| iOS input and shell | `ios-input-filter-final` | Actual keyboard/IME input, saved-filter save/load/rename/delete, retained query, Kubernetes PTY input/echo, controls restoration and shell exit pass. This is separate from the theme matrix's terminal-ready image. |
-| iOS packaging | `ios-device-filter-release-build.log`, `ios-*-filter-privacy.log` | Release device build passes. Privacy declarations pass in all nine packaged app/vendor bundles for device and simulator. |
-| Android 4 KB / 16 KB | `android-filter-4k`, `android-filter-16k` | Both actual signed-APK journeys pass, with 1,847 and 1,851 observed Kubernetes objects. Includes terminal, filters, YAML draft protection, logs and Sources. The 4-KB journey additionally checks map hit boundaries and retained selection. Both cleanup receipts report success. |
-| Standalone macOS | `macos-filter-final`, `universal-filter-final` | Package/dependency guards pass. Store slices from the same CI commit merge to native x86_64 + ARM64 with matching resources and macOS 13 minimum. The merged app is unsigned and is not a Store distribution. |
-| Packaged startup | `startup-filter-final.log` | Fresh local test copy, signed with the existing local test identity: first Settings interaction 1,391.8 ms, subsequent maximum 430.9 ms. Ten launches, disposable profiles, audio disabled. |
+Current local evidence root:
+`/Users/yuna/.cache/podlord/release-review-20261114`.
+`qualification-current.json` indexes receipts, hashes, conditions and exclusions.
 
-Evidence root: `$HOME/.cache/podlord/release-qualification-20261113`. `qualification-current.json` indexes the exact implementation and receipts. Local mobile evidence uses a simulator/emulator, not physical devices. Test-only Kubernetes fixtures remain outside production source and UI.
+| Check | Current result and evidence |
+| --- | --- |
+| Hosted platform CI | [Run 43571072633](https://github.com/YunaBraska/podlord/actions/runs/43571072633), exact tested commit, all 14 jobs successful. Includes macOS ARM64/Intel, Windows x64, Linux x64/ARM64, iOS build/bundle checks and native package/candidate jobs. `ci-current.json`. |
+| Local complete suite | 5,627 CTest executions pass in `full-coverage.log`. A subsequent 193-case storage cohort also passes, including 24 new current-format scenarios. The current registration has 5,651 executions including style/platform variants, not 5,651 independent user journeys. These are not claimed as a single fresh local 5,651-case invocation. |
+| Reachable coverage | Merged actual instrumented runs: 97.80% lines, 86.51% branches. `review-native.profdata`, `coverage-complete.txt`. The 95%/85% overall thresholds remain unchanged. |
+| Changed logic | 192/196 changed-line branch outcomes, 97.96%, above the unchanged 90% requirement. `changed-logic-summary.json`. Four filesystem error outcomes remain uncovered. They are not declared unreachable. The initial audit was only 82.65% and prompted the new tests. |
+| Public store regression cases | 193/193 pass in `storage-validation-tests.log`. Current-format invalid fields now reach their actual decoders. The previous malformed fixture incorrectly used an obsolete version and could pass without testing those fields. |
+| Real Kubernetes E2E | `kubernetes-e2e.log` passes against the owned local K3s API. Includes shell/vi/interrupt/reopen, forwards, context removal, search, inspector, health and numeric filters. No production writes. Owned fixture removed. |
+| Current desktop theme matrix | `native-themes`: 684 captures, 19 themes, two variants, 18 views, using real local Kubernetes data. |
+| Android 4-KB APK journey | `android-4k-current`: 1,849 resources, 14 grouped journey steps, full mode including filters, YAML protection, Sources and real terminal echo. Cleanup completed with exit 0. |
+| Android 16-KB APK journey | `android-16k-final`: 1,848 resources, 14 grouped steps, same signed APK, 16,384-byte pages. Cleanup completed with exit 0. |
+| iOS build and privacy | Release simulator and device builds pass. Privacy declarations verified across nine app/vendor bundles. `ios-current-simulator.log`, `ios-current-device.log`, `ios-current-device-privacy.log`. |
+| Current iOS theme/input evidence | `ios-final-matrix`: 684 captures, 19 themes, two variants, 18 views. `ios-final-input.log`: search, saved filters, keyboard geometry, real PTY/IME echo and shell exit pass. Native ARM64 simulator, no Rosetta. Owned simulators and fixtures cleaned. |
+| macOS standalone package | `macos-current`: bundled dependency and package checks pass. No development-SDK dependency or .NET/Avalonia runtime. ZIP SHA-256 `6167952d19bcf6551a2426aede253b4173c4f2f9b913f8d9bbf6cb7375678a94`. |
+| Current Universal2 Store structure | `universal2-current`: current CI Store artifacts merge with identical shared resources, native ARM64/x86_64 runtime slices, macOS 13 minimum, dependency and deep signature verification. Local ad-hoc signing only, not a distribution signature or Store submission. |
+| Current startup | Ten packaged-app launches in `startup-current.log`. First 1,202.7 ms against 1,500 ms, maximum repeat 440.3 ms against 1,000 ms. Both startup targets met. |
+| Current valid foreground performance | `performance-current`: full 60-second idle, no foreground loss, valid foreground-Cocoa receipt. Interaction p95: filter 22.40 ms, sort 22.46 ms, tab 32.61 ms, inspector 24.02 ms. All corresponding interaction targets met. Advisory exceptions and test conditions below. |
+| Landing page | Four real native images: map, resources, YAML and a connected colored terminal. Actual Jekyll page tested at 1280×900 and 390×844, all four images load, no horizontal mobile overflow. `landing-desktop.jpg`, `landing-mobile.jpg`. Branch prepared, not yet deployed. |
 
-### UI regressions closed during qualification
+### Review fixes and intentional retained paths
 
-- The Fusion columns dialog placed its 44-pixel actions six pixels outside the background. The shared footer now derives its height from the actual controls. The new public bounds checks cover 1440x948, 640x320 and 320x640. Ten affected resource/Sources layout cases pass.
-- The narrow filter limit clipped localized values such as `1.024`. Its grid now uses the actual Qt implicit widths rather than a fixed 110-pixel editor assumption. Six affected density/alignment cases pass, including 1,024/5,000 in German formatting and a real resize/frame transition.
-- The existing iOS input journey is now exposed by the maintained `ios-input-e2e` runner, with scenario-specific completion and capture validation. Its real PTY/IME journey passes. No product behavior or release threshold changed for this runner correction.
-- Four unscaled C#/C++ menu pairs remain under `desktop-final/comparison` and `desktop-columns-r2/comparison`. The columns pair captures the discovered pre-fix overflow, not the corrected footer. Corrected wide/narrow images are under `columns-corrected`, with failing/passing geometry receipts. The final iOS matrix and Android journeys include the corrected UI.
+Removed obsolete native read-settings, table-layout, view-state, preset and
+alert-format upgrades. Current formats are strict. Explicit C# filter import
+remains. Removed dead Map Back/Forward history and the generic C# publisher.
+C# remains a separately buildable comparison reference, not the published
+native runtime. The native source/UI contain no k3d production integration.
 
-### Remaining desktop receipt and measured advisories
+User-visible saved Sessions/Views are gone. Internal tab ownership identities
+remain necessary to isolate terminals, forwards and cleanup. They are not a
+second user-facing context catalog. Removed obsolete localization keys and
+added a guard that detects missing literal QML catalog bindings.
 
-The current startup receipt is valid. Three current foreground frame/idle attempts were rejected before fixture loading because the window was exposed but the native application was inactive. macOS reported `com.apple.UserNotificationCenter` as frontmost. AX Raise and a normal title-bar click did not resolve it. These attempts are failures of measurement admission, not passing performance evidence.
+The approved sound replacement mapping remains: old cue identifiers can select
+a suitable current own cue, but old recordings are not imported or bundled.
+This is not a native settings-file migration. All 20 own cues and 20 own tracks
+remain, and unknown cue identifiers are rejected.
 
-The recurring `Family` crash belongs to Apple's simulator process. Its crash parent matches the already-cleaned test simulator. Desktop automation cannot control that protected notification app. Next step: close the existing macOS crash dialogs, then run the unchanged foreground measurement once with its test window active. No complete suite rerun or new feature work is required for that environment step.
+Corrected the music-volume lock regression test to use one gesture and observe
+rollback without a timing race. It passes 30 consecutive repetitions. Corrected
+Android's test driver to follow the actual Context health label. Fixed the
+landing-page primary action contrast from 1.79:1 to 9.82:1. Replaced outdated
+native product pictures and removed two unreferenced duplicate C# help images.
+The terminal image comes from a real reopened K3s shell, not a mockup.
 
-`performance-final/assessment.json` retains the earlier valid native baseline for the unchanged C++ core, but predates the final small UI corrections. It is not relabeled as a current-UI run. Its advisories include 319,520,768-byte peak physical footprint, 2.3235% one-core idle CPU and cached-tab frame CPU above the advisory target. Package targets are also advisory per the approved platform policy: current macOS ARM64 is 78,577,902 bytes downloaded / 133,205,226 installed, Android is 81,892,650 bytes as APK.zip / at most 144,877,175 observed installed, and merged Universal2 is 264,767,938 installed bytes. No checks were weakened to conceal these values.
+Earlier C#/C++ popup comparisons and approved narrow-layout fixes remain recorded
+in the historical qualification evidence under
+`/Users/yuna/.cache/podlord/release-qualification-20261113`.
+They are provenance, not a claim that every old receipt was repeated against
+this commit. Current theme captures and input journeys are listed above.
 
-The tested Android APK SHA-256 is `84777b7979b8a7dd4321f4eb10fc9dcee3f70521bde45088b37919681628746a`. The private download ZIP was integrity-checked and contains that exact APK. Local owned test containers, private emulator ports and desktop test processes are absent after cleanup. Existing user files and shared services were not removed. Signing/notarization and Store publication remain separate, deferred delivery steps.
+### Runtime and package advisories, validity and limits
 
-Earlier dated entries below retain historical evidence. Their old open/closed states do not supersede this section or the operational specification.
+The user's current policy treats own platform size/performance targets as
+advisory. No validity requirement or coverage threshold was relaxed here.
+
+- Valid foreground frame CPU p95: filter 11.68 ms, sort 15.35 ms, tab 22.31 ms, inspector 14.48 ms, scroll 3.62 ms. Worst per-action p95 for tab is 24.33 ms against the 20-ms discrete-action advisory. Scroll stays below its 8-ms advisory, including its 6.51-ms worst per-action p95.
+- Peak physical footprint is 323,764,224 bytes against the 310-MB advisory. Warm growth is 2,392,064 bytes against 5 MB. Idle is 2.5571% of one core against 2%.
+- The valid receipt is not isolated: owned Android-emulator cleanup overlapped frame sampling and early idle until 07:29:07 UTC. `performance-current/conditions.txt` records this. No controlled CPU A/B improvement is claimed.
+- The subsequent isolated confirmation lost foreground during idle at 39.9 seconds to Apple's FollowUpUI. `performance-isolated` is retained as invalid and is not counted as passing. No protected system dialog was bypassed.
+- Current macOS ARM64 ZIP is 78,564,456 bytes, installed app 133,171,994 bytes. Universal2 is 267,281,788 bytes installed and 157,454,583 bytes as the locally unsigned PKG. These exceed the former 50/100-MB direct and 80/200-MB Universal2 targets.
+- Tested signed Android APK is 143,424,778 bytes. The approved private APK.zip is 82,039,985 bytes. Unpacking produces the exact tested APK. Signature verification passes with one APK-v3 signer. APK SHA-256: `c2974cc3b1effc7d8c71afb4a3daf1a2ae3e2043c8c8eafbdaa5d5681e4dc33d`. Logical installed sizes are 144,841,406 bytes on 4-KB and 144,841,370 bytes on 16-KB. The former 100-MB target is not claimed met. `download-checksums.txt` records the final archives.
+- `grype-current.json` retains 51 version-based FFmpeg matches: one critical, 28 high, 22 medium, using the 2026-11-13 vulnerability database. This is not a clean vulnerability scan. The scoped review in `dependency-review.json` finds no user-controlled media ingress: production playback accepts bundled qrc catalog entries only, external audio import remains out of scope, and several matched components are not built. Version matches are not blanket-dismissed as fixed. [FFmpeg security](https://ffmpeg.org/security.html) and the [7.1.5 changelog](https://raw.githubusercontent.com/FFmpeg/FFmpeg/n7.1.5/Changelog) show why backports also require individual assessment. Reassess before accepting external media.
+- Existing cloud-auth evidence is retained. This pass did not deploy paid AWS/GKE/AKS/OCI clusters. Physical mobile devices were not used. Simulator/emulator evidence follows the user's accepted device-test scope.
+- No owned visible app, fixture container, booted iOS simulator or private ADB/emulator listener remains. VoiceOver stayed off. Unqualified experimental package duplicates were removed. Pre-existing user files and toolchains were left alone.
+
+Earlier dated entries below retain historical evidence. Their old open/closed
+states do not supersede this section or the operational specification.
 
 
 Podlord's Kubernetes integration tests use a disposable k3d cluster. The suite is intentionally slow and proof-oriented.
