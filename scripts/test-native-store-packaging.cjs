@@ -446,8 +446,9 @@ test('macOS package matrix is independent of the complete native test job', asyn
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
     const native = ciJob(workflow, 'macos');
     const packages = ciJob(workflow, 'macos-package');
+    assert.match(native, /runner: \[macos-15\]/);
+    assert.match(packages, /runner: \[macos-15, macos-15-intel\]/);
     for (const job of [native, packages]) {
-        assert.match(job, /runner: \[macos-15, macos-15-intel\]/);
         assert.match(job, /timeout-minutes: 90/);
         assert.match(job, /fail-fast: false/);
     }
