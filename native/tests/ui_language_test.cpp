@@ -11,6 +11,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -41,12 +42,14 @@ bool click(QQuickWindow* window, const QString& name) {
 bool scenario(const QStringList& args) {
     require(args.size() >= 2, "Expected a language scenario.");
     const auto mode = args[1];
-    if (mode == "alert_catalog" || mode == "retired_theme_catalog") {
+    if (mode == "alert_catalog" || mode == "retired_catalog") {
         require(args.size() == 3 && podlord::validUiLanguage(args[2]), "Expected a shipped language.");
         const auto text = podlord::uiText(args[2]);
-        if (mode == "retired_theme_catalog")
-            return require(!text.contains("settings.themeIntensity") && !text.contains("settings.themeIntensityHelp"),
-                "Retired theme intensity remains in the public language catalog.");
+        if (mode == "retired_catalog") {
+            for (auto item = text.cbegin(); item != text.cend(); ++item)
+                require(!item.key().startsWith("session.") && !QStringList{"settings.themeIntensity", "settings.themeIntensityHelp", "settings.workspace", "settings.workspaceRestoreHelp", "settings.noSessionsForContext", "settings.removeContextAccessible", "settings.sessionConfiguration", "settings.sessionConfigurationHelp", "settings.manageSessions", "settings.reloadViews", "settings.reloadViewsHelp", "settings.cachedPayloadDescription", "settings.inactiveSessionSync", "settings.inactiveSessionSyncHelp", "settings.inactiveSessionSyncMinutes", "settings.noRequestsInSession", "settings.resourceCacheTtlHelp", "source.noSession", "tooltip.closeSessionTab", "tooltip.detachSessionTab", "tooltip.openSessionInTab", "tooltip.openSessionInWindow", "tooltip.useSource", "nav.savedViews"}.contains(item.key()), "A removed native UI concept remains in the language catalog.");
+            return true;
+        }
         for (const auto* key:{"alert.emptyContext","alert.emptyMatches"}) {
             require(text.contains(key) && !text.value(key).toString().isEmpty(), "Alert empty-state translation missing.");
             if (args[2]!="system" && args[2]!="en") require(text.value(key)!=podlord::uiText("en").value(key),
@@ -68,6 +71,19 @@ bool scenario(const QStringList& args) {
         const auto root = QJsonDocument::fromJson(read(args[2])).object();
         const auto english = root["english"].toObject().toVariantMap();
         require(!english.isEmpty(), "Reference catalog is empty.");
+        const auto qmlFiles = QDir(":/podlord").entryList({"*.qml"}, QDir::Files);
+        require(!qmlFiles.isEmpty(), "The shipped UI resources are missing.");
+        const QRegularExpression labelKey(R"(\buiText\s*\[\s*["']([^"']+)["']\s*\])");
+        int references = 0;
+        for (const auto& file : qmlFiles) {
+            auto matches = labelKey.globalMatch(QString::fromUtf8(read(":/podlord/" + file)));
+            while (matches.hasNext()) {
+                const auto key = matches.next().captured(1);
+                require(english.contains(key), qPrintable("Missing shipped UI label: " + key + " in " + file));
+                ++references;
+            }
+        }
+        require(references > 0, "The shipped UI label check found no bindings.");
         QVariantList options;
         for (const auto& item : root["languages"].toArray()) {
             const auto language = item.toObject();
@@ -97,8 +113,7 @@ bool scenario(const QStringList& args) {
         original.requestHardLimitPerMinute = 120; original.logLimitMb = 7;
         require(std::holds_alternative<podlord::ReadSettings>(store.save(original, {})), "Cannot establish the settings boundary.");
         auto root = QJsonDocument::fromJson(read(path)).object();
-        if (mode == "store_old_read" || mode == "store_old_upgrade") { root["version"] = 6; root.remove("language"); root.remove("collectionCacheHours"); root.remove("musicVolumePercent"); root.remove("alertVolumePercent"); root["themeIntensity"] = "subtle"; }
-        else if (mode == "store_missing") root.remove("language");
+        if (mode == "store_missing") root.remove("language");
         else if (mode == "store_type") root["language"] = 3;
         else if (mode == "store_empty") root["language"] = "";
         else if (mode == "store_unknown") root["language"] = "xx";
@@ -108,19 +123,11 @@ bool scenario(const QStringList& args) {
         const auto bytes = QJsonDocument(root).toJson();
         require(write(path, bytes), "Cannot supply old or malformed external settings.");
         const auto loaded = store.load();
-        if (mode != "store_old_read" && mode != "store_old_upgrade") {
-            const auto* failure = std::get_if<podlord::Failure>(&loaded);
-            const auto saved = store.save(original, original);
-            const auto* saveFailure = std::get_if<podlord::Failure>(&saved);
-            return require(failure && failure->code == podlord::StoreError::InvalidData && saveFailure
-                && saveFailure->code == podlord::StoreError::InvalidData && read(path) == bytes, "Invalid language replaced retained settings.");
-        }
-        require(std::holds_alternative<podlord::ReadSettings>(loaded) && std::get<podlord::ReadSettings>(loaded) == original && read(path) == bytes, "Old settings did not load read-only.");
-        if (mode == "store_old_read") return true;
-        auto desired = original; desired.language = "de";
-        return require(std::holds_alternative<podlord::ReadSettings>(store.save(desired, original))
-            && std::get<podlord::ReadSettings>(store.load()) == desired
-            && QJsonDocument::fromJson(read(path)).object()["version"] == 10, "Language upgrade lost unrelated settings.");
+        const auto* failure = std::get_if<podlord::Failure>(&loaded);
+        const auto saved = store.save(original, original);
+        const auto* saveFailure = std::get_if<podlord::Failure>(&saved);
+        return require(failure && failure->code == podlord::StoreError::InvalidData && saveFailure
+            && saveFailure->code == podlord::StoreError::InvalidData && read(path) == bytes, "Invalid language replaced retained settings.");
     }
     podlord::Workspace workspace(profile);
     QQmlApplicationEngine engine;

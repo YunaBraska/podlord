@@ -22,18 +22,17 @@ bool run(const QString& scenario) {
         QStringList ids;
         for (int index = 0; index < rows.columnCount(); ++index) ids.append(rows.headerData(index, Qt::Horizontal, Qt::UserRole).toString());
         if (!ids.contains("uid")) return false;
-        auto previous = ids; previous.removeAll("uid");
-        const TableSchemas oldSchemas{{"resource", previous}};
-        auto retained = defaultTableLayouts(oldSchemas).value("resource");
+        const TableSchemas schemas{{"resource", ids}};
+        auto retained = defaultTableLayouts(schemas).value("resource");
         retained.swapItemsAt(0, 2); retained[0].pinned = true; retained[1].visible = false; retained[2].width = 431;
         QJsonArray encoded;
         for (const auto& column : retained) encoded.append(QJsonObject{{"id", column.id}, {"visible", column.visible}, {"pinned", column.pinned}, {"width", column.width}});
         const auto path = temporary.filePath("table-layouts.json");
         QFile file(path);
-        auto data = QJsonDocument(QJsonObject{{"version", 2}, {"layouts", QJsonObject{{"resource", encoded}}}}).toJson();
+        auto data = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", QJsonObject{{"resource", encoded}}}}).toJson();
         if (scenario == "layout_invalid") {
             auto invalid = encoded[0].toObject(); invalid["id"] = "unknown"; encoded[0] = invalid;
-            data = QJsonDocument(QJsonObject{{"version", 2}, {"layouts", QJsonObject{{"resource", encoded}}}}).toJson();
+            data = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", QJsonObject{{"resource", encoded}}}}).toJson();
         }
         if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size()) return false; file.close();
         const TableLayoutStore store(temporary.path(), {{"resource", ids}});
@@ -41,7 +40,7 @@ bool run(const QString& scenario) {
         if (scenario == "layout_invalid") return std::holds_alternative<Failure>(loaded) && file.open(QIODevice::ReadOnly) && file.readAll() == data;
         const auto* layouts = std::get_if<TableLayouts>(&loaded); if (!layouts) return false;
         const auto actual = layouts->value("resource");
-        auto expected = retained; expected.append({"uid", false, false, 280});
+        const auto expected = retained;
         if (actual != expected || !file.open(QIODevice::ReadOnly) || file.readAll() != data) return false; file.close();
         if (scenario == "layout_read") return true;
         if (scenario != "layout_save") return false;

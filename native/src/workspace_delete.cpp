@@ -30,7 +30,7 @@ bool Workspace::previewDeletion() {
     intent.token = QUuid::createUuid().toString(QUuid::WithoutBraces); intent.session = active_; intent.path = inspectorPath();
     intent.baseline = {{"apiVersion", row["apiVersion"]}, {"kind", row["kind"]}, {"name", row["name"]}, {"namespace", row["namespace"]}, {"uid", row["uid"]}};
     intent.server = connection->server;
-    intent.target = "Cluster: " + connection->server.toDisplayString() + "\nSession: " + title()
+    intent.target = "Cluster: " + connection->server.toDisplayString() + "\nContext: " + title()
         + "\nNamespace: " + (row["namespace"].toString().isEmpty() ? "(cluster scoped)" : row["namespace"].toString())
         + "\nResource: " + row["kind"].toString() + '/' + row["name"].toString() + "\nUID: " + row["uid"].toString();
     intent.phase = "preview"; intent.status = "Confirmation only. Nothing sent.";

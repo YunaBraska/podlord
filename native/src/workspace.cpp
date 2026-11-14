@@ -385,7 +385,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     Q_UNUSED(waterType);
     static const int terminalType = qmlRegisterType<TerminalSurface>("Podlord.Graphics", 1, 0, "TerminalSurface");
     Q_UNUSED(terminalType);
-    static const int terminalSessionType = qmlRegisterUncreatableType<ContainerTerminal>("Podlord.Graphics", 1, 0, "ContainerTerminal", "Owned by the selected session");
+    static const int terminalSessionType = qmlRegisterUncreatableType<ContainerTerminal>("Podlord.Graphics", 1, 0, "ContainerTerminal", "Owned by the selected tab");
     Q_UNUSED(terminalSessionType);
     static const int findType = qmlRegisterType<ResourceFilter>("Podlord.Graphics", 1, 0, "ResourceFindFilter");
     Q_UNUSED(findType);
@@ -658,12 +658,7 @@ bool Workspace::confirmDiscard(bool discard) {
     }
     if (pending.origin != active_) {
         if (pending.action == Leave::Window) emit windowCloseCancelled();
-        error_ = "The originating session changed. Your draft is preserved; request the action again."; emit changed(); return false;
-    }
-    if (pending.action==Leave::MapHistory && (pending.historyIndex<0 || pending.historyIndex>=mapHistory_.size()
-        || mapHistory_[pending.historyIndex]!=pending.target
-        || std::none_of(catalog_.sessions.cbegin(),catalog_.sessions.cend(),[&](const auto& session) { return session.id==QUuid(pending.target); }))) {
-        error_="The requested map target is no longer available. Your draft was retained."; emit changed(); return false;
+        error_ = "The context changed. Your draft is preserved. Try again."; emit changed(); return false;
     }
     clearYamlDraft(); emit changed();
     switch (pending.action) {
@@ -679,7 +674,6 @@ bool Workspace::confirmDiscard(bool discard) {
     case Leave::Draft: return true;
     case Leave::Reload: return reload();
     case Leave::History: return inspectHistory(pending.target, pending.historyIndex);
-    case Leave::MapHistory: return visitMapHistory(pending.target, pending.historyIndex);
     }
     return false;
 }
@@ -707,15 +701,15 @@ QVariantMap Workspace::settingsDiagnostics() const {
     const auto cache = client_.cacheDiagnostics();
     QVariantList metrics{
         QVariantMap{{"id", "cachePayload"}, {"label", "Cached payload (bytes)"}, {"value", cache.value("payloadBytes")},
-            {"description", QString("%1 collections, %2 resources, %3 details, %4 log histories, %5 log lines. JSON/text estimate across sessions, including closed caches; excludes allocation overhead and shared UI projections.")
+            {"description", QString("%1 collections, %2 resources, %3 details, %4 log histories, %5 log lines. JSON and text estimate across contexts. Allocation overhead and shared UI data are excluded.")
                 .arg(cache.value("collections").toLongLong()).arg(cache.value("resources").toLongLong()).arg(cache.value("details").toLongLong())
                 .arg(cache.value("logHistories").toLongLong()).arg(cache.value("logLines").toLongLong())}},
-        QVariantMap{{"label","Cached resources"},{"value",rows_.rowCount()},{"description","Current session snapshot, before view filters"}},
+        QVariantMap{{"label","Cached resources"},{"value",rows_.rowCount()},{"description","Current context, before filters"}},
         QVariantMap{{"label","Matching resources"},{"value",table_.rowCount()},{"description","Current cached filter result"}},
         QVariantMap{{"label","Cached Events"},{"value",eventRows_.rowCount()},{"description","Canonical Events, without duplicate API aliases"}},
-        QVariantMap{{"label","Open sessions"},{"value",tabs().size()},{"description","Closed sessions do not synchronize"}},
+        QVariantMap{{"label","Open tabs"},{"value",tabs().size()},{"description","Closed tabs do not refresh"}},
         QVariantMap{{"label","Sync progress"},{"value",QString::number(loadingProgress()*100,'f',0)+"%"},{"description",status()}},
-        QVariantMap{{"label","Request limit"},{"value",settings_.requestHardLimitPerMinute},{"description","Per minute; 0 adds no extra limit; reads have at least 400 ms spacing"}},
+        QVariantMap{{"label","Request limit"},{"value",settings_.requestHardLimitPerMinute},{"description","Per minute. 0 disables the extra limit. Reads are spaced at least 400 ms apart."}},
         QVariantMap{{"label","Retained logs"},{"value",QString::number(settings_.logLimitMb)+" MB / Pod"},{"description","Bounded in-memory log retention"}}};
     metrics = runtimeDiagnostics() + metrics;
     return {{"metrics",metrics},{"requests",client_.requestAudit(active_)},{"sampledAt",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
@@ -1134,9 +1128,9 @@ bool Workspace::reloadCatalogs(bool reconnect) {
                 if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; emit changed(); }
                 else {
                     if (restore) { catalog_ = std::get<SessionCatalog>(result); restoreViewStates(views); viewsLoaded_ = true; }
-                    mapNavigating_=restore;
+                    restoringMap_=restore;
                     const bool selected=select(std::get<SessionCatalog>(result));
-                    mapNavigating_=false;
+                    restoringMap_=false;
                     if (restore) {
                         navigation_[active_].workspace="map";
                         emit changed();

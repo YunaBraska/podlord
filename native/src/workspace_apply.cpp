@@ -42,7 +42,7 @@ bool Workspace::previewYamlApply() {
     intent.token = QUuid::createUuid().toString(QUuid::WithoutBraces);
     intent.session = active_; intent.path = yamlDraft_->path; intent.text = yamlDraft_->text;
     intent.revision = yamlDraft_->revision;
-    intent.target = "Cluster: " + connection->server.toDisplayString() + "\nSession: " + title()
+    intent.target = "Cluster: " + connection->server.toDisplayString() + "\nContext: " + title()
         + "\nNamespace: " + (metadata["namespace"].toString().isEmpty() ? "(cluster scoped)" : metadata["namespace"].toString())
         + "\nResource: " + yamlDraft_->document["kind"].toString() + '/' + metadata["name"].toString()
         + "\nUID: " + metadata["uid"].toString() + "\nOriginal version: " + metadata["resourceVersion"].toString();

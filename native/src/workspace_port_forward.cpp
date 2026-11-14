@@ -107,7 +107,7 @@ bool Workspace::openPortForwardEndpoint(const QString& token, bool secure) {
         }
         error_.clear(); emit changed(); return true;
     }
-    error_ = "This port forward is no longer listening in the active session.";
+    error_ = "This connection is no longer active.";
     emit changed(); return false;
 }
 }

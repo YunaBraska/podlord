@@ -86,7 +86,7 @@ bool Workspace::detachSession(const QString& id) {
     if (runtime_->owners.value(id) != this) return false;
     if (id == active_ && !allowLeave(Leave::Detach, id)) return false;
     if (!sessionWindowActionsReady()) {
-        error_ = "Wait for the saved view to finish, or resolve its save error before moving this tab.";
+        error_ = "Wait for the context settings to finish saving before moving this tab.";
         emit changed(); return false;
     }
     return runtime_->host->detach(*this, id);

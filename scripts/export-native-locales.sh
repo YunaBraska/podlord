@@ -33,18 +33,19 @@ var source = File.ReadAllText(args[0]);
 var nativeJson = File.ReadAllText(args[2]);
 var native = JsonSerializer.Deserialize(nativeJson, CatalogJson.Default.Catalog)
     ?? throw new InvalidDataException("The native language catalog is empty.");
-var retired = new HashSet<string>(["settings.themeIntensity", "settings.themeIntensityHelp"], StringComparer.Ordinal);
+var retired = new HashSet<string>(["settings.themeIntensity", "settings.themeIntensityHelp", "settings.workspace", "settings.workspaceRestoreHelp", "settings.noSessionsForContext", "settings.removeContextAccessible", "settings.sessionConfiguration", "settings.sessionConfigurationHelp", "settings.manageSessions", "settings.reloadViews", "settings.reloadViewsHelp", "settings.cachedPayloadDescription", "settings.inactiveSessionSync", "settings.inactiveSessionSyncHelp", "settings.inactiveSessionSyncMinutes", "settings.noRequestsInSession", "settings.resourceCacheTtlHelp", "source.noSession", "tooltip.closeSessionTab", "tooltip.detachSessionTab", "tooltip.openSessionInTab", "tooltip.openSessionInWindow", "tooltip.useSource", "nav.savedViews"], StringComparer.Ordinal);
+bool IsRetired(string key) => retired.Contains(key) || key.StartsWith("session.", StringComparison.Ordinal);
 var keys = Regex.Matches(source, "\"(?<key>[a-z]+(?:\\.[a-zA-Z][a-zA-Z0-9]*)+)\"")
-    .Select(match => match.Groups["key"].Value).Where(key => !retired.Contains(key)).Distinct().Order(StringComparer.Ordinal).ToArray();
+    .Select(match => match.Groups["key"].Value).Where(key => !IsRetired(key)).Distinct().Order(StringComparer.Ordinal).ToArray();
 // Reference refreshes own shared strings, not native-only controls.
 var english = new SortedDictionary<string, string>(native.English, StringComparer.Ordinal);
-foreach (var key in retired) english.Remove(key);
+foreach (var key in english.Keys.Where(IsRetired).ToArray()) english.Remove(key);
 foreach (var key in keys) english[key] = PodlordLocalizer.Text(key, "en");
 var languages = PodlordLocalizer.SupportedLocales.Select(option => {
     var retained = native.Languages.SingleOrDefault(language => language.Code == option.Code);
     var text = retained is null ? new SortedDictionary<string, string>(StringComparer.Ordinal)
         : new SortedDictionary<string, string>(retained.Text, StringComparer.Ordinal);
-    foreach (var key in retired) text.Remove(key);
+    foreach (var key in text.Keys.Where(IsRetired).ToArray()) text.Remove(key);
     if (option.Code != "system")
         foreach (var key in keys) {
             var translated = PodlordLocalizer.Text(key, option.Code);

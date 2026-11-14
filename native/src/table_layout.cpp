@@ -115,77 +115,15 @@ Result<TableLayouts> TableLayoutStore::load() const {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
-    if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4 && root["version"] != 5 && root["version"] != 6 && root["version"] != 7 && root["version"] != 8 && root["version"] != 9 && root["version"] != 10) || !root["layouts"].isObject())
+    if (error.error != QJsonParseError::NoError || !document.isObject() || root.size() != 2 || root["version"] != 10 || !root["layouts"].isObject())
         return Failure{StoreError::InvalidData, "Invalid table layout document; existing data was retained."};
     const auto values = root["layouts"].toObject();
-    QStringList added;
-    for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table)
-        if (!values.contains(table.key()) && ((table.key() == "port" && root["version"].toInt() <= 3)
-            || ((table.key() == "inspectorEvent" || table.key() == "inspectorLink") && root["version"].toInt() <= 4)
-            || (table.key() == "value" && root["version"].toInt() <= 5)
-            || (table.key() == "alert" && root["version"].toInt() <= 6)
-            || ((table.key()=="diagnostic" || table.key()=="audit") && root["version"].toInt()<=7)
-            || (table.key()=="source" && root["version"].toInt()<=8))) added.append(table.key());
-    if (values.size() + added.size() != schemas_.size()) return Failure{StoreError::InvalidData, "Table layouts must describe the supported table types."};
-    for (const auto& key : values.keys()) if (!schemas_.contains(key)) return Failure{StoreError::InvalidData, "Unsupported table layout type; existing data was retained."};
+    if (values.size() != schemas_.size()) return Failure{StoreError::InvalidData, "Table layouts must describe the supported table types."};
+    for (const auto& key : values.keys()) if (!schemas_.contains(key)) return Failure{StoreError::InvalidData, "Unsupported table layout type. The file was left unchanged."};
     TableLayouts result;
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) {
-        if (added.contains(table.key())) { result.insert(table.key(), defaultTableLayouts(schemas_).value(table.key())); continue; }
-        auto layout = decode(values[table.key()], table.value());
-        if (!layout && table.key() == "source" && table.value() == QStringList{"name","cluster","user","context","auth","source","imported","status","rename","remove"}) {
-            const QStringList previous{"name","cluster","context","auth","source","imported","status","rename","remove"};
-            layout = decode(values[table.key()], previous);
-            if (layout) for (qsizetype i = 0; i < layout->size(); ++i) {
-                if (layout->at(i).id != "cluster") continue;
-                layout->insert(i + 1, {"user", true, false, 170});
-                break;
-            }
-        }
-        if (!layout && root["version"] == 1 && table.key() == "resource") {
-            const QStringList previous{"name", "kind", "namespace", "status", "node", "image"};
-            if (std::all_of(previous.cbegin(), previous.cend(), [&](const auto& id) { return table.value().contains(id); })) {
-                layout = decode(values[table.key()], previous);
-                if (layout) for (const auto& column : defaultTableLayouts(schemas_).value(table.key())) if (!previous.contains(column.id)) layout->append(column);
-            }
-        }
-        if (!layout && root["version"] == 2 && table.key() == "resource" && table.value().contains("uid")) {
-            const QStringList previous{"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue"};
-            if (std::all_of(previous.cbegin(), previous.cend(), [&](const auto& id) { return table.value().contains(id); })) {
-                layout = decode(values[table.key()], previous);
-                if (layout) layout->append({"uid", false, false, 280});
-            }
-        }
-        if (!layout && table.key() == "event" && table.value().contains("name") && table.value().contains("owner")) {
-            auto previous = table.value();
-            previous.removeAll("name"); previous.removeAll("owner");
-            layout = decode(values[table.key()], previous);
-            if (layout) {
-                const TableLayout legacyDefault{
-                    {"eventType", true, false, 105},
-                    {"eventTargetName", true, false, 200},
-                    {"eventReason", true, false, 140},
-                    {"eventMessage", true, false, 420},
-                    {"namespace", true, false, 140},
-                    {"eventTime", false, false, 200},
-                    {"eventCount", false, false, 85},
-                };
-                if (*layout == legacyDefault)
-                    layout = defaultTableLayouts(schemas_).value("event");
-                else {
-                    layout->append({"name", false, false, 240});
-                    layout->append({"owner", false, false, 220});
-                }
-            }
-        }
-        if (layout && root["version"] == 9 && table.key() == "event" && table.value().contains("owner")) {
-            auto previousDefault = defaultTableLayouts(schemas_).value("event");
-            for (auto& column : previousDefault) {
-                if (column.id == "namespace") column.visible = true;
-                if (column.id == "owner") column.width = 220;
-            }
-            if (*layout == previousDefault) layout = defaultTableLayouts(schemas_).value("event");
-        }
-        if (!layout) return Failure{StoreError::InvalidData, "Invalid column layout; existing data was retained."};
+        const auto layout = decode(values.value(table.key()), table.value());
+        if (!layout) return Failure{StoreError::InvalidData, "Invalid table columns. The file was left unchanged."};
         result.insert(table.key(), *layout);
     }
     return result;

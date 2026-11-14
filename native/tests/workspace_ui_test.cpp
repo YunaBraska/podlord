@@ -1340,7 +1340,7 @@ bool execute(const QString& requestedScenario) {
                     }
                     return workspace.mapOverview() && cards->property("count").toInt()==1003 && workspace.currentSession()==session && server.requests.size()==requests;
                 }
-                if (!workspace.navigateMap(-1)) return false;
+                if (!workspace.activate(workspace.currentSession())) return false;
                 if (cards && !QMetaObject::invokeMethod(cards,"positionViewAtBeginning",Qt::DirectConnection)) return false;
                 window->resize(cycle%2 ? 1120 : 960,720);
                 QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
@@ -1423,12 +1423,11 @@ bool execute(const QString& requestedScenario) {
                 && sessions.size()==1 && sessions.first().config.contextId==context && server.requests.size()==calls;
         }
         if (scenario=="map_boundaries") {
-            if (workspace.navigateMap(0) || workspace.navigateMap(2) || workspace.navigateMap(1)
-                || !workspace.showMapOverview() || !workspace.showMapOverview()
-                || !workspace.navigateMap(-1) || workspace.mapOverview() || workspace.currentSession()!=session
-                || !workspace.navigateMap(-1) || !workspace.mapOverview() || workspace.navigateMap(-1)
-                || !workspace.navigateMap(1) || workspace.mapOverview()
-                || !workspace.navigateMap(1) || !workspace.mapOverview() || workspace.navigateMap(1)) return false;
+            if (workspace.metaObject()->indexOfProperty("canMapBack") >= 0 || workspace.metaObject()->indexOfProperty("canMapForward") >= 0
+                || workspace.metaObject()->indexOfMethod("navigateMap(int)") >= 0) return false;
+            if (!workspace.showMapOverview() || !workspace.showMapOverview() || !workspace.mapOverview()
+                || !workspace.activate(session) || workspace.mapOverview() || workspace.currentSession() != session
+                || !workspace.showMapOverview() || !workspace.mapOverview()) return false;
             return workspace.currentSession()==session && server.requests.size()==calls;
         }
         if (scenario=="map_loaded_landscape") {
@@ -1642,8 +1641,8 @@ bool execute(const QString& requestedScenario) {
         if (scenario == "accessibility_populated") {
             window->hide(); QTest::qWait(20); window->show(); window->requestActivate();
             auto* summary=QAccessible::queryAccessibleInterface(item(window,"sessionHealthStrip"));
-            if (!summary || summary->role()!=QAccessible::StaticText || !summary->text(QAccessible::Name).startsWith("Session health: ")) {
-                std::fputs("Session health is not exposed as a named status in the accessibility tree.\n",stderr); return false;
+            if (!summary || summary->role()!=QAccessible::StaticText || !summary->text(QAccessible::Name).startsWith("Context health: ")) {
+                std::fputs("Context health is not exposed as a named status in the accessibility tree.\n",stderr); return false;
             }
             return waitFor([&] { return window->isVisible(); }) && accessibleName(window,"More actions") && server.requests.size() == calls;
         }
@@ -3935,17 +3934,19 @@ bool execute(const QString& requestedScenario) {
         QLockFile lock(QDir(profile).filePath("table-layouts.json.lock"));
         if (scenario == "columns_busy" && !lock.tryLock(0)) return false;
         if (scenario == "columns_conflict") {
-            QJsonObject layouts;
-            for (const auto& type : {QString("resource"), QString("event")}) {
-                QJsonArray entries;
-                for (const auto& value : columns(type)) {
-                    const auto entry = value.toMap();
-                    entries.append(QJsonObject{{"id", entry["id"].toString()}, {"visible", entry["visible"].toBool()}, {"pinned", entry["pinned"].toBool()}, {"width", type == "resource" && entry["id"] == "name" ? 430 : entry["width"].toInt()}});
-                }
-                layouts[type] = entries;
+            podlord::Workspace writer(profile);
+            if (!waitFor([&] { return !writer.busy(); })) return false;
+            auto changed = writer.resourceColumns();
+            for (auto& value : changed) {
+                auto entry = value.toMap();
+                if (entry["id"] == "name") entry["width"] = 430;
+                value = entry;
             }
-            QFile changed(QDir(profile).filePath("table-layouts.json"));
-            if (!changed.open(QIODevice::WriteOnly) || changed.write(QJsonDocument(QJsonObject{{"version", 1}, {"layouts", layouts}}).toJson()) < 0) return false;
+            if (!writer.saveTableLayout("resource", changed) || !waitFor([&] {
+                for (const auto& value : writer.resourceColumns())
+                    if (value.toMap()["id"] == "name") return value.toMap()["width"] == 430;
+                return false;
+            })) return false;
         }
         if (scenario == "columns_keyboard") { item(window, "resourceSaveColumns")->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return); }
         else if (!click(window, item(window, "resourceSaveColumns"))) return false;
@@ -6034,7 +6035,6 @@ bool execute(const QString& requestedScenario) {
                 if (!type(window, item(window, "resourceFilter"), "charlie") || !waitFor([&] { return workspace.table()->rowCount() == 1; }) || !click(window, item(window, "cell_0_0"))) return false;
             } else if (scenario.startsWith("inspector_edit_window_")) { if (window->close()) return false; }
             else if (scenario.startsWith("inspector_edit_tab_")) { if (!click(window,item(window,"closeCurrentSession"))) return false; }
-            else if (scenario.startsWith("inspector_edit_map_history_")) { if (!workspace.setWorkspacePage("map") || workspace.navigateMap(-1)) return false; }
             else if (scenario.startsWith("inspector_edit_session_")) { if (!click(window, item(window, "activateSession_" + otherSession))) return false; }
             else if (scenario.startsWith("inspector_edit_open_context_")) {
                 const bool duplicate = scenario.startsWith("inspector_edit_open_context_tab_");
@@ -6101,14 +6101,11 @@ bool execute(const QString& requestedScenario) {
                 const bool retained = text(window, "inspectorYaml") == draft && !yamlView->property("readOnly").toBool() && workspace.currentSession() == originalSession && !workspace.inspectorPath().isEmpty() && window->isVisible() && noWrites();
                 if (!retained) std::fprintf(stderr, "Stay: draft=%d readOnly=%d session=%d inspector=%s visible=%d writes=%d\n", text(window,"inspectorYaml")==draft, yamlView->property("readOnly").toBool(), workspace.currentSession()==originalSession, qPrintable(workspace.inspectorPath()), window->isVisible(), !noWrites());
                 return retained
-                    && (!scenario.startsWith("inspector_edit_open_context_") || workspace.tabs().size() == originalTabCount)
-                    && (!scenario.startsWith("inspector_edit_map_history_") || (!workspace.canMapForward() && workspace.canMapBack()));
+                    && (!scenario.startsWith("inspector_edit_open_context_") || workspace.tabs().size() == originalTabCount);
             }
             if (scenario.startsWith("inspector_edit_resource_")) return waitFor([&] { return text(window, "inspectorResourceName") == "ConfigMap/charlie" && !workspace.loading(); }) && !text(window, "inspectorYaml").contains("# operator draft") && yamlView->property("readOnly").toBool() && noWrites();
             if (scenario == "inspector_edit_window_accept") return !window->isVisible() && noWrites();
             if (scenario == "inspector_edit_tab_accept") return waitFor([&] { return workspace.currentSession().isEmpty() && !workspace.busy(); }) && noWrites();
-            if (scenario == "inspector_edit_map_history_accept") return waitFor([&] { return workspace.currentSession()==otherSession && !workspace.busy(); })
-                && workspace.workspacePage()=="map" && !workspace.mapOverview() && workspace.canMapForward() && noWrites();
             if (scenario == "inspector_edit_session_accept") return waitFor([&] { return workspace.currentSession() != originalSession && !workspace.busy(); }) && noWrites();
             if (scenario == "inspector_edit_open_context_accept" || scenario == "inspector_edit_open_context_tab_accept") return waitFor([&] {
                 const auto active = workspace.currentSession();
@@ -7098,7 +7095,7 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
                     const auto* preview=item(window,"contextMapPreview_"+context);
                     return preview && preview->property("status").toInt()==1;
                 }) || !capture("map-overview",themeIndex,variant)) return failure("theme persisted overview capture");
-                if (!workspace.navigateMap(-1) || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })) return failure("theme map history back");
+                if (!workspace.activate(workspace.currentSession()) || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })) return failure("theme current context navigation");
                 for (const auto& view : QList<QPair<QString, QString>>{{"resources", "resourcesWorkspaceButton"},
                     {"radar", ""}, {"events", "eventsWorkspaceButton"}, {"ports", "portForwardTasksButton"}}) {
                     if (view.first=="radar" ? !podlord::test::focusResourceRadar(window) : !click(window,item(window,view.second))) return failure("theme workspace navigation");

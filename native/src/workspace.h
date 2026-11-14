@@ -192,8 +192,6 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString mapContextCaption READ mapContextCaption NOTIFY changed)
     Q_PROPERTY(QVariantMap mapContextIdentity READ mapContextIdentity NOTIFY changed)
     Q_PROPERTY(QString mapCatalogWarning READ mapCatalogWarning NOTIFY changed)
-    Q_PROPERTY(bool canMapBack READ canMapBack NOTIFY changed)
-    Q_PROPERTY(bool canMapForward READ canMapForward NOTIFY changed)
     Q_PROPERTY(quint64 mapPreviewRevision READ mapPreviewRevision NOTIFY mapPreviewsChanged)
     Q_PROPERTY(QString mapPreviewError READ mapPreviewError NOTIFY mapPreviewsChanged)
     Q_PROPERTY(bool mapPreviewNeeded READ mapPreviewNeeded NOTIFY changed)
@@ -476,15 +474,12 @@ public:
     QVariantList mapContexts() const { return mapContexts_; }
     QString mapContextCaption() const;
     QString mapCatalogWarning() const;
-    bool canMapBack() const;
-    bool canMapForward() const;
     quint64 mapPreviewRevision() const;
     QString mapPreviewError() const;
     bool mapPreviewNeeded() const;
     Q_INVOKABLE QString mapPreviewUrl(const QString& context) const;
     Q_INVOKABLE bool captureMapPreview(const QString& session, const QImage& image);
     Q_INVOKABLE bool showMapOverview();
-    Q_INVOKABLE bool navigateMap(int step);
     Q_INVOKABLE bool setWorkspacePage(const QString& page);
     Q_INVOKABLE bool rememberRadarView(const QVariantMap& view);
     int sortColumnIndex() const;
@@ -771,7 +766,7 @@ private:
     bool yamlChecking_ = false;
     QString yamlCheckToken_;
     bool bindYamlApply();
-    enum class Leave { Resource, Source, Session, Context, ContextTab, Tab, Inspector, Window, Draft, Reload, History, MapHistory, Detach };
+    enum class Leave { Resource, Source, Session, Context, ContextTab, Tab, Inspector, Window, Draft, Reload, History, Detach };
     struct PendingLeave final { Leave action; QString target, origin; int historyIndex = -1; };
     struct Navigation final {
         QString filter, mode;
@@ -795,16 +790,14 @@ private:
     const Navigation emptyNavigation_;
     struct LogPosition final { QString anchor; double offset = 0; bool follow = true, evicted = false; PodLogHistory::Removal removal = PodLogHistory::Removal::None; };
     const QString profile_;
-    QStringList mapHistory_{QString{}};
+    bool mapOverview_ = true;
     QVariantList mapContexts_;
     void refreshMapContexts(bool reorder);
-    int mapHistoryIndex_ = 0;
-    bool mapNavigating_ = false;
+    bool restoringMap_ = false;
     QString pendingMapPreview_;
     qint64 cachePayloadBytes_ = 0;
     void rememberMapSession(bool visit = true);
     void reconcileMapPreviews();
-    bool visitMapHistory(const QString& session, int index);
     QString filterPickerField_, filterPickerSession_;
     QStringList filterPickerValues_;
     bool applyResourceFilters();

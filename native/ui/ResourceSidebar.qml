@@ -97,7 +97,7 @@ Pane {
             }
             readonly property bool initiallyLoading: workspace.syncLoading && workspace.loadingProgress < 1
             Accessible.role: Accessible.StaticText
-            Accessible.name: (initiallyLoading ? "Loading session. " : "Session health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
+            Accessible.name: (initiallyLoading ? "Loading context. " : "Context health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
             ToolTip.visible: healthHover.hovered
             ToolTip.text: workspace.authenticationRunning
                 ? "Authentication in progress."

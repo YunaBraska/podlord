@@ -131,7 +131,7 @@ END {
 fi
 "$COV" report "$@" -instr-profile="$BUILD/coverage/native.profdata" -show-functions \
     "$ROOT/native/src/radar_island.cpp" "$ROOT/native/src/workspace.cpp" "$ROOT/native/src/workspace_map.cpp" "$ROOT/native/src/map_previews.cpp" "$ROOT/native/src/kubeconfig_store.cpp" \
-    | awk '/RadarIsland|RadarTiles|oscillation|radar_island.cpp:.*5place|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|navigateMap|visitMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
+    | awk '/RadarIsland|RadarTiles|oscillation|radar_island.cpp:.*5place|Workspace[0-9]+(contexts|setWorkspacePage|map|showMap|rememberMap|reconcileMap|captureMap)|MapPreviews|KubeconfigStore4list/ { print }' \
     > "$BUILD/coverage/radar-map-functions.txt"
 cat "$BUILD/coverage/radar-map-functions.txt"
 if ! awk '
@@ -141,7 +141,7 @@ if ! awk '
 /_ZN7podlord11RadarIsland12setTextColor/ { color=1 }
 /_ZN7podlord9Workspace16setWorkspacePage/ { view=1 }
 /MapPreviews[0-9]+persist/ { preview=1 }
-/Workspace[0-9]+navigateMap/ { history=1 }
+/Workspace[0-9]+showMapOverview/ { overview=1 }
 /Workspace[0-9]+captureMapPreview/ { capture=1 }
 /KubeconfigStore4list/ { catalog=1 }
 /RadarTiles[0-9]+advanceFrame/ { clock=1 }
@@ -149,7 +149,7 @@ if ! awk '
 /radar_island.cpp:.*5place/ { placement=1 }
 { total+=$(NF-2); missed+=$(NF-1) }
 END {
-    if (!sync || !layout || !paint || !color || !view || !preview || !history || !capture || !catalog || !clock || !projection || !placement || total<=0) exit 1
+    if (!sync || !layout || !paint || !color || !view || !preview || !overview || !capture || !catalog || !clock || !projection || !placement || total<=0) exit 1
     printf "Radar/Map function-family branches: %d/%d %.2f%%\n",total-missed,total,100*(total-missed)/total
     if (100*(total-missed)/total<90) exit 1
 }' "$BUILD/coverage/radar-map-functions.txt"; then

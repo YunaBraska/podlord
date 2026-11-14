@@ -167,17 +167,17 @@ bool WindowHost::restore() {
                         for (const auto& session : placement.sessions) primary_.runtime_->owners[session.toString(QUuid::WithoutBraces)] = &primary_;
                         delete target;
                         primary_.error_ += (primary_.error_.isEmpty() ? QString{} : QString("\n"))
-                            + "A saved window could not be restored; its sessions remain in the main window.";
+                            + "A window could not be restored. Its tabs remain in the main window.";
                         continue;
                     }
                     for (const auto& session : placement.sessions) {
                         const auto id = session.toString(QUuid::WithoutBraces);
                         primary_.navigation_.remove(id);
                     }
-                    target->mapNavigating_ = true; target->select(primary_.catalog_, false); target->mapNavigating_ = false;
+                    target->restoringMap_ = true; target->select(primary_.catalog_, false); target->restoringMap_ = false;
                 }
                 primary_.navigation_[primary_.active_].workspace = "map";
-                primary_.mapNavigating_ = true; primary_.select(primary_.catalog_, false); primary_.mapNavigating_ = false;
+                primary_.restoringMap_ = true; primary_.select(primary_.catalog_, false); primary_.restoringMap_ = false;
                 for (auto& entry : windows_) {
                     const auto saved = std::find_if(desired.cbegin(), desired.cend(), [&](const auto& value) { return value.id == entry.id; });
                     if (saved == desired.cend()) continue;
@@ -326,8 +326,7 @@ bool WindowHost::detach(Workspace& source, const QString& session) {
     target->detached_ = true;
     target->navigation_.insert(session, source.navigation_.value(session));
     target->active_ = session;
-    target->mapHistory_.append(session);
-    target->mapHistoryIndex_ = 1;
+    target->mapOverview_ = false;
     for (auto it = source.logPositions_.cbegin(); it != source.logPositions_.cend(); ++it)
         if (it.key().startsWith(session + '\n')) target->logPositions_.insert(it.key(), it.value());
     if (!create(*target, true, &source)) { delete target; return false; }

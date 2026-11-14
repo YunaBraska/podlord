@@ -269,10 +269,10 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sync"
-                    SettingRow { label: workspace.uiText["settings.inactiveSessionSync"]; help: workspace.uiText["settings.inactiveSessionSyncHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.inactiveSessionSyncMinutes"] } }
+                    SettingRow { label: workspace.uiText["settings.backgroundRefresh"]; help: workspace.uiText["settings.backgroundRefreshHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.backgroundRefreshMinutes"] } }
                     SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
-                    SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceCacheTtlHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
-                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.cachedPayloadDescription"] }
+                    SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceRetentionHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
+                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.resourceDataSizeHelp"] }
                     SettingRow { label: workspace.uiText["settings.retainedLogsPerPod"]; help: workspace.uiText["settings.retainedLogsPerPodHelp"]; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; inputMethodHints: Qt.ImhDigitsOnly; onTextEdited: syncAutosave.restart(); Accessible.name: workspace.uiText["settings.retainedLogsPerPodMb"] } }
                 }
                 ColumnLayout {
@@ -390,7 +390,7 @@ Pane {
                         findShortcutEnabled: auditGrid.containsActiveFocus
                         tableModel: workspace.requestAuditTable; columns: workspace.auditColumns
                         sortColumn: workspace.auditSortColumn; sortDirection: workspace.auditSortDirection
-                        emptyText: workspace.uiText["settings.noRequestsInSession"]
+                        emptyText: workspace.uiText["settings.noRequests"]
                         onSortRequested: column => workspace.sortDiagnosticColumn("audit",column)
                         onCopyRequested: (row,column) => workspace.copyDiagnosticCell("audit",pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("audit",identity,column)

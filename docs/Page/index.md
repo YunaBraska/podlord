@@ -1,14 +1,14 @@
 ---
 layout: default
 title: Kubernetes without the tree-walk
-description: A cache-first native desktop console for everyday Kubernetes work.
+description: Explore your clusters, inspect resources and open container shells in one app.
 ---
 
 <section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow">Native Kubernetes operations</p>
+    <p class="eyebrow">Kubernetes, in view</p>
     <h1>Work the cluster, not the tree.</h1>
-    <p class="lead">PodLord is a cache-first desktop console for looking through Kubernetes resources, inspecting the detail and taking the next useful action without losing your place.</p>
+    <p class="lead">See your clusters, find problems and inspect resources without losing your place.</p>
     <p class="actions"><a class="button" href="install.html">Get PodLord</a><a class="button secondary" href="documentation.html">Read the documentation</a></p>
   </div>
   <figure class="hero-art">
@@ -18,11 +18,11 @@ description: A cache-first native desktop console for everyday Kubernetes work.
 </section>
 
 <section class="section">
-  <h2>Designed for the work between kubectl commands.</h2>
-  <p class="section-intro">PodLord keeps the current resource set close, lets you investigate from a flat explorer and protects the details that should not be shown by accident.</p>
+  <h2>From a problem to the next useful action.</h2>
+  <p class="section-intro">Move between the map, resource table and inspector. Open a shell when you need one.</p>
   <div class="feature-grid">
-    <article class="feature"><h3>Own the kubeconfig boundary</h3><p>Import kubeconfigs into explicit, app-owned snapshots rather than letting a desktop tool quietly rewrite your working files.</p></article>
-    <article class="feature"><h3>Inspect without hunting</h3><p>Move from a resource list to YAML, details, logs, metrics and native port forwarding without treating every task as a new terminal session.</p></article>
+    <article class="feature"><h3>Your configuration stays yours</h3><p>Import a kubeconfig without changing the original file.</p></article>
+    <article class="feature"><h3>Inspect without hunting</h3><p>Open YAML, logs, metrics, a container shell or a port forward from the selected resource.</p></article>
     <article class="feature"><h3>Keep sensitive values quiet</h3><p>Secret values are hidden and redacted by default so the information you need does not become the information you expose.</p></article>
   </div>
 </section>
@@ -31,8 +31,9 @@ description: A cache-first native desktop console for everyday Kubernetes work.
   <h2>Fast where it matters, deliberate where it counts.</h2>
   <p class="section-intro">The interface is built around keeping context while you check resource state, choose a different source or prepare a next action.</p>
   <div class="screenshot-grid">
-    <figure><a href="{{ '/assets/screenshots/native-resources.png' | relative_url }}" aria-label="View the resource explorer at full size"><img src="{{ '/assets/screenshots/native-resources.png' | relative_url }}" width="1440" height="920" loading="lazy" alt="Resource table with status, kind, namespace and cluster columns beside the minimap and filters"></a><figcaption>Resources, filters and the minimap share one cached view.</figcaption></figure>
+    <figure><a href="{{ '/assets/screenshots/native-resources.png' | relative_url }}" aria-label="View the resource explorer at full size"><img src="{{ '/assets/screenshots/native-resources.png' | relative_url }}" width="1440" height="920" loading="lazy" alt="Resource table with status, kind, namespace and cluster columns beside the minimap and filters"></a><figcaption>Resources, filters and the minimap stay in step.</figcaption></figure>
     <figure><a href="{{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }}" aria-label="View the YAML inspector at full size"><img src="{{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }}" width="1440" height="920" loading="lazy" alt="YAML inspector opened for a ConfigMap, with syntax highlighting, search and an explicit Edit YAML action"></a><figcaption>Inspect fresh YAML without losing the selected resource or filters.</figcaption></figure>
+    <figure class="terminal-shot"><a href="{{ '/assets/screenshots/native-terminal.png' | relative_url }}" aria-label="View the container terminal at full size"><img src="{{ '/assets/screenshots/native-terminal.png' | relative_url }}" width="1440" height="920" loading="lazy" alt="Interactive container terminal with ANSI-colored shell output, container selection and connection controls"></a><figcaption>A real container shell, with ANSI colors and keyboard input. No kubectl required.</figcaption></figure>
   </div>
 </section>
 

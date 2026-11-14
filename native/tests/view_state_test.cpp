@@ -1,4 +1,6 @@
 #include "view_state.h"
+#include "context_catalog.h"
+#include "kubeconfig_store.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -11,8 +13,6 @@
 namespace {
 using namespace podlord;
 const TableSchemas schemas{{"resource", {"name", "namespace"}}, {"event", {"eventTime", "eventCount"}}};
-const QString session = "12345678-1234-1234-1234-123456789abc";
-const QString other = "87654321-4321-4321-4321-cba987654321";
 bool fails(const Result<TableViewStates>& result, StoreError code) {
     const auto* failure = std::get_if<Failure>(&result);
     return failure && failure->code == code && !failure->message.isEmpty();
@@ -26,11 +26,21 @@ bool write(const QString& path, const QByteArray& bytes) {
 bool run(const QString& scenario) {
     QTemporaryDir temporary; if (!temporary.isValid()) return false;
     const auto profile = temporary.filePath("profile"), views = profile + "/views";
-    const auto path = views + "/" + session + ".json";
+    QString session = "ctx:" + QString(64, 'a'), other = "ctx:" + QString(64, 'b');
+    QString path = views + "/" + contextViewName(session);
+    const auto prepareContext = [&] {
+        const auto imported = KubeconfigStore(profile).importText(temporary.filePath("contexts.yaml"),
+            "apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster: {server: 'http://127.0.0.1:1'}\nusers:\n- name: local\n  user: {token: local-view-token}\ncontexts:\n- name: first\n  context: {cluster: local, user: local}\n- name: second\n  context: {cluster: local, user: local}\n");
+        const auto* source = std::get_if<SourceSnapshot>(&imported);
+        if (!source || source->contexts.size() != 2) return false;
+        session = source->contexts[0].id; other = source->contexts[1].id;
+        path = views + "/" + contextViewName(session);
+        return true;
+    };
     const ViewStateStore store(profile, schemas);
     const TableViewState resourceDefault{.limit = 1024};
     const TableViewState value{"alpha", "name", true};
-    if (scenario == "preset_default_upgrade") {
+    if (scenario == "preset_default_immutable") {
         const QJsonObject oldDefault{{"filter", ""}, {"column", ""}, {"descending", false},
             {"fields", QJsonObject{}}, {"mode", ""}, {"limit", 256}};
         const auto bytes = QJsonDocument(QJsonObject{{"version", 2},
@@ -39,11 +49,11 @@ bool run(const QString& scenario) {
         if (!QDir().mkpath(profile) || !write(presetPath, bytes)) return false;
         const auto loaded = store.loadPresets();
         QFile original(presetPath);
-        return equals(loaded, {{"default", resourceDefault}, {"My 256 rows", {}}})
+        return fails(loaded, StoreError::InvalidData)
             && original.open(QIODevice::ReadOnly) && original.readAll() == bytes;
     }
     if (scenario.startsWith("limit_")) {
-        if (!equals(store.save(session, "resource", value, resourceDefault), {{"resource", value}, {"event", {}}})) return false;
+        if (!prepareContext() || !equals(store.save(session, "resource", value, resourceDefault), {{"resource", value}, {"event", {}}})) return false;
         auto limited = value; limited.limit = 7;
         if (scenario == "limit_invalid_input") { limited.limit = 0; return fails(store.save(session, "resource", limited, value), StoreError::InvalidInput); }
         if (scenario == "limit_event_input") return fails(store.save(session, "event", limited, {}), StoreError::InvalidInput);
@@ -51,44 +61,25 @@ bool run(const QString& scenario) {
             const auto saved = store.save(session, "resource", limited, value);
             if (!std::holds_alternative<TableViewStates>(saved) || !equals(store.load(session), std::get<TableViewStates>(saved))) return false;
             if (scenario == "limit_conflict") return fails(store.save(session, "resource", value, value), StoreError::Conflict);
-            if (scenario == "limit_other_table") {
-                const auto merged = store.save(session, "event", {"Warning", "eventTime", false}, {});
-                return std::holds_alternative<TableViewStates>(merged) && std::get<TableViewStates>(merged)["resource"] == limited;
-            }
+            if (scenario == "limit_other_table") { const auto merged = store.save(session, "event", {"Warning", "eventTime", false}, {}); return std::holds_alternative<TableViewStates>(merged) && std::get<TableViewStates>(merged)["resource"] == limited; }
             return true;
         }
         QFile input(path); if (!input.open(QIODevice::ReadOnly)) return false;
         auto document = QJsonDocument::fromJson(input.readAll()).object(); input.close();
-        auto records = document["views"].toObject();
-        if (scenario == "limit_upgrade_v5") {
-            document["version"] = 5;
-            for (auto record = records.begin(); record != records.end(); ++record) {
-                auto state = record->toObject(); state.remove("limit"); record.value() = state;
-            }
-        } else {
-            auto state = records["resource"].toObject();
-            if (scenario == "limit_missing") state.remove("limit");
-            else if (scenario == "limit_zero") state["limit"] = 0;
-            else if (scenario == "limit_negative") state["limit"] = -1;
-            else if (scenario == "limit_large") state["limit"] = 5001;
-            else if (scenario == "limit_fraction") state["limit"] = 1.5;
-            else if (scenario == "limit_string") state["limit"] = "7";
-            else if (scenario == "limit_null") state["limit"] = QJsonValue::Null;
-            else return false;
-            records["resource"] = state;
-        }
-        document["views"] = records;
+        auto records = document["views"].toObject(), state = records["resource"].toObject();
+        if (scenario == "limit_missing") state.remove("limit");
+        else if (scenario == "limit_zero") state["limit"] = 0;
+        else if (scenario == "limit_negative") state["limit"] = -1;
+        else if (scenario == "limit_large") state["limit"] = 5001;
+        else if (scenario == "limit_fraction") state["limit"] = 1.5;
+        else if (scenario == "limit_string") state["limit"] = "7";
+        else if (scenario == "limit_null") state["limit"] = QJsonValue::Null;
+        else return false;
+        records["resource"] = state; document["views"] = records;
         const auto bytes = QJsonDocument(document).toJson();
-        if (!write(path, bytes)) return false;
-        const auto loaded = store.load(session);
-        if (scenario != "limit_upgrade_v5") {
-            if (!fails(loaded, StoreError::InvalidData) || !fails(store.save(session, "resource", limited, value), StoreError::InvalidData)) return false;
-            return input.open(QIODevice::ReadOnly) && input.readAll() == bytes;
-        }
-        if (!equals(loaded, {{"resource", value}, {"event", {}}}) || !input.open(QIODevice::ReadOnly) || input.readAll() != bytes) return false;
-        input.close();
-        return std::holds_alternative<TableViewStates>(store.save(session, "resource", limited, value))
-            && input.open(QIODevice::ReadOnly) && QJsonDocument::fromJson(input.readAll()).object()["version"] == 6;
+        return write(path, bytes) && fails(store.load(session), StoreError::InvalidData)
+            && fails(store.save(session, "resource", limited, value), StoreError::InvalidData)
+            && input.open(QIODevice::ReadOnly) && input.readAll() == bytes;
     }
     if (scenario.startsWith("preset_import_")) {
         const auto source = temporary.filePath("saved filters %.json");
@@ -121,29 +112,6 @@ bool run(const QString& scenario) {
         if (scenario == "preset_import_repeat") return equals(store.importPresets(source, actual), actual);
         return scenario == "preset_import_success";
     }
-    if (scenario.startsWith("values_upgrade_")) {
-        auto expanded = schemas; expanded["value"] = {"name", "encoding", "preview", "copy", "reveal"};
-        const QJsonObject resource{{"filter", "alpha"}, {"column", "name"}, {"descending", true}, {"fields", QJsonObject{}}, {"mode", "problems"}};
-        const QJsonObject event{{"filter", ""}, {"column", ""}, {"descending", false}, {"fields", QJsonObject{}}, {"mode", ""}};
-        auto state = resource;
-        if (scenario == "values_upgrade_invalid") state["column"] = "missing";
-        const auto bytes = QJsonDocument(QJsonObject{{"version", scenario == "values_upgrade_current_missing" ? 5 : 4},
-            {"views", QJsonObject{{"resource", state}, {"event", event}}}}).toJson();
-        if (!QDir().mkpath(views) || !write(path, bytes)) return false;
-        const ViewStateStore upgraded(profile, expanded);
-        const auto loaded = upgraded.load(session);
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly) || file.readAll() != bytes) return false;
-        if (scenario == "values_upgrade_invalid" || scenario == "values_upgrade_current_missing") return fails(loaded, StoreError::InvalidData);
-        if (!std::holds_alternative<TableViewStates>(loaded)) return false;
-        const auto actual = std::get<TableViewStates>(loaded);
-        if (actual.value("resource").mode != "problems" || actual.value("resource").column != "name" || actual.value("value") != TableViewState{}) return false;
-        if (scenario == "values_upgrade_read") return true;
-        const TableViewState sorted{"", "preview", true};
-        const auto saved = upgraded.save(session, "value", sorted, {});
-        return std::holds_alternative<TableViewStates>(saved) && std::get<TableViewStates>(upgraded.load(session)).value("value") == sorted
-            && std::get<TableViewStates>(upgraded.load(session)).value("resource") == actual.value("resource");
-    }
     if (scenario.startsWith("legacy_preset_")) {
         const auto presetPath = profile + "/filter-presets.json";
         auto full = schemas;
@@ -173,27 +141,6 @@ bool run(const QString& scenario) {
         auto desired = actual; desired["Renamed"] = desired.take("Production");
         return equals(imported.savePresets(desired, actual), desired) && equals(imported.loadPresets(), desired);
     }
-    if (scenario.startsWith("auxiliary_")) {
-        auto expanded = schemas;
-        expanded["port"] = {"endpoint", "name"}; expanded["inspectorEvent"] = {"time", "count"}; expanded["inspectorLink"] = {"from", "to"};
-        const QJsonObject resource{{"filter", "alpha"}, {"column", "name"}, {"descending", true}, {"fields", QJsonObject{}}, {"mode", "problems"}};
-        const QJsonObject event{{"filter", "Warning"}, {"column", "eventCount"}, {"descending", false}, {"fields", QJsonObject{}}, {"mode", ""}};
-        QJsonObject data{{"resource", resource}, {"event", event}};
-        if (scenario == "auxiliary_unknown") data["unknown"] = event;
-        const auto bytes = QJsonDocument(QJsonObject{{"version", scenario == "auxiliary_current_missing" ? 4 : 3}, {"views", data}}).toJson();
-        if (!QDir().mkpath(views) || !write(path, bytes)) return false;
-        const ViewStateStore upgraded(profile, expanded);
-        const auto loaded = upgraded.load(session);
-        if (scenario == "auxiliary_unknown" || scenario == "auxiliary_current_missing") return fails(loaded, StoreError::InvalidData);
-        if (!std::holds_alternative<TableViewStates>(loaded)) return false;
-        const auto actual = std::get<TableViewStates>(loaded);
-        if (actual.size() != 5 || actual["resource"].filter != "alpha" || actual["resource"].mode != "problems" || actual["event"].filter != "Warning"
-            || actual["port"] != TableViewState{} || actual["inspectorEvent"] != TableViewState{} || actual["inspectorLink"] != TableViewState{}) return false;
-        if (scenario == "auxiliary_read") { QFile file(path); return file.open(QIODevice::ReadOnly) && file.readAll() == bytes; }
-        const auto saved = upgraded.save(session, "inspectorLink", {"", "to", true}, {});
-        return std::holds_alternative<TableViewStates>(saved) && std::get<TableViewStates>(saved)["resource"] == actual["resource"]
-            && fails(store.load(session), StoreError::InvalidData) && equals(upgraded.load(session), std::get<TableViewStates>(saved));
-    }
     if (scenario.startsWith("preset_")) {
         const TableViewStates empty{{"default", resourceDefault}};
         auto desired = empty; desired["Problems"] = {"", "", false, {{"namespace", "team"}}, "problems"};
@@ -209,19 +156,6 @@ bool run(const QString& scenario) {
         if (scenario == "preset_large") { desired["Problems"].filter = QString(65536, 'x'); return fails(store.savePresets(desired, empty), StoreError::InvalidInput) && !QFile::exists(profile); }
         if (!equals(store.savePresets(desired, empty), desired)) return false;
         const auto presetPath = profile + "/filter-presets.json";
-        if (scenario == "preset_upgrade_limit") {
-            QFile input(presetPath); if (!input.open(QIODevice::ReadOnly)) return false;
-            auto document = QJsonDocument::fromJson(input.readAll()).object(); input.close();
-            document["version"] = 1; auto records = document["presets"].toObject();
-            for (auto entry = records.begin(); entry != records.end(); ++entry) {
-                auto record = entry->toObject(); record.remove("limit"); entry.value() = record;
-            }
-            document["presets"] = records; const auto bytes = QJsonDocument(document).toJson();
-            if (!write(presetPath, bytes) || !equals(store.loadPresets(), desired) || !input.open(QIODevice::ReadOnly) || input.readAll() != bytes) return false;
-            input.close(); auto limited = desired; limited["Problems"].limit = 7;
-            return equals(store.savePresets(limited, desired), limited) && equals(store.loadPresets(), limited)
-                && input.open(QIODevice::ReadOnly) && QJsonDocument::fromJson(input.readAll()).object()["version"] == 2;
-        }
         if (scenario == "preset_save") return equals(store.loadPresets(), desired);
         if (scenario == "preset_repeat") return equals(store.savePresets(desired, desired), desired);
         if (scenario == "preset_conflict") return fails(store.savePresets(empty, empty), StoreError::Conflict) && equals(store.loadPresets(), desired);
@@ -245,7 +179,7 @@ bool run(const QString& scenario) {
     if (scenario == "empty_profile") return fails(ViewStateStore("", schemas).load(session), StoreError::InvalidInput);
     if (scenario == "relative_profile") return fails(ViewStateStore("relative", schemas).load(session), StoreError::InvalidInput);
     if (scenario == "invalid_id") return fails(store.load("../escape"), StoreError::InvalidInput) && !QFile::exists(profile);
-    if (scenario == "noncanonical_id") return fails(store.load("{" + session + "}"), StoreError::InvalidInput);
+    if (scenario == "noncanonical_id") return fails(store.load("{" + session + "}"), StoreError::InvalidInput) && fails(store.load("12345678-1234-1234-1234-123456789abc"), StoreError::InvalidInput);
     if (scenario == "empty_id") return fails(store.save("", "resource", value, {}), StoreError::InvalidInput);
     if (scenario == "unknown_table") return fails(store.save(session, "unknown", value, {}), StoreError::InvalidInput);
     if (scenario == "unknown_column") return fails(store.save(session, "resource", {"", "removed", false}, {}), StoreError::InvalidInput);
@@ -257,6 +191,7 @@ bool run(const QString& scenario) {
         QLockFile lock(path + ".lock"); return lock.tryLock(0) && fails(store.save(session, "resource", value, resourceDefault), StoreError::Busy);
     }
     if (scenario == "lock_directory") return QDir().mkpath(path + ".lock") && fails(store.save(session, "resource", value, resourceDefault), StoreError::WriteFailed);
+    if (scenario == "oversized_input" && !prepareContext()) return false;
     if (scenario == "oversized_input") return fails(store.save(session, "resource", {QString(65536, 'x'), "", false}, resourceDefault), StoreError::InvalidInput) && !QFile::exists(path);
 #ifdef Q_OS_UNIX
     if (scenario == "profile_symlink") {
@@ -266,6 +201,7 @@ bool run(const QString& scenario) {
         const auto target = temporary.filePath("target"); return write(target, "{}") && QFile::link(target, path) && fails(store.load(session), StoreError::InvalidData);
     }
 #endif
+    if (!prepareContext()) return false;
     const auto initial = store.save(session, "resource", value, resourceDefault);
     if (!std::holds_alternative<TableViewStates>(initial)) return false;
     const auto saved = std::get<TableViewStates>(initial);
@@ -321,26 +257,7 @@ bool run(const QString& scenario) {
     QFile input(path); if (!input.open(QIODevice::ReadOnly)) return false;
     auto document = QJsonDocument::fromJson(input.readAll()).object(); input.close();
     auto states = document["views"].toObject(), resource = states["resource"].toObject();
-    if (scenario == "legacy_read" || scenario == "legacy_save" || scenario == "legacy_repeat") {
-        document["version"] = 1;
-        for (auto state = states.begin(); state != states.end(); ++state) {
-            auto old = state.value().toObject(); old.remove("fields"); old.remove("mode"); old.remove("limit"); state.value() = old;
-        }
-        document["views"] = states;
-        const auto bytes = QJsonDocument(document).toJson(QJsonDocument::Compact);
-        if (!write(path, bytes) || !equals(store.load(session), saved)) return false;
-        if (scenario == "legacy_repeat" && !equals(store.save(session, "resource", value, value), saved)) return false;
-        if (scenario != "legacy_save") {
-            if (!input.open(QIODevice::ReadOnly)) return false;
-            return input.readAll() == bytes;
-        }
-        auto filtered = value; filtered.fields = {{"name", "alpha"}};
-        const auto result = store.save(session, "resource", filtered, value);
-        if (!std::holds_alternative<TableViewStates>(result) || std::get<TableViewStates>(store.load(session)).value("resource") != filtered
-            || !input.open(QIODevice::ReadOnly)) return false;
-        return QJsonDocument::fromJson(input.readAll()).object()["version"] == 6;
-    }
-    if (scenario == "version") document["version"] = 7;
+    if (scenario == "version") document["version"] = 8;
     else if (scenario == "field_type") resource["fields"] = true;
     else if (scenario == "field_value_type") resource["fields"] = QJsonObject{{"name", 3}};
     else if (scenario == "field_empty") resource["fields"] = QJsonObject{{"name", ""}};

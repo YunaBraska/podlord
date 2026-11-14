@@ -76,11 +76,11 @@ Warning Event health uses the latest available Event timestamp with creation-tim
 The three locked definitions describe their actual effect: yellow/red problem
 color, the user-confirmed green freshness highlight, and bounded view-entry
 pulsing. The older C# description mentioning cyan does not override the accepted
-green behavior. Reading an existing native version-1 catalog replaces only the
-known generic built-in description in memory. Every other locked field is still
-validated, and custom rules and enabled flags are retained. Reading never rewrites
-the file; an explicit successful save publishes the canonical descriptions using
-the existing lock, conflict check and atomic writer.
+green behavior. Following CTX-006, confirmed on 2026-11-14, only the current native
+version-2 catalog is accepted. The obsolete version-1 reader and generic-description
+normalization are removed. Locked definitions remain validated, custom rules and
+enabled flags are retained, and unsupported files remain unchanged. The existing
+lock, conflict check and atomic writer protect explicit saves.
 
 ## How Are Original Music And Legacy Cue Choices Owned?
 

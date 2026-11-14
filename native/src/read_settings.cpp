@@ -8,7 +8,6 @@
 #include <QLockFile>
 #include <QSaveFile>
 #include <limits>
-#include <array>
 
 namespace podlord {
 bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && collectionCacheHours > 0 && musicVolumePercent >= 0 && musicVolumePercent <= 100 && alertVolumePercent >= 0 && alertVolumePercent <= 100 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
@@ -25,52 +24,37 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
-    const int version = root["version"].toInt(-1);
-    constexpr std::array fieldCounts{3, 4, 5, 8, 10, 11, 12, 11, 12, 14};
-    if (error.error != QJsonParseError::NoError || !document.isObject() || version < 1 || version > static_cast<int>(fieldCounts.size()) || root.size() != fieldCounts[version - 1])
-        return Failure{StoreError::InvalidData, "Invalid profile request settings; existing data was retained."};
+    if (error.error != QJsonParseError::NoError || !document.isObject() || root["version"] != 10 || root.size() != 14)
+        return Failure{StoreError::InvalidData, "Unsupported or invalid settings format. The file was left unchanged."};
     const auto integer = [](const QJsonValue& value, int maximum) {
         const int number = value.toInt(-1);
         return number >= 0 && number <= maximum;
     };
     if (!integer(root["requestHardLimitPerMinute"], 60000) || !integer(root["inactiveSyncMinutes"], std::numeric_limits<int>::max()))
-        return Failure{StoreError::InvalidData, "Invalid profile request setting values."};
-    if (version >= 2 && (!integer(root["logLimitMb"], std::numeric_limits<int>::max()) || root["logLimitMb"].toInt() == 0))
+        return Failure{StoreError::InvalidData, "Invalid request setting values."};
+    if (!integer(root["logLimitMb"], std::numeric_limits<int>::max()) || root["logLimitMb"].toInt() == 0)
         return Failure{StoreError::InvalidData, "Log-size limit must be a positive whole number of MB."};
-    if (version >= 3 && (!integer(root["yamlLimitMiB"], std::numeric_limits<int>::max()) || root["yamlLimitMiB"].toInt() == 0))
+    if (!integer(root["yamlLimitMiB"], std::numeric_limits<int>::max()) || root["yamlLimitMiB"].toInt() == 0)
         return Failure{StoreError::InvalidData, "YAML limit must be a positive whole number of MiB."};
-    ReadSettings settings{root["requestHardLimitPerMinute"].toInt(), root["inactiveSyncMinutes"].toInt(), version >= 2 ? root["logLimitMb"].toInt() : 5, version >= 3 ? root["yamlLimitMiB"].toInt() : 3};
-    if (version >= 4) {
-        if (!root["themeName"].isString() || !root["themeVariant"].isString() || (version >= 8 && root.contains("themeIntensity")))
-            return Failure{StoreError::InvalidData, "Appearance settings must contain canonical text choices."};
-        settings.themeName = root["themeName"].toString(); settings.themeVariant = root["themeVariant"].toString();
-    }
-    if (version >= 5) {
-        if (!root["radarWaterEnabled"].isBool() || !integer(root["radarWaterSpeedPercent"],100))
-            return Failure{StoreError::InvalidData, "Radar water requires an enable flag and a whole-number speed from 0 to 100."};
-        settings.radarWaterEnabled = root["radarWaterEnabled"].toBool();
-        settings.radarWaterSpeedPercent = root["radarWaterSpeedPercent"].toInt();
-    }
-    if (version >= 6) {
-        if (!root["workspaceRestore"].isBool()) return Failure{StoreError::InvalidData, "Workspace restoration requires an enable flag."};
-        settings.workspaceRestore = root["workspaceRestore"].toBool();
-    }
-    if (version >= 7) {
-        if (!root["language"].isString() || !validUiLanguage(root["language"].toString()))
-            return Failure{StoreError::InvalidData, "UI language must be a shipped language code or system; existing settings were retained."};
-        settings.language = root["language"].toString();
-    }
-    if (version >= 9) {
-        if (!integer(root["collectionCacheHours"], std::numeric_limits<int>::max()) || root["collectionCacheHours"].toInt() == 0)
-            return Failure{StoreError::InvalidData, "Collection cache lifetime must be a positive whole number of hours."};
-        settings.collectionCacheHours = root["collectionCacheHours"].toInt();
-    }
-    if (version >= 10) {
-        if (!integer(root["musicVolumePercent"], 100) || !integer(root["alertVolumePercent"], 100))
-            return Failure{StoreError::InvalidData, "Audio volumes must be whole-number percentages from 0 to 100."};
-        settings.musicVolumePercent = root["musicVolumePercent"].toInt();
-        settings.alertVolumePercent = root["alertVolumePercent"].toInt();
-    }
+    if (!root["themeName"].isString() || !root["themeVariant"].isString())
+        return Failure{StoreError::InvalidData, "Appearance settings must contain canonical text choices."};
+    if (!root["radarWaterEnabled"].isBool() || !integer(root["radarWaterSpeedPercent"], 100))
+        return Failure{StoreError::InvalidData, "Invalid radar water settings."};
+    if (!root["workspaceRestore"].isBool())
+        return Failure{StoreError::InvalidData, "Tab restoration requires an enable flag."};
+    if (!root["language"].isString() || !validUiLanguage(root["language"].toString()))
+        return Failure{StoreError::InvalidData, "Choose a supported language."};
+    if (!integer(root["collectionCacheHours"], std::numeric_limits<int>::max()) || root["collectionCacheHours"].toInt() == 0)
+        return Failure{StoreError::InvalidData, "Resource retention must be a positive whole number of hours."};
+    if (!integer(root["musicVolumePercent"], 100) || !integer(root["alertVolumePercent"], 100))
+        return Failure{StoreError::InvalidData, "Audio volumes must be whole-number percentages from 0 to 100."};
+    ReadSettings settings{root["requestHardLimitPerMinute"].toInt(), root["inactiveSyncMinutes"].toInt(), root["logLimitMb"].toInt(), root["yamlLimitMiB"].toInt()};
+    settings.themeName = root["themeName"].toString(); settings.themeVariant = root["themeVariant"].toString();
+    settings.radarWaterEnabled = root["radarWaterEnabled"].toBool();
+    settings.radarWaterSpeedPercent = root["radarWaterSpeedPercent"].toInt();
+    settings.workspaceRestore = root["workspaceRestore"].toBool(); settings.language = root["language"].toString();
+    settings.collectionCacheHours = root["collectionCacheHours"].toInt();
+    settings.musicVolumePercent = root["musicVolumePercent"].toInt(); settings.alertVolumePercent = root["alertVolumePercent"].toInt();
     if (!settings.valid()) return Failure{StoreError::InvalidData, "Invalid profile appearance settings; existing data was retained."};
     return settings;
 }

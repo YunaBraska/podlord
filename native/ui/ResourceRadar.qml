@@ -102,7 +102,7 @@ Pane {
                         }
                     }
                 }
-                Accessible.name: "Session resource health"
+                Accessible.name: "Context resource health"
             }
             Label {
                 objectName: "radarHealthSummary"

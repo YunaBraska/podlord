@@ -111,35 +111,17 @@ bool run(const QString& scenario) {
     if (scenario=="repeat") return std::holds_alternative<podlord::AlertCatalog>(store.save(desired, desired));
     QFile file(path); if (!file.open(QIODevice::ReadOnly)) return false;
     const auto previous=file.readAll(); file.close(); auto root=QJsonDocument::fromJson(previous).object();
-    if (scenario.startsWith("legacy_descriptions_")) {
-        root["version"]=1;
-        auto rules=root["rules"].toArray();
-        for (int index=0; index<rules.size(); ++index) {
-            auto rule=rules[index].toObject(); rule.remove("draft"); rules[index]=rule;
-        }
-        for (int index=0; index<3; ++index) {
-            auto rule=rules[index].toObject(); rule["description"]="Built-in desktop alert";
-            if (index==0) rule["enabled"]=false;
-            if (scenario=="legacy_descriptions_locked" && index==0) rule["name"]="Changed built-in";
-            rules[index]=rule;
-        }
-        root["rules"]=rules;
-        const auto legacy=QJsonDocument(root).toJson();
-        if (!file.open(QIODevice::WriteOnly|QIODevice::Truncate) || file.write(legacy)!=legacy.size()) return false;
+    if (scenario == "obsolete_format") {
+        root["version"] = 1;
+        auto rules = root["rules"].toArray();
+        for (int index = 0; index < rules.size(); ++index) { auto rule = rules[index].toObject(); rule.remove("draft"); rules[index] = rule; }
+        root["rules"] = rules;
+        const auto bytes = QJsonDocument(root).toJson();
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) || file.write(bytes) != bytes.size()) return false;
         file.close();
-        const auto restored=store.load();
-        if (scenario=="legacy_descriptions_locked") return std::holds_alternative<podlord::Failure>(restored)
-            && file.open(QIODevice::ReadOnly) && file.readAll()==legacy;
-        if (!std::holds_alternative<podlord::AlertCatalog>(restored)) return false;
-        const auto catalog=std::get<podlord::AlertCatalog>(restored);
-        if (catalog.rules.size()!=4 || catalog.rules[0].value["enabled"].toBool()
-            || catalog.rules[3].value!=desired.rules[3].value) return false;
-        for (int index=0; index<3; ++index)
-            if (catalog.rules[index].value["description"]!=original.rules[index].value["description"]
-                || catalog.rules[index].value["description"]=="Built-in desktop alert") return false;
-        if (scenario=="legacy_descriptions_read") return file.open(QIODevice::ReadOnly) && file.readAll()==legacy;
-        return scenario=="legacy_descriptions_save" && std::holds_alternative<podlord::AlertCatalog>(store.save(catalog,catalog))
-            && file.open(QIODevice::ReadOnly) && !file.readAll().contains("Built-in desktop alert");
+        const auto loaded = store.load(), saved = store.save(desired, desired);
+        return std::holds_alternative<podlord::Failure>(loaded) && std::holds_alternative<podlord::Failure>(saved)
+            && file.open(QIODevice::ReadOnly) && file.readAll() == bytes;
     }
     if (scenario.startsWith("document_")) {
         const auto action=scenario.mid(9);

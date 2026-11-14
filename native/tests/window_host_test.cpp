@@ -361,7 +361,7 @@ bool run(const QString& scenario) {
             && fileBytes(profile.filePath("tabs.json")) == sessionBytes
             && fileBytes(profile.filePath("window-layout.json")) == savedBytes && fileBytes(source->ownedPath) == sourceBytes);
         if (viewError) {
-            REQUIRE(peerOwner->viewStateFailed() && peerOwner->error().contains("Invalid saved views"));
+            REQUIRE(peerOwner->viewStateFailed() && peerOwner->error().contains("Invalid context settings"));
             const auto error = peerOwner->error();
             QEvent quit(QEvent::Quit); QCoreApplication::sendEvent(qGuiApp, &quit);
             REQUIRE(!quit.isAccepted() && waitFor([&] { return peerOwner->viewCloseNeedsDecision(); })
@@ -620,7 +620,7 @@ bool run(const QString& scenario) {
             if (owner == &restored) { REQUIRE(owner->error().isEmpty() && owner->currentSession() == a); continue; }
             ++peers;
             REQUIRE(owner->currentSession() == b && owner->tabs().size() == 1
-                && owner->viewStateFailed() && owner->error().contains("Invalid saved views"));
+                && owner->viewStateFailed() && owner->error().contains("Invalid context settings"));
         }
         REQUIRE(peers == 1 && unchanged(store, before)
             && fileBytes(profile.filePath("window-layout.json")) == layoutBytes
@@ -1123,7 +1123,7 @@ bool run(const QString& scenario) {
         REQUIRE(waitFor([&] { return !opened->busy() && opened->resourceCount() == 2; }));
         REQUIRE(!opened->mapOverview() && opened->workspacePage() == "map");
         REQUIRE(opened->showMapOverview() && opened->mapOverview());
-        REQUIRE(opened->navigateMap(-1) && !opened->mapOverview()); return true;
+        REQUIRE(opened->activate(opened->currentSession()) && !opened->mapOverview()); return true;
     } else
     if (scenario == "dirty_stay" || scenario == "dirty_discard") {
         REQUIRE(primary.beginYamlEdit() && primary.setYamlDraft(primary.yamlText() + "\n# local draft\n"));

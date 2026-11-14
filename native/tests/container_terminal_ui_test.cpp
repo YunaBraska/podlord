@@ -260,7 +260,20 @@ bool run(const QString& scenario, const QString& configPath) {
         type("printf 'PODLORD_AFTER:%s\\n' \"$$\"");
         REQUIRE(waitFor([&] { return QRegularExpression("PODLORD_AFTER:([0-9]+)").match(surface->visibleText()).captured(1)==pid; }));
         const auto frame=qEnvironmentVariable("PODLORD_TERMINAL_FRAME");
-        if (!frame.isEmpty()) REQUIRE(window->grabWindow().save(frame));
+        if (!frame.isEmpty()) {
+            window->resize(1440, 920);
+            QSignalSpy resized(window, &QQuickWindow::frameSwapped);
+            window->update(); REQUIRE(resized.wait(2000));
+            surface->forceActiveFocus(); REQUIRE(waitFor([&] { return surface->hasActiveFocus(); }));
+            type("clear; printf '\\033[1;36mContainer\\033[0m: '; hostname; printf '\\033[32mUser\\033[0m: '; id; printf '\\033[33mShell\\033[0m: %s\\n' \"$0\"; printf '\\033[34mDirectory\\033[0m: %s\\n' \"$PWD\"; ls --color=always -d /bin /etc /tmp /usr /var; printf '\\033[31mError\\033[0m: '; ls /podlord-example-missing");
+            const bool outputReady = waitFor([&] { return QRegularExpression("(?m)^User: uid=[0-9]+").match(surface->visibleText()).hasMatch()
+                && surface->visibleText().contains("podlord-example-missing"); });
+            if (!outputReady) { std::fprintf(stderr, "Showcase shell output:\n%s\n", qPrintable(surface->visibleText())); window->grabWindow().save(frame + ".failure.png"); }
+            REQUIRE(outputReady);
+            QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
+            window->update(); REQUIRE(rendered.wait(2000));
+            REQUIRE(window->grabWindow().save(frame));
+        }
         type("exit");
         REQUIRE(waitFor([&] { return !terminal->active(); }));
         REQUIRE(click("collapseTerminal") && workspace.stopContainerTerminal());

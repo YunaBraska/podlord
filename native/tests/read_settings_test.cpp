@@ -42,6 +42,22 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile");
     const auto path = QDir(profile).filePath("read-settings.json");
     const ReadSettingsStore store(profile);
+    if (name == "reject_obsolete_format") {
+        for (int version = 1; version < 10; ++version) {
+            QJsonObject root{{"version", version}, {"requestHardLimitPerMinute", 120}, {"inactiveSyncMinutes", 2}};
+            if (version >= 2) root["logLimitMb"] = 7;
+            if (version >= 3) root["yamlLimitMiB"] = 4;
+            if (version >= 4) { root["themeName"] = "Gunmetal Sector"; root["themeVariant"] = "light"; if (version <= 7) root["themeIntensity"] = "subtle"; }
+            if (version >= 5) { root["radarWaterEnabled"] = false; root["radarWaterSpeedPercent"] = 25; }
+            if (version >= 6) root["workspaceRestore"] = false;
+            if (version >= 7) root["language"] = "de";
+            if (version >= 9) root["collectionCacheHours"] = 24;
+            const auto bytes = QJsonDocument(root).toJson();
+            if (!QDir().mkpath(profile) || !write(path, bytes) || !failure(store.load(), StoreError::InvalidData)
+                || !failure(store.save({}, {}), StoreError::InvalidData) || read(path) != bytes) return false;
+        }
+        return true;
+    }
     if (name.startsWith("audio_volume_")) {
         const ReadSettings defaults;
         if (name == "audio_volume_default") return defaults.musicVolumePercent == 35 && defaults.alertVolumePercent == 100
@@ -55,15 +71,14 @@ bool scenario(const QString& name) {
         if (!value(store.save(desired, defaults), desired)) return false;
         if (name == "audio_volume_save" || name == "audio_volume_zero" || name == "audio_volume_maximum") return value(store.load(), desired);
         auto root = QJsonDocument::fromJson(read(path)).object();
-        if (name == "audio_volume_upgrade") { root["version"] = 9; root.remove("musicVolumePercent"); root.remove("alertVolumePercent"); }
-        else if (name == "audio_volume_fraction") root["musicVolumePercent"] = 12.5;
+        if (name == "audio_volume_fraction") root["musicVolumePercent"] = 12.5;
         else if (name == "audio_volume_string") root["alertVolumePercent"] = "27";
         else if (name == "audio_volume_missing") root.remove("musicVolumePercent");
         else return false;
         const auto bytes = QJsonDocument(root).toJson();
         if (!write(path, bytes)) return false;
         const auto loaded = store.load();
-        return (name == "audio_volume_upgrade" ? value(loaded, defaults) : failure(loaded, StoreError::InvalidData)) && read(path) == bytes;
+        return failure(loaded, StoreError::InvalidData) && read(path) == bytes;
     }
     if (name == "collection_cache_default")
         return require(ReadSettings{}.collectionCacheHours == 24, "Collection cache default is not 24 hours.")
@@ -83,31 +98,6 @@ bool scenario(const QString& name) {
         auto stale = ReadSettings{}; stale.logLimitMb = 7;
         return failure(store.save(stale, {}), StoreError::Conflict) && read(path) == bytes && value(store.load(), desired);
     }
-    if (name.startsWith("collection_cache_upgrade_v")) {
-        const int version = name.sliced(QString("collection_cache_upgrade_v").size()).toInt();
-        if (version < 1 || version > 8 || !QDir().mkpath(profile)) return false;
-        QJsonObject root{{"version", version}, {"requestHardLimitPerMinute", 120}, {"inactiveSyncMinutes", 2}};
-        ReadSettings expected{120, 2};
-        if (version >= 2) { root["logLimitMb"] = 7; expected.logLimitMb = 7; }
-        if (version >= 3) { root["yamlLimitMiB"] = 4; expected.yamlLimitMiB = 4; }
-        if (version >= 4) {
-            root["themeName"] = "Gunmetal Sector"; root["themeVariant"] = "light";
-            if (version <= 7) root["themeIntensity"] = "subtle";
-            expected.themeName = "Gunmetal Sector"; expected.themeVariant = "light";
-        }
-        if (version >= 5) {
-            root["radarWaterEnabled"] = false; root["radarWaterSpeedPercent"] = 25;
-            expected.radarWaterEnabled = false; expected.radarWaterSpeedPercent = 25;
-        }
-        if (version >= 6) { root["workspaceRestore"] = false; expected.workspaceRestore = false; }
-        if (version >= 7) { root["language"] = "de"; expected.language = "de"; }
-        const auto bytes = QJsonDocument(root).toJson();
-        if (!write(path, bytes) || !value(store.load(), expected) || read(path) != bytes) return false;
-        auto desired = expected; desired.collectionCacheHours = 48;
-        if (!value(store.save(desired, expected), desired) || !value(store.load(), desired)) return false;
-        const auto saved = QJsonDocument::fromJson(read(path)).object();
-        return saved["version"] == 10 && saved["collectionCacheHours"] == 48 && !saved.contains("themeIntensity");
-    }
     if (name.startsWith("collection_cache_schema_")) {
         if (!value(store.save({}, {}), {})) return false;
         auto root = QJsonDocument::fromJson(read(path)).object();
@@ -125,20 +115,6 @@ bool scenario(const QString& name) {
         return write(path, bytes) && failure(store.load(), StoreError::InvalidData)
             && failure(store.save({}, {}), StoreError::InvalidData) && read(path) == bytes;
     }
-    if (name.startsWith("appearance_upgrade_")) {
-        const auto intensity = name.mid(QString("appearance_upgrade_").size());
-        QJsonObject root{{"version",7},{"requestHardLimitPerMinute",120},{"inactiveSyncMinutes",2},{"logLimitMb",7},{"yamlLimitMiB",4},
-            {"themeName","Gunmetal Sector"},{"themeVariant","light"},{"themeIntensity",intensity},
-            {"radarWaterEnabled",false},{"radarWaterSpeedPercent",25},{"workspaceRestore",false},{"language","de"}};
-        if (!QDir().mkpath(profile)) return false;
-        const auto bytes = QJsonDocument(root).toJson();
-        if (!write(path, bytes)) return false;
-        auto expected = ReadSettings{120,2,7,4}; expected.themeName = "Gunmetal Sector"; expected.themeVariant = "light";
-        expected.radarWaterEnabled = false; expected.radarWaterSpeedPercent = 25; expected.workspaceRestore = false; expected.language = "de";
-        if (!value(store.load(), expected) || read(path) != bytes || !value(store.save(expected, expected), expected)) return false;
-        const auto saved = QJsonDocument::fromJson(read(path)).object();
-        return value(store.load(), expected) && saved["version"] == 10 && !saved.contains("themeIntensity");
-    }
     if (name == "appearance_removed_field") {
         if (!value(store.save({}, {}), {})) return false;
         auto root = QJsonDocument::fromJson(read(path)).object(); root["themeIntensity"] = "subtle";
@@ -155,10 +131,8 @@ bool scenario(const QString& name) {
             return failure(store.save(desired,{}),StoreError::InvalidInput) && !QFileInfo::exists(profile);
         }
         if (!QDir().mkpath(profile)) return false;
-        QJsonObject root{{"version",4},{"requestHardLimitPerMinute",0},{"inactiveSyncMinutes",0},{"logLimitMb",5},{"yamlLimitMiB",3},
-            {"themeName","Sirocco Command"},{"themeVariant","dark"},{"themeIntensity","subtle"}};
-        if (name=="water_upgrade") return write(path,QJsonDocument(root).toJson()) && value(store.load(),{}) && value(store.save(desired,{}),desired) && value(store.load(),desired);
-        root["version"]=5; root["radarWaterEnabled"]=true; root["radarWaterSpeedPercent"]=45;
+        if (!value(store.save({}, {}), {})) return false;
+        auto root = QJsonDocument::fromJson(read(path)).object();
         if (name=="water_flag_invalid") root["radarWaterEnabled"]="true";
         else if (name=="water_speed_fraction") root["radarWaterSpeedPercent"]=45.5;
         else if (name=="water_speed_string") root["radarWaterSpeedPercent"]="45";
@@ -200,18 +174,6 @@ bool scenario(const QString& name) {
                        !(file & (QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther)), "Settings profile or file exposes other-user access.");
     }
     if (!QDir().mkpath(profile)) return false;
-    if (name == "schema_v3_upgrade") {
-        if (!write(path, "{\"version\":3,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6,\"yamlLimitMiB\":4}")) return false;
-        return value(store.load(), {120, 2, 6, 4}) && value(store.save({120, 2, 6, 5}, {120, 2, 6, 4}), {120, 2, 6, 5}) && value(store.load(), {120, 2, 6, 5}) && QJsonDocument::fromJson(read(path)).object()["version"] == 10;
-    }
-    if (name == "version_two_yaml_upgrade") {
-        if (!write(path, "{\"version\":2,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2,\"logLimitMb\":6}")) return false;
-        return value(store.load(), {120, 2, 6, 3}) && value(store.save({120, 2, 6, 4}, {120, 2, 6, 3}), {120, 2, 6, 4}) && value(store.load(), {120, 2, 6, 4});
-    }
-    if (name == "version_one_upgrade") {
-        if (!write(path, "{\"version\":1,\"requestHardLimitPerMinute\":120,\"inactiveSyncMinutes\":2}")) return false;
-        return value(store.load(), {120, 2, 5}) && value(store.save({120, 2, 6}, {120, 2, 5}), {120, 2, 6}) && value(store.load(), {120, 2, 6}) && QJsonDocument::fromJson(read(path)).object()["version"] == 10;
-    }
     if (name == "conflict" || name == "repeat") {
         if (!value(store.save({120, 1}, {}), {120, 1})) return false;
         const auto bytes = read(path);
@@ -282,16 +244,15 @@ bool scenario(const QString& name) {
     else if (name == "array_root") bytes = "[]";
     else if (name == "scalar_root") bytes = "123";
     else {
-        QJsonObject root{{"version", 1}, {"requestHardLimitPerMinute", 0}, {"inactiveSyncMinutes", 0}};
+        if (!value(store.save({}, {}), {})) return false;
+        auto root = QJsonDocument::fromJson(read(path)).object();
         if (name.startsWith("schema_")) {
             const bool appearance = name.startsWith("schema_theme_") || name.startsWith("schema_v4_");
-            root["version"] = appearance ? 4 : 3;
             root["logLimitMb"] = 5;
             root["yamlLimitMiB"] = 3;
             if (appearance) {
                 root["themeName"] = "Sirocco Command";
                 root["themeVariant"] = "dark";
-                root["themeIntensity"] = "subtle";
             }
             if (name == "schema_yaml_zero" || name == "schema_v4_yaml_zero") root["yamlLimitMiB"] = 0;
             else if (name == "schema_yaml_negative") root["yamlLimitMiB"] = -1;
@@ -307,14 +268,14 @@ bool scenario(const QString& name) {
             else if (name == "schema_theme_variant_unknown") root["themeVariant"] = "Unknown";
             else return require(false, "Unknown settings schema scenario.");
         } else if (name.startsWith("log_")) {
-            root["version"] = 2;
             if (name == "log_zero") root["logLimitMb"] = 0;
             else if (name == "log_negative") root["logLimitMb"] = -1;
             else if (name == "log_fraction") root["logLimitMb"] = 1.5;
             else if (name == "log_string") root["logLimitMb"] = "5";
             else if (name == "log_high") root["logLimitMb"] = 2147483648.0;
             else if (name == "log_null") root["logLimitMb"] = QJsonValue::Null;
-            else if (name != "log_missing") return require(false, "Unknown log-size scenario.");
+            else if (name == "log_missing") root.remove("logLimitMb");
+            else return require(false, "Unknown log-size scenario.");
         } else if (name == "extra_key") root["extra"] = 0;
         else if (name == "missing_key") root.remove("inactiveSyncMinutes");
         else if (name == "version_string") root["version"] = "1";

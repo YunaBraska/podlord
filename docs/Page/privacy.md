@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Privacy
-description: How PodLord handles cluster data on your computer.
+description: How PodLord handles cluster data on your device.
 ---
 
 <header class="page-heading">
@@ -12,7 +12,7 @@ description: How PodLord handles cluster data on your computer.
 
 <section class="section">
   <h2>What PodLord handles</h2>
-  <p>PodLord reads the kubeconfig and cluster data you explicitly import or connect. It stores app-owned connection snapshots and settings on your device so that it can reopen your workspace. Kubernetes requests, logs, terminals and port-forwarded traffic go directly to the Kubernetes endpoint you chose. Explicitly confirmed native sign-in also contacts the configured identity or cloud provider, using the system browser where required.</p>
+  <p>PodLord reads the kubeconfig and cluster data you explicitly import or connect. It stores app-owned connection snapshots and settings on your device so that it can restore your contexts and tabs. Kubernetes requests, logs, terminals and port-forwarded traffic go directly to the Kubernetes endpoint you chose. Explicitly confirmed native sign-in also contacts the configured identity or cloud provider, using the system browser where required.</p>
   <p>The native edition keeps resource and log caches in memory. It saves the latest map preview for each context locally, without resource names, YAML or Secret values. Imported connection snapshots can contain credentials. Explicitly imported cloud keys stay in private app storage.</p>
   <p>Secret values are hidden and redacted by default. They remain sensitive data under your control.</p>
 </section>
@@ -25,6 +25,6 @@ description: How PodLord handles cluster data on your computer.
 
 <section class="section">
   <h2>Your choices</h2>
-  <p>Remove unused imported connections and keys in PodLord. Saved sessions can retain older connection snapshots. Uninstalling a desktop application does not necessarily remove its local profile. Remove that profile as well when you want to erase all local PodLord data. For help, use <a href="{{ site.support }}">PodLord support</a>. Never post kubeconfigs, tokens or private cluster details in a public issue.</p>
-  <p>Last updated: 31 October 2026.</p>
+  <p>Remove unused imported connections and keys in PodLord. App-owned kubeconfig copies can retain connection data for other contexts. Uninstalling a desktop application does not necessarily remove its local profile. Remove that profile as well when you want to erase all local PodLord data. For help, use <a href="{{ site.support }}">PodLord support</a>. Never post kubeconfigs, tokens or private cluster details in a public issue.</p>
+  <p>Last updated: 14 November 2026.</p>
 </section>

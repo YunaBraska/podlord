@@ -52,6 +52,8 @@ main { padding: 54px 0 76px; }
 .feature h3, .install-option h3 { margin: 0; font-size: 1.05rem; letter-spacing: -0.02em; }
 .feature p, .install-option p { margin: 9px 0 0; color: #516174; }
 .screenshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; margin-top: 30px; }
+.screenshot-grid .terminal-shot { grid-column: 1 / -1; }
+.screenshot-grid .terminal-shot img { aspect-ratio: 4 / 1; object-fit: cover; object-position: top; }
 .screenshot-grid figure { margin: 0; overflow: hidden; border: 1px solid #d9e1eb; background: #fff; }
 .install-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 30px; }
 .install-option { padding: 22px; border-top: 3px solid var(--accent); background: #fff; }
@@ -96,6 +98,7 @@ pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
 .theme-dark .section, .theme-dark .feature-grid, .theme-dark .feature, .theme-dark .doc-list, .theme-dark .doc-list li, .theme-dark .install-step, .theme-dark .site-footer { border-color: #34382f; }
 .theme-dark .feature { background: #151813; }
 .theme-dark .button.secondary { border-color: #686759; color: #eee8d8; }
+.theme-dark .button:not(.secondary) { color: #171a15; }
 .theme-dark .product-menu summary { color: #c4c1b6; }
 .theme-dark .product-menu-panel { border-color: #34382f; background: #171a15; box-shadow: none; }
 .theme-dark .product-menu-panel a { color: #eee8d8; }

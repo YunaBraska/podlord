@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     QCommandLineParser parser;
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOption({"profile", "Absolute private application profile; defaults to this app's local data directory.", "path"});
-    parser.addOption({"kubeconfig", "Explicitly import one kubeconfig file, file URL or folder after opening the window; does not open a session or authenticate.", "path"});
+    parser.addOption({"kubeconfig", "Explicitly import one kubeconfig file, file URL or folder after opening the window; does not open a context or authenticate.", "path"});
     parser.addPositionalArgument("files", "Kubeconfig files to open.", "[files...]");
     parser.process(app);
     const auto startupSource = parser.value("kubeconfig");

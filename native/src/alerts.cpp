@@ -209,25 +209,19 @@ Result<AlertCatalog> defaultAlerts() {
     return result;
 }
 Result<AlertCatalog> decodeAlerts(const QJsonObject& root) {
-    const int version=root["version"].toInt(-1);
-    if (root.size()!=4 || !whole(root["version"], 1, 2) || !root["rules"].isArray() || !root["muted"].isBool() || !root["reducedMotion"].isBool()) return Failure{StoreError::InvalidData, "Invalid or unsupported alert document; existing data was retained."};
+    if (root.size()!=4 || root["version"] != 2 || !root["rules"].isArray() || !root["muted"].isBool() || !root["reducedMotion"].isBool()) return Failure{StoreError::InvalidData, "Invalid or unsupported alert document; existing data was retained."};
     const auto defaults = defaultAlerts();
     if (const auto* failure = std::get_if<Failure>(&defaults)) return *failure;
     auto result=std::get<AlertCatalog>(defaults); result.muted=root["muted"].toBool(); result.reducedMotion=root["reducedMotion"].toBool(); QSet<QString> ids;
     for (const auto& entry : root["rules"].toArray()) {
         if (!entry.isObject()) return Failure{StoreError::InvalidData, "Invalid alert record; existing data was retained."};
         auto value=entry.toObject();
-        if (version==1) {
-            if (value.contains("draft")) return Failure{StoreError::InvalidData, "Invalid alert record; existing data was retained."};
-            value["draft"]=false;
-        }
         const auto parsed=parseAlertRule(value); if (const auto* failure=std::get_if<Failure>(&parsed)) return *failure;
         auto rule=std::get<AlertRule>(parsed); const auto id=rule.value["id"].toString();
         if (ids.contains(id)) return Failure{StoreError::InvalidData, "Duplicate alert identity; existing data was retained."}; ids.insert(id);
         auto builtin=std::find_if(result.rules.begin(), result.rules.end(), [&](const auto& item) { return item.value["id"] == id; });
         if (builtin!=result.rules.end()) {
             const QJsonValue enabled=rule.value["enabled"]; rule.value["enabled"]=builtin->value["enabled"];
-            if (rule.value["description"]=="Built-in desktop alert") rule.value["description"]=builtin->value["description"];
             if (rule.value!=builtin->value) return Failure{StoreError::InvalidData, "Built-in alert definitions are locked."}; builtin->value["enabled"]=enabled;
         } else {
             if (rule.value["builtIn"].toBool()) return Failure{StoreError::InvalidData, "Unknown built-in alert; existing data was retained."}; result.rules.append(rule);

@@ -121,14 +121,17 @@ bool run(const QString& scenario) {
             const auto point = musicSlider->mapToScene({left + handle->width()/2 + 0.7*(available-handle->width()), musicSlider->height()/2}).toPoint();
             QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
         } else {
-            for (int step=0; step<(repeated || leaving ? 10 : mixed ? 8 : locked ? 2 : 1); ++step) {
+            for (int step=0; step<(repeated || leaving ? 10 : mixed ? 8 : 1); ++step) {
                 musicSlider->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Right);
                 if (mixed) { alertSlider->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Left); }
             }
         }
         if (locked) {
-            if (!waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty() && saves.count()==1; })) return false;
-            QTest::qWait(600);
+            if (!waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty() && saves.count()==1
+                && musicSlider->property("value").toInt()==35; })) return false;
+            QSignalSpy frames(window, &QQuickWindow::frameSwapped);
+            window->update();
+            if (!waitFor([&] { return !frames.isEmpty(); }) || QTest::qWaitFor([&] { return saves.count()>1; },600)) return false;
             return saves.count()==1 && !saves.first().first().toBool() && !workspace.busy()
                 && workspace.musicVolumePercent()==35 && workspace.alertVolumePercent()==100
                 && musicSlider->property("value").toInt()==35 && workspace.music()->volumePercent()==35

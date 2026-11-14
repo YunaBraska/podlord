@@ -219,7 +219,7 @@ ApplicationWindow {
         property bool stopMode: !!workspace.portForwardTarget.existingId
         contentItem: ColumnLayout {
             Label { Layout.fillWidth: true; text: (workspace.portForwardTarget.title || "") + "\n" + (workspace.portForwardTarget.namespace || "") + " / " + (workspace.portForwardTarget.kind || "") + " / " + (workspace.portForwardTarget.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: "Port-forward target: " + text }
-            Label { Layout.fillWidth: true; text: "The endpoint is local to this computer (127.0.0.1). Closing this session tab stops its forwards. Switching tabs does not."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; text: "Only this device can access 127.0.0.1. Closing this tab stops its forwards."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             RowLayout {
                 visible: !portForwardDialog.stopMode
                 Label { text: "Local TCP port" }
@@ -230,7 +230,7 @@ ApplicationWindow {
                 Label { text: "Target TCP port" }
                 TextField { id: forwardRemote; objectName: "portForwardRemote"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Pod or Service TCP port, 1 through 65535" }
             }
-            Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This resource already has a session-owned forward. Stop it to release its local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This tab already has a forward for this resource. Stop it to release the local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             Label { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         }

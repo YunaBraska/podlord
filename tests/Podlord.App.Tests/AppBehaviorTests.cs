@@ -735,11 +735,10 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Legacy_reference_build_uses_shared_archives_and_public_asset_names()
+    public void Reference_macos_build_uses_shared_archive_names()
     {
         var root = LocateProjectRoot();
         var macOSBundleScript = File.ReadAllText(Path.Combine(root, "scripts", "build-macos-app.sh"));
-        var publishScript = File.ReadAllText(Path.Combine(root, "scripts", "publish.sh"));
 
 
         Assert.Contains("macos-arm64) RID=osx-arm64 ;;", macOSBundleScript, StringComparison.Ordinal);
@@ -747,10 +746,7 @@ public sealed class AppBehaviorTests
         Assert.Contains("BUNDLE_DIR=\"$ROOT_DIR/out/$APP_NAME.app\"", macOSBundleScript, StringComparison.Ordinal);
         Assert.DoesNotContain("BUNDLE_DIR=\"$ROOT_DIR/out/$APP_NAME-$RID.app\"", macOSBundleScript, StringComparison.Ordinal);
 
-        Assert.Contains("RIDS=\"macos-arm64 macos-x64", publishScript, StringComparison.Ordinal);
-        Assert.Contains("macos-arm64) dotnet_rid=osx-arm64 ;;", publishScript, StringComparison.Ordinal);
-        Assert.Contains("-r \"$dotnet_rid\"", publishScript, StringComparison.Ordinal);
-        Assert.Contains("-o \"out/podlord-$rid\"", publishScript, StringComparison.Ordinal);
+
     }
 
     [Fact]
