@@ -25,7 +25,7 @@ jobs:
           set -eu
           case "$PACKAGE_RUN" in ''|*[!0-9]*) printf 'A numeric package workflow run ID is required.\n' >&2; exit 2 ;; esac
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PACKAGE_RUN" > source-run.json
-          jq -e '.conclusion == "success" and .event == "workflow_dispatch" and .path == ".github/workflows/app-store.yml"' source-run.json
+          jq -e '.conclusion == "success" and (.path == ".github/workflows/app-store.yml" or .path == ".github/workflows/release.yml")' source-run.json
       - uses: actions/download-artifact@v7
         with:
           github-token: ${{ github.token }}

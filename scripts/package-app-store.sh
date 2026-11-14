@@ -15,7 +15,7 @@ printf '%s\n' "$build_number" | /usr/bin/grep -Eq '^[1-9][0-9]{0,3}(\.[0-9]{1,2}
 [ "$APP_STORE_BUNDLE_ID" = berlin.yuna.podlord ] || { printf 'Unexpected Store bundle identity.\n' >&2; exit 2; }
 printf '%s\n' "$APP_STORE_TEAM_ID" | /usr/bin/grep -Eq '^[A-Z0-9]{10}$' || { printf 'Invalid Apple team identifier.\n' >&2; exit 2; }
 [ -f "$MACOS_APP_STORE_PROFILE_PATH" ] && [ -r "$MACOS_APP_STORE_PROFILE_PATH" ] && [ ! -L "$MACOS_APP_STORE_PROFILE_PATH" ] || { printf 'A readable regular provisioning profile is required.\n' >&2; exit 2; }
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 DIST="$ROOT/dist/app-store"
 [ ! -e "$DIST" ] && [ ! -L "$DIST" ] || { printf 'Store output already exists; refusing to replace it.\n' >&2; exit 2; }
 mkdir -p "$DIST"

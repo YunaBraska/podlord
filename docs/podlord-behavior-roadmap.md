@@ -10,7 +10,7 @@ approved changes are defined in the
 The [test map](../doc/spec/k3d-test-map.md) records executable evidence, measured
 results and remaining qualification gaps. Build and platform checks are owned
 by [native/CMakeLists.txt](../native/CMakeLists.txt) and the
-[native release workflow](../.github/workflows/release.yml).
+[native qualification workflow](../.github/workflows/native-qualify.yml).
 
 The user-facing model is contexts and their settings, not separately managed
 saved sessions. Tabs retain independent selection, cameras and connections.
@@ -1594,11 +1594,10 @@ Behavior:
 
 ### macOS Notes
 
-Until notarized signing exists:
-
-- release docs explain right-click Open
-- release docs explain Privacy & Security approval
-- release docs explain quarantine removal fallback
+For legacy unsigned archives only, release docs explain right-click Open,
+Privacy & Security approval and quarantine removal. Current direct macOS
+releases are Developer ID signed and notarized by CI. Gatekeeper verification
+is part of the stable release workflow.
 
 ### Acceptance Criteria
 
