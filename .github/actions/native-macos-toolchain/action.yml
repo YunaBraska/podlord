@@ -1,5 +1,12 @@
 name: Native macOS toolchain
 description: Install, validate and cache the pinned public macOS SDK inputs.
+outputs:
+  cmake-prefix-path:
+    description: Validated CMake package prefixes for Qt, yaml-cpp and OpenSSL.
+    value: ${{ steps.toolchain-path.outputs.cmake-prefix-path }}
+  openssl-root-dir:
+    description: Validated OpenSSL installation prefix.
+    value: ${{ steps.toolchain-path.outputs.openssl-root-dir }}
 runs:
   using: composite
   steps:
@@ -10,14 +17,21 @@ runs:
         printf 'PODLORD_RADAR_ACTION_EVIDENCE=%s/native-radar-failures\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
         brew install cmake ninja python
         node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs
-        {
-          printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP"
-          printf 'CMAKE_PREFIX_PATH=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain" "$RUNNER_TEMP/native-toolchain"
-          printf 'OPENSSL_ROOT_DIR=%s/native-toolchain/openssl\n' "$RUNNER_TEMP"
-        } >> "$GITHUB_ENV"
+        printf 'PODLORD_NATIVE_BUILD_DIR=%s/podlord-native-build\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
         printf '%s/qt-sdk/bin\n' "$RUNNER_TEMP/native-toolchain" >> "$GITHUB_PATH"
         cmake --version
         xcrun clang --version
+    - name: Expose validated toolchain locations
+      id: toolchain-path
+      shell: sh
+      run: |
+        set -eu
+        prefix="$RUNNER_TEMP/native-toolchain"
+        test -f "$prefix/qt-sdk/lib/cmake/Qt6/Qt6Config.cmake"
+        test -f "$prefix/yaml-cpp/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
+        test -x "$prefix/openssl/bin/openssl"
+        printf 'cmake-prefix-path=%s/qt-sdk;%s/yaml-cpp;%s/openssl\n' "$prefix" "$prefix" "$prefix" >> "$GITHUB_OUTPUT"
+        printf 'openssl-root-dir=%s/openssl\n' "$prefix" >> "$GITHUB_OUTPUT"
     - name: Resolve exact macOS toolchain cache identity
       id: macos-toolchain-key
       shell: sh

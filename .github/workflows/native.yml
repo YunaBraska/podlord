@@ -211,9 +211,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Set up pinned public macOS toolchain
+        id: toolchain
         uses: ./.github/actions/native-macos-toolchain
       - name: Native tests, benchmarks and coverage report
         id: tests
+        env:
+          CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}
+          OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}
         run: |
           status=0
           touch "$RUNNER_TEMP/native-tests.started"
@@ -278,9 +282,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Set up pinned public macOS toolchain
+        id: toolchain
         uses: ./.github/actions/native-macos-toolchain
       - name: Build direct package test drivers
         if: ${{ !cancelled() && matrix.channel == 'direct' }}
+        env:
+          CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}
+          OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}
         run: |
           status=0
           {
@@ -291,6 +299,9 @@ jobs:
           exit "$status"
       - name: Verify native Mac App Store boundaries
         if: ${{ !cancelled() && matrix.channel == 'store' }}
+        env:
+          CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}
+          OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}
         run: |
           store="$RUNNER_TEMP/native-store"
           export PODLORD_SHELL_EVIDENCE="$RUNNER_TEMP/native-store-frames"
@@ -304,6 +315,9 @@ jobs:
           exit "$status"
       - name: Build and inspect the native Store slice
         if: ${{ !cancelled() && matrix.channel == 'store' }}
+        env:
+          CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}
+          OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}
         run: |
           status=0
           PODLORD_MAC_APP_STORE=ON /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-store-package" > "$RUNNER_TEMP/native-store-package.log" 2>&1 || status=$?
@@ -312,6 +326,9 @@ jobs:
       - name: Build and inspect the native macOS package
         id: package
         if: ${{ !cancelled() && matrix.channel == 'direct' }}
+        env:
+          CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}
+          OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}
         run: |
           status=0
           /bin/sh scripts/check-native-macos-package.sh "$RUNNER_TEMP/native-package" > "$RUNNER_TEMP/native-package.log" 2>&1 || status=$?

@@ -463,11 +463,15 @@ test('macOS package matrix is independent of the complete native test job', asyn
 test('macOS package jobs share pinned setup and retain every package scenario', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
     const action = await fs.readFile(path.join(root, '.github/actions/native-macos-toolchain/action.yml'), 'utf8');
+    const prefix = 'CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}';
+    const openssl = 'OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}';
     for (const job of [ciJob(workflow, 'macos'), ciJob(workflow, 'macos-package')]) {
-        assert.equal(job.split('uses: ./.github/actions/native-macos-toolchain').length - 1, 1);
+        assert.equal(job.split('id: toolchain\n        uses: ./.github/actions/native-macos-toolchain').length - 1, 1);
         assert.doesNotMatch(job, /brew install|uses: actions\/cache|\/bin\/sh scripts\/install-native-macos-toolchain\.sh/);
     }
     assert.match(action, /using: composite/);
+    for (const output of ['cmake-prefix-path:', 'openssl-root-dir:', 'Expose validated toolchain locations',
+        'test -f "$prefix\/qt-sdk\/lib\/cmake\/Qt6\/Qt6Config.cmake"']) assert.ok(action.includes(output), `Missing toolchain output: ${output}`);
     for (const command of ['brew install cmake ninja python',
         'node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs',
         'xcodebuild -version', 'xcrun --sdk macosx --show-sdk-path', 'xcrun --sdk macosx --show-sdk-version',
@@ -485,6 +489,10 @@ test('macOS package jobs share pinned setup and retain every package scenario', 
         assert.deepEqual(cached, publicCache, 'Cache must contain only the existing public SDK inputs');
     }
     const packages = ciJob(workflow, 'macos-package');
+    const native = ciJob(workflow, 'macos');
+    assert.ok(native.includes(prefix) && native.includes(openssl), 'Native macOS tests must use the validated toolchain locations.');
+    assert.equal(packages.split(prefix).length - 1, 4, 'Every CMake package step must use the validated Qt prefix.');
+    assert.equal(packages.split(openssl).length - 1, 4, 'Every CMake package step must use the validated OpenSSL prefix.');
     const drivers = packages.split('      - name: Build direct package test drivers\n')[1]?.split('\n      - name:')[0];
     assert.ok(drivers, 'The direct package job must build its own real test drivers');
     for (const argument of ['-DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"', '-DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"',
