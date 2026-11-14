@@ -44,10 +44,11 @@ the stored App Store application certificate, installer certificate and
 provisioning profile. The Store sandbox requests only selected-file read access
 and outbound network access. It does not request incoming network access.
 
-`app-store-upload.yml` accepts only the `app-store-package` artifact from a
-successful package or stable-release run. Upload is intentionally separate from
-the GitHub release because it creates an external App Store Connect delivery.
-It does not submit App Review.
+`app-store-upload.yml` is one manual action. It selects the newest successful
+stable release package from `main`, rejects anything else, then uploads that
+immutable package to App Store Connect without rebuilding. Upload is separate
+from the GitHub release because it creates an external delivery. It does not
+submit App Review.
 
 Required repository secrets already exist:
 

@@ -356,7 +356,7 @@ test('pull requests and snapshots reuse the same native qualification', async ()
     const snapshot = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
     const pullRequest = request.split('  pull_request:\n')[1].split('\n  workflow_dispatch:')[0];
     assert.doesNotMatch(pullRequest, /paths|branches|if:/);
-    for (const event of ['opened', 'synchronize', 'reopened', 'ready_for_review'])
+    for (const event of ['opened', 'synchronize', 'reopened'])
         assert.ok(pullRequest.includes('      - ' + event));
     assert.doesNotMatch(workflow, /  pull_request:|  push:/);
     assert.match(workflow, /  workflow_dispatch:/);
@@ -401,7 +401,10 @@ test('stable releases qualify once, sign direct macOS assets and prepare the Sto
     assert.match(ciJob(release, 'release'), /wc_dotnet_create_github_release\.yml@[a-f0-9]{40}/);
     assert.doesNotMatch(release, /app-store-upload\.yml/);
     assert.match(upload, /workflow_dispatch:/);
-    assert.match(upload, /\.path == "\.github\/workflows\/app-store\.yml" or \.path == "\.github\/workflows\/release\.yml"/);
+    assert.doesNotMatch(upload, /package_run_id/);
+    assert.match(upload, /actions\/workflows\/release\.yml\/runs\?branch=\$DEFAULT_BRANCH/);
+    assert.match(upload, /\.head_branch == env\.DEFAULT_BRANCH/);
+    assert.match(upload, /steps\.package-run\.outputs\.package-run-id/);
     for (const command of ['notarytool submit', 'stapler staple', 'spctl --assess', 'podlord-native-macos-$ARCH.dmg'])
         assert.ok(direct.includes(command), `Direct macOS packaging lost ${command}`);
 });

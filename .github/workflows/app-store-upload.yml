@@ -2,11 +2,6 @@ name: Upload prepared native Store package
 
 on:
   workflow_dispatch:
-    inputs:
-      package_run_id:
-        description: Successful Native Mac App Store package workflow run to upload, without rebuilding.
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -16,20 +11,24 @@ jobs:
   retrieve:
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify source workflow
+      - name: Resolve the latest successful stable package
+        id: package-run
         env:
           GH_TOKEN: ${{ github.token }}
-          PACKAGE_RUN: ${{ inputs.package_run_id }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: sh
         run: |
           set -eu
-          case "$PACKAGE_RUN" in ''|*[!0-9]*) printf 'A numeric package workflow run ID is required.\n' >&2; exit 2 ;; esac
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?branch=$DEFAULT_BRANCH&per_page=100" > source-runs.json
+          PACKAGE_RUN=$(jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' source-runs.json | sed -n '1p')
+          case "$PACKAGE_RUN" in ''|*[!0-9]*) printf 'No successful stable release package exists on %s.\n' "$DEFAULT_BRANCH" >&2; exit 2 ;; esac
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PACKAGE_RUN" > source-run.json
-          jq -e '.conclusion == "success" and (.path == ".github/workflows/app-store.yml" or .path == ".github/workflows/release.yml")' source-run.json
+          jq -e '.conclusion == "success" and .path == ".github/workflows/release.yml" and .head_branch == env.DEFAULT_BRANCH' source-run.json
+          printf 'package-run-id=%s\n' "$PACKAGE_RUN" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v7
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.package_run_id }}
+          run-id: ${{ steps.package-run.outputs.package-run-id }}
           name: app-store-package
           path: app-store-package
       - name: Reject non-native or incomplete packages
