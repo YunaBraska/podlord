@@ -98,7 +98,9 @@ ModalDialog {
         Label { Layout.fillWidth: true; visible: workspace.tableLayoutSaving || workspace.tableLayoutError !== ""; text: workspace.tableLayoutSaving ? "Saving column layout..." : workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     }
     footer: DialogButtonBox {
+        implicitHeight: Math.max(defaultsButton.implicitHeight, saveButton.implicitHeight) + topPadding + bottomPadding
         Button {
+            id: defaultsButton
             objectName: surfaceDialog.tableType + "ResetColumns"
             text: "Defaults"
             enabled: !workspace.tableLayoutSaving
@@ -106,7 +108,7 @@ ModalDialog {
             DialogButtonBox.buttonRole: DialogButtonBox.ResetRole
             onClicked: surfaceDialog.resetDraft()
         }
-        IconButton { glyph: "Save"; showText: true; objectName: surfaceDialog.tableType + "SaveColumns"; text: workspace.uiText["action.save"]; enabled: !workspace.tableLayoutSaving; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: surfaceDialog.save(); Keys.onReturnPressed: surfaceDialog.save() }
+        IconButton { id: saveButton; glyph: "Save"; showText: true; objectName: surfaceDialog.tableType + "SaveColumns"; text: workspace.uiText["action.save"]; enabled: !workspace.tableLayoutSaving; DialogButtonBox.buttonRole: DialogButtonBox.ActionRole; onClicked: surfaceDialog.save(); Keys.onReturnPressed: surfaceDialog.save() }
         onRejected: surfaceDialog.close()
     }
 }

@@ -1114,7 +1114,7 @@ if(BUILD_TESTING)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     add_executable(resource-columns-ui-test tests/resource_columns_ui_test.cpp)
     target_link_libraries(resource-columns-ui-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario default custom)
+    foreach(scenario default custom dialog_bounds)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.resource_columns_${scenario}_${style} COMMAND resource-columns-ui-test ${scenario})
             set_tests_properties(native.ui.resource_columns_${scenario}_${style} PROPERTIES TIMEOUT 30

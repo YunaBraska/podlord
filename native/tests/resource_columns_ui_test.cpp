@@ -27,7 +27,8 @@ QString firstHeader(QQuickWindow* window) {
     }
     return first ? first->property("text").toString() : QString{};
 }
-bool run(bool customized) {
+bool run(const QString& scenario) {
+    const bool customized = scenario == "custom";
     QTemporaryDir root;
     if (!root.isValid()) return false;
     const auto profile = root.filePath("profile");
@@ -61,6 +62,39 @@ bool run(bool customized) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window) return false;
     if (!podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return false;
+    if (scenario == "dialog_bounds") {
+        if (!podlord::test::clickVisible(window, "workspaceActionsButton")
+            || !podlord::test::clickVisible(window, "resourceColumnsButton")) return false;
+        auto* dialog = window->findChild<QObject*>("resourceColumnsDialog");
+        if (!dialog || !QTest::qWaitFor([&] { return dialog->property("opened").toBool(); })) return false;
+        auto* background = dialog->property("background").value<QQuickItem*>();
+        if (!background) return false;
+        const QStringList actions{"resourceCancelColumns", "resourceResetColumns", "resourceSaveColumns"};
+        for (const auto size : {QSize(1440, 948), QSize(640, 320), QSize(320, 640)}) {
+            window->resize(size);
+            const auto contained = [&] {
+                const auto frame = background->mapRectToScene(background->boundingRect());
+                if (frame.isEmpty() || !QRectF(QPointF(), QSizeF(size)).contains(frame)) return false;
+                for (const auto& name : actions) {
+                    auto* action = test::visibleItem(window->contentItem(), name);
+                    if (!action || action->width() <= 0 || action->height() <= 0
+                        || !frame.adjusted(-0.5, -0.5, 0.5, 0.5).contains(action->mapRectToScene(action->boundingRect()))) return false;
+                }
+                return true;
+            };
+            if (!QTest::qWaitFor(contained, 3000)) {
+                qWarning() << "Column dialog background at" << size << background->mapRectToScene(background->boundingRect());
+                for (const auto& name : actions) {
+                    auto* action = test::visibleItem(window->contentItem(), name);
+                    if (action) qWarning() << name << action->mapRectToScene(action->boundingRect());
+                }
+                const auto capture = qEnvironmentVariable("PODLORD_COLUMNS_SCREENSHOT");
+                if (!capture.isEmpty()) window->grabWindow().save(capture);
+                return false;
+            }
+        }
+        return podlord::test::clickVisible(window, "resourceCancelColumns");
+    }
     for (const auto width : {320, 599, 600, 1440, 320}) {
         window->resize(width, 800);
         const auto expected = customized ? "Kind" : "Status";
@@ -76,6 +110,6 @@ bool run(bool customized) {
 
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
-    if (argc != 2 || !QStringList{"default", "custom"}.contains(QString::fromUtf8(argv[1]))) return 2;
-    return run(QString::fromUtf8(argv[1]) == "custom") ? 0 : 1;
+    if (argc != 2 || !QStringList{"default", "custom", "dialog_bounds"}.contains(QString::fromUtf8(argv[1]))) return 2;
+    return run(QString::fromUtf8(argv[1])) ? 0 : 1;
 }
