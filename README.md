@@ -41,6 +41,7 @@ function, visual and performance checks.
 - [Operational specification](doc/spec/podlord-operational-spec.md)
 - [Public behavior, Kubernetes scenarios and current evidence](doc/spec/k3d-test-map.md)
 - [Native release gates and reference policy](doc/adr/0035-native-preflight-gates-before-release.md)
+- [Distribution channels and publisher prerequisites](docs/release-channels.md)
 - [Architecture decisions](doc/adr/0015-cpp-rewrite-for-performance-and-device-coverage.md)
 - [Roadmap](doc/ROADMAP.md)
 
@@ -64,15 +65,14 @@ The [manual C# reference workflow](.github/workflows/csharp-reference.yml)
 retains its tests and original coverage checks separately. Reference gaps must
 not be disguised as native evidence.
 
-## Release Candidates
+## Qualification and Release
 
-Merges to `main` run the native qualification and automatically publish a
-GitHub prerelease snapshot containing the checked desktop archives from that
-exact commit. Regular releases remain manual.
-
-The [native candidate workflow](.github/workflows/release.yml) can also be
-started manually to collect checked artifacts without publishing. The [Store preparation workflow](.github/workflows/app-store.yml)
-prepares native macOS packaging without uploading to the Store.
+Every pull request and merge to `main` runs the same native qualification.
+Merges do not create a tag, GitHub Release or published snapshot. The
+[native qualification workflow](.github/workflows/native-qualify.yml) can also
+be started manually to collect checked artifacts. The [Store preparation
+workflow](.github/workflows/app-store.yml) prepares native macOS packaging
+without uploading to the Store.
 
 Existing [published releases](https://github.com/YunaBraska/podlord/releases)
 and installation channels may still contain legacy C# builds. They are not
@@ -80,8 +80,10 @@ proof that the native replacement is released. Native distribution names start
 with `podlord-native-`. Final platform support and remaining blockers belong in
 the linked specification and test map, not an inferred download promise.
 
-Developer-ID signing and notarization are deferred for the private release.
-Other agreed gates remain in effect.
+Stable releases package the qualified artifacts separately. Direct macOS ZIP
+and DMG assets are Developer ID signed and notarized. The native Mac App Store
+package is prepared in the same release. Uploading that package is a separate,
+explicit workflow until the first Store delivery is accepted.
 
 ## Native Screenshots
 

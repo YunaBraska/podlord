@@ -1,79 +1,224 @@
-name: Native release candidate
+name: Release
+# yuna-release: true
 
 on:
   workflow_dispatch:
-  workflow_call:
+    inputs:
+      force:
+        description: Release unchanged production source.
+        required: true
+        default: false
+        type: boolean
+      semver_strategy:
+        description: Semantic version increment.
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
-permissions:
-  actions: read
-  contents: read
+permissions: {}
+
+concurrency:
+  group: podlord-release
+  cancel-in-progress: false
 
 jobs:
-  native-preflight:
-    uses: ./.github/workflows/native.yml
-
-  linux-package-preflight:
-    uses: ./.github/workflows/native-linux-package.yml
-  candidate:
-    needs: [native-preflight, linux-package-preflight]
+  version:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      latest_tag: ${{ steps.latest_tag.outputs.latest_tag }}
+      version: ${{ steps.version_info.outputs.version }}
     steps:
-      # Only package inputs, not the Store bundles, SDKs or full preflight evidence.
-      - uses: actions/download-artifact@v7
+      - uses: actions/checkout@v6
         with:
-          name: native-package-direct-macos-15-${{ github.sha }}
-          path: native-input/native-package-direct-macos-15-${{ github.sha }}
-      - uses: actions/download-artifact@v7
-        with:
-          name: native-package-direct-macos-15-intel-${{ github.sha }}
-          path: native-input/native-package-direct-macos-15-intel-${{ github.sha }}
-      - uses: actions/download-artifact@v7
-        with:
-          name: native-windows-x64-${{ github.sha }}
-          path: native-input/native-windows-x64-${{ github.sha }}
-      - uses: actions/download-artifact@v7
-        with:
-          name: native-linux-trial-x64-${{ github.sha }}
-          path: native-input/native-linux-trial-x64-${{ github.sha }}
-      - uses: actions/download-artifact@v7
-        with:
-          name: native-linux-trial-arm64-${{ github.sha }}
-          path: native-input/native-linux-trial-arm64-${{ github.sha }}
-      - name: Collect verified native desktop candidates
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read latest stable tag
+        id: latest_tag
         shell: sh
-        env:
-          SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -eu
-          mkdir native-candidate
-          cp "native-input/native-package-direct-macos-15-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-arm64.zip
-          cp "native-input/native-package-direct-macos-15-intel-$SOURCE_COMMIT/native-package/podlord-native.zip" native-candidate/podlord-native-macos-x64.zip
-          cp "native-input/native-windows-x64-$SOURCE_COMMIT/podlord-windows-x64.zip" native-candidate/podlord-native-win-x64.zip
-          for arch in x64 arm64; do
-            cp "native-input/native-linux-trial-$arch-$SOURCE_COMMIT/package/podlord-native-linux-$arch.tar.gz" "native-candidate/podlord-native-linux-$arch.tar.gz"
-          done
-          : > native-candidate/size-evidence.txt
-          for archive in native-candidate/*.zip native-candidate/*.tar.gz; do
-            bytes=$(wc -c < "$archive") || {
-              result=$?
-              printf 'Candidate download measurement failed: %s (exit %s)\n' "$archive" "$result" >&2
-              exit "$result"
-            }
-            bytes=$(printf '%s' "$bytes" | tr -d '[:space:]')
-            case "$bytes" in ''|*[!0-9]*) printf 'Invalid candidate download measurement: %s\n' "$archive" >&2; exit 1 ;; esac
-            [ "$bytes" -gt 0 ] || { printf 'Invalid candidate download measurement: %s\n' "$archive" >&2; exit 1; }
-            printf 'Archive: %s; download bytes: %s; advisory target: 50000000\n' "$archive" "$bytes" >> native-candidate/size-evidence.txt
-            if [ "$bytes" -gt 50000000 ]; then
-              printf 'WARNING: package-size advisory: archive=%s metric=download measured_bytes=%s target_bytes=50000000\n' "$archive" "$bytes" | tee -a native-candidate/size-evidence.txt >&2
-            fi
-          done
-          (cd native-candidate && sha256sum ./*.zip ./*.tar.gz > SHA256SUMS)
-          printf '%s\n' "$SOURCE_COMMIT" > native-candidate/SOURCE_COMMIT
-          printf '%s\n' 'Native desktop candidate archives for macOS, Windows and Linux only. Collection does not establish release approval. Mobile packages, visual and performance evidence, licensing and publisher gates remain separate. Store submission is not performed.' > native-candidate/SCOPE.txt
-      - uses: actions/upload-artifact@v7
+          latest_tag=$(git tag --merged HEAD --sort=-creatordate | awk '/^v?[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }')
+          printf 'latest_tag=%s\n' "${latest_tag:-none}"
+          printf 'latest_tag=%s\n' "$latest_tag" >> "$GITHUB_OUTPUT"
+      - name: Resolve semantic version
+        id: semver_info
+        if: steps.latest_tag.outputs.latest_tag != ''
+        uses: YunaBraska/semver-info-action@180ebf79b3c81785c50cf1f198ee236fc5591504 # v3.0.4
+        with:
+          semver-a: ${{ steps.latest_tag.outputs.latest_tag }}
+          semver-b: ${{ steps.latest_tag.outputs.latest_tag }}
+          fallBack-semver-a: 0.0.1
+          fallBack-semver-b: 0.0.1
+      - name: Select release version
+        id: version_info
+        shell: sh
+        run: |
+          set -eu
+          if [ -z "${{ steps.latest_tag.outputs.latest_tag }}" ]; then
+            version=0.0.1
+          else
+            test "${{ steps.semver_info.outputs.is_valid_semver_a }}" = true
+            strategy="${{ inputs.semver_strategy || 'patch' }}"
+            case "$strategy" in
+              patch) version="${{ steps.semver_info.outputs.next_patch }}" ;;
+              minor) version="${{ steps.semver_info.outputs.next_minor }}" ;;
+              major) version="${{ steps.semver_info.outputs.next_major }}" ;;
+              *) printf 'Unsupported semantic version strategy: %s\n' "$strategy" >&2; exit 2 ;;
+            esac
+          fi
+          printf 'version=%s\n' "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+  mode:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.release_info.outputs.release }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select release mode
+        id: release_info
+        shell: sh
+        run: |
+          set -eu
+          release=false
+          force="${{ inputs.force || false }}"
+          if [ "$force" = true ] || [ -z "${{ needs.version.outputs.latest_tag }}" ]; then
+            release=true
+          elif git diff --name-only "${{ needs.version.outputs.latest_tag }}"..HEAD | while IFS= read -r path; do
+            case "$path" in
+              README*|*/README*|docs/*|*/docs/*|*.md|.github/*|.editorconfig|.gitignore|LICENSE*|*/LICENSE*|\
+              test/*|tests/*|spec/*|specs/*|*/test/*|*/tests/*|*/spec/*|*/specs/*|\
+              example/*|examples/*|benchmark/*|benchmarks/*|*/example/*|*/examples/*|*/benchmark/*|*/benchmarks/*)
+                ;;
+              *)
+                exit 1
+                ;;
+            esac
+          done; then
+            :
+          else
+            release=true
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+            release=false
+          fi
+          printf 'release=%s\n' "$release"
+          printf 'release=%s\n' "$release" >> "$GITHUB_OUTPUT"
+
+  qualify:
+    needs: [version, mode]
+    if: needs.mode.outputs.release == 'true'
+    uses: ./.github/workflows/native-qualify.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  direct_macos:
+    needs: [version, qualify]
+    runs-on: macos-15
+    timeout-minutes: 240
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
         with:
           name: podlord-native-candidates-${{ github.sha }}
-          compression-level: 0
           path: native-candidate
+      - name: Import direct distribution credentials
+        id: signing
+        shell: sh
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          set -eu
+          test -n "$CERTIFICATE$CERTIFICATE_PASSWORD$NOTARY_KEY$NOTARY_KEY_ID$NOTARY_ISSUER"
+          test -n "$CERTIFICATE" && test -n "$CERTIFICATE_PASSWORD"
+          test -n "$NOTARY_KEY" && test -n "$NOTARY_KEY_ID" && test -n "$NOTARY_ISSUER"
+          umask 077
+          keychain="${RUNNER_TEMP}/podlord-direct-${GITHUB_RUN_ID}.keychain-db"
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 14400 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security default-keychain -s "$keychain"
+          security list-keychains -d user -s "$keychain"
+          printf '%s' "$CERTIFICATE" | base64 -D > "${RUNNER_TEMP}/podlord-direct.p12"
+          security import "${RUNNER_TEMP}/podlord-direct.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application:/ { print $2; exit }')
+          test -n "$identity"
+          printf '%s' "$NOTARY_KEY" > "${RUNNER_TEMP}/podlord-direct.p8"
+          xcrun notarytool store-credentials podlord-direct --keychain "$keychain" \
+            --key "${RUNNER_TEMP}/podlord-direct.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+          printf 'identity=%s\n' "$identity" >> "$GITHUB_OUTPUT"
+      - name: Sign and notarize direct macOS packages
+        shell: sh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: |
+          set -eu
+          test "$(cat native-candidate/SOURCE_COMMIT)" = "$GITHUB_SHA"
+          mkdir release-assets
+          for asset in podlord-native-win-x64.zip podlord-native-linux-x64.tar.gz podlord-native-linux-arm64.tar.gz; do
+            test -s "native-candidate/$asset"
+            cp "native-candidate/$asset" "release-assets/$asset"
+          done
+          sh scripts/package-direct-macos.sh "$VERSION" "$IDENTITY" podlord-direct \
+            native-candidate/podlord-native-macos-arm64.zip arm64 release-assets
+          sh scripts/package-direct-macos.sh "$VERSION" "$IDENTITY" podlord-direct \
+            native-candidate/podlord-native-macos-x64.zip x64 release-assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-podlord-${{ github.sha }}
+          path: release-assets
+          compression-level: 0
           if-no-files-found: error
           retention-days: 14
+      - name: Remove direct distribution credentials
+        if: always()
+        shell: sh
+        run: |
+          rm -f "${RUNNER_TEMP}/podlord-direct.p12" "${RUNNER_TEMP}/podlord-direct.p8"
+          security delete-keychain "${RUNNER_TEMP}/podlord-direct-${GITHUB_RUN_ID}.keychain-db" 2>/dev/null || true
+
+  app_store_package:
+    needs: [version, qualify]
+    uses: ./.github/workflows/app-store.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      qualified: true
+    secrets: inherit
+
+  release:
+    needs: [version, mode, direct_macos, app_store_package]
+    if: needs.mode.outputs.release == 'true' && needs.direct_macos.result == 'success' && needs.app_store_package.result == 'success'
+    permissions:
+      actions: read
+      contents: write
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_create_github_release.yml@0c16fe69a5b69ad9da903c444f855b19d4d555fc
+    with:
+      run_id: ${{ github.run_id }}
+      commit_sha: ${{ github.sha }}
+      version: ${{ needs.version.outputs.version }}

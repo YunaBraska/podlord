@@ -2,10 +2,25 @@ name: Native preflight
 
 on:
   workflow_call:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
   workflow_dispatch:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
 
 permissions:
   contents: read
+
+env:
+  PODLORD_VERSION: ${{ inputs.version || '0.1.0' }}
 
 jobs:
   linux:
@@ -30,6 +45,7 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/source,readonly" \
             --mount "type=bind,src=$RUNNER_TEMP/native-linux,dst=/output" \
+            -e PODLORD_VERSION \
             "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             sh -c 'dpkg-query -W > /output/packages.txt; sh scripts/test-native.sh > /output/tests.log 2>&1; status=$?; tail -45 /output/tests.log; exit "$status"'
       - name: Retain Linux evidence

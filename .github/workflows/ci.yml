@@ -1,15 +1,20 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - dev
-      - 'feat/**'
-    paths-ignore:
-      - doc/ROADMAP.md
-      - doc/spec/k3d-test-map.md
   workflow_dispatch:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
   workflow_call:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
 
 permissions:
   actions: read
@@ -21,7 +26,9 @@ concurrency:
 
 jobs:
   native-preflight:
-    uses: ./.github/workflows/release.yml
+    uses: ./.github/workflows/native-qualify.yml
+    with:
+      version: ${{ inputs.version || '0.1.0' }}
   build:
     if: ${{ always() }}
     needs: native-preflight
