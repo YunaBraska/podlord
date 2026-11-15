@@ -113,6 +113,8 @@ void run(const QString& scenario) {
         else if (scenario == "contract_duplicate") ids.append(ids.first());
         else if (scenario == "contract_unconfirmed") { ids.clear(); expected = StoreError::Conflict; }
         else throw std::runtime_error("Unknown contract scenario.");
+        QLockFile lock(profile + "/kubeconfigs/sources.lock");
+        if (scenario == "contract_missing") require(lock.tryLock(0), "Cannot establish an unrelated source lock.");
         const auto result = sources.removeContext(context, ids);
         require(std::holds_alternative<Failure>(result) && std::get<Failure>(result).code == expected, "Invalid public confirmation was accepted or failed ambiguously.");
         require(contents(profile + "/tabs.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes && contents(original) == yaml, "Invalid confirmation changed persistence.");
@@ -171,7 +173,8 @@ void run(const QString& scenario) {
         return;
     }
     QLockFile lock(profile + (scenario == "source_locked" ? "/kubeconfigs/sources.lock" : "/tabs.lock"));
-    if (scenario == "locked" || scenario == "source_locked") require(lock.tryLock(0), "Cannot hold the real writer lock.");
+    if (scenario == "locked" || scenario == "source_locked")
+        require(QTest::qWaitFor([&] { return lock.tryLock(0); }, 5000), "Cannot hold the real writer lock.");
     if (scenario == "conflict") { removed.append(create(alpha, "Added after confirmation")); sessionBytes = contents(profile + "/tabs.json"); }
     if (scenario == "corrupt") { require(write(profile + "/tabs.json", "{invalid"), "Cannot exercise corrupt local input."); sessionBytes = contents(profile + "/tabs.json"); }
     if (ui) {
