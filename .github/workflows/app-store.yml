@@ -2,6 +2,23 @@ name: Native Mac App Store package
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: true
+        type: string
+      qualified:
+        description: Reuse native package evidence from the calling release.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -9,10 +26,14 @@ permissions:
 
 jobs:
   native-preflight:
+    if: inputs.qualified != true
     uses: ./.github/workflows/native.yml
+    with:
+      version: ${{ inputs.version || '0.1.0' }}
 
   package:
     needs: native-preflight
+    if: always() && (inputs.qualified == true || needs.native-preflight.result == 'success')
     runs-on: macos-15
     timeout-minutes: 30
     defaults:
@@ -65,7 +86,8 @@ jobs:
           application=$(security find-identity -v "$keychain" | awk '/"Mac App Distribution:|"Apple Distribution:|"3rd Party Mac Developer Application:/ {print $2; exit}')
           installer=$(security find-identity -v "$keychain" | awk '/"Mac Installer Distribution:|"3rd Party Mac Developer Installer:/ {print $2; exit}')
           [ -n "$application" ] && [ -n "$installer" ]
-          version=$(sed -n 's/^project(PodlordNative VERSION \([^ ]*\) .*/\1/p' native/CMakeLists.txt)
+          version="${{ inputs.version || '0.1.0' }}"
+          printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           APP_STORE_BUNDLE_ID=berlin.yuna.podlord APP_STORE_TEAM_ID="$team" \
             MACOS_APP_STORE_APPLICATION_IDENTITY="$application" MACOS_APP_STORE_PROFILE_PATH="$profile" \
             PODLORD_STORE_ARM64_ARCHIVE="$GITHUB_WORKSPACE/store-arm64/native-store-package/podlord-native.zip" \

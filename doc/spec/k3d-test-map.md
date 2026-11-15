@@ -3089,11 +3089,13 @@ until actually run; they do not publish native release assets.
 | Production macOS renderer | `application_startup_test PACKAGE_EXECUTABLE SCENARIO` with `PODLORD_TEST_QPA_PLATFORM=cocoa` | Seven packaged Cocoa cases pass: normal/ambient-config/ambient-exec startup, profile-file/symlink rejection, explicit override and empty-profile rejection. Seven offscreen component startup cases also pass. The deliberately omitted offscreen package plugin is not a product dependency requirement. |
 | Native package bytes, static paths and signature | `scripts/check-native-macos-package.sh` | arm64/macOS 27.0: ZIP 36,524,314 bytes; installed regular files 98,726,138 bytes; dependency checker and local ad-hoc signature pass. No clean-device/notarization/license pass follows. |
 | Current C# public suite | `scripts/test.sh --no-restore` | 458 passed, zero failed/skipped: Core 91, Layout 69, App 214, Kubernetes 84. Coverage 6657/7011 lines (94.95%) fails 95%; 2715/3236 branches (83.90%) passes only its currently configured 80% gate. |
-| Native hosted CI and release dependency | `actionlint .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/native.yml`; reusable native preflight | Checks both Mac architectures using maintained local test/package entrypoints; release test depends on native preflight. Syntax validation is not hosted runner/device execution. Windows/Linux/mobile and actual native release assets remain open. |
+| Native hosted CI and qualification dependency | `actionlint .github/workflows/ci.yml .github/workflows/native-qualify.yml .github/workflows/native.yml`; reusable native preflight | Checks both Mac architectures using maintained local test/package entrypoints. Syntax validation is not hosted runner/device execution. Windows/Linux/mobile and actual native release assets remain open. |
 
-Workflow validation and POSIX shell syntax pass. No Developer ID distribution
-identity was found; only a local development identity is available. No public
-release/tag/push or signing-credential changes were performed. Owned legacy test
+Workflow validation and POSIX shell syntax pass. This historical qualification
+predates the stored Developer ID CI signing credentials. The release workflow
+now checks the Developer ID identity and notarization credentials on its hosted
+macOS runner before it can publish a stable release. No public release/tag/push
+or signing-credential changes were performed for this audit. Owned legacy test
 containers are absent after runner cleanup. The preserved reference was untouched.
 
 Coverage gaps are not waived. Prioritize public failure/merge/lifecycle scenarios

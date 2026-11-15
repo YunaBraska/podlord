@@ -2,10 +2,25 @@ name: Native Linux distribution trial
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
   workflow_call:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: false
+        default: 0.1.0
+        type: string
 
 permissions:
   contents: read
+
+env:
+  PODLORD_VERSION: ${{ inputs.version || '0.1.0' }}
 
 concurrency:
   group: native-linux-trial-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'latest' }}
@@ -122,6 +137,7 @@ jobs:
           docker run --rm --cidfile "$out/tests.cid" --user "$(id -u):$(id -g)" \
             -v "$GITHUB_WORKSPACE:/source:ro" -v "$out:/output" \
             -e HOME=/tmp/podlord-home -e PODLORD_NATIVE_BUILD_DIR=/output/tests \
+            -e PODLORD_VERSION \
             -e PODLORD_BUILD_JOBS=4 -e PODLORD_TEST_JOBS=6 \
             -e QT_QPA_PLATFORM=offscreen -e QT_QUICK_BACKEND=software \
             "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
@@ -133,6 +149,7 @@ jobs:
           out="$RUNNER_TEMP/linux-distribution"
           docker run --rm --cidfile "$out/package.cid" --user "$(id -u):$(id -g)" \
             -v "$GITHUB_WORKSPACE:/source:ro" -v "$out:/output" \
+            -e PODLORD_VERSION \
             "podlord-linux-sdk:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
             sh scripts/check-native-linux-package.sh /output/package > "$out/package.log" 2>&1
       - name: Exercise current Ubuntu and Debian without installed Qt

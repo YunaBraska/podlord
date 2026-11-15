@@ -1,4 +1,4 @@
-name: Release snapshot
+name: Snapshot
 
 on:
   push:
@@ -11,93 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: podlord-merge-${{ github.sha }}
-  cancel-in-progress: false
+  group: podlord-merge-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  version:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      commit_sha: ${{ steps.source.outputs.commit_sha }}
-      version: ${{ steps.snapshot.outputs.version }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Identify the exact source and previous tag
-        id: source
-        shell: sh
-        run: |
-          set -eu
-          commit=$(git rev-parse HEAD)
-          [ "$commit" = "$GITHUB_SHA" ]
-          printf 'commit_sha=%s\n' "$commit" >> "$GITHUB_OUTPUT"
-          tag=$(git tag --merged HEAD --sort=-creatordate | sed -n '1p')
-          printf 'latest_tag=%s\n' "${tag:-0.0.1}" >> "$GITHUB_OUTPUT"
-      - uses: YunaBraska/semver-info-action@180ebf79b3c81785c50cf1f198ee236fc5591504
-        id: semver
-        with:
-          semver-a: ${{ steps.source.outputs.latest_tag }}
-          semver-b: 0.0.1
-          fallBack-semver-a: 0.0.1
-          fallBack-semver-b: 0.0.1
-      - name: Use the shared snapshot naming convention
-        id: snapshot
-        shell: sh
-        env:
-          SNAPSHOT_VERSION: ${{ steps.semver.outputs.next_snapshot }}.${{ github.run_id }}
-        run: |
-          set -eu
-          case "$SNAPSHOT_VERSION" in
-            *-*.$GITHUB_RUN_ID) ;;
-            *) printf 'Snapshot version must be a prerelease.\n' >&2; exit 1 ;;
-          esac
-          printf 'version=%s\n' "$SNAPSHOT_VERSION" >> "$GITHUB_OUTPUT"
   build:
-    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
-  assets:
-    needs: [version, build]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/download-artifact@v7
-        with:
-          name: podlord-native-candidates-${{ needs.version.outputs.commit_sha }}
-          path: native-candidate
-      - name: Stage verified snapshot assets
-        shell: sh
-        env:
-          SOURCE_COMMIT: ${{ needs.version.outputs.commit_sha }}
-          SNAPSHOT_VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -eu
-          [ "$(cat native-candidate/SOURCE_COMMIT)" = "$SOURCE_COMMIT" ]
-          for name in macos-arm64.zip macos-x64.zip win-x64.zip linux-x64.tar.gz linux-arm64.tar.gz; do
-            [ -s "native-candidate/podlord-native-$name" ]
-          done
-          (cd native-candidate && sha256sum --strict -c SHA256SUMS)
-          cp -R native-candidate release-assets
-          printf '%s\n' "$SNAPSHOT_VERSION" > release-assets/SNAPSHOT_VERSION
-      - uses: actions/upload-artifact@v7
-        with:
-          name: release-assets-native-${{ needs.version.outputs.commit_sha }}
-          compression-level: 0
-          path: release-assets
-          if-no-files-found: error
-          retention-days: 14
-  publish:
-    needs: [version, assets]
-    permissions:
-      actions: read
-      contents: write
-    # This shared publisher is artifact-only. Its historical filename does not add a .NET build.
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_create_github_release.yml@0c16fe69a5b69ad9da903c444f855b19d4d555fc
-    with:
-      run_id: ${{ github.run_id }}
-      commit_sha: ${{ needs.version.outputs.commit_sha }}
-      version: ${{ needs.version.outputs.version }}

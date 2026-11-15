@@ -19,7 +19,7 @@ description: How PodLord handles cluster data on your device.
 
 <section class="section">
   <h2>Network connections</h2>
-  <p>PodLord does not upload cluster data to YunaBraska. The C# direct-download macOS edition checks a signed GitHub update feed. The native direct-download edition checks GitHub release metadata weekly and opens a compatible download only on request. It does not automatically install an update. GitHub receives normal connection metadata, such as your IP address. App Store builds do not contact GitHub for updates.</p>
+  <p>PodLord does not upload cluster data to YunaBraska. The direct-download edition checks GitHub release metadata weekly and opens a compatible download only on request. It does not automatically install an update. GitHub receives normal connection metadata, such as your IP address. App Store builds do not contact GitHub for updates.</p>
   <p>The native Mac App Store build imports individual selected files or pasted kubeconfigs into app-owned copies. It does not scan folders, reload original files or run external credential commands. Native sign-in and explicitly imported keys remain available. Certificate and token file references must be replaced with embedded data or an explicit supported key import.</p>
 </section>
 

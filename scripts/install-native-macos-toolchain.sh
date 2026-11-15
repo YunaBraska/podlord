@@ -23,6 +23,7 @@ if [ "$MODE" = check ]; then
     test "$("$TARGET/qt-sdk/bin/qmake" -query QT_VERSION)" = "$QT_VERSION"
     test -f "$TARGET/qt-sdk/plugins/platforms/libqcocoa.dylib"
     test -f "$TARGET/qt-sdk/plugins/tls/libqopensslbackend.dylib"
+    test -f "$TARGET/qt-sdk/lib/cmake/Qt6/Qt6Config.cmake"
     for module in Multimedia WebSockets ShaderTools; do
         test -f "$TARGET/qt-sdk/lib/cmake/Qt6$module/Qt6${module}Config.cmake"
     done

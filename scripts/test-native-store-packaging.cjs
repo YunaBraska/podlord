@@ -122,7 +122,7 @@ for (const [scenario, bytes, valid, commandStatus = 0] of [
     test(`release collector keeps size advisory artifacts: ${scenario}`, async t => {
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-release-size-'));
         t.after(() => fs.rm(directory, {recursive: true, force: true}));
-        const workflow = await fs.readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
+        const workflow = await fs.readFile(path.join(root, '.github/workflows/native-qualify.yml'), 'utf8');
         const step = workflow.split('      - name: Collect verified native desktop candidates\n')[1].split('\n      - uses:')[0];
         const script = step.split('        run: |\n')[1].split('\n').map(line => line.replace(/^ {10}/, '')).join('\n');
         for (const relative of [
@@ -350,24 +350,20 @@ function ciJob(workflow, name) {
     return workflow.split(heading)[1].split(/\n  [a-z][a-z0-9-]*:\n/)[0];
 }
 
-test('CI excludes only exact evidence-only pushes and keeps native pull-request checks', async () => {
+test('pull requests and snapshots reuse the same native qualification', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
     const request = await fs.readFile(path.join(root, '.github/workflows/build-pr.yml'), 'utf8');
-    const push = workflow.split('  push:\n')[1].split('  workflow_dispatch:')[0];
-    const ignore = push.match(/    paths-ignore:\n((?:      - [^\n]+\n?)+)/);
-    assert.ok(ignore, 'Evidence-only pushes must not restart the complete build matrix');
-    const paths = ignore[1].trim().split('\n').map(line => line.trim().slice(2).replace(/^['"]|['"]$/g, ''));
-    assert.deepEqual(paths, ['doc/ROADMAP.md', 'doc/spec/k3d-test-map.md']);
-    assert.doesNotMatch(push, /^    paths:/m);
-    assert.match(push, /      - dev\n      - 'feat\/\*\*'/);
+    const snapshot = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
     const pullRequest = request.split('  pull_request:\n')[1].split('\n  workflow_dispatch:')[0];
     assert.doesNotMatch(pullRequest, /paths|branches|if:/);
-    for (const event of ['opened', 'synchronize', 'reopened', 'ready_for_review'])
+    for (const event of ['opened', 'synchronize', 'reopened'])
         assert.ok(pullRequest.includes('      - ' + event));
-    assert.doesNotMatch(workflow, /  pull_request:/);
-    assert.match(workflow, /  workflow_dispatch:\n  workflow_call:/);
+    assert.doesNotMatch(workflow, /  pull_request:|  push:/);
+    assert.match(workflow, /  workflow_dispatch:/);
+    assert.match(workflow, /  workflow_call:/);
     assert.match(ciJob(request, 'build'), /uses: \.\/\.github\/workflows\/ci\.yml/);
-    assert.match(ciJob(workflow, 'native-preflight'), /uses: \.\/\.github\/workflows\/release\.yml/);
+    assert.match(ciJob(snapshot, 'build'), /uses: \.\/\.github\/workflows\/ci\.yml/);
+    assert.match(ciJob(workflow, 'native-preflight'), /uses: \.\/\.github\/workflows\/native-qualify\.yml/);
     assert.match(ciJob(workflow, 'build'), /if: \$\{\{ always\(\) \}\}/);
     assert.match(ciJob(workflow, 'build'), /needs: native-preflight/);
 });
@@ -384,52 +380,34 @@ for (const result of ['success', 'failure', 'cancelled', 'skipped']) {
     });
 }
 
-test('snapshots use native qualification and the pinned artifact-only publisher on main', async () => {
+test('snapshots never create a GitHub release or release assets', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
-    const linux = await fs.readFile(path.join(root, '.github/workflows/native-linux-package.yml'), 'utf8');
     assert.match(workflow, /push:\n    branches:\n      - main/);
-    for (const job of ['version', 'build']) assert.match(ciJob(workflow, job), /if: github.ref == 'refs\/heads\/main'/);
     assert.match(ciJob(workflow, 'build'), /uses: \.\/\.github\/workflows\/ci\.yml/);
-    assert.match(ciJob(workflow, 'assets'), /needs: \[version, build\]/);
-    assert.match(ciJob(workflow, 'publish'), /needs: \[version, assets\]/);
-    assert.match(ciJob(workflow, 'publish'), /wc_dotnet_create_github_release\.yml@[a-f0-9]{40}/);
-    assert.doesNotMatch(workflow, /wc_dotnet_(?:build|snapshot|release)\.yml|secrets: inherit/);
-    assert.match(workflow, /steps\.semver\.outputs\.next_snapshot/);
-    assert.doesNotMatch(linux, /  push:/);
-    assert.match(linux, /  workflow_dispatch:\n  workflow_call:/);
+    assert.doesNotMatch(workflow, /contents: write|wc_dotnet_create_github_release|release-assets|SNAPSHOT|semver-info-action/);
 });
 
-for (const scenario of ['valid', 'wrong source', 'missing archive', 'changed archive']) {
-    test('native snapshot asset boundary: ' + scenario, async t => {
-        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-snapshot-assets-'));
-        t.after(() => fs.rm(directory, {recursive: true, force: true}));
-        const workflow = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
-        const step = workflow.split('      - name: Stage verified snapshot assets\n')[1].split('      - uses:')[0];
-        const script = step.split('        run: |\n')[1].trimEnd().split('\n').map(line => line.replace(/^ {10}/, '')).join('\n');
-        const candidate = path.join(directory, 'native-candidate');
-        await fs.mkdir(candidate);
-        const names = ['macos-arm64.zip', 'macos-x64.zip', 'win-x64.zip', 'linux-x64.tar.gz', 'linux-arm64.tar.gz']
-            .map(name => 'podlord-native-' + name);
-        const crypto = require('node:crypto');
-        const contents = Buffer.from('exact checked candidate bytes');
-        for (const name of names) await fs.writeFile(path.join(candidate, name), contents);
-        await fs.writeFile(path.join(candidate, 'SOURCE_COMMIT'), scenario === 'wrong source' ? 'other' : 'checked');
-        await fs.writeFile(path.join(candidate, 'SHA256SUMS'), names.map(name => crypto.createHash('sha256').update(contents).digest('hex') + '  ./' + name).join('\n') + '\n');
-        if (scenario === 'missing archive') await fs.rm(path.join(candidate, names[0]));
-        if (scenario === 'changed archive') await fs.writeFile(path.join(candidate, names[0]), 'unverified replacement');
-        const bin = path.join(directory, 'bin'); await fs.mkdir(bin);
-        // macOS shasum has no --strict option. The system tool still verifies each real SHA256.
-        if (mac) await fs.writeFile(path.join(bin, 'sha256sum'), '#!/bin/sh\n[ "$1" != --strict ] || shift\nexec /usr/bin/shasum -a 256 "$@"\n', {mode: 0o700});
-        const actual = spawnSync('/bin/sh', ['-eu', '-c', script], {cwd: directory, encoding: 'utf8', timeout: 10000,
-            env: {...process.env, PATH: bin + path.delimiter + process.env.PATH, SOURCE_COMMIT: 'checked', SNAPSHOT_VERSION: '1.2.3-SNAPSHOT.42'}});
-        assert.ifError(actual.error);
-        assert.equal(actual.status === 0, scenario === 'valid', actual.stdout + actual.stderr);
-        if (scenario === 'valid') {
-            for (const name of names) assert.deepEqual(await fs.readFile(path.join(directory, 'release-assets', name)), contents);
-            assert.equal(await fs.readFile(path.join(directory, 'release-assets/SNAPSHOT_VERSION'), 'utf8'), '1.2.3-SNAPSHOT.42\n');
-        } else await assert.rejects(fs.stat(path.join(directory, 'release-assets')), {code: 'ENOENT'});
-    });
-}
+test('stable releases qualify once, sign direct macOS assets and prepare the Store package', async () => {
+    const release = await fs.readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
+    const upload = await fs.readFile(path.join(root, '.github/workflows/app-store-upload.yml'), 'utf8');
+    const direct = await fs.readFile(path.join(root, 'scripts/package-direct-macos.sh'), 'utf8');
+    assert.match(release, /# yuna-release: true/);
+    assert.match(release, /github\.event\.repository\.default_branch/);
+    assert.doesNotMatch(release, /GITHUB_DEFAULT_BRANCH/);
+    assert.match(ciJob(release, 'qualify'), /uses: \.\/\.github\/workflows\/native-qualify\.yml/);
+    assert.match(ciJob(release, 'direct_macos'), /SOURCE_COMMIT/);
+    assert.match(ciJob(release, 'direct_macos'), /Sign and notarize direct macOS packages/);
+    assert.match(ciJob(release, 'app_store_package'), /uses: \.\/\.github\/workflows\/app-store\.yml/);
+    assert.match(ciJob(release, 'release'), /wc_dotnet_create_github_release\.yml@[a-f0-9]{40}/);
+    assert.doesNotMatch(release, /app-store-upload\.yml/);
+    assert.match(upload, /workflow_dispatch:/);
+    assert.doesNotMatch(upload, /package_run_id/);
+    assert.match(upload, /actions\/workflows\/release\.yml\/runs\?branch=\$DEFAULT_BRANCH/);
+    assert.match(upload, /\.head_branch == env\.DEFAULT_BRANCH/);
+    assert.match(upload, /steps\.package-run\.outputs\.package-run-id/);
+    for (const command of ['notarytool submit', 'stapler staple', 'spctl --assess', 'podlord-native-macos-$ARCH.dmg'])
+        assert.ok(direct.includes(command), `Direct macOS packaging lost ${command}`);
+});
 
 test('macOS failure diagnostics retain only new owned crash reports', async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'podlord-macos-crash-evidence-'));
@@ -468,8 +446,9 @@ test('macOS package matrix is independent of the complete native test job', asyn
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
     const native = ciJob(workflow, 'macos');
     const packages = ciJob(workflow, 'macos-package');
+    assert.match(native, /runner: \[macos-15\]/);
+    assert.match(packages, /runner: \[macos-15, macos-15-intel\]/);
     for (const job of [native, packages]) {
-        assert.match(job, /runner: \[macos-15, macos-15-intel\]/);
         assert.match(job, /timeout-minutes: 90/);
         assert.match(job, /fail-fast: false/);
     }
@@ -488,11 +467,17 @@ test('macOS package matrix is independent of the complete native test job', asyn
 test('macOS package jobs share pinned setup and retain every package scenario', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
     const action = await fs.readFile(path.join(root, '.github/actions/native-macos-toolchain/action.yml'), 'utf8');
+    const prefix = 'CMAKE_PREFIX_PATH: ${{ steps.toolchain.outputs.cmake-prefix-path }}';
+    const openssl = 'OPENSSL_ROOT_DIR: ${{ steps.toolchain.outputs.openssl-root-dir }}';
     for (const job of [ciJob(workflow, 'macos'), ciJob(workflow, 'macos-package')]) {
-        assert.equal(job.split('uses: ./.github/actions/native-macos-toolchain').length - 1, 1);
+        assert.equal(job.split('id: toolchain\n        uses: ./.github/actions/native-macos-toolchain').length - 1, 1);
         assert.doesNotMatch(job, /brew install|uses: actions\/cache|\/bin\/sh scripts\/install-native-macos-toolchain\.sh/);
     }
     assert.match(action, /using: composite/);
+    for (const output of ['cmake-prefix-path:', 'openssl-root-dir:', 'Expose validated toolchain locations',
+        'test -f "$prefix\/qt-sdk\/lib\/cmake\/Qt6\/Qt6Config.cmake"']) assert.ok(action.includes(output), `Missing toolchain output: ${output}`);
+    assert.ok(action.indexOf('Validate pinned macOS toolchain') < action.indexOf('Expose validated toolchain locations'),
+        'Toolchain outputs must be emitted only after cache restore or installation is validated.');
     for (const command of ['brew install cmake ninja python',
         'node --test scripts/test-native-macos-toolchain.cjs scripts/test-native-store-packaging.cjs',
         'xcodebuild -version', 'xcrun --sdk macosx --show-sdk-path', 'xcrun --sdk macosx --show-sdk-version',
@@ -510,6 +495,10 @@ test('macOS package jobs share pinned setup and retain every package scenario', 
         assert.deepEqual(cached, publicCache, 'Cache must contain only the existing public SDK inputs');
     }
     const packages = ciJob(workflow, 'macos-package');
+    const native = ciJob(workflow, 'macos');
+    assert.ok(native.includes(prefix) && native.includes(openssl), 'Native macOS tests must use the validated toolchain locations.');
+    assert.equal(packages.split(prefix).length - 1, 4, 'Every CMake package step must use the validated Qt prefix.');
+    assert.equal(packages.split(openssl).length - 1, 4, 'Every CMake package step must use the validated OpenSSL prefix.');
     const drivers = packages.split('      - name: Build direct package test drivers\n')[1]?.split('\n      - name:')[0];
     assert.ok(drivers, 'The direct package job must build its own real test drivers');
     for (const argument of ['-DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"', '-DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"',
@@ -547,26 +536,26 @@ test('macOS package jobs share pinned setup and retain every package scenario', 
 
 test('native package consumers await the complete workflow and select their own channel', async () => {
     const store = await fs.readFile(path.join(root, '.github/workflows/app-store.yml'), 'utf8');
-    const release = await fs.readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
-    for (const workflow of [store, release]) {
+    const qualification = await fs.readFile(path.join(root, '.github/workflows/native-qualify.yml'), 'utf8');
+    for (const workflow of [store, qualification]) {
         assert.ok(ciJob(workflow, 'native-preflight').includes('uses: ./.github/workflows/native.yml'));
         assert.doesNotMatch(workflow, /native-preflight-macos-15/);
     }
     assert.match(store, /needs: native-preflight/);
-    const releaseNeeds = ciJob(release, 'candidate').match(/^    needs: \[([^\]\r\n]+)\]$/m);
-    assert.ok(releaseNeeds, 'The release collector must declare its complete prerequisite list');
-    const dependencies = new Set(releaseNeeds[1].split(',').map(value => value.trim()));
+    const qualificationNeeds = ciJob(qualification, 'candidate').match(/^    needs: \[([^\]\r\n]+)\]$/m);
+    assert.ok(qualificationNeeds, 'The native collector must declare its complete prerequisite list');
+    const dependencies = new Set(qualificationNeeds[1].split(',').map(value => value.trim()));
     for (const required of ['native-preflight', 'linux-package-preflight']) {
         assert.ok(dependencies.has(required), `The release collector must await ${required}`);
     }
-    assert.ok(ciJob(release, 'linux-package-preflight').includes('uses: ./.github/workflows/native-linux-package.yml'));
+    assert.ok(ciJob(qualification, 'linux-package-preflight').includes('uses: ./.github/workflows/native-linux-package.yml'));
     for (const runner of ['macos-15', 'macos-15-intel']) {
         assert.ok(store.includes(`name: native-package-store-${runner}-` + '${{ github.sha }}'));
-        assert.ok(release.includes(`native-input/native-package-direct-${runner}-$SOURCE_COMMIT/native-package/podlord-native.zip`));
+        assert.ok(qualification.includes(`native-input/native-package-direct-${runner}-$SOURCE_COMMIT/native-package/podlord-native.zip`));
     }
     assert.ok(store.includes('store-arm64/native-store-package/podlord-native.zip'));
     assert.ok(store.includes('store-x64/native-store-package/podlord-native.zip'));
-    const downloaded = [...ciJob(release, 'candidate').matchAll(/^\s+name: (native-[^\r\n]+)$/gm)]
+    const downloaded = [...ciJob(qualification, 'candidate').matchAll(/^\s+name: (native-[^\r\n]+)$/gm)]
         .map(match => match[1]);
     assert.deepEqual(downloaded, [
         'native-package-direct-macos-15-${{ github.sha }}',
@@ -575,7 +564,27 @@ test('native package consumers await the complete workflow and select their own 
         'native-linux-trial-x64-${{ github.sha }}',
         'native-linux-trial-arm64-${{ github.sha }}',
     ], 'Collect only the exact direct-download packages for this commit');
-    assert.doesNotMatch(ciJob(release, 'candidate'), /\bpattern:/);
+    assert.doesNotMatch(ciJob(qualification, 'candidate'), /\bpattern:/);
+});
+
+test('Store entitlement grants only client networking and selected-file access', async () => {
+    const entitlements = await fs.readFile(path.join(root, 'native/macos/AppStore.entitlements'), 'utf8');
+    for (const key of [
+        'com.apple.security.app-sandbox',
+        'com.apple.security.files.user-selected.read-only',
+        'com.apple.security.network.client',
+    ]) assert.match(entitlements, new RegExp(`<key>${key}</key>\\s*<true/>`));
+    assert.doesNotMatch(entitlements, /com\.apple\.security\.network\.server/);
+    assert.doesNotMatch(entitlements, /com\.apple\.security\.files\.user-selected\.read-write/);
+});
+
+test('Android release packaging derives one valid code from the shared release version', async () => {
+    const cmake = await fs.readFile(path.join(root, 'native/CMakeLists.txt'), 'utf8');
+    const readme = await fs.readFile(path.join(root, 'native/README.md'), 'utf8');
+    assert.match(cmake, /PROJECT_VERSION_MINOR GREATER 999 OR PROJECT_VERSION_PATCH GREATER 999/);
+    assert.match(cmake, /math\(EXPR podlord_android_version_code "\$\{PROJECT_VERSION_MAJOR\} \* 1000000 \+ \$\{PROJECT_VERSION_MINOR\} \* 1000 \+ \$\{PROJECT_VERSION_PATCH\}"\)/);
+    assert.match(cmake, /QT_ANDROID_VERSION_CODE "\$\{podlord_android_version_code\}"/);
+    assert.match(readme, /cmake --build "\$ANDROID_BUILD_DIR" --target aab --parallel 4/);
 });
 
 test('Store signing seals nested code before the app executable', {skip: !mac}, async t => {

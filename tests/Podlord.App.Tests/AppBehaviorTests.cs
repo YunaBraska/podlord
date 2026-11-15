@@ -750,10 +750,10 @@ public sealed class AppBehaviorTests
     }
 
     [Fact]
-    public void Native_release_candidate_requires_verified_archives_without_publication()
+    public void Native_qualification_requires_verified_archives_without_publication()
     {
         var root = LocateProjectRoot();
-        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "native-qualify.yml"));
 
         Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
         Assert.Contains("uses: ./.github/workflows/native.yml", workflow, StringComparison.Ordinal);
@@ -785,23 +785,21 @@ public sealed class AppBehaviorTests
 
         Assert.Contains("push:\n    branches:\n      - main", mergeWorkflow, StringComparison.Ordinal);
         Assert.Contains("uses: ./.github/workflows/ci.yml", mergeWorkflow, StringComparison.Ordinal);
-        Assert.Matches(@"wc_dotnet_create_github_release\.yml@[a-f0-9]{40}", mergeWorkflow);
-        Assert.Contains("contents: write", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("workflow_dispatch:", mergeWorkflow, StringComparison.Ordinal);
+        Assert.Contains("contents: read", mergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("wc_dotnet_create_github_release", mergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("contents: write", mergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("version:", mergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("assets:", mergeWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("publish:", mergeWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("dev", mergeWorkflow, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Main_sync_workflow_updates_dev_after_main_push()
+    public void Main_snapshot_does_not_retain_an_abandoned_dev_sync_workflow()
     {
         var root = LocateProjectRoot();
-        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "sync-dev.yml"));
-
-        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
-        Assert.Contains("branches:\n      - main", workflow, StringComparison.Ordinal);
-        Assert.Contains("git checkout dev", workflow, StringComparison.Ordinal);
-        Assert.Contains("git merge --no-edit origin/main", workflow, StringComparison.Ordinal);
-        Assert.Contains("git push origin dev", workflow, StringComparison.Ordinal);
-        Assert.Contains("permissions:\n  contents: write", workflow, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(root, ".github", "workflows", "sync-dev.yml")));
     }
 
     [Fact]

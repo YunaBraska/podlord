@@ -1,6 +1,6 @@
 # Why Must Native Preflight Gate CI And Release?
 
-Status: accepted implementation gate, 2026-10-05; size/performance enforcement amended 2026-11-06.
+Status: accepted implementation gate, 2026-10-05. Snapshot and stable-release policy amended 2026-11-14.
 
 ## Context
 
@@ -20,28 +20,22 @@ standalone packages. The same candidate workflow serves push checks, manual
 collection and snapshots. The separate Linux workflow no longer duplicates
 push builds. C# remains a manually runnable comparison reference.
 
-Snapshot publication uses the shared YunaBraska semver/run-ID convention and
-artifact-only GitHub publisher. Only `main` can enter this path. It downloads
-the candidate for the exact checked commit, verifies source identity, required
-archives and checksums, then uploads those same bytes. It does not rebuild,
-produce a stable release, invoke a .NET builder or submit to an app store.
-The historical shared publisher filename contains `dotnet`, but its pinned
-implementation only downloads artifacts and creates the GitHub release.
-This explicit snapshot approval supersedes the earlier private-only prohibition
-on automatic GitHub publication. Signing, notarization and Store submission
-remain separate. A prerelease tag identifies the CI snapshot, not a change to
-the application's existing embedded base version.
+Snapshots are qualification only. A merge to `main` builds and tests the exact
+revision but creates no tag, GitHub Release or published binary. Stable releases
+derive one version from the latest reachable stable tag and pass it into every
+native package. They first reuse the exact qualified candidate, then sign and
+notarize direct macOS assets and prepare the Mac App Store package before the
+GitHub release can be created. App Store upload remains a separate explicit
+workflow. This removes generated snapshot tags and makes the release version
+the one source of truth for every stable artifact.
 
-On 2026-11-06 the user approved excluding evidence-only pushes from the root
-build workflow. Its push filter names exactly `doc/ROADMAP.md` and
-`doc/spec/k3d-test-map.md`, not their directories or all Markdown files.
-Any other changed path, including code, build configuration, specifications and
-ADRs, still triggers the complete workflow. Pull-request, manual and reusable
-workflow entrypoints remain unfiltered. This avoids restarting and cancelling
-an active qualification merely to record its results. It does not qualify a
-new implementation or remove release checks. GitHub evaluates an ignored push
-only when all changed paths match the exclusion list. See the
-[official event-filter rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#using-filters-to-target-specific-paths-for-pull-request-or-push-events).
+The root CI workflow has no direct push trigger. Pull requests and `main` merge
+snapshots call the same reusable qualification workflow, so a changed source is
+never accepted because an event-path filter happened to miss it. The stable
+release workflow separately compares the latest stable tag with `HEAD`. It
+skips documentation, test, example, benchmark and workflow-only changes, while
+any production source or build change requires a release qualification. Manual
+release remains available for the exceptional deliberate unchanged release.
 
 The user clarified on 2026-11-06 that our own size and performance limits are
 guidelines, not identical hard release ceilings across OS/architecture targets.
