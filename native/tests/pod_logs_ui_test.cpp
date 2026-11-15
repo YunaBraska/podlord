@@ -318,7 +318,10 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             return completed;
         }
         if (scenario == "handoff_overlap_pointer") {
-            if (!settle() || !beginning() || !click(window,"logEntry_2")) return false;
+            // beginning() waits for the observable list position. A preceding frame
+            // signal is not a product requirement and can be delayed by concurrent
+            // offscreen Qt tests on hosted macOS runners.
+            if (!beginning() || !click(window,"logEntry_2")) return false;
             auto* first = item(window,"logEntry_0");
             if (!first) return false;
             QSignalSpy oldClicked(first, SIGNAL(clicked()));
