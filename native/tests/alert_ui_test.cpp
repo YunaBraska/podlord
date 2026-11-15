@@ -9,6 +9,7 @@
 #include <QQuickWindow>
 #include <QImage>
 #include <QClipboard>
+#include <QItemSelectionModel>
 #include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QTest>
@@ -784,6 +785,10 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             diagnosticTarget = "alertTable";
             const QPointer<QQuickItem> nativeTable(item(window, "alertTable"));
             if (!nativeTable) return fail("table-missing");
+            const QPointer<QItemSelectionModel> selection(nativeTable->property("selectionModel").value<QItemSelectionModel*>());
+            const QPointer<QAbstractItemModel> model(nativeTable->property("model").value<QAbstractItemModel*>());
+            if (!selection || !model || model->rowCount() == 0) return fail("table-selection-missing");
+            selection->setCurrentIndex(model->index(0, 0), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
             nativeTable->forceActiveFocus(Qt::TabFocusReason);
             diagnosticTarget = cellName;
             for (int step = 0; step < logicalColumn; ++step) QTest::keyClick(window, Qt::Key_Right);

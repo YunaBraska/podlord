@@ -1,0 +1,233 @@
+name: Native iOS build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Three-part native application version.
+        required: true
+        type: string
+      store_package:
+        description: Sign and package the verified iPhone and iPad app for App Store Connect.
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      IOS_DISTRIBUTION_CERTIFICATE:
+        required: false
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD:
+        required: false
+      IOS_APP_STORE_PROFILE:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Native iOS ARM64 build and bundle checks
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: sh
+    env:
+      PODLORD_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install public iOS build dependencies
+        run: brew install cmake ninja python
+      - name: Verify iOS installer contracts before building the SDK
+        run: node --test scripts/test-native-ios-toolchain.cjs
+      - name: Resolve exact iOS toolchain cache identity
+        id: toolchain-key
+        run: |
+          set -eu
+          xcode=$(xcodebuild -version)
+          sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          compiler=$(xcrun --sdk iphoneos clang --version)
+          cmake_version=$(cmake --version)
+          abi=$(printf '%s\n%s\n%s\n%s\n%s\n' "$xcode" "$sdk_path" "$sdk_version" "$compiler" "$cmake_version" | shasum -a 256 | awk '{print $1}')
+          printf 'xcode=%s\niphoneos-sdk=%s (%s)\ncompiler=%s\ncmake=%s\nabi=%s\n' \
+            "$xcode" "$sdk_version" "$sdk_path" "$compiler" "$cmake_version" "$abi" | tee "$RUNNER_TEMP/native-ios-cache-inputs.log"
+          printf 'abi=%s\n' "$abi" >> "$GITHUB_OUTPUT"
+      - name: Restore exact public iOS toolchain
+        id: ios-toolchain-cache
+        uses: actions/cache@v6
+        with:
+          key: native-ios-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain-key.outputs.abi }}-${{ hashFiles('scripts/install-native-macos-toolchain.sh', 'scripts/build-native-ios-toolchain.sh', 'scripts/install-native-ios-privacy.cmake', 'native/ios/*Privacy.xcprivacy', 'scripts/qt-quick-shutdown.cmake', 'scripts/patches/qtdeclarative-6.11.3-shutdown.diff', 'native/tests/qt_shutdown/**') }}
+          path: |
+            ${{ runner.temp }}/native-toolchain/qt
+            ${{ runner.temp }}/native-toolchain/qt-sdk
+            ${{ runner.temp }}/native-toolchain/yaml-cpp
+            ${{ runner.temp }}/native-toolchain/openssl
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-ios-toolchain/qt
+            ${{ runner.temp }}/native-ios-toolchain/ssl
+            ${{ runner.temp }}/native-ios-toolchain/yaml
+            ${{ runner.temp }}/native-ios-toolchain/media
+            ${{ runner.temp }}/native-ios-toolchain/build-inputs.txt
+      - name: Validate restored public iOS toolchain
+        if: steps.ios-toolchain-cache.outputs.cache-hit == 'true'
+        run: |
+          set -eu
+          host="$RUNNER_TEMP/native-toolchain"
+          target="$RUNNER_TEMP/native-ios-toolchain"
+          /bin/sh scripts/install-native-macos-toolchain.sh --check "$host"
+          test -f "$target/qt/plugins/tls/libqopensslbackend.a"
+          test ! -e "$target/qt/plugins/tls/libqsecuretransportbackend.a"
+          test -x "$target/qt/bin/qt-cmake"
+          test "$("$target/qt/bin/qmake" -query QT_VERSION)" = 6.11.3
+          test -f "$target/ssl/lib/libssl.a"
+          test -f "$target/ssl/lib/libcrypto.a"
+          test -f "$target/yaml/lib/cmake/yaml-cpp/yaml-cpp-config.cmake"
+          for library in avcodec avformat avutil swresample swscale; do
+            test -f "$target/media/lib/lib$library.dylib"
+            test -f "$target/media/frameworks/lib$library.framework/lib$library"
+            test -d "$target/media/lib/lib$library.xcframework"
+            find "$target/qt/lib/ffmpeg/lib$library.xcframework" -name PrivacyInfo.xcprivacy | grep -q .
+          done
+          test -f "$target/ssl/share/podlord/PrivacyInfo.xcprivacy"
+          test -f "$target/qt/lib/QtCore.framework/PrivacyInfo.xcprivacy"
+          test -f "$target/qt/lib/QtGui.framework/PrivacyInfo.xcprivacy"
+          grep -F 'Qt: 6.11.3' "$target/build-inputs.txt"
+          grep -F 'OpenSSL: 3.5.9' "$target/build-inputs.txt"
+          grep -F 'FFmpeg: 7.1.5' "$target/build-inputs.txt"
+          grep -F 'yaml-cpp: 0.9.0' "$target/build-inputs.txt"
+          patch_sha=$(shasum -a 256 scripts/patches/qtdeclarative-6.11.3-shutdown.diff | awk '{print $1}')
+          grep -Fx "Qt Quick patch SHA256: $patch_sha" "$target/qt/podlord-qtquick-patch.txt"
+          printf 'Exact public toolchain cache validated.\n' | tee "$RUNNER_TEMP/native-toolchain.log" "$RUNNER_TEMP/native-ios-toolchain.log"
+      - name: Install native host toolchain on cache miss
+        if: steps.ios-toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          /bin/sh scripts/install-native-macos-toolchain.sh "$RUNNER_TEMP/native-toolchain" > "$RUNNER_TEMP/native-toolchain.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/native-toolchain.log"; exit 1; }
+      - name: Build iOS toolchain on cache miss
+        if: steps.ios-toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          CMAKE_BUILD_PARALLEL_LEVEL=4 sh scripts/build-native-ios-toolchain.sh iphoneos \
+            "$RUNNER_TEMP/native-toolchain/qt-sdk" "$RUNNER_TEMP/native-ios-toolchain" > "$RUNNER_TEMP/native-ios-toolchain.log" 2>&1 || { tail -40 "$RUNNER_TEMP/native-ios-toolchain.log"; exit 1; }
+      - name: Import App Store signing credentials
+        id: signing
+        if: inputs.store_package == true
+        env:
+          CERTIFICATE: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_APP_STORE_PROFILE }}
+        run: |
+          set -eu
+          test -n "$CERTIFICATE"
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$PROFILE"
+          umask 077
+          keychain="$RUNNER_TEMP/podlord-ios-$GITHUB_RUN_ID.keychain-db"
+          keychain_password=$(uuidgen)
+          certificate="$RUNNER_TEMP/podlord-ios-distribution.p12"
+          profile="$RUNNER_TEMP/podlord-ios.mobileprovision"
+          printf '%s' "$CERTIFICATE" | base64 -D > "$certificate"
+          printf '%s' "$PROFILE" | base64 -D > "$profile"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 14400 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security default-keychain -s "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security cms -D -i "$profile" > "$RUNNER_TEMP/podlord-ios-profile.plist"
+          team=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/podlord-ios-profile.plist")
+          identifier=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/podlord-ios-profile.plist")
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/podlord-ios-profile.plist")
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/podlord-ios-profile.plist")
+          test "$identifier" = "$team.berlin.yuna.podlord"
+          identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Apple Distribution:.*\)"/\1/p' | sed -n '1p')
+          test -n "$identity"
+          profile_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$profile_dir"
+          cp "$profile" "$profile_dir/$profile_uuid.mobileprovision"
+          {
+            printf 'identity=%s\n' "$identity"
+            printf 'team=%s\n' "$team"
+            printf 'profile_name=%s\n' "$profile_name"
+            printf 'profile_uuid=%s\n' "$profile_uuid"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build iPhone and iPad application
+        env:
+          PODLORD_GKE_IOS_CLIENT_ID: ${{ vars.PODLORD_GKE_IOS_CLIENT_ID }}
+          STORE_PACKAGE: ${{ inputs.store_package }}
+          SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
+          SIGNING_TEAM: ${{ steps.signing.outputs.team }}
+          PROFILE_NAME: ${{ steps.signing.outputs.profile_name }}
+          PROFILE_UUID: ${{ steps.signing.outputs.profile_uuid }}
+        run: |
+          set -eu
+          if [ -n "$PODLORD_GKE_IOS_CLIENT_ID" ]; then printf '::add-mask::%s\n' "$PODLORD_GKE_IOS_CLIENT_ID"; fi
+          log="$RUNNER_TEMP/native-ios.log"
+          sdk="$RUNNER_TEMP/native-ios-toolchain"
+          build="$RUNNER_TEMP/native-ios-build"
+          set -- -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DQT_HOST_PATH="$RUNNER_TEMP/native-toolchain/qt-sdk" -DOPENSSL_ROOT_DIR="$sdk/ssl" -DFFMPEG_DIR="$sdk/media" \
+            -Dyaml-cpp_DIR="$sdk/yaml/lib/cmake/yaml-cpp" -DBUILD_TESTING=OFF -DPODLORD_GKE_IOS_CLIENT_ID="$PODLORD_GKE_IOS_CLIENT_ID" \
+            -DQT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY=ON
+          if [ "$STORE_PACKAGE" = true ]; then
+            set -- "$@" -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE=Manual -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="$SIGNING_TEAM" \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" -DCMAKE_XCODE_ATTRIBUTE_PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+              -DCMAKE_XCODE_ATTRIBUTE_PROVISIONING_PROFILE="$PROFILE_UUID"
+          else
+            set -- "$@" -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
+          fi
+          "$sdk/qt/bin/qt-cmake" -S native -B "$build" -G Xcode "$@" >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          cmake --build "$build" --config Release --target podlord-native --parallel 4 >> "$log" 2>&1 || { tail -40 "$log"; exit 1; }
+          app="$build/Release-iphoneos/podlord-native.app"
+          plist="$app/Info.plist"
+          [ -x "$app/podlord-native" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist")" = 17.0 ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$plist")" = 1 ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:1' "$plist")" = 2 ]
+          if [ -n "$PODLORD_GKE_IOS_CLIENT_ID" ]; then
+            [ "$(/usr/libexec/PlistBuddy -c 'Print :GIDClientID' "$plist")" = "$PODLORD_GKE_IOS_CLIENT_ID" ]
+            prefix=${PODLORD_GKE_IOS_CLIENT_ID%.apps.googleusercontent.com}
+            /usr/bin/plutil -extract CFBundleURLTypes xml1 -o - "$plist" | grep -F -q "<string>com.googleusercontent.apps.$prefix</string>"
+          fi
+          for library in libavcodec libavformat libavutil libswresample libswscale; do test -f "$app/Frameworks/$library.framework/$library"; done
+          node scripts/check-native-ios-privacy.cjs "$app" | tee -a "$log"
+          if [ "$STORE_PACKAGE" = true ]; then
+            codesign --verify --deep --strict "$app"
+            codesign -d --entitlements :- "$app" 2>/dev/null | /usr/bin/plutil -extract application-identifier raw -o - - | grep -Fx "$SIGNING_TEAM.berlin.yuna.podlord"
+            test -f "$app/embedded.mobileprovision"
+            stage=$(mktemp -d "$RUNNER_TEMP/podlord-ios-package.XXXXXX")
+            mkdir -p "$stage/Payload"
+            ditto "$app" "$stage/Payload/Podlord.app"
+            (cd "$stage" && ditto -c -k --sequesterRsrc --keepParent Payload "$RUNNER_TEMP/Podlord.ipa")
+            unzip -Z1 "$RUNNER_TEMP/Podlord.ipa" | grep -Fx 'Payload/Podlord.app/Info.plist'
+            printf 'Signed iPhone and iPad IPA built from %s.\n' "$GITHUB_SHA" | tee "$RUNNER_TEMP/ios-store-evidence.txt"
+          fi
+          printf 'iPhoneOS arm64 compile and iPhone/iPad bundle checks passed. Device runtime was not tested.\n' | tee -a "$log"
+      - name: Upload signed iOS Store package
+        if: inputs.store_package == true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-app-store-package
+          path: |
+            ${{ runner.temp }}/Podlord.ipa
+            ${{ runner.temp }}/ios-store-evidence.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain native iOS build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-ios-arm64-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/native-toolchain.log
+            ${{ runner.temp }}/native-toolchain/build-inputs.txt
+            ${{ runner.temp }}/native-ios-cache-inputs.log
+            ${{ runner.temp }}/native-ios.log
+            ${{ runner.temp }}/native-ios-toolchain.log
+            ${{ runner.temp }}/native-ios-toolchain/build-inputs.txt
+      - name: Remove iOS signing credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/podlord-ios-distribution.p12" "$RUNNER_TEMP/podlord-ios.mobileprovision" "$RUNNER_TEMP/podlord-ios-profile.plist"
+          security delete-keychain "$RUNNER_TEMP/podlord-ios-$GITHUB_RUN_ID.keychain-db" >/dev/null 2>&1 || true

@@ -211,9 +211,17 @@ jobs:
       qualified: true
     secrets: inherit
 
+  ios_store_package:
+    needs: [version, qualify]
+    uses: ./.github/workflows/native-ios.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      store_package: true
+    secrets: inherit
+
   release:
-    needs: [version, mode, direct_macos, app_store_package]
-    if: needs.mode.outputs.release == 'true' && needs.direct_macos.result == 'success' && needs.app_store_package.result == 'success'
+    needs: [version, mode, direct_macos, app_store_package, ios_store_package]
+    if: needs.mode.outputs.release == 'true' && needs.direct_macos.result == 'success' && needs.app_store_package.result == 'success' && needs.ios_store_package.result == 'success'
     permissions:
       actions: read
       contents: write
