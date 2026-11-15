@@ -2,6 +2,15 @@ name: Upload prepared native Store package
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Store package to upload.
+        required: true
+        default: macos
+        type: choice
+        options:
+          - macos
+          - ios
 
 permissions:
   contents: read
@@ -10,7 +19,32 @@ permissions:
 jobs:
   retrieve:
     runs-on: ubuntu-24.04
+    outputs:
+      artifact-extension: ${{ steps.package-kind.outputs.artifact-extension }}
     steps:
+      - name: Select the verified Store package
+        id: package-kind
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        shell: sh
+        run: |
+          set -eu
+          case "$PLATFORM" in
+            macos)
+              printf 'artifact-name=app-store-package\n' >> "$GITHUB_OUTPUT"
+              printf 'artifact-extension=pkg\n' >> "$GITHUB_OUTPUT"
+              printf 'package-file=Podlord.pkg\n' >> "$GITHUB_OUTPUT"
+              ;;
+            ios)
+              printf 'artifact-name=ios-app-store-package\n' >> "$GITHUB_OUTPUT"
+              printf 'artifact-extension=ipa\n' >> "$GITHUB_OUTPUT"
+              printf 'package-file=Podlord.ipa\n' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              printf 'Unsupported Store platform: %s\n' "$PLATFORM" >&2
+              exit 2
+              ;;
+          esac
       - name: Resolve the latest successful stable package
         id: package-run
         env:
@@ -29,25 +63,37 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ steps.package-run.outputs.package-run-id }}
-          name: app-store-package
+          name: ${{ steps.package-kind.outputs.artifact-name }}
           path: app-store-package
-      - name: Reject non-native or incomplete packages
+      - name: Reject incomplete Store package
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          PACKAGE_FILE: ${{ steps.package-kind.outputs.package-file }}
         shell: sh
         run: |
           set -eu
-          test -f app-store-package/Podlord.pkg
-          grep -Fx 'implementation=cpp' app-store-package/native-build.txt
-          grep -Fx 'architectures=arm64 x86_64' app-store-package/native-build.txt
+          test -f "app-store-package/$PACKAGE_FILE"
+          case "$PLATFORM" in
+            macos)
+              grep -Fx 'implementation=cpp' app-store-package/native-build.txt
+              grep -Fx 'architectures=arm64 x86_64' app-store-package/native-build.txt
+              ;;
+            ios)
+              grep -Eq '^Signed iPhone and iPad IPA built from [0-9a-f]{40}\.$' app-store-package/ios-store-evidence.txt
+              ;;
+          esac
       - uses: actions/upload-artifact@v7
         with:
-          name: app-store-package
+          name: app-store-upload
           path: app-store-package
           if-no-files-found: error
           retention-days: 1
 
   upload:
     needs: retrieve
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@172316ba468bd7bbdf0d57ea28856d68b7aacb2e
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@cbab854713e514f28a2ea8556d66ad416fc0aff9
     with:
       app_name: Podlord
+      artifact_name: app-store-upload
+      artifact_extension: ${{ needs.retrieve.outputs.artifact-extension }}
     secrets: inherit
