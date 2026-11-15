@@ -79,6 +79,13 @@ for style in Basic Fusion; do
         export KUBECONFIG="$PROFILE/missing-config" PODLORD_DISABLE_UPDATE_CHECK=1 PODLORD_DISABLE_AUDIO=1
         export QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE="$STYLE" QSG_INFO=1 QSG_RENDER_TIMING=1
         export QT_LOGGING_RULES="qt.scenegraph.time.*=true"
+        # Xvfb creates its socket before it can accept a client. Verify an
+        # actual connection before exercising the packaged XCB backend.
+        n=0
+        until xwininfo -root >/dev/null 2>&1; do
+            n=$((n + 1)); test "$n" -lt 100
+            sleep 0.1
+        done
         export XDG_RUNTIME_DIR="$PROFILE/run" WAYLAND_DISPLAY=podlord-test
         mkdir -m 700 "$XDG_RUNTIME_DIR"
         weston --backend=headless-backend.so --renderer=pixman --socket="$WAYLAND_DISPLAY" --idle-time=0 > "$OUTPUT/weston-$STYLE.log" 2>&1 &
