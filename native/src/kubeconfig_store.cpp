@@ -740,6 +740,14 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
     const auto directory = sourceDirectory(profile_, false);
     if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
     if (!QDir(std::get<QString>(directory)).exists()) return Failure{StoreError::NotFound, "Source context is unavailable."};
+    const auto beforeLock = list();
+    if (const auto* failure = std::get_if<Failure>(&beforeLock)) return *failure;
+    const auto& sources = std::get<SourceCatalog>(beforeLock).sources;
+    const bool exists = std::any_of(sources.cbegin(), sources.cend(), [&](const auto& source) {
+        return std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; });
+    });
+    if (!exists)
+        return Failure{StoreError::NotFound, "Source context is unavailable; existing data was retained."};
     QLockFile lock(QDir(std::get<QString>(directory)).filePath("sources.lock"));
     lock.setStaleLockTime(0);
     if (!lock.tryLock(0)) return Failure{lock.error() == QLockFile::LockFailedError ? StoreError::Busy : StoreError::WriteFailed,
