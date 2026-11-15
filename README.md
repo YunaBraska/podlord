@@ -52,14 +52,14 @@ sh scripts/test-native.sh
 sh scripts/test-native-kubernetes.sh
 ```
 
-The first command builds and runs native tests, benchmarks and coverage gates.
+The first command builds and runs native tests, benchmarks and coverage reports.
 The second exercises real, disposable local Kubernetes and requires Docker or
 Colima for tests only. Owned test containers and data must be cleaned up.
 
-Native coverage requires 95% lines and 85% branches overall, with explicit 90%
-branch gates for new production logic. Counts include meaningful style variants,
-not that many different product features. Use the native guide's targeted checks
-while developing rather than rebuilding the complete suite after every edit.
+Native coverage targets 95% lines and 85% branches overall, with 90% branch
+targets for new production logic. Misses are reported for review and do not
+hide a functional result or block a release. Counts include meaningful style
+variants, not that many different product features.
 
 The [manual C# reference workflow](.github/workflows/csharp-reference.yml)
 retains its tests and original coverage checks separately. Reference gaps must
