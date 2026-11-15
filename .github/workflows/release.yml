@@ -122,6 +122,9 @@ jobs:
   qualify:
     needs: [version, mode]
     if: needs.mode.outputs.release == 'true'
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/native-qualify.yml
     with:
       version: ${{ needs.version.outputs.version }}
@@ -205,6 +208,9 @@ jobs:
 
   app_store_package:
     needs: [version, qualify]
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/app-store.yml
     with:
       version: ${{ needs.version.outputs.version }}
@@ -213,6 +219,9 @@ jobs:
 
   ios_store_package:
     needs: [version, qualify]
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/native-ios.yml
     with:
       version: ${{ needs.version.outputs.version }}
