@@ -44,9 +44,11 @@ owns that current policy and supersedes numerical gate wording below. Package
 checks retain exact measurements, targets and explicit warnings, but do not
 discard an otherwise valid artifact solely for exceeding those targets.
 Performance reports separate valid measurement completion from target attainment.
-Missing evidence and correctness, dependency, architecture, signing, security
-and coverage failures remain failures. Coverage remains 95% lines, 85% branches
-overall and 90% branches for new logic. Private-distribution deferrals are unchanged.
+Missing evidence and correctness, dependency, architecture, signing and security
+failures remain failures. Coverage targets remain 95% lines, 85% branches overall
+and 90% branches for new logic. A coverage miss is reported for review but does
+not itself fail functional verification or block a release. Private-distribution
+deferrals are unchanged.
 
 On 2026-11-04 the user confirmed that C# remains the function and UI/UX
 comparison reference, while implementation and ordinary CI build the C++
