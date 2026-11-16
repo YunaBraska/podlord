@@ -573,6 +573,16 @@ test('native package consumers await the complete workflow and select their own 
     assert.doesNotMatch(ciJob(qualification, 'candidate'), /\bpattern:/);
 });
 
+test('Store package normalizes application readability before productbuild', async () => {
+    const workflow = await fs.readFile(path.join(root, '.github/workflows/app-store.yml'), 'utf8');
+    const preparation = ciJob(workflow, 'package');
+    const normalize = 'chmod -R a+rX dist/app-store/Podlord.app';
+    const validate = 'find dist/app-store/Podlord.app -type f ! -perm -004 -print -quit';
+    assert.ok(preparation.includes(normalize));
+    assert.ok(preparation.includes(validate));
+    assert.ok(preparation.indexOf(normalize) < preparation.indexOf('productbuild --component dist/app-store/Podlord.app'));
+});
+
 test('Store entitlement grants only client networking and selected-file access', async () => {
     const entitlements = await fs.readFile(path.join(root, 'native/macos/AppStore.entitlements'), 'utf8');
     for (const key of [
