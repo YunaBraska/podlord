@@ -312,8 +312,8 @@ bool run(const QString& scenario) {
         if (scenario=="remove_all") {
             const QPointer<QQuickItem> remove(control("removeSource_"+model->index(0,0).data(Qt::UserRole).toString()));
             require(remove && test::scrollIntoView(window,remove) && remove, "Sources removal target could not be revealed.");
-            remove->forceActiveFocus(Qt::TabFocusReason);
-            QTest::keyClick(window,Qt::Key_Space); click("confirmSourceRemoval");
+            require(test::clickVisible(window,remove), "Sources removal action could not be clicked.");
+            click("confirmSourceRemoval");
             require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount()==0 && control("sourceEmpty"); }), "Sources empty state missing after confirmed removal.");
         }
     } else throw std::runtime_error("Unknown Sources scenario.");
