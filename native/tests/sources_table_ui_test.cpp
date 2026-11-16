@@ -313,7 +313,12 @@ bool run(const QString& scenario) {
             const QPointer<QQuickItem> remove(control("removeSource_"+model->index(0,0).data(Qt::UserRole).toString()));
             require(remove && test::scrollIntoView(window,remove) && remove, "Sources removal target could not be revealed.");
             remove->forceActiveFocus(Qt::TabFocusReason);
-            QTest::keyClick(window,Qt::Key_Space); click("confirmSourceRemoval");
+            QTest::keyClick(window,Qt::Key_Space);
+            const QPointer<QQuickItem> confirm(control("confirmSourceRemoval"));
+            require(confirm && QTest::qWaitFor([&] { return confirm && confirm->isVisible() && confirm->isEnabled(); }),
+                "Sources removal confirmation did not become available.");
+            confirm->forceActiveFocus(Qt::TabFocusReason);
+            QTest::keyClick(window,Qt::Key_Space);
             require(QTest::qWaitFor([&] { return !workspace.busy() && model->rowCount()==0 && control("sourceEmpty"); }), "Sources empty state missing after confirmed removal.");
         }
     } else throw std::runtime_error("Unknown Sources scenario.");
