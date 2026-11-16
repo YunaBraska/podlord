@@ -91,7 +91,7 @@ jobs:
 
   upload:
     needs: retrieve
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@cbab854713e514f28a2ea8556d66ad416fc0aff9
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@3ad4cf3c1827b30d89bc13a0f331bc998fe31c46
     with:
       app_name: Podlord
       artifact_name: app-store-upload
