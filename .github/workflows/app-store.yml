@@ -93,6 +93,9 @@ jobs:
             PODLORD_STORE_ARM64_ARCHIVE="$GITHUB_WORKSPACE/store-arm64/native-store-package/podlord-native.zip" \
             PODLORD_STORE_X64_ARCHIVE="$GITHUB_WORKSPACE/store-x64/native-store-package/podlord-native.zip" \
             /bin/sh scripts/package-app-store.sh "$version" "$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT.0"
+          chmod -R a+rX dist/app-store/Podlord.app
+          unreadable=$(find dist/app-store/Podlord.app -type f ! -perm -004 -print -quit)
+          [ -z "$unreadable" ] || { printf 'Store bundle contains a non-world-readable file: %s\n' "$unreadable" >&2; exit 1; }
           productbuild --component dist/app-store/Podlord.app /Applications "$credentials/unsigned.pkg"
           productsign --sign "$installer" "$credentials/unsigned.pkg" dist/app-store/Podlord.pkg
           pkgutil --check-signature dist/app-store/Podlord.pkg
