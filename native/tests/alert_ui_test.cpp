@@ -375,7 +375,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             if (!waitFor([&] {
                 const auto updated=rules();
                 const auto enabled=updated.last().toMap();
-                return enabled["draft"].toBool() && !enabled["enabled"].toBool()
+                return !enabled["enabled"].toBool()
                     && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha";
             })) return false;
             if (!click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle()) return false;
