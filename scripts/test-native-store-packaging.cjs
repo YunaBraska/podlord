@@ -464,6 +464,12 @@ test('macOS package matrix is independent of the complete native test job', asyn
     assert.match(packages, /name: native-package-\$\{\{ matrix\.channel \}\}-\$\{\{ matrix\.runner \}\}-\$\{\{ github\.sha \}\}/);
 });
 
+test('native coverage-report tooling is advisory after functional tests pass', async () => {
+    const script = await fs.readFile(path.join(root, 'scripts/test-native.sh'), 'utf8');
+    assert.match(script, /if ! "\$COV" report "\$@"[\s\S]*?Native coverage report is unavailable\. Functional verification remains successful\./);
+    assert.match(script, /\[ "\$TEST_STATUS" -eq 0 \] \|\| exit "\$TEST_STATUS"/);
+});
+
 test('macOS package jobs share pinned setup and retain every package scenario', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native.yml'), 'utf8');
     const action = await fs.readFile(path.join(root, '.github/actions/native-macos-toolchain/action.yml'), 'utf8');
