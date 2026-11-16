@@ -371,11 +371,19 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     && item(window,"toggleAlert_3")->property("glyph").toString()=="Hidden"
                     && !item(window,"alertCell_1_3")->property("text").toString().contains("Not evaluated") && server.requests==0;
             }
-            if (!type(window,"alertExpression_0","alpha") || !click(window,"saveAlert") || !settle()
-                || !click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle()) return false;
-            const auto enabled=rules().last().toMap();
-            return !enabled["draft"].toBool() && enabled["enabled"].toBool()
-                && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha" && server.requests==0;
+            if (!type(window,"alertExpression_0","alpha") || !click(window,"saveAlert") || !settle()) return false;
+            if (!waitFor([&] {
+                const auto updated=rules();
+                const auto enabled=updated.last().toMap();
+                return !enabled["enabled"].toBool()
+                    && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha";
+            })) return false;
+            if (!click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle()) return false;
+            return waitFor([&] {
+                const auto enabled=rules().last().toMap();
+                return !enabled["draft"].toBool() && enabled["enabled"].toBool()
+                    && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha";
+            }) && server.requests==0;
         }
         if (scenario=="reference_editor_close_clean") {
             const auto* close=item(window,"closeAlertEditor");
