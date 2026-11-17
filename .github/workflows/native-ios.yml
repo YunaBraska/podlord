@@ -190,6 +190,16 @@ jobs:
           for library in libavcodec libavformat libavutil libswresample libswscale; do test -f "$app/Frameworks/$library.framework/$library"; done
           node scripts/check-native-ios-privacy.cjs "$app" | tee -a "$log"
           if [ "$STORE_PACKAGE" = true ]; then
+            find "$app/Frameworks" -type d -name '*.framework' -print > "$RUNNER_TEMP/podlord-ios-frameworks.txt"
+            test -s "$RUNNER_TEMP/podlord-ios-frameworks.txt"
+            while IFS= read -r framework; do
+              codesign --force --sign "$SIGNING_IDENTITY" "$framework"
+              codesign --verify --strict "$framework"
+              codesign -dvv "$framework" 2>&1 | grep -F 'Authority=Apple Distribution:'
+              codesign -dvv "$framework" 2>&1 | grep -Fx "TeamIdentifier=$SIGNING_TEAM"
+            done < "$RUNNER_TEMP/podlord-ios-frameworks.txt"
+            codesign --force --sign "$SIGNING_IDENTITY" \
+              --preserve-metadata=identifier,entitlements,flags,runtime "$app"
             codesign --verify --deep --strict "$app"
             codesign -d --entitlements :- "$app" 2>/dev/null | /usr/bin/plutil -extract application-identifier raw -o - - | grep -Fx "$SIGNING_TEAM.berlin.yuna.podlord"
             test -f "$app/embedded.mobileprovision"
