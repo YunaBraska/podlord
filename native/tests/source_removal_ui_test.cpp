@@ -91,15 +91,6 @@ void run(const QString& scenario) {
     if (scenario != "empty") { removed.append(create(alpha, "Alpha one")); removed.append(create(alpha, "Alpha two")); }
     const auto kept = create(beta, "Beta retained");
     if (scenario == "active") require(std::holds_alternative<SessionCatalog>(sessions.activate(removed.first())), "Cannot select removed session.");
-    Workspace workspace(profile);
-    settle(workspace);
-    require(workspace.activate((scenario == "active" ? removed.first() : kept).toString(QUuid::WithoutBraces)), "Cannot explicitly open the saved source-removal session.");
-    settle(workspace);
-    require(QTest::qWaitFor([&] { return requests > 0 && workspace.authenticationRequired(); }, 5000), "Real workspace did not reject external authentication.");
-    settle(workspace);
-    const int requestsBefore = requests;
-    const auto sourceBytes = contents(snapshot.ownedPath);
-    auto sessionBytes = contents(profile + "/tabs.json");
     if (scenario.startsWith("contract_")) {
         auto context = alpha;
         QStringList ids;
@@ -113,6 +104,8 @@ void run(const QString& scenario) {
         else if (scenario == "contract_duplicate") ids.append(ids.first());
         else if (scenario == "contract_unconfirmed") { ids.clear(); expected = StoreError::Conflict; }
         else throw std::runtime_error("Unknown contract scenario.");
+        const auto sourceBytes = contents(snapshot.ownedPath);
+        const auto sessionBytes = contents(profile + "/tabs.json");
         QLockFile lock(profile + "/kubeconfigs/sources.lock");
         if (scenario == "contract_missing") require(lock.tryLock(0), "Cannot establish an unrelated source lock.");
         const auto result = sources.removeContext(context, ids);
@@ -120,6 +113,15 @@ void run(const QString& scenario) {
         require(contents(profile + "/tabs.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes && contents(original) == yaml, "Invalid confirmation changed persistence.");
         return;
     }
+    Workspace workspace(profile);
+    settle(workspace);
+    require(workspace.activate((scenario == "active" ? removed.first() : kept).toString(QUuid::WithoutBraces)), "Cannot explicitly open the saved source-removal session.");
+    settle(workspace);
+    require(QTest::qWaitFor([&] { return requests > 0 && workspace.authenticationRequired(); }, 5000), "Real workspace did not reject external authentication.");
+    settle(workspace);
+    const int requestsBefore = requests;
+    const auto sourceBytes = contents(snapshot.ownedPath);
+    auto sessionBytes = contents(profile + "/tabs.json");
     if (scenario == "unknown") {
         require(!prepare(workspace, "ctx:missing") && !workspace.sourceImportError().isEmpty(), "Unknown context was accepted.");
         require(contents(profile + "/tabs.json") == sessionBytes && contents(snapshot.ownedPath) == sourceBytes, "Rejected removal changed local files.");
