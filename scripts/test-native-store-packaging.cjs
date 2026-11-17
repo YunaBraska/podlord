@@ -583,12 +583,17 @@ test('Store package normalizes application readability before productbuild', asy
     assert.ok(preparation.indexOf(normalize) < preparation.indexOf('productbuild --component dist/app-store/Podlord.app'));
 });
 
-test('iOS Store package lets Xcode sign the final embedded frameworks', async () => {
+test('iOS Store package signs and validates final embedded frameworks', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/native-ios.yml'), 'utf8');
     const privacyInstaller = await fs.readFile(path.join(root, 'scripts/install-native-ios-privacy.cmake'), 'utf8');
     assert.doesNotMatch(workflow, /QT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY/);
+    assert.match(workflow, /find "\$app\/Frameworks" -type d -name '\*\.framework' -print/);
+    assert.match(workflow, /codesign --force --sign "\$SIGNING_IDENTITY" "\$framework"/);
+    assert.match(workflow, /Authority=Apple Distribution:/);
+    assert.match(workflow, /TeamIdentifier=\$SIGNING_TEAM/);
+    assert.match(workflow, /--preserve-metadata=identifier,entitlements,flags,runtime/);
     assert.match(workflow, /codesign --verify --deep --strict "\$app"/);
-    assert.match(privacyInstaller, /Run before\n# embedding frameworks so Xcode signs their final contents/);
+    assert.match(privacyInstaller, /Run before\n# embedding frameworks so their final contents can be signed without mutation/);
 });
 
 test('Store entitlement grants only client networking and selected-file access', async () => {

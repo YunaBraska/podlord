@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 # Metadata-only completion of the pinned, locally source-built SDK. Run before
-# embedding frameworks so Xcode signs their final contents, not a later mutation.
+# embedding frameworks so their final contents can be signed without mutation.
 if(NOT IS_ABSOLUTE "${PODLORD_IOS_SDK_ROOT}" OR IS_SYMLINK "${PODLORD_IOS_SDK_ROOT}"
     OR NOT EXISTS "${PODLORD_IOS_SDK_ROOT}/build-inputs.txt")
     message(FATAL_ERROR "PODLORD_IOS_SDK_ROOT must be an existing source-built Podlord iOS SDK.")
