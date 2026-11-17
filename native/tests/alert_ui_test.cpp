@@ -356,11 +356,20 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             return focus.isEmpty() && sound.isEmpty();
         }
         if (scenario=="reference_draft_round_trip" || scenario=="reference_draft_enable") {
-            if (!click(window,"addAlert") || !type(window,"alertName","Incomplete draft")
-                || !type(window,"alertExpression_0","/[broken/") || !click(window,"saveAlert") || !settle()) return false;
+            const auto inputHas = [&](const QString& name, const QString& value) {
+                return waitFor([&] { auto* input=item(window,name); return input && input->property("text").toString()==value; });
+            };
+            const auto failed = [&](const char* stage) {
+                std::fprintf(stderr,"Alert draft flow failed at %s\\n",stage);
+                return false;
+            };
+            if (!click(window,"addAlert")) return failed("create");
+            if (!type(window,"alertName","Incomplete draft") || !inputHas("alertName","Incomplete draft")) return failed("name");
+            if (!type(window,"alertExpression_0","/[broken/") || !inputHas("alertExpression_0","/[broken/")) return failed("invalid-expression");
+            if (!click(window,"saveAlert") || !settle()) return failed("save-invalid-draft");
             const auto saved=rules().last().toMap();
             const auto expression=saved["groups"].toList().first().toList().first().toMap()["expression"].toString();
-            if (!saved["draft"].toBool() || saved["enabled"].toBool() || expression!="/[broken/") return false;
+            if (!saved["draft"].toBool() || saved["enabled"].toBool() || expression!="/[broken/") return failed("verify-invalid-draft");
             if (scenario=="reference_draft_round_trip") {
                 podlord::Workspace restored(profile);
                 if (!waitFor([&] { return !restored.alerts()->busy(); })) return false;
@@ -371,19 +380,21 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     && item(window,"toggleAlert_3")->property("glyph").toString()=="Hidden"
                     && !item(window,"alertCell_1_3")->property("text").toString().contains("Not evaluated") && server.requests==0;
             }
-            if (!type(window,"alertExpression_0","alpha") || !click(window,"saveAlert") || !settle()) return false;
+            if (!type(window,"alertExpression_0","alpha") || !inputHas("alertExpression_0","alpha")) return failed("valid-expression");
+            if (!click(window,"saveAlert") || !settle()) return failed("save-enabled-draft");
             if (!waitFor([&] {
                 const auto updated=rules();
                 const auto enabled=updated.last().toMap();
                 return !enabled["enabled"].toBool()
                     && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha";
-            })) return false;
-            if (!click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle()) return false;
-            return waitFor([&] {
+            })) return failed("verify-enabled-draft");
+            if (!click(window,"toggleAlert_"+QString::number(baseline.size())) || !settle()) return failed("enable");
+            if (!waitFor([&] {
                 const auto enabled=rules().last().toMap();
                 return !enabled["draft"].toBool() && enabled["enabled"].toBool()
                     && enabled["groups"].toList().first().toList().first().toMap()["expression"]=="alpha";
-            }) && server.requests==0;
+            })) return failed("verify-enabled-rule");
+            return server.requests==0 || failed("unexpected-server-request");
         }
         if (scenario=="reference_editor_close_clean") {
             const auto* close=item(window,"closeAlertEditor");
