@@ -583,6 +583,27 @@ test('Store package normalizes application readability before productbuild', asy
     assert.ok(preparation.indexOf(normalize) < preparation.indexOf('productbuild --component dist/app-store/Podlord.app'));
 });
 
+test('iOS Store package signs each embedded framework before resealing the app', async () => {
+    const workflow = await fs.readFile(path.join(root, '.github/workflows/native-ios.yml'), 'utf8');
+    const privacyCheck = workflow.indexOf('          node scripts/check-native-ios-privacy.cjs "$app" | tee -a "$log"');
+    const start = workflow.indexOf('          if [ "$STORE_PACKAGE" = true ]; then\n', privacyCheck);
+    const end = workflow.indexOf('            stage=$(mktemp -d', start);
+    assert.ok(privacyCheck >= 0 && start > privacyCheck && end > start);
+    const signing = workflow.slice(start, end);
+    const frameworks = 'find "$app/Frameworks" -type d -name \'*.framework\' -prune -print > "$frameworks"';
+    const signFramework = 'codesign --force --sign "$SIGNING_IDENTITY" "$framework"';
+    const verifyFramework = 'codesign -dvvv "$framework" 2>&1 | grep -Fx "Authority=$SIGNING_IDENTITY"';
+    const entitlements = 'codesign -d --entitlements :- "$app" > "$entitlements" 2>/dev/null';
+    const signApp = 'codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$entitlements" "$app"';
+    assert.ok(signing.includes(frameworks));
+    assert.ok(signing.includes(signFramework));
+    assert.ok(signing.includes(verifyFramework));
+    assert.ok(signing.includes(entitlements));
+    assert.ok(signing.includes(signApp));
+    assert.ok(signing.indexOf(signFramework) < signing.indexOf(signApp));
+    assert.ok(signing.indexOf(signApp) < signing.indexOf('codesign --verify --deep --strict "$app"'));
+});
+
 test('Store entitlement grants only client networking and selected-file access', async () => {
     const entitlements = await fs.readFile(path.join(root, 'native/macos/AppStore.entitlements'), 'utf8');
     for (const key of [
