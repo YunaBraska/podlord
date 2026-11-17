@@ -95,7 +95,7 @@ void run(const QString& scenario) {
     settle(workspace);
     require(workspace.activate((scenario == "active" ? removed.first() : kept).toString(QUuid::WithoutBraces)), "Cannot explicitly open the saved source-removal session.");
     settle(workspace);
-    require(QTest::qWaitFor([&] { return requests > 0; }, 5000), "Real workspace did not reach external boundary.");
+    require(QTest::qWaitFor([&] { return requests > 0 && workspace.authenticationRequired(); }, 5000), "Real workspace did not reject external authentication.");
     settle(workspace);
     const int requestsBefore = requests;
     const auto sourceBytes = contents(snapshot.ownedPath);
