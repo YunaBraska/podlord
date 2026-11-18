@@ -35,7 +35,7 @@ jobs:
       latest_tag: ${{ steps.latest_tag.outputs.latest_tag }}
       version: ${{ steps.version_info.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -50,7 +50,7 @@ jobs:
       - name: Resolve semantic version
         id: semver_info
         if: steps.latest_tag.outputs.latest_tag != ''
-        uses: YunaBraska/semver-info-action@180ebf79b3c81785c50cf1f198ee236fc5591504 # v3.0.4
+        uses: YunaBraska/semver-info-action@494f1601936e3cdfc8a7b1135975eebb16041991 # v3.0.18
         with:
           semver-a: ${{ steps.latest_tag.outputs.latest_tag }}
           semver-b: ${{ steps.latest_tag.outputs.latest_tag }}
@@ -85,7 +85,7 @@ jobs:
     outputs:
       release: ${{ steps.release_info.outputs.release }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -137,10 +137,10 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: podlord-native-candidates-${{ github.sha }}
           path: native-candidate

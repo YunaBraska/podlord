@@ -35,7 +35,7 @@ jobs:
       run:
         shell: sh
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build isolated Linux toolchain
         run: docker build --tag "podlord-native-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" - < native/tests/linux.Dockerfile
       - name: Execute native tests and coverage report without host Qt
@@ -76,7 +76,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -209,7 +209,7 @@ jobs:
     env:
       PODLORD_TEST_JOBS: '6'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up pinned public macOS toolchain
         id: toolchain
         uses: ./.github/actions/native-macos-toolchain
@@ -280,7 +280,7 @@ jobs:
       run:
         shell: sh
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up pinned public macOS toolchain
         id: toolchain
         uses: ./.github/actions/native-macos-toolchain
