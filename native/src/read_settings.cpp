@@ -24,7 +24,9 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(bytes, &error);
     const auto root = document.object();
-    if (error.error != QJsonParseError::NoError || !document.isObject() || root["version"] != 10 || root.size() != 14)
+    const bool legacyVolumeDefaults = root["version"] == 9 && root.size() == 12;
+    if (error.error != QJsonParseError::NoError || !document.isObject()
+        || (!legacyVolumeDefaults && (root["version"] != 10 || root.size() != 14)))
         return Failure{StoreError::InvalidData, "Unsupported or invalid settings format. The file was left unchanged."};
     const auto integer = [](const QJsonValue& value, int maximum) {
         const int number = value.toInt(-1);
@@ -46,7 +48,7 @@ Result<ReadSettings> ReadSettingsStore::load() const {
         return Failure{StoreError::InvalidData, "Choose a supported language."};
     if (!integer(root["collectionCacheHours"], std::numeric_limits<int>::max()) || root["collectionCacheHours"].toInt() == 0)
         return Failure{StoreError::InvalidData, "Resource retention must be a positive whole number of hours."};
-    if (!integer(root["musicVolumePercent"], 100) || !integer(root["alertVolumePercent"], 100))
+    if (!legacyVolumeDefaults && (!integer(root["musicVolumePercent"], 100) || !integer(root["alertVolumePercent"], 100)))
         return Failure{StoreError::InvalidData, "Audio volumes must be whole-number percentages from 0 to 100."};
     ReadSettings settings{root["requestHardLimitPerMinute"].toInt(), root["inactiveSyncMinutes"].toInt(), root["logLimitMb"].toInt(), root["yamlLimitMiB"].toInt()};
     settings.themeName = root["themeName"].toString(); settings.themeVariant = root["themeVariant"].toString();
@@ -54,7 +56,10 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     settings.radarWaterSpeedPercent = root["radarWaterSpeedPercent"].toInt();
     settings.workspaceRestore = root["workspaceRestore"].toBool(); settings.language = root["language"].toString();
     settings.collectionCacheHours = root["collectionCacheHours"].toInt();
-    settings.musicVolumePercent = root["musicVolumePercent"].toInt(); settings.alertVolumePercent = root["alertVolumePercent"].toInt();
+    if (!legacyVolumeDefaults) {
+        settings.musicVolumePercent = root["musicVolumePercent"].toInt();
+        settings.alertVolumePercent = root["alertVolumePercent"].toInt();
+    }
     if (!settings.valid()) return Failure{StoreError::InvalidData, "Invalid profile appearance settings; existing data was retained."};
     return settings;
 }
