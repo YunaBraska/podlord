@@ -101,6 +101,26 @@ void scenario(const QString& name) {
         require(!ai.setEnabled("context", true) && !ai.enabled("context"), "Invalid settings enabled analysis");
         return;
     }
+    if (name == "migration") {
+        require(QDir().mkpath(profile), "Cannot prepare legacy profile");
+        QFile legacy(QDir(profile).filePath("incident-ai.json"));
+        const auto data = QJsonDocument(QJsonObject{{"version", 1}, {"enabledContexts", QJsonArray{"context"}},
+            {"model", ""}, {"reasoning", "auto"}, {"records", QJsonArray{}}}).toJson();
+        require(legacy.open(QIODevice::WriteOnly) && legacy.write(data) == data.size(), "Cannot prepare legacy consent");
+        legacy.close();
+        podlord::IncidentAi ai(profile, endpoint);
+        require(ai.enabled("context"), "Legacy Ollama consent was not retained");
+        require(ai.setProvider("chatgpt") && !ai.enabled("context"), "Local consent authorized ChatGPT analysis");
+        require(ai.setProvider("claude") && !ai.enabled("context"), "Local consent authorized Claude analysis");
+        require(ai.setProvider("openrouter") && !ai.enabled("context"), "Local consent authorized OpenRouter analysis");
+        require(ai.setProvider("ollama") && ai.enabled("context"), "Provider switch lost local consent");
+        QFile stored(QDir(profile).filePath("incident-ai.json"));
+        require(stored.open(QIODevice::ReadOnly), "Cannot read migrated settings");
+        const auto root = QJsonDocument::fromJson(stored.readAll()).object();
+        require(root.value("version") == 3 && root.value("enabledByProvider").toObject().value("ollama").toArray().contains("context")
+            && root.value("enabledByProvider").toObject().value("chatgpt").toArray().isEmpty(), "Consent migration is invalid");
+        return;
+    }
     if (name == "model_choice") {
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000), "Model catalog unavailable");

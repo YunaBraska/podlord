@@ -10,7 +10,13 @@ bool Workspace::incidentAiEnabled() const {
     return runtime_->incidentAi.enabled(sessionConfiguration(active_).value("contextId").toString());
 }
 QStringList Workspace::incidentAiModels() const { return runtime_->incidentAi.models(); }
+QVariantList Workspace::incidentAiModelChoices() const { return runtime_->incidentAi.modelChoices(); }
 QString Workspace::incidentAiModel() const { return runtime_->incidentAi.model(); }
+QString Workspace::incidentAiProvider() const { return runtime_->incidentAi.provider(); }
+QVariantList Workspace::chatgptAccounts() const { return runtime_->incidentAi.chatgptAccounts(); }
+QString Workspace::chatgptAccount() const { return runtime_->incidentAi.chatgptAccount(); }
+QString Workspace::chatgptClientId() const { return runtime_->incidentAi.chatgptClientId(); }
+bool Workspace::incidentAiApiKeyConfigured() const { return runtime_->incidentAi.apiKeyConfigured(); }
 QStringList Workspace::incidentAiReasoningOptions() const { return runtime_->incidentAi.reasoningOptions(); }
 QString Workspace::incidentAiReasoning() const { return runtime_->incidentAi.reasoning(); }
 QString Workspace::incidentAiStatus() const {
@@ -28,6 +34,12 @@ bool Workspace::setIncidentAiEnabled(bool enabled) {
     return true;
 }
 bool Workspace::setIncidentAiModel(const QString& model) { return runtime_->incidentAi.setModel(model); }
+bool Workspace::setIncidentAiProvider(const QString& provider) { return runtime_->incidentAi.setProvider(provider); }
+bool Workspace::signInChatGpt(const QString& clientId) { return runtime_->incidentAi.chatgptSignIn(clientId); }
+bool Workspace::selectChatGptAccount(const QString& clientId) { return runtime_->incidentAi.chatgptSelectAccount(clientId); }
+void Workspace::signOutChatGpt() { runtime_->incidentAi.chatgptSignOut(); }
+bool Workspace::setIncidentAiApiKey(const QString& key) { return runtime_->incidentAi.setApiKey(key); }
+void Workspace::clearIncidentAiApiKey() { runtime_->incidentAi.clearApiKey(); }
 bool Workspace::setIncidentAiReasoning(const QString& reasoning) { return runtime_->incidentAi.setReasoning(reasoning); }
 void Workspace::refreshIncidentAiModels() { runtime_->incidentAi.refreshModels(); }
 bool Workspace::refreshIncidentAiAnalysis() {

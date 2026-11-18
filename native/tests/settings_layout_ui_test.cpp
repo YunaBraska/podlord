@@ -21,6 +21,22 @@ int main(int argc, char** argv) {
     auto* window = engine.rootObjects().isEmpty() ? nullptr : qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !QTest::qWaitFor([&] { return !workspace.busy(); }, 5000)) return 1;
     const auto scenario = argc == 2 ? QString::fromLocal8Bit(argv[1]) : QString{};
+    if (scenario == "ai_provider_settings" || scenario == "ai_provider_settings_compact") {
+        window->resize(scenario == "ai_provider_settings" ? QSize(1200, 800) : QSize(640, 700));
+        if (!podlord::test::clickVisible(window, "settingsWorkspaceButton")
+            || !podlord::test::selectSettingsSection(window, "ai")) return 1;
+        auto* provider = podlord::test::visibleItem(window->contentItem(), "settingsAiProvider");
+        auto* model = podlord::test::visibleItem(window->contentItem(), "settingsAiModel");
+        if (!provider || !model || workspace.incidentAiProvider() != "ollama") return 1;
+        const auto frame = qEnvironmentVariable("PODLORD_AI_SETTINGS_FRAME");
+        if (!frame.isEmpty()) window->grabWindow().save(frame);
+        if (!workspace.setIncidentAiProvider("claude")
+            || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey") != nullptr; }, 2000)
+            || workspace.incidentAiApiKeyConfigured()) return 1;
+        if (!workspace.setIncidentAiProvider("chatgpt")
+            || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsChatGptAccount") != nullptr; }, 2000)) return 1;
+        return workspace.setIncidentAiProvider("ollama") && workspace.incidentAiProvider() == "ollama" ? 0 : 1;
+    }
     if (scenario.startsWith("review_")) {
         const auto failed = [&](const char* stage) {
             std::fprintf(stderr, "Alert review %s failed at %s\n", qPrintable(scenario), stage);
