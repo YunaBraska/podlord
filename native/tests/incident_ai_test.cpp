@@ -137,7 +137,8 @@ void scenario(const QString& name) {
     if (name == "related") {
         auto snapshot = rows();
         auto pod = snapshot.at(2).toObject();
-        pod["node"] = "worker-a"; pod["volumeClaims"] = QJsonArray{"claim-data"}; snapshot.replace(2, pod);
+        pod["node"] = "worker-a"; pod["volumeClaims"] = QJsonArray{"claim-data"};
+        pod["secretKeys"] = QJsonArray{"DATABASE_PASSWORD"}; snapshot.replace(2, pod);
         snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"status", "NotReady"}});
         snapshot.append(QJsonObject{{"kind", "PersistentVolumeClaim"}, {"name", "claim-data"}, {"namespace", "team"},
             {"status", "Pending"}, {"boundVolume", "volume-01"}, {"data", "c2VjcmV0LXZhbHVlLXRlc3Q="}});
@@ -154,6 +155,7 @@ void scenario(const QString& name) {
             require(!server.submitted.contains("worker-a") && !server.submitted.contains("claim-data")
                 && !server.submitted.contains("volume-01") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
                 "Related resource names or values reached the model");
+            require(!server.submitted.contains("DATABASE_PASSWORD"), "Irrelevant Secret key reached an ImagePullBackOff analysis");
         }
         auto node = snapshot.at(4).toObject(); node["status"] = "Ready"; snapshot.replace(4, node);
         auto claim = snapshot.at(5).toObject(); claim["status"] = "Bound"; snapshot.replace(5, claim);
