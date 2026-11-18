@@ -61,10 +61,11 @@ QJsonArray rows(QString podName = "pod-one", QString path = "/api/v1/namespaces/
         {"namespace", "team"}, {"owners", QJsonArray{QJsonObject{{"uid", "deploy-uid"}}}}};
     const QJsonObject pod{{"uid", podName}, {"kind", "Pod"}, {"name", podName}, {"namespace", "team"},
         {"path", path}, {"owners", QJsonArray{owner}}, {"owner", "ReplicaSet/web-abc123"}, {"issue", "ImagePullBackOff, Ready 0/1"},
-        {"status", "ImagePullBackOff"}, {"problemSeverity", 2}, {"message", "private-status-marker"},
-        {"eventMessage", "private-event-marker"}, {"secret", "private-secret-marker"}};
+        {"status", "ImagePullBackOff"}, {"problemSeverity", 2}, {"message", "API_KEY=sk_test_0123456789_private-status-marker"},
+        {"eventMessage", "private-event-marker"}, {"secret", "c2VjcmV0LXZhbHVlLXRlc3Q="},
+        {"data", QJsonObject{{"registry-token", "c2VjcmV0LXZhbHVlLXRlc3Q="}}}};
     const QJsonObject event{{"uid", "event-uid"}, {"kind", "Event"}, {"kubernetesEvent", true},
-        {"eventReason", "BackOff"}, {"eventMessage", "private-event-marker"}, {"problemSeverity", 2}};
+        {"eventReason", "BackOff"}, {"eventMessage", "private-event-marker c2VjcmV0LXZhbHVlLXRlc3Q="}, {"problemSeverity", 2}};
     return {deployment, replica, pod, event};
 }
 void scenario(const QString& name) {
@@ -72,7 +73,9 @@ void scenario(const QString& name) {
     require(directory.isValid(), "Cannot create temporary profile");
     if (name == "live") {
         podlord::IncidentAi ai(directory.filePath("profile"));
-        require(QTest::qWaitFor([&] { return !ai.models().isEmpty() && ai.reasoningOptions().size() > 1; }, 10000), "Local Ollama model unavailable");
+        require(QTest::qWaitFor([&] { return !ai.models().isEmpty(); }, 10000), "Local Ollama model unavailable");
+        require(ai.setModel(ai.models().first()), "Cannot select local Ollama model");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().size() > 1; }, 10000), "Local model reasoning unavailable");
         require(ai.setEnabled("local", true), "Cannot enable local analysis");
         ai.observe("local", rows(), "de");
         const auto path = rows().at(2).toObject()["path"].toString();
@@ -98,9 +101,53 @@ void scenario(const QString& name) {
         require(!ai.setEnabled("context", true) && !ai.enabled("context"), "Invalid settings enabled analysis");
         return;
     }
+    if (name == "model_choice") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000), "Model catalog unavailable");
+        require(ai.model().isEmpty(), "A local model was selected without a user decision");
+        require(ai.setEnabled("context", true), "Cannot enable model-choice context");
+        ai.observe("context", rows(), "de");
+        QTest::qWait(50);
+        require(server.chats == 0, "Analysis ran before the user chose a model");
+        require(ai.setModel("local-test:9b"), "User could not select the installed model");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium") && server.chats == 1; }, 2000),
+            "Selected model did not analyze the observed problem");
+        return;
+    }
+    if (name == "related") {
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["node"] = "worker-a"; pod["volumeClaims"] = QJsonArray{"claim-data"}; snapshot.replace(2, pod);
+        snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"status", "NotReady"}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolumeClaim"}, {"name", "claim-data"}, {"namespace", "team"},
+            {"status", "Pending"}, {"boundVolume", "volume-01"}, {"data", "c2VjcmV0LXZhbHVlLXRlc3Q="}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolume"}, {"name", "volume-01"}, {"status", "Released"}});
+        {
+            podlord::IncidentAi ai(profile, endpoint);
+            require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000), "Related-context model unavailable");
+            require(ai.setEnabled("context", true) && ai.setModel("local-test:9b"), "Cannot choose related-context model");
+            ai.observe("context", snapshot, "de");
+            require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", pod["path"].toString()).value("summary").toString().isEmpty(); }, 2000),
+                "Related incident was not analyzed");
+            require(server.submitted.contains("NotReady") && server.submitted.contains("Pending") && server.submitted.contains("Released"),
+                "Related Node, claim, and volume statuses were omitted");
+            require(!server.submitted.contains("worker-a") && !server.submitted.contains("claim-data")
+                && !server.submitted.contains("volume-01") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
+                "Related resource names or values reached the model");
+        }
+        auto node = snapshot.at(4).toObject(); node["status"] = "Ready"; snapshot.replace(4, node);
+        auto claim = snapshot.at(5).toObject(); claim["status"] = "Bound"; snapshot.replace(5, claim);
+        auto volume = snapshot.at(6).toObject(); volume["status"] = "Bound"; snapshot.replace(6, volume);
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000), "Related-context model unavailable after restart");
+        reopened.observe("context", snapshot, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000), "Changed related status reused the stale answer");
+        return;
+    }
     if (name == "events") {
         podlord::IncidentAi ai(profile, endpoint);
-        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Event test model unavailable");
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000) && ai.setModel("local-test:9b"), "Event test model unavailable");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Event model capabilities unavailable");
         require(ai.setEnabled("context", true), "Cannot enable Event analysis");
         auto snapshot = rows();
         auto pod = snapshot.at(2).toObject(); pod["issue"] = ""; pod["status"] = "Running"; pod["problemSeverity"] = 0; snapshot.replace(2, pod);
@@ -117,7 +164,8 @@ void scenario(const QString& name) {
     }
     if (name == "missing_owner") {
         podlord::IncidentAi ai(profile, endpoint);
-        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Fallback model unavailable");
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000) && ai.setModel("local-test:9b"), "Fallback model unavailable");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Fallback model capabilities unavailable");
         require(ai.setEnabled("context", true), "Cannot enable fallback analysis");
         auto first = rows(); first.removeAt(0); first.removeAt(0);
         ai.observe("context", first, "de");
@@ -131,7 +179,8 @@ void scenario(const QString& name) {
     }
     if (name == "conflict") {
         podlord::IncidentAi first(profile, endpoint);
-        require(QTest::qWaitFor([&] { return first.reasoningOptions().contains("medium"); }, 2000), "First model unavailable");
+        require(QTest::qWaitFor([&] { return first.models().contains("local-test:9b"); }, 2000) && first.setModel("local-test:9b"), "First model unavailable");
+        require(QTest::qWaitFor([&] { return first.reasoningOptions().contains("medium"); }, 2000), "First model capabilities unavailable");
         podlord::IncidentAi stale(profile, endpoint);
         require(QTest::qWaitFor([&] { return stale.reasoningOptions().contains("medium"); }, 2000), "Second model unavailable");
         require(first.setEnabled("context", true), "First writer failed");
@@ -140,7 +189,8 @@ void scenario(const QString& name) {
     }
     {
         podlord::IncidentAi ai(profile, endpoint);
-        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b") && ai.reasoningOptions().contains("medium"); }, 2000), "Local model capabilities were not discovered");
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000) && ai.setModel("local-test:9b"), "Local model was not discovered or chosen");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Local model capabilities were not discovered");
         ai.observe("context", rows(), "de");
         QTest::qWait(50);
         require(server.chats == 0, "Analysis ran before consent");
@@ -148,6 +198,8 @@ void scenario(const QString& name) {
         ai.observe("context", rows(), "de");
         require(QTest::qWaitFor([&] { return server.chats == 1; }, 2000), "Problem did not reach local model");
         require(!server.submitted.contains("private-") && !server.submitted.contains("pod-one")
+            && !server.submitted.contains("sk_test_0123456789") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q=")
+            && !server.submitted.contains("registry-token")
             && server.submitted.contains("ImagePullBackOff") && server.submitted.contains("de"), "AI payload exposed untrusted data or omitted evidence");
         require(QJsonDocument::fromJson(server.submitted).object()["think"] == "medium", "Automatic reasoning did not choose the advertised medium level");
         if (name == "cancel") {
@@ -176,9 +228,24 @@ void scenario(const QString& name) {
             require(QTest::qWaitFor([&] { return ai.status("context").contains("failed"); }, 2000), "Failed analysis never settled");
             ai.observe("context", rows(), "de");
             require(server.chats == 1, "Failed analysis retried without cooldown");
+            if (name == "failure") {
+                server.failure = false;
+                require(ai.refresh("context", rows().at(2).toObject()["path"].toString()), "Explicit retry was rejected");
+                require(QTest::qWaitFor([&] { return server.chats == 2 && !ai.result("context", rows().at(2).toObject()["path"].toString()).value("summary").toString().isEmpty(); }, 2000),
+                    "Explicit retry remained blocked by automatic failure cooldown");
+            }
             return;
         }
         require(QTest::qWaitFor([&] { return !ai.result("context", rows().at(2).toObject()["path"].toString()).value("summary").toString().isEmpty(); }, 2000), "AI result not shown");
+        if (name == "refresh") {
+            const auto path = rows().at(2).toObject()["path"].toString();
+            require(ai.refresh("context", path), "Cannot refresh the inspected analysis");
+            require(ai.result("context", path).value("summary").toString().isEmpty(), "Refresh kept the old answer visible");
+            require(QTest::qWaitFor([&] { return server.chats == 2 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
+                "Explicit refresh did not bypass the cached answer and passive request spacing");
+            require(!ai.refresh("context", "/unknown"), "Unknown resource was refreshed");
+            return;
+        }
         if (name == "rate") {
             auto changed = rows();
             auto pod = changed.at(2).toObject(); pod["issue"] = "CrashLoopBackOff"; pod["status"] = "CrashLoopBackOff";
@@ -217,6 +284,27 @@ void scenario(const QString& name) {
         reopened.observe("context", rows(), "de");
         require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000), "New reasoning did not request a distinct analysis");
         require(QJsonDocument::fromJson(server.submitted).object()["think"] == "low", "Chosen reasoning was not sent to Ollama");
+    }
+    if (name == "ttl") {
+        const auto path = QDir(profile).filePath("incident-ai.json");
+        QFile file(path);
+        require(file.open(QIODevice::ReadOnly), "Cannot inspect persisted cache");
+        auto root = QJsonDocument::fromJson(file.readAll()).object(); file.close();
+        auto records = root["records"].toArray();
+        require(records.size() == 1, "Expected one cached analysis");
+        auto record = records.first().toObject();
+        record["created"] = QDateTime::currentDateTimeUtc().addDays(-91).toString(Qt::ISODateWithMs);
+        records.replace(0, record); root["records"] = records;
+        require(file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            && file.write(QJsonDocument(root).toJson()) > 0, "Cannot age persisted cache");
+        file.close();
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000), "Model unavailable after cache expiry");
+        reopened.observe("context", rows(), "de");
+        const auto target = rows().at(2).toObject()["path"].toString();
+        require(reopened.result("context", target).value("summary").toString().isEmpty(), "Expired answer was displayed");
+        require(QTest::qWaitFor([&] { return server.chats == 2 && !reopened.result("context", target).value("summary").toString().isEmpty(); }, 2000),
+            "Expired answer did not trigger new analysis");
     }
 }
 }

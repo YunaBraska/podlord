@@ -30,6 +30,9 @@ bool Workspace::setIncidentAiEnabled(bool enabled) {
 bool Workspace::setIncidentAiModel(const QString& model) { return runtime_->incidentAi.setModel(model); }
 bool Workspace::setIncidentAiReasoning(const QString& reasoning) { return runtime_->incidentAi.setReasoning(reasoning); }
 void Workspace::refreshIncidentAiModels() { runtime_->incidentAi.refreshModels(); }
+bool Workspace::refreshIncidentAiAnalysis() {
+    return runtime_->incidentAi.refresh(sessionConfiguration(active_).value("contextId").toString(), inspectorPath());
+}
 bool Workspace::copyIncidentAiCommand() {
     const auto command = incidentAiResult().value("command").toString();
     if (command.isEmpty() || !QGuiApplication::clipboard()) return false;

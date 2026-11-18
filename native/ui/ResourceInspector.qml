@@ -224,6 +224,21 @@ Pane {
             textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }
+        Label {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && (workspace.incidentAiResult.related || []).length > 0
+            text: workspace.uiText["ai.related"] + ": " + (workspace.incidentAiResult.related || []).join("; ")
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        Button {
+            objectName: "incidentAiReanalyze"
+            Layout.alignment: Qt.AlignLeft
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.code !== undefined
+            enabled: workspace.incidentAiResult.pending !== true
+            text: workspace.uiText["ai.reanalyze"]
+            onClicked: workspace.refreshIncidentAiAnalysis()
+        }
         Flow {
             Layout.fillWidth: true
             visible: workspace.incidentAiEnabled && workspace.incidentAiResult.summary !== undefined

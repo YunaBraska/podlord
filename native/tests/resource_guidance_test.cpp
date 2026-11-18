@@ -206,6 +206,8 @@ bool ui(const QString& mode) {
     if (mode == "ui_ai_live") {
         press("incidentAiEnable");
         require(workspace.incidentAiEnabled(), "AI consent did not activate");
+        require(QTest::qWaitFor([&] { return !workspace.incidentAiModels().isEmpty(); }, 10000)
+            && workspace.setIncidentAiModel(workspace.incidentAiModels().first()), "Cannot select the discovered local model");
         const auto completed = QTest::qWaitFor([&] {
             return !workspace.incidentAiResult().value("summary").toString().isEmpty()
                 || workspace.incidentAiStatus().contains("failed");
@@ -215,10 +217,17 @@ bool ui(const QString& mode) {
         require(item("incidentAiSummary") && item("incidentAiSummary")->property("text").toString() == workspace.incidentAiResult().value("summary").toString(),
             "Inspector did not show the returned AI summary");
         require(!item("incidentAiSummary")->property("text").toString().contains("diagnostic-secret"), "AI summary exposed untrusted status text");
+        require(item("incidentAiReanalyze") && item("incidentAiReanalyze")->isEnabled(), "Explicit reanalysis button is missing");
+        require(boundary.requests == requests, "Initial AI analysis caused an extra Kubernetes request");
+        const int beforeReanalysis = boundary.requests;
+        press("incidentAiReanalyze");
+        require(workspace.incidentAiResult().value("summary").toString().isEmpty(), "Explicit reanalysis retained the cached answer");
+        require(boundary.requests == beforeReanalysis, "Reanalysis caused an immediate Kubernetes request");
+        require(QTest::qWaitFor([&] { return !workspace.incidentAiResult().value("summary").toString().isEmpty(); }, 180000),
+            "Explicit reanalysis did not return a new answer");
         press("incidentAiCopyCommand");
         require(QGuiApplication::clipboard()->text() == workspace.incidentAiResult().value("command").toString(), "Read-only command copy failed");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
-        require(boundary.requests == requests, "AI analysis caused an extra Kubernetes request");
     } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
         if (mode == "ui_node_actions") require(!workspace.podInspected() && !item("guidanceLogs_0"), "Non-Pod diagnostic offers an invalid log action");
         const bool yamlAction = mode == "ui_open_yaml" || mode == "ui_action_keyboard";
