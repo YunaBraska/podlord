@@ -20,6 +20,11 @@ QJsonObject pod(const QString& name, const QString& phase, const QString& create
     if (name == "running-0") {
         spec["nodeName"] = "worker-a";
         spec["volumes"] = QJsonArray{QJsonObject{{"name", "data"}, {"persistentVolumeClaim", QJsonObject{{"claimName", "claim-data"}}}}};
+        const QJsonObject secretRef{{"name", "credentials"}, {"key", "DATABASE_PASSWORD"}};
+        const QJsonObject configRef{{"name", "settings"}, {"key", "SERVER_PORT"}};
+        const QJsonArray env{QJsonObject{{"name", "DATABASE_PASSWORD"}, {"valueFrom", QJsonObject{{"secretKeyRef", secretRef}}}},
+            QJsonObject{{"name", "SERVER_PORT"}, {"valueFrom", QJsonObject{{"configMapKeyRef", configRef}}}}};
+        spec["containers"] = QJsonArray{QJsonObject{{"name", "main"}, {"env", env}}};
     }
     return {{"apiVersion", "v1"}, {"kind", "Pod"},
         {"metadata", QJsonObject{{"name", name}, {"namespace", "default"}, {"uid", name},
@@ -148,6 +153,15 @@ void storageReferences(const QJsonArray& rows) {
         "Pod did not publish its Node and claim references");
     require(claim["boundVolume"] == "volume-01", "Claim did not publish its bound volume reference");
 }
+void referencedKeys(const QJsonArray& rows) {
+    const auto workload = row(rows, "running-0");
+    require(workload["secretKeys"].toArray().contains("DATABASE_PASSWORD")
+        && workload["configMapKeys"].toArray().contains("SERVER_PORT"),
+        "Pod did not publish referenced Secret and ConfigMap key names");
+    require(!QJsonDocument(workload).toJson().contains("credentials")
+        && !QJsonDocument(workload).toJson().contains("settings"),
+        "Referenced resource names appeared in the key projection");
+}
 }
 
 int main(int argc, char* argv[]) {
@@ -169,6 +183,7 @@ int main(int argc, char* argv[]) {
         else if (scenario == "warning_recent") recentWarning(rows);
         else if (scenario == "warning_expired") expiredWarning(rows);
         else if (scenario == "storage_references") storageReferences(rows);
+        else if (scenario == "referenced_keys") referencedKeys(rows);
         else throw std::invalid_argument("Unknown health scenario");
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr, "%s\n", error.what()); return 1; }

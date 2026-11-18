@@ -16,7 +16,7 @@ ChatGPT uses the public browser OAuth flow with a loopback callback, state, nonc
 
 Claude and OpenRouter use separately stored, user-supplied API keys. Their web subscriptions are not reused as API credentials. Claude calls Messages; OpenRouter calls Chat Completions. The UI never displays a saved key. Removing it cancels active analysis. macOS uses Keychain, Windows uses Credential Manager and Linux uses Secret Service. Old private credential files are migrated and removed after a successful transfer. An unavailable OS store disables cloud credentials without a plaintext fallback.
 
-All providers receive only resource kind, recognized problem code, UI language and related status labels. No cluster names, resource names, logs, arbitrary status or Event messages, key names, Secret values or Base64 data are sent. Model text is rendered as plain text. PodLord supplies observed codes, Kubernetes documentation and a copied read-only command locally. Models never execute commands or change the cluster.
+All providers receive only resource kind, recognized problem code, UI language, related status labels and bounded referenced Secret or ConfigMap key names for relevant Pod errors. Key names are checked for token and encoded-value patterns before transmission. No cluster names, resource names, logs, arbitrary status or Event messages, Secret values or Base64 data are sent. Model text is rendered as plain text. PodLord supplies observed codes, Kubernetes documentation and a copied read-only command locally. Models never execute commands or change the cluster.
 
 ## Consequences
 
