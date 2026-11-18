@@ -121,6 +121,29 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
             if (!name.isEmpty() && !claims.contains(name)) claims.append(name);
         }
         result["volumeClaims"] = claims;
+        QJsonArray secretKeys, configMapKeys;
+        for (const auto& group : {"containers", "initContainers", "ephemeralContainers"})
+            for (const auto& value : spec[group].toArray())
+                for (const auto& env : value.toObject()["env"].toArray()) {
+                    const auto source = env.toObject()["valueFrom"].toObject();
+                    const auto secret = source["secretKeyRef"].toObject()["key"].toString();
+                    const auto config = source["configMapKeyRef"].toObject()["key"].toString();
+                    if (!secret.isEmpty() && !secretKeys.contains(secret) && secretKeys.size() < 12) secretKeys.append(secret);
+                    if (!config.isEmpty() && !configMapKeys.contains(config) && configMapKeys.size() < 12) configMapKeys.append(config);
+                }
+        for (const auto& value : spec["volumes"].toArray()) {
+            const auto volume = value.toObject();
+            for (const auto& item : volume["secret"].toObject()["items"].toArray()) {
+                const auto key = item.toObject()["key"].toString();
+                if (!key.isEmpty() && !secretKeys.contains(key) && secretKeys.size() < 12) secretKeys.append(key);
+            }
+            for (const auto& item : volume["configMap"].toObject()["items"].toArray()) {
+                const auto key = item.toObject()["key"].toString();
+                if (!key.isEmpty() && !configMapKeys.contains(key) && configMapKeys.size() < 12) configMapKeys.append(key);
+            }
+        }
+        result["secretKeys"] = secretKeys;
+        result["configMapKeys"] = configMapKeys;
     } else if (version == "v1" && kind == "PersistentVolumeClaim") {
         result["boundVolume"] = spec["volumeName"];
     }

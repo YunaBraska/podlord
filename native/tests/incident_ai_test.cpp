@@ -164,6 +164,36 @@ void scenario(const QString& name) {
         require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000), "Changed related status reused the stale answer");
         return;
     }
+    if (name == "referenced_keys") {
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["issue"] = "CreateContainerConfigError";
+        pod["status"] = "CreateContainerConfigError";
+        pod["secretKeys"] = QJsonArray{"DATABASE_PASSWORD", "c2VjcmV0LXZhbHVlLXRlc3Q=", "c2VjcmV0", "sk-private-token"};
+        pod["configMapKeys"] = QJsonArray{"SERVER_PORT"};
+        snapshot.replace(2, pod);
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setEnabled("context", true) && ai.setModel("local-test:9b"), "Referenced-key model unavailable");
+        ai.observe("context", snapshot, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 1
+            && !ai.result("context", pod["path"].toString()).value("summary").toString().isEmpty(); }, 2000),
+            "Referenced keys did not reach analysis");
+        require(server.submitted.contains("DATABASE_PASSWORD") && server.submitted.contains("SERVER_PORT")
+            && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q=")
+            && !server.submitted.contains("c2VjcmV0")
+            && !server.submitted.contains("sk-private-token")
+            && !server.submitted.contains("private-status-marker"), "Referenced keys were omitted or private values leaked");
+        pod["secretKeys"] = QJsonArray{"NEXT_PASSWORD"};
+        snapshot.replace(2, pod);
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000),
+            "Referenced-key model unavailable after restart");
+        reopened.observe("context", snapshot, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000)
+            && server.submitted.contains("NEXT_PASSWORD"), "Changed key references reused a stale analysis");
+        return;
+    }
     if (name == "events") {
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000) && ai.setModel("local-test:9b"), "Event test model unavailable");
