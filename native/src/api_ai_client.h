@@ -2,6 +2,8 @@
 #include "credential_store.h"
 #include <QNetworkAccessManager>
 #include <QPointer>
+#include <QTcpServer>
+#include <QTimer>
 #include <QVariantList>
 #include <functional>
 
@@ -18,6 +20,7 @@ public:
     QString identity() const;
     QVariantList models() const { return models_; }
     bool setKey(const QString& key);
+    bool signIn(const QString& language = "en");
     void clearKey();
     void refreshModels();
     void analyze(const QString& model, const QString& instructions, const QString& input,
@@ -28,13 +31,18 @@ signals:
 private:
     bool save();
     void loadModels(const QString& after, QVariantList collected);
+    void finishLogin(const QString& status);
     const QString profile_;
     const Provider provider_;
     const QUrl base_;
     QNetworkAccessManager network_;
+    QTcpServer callbackServer_;
+    QTimer loginTimer_;
     QString key_, status_;
+    QString loginState_, loginVerifier_;
+    QString loginLanguage_ = "en";
     QVariantList models_;
-    QPointer<QNetworkReply> modelsReply_, analysisReply_;
+    QPointer<QNetworkReply> modelsReply_, analysisReply_, loginReply_;
     QByteArray savedBytes_;
     bool writable_ = true;
     SystemCredentialStore systemCredentials_;

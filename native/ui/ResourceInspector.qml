@@ -140,18 +140,26 @@ Pane {
             }
         }
         ComboBox {
+            id: incidentAiModel
             objectName: "incidentAiModel"
             Layout.fillWidth: true
             visible: workspace.incidentAiEnabled
             model: workspace.incidentAiModelChoices; textRole: "label"
-            currentIndex: {
-                const exact = model.findIndex(choice => choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
-                return exact >= 0 ? exact : model.findIndex(choice => choice.provider === workspace.incidentAiProvider && choice.slug === "")
-            }
+            currentIndex: model.findIndex(choice => !choice.header && choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
+            displayText: currentIndex < 0 ? workspace.uiText["ai.chooseModel"] : model[currentIndex].label
             Accessible.name: workspace.uiText["ai.model"]
+            delegate: ItemDelegate {
+                required property var modelData
+                required property int index
+                width: incidentAiModel.popup.width
+                text: modelData.label
+                enabled: !modelData.header
+                font.bold: modelData.header
+                highlighted: incidentAiModel.highlightedIndex === index
+            }
             onActivated: index => {
                 const choice = model[index]
-                workspace.selectIncidentAiModel(choice.provider, choice.slug)
+                if (!choice.header) workspace.selectIncidentAiModel(choice.provider, choice.slug)
             }
         }
         RowLayout {

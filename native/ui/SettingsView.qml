@@ -265,17 +265,46 @@ Pane {
                     Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
                     SettingRow {
                         label: workspace.uiText["ai.model"]; help: ""
-                        ComboBox {
-                            objectName: "settingsAiModel"; Layout.fillWidth: true
-                            model: workspace.incidentAiModelChoices; textRole: "label"
-                            currentIndex: {
-                                const exact = model.findIndex(choice => choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
-                                return exact >= 0 ? exact : model.findIndex(choice => choice.provider === workspace.incidentAiProvider && choice.slug === "")
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ComboBox {
+                                id: settingsAiModel
+                                objectName: "settingsAiModel"; Layout.fillWidth: true
+                                model: workspace.incidentAiModelChoices; textRole: "label"
+                                currentIndex: model.findIndex(choice => !choice.header && choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
+                                displayText: currentIndex < 0 ? workspace.uiText["ai.chooseModel"] : model[currentIndex].label
+                                Accessible.name: workspace.uiText["ai.model"]
+                                delegate: ItemDelegate {
+                                    required property var modelData
+                                    required property int index
+                                    width: settingsAiModel.popup.width
+                                    text: modelData.label
+                                    enabled: !modelData.header
+                                    font.bold: modelData.header
+                                    highlighted: settingsAiModel.highlightedIndex === index
+                                }
+                                onActivated: index => {
+                                    const choice = model[index]
+                                    if (!choice.header && workspace.selectIncidentAiModel(choice.provider, choice.slug)) providerKey.clear()
+                                }
                             }
-                            Accessible.name: workspace.uiText["ai.model"]
-                            onActivated: index => {
-                                const choice = model[index]
-                                if (workspace.selectIncidentAiModel(choice.provider, choice.slug)) providerKey.clear()
+                            Button {
+                                id: aiConnectButton
+                                objectName: "settingsAiConnect"
+                                text: workspace.uiText["ai.connectProvider"]
+                                Accessible.name: text
+                                onClicked: aiConnections.open()
+                                Menu {
+                                    id: aiConnections
+                                    MenuItem { objectName: "connectOllama"; text: "Ollama"; onTriggered: workspace.setIncidentAiProvider("ollama") }
+                                    MenuItem { objectName: "connectChatGpt"; text: "ChatGPT"; onTriggered: {
+                                        if (workspace.setIncidentAiProvider("chatgpt") && !workspace.chatgptConnected) workspace.signInChatGpt()
+                                    } }
+                                    MenuItem { objectName: "connectClaude"; text: "Claude API"; onTriggered: workspace.setIncidentAiProvider("claude") }
+                                    MenuItem { objectName: "connectOpenRouter"; text: "OpenRouter"; onTriggered: {
+                                        if (workspace.setIncidentAiProvider("openrouter") && !workspace.incidentAiApiKeyConfigured) workspace.signInOpenRouter()
+                                    } }
+                                }
                             }
                         }
                     }

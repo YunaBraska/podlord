@@ -490,7 +490,16 @@
     "ai.status.. Check ChatGPT Settings → Usage.": ". Check ChatGPT Settings → Usage.",
     "ai.status.System password store is unavailable or locked.": "System password store is unavailable or locked.",
     "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Legacy credentials could not be migrated. The old file was kept.",
-    "ai.status.Credentials exceed the Windows password store size limit.": "Credentials exceed the Windows password store size limit."
+    "ai.status.Credentials exceed the Windows password store size limit.": "Credentials exceed the Windows password store size limit.",
+    "ai.chooseModel": "Choose a model",
+    "ai.connectProvider": "Connect provider",
+    "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter token exchange failed. Sign in again.",
+    "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter sign-in timed out. Try again.",
+    "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Cannot open a local callback for OpenRouter sign-in.",
+    "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter sign-in did not finish. Return to PodLord.",
+    "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter sign-in was cancelled or rejected.",
+    "ai.status.Could not open the browser for OpenRouter sign-in.": "Could not open the browser for OpenRouter sign-in.",
+    "ai.status.Complete OpenRouter sign-in in your browser.": "Complete OpenRouter sign-in in your browser."
   },
   "languages": [
     {
@@ -506,7 +515,9 @@
         "settings.alertVolume": "Alert volume",
         "context.copyName": "Copy context name",
         "context.copyCluster": "Copy cluster name",
-        "settings.removeContextHelp": "Remove this context from Podlord? Its tabs and connections will close. The original kubeconfig stays unchanged."
+        "settings.removeContextHelp": "Remove this context from Podlord? Its tabs and connections will close. The original kubeconfig stays unchanged.",
+        "ai.chooseModel": "Choose a model",
+        "ai.connectProvider": "Connect provider"
       }
     },
     {
@@ -776,7 +787,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "系统密码存储不可用或已锁定。",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "无法迁移旧凭据。旧文件已保留。",
-        "ai.status.Credentials exceed the Windows password store size limit.": "凭据超过 Windows 密码存储的大小限制。"
+        "ai.status.Credentials exceed the Windows password store size limit.": "凭据超过 Windows 密码存储的大小限制。",
+        "ai.chooseModel": "选择模型",
+        "ai.connectProvider": "连接提供商",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter 令牌交换失败。请重新登录。",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter 登录超时。请重试。",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "无法打开本地回调以完成 OpenRouter 登录。",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter 登录未完成。请返回 PodLord。",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter 登录已被取消或拒绝。",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "无法打开浏览器以进行 OpenRouter 登录。",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "请在您的浏览器中完成 OpenRouter 登录。"
       }
     },
     {
@@ -1046,7 +1066,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "सिस्टम पासवर्ड स्टोर उपलब्ध नहीं है या लॉक है।",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "पुराने क्रेडेंशियल माइग्रेट नहीं हो सके। पुरानी फ़ाइल सुरक्षित रखी गई है।",
-        "ai.status.Credentials exceed the Windows password store size limit.": "क्रेडेंशियल Windows पासवर्ड स्टोर की आकार सीमा से बड़े हैं।"
+        "ai.status.Credentials exceed the Windows password store size limit.": "क्रेडेंशियल Windows पासवर्ड स्टोर की आकार सीमा से बड़े हैं।",
+        "ai.chooseModel": "मॉडल चुनें",
+        "ai.connectProvider": "प्रदाता से जुड़ें",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter टोकन विनिमय विफल। पुनः साइन इन करें।",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter साइन-इन टाइमआउट हो गया। पुनः प्रयास करें।",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter साइन-इन के लिए स्थानीय कॉलबैक खोलने में विफल।",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter साइन-इन पूरा नहीं हुआ। PodLord वापस जाएं।",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter साइन-इन रद्द किया गया या अस्वीकार कर दिया गया।",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter साइन-इन के लिए ब्राउज़र खोलने में विफल।",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "अपने ब्राउज़र में OpenRouter साइन-इन पूरा करें।"
       }
     },
     {
@@ -1313,7 +1342,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "El almacén de contraseñas del sistema no está disponible o está bloqueado.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "No se pudieron migrar las credenciales anteriores. Se conservó el archivo original.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Las credenciales superan el límite de tamaño del almacén de contraseñas de Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Las credenciales superan el límite de tamaño del almacén de contraseñas de Windows.",
+        "ai.chooseModel": "Elegir modelo",
+        "ai.connectProvider": "Conectar proveedor",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "El intercambio del token de OpenRouter falló. Inicia sesión de nuevo.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "La conexión con OpenRouter ha superado el tiempo límite. Vuelve a intentarlo.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "No se puede abrir una llamada local para el inicio de sesión de OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "El inicio de sesión en OpenRouter no ha finalizado. Vuelve a PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "El inicio de sesión en OpenRouter se ha cancelado o rechazado.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "No se pudo abrir el navegador para el inicio de sesión en OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Completa el inicio de sesión en OpenRouter en tu navegador."
       }
     },
     {
@@ -1583,7 +1621,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "مخزن كلمات المرور في النظام غير متاح أو مقفل.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "تعذّر نقل بيانات الاعتماد القديمة. تم الاحتفاظ بالملف القديم.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "تتجاوز بيانات الاعتماد حد الحجم في مخزن كلمات مرور Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "تتجاوز بيانات الاعتماد حد الحجم في مخزن كلمات مرور Windows.",
+        "ai.chooseModel": "اختر نموذجًا",
+        "ai.connectProvider": "توصيل مزود",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "فشل تبادل رمز OpenRouter. قم بتسجيل الدخول مرة أخرى.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "انتهت مهلة تسجيل الدخول إلى OpenRouter. حاول مرة أخرى.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "تعذر فتح استدعاء محلي لتسجيل الدخول إلى OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "لم ينتهِ تسجيل الدخول إلى OpenRouter. عد إلى PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "تم إلغاء أو رفض تسجيل الدخول إلى OpenRouter.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "تعذر فتح المتصفح لتسجيل الدخول إلى OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "أكمل تسجيل الدخول إلى OpenRouter في متصفحك."
       }
     },
     {
@@ -1850,7 +1897,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "সিস্টেমের পাসওয়ার্ড স্টোর উপলব্ধ নয় বা লক করা আছে।",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "পুরোনো শংসাপত্র স্থানান্তর করা যায়নি। পুরোনো ফাইলটি রাখা হয়েছে।",
-        "ai.status.Credentials exceed the Windows password store size limit.": "শংসাপত্র Windows পাসওয়ার্ড স্টোরের আকারসীমা ছাড়িয়ে গেছে।"
+        "ai.status.Credentials exceed the Windows password store size limit.": "শংসাপত্র Windows পাসওয়ার্ড স্টোরের আকারসীমা ছাড়িয়ে গেছে।",
+        "ai.chooseModel": "মডেল বেছে নিন",
+        "ai.connectProvider": "প্রদানকারী সংযুক্ত করুন",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter টোকেন বিনিময় ব্যর্থ হয়েছে। আবার লগইন করুন।",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter সাইন-ইন টাইমআউট হয়েছে। আবার চেষ্টা করুন।",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter সাইন-ইনের জন্য লোকাল ক্যালব্যাক খোলা সম্ভব হলো না।",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter সাইন-ইন সম্পন্ন হয়নি। PodLord-এ ফিরে যান।",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter সাইন-ইন বাতিল করা হয়েছে অথবা প্রত্যাখ্যাত হয়েছে।",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter সাইন-ইনের জন্য ব্রাউজার খোলা সম্ভব হলো না।",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "আপনার ব্রাউজারে OpenRouter সাইন-ইন সম্পন্ন করুন।"
       }
     },
     {
@@ -2114,7 +2170,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "O armazenamento de senhas do sistema está indisponível ou bloqueado.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Não foi possível migrar as credenciais antigas. O arquivo antigo foi mantido.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "As credenciais excedem o limite de tamanho do armazenamento de senhas do Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "As credenciais excedem o limite de tamanho do armazenamento de senhas do Windows.",
+        "ai.chooseModel": "Escolher modelo",
+        "ai.connectProvider": "Conectar provedor",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Troca do token do OpenRouter falhou. Faça login novamente.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Tempo limite para o login no OpenRouter expirou. Tente novamente.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Não foi possível abrir um callback local para o login no OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "O login no OpenRouter não foi concluído. Retorne ao PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "O login no OpenRouter foi cancelado ou rejeitado.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Não foi possível abrir o navegador para o login no OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Conclua o login no OpenRouter no seu navegador."
       }
     },
     {
@@ -2384,7 +2449,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Системное хранилище паролей недоступно или заблокировано.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Не удалось перенести старые учетные данные. Старый файл сохранен.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Учетные данные превышают ограничение размера хранилища паролей Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Учетные данные превышают ограничение размера хранилища паролей Windows.",
+        "ai.chooseModel": "Выбрать модель",
+        "ai.connectProvider": "Подключить провайдера",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Обмен токеном OpenRouter не удался. Войдите снова.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Тайм-аут входа в OpenRouter. Попробуйте снова.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Не удалось открыть локальный обратный вызов для входа в OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "Вход в OpenRouter не был завершен. Вернитесь к PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "Вход в OpenRouter был отменён или отвергнут.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Не удалось открыть браузер для входа в OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Завершите вход в OpenRouter в вашем браузере."
       }
     },
     {
@@ -2654,7 +2728,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "システムのパスワード保管庫を利用できないか、ロックされています。",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "以前の認証情報を移行できませんでした。元のファイルは保持されています。",
-        "ai.status.Credentials exceed the Windows password store size limit.": "認証情報が Windows のパスワード保管庫のサイズ制限を超えています。"
+        "ai.status.Credentials exceed the Windows password store size limit.": "認証情報が Windows のパスワード保管庫のサイズ制限を超えています。",
+        "ai.chooseModel": "モデルを選択",
+        "ai.connectProvider": "プロバイダーを接続",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter トークンの交換に失敗しました。再度サインインしてください。",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter のサインインがタイムアウトしました。再度お試しください。",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter サインインのローカルコールバックを開けません。",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter サインインが完了しませんでした。PodLord に戻ってください。",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter サインインがキャンセルまたは拒否されました。",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter サインイン用のブラウザを開けません。",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "ブラウザで OpenRouter サインインを完了してください。"
       }
     },
     {
@@ -2921,7 +3004,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "ਸਿਸਟਮ ਪਾਸਵਰਡ ਸਟੋਰ ਉਪਲਬਧ ਨਹੀਂ ਹੈ ਜਾਂ ਲੌਕ ਹੈ।",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "ਪੁਰਾਣੇ ਪ੍ਰਮਾਣ ਪੱਤਰ ਤਬਦੀਲ ਨਹੀਂ ਕੀਤੇ ਜਾ ਸਕੇ। ਪੁਰਾਣੀ ਫ਼ਾਈਲ ਰੱਖੀ ਗਈ ਹੈ।",
-        "ai.status.Credentials exceed the Windows password store size limit.": "ਪ੍ਰਮਾਣ ਪੱਤਰ Windows ਪਾਸਵਰਡ ਸਟੋਰ ਦੀ ਆਕਾਰ ਸੀਮਾ ਤੋਂ ਵੱਧ ਹਨ।"
+        "ai.status.Credentials exceed the Windows password store size limit.": "ਪ੍ਰਮਾਣ ਪੱਤਰ Windows ਪਾਸਵਰਡ ਸਟੋਰ ਦੀ ਆਕਾਰ ਸੀਮਾ ਤੋਂ ਵੱਧ ਹਨ।",
+        "ai.chooseModel": "ਮਾਡਲ ਚੁਣੋ",
+        "ai.connectProvider": "ਪ੍ਰਦਾਤਾ ਨਾਲ ਜੁੜੋ",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter ਟੋਕਨ ਬਦਲਣ ਵਿੱਚ ਅਸਫਲ ਹੋਇਆ। ਦੁਬਾਰਾ ਲੌਗ ਇਨ ਕਰੋ।",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter ਲੌਗ-ਇਨ ਸਮਾਂ ਪੂਰਾ ਹੋ ਗਿਆ। ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter ਲੌਗ-ਇਨ ਲਈ ਇੱਕ ਲੋਕਲ ਕੈਲਬੈਕ ਖੋਲ੍ਹਣ ਵਿੱਚ ਅਸਮਰਥ।",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter ਲੌਗ-ਇਨ ਪੂਰਾ ਨਹੀਂ ਹੋਇਆ। PodLord ਵਿੱਚ ਵਾਪਸ ਆਓ।",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter ਲੌਗ-ਇਨ ਰੱਦ ਕੀਤਾ ਗਿਆ ਜਾਂ ਅਸਵੀਕਾਰ ਕੀਤਾ ਗਿਆ ਹੈ।",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter ਲੌਗ-ਇਨ ਲਈ ਬ੍ਰਾਊਜ਼ਰ ਖੋਲ੍ਹਣ ਵਿੱਚ ਅਸਮਰਥ।",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "ਬ੍ਰਾਊਜ਼ਰ ਵਿੱਚ OpenRouter ਲੌਗ-ਇਨ ਪੂਰਾ ਕਰੋ।"
       }
     },
     {
@@ -3277,7 +3369,16 @@
         "ai.status.. Check ChatGPT Settings → Usage.": ". Prüfe ChatGPT-Einstellungen → Nutzung.",
         "ai.status.System password store is unavailable or locked.": "Der Passwortspeicher des Systems ist nicht verfügbar oder gesperrt.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Die bisherigen Zugangsdaten konnten nicht übernommen werden. Die alte Datei wurde behalten.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Die Zugangsdaten überschreiten die Größenbegrenzung des Windows-Passwortspeichers."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Die Zugangsdaten überschreiten die Größenbegrenzung des Windows-Passwortspeichers.",
+        "ai.chooseModel": "Modell wählen",
+        "ai.connectProvider": "Anbieter verbinden",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Der OpenRouter-Token-Austausch ist fehlgeschlagen. Melde dich erneut an.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Zeitüberschreitung bei der OpenRouter-Anmeldung. Versuche es erneut.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Der lokale Rückruf für die OpenRouter-Anmeldung konnte nicht geöffnet werden.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter-Anmeldung wurde nicht abgeschlossen. Kehre zu PodLord zurück.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter-Anmeldung wurde abgebrochen oder abgelehnt.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Der Browser für die OpenRouter-Anmeldung konnte nicht geöffnet werden.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Beende die OpenRouter-Anmeldung in deinem Browser."
       }
     },
     {
@@ -3535,7 +3636,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Le coffre de mots de passe du système est indisponible ou verrouillé.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Impossible de migrer les anciens identifiants. Le fichier d’origine a été conservé.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Les identifiants dépassent la limite de taille du coffre de mots de passe Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Les identifiants dépassent la limite de taille du coffre de mots de passe Windows.",
+        "ai.chooseModel": "Choisir un modèle",
+        "ai.connectProvider": "Connecter un fournisseur",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Échange du token OpenRouter échoué. Veuillez vous reconnecter.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "La connexion OpenRouter a expiré. Réessaie.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Impossible d'ouvrir une boucle de rappel locale pour la connexion OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "La connexion OpenRouter n'a pas été terminée. Retourne dans PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "La connexion OpenRouter a été annulée ou rejetée.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Impossible d'ouvrir le navigateur pour la connexion OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Termine la connexion OpenRouter dans ton navigateur."
       }
     },
     {
@@ -3802,7 +3912,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "سسٹم کا پاس ورڈ اسٹور دستیاب نہیں یا مقفل ہے۔",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "پرانے اکاؤنٹ کی معلومات منتقل نہیں ہو سکیں۔ پرانی فائل محفوظ رکھی گئی ہے۔",
-        "ai.status.Credentials exceed the Windows password store size limit.": "اکاؤنٹ کی معلومات Windows پاس ورڈ اسٹور کی سائز حد سے زیادہ ہیں۔"
+        "ai.status.Credentials exceed the Windows password store size limit.": "اکاؤنٹ کی معلومات Windows پاس ورڈ اسٹور کی سائز حد سے زیادہ ہیں۔",
+        "ai.chooseModel": "ماڈل منتخب کریں",
+        "ai.connectProvider": "فراہم کنندہ جوڑیں",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter ٹوکن تبادلہ ناکام ہو گیا۔ دوبارہ لاگ ان کریں۔",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter سائن ان کا وقت ختم ہو گیا، دوبارہ کوشش کریں۔",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter لاگ ان کے لیے مقامی کال بیک کھولنے میں ناکام رہا۔",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter لاگ ان مکمل نہیں ہوا۔ PodLord واپس جائیں۔",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter لاگ منسوخ یا مسترد کر دیا گیا۔",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter لاگ ان کے لیے براؤزر کھولنے میں ناکامی ہوئی۔",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "براؤزر میں OpenRouter لاگ ان مکمل کریں۔"
       }
     },
     {
@@ -4066,7 +4185,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Penyimpanan kata sandi sistem tidak tersedia atau terkunci.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Kredensial lama tidak dapat dipindahkan. Berkas lama tetap disimpan.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Kredensial melebihi batas ukuran penyimpanan kata sandi Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Kredensial melebihi batas ukuran penyimpanan kata sandi Windows.",
+        "ai.chooseModel": "Pilih model",
+        "ai.connectProvider": "Hubungkan penyedia",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Pertukaran token OpenRouter gagal. Masuk lagi.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Waktu login OpenRouter habis. Coba lagi.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Tidak bisa membuka callback lokal untuk login OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "Login OpenRouter tidak selesai. Kembali ke PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "Login OpenRouter dibatalkan atau ditolak.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Tidak bisa membuka browser untuk login OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Selesaikan login OpenRouter di browser Anda."
       }
     },
     {
@@ -4334,7 +4462,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Sistem parola deposu kullanılamıyor veya kilitli.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Eski kimlik bilgileri taşınamadı. Eski dosya korundu.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Kimlik bilgileri Windows parola deposunun boyut sınırını aşıyor."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Kimlik bilgileri Windows parola deposunun boyut sınırını aşıyor.",
+        "ai.chooseModel": "Model seç",
+        "ai.connectProvider": "Sağlayıcı bağla",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter token değişimi başarısız. Tekrar giriş yapın.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter giriş işlemi zaman aşımına uğradı. Tekrar deneyin.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter giriş işleminin yerel geri çağrısı açılamadı.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter giriş işlemi tamamlanmadı. PodLord'a dönün.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter giriş işlemi iptal edildi veya reddedildi.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter giriş işlemi için tarayıcı açılamadı.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "OpenRouter giriş işlemini tarayıcınızda tamamlayın."
       }
     },
     {
@@ -4604,7 +4741,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "시스템 암호 저장소를 사용할 수 없거나 잠겨 있습니다.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "기존 자격 증명을 이전할 수 없습니다. 기존 파일은 보존했습니다.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "자격 증명이 Windows 암호 저장소의 크기 제한을 초과합니다."
+        "ai.status.Credentials exceed the Windows password store size limit.": "자격 증명이 Windows 암호 저장소의 크기 제한을 초과합니다.",
+        "ai.chooseModel": "모델 선택",
+        "ai.connectProvider": "제공업체 연결",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter 토큰 교환 실패. 다시 로그인하세요.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter 로그인 시간이 초과되었습니다. 다시 시도하세요.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "OpenRouter 로그인용 로컬 콜백을 열 수 없습니다.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter 로그인이 완료되지 않았습니다. PodLord 로 돌아갑니다.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter 로그인이 취소되거나 거부되었습니다.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "OpenRouter 로그인용 브라우저를 열 수 없습니다.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "브라우저에서 OpenRouter 로그인을 완료하세요."
       }
     },
     {
@@ -4873,7 +5019,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Kho mật khẩu hệ thống không khả dụng hoặc đang bị khóa.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Không thể chuyển thông tin đăng nhập cũ. Tệp cũ đã được giữ lại.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Thông tin đăng nhập vượt quá giới hạn dung lượng của kho mật khẩu Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Thông tin đăng nhập vượt quá giới hạn dung lượng của kho mật khẩu Windows.",
+        "ai.chooseModel": "Chọn mô hình",
+        "ai.connectProvider": "Kết nối nhà cung cấp",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Trao đổi token OpenRouter thất bại. Hãy đăng nhập lại.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Thời gian đăng nhập OpenRouter hết hạn. Thử lại.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Không thể mở phản hồi cục bộ cho đăng nhập OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "Quy trình đăng nhập OpenRouter chưa hoàn thành. Quay trở lại PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "Đăng nhập OpenRouter đã bị hủy hoặc từ chối.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Không thể mở trình duyệt để đăng nhập OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Hoàn tất đăng nhập OpenRouter trong trình duyệt của bạn."
       }
     },
     {
@@ -5138,7 +5293,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "L’archivio password di sistema non è disponibile o è bloccato.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Impossibile migrare le credenziali precedenti. Il vecchio file è stato conservato.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Le credenziali superano il limite di dimensione dell’archivio password di Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Le credenziali superano il limite di dimensione dell’archivio password di Windows.",
+        "ai.chooseModel": "Scegli modello",
+        "ai.connectProvider": "Collega provider",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Lo scambio del token di OpenRouter è fallito. Accedi di nuovo.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Il login a OpenRouter è scaduto. Riprova.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Impossibile aprire un callback locale per il login a OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "Il login a OpenRouter non è stato completato. Torna a PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "Il login a OpenRouter è stato annullato o rifiutato.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Impossibile aprire il browser per il login a OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Completa il login a OpenRouter nel tuo browser."
       }
     },
     {
@@ -5405,7 +5569,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Systemowy magazyn haseł jest niedostępny lub zablokowany.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Nie udało się przenieść wcześniejszych danych logowania. Stary plik został zachowany.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Dane logowania przekraczają limit rozmiaru magazynu haseł systemu Windows."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Dane logowania przekraczają limit rozmiaru magazynu haseł systemu Windows.",
+        "ai.chooseModel": "Wybierz model",
+        "ai.connectProvider": "Połącz dostawcę",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Wymiana tokena OpenRouter nie powiodła się. Zaloguj się ponownie.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "Czas na zalogowanie do OpenRouter upłynął. Spróbuj ponownie.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Nie można otworzyć lokalnego powrotu dla zalogowania do OpenRouter.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "Zalogowanie do OpenRouter nie zostało ukończone. Wróć do PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "Zalogowanie do OpenRouter zostało anulowane lub odrzucone.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Nie można otworzyć przeglądarki dla zalogowania do OpenRouter.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Ukończ zalogowanie do OpenRouter w swojej przeglądarce."
       }
     },
     {
@@ -5661,7 +5834,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "De wachtwoordopslag van het systeem is niet beschikbaar of vergrendeld.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "De oude aanmeldgegevens konden niet worden gemigreerd. Het oude bestand is bewaard.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "De aanmeldgegevens overschrijden de groottelimiet van de Windows-wachtwoordopslag."
+        "ai.status.Credentials exceed the Windows password store size limit.": "De aanmeldgegevens overschrijden de groottelimiet van de Windows-wachtwoordopslag.",
+        "ai.chooseModel": "Model kiezen",
+        "ai.connectProvider": "Provider verbinden",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "OpenRouter token-uitwisseling mislukt. Log opnieuw in.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter-inloggen is verlopen. Probeer opnieuw.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Kan geen lokaal callback voor OpenRouter-inloggen openen.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter-inloggen is niet voltooid. Terugkeren naar PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter-inloggen is geannuleerd of afgewezen.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Kon de browser niet openen voor OpenRouter-inloggen.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Voltooi OpenRouter-inloggen in je browser."
       }
     },
     {
@@ -5925,7 +6107,16 @@
         "ai.relatedVolume": "Volume: ",
         "ai.status.System password store is unavailable or locked.": "Systemets lösenordslagring är inte tillgänglig eller är låst.",
         "ai.status.Legacy credentials could not be migrated. The old file was kept.": "Tidigare inloggningsuppgifter kunde inte flyttas. Den gamla filen har sparats.",
-        "ai.status.Credentials exceed the Windows password store size limit.": "Inloggningsuppgifterna överskrider storleksgränsen för Windows lösenordslagring."
+        "ai.status.Credentials exceed the Windows password store size limit.": "Inloggningsuppgifterna överskrider storleksgränsen för Windows lösenordslagring.",
+        "ai.chooseModel": "Välj modell",
+        "ai.connectProvider": "Anslut leverantör",
+        "ai.status.OpenRouter token exchange failed. Sign in again.": "Utbyte av OpenRouter-token misslyckades. Logga in igen.",
+        "ai.status.OpenRouter sign-in timed out. Try again.": "OpenRouter-inloggningen tidsgränsades. Försök igen.",
+        "ai.status.Cannot open a local callback for OpenRouter sign-in.": "Kan inte öppna en lokal återkoppling för OpenRouter-inloggning.",
+        "ai.status.OpenRouter sign-in did not finish. Return to PodLord.": "OpenRouter-inloggningen avslutades inte. Återvänd till PodLord.",
+        "ai.status.OpenRouter sign-in was cancelled or rejected.": "OpenRouter-inloggningen avbröts eller nekades.",
+        "ai.status.Could not open the browser for OpenRouter sign-in.": "Kunde inte öppna webbläsaren för OpenRouter-inloggning.",
+        "ai.status.Complete OpenRouter sign-in in your browser.": "Avsluta OpenRouter-inloggningen i din webbläsare."
       }
     }
   ]

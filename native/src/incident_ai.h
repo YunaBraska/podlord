@@ -59,6 +59,7 @@ public:
     bool chatgptConnected() const { return chatgpt_.connected(); }
     QString chatgptClientId() const { return chatgpt_.activeClientId(); }
     bool chatgptSignIn(const QString& clientId = {}, const QString& language = "en") { return supported() && chatgpt_.signIn(clientId, language); }
+    bool openRouterSignIn(const QString& language = "en") { return supported() && openrouter_.signIn(language); }
     void chatgptSignOut() { if (supported()) chatgpt_.signOut(); }
     bool setApiKey(const QString& key);
     void clearApiKey();

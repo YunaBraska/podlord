@@ -19,6 +19,7 @@
 #include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
 #include <QVariantList>
+#include <QUrl>
 #include <QPointer>
 #include <memory>
 #include <optional>
@@ -189,6 +190,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
     Q_PROPERTY(QVariantMap sourceRemoval READ sourceRemoval NOTIFY sourceRemovalChanged)
     Q_PROPERTY(QString defaultSourceOrigin READ defaultSourceOrigin CONSTANT)
+    Q_PROPERTY(QUrl defaultKubeconfigFolder READ defaultKubeconfigFolder CONSTANT)
     Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
     Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
     Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
@@ -446,6 +448,7 @@ public:
     Q_INVOKABLE bool selectIncidentAiModel(const QString& provider, const QString& model);
     Q_INVOKABLE bool setIncidentAiProvider(const QString& provider);
     Q_INVOKABLE bool signInChatGpt();
+    Q_INVOKABLE bool signInOpenRouter();
     Q_INVOKABLE void signOutChatGpt();
     Q_INVOKABLE bool setIncidentAiApiKey(const QString& key);
     Q_INVOKABLE void clearIncidentAiApiKey();
@@ -455,6 +458,7 @@ public:
     Q_INVOKABLE bool copyIncidentAiCommand();
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;
+    QUrl defaultKubeconfigFolder() const;
     Q_INVOKABLE bool importText(QString originPath, const QString& yaml);
     Q_INVOKABLE bool importHome();
     Q_INVOKABLE bool refreshSources();

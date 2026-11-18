@@ -36,6 +36,7 @@ bool Workspace::setIncidentAiModel(const QString& model) { return runtime_->inci
 bool Workspace::selectIncidentAiModel(const QString& provider, const QString& model) { return runtime_->incidentAi.selectModel(provider, model); }
 bool Workspace::setIncidentAiProvider(const QString& provider) { return runtime_->incidentAi.setProvider(provider); }
 bool Workspace::signInChatGpt() { return runtime_->incidentAi.chatgptSignIn(runtime_->incidentAi.chatgptClientId(), settings_.language); }
+bool Workspace::signInOpenRouter() { return runtime_->incidentAi.openRouterSignIn(settings_.language); }
 void Workspace::signOutChatGpt() { runtime_->incidentAi.chatgptSignOut(); }
 bool Workspace::setIncidentAiApiKey(const QString& key) { return runtime_->incidentAi.setApiKey(key); }
 void Workspace::clearIncidentAiApiKey() { runtime_->incidentAi.clearApiKey(); }

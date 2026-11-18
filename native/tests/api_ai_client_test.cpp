@@ -1,9 +1,10 @@
 #include "api_ai_client.h"
 #include "incident_ai.h"
 #include "memory_credential_store.h"
-#include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,11 +12,21 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QUrlQuery>
 #include <cstdio>
 #include <memory>
 
 namespace {
 void require(bool condition, const char* message) { if (!condition) { std::fprintf(stderr, "%s\n", message); std::exit(1); } }
+class BrowserCapture final : public QObject {
+    Q_OBJECT
+public:
+    BrowserCapture() { QDesktopServices::setUrlHandler("http", this, "opened"); }
+    ~BrowserCapture() override { QDesktopServices::unsetUrlHandler("http"); }
+    QUrl last;
+public slots:
+    void opened(const QUrl& url) { last = url; }
+};
 class Boundary final : public QTcpServer {
 public:
     explicit Boundary(bool claude) : claude_(claude) {
@@ -37,7 +48,14 @@ public:
                     int code = lower.contains("authorization: bearer private-test-key") ? 200 : 401;
                     if (claude_ && !lower.contains("anthropic-version: 2026-10-21")) code = 400;
                     QByteArray payload;
-                    if (firstLine.startsWith("GET /v1/models") || firstLine.startsWith("GET /api/v1/models")) {
+                    if (firstLine.startsWith("POST /api/v1/auth/keys") && !claude_) {
+                        oauthSubmitted = body;
+                        const auto exchange = QJsonDocument::fromJson(body).object();
+                        code = exchange.value("code") == "test-code"
+                            && !exchange.value("code_verifier").toString().isEmpty()
+                            && exchange.value("code_challenge_method") == "S256" ? 200 : 400;
+                        payload = QJsonDocument(QJsonObject{{"key", "private-test-key"}}).toJson(QJsonDocument::Compact);
+                    } else if (firstLine.startsWith("GET /v1/models") || firstLine.startsWith("GET /api/v1/models")) {
                         const QJsonObject model = claude_ ? QJsonObject{{"id", "claude-test"}, {"display_name", "Claude test"}}
                             : QJsonObject{{"id", "vendor/model"}, {"name", "Router test"},
                                 {"architecture", QJsonObject{{"output_modalities", QJsonArray{"text"}}}}};
@@ -60,9 +78,64 @@ public:
     }
     QString base() const { return QString("http://127.0.0.1:%1").arg(serverPort()); }
     QByteArray submitted;
+    QByteArray oauthSubmitted;
 private:
     bool claude_;
 };
+void oauthScenario() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "Cannot create OAuth profile");
+    BrowserCapture browser;
+    Boundary boundary(false);
+    require(boundary.listen(QHostAddress::LocalHost, 0), "Cannot start OpenRouter boundary");
+    MemoryCredentialStore credentials;
+    podlord::ApiAiClient client(directory.filePath("profile"), podlord::ApiAiClient::Provider::OpenRouter,
+        QUrl(boundary.base()), nullptr, &credentials);
+    require(client.signIn("de") && !client.signIn(), "OpenRouter sign-in did not start exactly once");
+    require(QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000), "OpenRouter browser did not open");
+    const QUrlQuery authorization(browser.last);
+    require(browser.last.path() == "/auth" && authorization.queryItemValue("code_challenge_method") == "S256"
+        && !authorization.queryItemValue("code_challenge").isEmpty()
+        && !authorization.queryItemValue("state").isEmpty(), "OpenRouter authorization request is incomplete");
+    const auto callback = [&](bool wrongState, bool denied = false) {
+        const QUrlQuery currentAuthorization(browser.last);
+        QUrl uri(currentAuthorization.queryItemValue("callback_url", QUrl::FullyDecoded));
+        QUrlQuery query;
+        query.addQueryItem("state", wrongState ? "wrong" : currentAuthorization.queryItemValue("state", QUrl::FullyDecoded));
+        if (denied) query.addQueryItem("error", "access_denied");
+        else query.addQueryItem("code", "test-code");
+        uri.setQuery(query);
+        QTcpSocket socket;
+        socket.connectToHost("127.0.0.1", uri.port());
+        require(socket.waitForConnected(1000), "Cannot reach OpenRouter callback");
+        socket.write("GET " + uri.toEncoded(QUrl::RemoveScheme | QUrl::RemoveAuthority)
+            + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        socket.flush();
+        QTest::qWait(50);
+        return socket.bytesAvailable() ? socket.readAll() : QByteArray{};
+    };
+    callback(true);
+    require(!client.configured() && boundary.oauthSubmitted.isEmpty(), "Wrong OAuth state was accepted");
+    const auto response = callback(false);
+    require(response.contains("Du kannst") || response.contains("Sie können"),
+        "OpenRouter callback did not use the selected language");
+    require(QTest::qWaitFor([&] { return client.configured() && client.models().size() == 1; }, 3000),
+        "OpenRouter sign-in did not save key and load catalog");
+    const auto stored = credentials.read(directory.filePath("profile"), "openrouter");
+    require(stored.ok && stored.found && stored.data.contains("private-test-key")
+        && !QFile::exists(directory.filePath("profile/openrouter-auth.json")),
+        "OpenRouter browser key was not saved in the system credential store");
+    client.clearKey();
+    require(!client.configured() && !credentials.read(directory.filePath("profile"), "openrouter").found,
+        "OpenRouter sign-out left a credential");
+    browser.last = QUrl{};
+    require(client.signIn() && QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000),
+        "OpenRouter sign-in could not be repeated");
+    callback(false, true);
+    require(QTest::qWaitFor([&] { return client.status().contains("cancelled"); }, 1000)
+        && !client.configured(),
+        "Cancelled OpenRouter sign-in connected an account");
+}
 void scenario(bool claude) {
     QTemporaryDir directory;
     require(directory.isValid(), "Cannot create test profile");
@@ -100,6 +173,22 @@ void scenario(bool claude) {
         }
         return false;
     }, 2000), "Combined model catalog did not include the configured provider");
+    const auto choices = ai.allModelChoices();
+    int headers = 0, models = 0;
+    for (const auto& value : choices) {
+        const auto choice = value.toMap();
+        if (choice.value("header").toBool()) {
+            ++headers;
+            require(choice.value("provider") == providerName && choice.value("slug").toString().isEmpty(),
+                "Unconnected provider appeared as a model");
+        } else {
+            ++models;
+            require(choice.value("provider") == providerName && choice.value("slug") == model,
+                "Model list contains a placeholder instead of a model");
+        }
+    }
+    require(headers == 1 && models == 1 && !ai.selectModel(providerName, {}),
+        "Combined model list contains selectable provider placeholders");
     require(ai.model().isEmpty() && ai.selectModel(providerName, model) && ai.provider() == providerName
         && ai.model() == model, "Selecting a model did not activate its provider");
     require(ai.setEnabled("cluster-one", true), "Cannot enable incident analysis");
@@ -161,9 +250,11 @@ void systemStoreScenario() {
 }
 } // namespace
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
     const auto name = argc < 2 ? QStringLiteral("claude") : QString::fromUtf8(argv[1]);
-    if (name == "migration" || name == "unavailable" || name == "conflict" || name == "invalid") storageScenario(name);
+    if (name == "oauth") oauthScenario();
+    else if (name == "migration" || name == "unavailable" || name == "conflict" || name == "invalid") storageScenario(name);
     else if (name == "system_store") systemStoreScenario();
     else scenario(name == "claude");
 }
+#include "api_ai_client_test.moc"

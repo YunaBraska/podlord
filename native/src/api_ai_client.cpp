@@ -1,14 +1,20 @@
 #include "api_ai_client.h"
 #include "session_store.h"
+#include "ui_language.h"
 #include <QCryptographicHash>
+#include <QDesktopServices>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QRandomGenerator>
+#include <QTcpSocket>
 #include <QUrlQuery>
 #include <algorithm>
+#include <array>
+#include <memory>
 
 namespace podlord {
 namespace {
@@ -25,6 +31,8 @@ ApiAiClient::ApiAiClient(QString profile, Provider provider, QUrl base, QObject*
     : QObject(parent), profile_(std::move(profile)), provider_(provider),
       base_(base.isEmpty() ? (provider == Provider::Claude ? QUrl("https://api.anthropic.com") : QUrl("https://openrouter.ai")) : std::move(base)),
       credentials_(credentials ? credentials : &systemCredentials_) {
+    loginTimer_.setSingleShot(true);
+    connect(&loginTimer_, &QTimer::timeout, this, [this] { finishLogin("OpenRouter sign-in timed out. Try again."); });
     if (!base_.isValid() || (base_.scheme() != "https" && !(base_.scheme() == "http" && base_.host() == "127.0.0.1"))
         || base_.host().isEmpty() || !base_.userInfo().isEmpty() || !base_.path().isEmpty() || base_.hasQuery() || base_.hasFragment()) {
         writable_ = false; status_ = "Invalid AI provider endpoint."; return;
@@ -44,6 +52,101 @@ ApiAiClient::ApiAiClient(QString profile, Provider provider, QUrl base, QObject*
         writable_ = false; status_ = "AI provider credentials are invalid."; return;
     }
     key_ = document.object().value("key").toString();
+}
+bool ApiAiClient::signIn(const QString& language) {
+    if (provider_ != Provider::OpenRouter || !writable_ || !loginState_.isEmpty()) return false;
+    if (!callbackServer_.listen(QHostAddress::LocalHost, 0)) {
+        status_ = "Cannot open a local callback for OpenRouter sign-in."; emit changed(); return false;
+    }
+    const auto randomValue = [] {
+        std::array<quint32, 8> words;
+        QRandomGenerator::system()->generate(words.begin(), words.end());
+        return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(words.data()), sizeof(words))
+            .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
+    };
+    loginState_ = randomValue();
+    loginVerifier_ = randomValue();
+    loginLanguage_ = language;
+    connect(&callbackServer_, &QTcpServer::newConnection, this, [this] {
+        auto* socket = callbackServer_.nextPendingConnection();
+        if (!socket) return;
+        auto bytes = std::make_shared<QByteArray>();
+        connect(socket, &QTcpSocket::readyRead, this, [this, socket, bytes] {
+            bytes->append(socket->readAll());
+            if (bytes->size() > 8192) { socket->disconnectFromHost(); return; }
+            const auto end = bytes->indexOf("\r\n\r\n");
+            if (end < 0) return;
+            const auto line = bytes->left(bytes->indexOf("\r\n"));
+            const auto parts = line.split(' ');
+            const QUrl callback(parts.size() == 3 ? QString::fromLatin1(parts[1]) : QString{});
+            const QUrlQuery query(callback);
+            const auto items = query.queryItems(QUrl::FullyDecoded);
+            const auto count = [&items](const QString& name) {
+                return std::count_if(items.cbegin(), items.cend(), [&name](const auto& item) { return item.first == name; });
+            };
+            const bool valid = parts.size() == 3 && parts[0] == "GET" && parts[2] == "HTTP/1.1"
+                && parts[1].startsWith("/callback?") && callback.path() == "/callback" && !loginState_.isEmpty()
+                && count("state") == 1 && count("code") <= 1 && count("error") <= 1
+                && query.queryItemValue("state", QUrl::FullyDecoded) == loginState_;
+            const auto code = valid ? query.queryItemValue("code", QUrl::FullyDecoded) : QString{};
+            const bool denied = valid && !query.queryItemValue("error", QUrl::FullyDecoded).isEmpty();
+            const QByteArray body = localizedAiStatus(valid && !denied && !code.isEmpty()
+                ? "You can return to PodLord." : "OpenRouter sign-in did not finish. Return to PodLord.", loginLanguage_).toUtf8();
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: "
+                + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+            socket->disconnectFromHost();
+            if (!valid) return;
+            callbackServer_.close(); loginTimer_.stop();
+            disconnect(&callbackServer_, nullptr, this, nullptr);
+            if (denied || code.isEmpty() || code.size() > 4096) {
+                finishLogin("OpenRouter sign-in was cancelled or rejected."); return;
+            }
+            QNetworkRequest request(base_.resolved(QUrl("/api/v1/auth/keys")));
+            request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+            request.setTransferTimeout(20000);
+            request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            loginReply_ = network_.post(request, QJsonDocument(QJsonObject{{"code", code},
+                {"code_verifier", loginVerifier_}, {"code_challenge_method", "S256"}}).toJson(QJsonDocument::Compact));
+            auto* reply = loginReply_.data();
+            limitReply(reply, 65536);
+            connect(reply, &QNetworkReply::finished, this, [this, reply] {
+                const bool ok = reply->error() == QNetworkReply::NoError
+                    && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200
+                    && reply->bytesAvailable() <= 65536;
+                const auto data = reply->read(65537);
+                reply->deleteLater(); loginReply_ = nullptr;
+                if (loginState_.isEmpty()) return;
+                const auto key = QJsonDocument::fromJson(data).object().value("key").toString();
+                loginState_.clear(); loginVerifier_.clear();
+                if (!ok || data.size() > 65536 || !setKey(key)) {
+                    if (status_.isEmpty()) status_ = "OpenRouter token exchange failed. Sign in again.";
+                    emit changed();
+                }
+            });
+        });
+        connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+    });
+    QUrl authorization = base_.resolved(QUrl("/auth"));
+    QUrlQuery query;
+    query.addQueryItem("callback_url", QString("http://127.0.0.1:%1/callback").arg(callbackServer_.serverPort()));
+    query.addQueryItem("code_challenge", QString::fromLatin1(QCryptographicHash::hash(loginVerifier_.toLatin1(),
+        QCryptographicHash::Sha256).toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)));
+    query.addQueryItem("code_challenge_method", "S256");
+    query.addQueryItem("state", loginState_);
+    authorization.setQuery(query);
+    loginTimer_.start(300000);
+    if (!QDesktopServices::openUrl(authorization)) {
+        finishLogin("Could not open the browser for OpenRouter sign-in."); return false;
+    }
+    status_ = "Complete OpenRouter sign-in in your browser."; emit changed();
+    return true;
+}
+void ApiAiClient::finishLogin(const QString& status) {
+    callbackServer_.close(); loginTimer_.stop();
+    disconnect(&callbackServer_, nullptr, this, nullptr);
+    if (loginReply_) { loginReply_->abort(); loginReply_ = nullptr; }
+    loginState_.clear(); loginVerifier_.clear();
+    status_ = status; emit changed();
 }
 bool ApiAiClient::save() {
     if (!writable_ || profileFailure(profile_) || !QDir().mkpath(profile_)) {
@@ -72,12 +175,14 @@ bool ApiAiClient::setKey(const QString& key) {
     const auto previous = key_;
     key_ = key;
     if (!save()) { key_ = previous; return false; }
+    if (!loginState_.isEmpty()) finishLogin({});
     if (analysisReply_) analysisReply_->abort();
     if (modelsReply_) modelsReply_->abort();
     models_.clear(); status_.clear(); emit changed(); refreshModels();
     return true;
 }
 void ApiAiClient::clearKey() {
+    if (!loginState_.isEmpty()) finishLogin({});
     if (!writable_ || key_.isEmpty()) return;
     const auto previous = key_;
     key_.clear();

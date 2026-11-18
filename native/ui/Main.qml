@@ -273,6 +273,7 @@ ApplicationWindow {
         id: chooser
         objectName: "kubeconfigFileDialog"
         title: "Import kubeconfig"
+        currentFolder: workspace.defaultKubeconfigFolder
         onAccepted: workspace.importFile(selectedFile.toString())
     }
     ModalDialog {
@@ -337,6 +338,7 @@ ApplicationWindow {
         id: quickChooser
         objectName: "quickFileDialog"
         title: "Open kubeconfig file"
+        currentFolder: workspace.defaultKubeconfigFolder
         onAccepted: workspace.quickImportFile(selectedFile.toString())
     }
     Shortcut { sequences: [StandardKey.Open]; enabled: !workspace.busy; onActivated: quickChooser.open() }
@@ -344,6 +346,7 @@ ApplicationWindow {
         id: folderChooser
         objectName: "kubeconfigFolderDialog"
         title: "Import kubeconfig folder"
+        currentFolder: workspace.defaultKubeconfigFolder
         onAccepted: workspace.importFile(selectedFolder.toString())
     }
     ModalDialog {

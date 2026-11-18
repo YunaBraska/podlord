@@ -164,29 +164,30 @@ QVariantList IncidentAi::modelChoices() const {
 QVariantList IncidentAi::allModelChoices() const {
     QVariantList result;
     const auto append = [&result](const QString& provider, const QString& title, const QVariantList& choices) {
-        result.append(QVariantMap{{"provider", provider}, {"slug", QString{}}, {"label", title}});
+        if (choices.isEmpty()) return;
+        result.append(QVariantMap{{"provider", provider}, {"slug", QString{}}, {"label", title}, {"header", true}});
         for (const auto& value : choices) {
             const auto choice = value.toMap();
             result.append(QVariantMap{{"provider", provider}, {"slug", choice.value("slug")},
-                {"label", title + " · " + choice.value("label").toString()}});
+                {"label", choice.value("label")}, {"header", false}});
         }
     };
     QVariantList ollama;
     for (const auto& name : models_) ollama.append(QVariantMap{{"slug", name}, {"label", name}});
     append("ollama", "Ollama", ollama);
-    append("chatgpt", "ChatGPT", chatgpt_.models());
-    append("claude", "Claude", claude_.models());
-    append("openrouter", "OpenRouter", openrouter_.models());
+    if (chatgpt_.connected()) append("chatgpt", "ChatGPT", chatgpt_.models());
+    if (claude_.configured()) append("claude", "Claude", claude_.models());
+    if (openrouter_.configured()) append("openrouter", "OpenRouter", openrouter_.models());
     return result;
 }
 bool IncidentAi::selectModel(const QString& provider, const QString& model) {
+    if (model.isEmpty()) return false;
     const auto choices = allModelChoices();
     if (!std::any_of(choices.cbegin(), choices.cend(), [&](const auto& value) {
         const auto choice = value.toMap();
-        return choice.value("provider") == provider && choice.value("slug") == model;
+        return !choice.value("header").toBool() && choice.value("provider") == provider && choice.value("slug") == model;
     })) return false;
-    if (provider_ == provider) return model.isEmpty() || setModel(model);
-    if (model.isEmpty()) return setProvider(provider);
+    if (provider_ == provider) return setModel(model);
     auto* selected = provider == "chatgpt" ? &chatgptModel_ : provider == "claude" ? &claudeModel_
         : provider == "openrouter" ? &openrouterModel_ : &model_;
     const auto previous = *selected;
@@ -491,8 +492,8 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             const auto node = nodes.value(row["node"].toString());
             const auto nodeStatus = node["status"].toString();
             if (nodeStatus == "Ready" || nodeStatus == "NotReady") relatedSignals.insert("Assigned Node: " + nodeStatus);
-            for (const auto& value : row["volumeClaims"].toArray()) {
-                const auto claim = claims.value(nameSpace + '\n' + value.toString());
+            for (const auto& claimReference : row["volumeClaims"].toArray()) {
+                const auto claim = claims.value(nameSpace + '\n' + claimReference.toString());
                 const auto claimStatus = claim["status"].toString();
                 if (QStringList{"Pending", "Lost", "Bound"}.contains(claimStatus)) relatedSignals.insert("Referenced claim: " + claimStatus);
                 const auto volume = volumes.value(claim["boundVolume"].toString());
@@ -512,8 +513,8 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             for (const auto& field : {"secretKeys", "configMapKeys"}) {
                 const auto label = QString(field) == "secretKeys" ? "Referenced Secret key: " : "Referenced ConfigMap key: ";
                 int count = 0;
-                for (const auto& value : row[field].toArray()) {
-                    const auto keyName = value.toString();
+                for (const auto& keyReference : row[field].toArray()) {
+                    const auto keyName = keyReference.toString();
                     const auto decoded = QByteArray::fromBase64Encoding(keyName.toLatin1(),
                         QByteArray::Base64UrlEncoding | QByteArray::AbortOnBase64DecodingErrors);
                     const bool encodedText = keyName.size() >= 8 && decoded && decoded.decoded.size() >= 4
