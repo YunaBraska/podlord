@@ -1292,7 +1292,6 @@ bool Workspace::quickImportFile(const QString& path) {
 }
 QString Workspace::defaultSourceOrigin() const { return appStore() ? QDir(profile_).filePath("pasted-kubeconfig") : QDir::home().filePath(".kube/pasted-kubeconfig"); }
 QUrl Workspace::defaultKubeconfigFolder() const {
-    if (appStore()) return {};
     const auto home = QDir::home();
     const auto kube = home.filePath(".kube");
     return QUrl::fromLocalFile(QDir(kube).exists() ? kube : home.absolutePath());

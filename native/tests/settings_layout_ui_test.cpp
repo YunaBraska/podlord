@@ -24,7 +24,6 @@ int main(int argc, char** argv) {
     if (!window || !QTest::qWaitFor([&] { return !workspace.busy(); }, 5000)) return 1;
     const auto scenario = argc == 2 ? QString::fromLocal8Bit(argv[1]) : QString{};
     if (scenario == "kubeconfig_default_folder") {
-        if (workspace.appStore()) return 0;
         const auto home = QDir::home();
         const auto kube = home.filePath(".kube");
         const auto expected = QDir(kube).exists() ? kube : home.absolutePath();
