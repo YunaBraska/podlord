@@ -435,6 +435,7 @@ public:
     Q_INVOKABLE bool setIncidentAiModel(const QString& model);
     Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
     Q_INVOKABLE void refreshIncidentAiModels();
+    Q_INVOKABLE bool refreshIncidentAiAnalysis();
     Q_INVOKABLE bool copyIncidentAiCommand();
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;

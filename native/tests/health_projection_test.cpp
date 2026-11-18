@@ -16,10 +16,15 @@ void require(bool accepted, const char* message) {
 QJsonObject pod(const QString& name, const QString& phase, const QString& created, int restarts = 0) {
     QJsonObject status{{"phase", phase}};
     if (phase == "Running") status["containerStatuses"] = QJsonArray{QJsonObject{{"restartCount", restarts}, {"ready", true}}};
+    QJsonObject spec{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
+    if (name == "running-0") {
+        spec["nodeName"] = "worker-a";
+        spec["volumes"] = QJsonArray{QJsonObject{{"name", "data"}, {"persistentVolumeClaim", QJsonObject{{"claimName", "claim-data"}}}}};
+    }
     return {{"apiVersion", "v1"}, {"kind", "Pod"},
         {"metadata", QJsonObject{{"name", name}, {"namespace", "default"}, {"uid", name},
             {"resourceVersion", "1"}, {"creationTimestamp", created}}},
-        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}}}, {"status", status}};
+        {"spec", spec}, {"status", status}};
 }
 
 QJsonObject event(const QString& name, const QString& at) {
@@ -54,7 +59,8 @@ struct Kubernetes final {
                         {"preferredVersion", QJsonObject{{"groupVersion", "batch/v1"}}}}}}};
                     else if (route == "/api/v1") body = {{"resources", QJsonArray{
                         QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
-                        QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+                        QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
+                        QJsonObject{{"name", "persistentvolumeclaims"}, {"kind", "PersistentVolumeClaim"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
                     else if (route == "/api/v1/pods") body = collection(QJsonArray{
                         pod("running-0", "Running", "2026-10-15T11:40:00Z"),
                         pod("running-1", "Running", "2026-10-15T11:40:00Z"),
@@ -65,6 +71,10 @@ struct Kubernetes final {
                     else if (route == "/api/v1/events") body = collection(QJsonArray{
                         event("warning-new", "2026-10-15T11:59:00Z"),
                         event("warning-old", "2026-10-15T11:00:00Z")});
+                    else if (route == "/api/v1/persistentvolumeclaims") body = collection(QJsonArray{QJsonObject{
+                        {"apiVersion", "v1"}, {"kind", "PersistentVolumeClaim"},
+                        {"metadata", QJsonObject{{"name", "claim-data"}, {"namespace", "default"}, {"uid", "claim-uid"}, {"resourceVersion", "1"}}},
+                        {"spec", QJsonObject{{"volumeName", "volume-01"}}}, {"status", QJsonObject{{"phase", "Bound"}}}}});
                     else if (route == "/apis/batch/v1") body = {{"resources", QJsonArray{QJsonObject{
                         {"name", "cronjobs"}, {"kind", "CronJob"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
                     else if (route == "/apis/batch/v1/cronjobs") body = collection(QJsonArray{QJsonObject{
@@ -131,6 +141,13 @@ void expiredWarning(const QJsonArray& rows) {
     const auto value = row(rows, "warning-old");
     require(!value["problems"].toBool() && !value["activity"].toBool(), "Expired Warning event stayed active");
 }
+void storageReferences(const QJsonArray& rows) {
+    const auto workload = row(rows, "running-0");
+    const auto claim = row(rows, "claim-data");
+    require(workload["node"] == "worker-a" && workload["volumeClaims"].toArray() == QJsonArray{"claim-data"},
+        "Pod did not publish its Node and claim references");
+    require(claim["boundVolume"] == "volume-01", "Claim did not publish its bound volume reference");
+}
 }
 
 int main(int argc, char* argv[]) {
@@ -142,7 +159,7 @@ int main(int argc, char* argv[]) {
         const auto now = QDateTime::fromString("2026-10-15T12:00:00Z", Qt::ISODate);
         podlord::ResourceClient client(nullptr, [now] { return now; });
         require(client.open("projection", kubernetes.connection(), {}), "Cannot open Kubernetes request client");
-        require(QTest::qWaitFor([&] { return client.initialSyncComplete("projection") && client.rows("projection").size() == 9; }, 10000),
+        require(QTest::qWaitFor([&] { return client.initialSyncComplete("projection") && client.rows("projection").size() == 10; }, 10000),
             "Kubernetes health scenarios did not reach the public cache");
         const auto rows = client.rows("projection");
         if (scenario == "cronjob_suspended") suspendedCronJob(rows);
@@ -151,6 +168,7 @@ int main(int argc, char* argv[]) {
         else if (scenario == "pending_grace_expired") expiredPendingGrace(rows);
         else if (scenario == "warning_recent") recentWarning(rows);
         else if (scenario == "warning_expired") expiredWarning(rows);
+        else if (scenario == "storage_references") storageReferences(rows);
         else throw std::invalid_argument("Unknown health scenario");
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr, "%s\n", error.what()); return 1; }

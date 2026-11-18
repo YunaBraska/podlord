@@ -30,6 +30,7 @@ public:
     QString status(const QString& context = {}) const { return !status_.isEmpty() ? status_ : contextStatus_.value(context); }
     void refreshModels();
     void observe(const QString& context, const QJsonArray& rows, const QString& language);
+    bool refresh(const QString& context, const QString& path);
     void retainContexts(const QSet<QString>& contexts);
     QVariantMap result(const QString& context, const QString& path) const;
 signals:
@@ -37,6 +38,8 @@ signals:
 private:
     struct Incident final {
         QString key, context, code, kind, name, nameSpace, path, language, model, reasoning, thinkSignature, documentation;
+        QStringList related;
+        bool manual = false;
     };
     struct Record final { QJsonObject answer; QDateTime created; };
     bool save();

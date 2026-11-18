@@ -114,6 +114,16 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         {"uid", metadata["uid"]}, {"resourceVersion", metadata["resourceVersion"]},
         {"createdAt", metadata["creationTimestamp"]}, {"status", status}, {"activity", false}, {"problemSeverity", 0},
         {"node", spec["nodeName"]}, {"image", images.join(", ")}, {"containers", containers}, {"owners", owners}};
+    if (version == "v1" && kind == "Pod") {
+        QJsonArray claims;
+        for (const auto& value : spec["volumes"].toArray()) {
+            const auto name = value.toObject()["persistentVolumeClaim"].toObject()["claimName"].toString();
+            if (!name.isEmpty() && !claims.contains(name)) claims.append(name);
+        }
+        result["volumeClaims"] = claims;
+    } else if (version == "v1" && kind == "PersistentVolumeClaim") {
+        result["boundVolume"] = spec["volumeName"];
+    }
     QStringList ownerNames;
     for (const auto& value : metadata["ownerReferences"].toArray()) {
         const auto owner=value.toObject(); ownerNames.append(owner["kind"].toString()+"/"+owner["name"].toString());
