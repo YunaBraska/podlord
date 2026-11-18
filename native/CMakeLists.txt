@@ -896,7 +896,7 @@ if(BUILD_TESTING)
     set_tests_properties(native.logs.compact_scroll_Basic native.logs.compact_scroll_Fusion PROPERTIES FAIL_REGULAR_EXPRESSION "Binding loop detected")
     add_executable(read_settings_test tests/read_settings_test.cpp)
     target_link_libraries(read_settings_test PRIVATE podlord_workspace)
-    set(read_settings_cases reject_obsolete_format water_save water_maximum water_invalid_low water_invalid_high water_flag_invalid water_speed_fraction water_speed_string water_speed_low water_speed_high water_missing missing empty_profile relative_profile profile_file parent_file
+    set(read_settings_cases reject_obsolete_format migrate_v9 water_save water_maximum water_invalid_low water_invalid_high water_flag_invalid water_speed_fraction water_speed_string water_speed_low water_speed_high water_missing missing empty_profile relative_profile profile_file parent_file
         invalid_limit_low invalid_limit_high invalid_inactive maximum zero private conflict repeat concurrent busy lock_io settings_directory
         oversized malformed empty_document array_root scalar_root extra_key missing_key version_string version_future
         limit_string limit_negative limit_fraction limit_high limit_null inactive_string inactive_negative inactive_fraction inactive_high inactive_null
