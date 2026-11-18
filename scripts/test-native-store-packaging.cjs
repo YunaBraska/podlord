@@ -387,9 +387,8 @@ test('snapshots never create a GitHub release or release assets', async () => {
     assert.doesNotMatch(workflow, /contents: write|wc_dotnet_create_github_release|release-assets|SNAPSHOT|semver-info-action/);
 });
 
-test('stable releases qualify once, sign direct macOS assets and prepare the Store package', async () => {
+test('stable releases qualify once, sign direct macOS assets and upload both Store packages', async () => {
     const release = await fs.readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
-    const upload = await fs.readFile(path.join(root, '.github/workflows/app-store-upload.yml'), 'utf8');
     const direct = await fs.readFile(path.join(root, 'scripts/package-direct-macos.sh'), 'utf8');
     assert.match(release, /# yuna-release: true/);
     assert.match(release, /github\.event\.repository\.default_branch/);
@@ -398,13 +397,14 @@ test('stable releases qualify once, sign direct macOS assets and prepare the Sto
     assert.match(ciJob(release, 'direct_macos'), /SOURCE_COMMIT/);
     assert.match(ciJob(release, 'direct_macos'), /Sign and notarize direct macOS packages/);
     assert.match(ciJob(release, 'app_store_package'), /uses: \.\/\.github\/workflows\/app-store\.yml/);
+    assert.match(ciJob(release, 'ios_store_package'), /store_package: true/);
+    assert.match(ciJob(release, 'app_store_upload'), /wc_macos_app_store_upload\.yml@[a-f0-9]{40}/);
+    assert.match(ciJob(release, 'ios_store_upload'), /artifact_name: ios-app-store-package/);
+    assert.match(ciJob(release, 'ios_store_upload'), /artifact_extension: ipa/);
     assert.match(ciJob(release, 'release'), /wc_dotnet_create_github_release\.yml@[a-f0-9]{40}/);
-    assert.doesNotMatch(release, /app-store-upload\.yml/);
-    assert.match(upload, /workflow_dispatch:/);
-    assert.doesNotMatch(upload, /package_run_id/);
-    assert.match(upload, /actions\/workflows\/release\.yml\/runs\?branch=\$DEFAULT_BRANCH/);
-    assert.match(upload, /\.head_branch == env\.DEFAULT_BRANCH/);
-    assert.match(upload, /steps\.package-run\.outputs\.package-run-id/);
+    assert.match(ciJob(release, 'release'), /app_store_upload\.result == 'success'/);
+    assert.match(ciJob(release, 'release'), /ios_store_upload\.result == 'success'/);
+    await assert.rejects(fs.access(path.join(root, '.github/workflows/app-store-upload.yml')), {code: 'ENOENT'});
     for (const command of ['notarytool submit', 'stapler staple', 'spctl --assess', 'podlord-native-macos-$ARCH.dmg'])
         assert.ok(direct.includes(command), `Direct macOS packaging lost ${command}`);
 });
