@@ -173,6 +173,14 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString currentSession READ currentSession NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QVariantList resourceGuidance READ resourceGuidance NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(bool incidentAiEnabled READ incidentAiEnabled NOTIFY incidentAiChanged)
+    Q_PROPERTY(bool incidentAiSupported READ incidentAiSupported CONSTANT)
+    Q_PROPERTY(QStringList incidentAiModels READ incidentAiModels NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiModel READ incidentAiModel NOTIFY incidentAiChanged)
+    Q_PROPERTY(QStringList incidentAiReasoningOptions READ incidentAiReasoningOptions NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiReasoning READ incidentAiReasoning NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiStatus READ incidentAiStatus NOTIFY incidentAiChanged)
+    Q_PROPERTY(QVariantMap incidentAiResult READ incidentAiResult NOTIFY incidentAiChanged)
     Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
     Q_PROPERTY(QVariantMap sourceRemoval READ sourceRemoval NOTIFY sourceRemovalChanged)
     Q_PROPERTY(QString defaultSourceOrigin READ defaultSourceOrigin CONSTANT)
@@ -415,6 +423,19 @@ public:
     QString currentSession() const;
     QString title() const;
     QVariantList resourceGuidance() const;
+    bool incidentAiEnabled() const;
+    bool incidentAiSupported() const;
+    QStringList incidentAiModels() const;
+    QString incidentAiModel() const;
+    QStringList incidentAiReasoningOptions() const;
+    QString incidentAiReasoning() const;
+    QString incidentAiStatus() const;
+    QVariantMap incidentAiResult() const;
+    Q_INVOKABLE bool setIncidentAiEnabled(bool enabled);
+    Q_INVOKABLE bool setIncidentAiModel(const QString& model);
+    Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
+    Q_INVOKABLE void refreshIncidentAiModels();
+    Q_INVOKABLE bool copyIncidentAiCommand();
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;
     Q_INVOKABLE bool importText(QString originPath, const QString& yaml);
@@ -709,6 +730,7 @@ signals:
     void catalogsChanged();
     void mapContextsChanged();
     void resourcePresentationChanged();
+    void incidentAiChanged();
     void fieldFiltersChanged();
     void filterPresetsChanged();
     void filterPickerChanged();
