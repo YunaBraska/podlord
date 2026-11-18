@@ -28,6 +28,11 @@ int main(int argc, char** argv) {
         auto* provider = podlord::test::visibleItem(window->contentItem(), "settingsAiProvider");
         auto* model = podlord::test::visibleItem(window->contentItem(), "settingsAiModel");
         if (!provider || !model || workspace.incidentAiProvider() != "ollama") return 1;
+        const auto frameLanguage = qEnvironmentVariable("PODLORD_AI_SETTINGS_LANG");
+        if (!frameLanguage.isEmpty() && (!workspace.saveUiLanguage(frameLanguage)
+            || !QTest::qWaitFor([&] { return workspace.uiLanguage() == frameLanguage; }, 3000))) return 1;
+        const auto frameProvider = qEnvironmentVariable("PODLORD_AI_SETTINGS_PROVIDER");
+        if (!frameProvider.isEmpty() && !workspace.setIncidentAiProvider(frameProvider)) return 1;
         const auto frame = qEnvironmentVariable("PODLORD_AI_SETTINGS_FRAME");
         if (!frame.isEmpty()) window->grabWindow().save(frame);
         if (!workspace.setIncidentAiProvider("claude")

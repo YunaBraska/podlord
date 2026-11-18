@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <algorithm>
 
 namespace podlord {
 namespace {
@@ -56,5 +57,28 @@ QVariantMap uiText(const QString& setting, const QLocale& system) {
     for (const auto& language : catalog()) if (language.code == code) return language.text;
     qFatal("Shipped UI language catalog has no English fallback.");
     Q_UNREACHABLE();
+}
+QString localizedAiStatus(const QString& status, const QString& setting) {
+    if (status.isEmpty()) return {};
+    const auto text = uiText(setting);
+    const auto translated = text.value("ai.status." + status).toString();
+    if (!translated.isEmpty()) return translated;
+    const QString prefix = "ChatGPT request failed (HTTP ";
+    const auto end = status.indexOf(')', prefix.size());
+    if (status.startsWith(prefix) && end > prefix.size()) {
+        const auto code = status.mid(prefix.size(), end - prefix.size());
+        if (code.size() <= 3 && std::all_of(code.cbegin(), code.cend(), [](QChar c) { return c.isDigit(); })) {
+            auto detail = status.mid(end + 1);
+            const QString usage = ". Check ChatGPT Settings → Usage.";
+            QString translatedUsage;
+            if (detail.endsWith(usage)) {
+                detail.chop(usage.size());
+                translatedUsage = text.value("ai.status." + usage).toString();
+            }
+            return text.value("ai.status.ChatGPT request failed (HTTP %1)").toString().arg(code)
+                + detail + translatedUsage;
+        }
+    }
+    return status;
 }
 } // namespace podlord

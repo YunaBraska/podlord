@@ -21,7 +21,7 @@ QStringList Workspace::incidentAiReasoningOptions() const { return runtime_->inc
 QString Workspace::incidentAiReasoning() const { return runtime_->incidentAi.reasoning(); }
 QString Workspace::incidentAiStatus() const {
     if (incidentAiResult().contains("summary")) return {};
-    return runtime_->incidentAi.status(sessionConfiguration(active_).value("contextId").toString());
+    return localizedAiStatus(runtime_->incidentAi.status(sessionConfiguration(active_).value("contextId").toString()), settings_.language);
 }
 QVariantMap Workspace::incidentAiResult() const {
     return runtime_->incidentAi.result(sessionConfiguration(active_).value("contextId").toString(), inspectorPath());
@@ -35,7 +35,7 @@ bool Workspace::setIncidentAiEnabled(bool enabled) {
 }
 bool Workspace::setIncidentAiModel(const QString& model) { return runtime_->incidentAi.setModel(model); }
 bool Workspace::setIncidentAiProvider(const QString& provider) { return runtime_->incidentAi.setProvider(provider); }
-bool Workspace::signInChatGpt(const QString& clientId) { return runtime_->incidentAi.chatgptSignIn(clientId); }
+bool Workspace::signInChatGpt(const QString& clientId) { return runtime_->incidentAi.chatgptSignIn(clientId, settings_.language); }
 bool Workspace::selectChatGptAccount(const QString& clientId) { return runtime_->incidentAi.chatgptSelectAccount(clientId); }
 void Workspace::signOutChatGpt() { runtime_->incidentAi.chatgptSignOut(); }
 bool Workspace::setIncidentAiApiKey(const QString& key) { return runtime_->incidentAi.setApiKey(key); }
