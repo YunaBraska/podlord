@@ -257,3 +257,18 @@ jobs:
       run_id: ${{ github.run_id }}
       commit_sha: ${{ github.sha }}
       version: ${{ needs.version.outputs.version }}
+
+  chocolatey:
+    needs: [version, release]
+    if: needs.release.result == 'success'
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_chocolatey_publish.yml@97f62c478daba54a57f8f0150fb45170b4ad5b59
+    with:
+      package_id: podlord
+      display_name: PodLord
+      version: ${{ needs.version.outputs.version }}
+      release_tag: ${{ needs.version.outputs.version }}
+      asset_name: podlord-native-win-x64.zip
+      executable_path: podlord-native.exe
+      project_url: https://yunabraska.github.io/podlord/
+      license_expression: MIT
+    secrets: inherit
