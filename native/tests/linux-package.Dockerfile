@@ -4,7 +4,7 @@ FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS toolchain-dependencies
 RUN apt-get update && apt-get install --yes --no-install-recommends \
     ca-certificates curl git build-essential clang llvm libclang-rt-dev cmake ninja-build pkg-config nasm fonts-dejavu-core \
-    python3 python3-venv xz-utils libssl-dev libgl-dev libegl-dev libopengl-dev \
+    python3 python3-venv xz-utils libssl-dev libsecret-1-dev libgl-dev libegl-dev libopengl-dev \
     libdbus-1-dev libfontconfig1-dev libfreetype-dev libglib2.0-dev libgtk-3-dev \
     libxcb1-dev libxcb-glx0-dev libxcb-keysyms1-dev libxcb-image0-dev libxcb-shm0-dev \
     libxcb-icccm4-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-shape0-dev \

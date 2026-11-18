@@ -3,7 +3,7 @@ FROM ${RUNTIME_IMAGE}
 # Ordinary OS/display libraries only. No Qt, compiler, SDK, kubectl or .NET.
 RUN apt-get update && apt-get install --yes --no-install-recommends \
     ca-certificates fonts-dejavu-core fontconfig libgl1 libegl1 libopengl0 \
-    libdbus-1-3 libglib2.0-0t64 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+    libdbus-1-3 libglib2.0-0t64 libsecret-1-0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
     libxcb-xfixes0 libxcb-randr0 libx11-xcb1 libxrender1 libxi6 libxext6 libxfixes3 \
     libpulse0 libasound2t64 libwayland-client0 libwayland-cursor0 libwayland-egl1 \
