@@ -23,7 +23,7 @@ public:
     QVariantList models() const { return models_; }
     QString status() const { return status_; }
     bool connected() const;
-    bool signIn(const QString& clientId = {});
+    bool signIn(const QString& clientId = {}, const QString& language = "en");
     bool selectAccount(const QString& clientId);
     void signOut();
     void refreshModels();
@@ -52,7 +52,7 @@ private:
     QList<Account> accounts_;
     QVariantList models_;
     QString activeClientId_, hostId_, status_;
-    QString pendingClientId_, issuedClientId_, retryClientId_, state_, nonce_, verifier_, redirectUri_;
+    QString pendingClientId_, issuedClientId_, retryClientId_, state_, nonce_, verifier_, redirectUri_, loginLanguage_ = "en";
     QPointer<QNetworkReply> loginReply_, refreshReply_, modelsReply_, analysisReply_, revokeReply_;
     std::unique_ptr<QLockFile> refreshLock_;
     QList<std::function<void(bool)>> accessWaiters_;

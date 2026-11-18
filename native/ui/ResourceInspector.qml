@@ -227,7 +227,12 @@ Pane {
         Label {
             Layout.fillWidth: true
             visible: workspace.incidentAiEnabled && (workspace.incidentAiResult.related || []).length > 0
-            text: workspace.uiText["ai.related"] + ": " + (workspace.incidentAiResult.related || []).join("; ")
+            text: workspace.uiText["ai.related"] + ": " + (workspace.incidentAiResult.related || []).map(signal => {
+                if (signal.startsWith("Assigned Node: ")) return workspace.uiText["ai.relatedNode"] + signal.slice(15)
+                if (signal.startsWith("Referenced claim: ")) return workspace.uiText["ai.relatedClaim"] + signal.slice(18)
+                if (signal.startsWith("Bound volume: ")) return workspace.uiText["ai.relatedVolume"] + signal.slice(14)
+                return signal
+            }).join("; ")
             textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }

@@ -144,7 +144,7 @@ private:
         return QString::fromLatin1(message + '.' + signature.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
     }
 };
-void callback(const QUrl& authorization, ChatGptBoundary& boundary, bool wrongState = false) {
+QByteArray callback(const QUrl& authorization, ChatGptBoundary& boundary, bool wrongState = false) {
     const QUrlQuery query(authorization);
     boundary.expectedRedirect = query.queryItemValue("redirect_uri", QUrl::FullyDecoded);
     boundary.expectedNonce = query.queryItemValue("nonce", QUrl::FullyDecoded);
@@ -159,6 +159,7 @@ void callback(const QUrl& authorization, ChatGptBoundary& boundary, bool wrongSt
     socket.write("GET " + url.toEncoded(QUrl::RemoveScheme | QUrl::RemoveAuthority) + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
     socket.flush();
     QTest::qWait(50);
+    return socket.readAll();
 }
 void scenario(const QString& name) {
     QTemporaryDir directory;
@@ -171,7 +172,7 @@ void scenario(const QString& name) {
     boundary.missingDirectScope = name == "reconsent";
     podlord::ChatGptClient client(directory.filePath("profile"), QUrl(boundary.base()), QUrl(boundary.base()));
     require(!client.connected() && client.models().isEmpty(), "ChatGPT connected without sign-in");
-    require(client.signIn(), "Cannot start ChatGPT sign-in");
+    require(client.signIn({}, name == "localized_callback" ? "de" : "en"), "Cannot start ChatGPT sign-in");
     require(QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000), "Browser authorization was not opened");
     const QUrlQuery authorization(browser.last);
     require(authorization.queryItemValue("client_id") == "dynamic_agent_client"
@@ -184,7 +185,10 @@ void scenario(const QString& name) {
         QTest::qWait(50);
         require(!client.connected(), "Wrong OAuth state connected account");
     }
-    callback(browser.last, boundary);
+    const auto callbackResponse = callback(browser.last, boundary);
+    if (name == "localized_callback")
+        require(callbackResponse.contains("Sie können") || callbackResponse.contains("Du kannst"),
+            "OAuth callback was not localized to German");
     if (name == "wrong_nonce") {
         require(QTest::qWaitFor([&] { return client.status().contains("verification failed"); }, 2000),
             "Invalid ID token was accepted or verification did not finish");

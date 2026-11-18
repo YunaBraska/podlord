@@ -1,6 +1,7 @@
 #include "chatgpt_client.h"
 #include "native_oidc.h"
 #include "session_store.h"
+#include "ui_language.h"
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QDir>
@@ -160,7 +161,7 @@ bool ChatGptClient::selectAccount(const QString& clientId) {
     else { status_ = "Sign in again to use this ChatGPT account."; emit changed(); }
     return true;
 }
-bool ChatGptClient::signIn(const QString& clientId) {
+bool ChatGptClient::signIn(const QString& clientId, const QString& language) {
     if (!writable_ || !state_.isEmpty() || !validBase(authBase_)) return false;
     const auto requestedClientId = clientId.isEmpty() ? retryClientId_ : clientId;
     if (!requestedClientId.isEmpty() && requestedClientId != retryClientId_) {
@@ -176,6 +177,7 @@ bool ChatGptClient::signIn(const QString& clientId) {
         status_ = "Cannot open a local callback for ChatGPT sign-in."; emit changed(); return false;
     }
     pendingClientId_ = requestedClientId;
+    loginLanguage_ = language;
     state_ = randomValue(); nonce_ = randomValue(); verifier_ = randomValue();
     redirectUri_ = QString("http://127.0.0.1:%1/auth/callback").arg(callbackServer_.serverPort());
     connect(&callbackServer_, &QTcpServer::newConnection, this, [this] {
@@ -202,7 +204,8 @@ bool ChatGptClient::signIn(const QString& clientId) {
             const auto code = valid ? query.queryItemValue("code", QUrl::FullyDecoded) : QString{};
             const auto issued = valid ? query.queryItemValue("client_id", QUrl::FullyDecoded) : QString{};
             const auto denied = valid && !query.queryItemValue("error", QUrl::FullyDecoded).isEmpty();
-            const QByteArray body = valid && !denied && !code.isEmpty() ? "You can return to PodLord." : "ChatGPT sign-in did not finish. Return to PodLord.";
+            const QByteArray body = localizedAiStatus(valid && !denied && !code.isEmpty()
+                ? "You can return to PodLord." : "ChatGPT sign-in did not finish. Return to PodLord.", loginLanguage_).toUtf8();
             socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: "
                 + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
             socket->disconnectFromHost();

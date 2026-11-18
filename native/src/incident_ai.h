@@ -55,7 +55,7 @@ public:
     QVariantList chatgptAccounts() const { return chatgpt_.accounts(); }
     QString chatgptAccount() const { return chatgpt_.activeAccount(); }
     QString chatgptClientId() const { return chatgpt_.activeClientId(); }
-    bool chatgptSignIn(const QString& clientId = {}) { return supported() && chatgpt_.signIn(clientId); }
+    bool chatgptSignIn(const QString& clientId = {}, const QString& language = "en") { return supported() && chatgpt_.signIn(clientId, language); }
     bool chatgptSelectAccount(const QString& clientId) { return supported() && chatgpt_.selectAccount(clientId); }
     void chatgptSignOut() { if (supported()) chatgpt_.signOut(); }
     bool setApiKey(const QString& key);

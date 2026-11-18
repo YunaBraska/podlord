@@ -370,6 +370,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(&runtime_->incidentAi, &IncidentAi::changed, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::inspectorPresentationChanged, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::catalogsChanged, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::languageChanged, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::languageChanged, this, [this] {
         const auto context = sessionConfiguration(active_).value("contextId").toString();
         if (!context.isEmpty() && runtime_->owners.value(active_) == this)
