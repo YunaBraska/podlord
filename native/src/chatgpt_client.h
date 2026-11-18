@@ -1,4 +1,5 @@
 #pragma once
+#include "credential_store.h"
 #include <QDateTime>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -16,15 +17,13 @@ class ChatGptClient final : public QObject {
     Q_OBJECT
 public:
     explicit ChatGptClient(QString profile, QUrl authBase = QUrl("https://auth.openai.com"),
-        QUrl apiBase = QUrl("https://api.openai.com"), QObject* parent = nullptr);
-    QVariantList accounts() const;
+        QUrl apiBase = QUrl("https://api.openai.com"), QObject* parent = nullptr, CredentialStore* credentials = nullptr);
     QString activeAccount() const;
     QString activeClientId() const { return activeClientId_; }
     QVariantList models() const { return models_; }
     QString status() const { return status_; }
     bool connected() const;
     bool signIn(const QString& clientId = {}, const QString& language = "en");
-    bool selectAccount(const QString& clientId);
     void signOut();
     void refreshModels();
     void analyze(const QString& model, const QString& instructions, const QString& input,
@@ -58,5 +57,7 @@ private:
     QList<std::function<void(bool)>> accessWaiters_;
     QByteArray savedBytes_;
     bool writable_ = true;
+    SystemCredentialStore systemCredentials_;
+    CredentialStore* credentials_;
 };
 } // namespace podlord

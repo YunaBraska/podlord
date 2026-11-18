@@ -21,6 +21,10 @@ foreach(component IN ITEMS SSL CRYPTO)
     string(TOLOWER "${component}" soname)
     install(FILES "${runtime}" DESTINATION lib RENAME "lib${soname}.so.3")
 endforeach()
+# The credential store is required for startup even when no Secret Service is running.
+find_library(PODLORD_LIBSECRET_LIBRARY NAMES secret-1 REQUIRED)
+file(REAL_PATH "${PODLORD_LIBSECRET_LIBRARY}" podlord_libsecret_runtime)
+install(FILES "${podlord_libsecret_runtime}" DESTINATION lib RENAME "libsecret-1.so.0")
 install(CODE [[
     # The product uses Fusion and supports Basic. Other styles are not a runtime feature.
     foreach(style IN ITEMS Imagine Material Universal FluentWinUI3 iOS macOS Windows)

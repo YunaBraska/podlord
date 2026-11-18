@@ -179,9 +179,8 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantList incidentAiModelChoices READ incidentAiModelChoices NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiModel READ incidentAiModel NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiProvider READ incidentAiProvider NOTIFY incidentAiChanged)
-    Q_PROPERTY(QVariantList chatgptAccounts READ chatgptAccounts NOTIFY incidentAiChanged)
     Q_PROPERTY(QString chatgptAccount READ chatgptAccount NOTIFY incidentAiChanged)
-    Q_PROPERTY(QString chatgptClientId READ chatgptClientId NOTIFY incidentAiChanged)
+    Q_PROPERTY(bool chatgptConnected READ chatgptConnected NOTIFY incidentAiChanged)
     Q_PROPERTY(bool incidentAiApiKeyConfigured READ incidentAiApiKeyConfigured NOTIFY incidentAiChanged)
     Q_PROPERTY(QStringList incidentAiReasoningOptions READ incidentAiReasoningOptions NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiReasoning READ incidentAiReasoning NOTIFY incidentAiChanged)
@@ -435,9 +434,8 @@ public:
     QVariantList incidentAiModelChoices() const;
     QString incidentAiModel() const;
     QString incidentAiProvider() const;
-    QVariantList chatgptAccounts() const;
     QString chatgptAccount() const;
-    QString chatgptClientId() const;
+    bool chatgptConnected() const;
     bool incidentAiApiKeyConfigured() const;
     QStringList incidentAiReasoningOptions() const;
     QString incidentAiReasoning() const;
@@ -445,14 +443,14 @@ public:
     QVariantMap incidentAiResult() const;
     Q_INVOKABLE bool setIncidentAiEnabled(bool enabled);
     Q_INVOKABLE bool setIncidentAiModel(const QString& model);
+    Q_INVOKABLE bool selectIncidentAiModel(const QString& provider, const QString& model);
     Q_INVOKABLE bool setIncidentAiProvider(const QString& provider);
-    Q_INVOKABLE bool signInChatGpt(const QString& clientId = {});
-    Q_INVOKABLE bool selectChatGptAccount(const QString& clientId);
+    Q_INVOKABLE bool signInChatGpt();
     Q_INVOKABLE void signOutChatGpt();
     Q_INVOKABLE bool setIncidentAiApiKey(const QString& key);
     Q_INVOKABLE void clearIncidentAiApiKey();
     Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
-    Q_INVOKABLE void refreshIncidentAiModels();
+    Q_INVOKABLE void ensureIncidentAiModels();
     Q_INVOKABLE bool refreshIncidentAiAnalysis();
     Q_INVOKABLE bool copyIncidentAiCommand();
     QString sourceImportError() const { return sourceImportError_; }

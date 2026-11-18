@@ -1,5 +1,6 @@
 #include "api_ai_client.h"
 #include "incident_ai.h"
+#include "memory_credential_store.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -68,7 +69,8 @@ void scenario(bool claude) {
     Boundary boundary(claude);
     require(boundary.listen(QHostAddress::LocalHost, 0), "Cannot start AI provider boundary");
     const auto provider = claude ? podlord::ApiAiClient::Provider::Claude : podlord::ApiAiClient::Provider::OpenRouter;
-    podlord::ApiAiClient client(directory.filePath("profile"), provider, QUrl(boundary.base()));
+    MemoryCredentialStore credentials;
+    podlord::ApiAiClient client(directory.filePath("profile"), provider, QUrl(boundary.base()), nullptr, &credentials);
     require(!client.configured() && client.models().isEmpty(), "Provider configured without a key");
     require(!client.setKey("bad key"), "Whitespace in API key was accepted");
     require(client.setKey("private-test-key"), "Cannot save API key");
@@ -76,9 +78,8 @@ void scenario(bool claude) {
     const auto model = client.models().first().toMap().value("slug").toString();
     require(model == (claude ? "claude-test" : "vendor/model"), "Wrong model in catalog");
     const auto path = QDir(directory.filePath("profile")).filePath(claude ? "claude-auth.json" : "openrouter-auth.json");
-    QFile credentials(path);
-    require(credentials.open(QIODevice::ReadOnly) && (credentials.permissions() & (QFile::ReadGroup | QFile::ReadOther)) == 0,
-        "Provider credentials are not private");
+    require(!QFile::exists(path) && credentials.read(directory.filePath("profile"), claude ? "claude" : "openrouter").found,
+        "Provider key was written as a file or not saved in the credential store");
     QString answer, error;
     client.analyze(model, "Return JSON", "Observed problem code: NotReady", [&](QString value, QString failure) {
         answer = value; error = failure;
@@ -90,10 +91,17 @@ void scenario(bool claude) {
         && answer.contains(claude ? "Claude ok" : "Router ok"), "Provider request or answer is wrong");
     const podlord::IncidentAi::RemoteEndpoints endpoints{QUrl(boundary.base()), QUrl(boundary.base()),
         QUrl(boundary.base()), QUrl(boundary.base())};
-    podlord::IncidentAi ai(directory.filePath("profile"), QUrl(boundary.base()), nullptr, endpoints);
-    require(ai.setProvider(claude ? "claude" : "openrouter"), "Cannot choose API provider");
-    require(QTest::qWaitFor([&] { return ai.models().contains(model); }, 2000), "Incident provider model catalog unavailable");
-    require(ai.model().isEmpty() && ai.setModel(model), "Incident provider model was automatic or not selectable");
+    podlord::IncidentAi ai(directory.filePath("profile"), QUrl(boundary.base()), nullptr, endpoints, &credentials);
+    const auto providerName = claude ? QString("claude") : QString("openrouter");
+    require(QTest::qWaitFor([&] {
+        for (const auto& item : ai.allModelChoices()) {
+            const auto choice = item.toMap();
+            if (choice.value("provider") == providerName && choice.value("slug") == model) return true;
+        }
+        return false;
+    }, 2000), "Combined model catalog did not include the configured provider");
+    require(ai.model().isEmpty() && ai.selectModel(providerName, model) && ai.provider() == providerName
+        && ai.model() == model, "Selecting a model did not activate its provider");
     require(ai.setEnabled("cluster-one", true), "Cannot enable incident analysis");
     const auto resourcePath = QStringLiteral("/api/v1/nodes/broken");
     ai.observe("cluster-one", QJsonArray{QJsonObject{{"uid", "node-one"}, {"kind", "Node"}, {"name", "broken"},
@@ -103,11 +111,59 @@ void scenario(bool claude) {
         "API provider did not reach the public incident result");
     require(!boundary.submitted.contains("secret-private-marker") && boundary.submitted.contains("NotReady"),
         "API provider received unsafe data or lost the problem signal");
+    credentials.available = false;
     client.clearKey();
-    require(!client.configured() && client.models().isEmpty(), "Removing API key left provider configured");
+    require(client.configured() && !client.status().isEmpty(),
+        "Failed credential-store deletion silently disconnected the provider");
+    credentials.available = true;
+    client.clearKey();
+    require(!client.configured() && client.models().isEmpty()
+        && !credentials.read(directory.filePath("profile"), claude ? "claude" : "openrouter").found,
+        "Removing API key left provider configured");
+}
+void storageScenario(const QString& name) {
+    QTemporaryDir directory;
+    require(directory.isValid(), "Cannot create storage test profile");
+    const auto profile = directory.filePath("profile");
+    require(QDir().mkpath(profile), "Cannot create storage test directory");
+    const auto path = QDir(profile).filePath("claude-auth.json");
+    const auto data = name == "invalid" ? QByteArray("not-json")
+        : QJsonDocument(QJsonObject{{"version", 1}, {"key", "private-test-key"}}).toJson();
+    QFile legacy(path);
+    require(legacy.open(QIODevice::WriteOnly) && legacy.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
+        && legacy.write(data) == data.size(), "Cannot create legacy credential fixture");
+    legacy.close();
+    MemoryCredentialStore credentials;
+    if (name == "unavailable") credentials.available = false;
+    if (name == "conflict") credentials.entries.insert(profile + "/claude", "other-credential");
+    podlord::ApiAiClient client(profile, podlord::ApiAiClient::Provider::Claude, {}, nullptr, &credentials);
+    if (name == "unavailable" || name == "conflict" || name == "invalid") {
+        require(!client.configured() && QFile::exists(path) && !client.status().isEmpty()
+            && (!credentials.read(profile, "claude").found || name == "conflict"),
+            "Failed migration discarded a legacy credential or hid the error");
+        return;
+    }
+    require(client.configured() && !QFile::exists(path) && credentials.read(profile, "claude").data == data,
+        "Legacy API key was not migrated into the system credential store");
+    podlord::ApiAiClient restarted(profile, podlord::ApiAiClient::Provider::Claude, {}, nullptr, &credentials);
+    require(restarted.configured(), "Migrated API key was unavailable after restart");
+}
+void systemStoreScenario() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "Cannot create system store test profile");
+    podlord::SystemCredentialStore credentials;
+    QString error;
+    require(credentials.write(directory.path(), "test", "temporary-test-value", error), "System credential write failed");
+    const auto stored = credentials.read(directory.path(), "test");
+    require(stored.ok && stored.found && stored.data == "temporary-test-value", "System credential read failed");
+    require(credentials.remove(directory.path(), "test", error) && !credentials.read(directory.path(), "test").found,
+        "System credential cleanup failed");
 }
 } // namespace
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
-    scenario(argc < 2 || QString::fromUtf8(argv[1]) == "claude");
+    const auto name = argc < 2 ? QStringLiteral("claude") : QString::fromUtf8(argv[1]);
+    if (name == "migration" || name == "unavailable" || name == "conflict" || name == "invalid") storageScenario(name);
+    else if (name == "system_store") systemStoreScenario();
+    else scenario(name == "claude");
 }

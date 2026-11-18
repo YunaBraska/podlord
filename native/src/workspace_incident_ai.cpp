@@ -10,12 +10,11 @@ bool Workspace::incidentAiEnabled() const {
     return runtime_->incidentAi.enabled(sessionConfiguration(active_).value("contextId").toString());
 }
 QStringList Workspace::incidentAiModels() const { return runtime_->incidentAi.models(); }
-QVariantList Workspace::incidentAiModelChoices() const { return runtime_->incidentAi.modelChoices(); }
+QVariantList Workspace::incidentAiModelChoices() const { return runtime_->incidentAi.allModelChoices(); }
 QString Workspace::incidentAiModel() const { return runtime_->incidentAi.model(); }
 QString Workspace::incidentAiProvider() const { return runtime_->incidentAi.provider(); }
-QVariantList Workspace::chatgptAccounts() const { return runtime_->incidentAi.chatgptAccounts(); }
 QString Workspace::chatgptAccount() const { return runtime_->incidentAi.chatgptAccount(); }
-QString Workspace::chatgptClientId() const { return runtime_->incidentAi.chatgptClientId(); }
+bool Workspace::chatgptConnected() const { return runtime_->incidentAi.chatgptConnected(); }
 bool Workspace::incidentAiApiKeyConfigured() const { return runtime_->incidentAi.apiKeyConfigured(); }
 QStringList Workspace::incidentAiReasoningOptions() const { return runtime_->incidentAi.reasoningOptions(); }
 QString Workspace::incidentAiReasoning() const { return runtime_->incidentAi.reasoning(); }
@@ -34,14 +33,14 @@ bool Workspace::setIncidentAiEnabled(bool enabled) {
     return true;
 }
 bool Workspace::setIncidentAiModel(const QString& model) { return runtime_->incidentAi.setModel(model); }
+bool Workspace::selectIncidentAiModel(const QString& provider, const QString& model) { return runtime_->incidentAi.selectModel(provider, model); }
 bool Workspace::setIncidentAiProvider(const QString& provider) { return runtime_->incidentAi.setProvider(provider); }
-bool Workspace::signInChatGpt(const QString& clientId) { return runtime_->incidentAi.chatgptSignIn(clientId, settings_.language); }
-bool Workspace::selectChatGptAccount(const QString& clientId) { return runtime_->incidentAi.chatgptSelectAccount(clientId); }
+bool Workspace::signInChatGpt() { return runtime_->incidentAi.chatgptSignIn(runtime_->incidentAi.chatgptClientId(), settings_.language); }
 void Workspace::signOutChatGpt() { runtime_->incidentAi.chatgptSignOut(); }
 bool Workspace::setIncidentAiApiKey(const QString& key) { return runtime_->incidentAi.setApiKey(key); }
 void Workspace::clearIncidentAiApiKey() { runtime_->incidentAi.clearApiKey(); }
 bool Workspace::setIncidentAiReasoning(const QString& reasoning) { return runtime_->incidentAi.setReasoning(reasoning); }
-void Workspace::refreshIncidentAiModels() { runtime_->incidentAi.refreshModels(); }
+void Workspace::ensureIncidentAiModels() { runtime_->incidentAi.ensureModelsFresh(); }
 bool Workspace::refreshIncidentAiAnalysis() {
     return runtime_->incidentAi.refresh(sessionConfiguration(active_).value("contextId").toString(), inspectorPath());
 }

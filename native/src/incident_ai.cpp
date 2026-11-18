@@ -21,11 +21,11 @@ bool IncidentAi::supported() const {
     return true;
 #endif
 }
-IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEndpoints remote)
+IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEndpoints remote, CredentialStore* credentials)
     : QObject(parent), profile_(std::move(profile)), endpoint_(std::move(endpoint)),
-      chatgpt_(profile_, std::move(remote.chatgptAuth), std::move(remote.chatgptApi)),
-      claude_(profile_, ApiAiClient::Provider::Claude, std::move(remote.claude)),
-      openrouter_(profile_, ApiAiClient::Provider::OpenRouter, std::move(remote.openrouter)) {
+      chatgpt_(profile_, std::move(remote.chatgptAuth), std::move(remote.chatgptApi), nullptr, credentials),
+      claude_(profile_, ApiAiClient::Provider::Claude, std::move(remote.claude), nullptr, credentials),
+      openrouter_(profile_, ApiAiClient::Provider::OpenRouter, std::move(remote.openrouter), nullptr, credentials) {
     dispatchTimer_.setSingleShot(true);
     connect(&dispatchTimer_, &QTimer::timeout, this, &IncidentAi::dispatch);
     connect(&chatgpt_, &ChatGptClient::changed, this, &IncidentAi::providerChanged);
@@ -97,7 +97,7 @@ bool IncidentAi::enabled(const QString& context) const {
     return supported() && !context.isEmpty() && enabledByProvider_.value(provider_).contains(context);
 }
 void IncidentAi::providerChanged() {
-    if (provider_ == "ollama") return;
+    if (provider_ == "ollama") { emit changed(); return; }
     const auto choices = modelChoices();
     const bool configured = provider_ == "chatgpt" ? chatgpt_.connected()
         : provider_ == "claude" ? claude_.configured() : openrouter_.configured();
@@ -142,7 +142,7 @@ bool IncidentAi::setProvider(const QString& provider) {
     if (provider_ == "ollama") {
         if (models_.isEmpty()) refreshModels();
         else if (!model_.isEmpty()) refreshReasoning();
-    } else { providerChanged(); refreshModels(); }
+    } else providerChanged();
     emit changed();
     return true;
 }
@@ -159,6 +159,43 @@ QVariantList IncidentAi::modelChoices() const {
     QVariantList result;
     for (const auto& name : models_) result.append(QVariantMap{{"slug", name}, {"label", name}});
     return result;
+}
+QVariantList IncidentAi::allModelChoices() const {
+    QVariantList result;
+    const auto append = [&result](const QString& provider, const QString& title, const QVariantList& choices) {
+        result.append(QVariantMap{{"provider", provider}, {"slug", QString{}}, {"label", title}});
+        for (const auto& value : choices) {
+            const auto choice = value.toMap();
+            result.append(QVariantMap{{"provider", provider}, {"slug", choice.value("slug")},
+                {"label", title + " · " + choice.value("label").toString()}});
+        }
+    };
+    QVariantList ollama;
+    for (const auto& name : models_) ollama.append(QVariantMap{{"slug", name}, {"label", name}});
+    append("ollama", "Ollama", ollama);
+    append("chatgpt", "ChatGPT", chatgpt_.models());
+    append("claude", "Claude", claude_.models());
+    append("openrouter", "OpenRouter", openrouter_.models());
+    return result;
+}
+bool IncidentAi::selectModel(const QString& provider, const QString& model) {
+    const auto choices = allModelChoices();
+    if (!std::any_of(choices.cbegin(), choices.cend(), [&](const auto& value) {
+        const auto choice = value.toMap();
+        return choice.value("provider") == provider && choice.value("slug") == model;
+    })) return false;
+    if (provider_ == provider) return model.isEmpty() || setModel(model);
+    if (model.isEmpty()) return setProvider(provider);
+    auto* selected = provider == "chatgpt" ? &chatgptModel_ : provider == "claude" ? &claudeModel_
+        : provider == "openrouter" ? &openrouterModel_ : &model_;
+    const auto previous = *selected;
+    const auto previousReasoning = reasoning_;
+    *selected = model;
+    if (provider == "ollama" && previous != model) reasoning_ = "auto";
+    if (setProvider(provider)) return true;
+    *selected = previous;
+    reasoning_ = previousReasoning;
+    return false;
 }
 bool IncidentAi::save() {
     if (!writable_) return false;
@@ -282,9 +319,10 @@ bool IncidentAi::setReasoning(const QString& reasoning) {
     return true;
 }
 void IncidentAi::refreshModels() {
-    if (provider_ == "chatgpt") { chatgpt_.refreshModels(); return; }
-    if (provider_ == "claude") { claude_.refreshModels(); return; }
-    if (provider_ == "openrouter") { openrouter_.refreshModels(); return; }
+    lastModelCatalogRefresh_ = QDateTime::currentDateTimeUtc();
+    if (chatgpt_.connected()) chatgpt_.refreshModels();
+    if (claude_.configured()) claude_.refreshModels();
+    if (openrouter_.configured()) openrouter_.refreshModels();
     if (!supported() || modelRefreshRunning_) return;
     modelRefreshRunning_ = true;
     QNetworkRequest request(endpoint_.resolved(QUrl("/api/tags")));
@@ -295,9 +333,10 @@ void IncidentAi::refreshModels() {
         const auto bytes = reply->readAll();
         const auto error = reply->error();
         reply->deleteLater();
-        if (provider_ != "ollama") return;
         if (error != QNetworkReply::NoError || bytes.size() > 256 * 1024) {
-            models_.clear(); modelReady_ = false; status_ = "The local Ollama service is unavailable."; emit changed(); return;
+            models_.clear();
+            if (provider_ == "ollama") { modelReady_ = false; status_ = "The local Ollama service is unavailable."; }
+            emit changed(); return;
         }
         const auto root = QJsonDocument::fromJson(bytes).object();
         QStringList available;
@@ -308,6 +347,7 @@ void IncidentAi::refreshModels() {
         }
         available.removeDuplicates(); available.sort();
         models_ = available;
+        if (provider_ != "ollama") { emit changed(); return; }
         if (models_.isEmpty()) { modelReady_ = false; status_ = "No local Ollama model installed. Install one with ollama pull <model>."; }
         else {
             serviceRetryAfterByProvider_.remove("ollama");
@@ -330,6 +370,10 @@ void IncidentAi::refreshModels() {
         }
         emit changed();
     });
+}
+void IncidentAi::ensureModelsFresh() {
+    if (!lastModelCatalogRefresh_.isValid() || lastModelCatalogRefresh_.secsTo(QDateTime::currentDateTimeUtc()) >= 15 * 60)
+        refreshModels();
 }
 void IncidentAi::refreshReasoning() {
     modelReady_ = false;
