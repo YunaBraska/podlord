@@ -86,6 +86,7 @@ Pane {
     TabBar {
         spacing: 0
         implicitWidth: 0
+        Layout.maximumWidth: inspector.width
         Layout.fillWidth: true
         currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
         InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
