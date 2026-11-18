@@ -122,6 +122,8 @@ Pane {
         Layout.fillWidth: true
         visible: workspace.incidentAiSupported && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
         spacing: 5
+        onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
+        Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
         property string docsError: ""
         Connections { target: workspace; function onInspectorPresentationChanged() { aiPanel.docsError = "" } }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: workspace.appearanceColors.border }
@@ -137,25 +139,20 @@ Pane {
                 onClicked: workspace.setIncidentAiEnabled(checked)
             }
         }
-        Label {
-            Layout.fillWidth: true
-            text: workspace.uiText["ai.scope"]
-            visible: !workspace.incidentAiEnabled
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
-            color: workspace.appearanceColors.muted
-        }
-        RowLayout {
+        ComboBox {
+            objectName: "incidentAiModel"
             Layout.fillWidth: true
             visible: workspace.incidentAiEnabled
-            ComboBox {
-                objectName: "incidentAiModel"
-                Layout.fillWidth: true
-                model: workspace.incidentAiModelChoices; textRole: "label"; valueRole: "slug"
-                currentIndex: workspace.incidentAiModelChoices.findIndex(choice => choice.slug === workspace.incidentAiModel)
-                Accessible.name: workspace.uiText["ai.model"]
-                onActivated: workspace.setIncidentAiModel(currentValue)
+            model: workspace.incidentAiModelChoices; textRole: "label"
+            currentIndex: {
+                const exact = model.findIndex(choice => choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
+                return exact >= 0 ? exact : model.findIndex(choice => choice.provider === workspace.incidentAiProvider && choice.slug === "")
             }
-            Button { objectName: "incidentAiRefresh"; text: workspace.uiText["ai.refresh"]; onClicked: workspace.refreshIncidentAiModels() }
+            Accessible.name: workspace.uiText["ai.model"]
+            onActivated: index => {
+                const choice = model[index]
+                workspace.selectIncidentAiModel(choice.provider, choice.slug)
+            }
         }
         RowLayout {
             Layout.fillWidth: true

@@ -27,41 +27,44 @@ public:
     };
     explicit IncidentAi(QString profile, QUrl endpoint = QUrl("http://127.0.0.1:11434"), QObject* parent = nullptr,
         RemoteEndpoints remote = {QUrl("https://auth.openai.com"), QUrl("https://api.openai.com"),
-            QUrl("https://api.anthropic.com"), QUrl("https://openrouter.ai")});
+            QUrl("https://api.anthropic.com"), QUrl("https://openrouter.ai")}, CredentialStore* credentials = nullptr);
     bool supported() const;
     bool enabled(const QString& context) const;
     bool setEnabled(const QString& context, bool enabled);
     QStringList models() const;
     QVariantList modelChoices() const;
+    QVariantList allModelChoices() const;
     QString model() const { return provider_ == "chatgpt" ? chatgptModel_ : provider_ == "claude" ? claudeModel_
         : provider_ == "openrouter" ? openrouterModel_ : model_; }
     bool setModel(const QString& model);
+    bool selectModel(const QString& provider, const QString& model);
     QStringList reasoningOptions() const { return provider_ == "ollama" ? reasoningOptions_ : QStringList{}; }
     QString reasoning() const { return provider_ == "ollama" ? reasoning_ : QString{}; }
     bool setReasoning(const QString& reasoning);
     QString status(const QString& context = {}) const {
         return !status_.isEmpty() ? status_ : !contextStatus_.value(context).isEmpty() ? contextStatus_.value(context) :
             provider_ == "chatgpt" ? (!chatgpt_.status().isEmpty() ? chatgpt_.status()
+                : !chatgpt_.connected() ? "Connect a ChatGPT account with plan permission first."
                 : chatgptModel_.isEmpty() ? "Choose a ChatGPT model in AI settings." : QString{})
-            : provider_ == "claude" ? (!claude_.configured() ? "Enter a Claude API key in AI settings."
-                : !claude_.status().isEmpty() ? claude_.status()
+            : provider_ == "claude" ? (!claude_.status().isEmpty() ? claude_.status()
+                : !claude_.configured() ? "Enter a Claude API key in AI settings."
                 : claudeModel_.isEmpty() ? "Choose a Claude model in AI settings." : QString{})
-            : provider_ == "openrouter" ? (!openrouter_.configured() ? "Enter an OpenRouter API key in AI settings."
-                : !openrouter_.status().isEmpty() ? openrouter_.status()
+            : provider_ == "openrouter" ? (!openrouter_.status().isEmpty() ? openrouter_.status()
+                : !openrouter_.configured() ? "Enter an OpenRouter API key in AI settings."
                 : openrouterModel_.isEmpty() ? "Choose an OpenRouter model in AI settings." : QString{}) : QString{};
     }
     QString provider() const { return provider_; }
     bool setProvider(const QString& provider);
-    QVariantList chatgptAccounts() const { return chatgpt_.accounts(); }
     QString chatgptAccount() const { return chatgpt_.activeAccount(); }
+    bool chatgptConnected() const { return chatgpt_.connected(); }
     QString chatgptClientId() const { return chatgpt_.activeClientId(); }
     bool chatgptSignIn(const QString& clientId = {}, const QString& language = "en") { return supported() && chatgpt_.signIn(clientId, language); }
-    bool chatgptSelectAccount(const QString& clientId) { return supported() && chatgpt_.selectAccount(clientId); }
     void chatgptSignOut() { if (supported()) chatgpt_.signOut(); }
     bool setApiKey(const QString& key);
     void clearApiKey();
     bool apiKeyConfigured() const;
     void refreshModels();
+    void ensureModelsFresh();
     void observe(const QString& context, const QJsonArray& rows, const QString& language);
     bool refresh(const QString& context, const QString& path);
     void retainContexts(const QSet<QString>& contexts);
@@ -106,6 +109,7 @@ private:
     QString inFlightContext_;
     QNetworkReply* activeReply_ = nullptr;
     QDateTime lastRequest_;
+    QDateTime lastModelCatalogRefresh_;
     QMap<QString, QDateTime> serviceRetryAfterByProvider_;
     bool modelRefreshRunning_ = false;
     bool writable_ = true;

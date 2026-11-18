@@ -142,11 +142,18 @@ bool scenario(const QStringList& args) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     require(window && QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Initial language settings did not settle.");
     if (mode == "ai_status") {
-        const QString english = "Connect a ChatGPT account with plan permission first.";
-        require(workspace.saveUiLanguage("de") && QTest::qWaitFor([&] { return workspace.uiLanguage() == "de"; }, 3000)
-            && workspace.setIncidentAiProvider("chatgpt"), "Cannot establish German ChatGPT settings");
+        require(workspace.saveUiLanguage("en")
+            && QTest::qWaitFor([&] { return workspace.uiLanguage() == "en" && !workspace.busy(); }, 3000)
+            && workspace.setIncidentAiProvider("chatgpt"),
+            "Cannot establish English ChatGPT settings");
+        const auto english = workspace.incidentAiStatus();
+        require(english == "Connect a ChatGPT account with plan permission first."
+            || english == "System password store is unavailable or locked.", "Unexpected initial ChatGPT status");
+        require(workspace.saveUiLanguage("de")
+            && QTest::qWaitFor([&] { return workspace.uiLanguage() == "de" && !workspace.busy(); }, 3000),
+            "Cannot establish German ChatGPT settings");
         require(workspace.incidentAiStatus() == workspace.uiText().value("ai.status." + english).toString()
-            && workspace.incidentAiStatus() != english, "Visible ChatGPT status was not translated");
+            && workspace.incidentAiStatus() != english, "ChatGPT status was not translated");
         const auto requestFailure = podlord::localizedAiStatus(
             "ChatGPT request failed (HTTP 429): rate_limit [request_123]. Check ChatGPT Settings → Usage.", "de");
         require(requestFailure.startsWith("ChatGPT-Anfrage fehlgeschlagen (HTTP 429): rate_limit [request_123]")
@@ -156,7 +163,7 @@ bool scenario(const QStringList& args) {
         return require(workspace.saveUiLanguage("en")
             && QTest::qWaitFor([&] { return workspace.uiLanguage() == "en"; }, 3000)
             && changed.count() > 0 && workspace.incidentAiStatus() == english,
-            "Changing UI language did not update the visible AI status");
+            "Changing UI language did not update the AI status");
     }
     if (mode == "repeat") return require(workspace.saveUiLanguage("system") && !QFileInfo::exists(profile), "Repeated language selection wrote data.");
     if (mode == "invalid") return require(!workspace.saveUiLanguage("xx") && workspace.uiLanguage() == "system"

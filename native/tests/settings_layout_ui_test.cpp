@@ -8,6 +8,7 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
+#include <algorithm>
 #include <cstdio>
 
 int main(int argc, char** argv) {
@@ -27,7 +28,9 @@ int main(int argc, char** argv) {
             || !podlord::test::selectSettingsSection(window, "ai")) return 1;
         auto* provider = podlord::test::visibleItem(window->contentItem(), "settingsAiProvider");
         auto* model = podlord::test::visibleItem(window->contentItem(), "settingsAiModel");
-        if (!provider || !model || workspace.incidentAiProvider() != "ollama") return 1;
+        if (provider || !model || workspace.incidentAiProvider() != "ollama"
+            || workspace.incidentAiModelChoices().size() < 4
+            || podlord::test::visibleItem(window->contentItem(), "settingsAiRefresh")) return 1;
         const auto frameLanguage = qEnvironmentVariable("PODLORD_AI_SETTINGS_LANG");
         if (!frameLanguage.isEmpty() && (!workspace.saveUiLanguage(frameLanguage)
             || !QTest::qWaitFor([&] { return workspace.uiLanguage() == frameLanguage; }, 3000))) return 1;
@@ -35,12 +38,23 @@ int main(int argc, char** argv) {
         if (!frameProvider.isEmpty() && !workspace.setIncidentAiProvider(frameProvider)) return 1;
         const auto frame = qEnvironmentVariable("PODLORD_AI_SETTINGS_FRAME");
         if (!frame.isEmpty()) window->grabWindow().save(frame);
-        if (!workspace.setIncidentAiProvider("claude")
+        const auto choices = workspace.incidentAiModelChoices();
+        const auto claude = std::find_if(choices.cbegin(), choices.cend(), [](const QVariant& value) {
+            return value.toMap().value("provider") == "claude";
+        });
+        if (claude == choices.cend() || !QMetaObject::invokeMethod(model, "activated", Q_ARG(int, int(claude - choices.cbegin())))
+            || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "claude"; }, 2000)
             || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey") != nullptr; }, 2000)
             || workspace.incidentAiApiKeyConfigured()) return 1;
-        if (!workspace.setIncidentAiProvider("chatgpt")
-            || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsChatGptAccount") != nullptr; }, 2000)) return 1;
-        return workspace.setIncidentAiProvider("ollama") && workspace.incidentAiProvider() == "ollama" ? 0 : 1;
+        const auto chatgpt = std::find_if(choices.cbegin(), choices.cend(), [](const QVariant& value) {
+            return value.toMap().value("provider") == "chatgpt";
+        });
+        if (chatgpt == choices.cend() || !QMetaObject::invokeMethod(model, "activated", Q_ARG(int, int(chatgpt - choices.cbegin())))
+            || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "chatgpt"; }, 2000)
+            || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "chatgptConnect") != nullptr; }, 2000)
+            || podlord::test::visibleItem(window->contentItem(), "settingsChatGptAccount")
+            || podlord::test::visibleItem(window->contentItem(), "chatgptAddAccount")) return 1;
+        return workspace.incidentAiProvider() == "chatgpt" ? 0 : 1;
     }
     if (scenario.startsWith("review_")) {
         const auto failed = [&](const char* stage) {

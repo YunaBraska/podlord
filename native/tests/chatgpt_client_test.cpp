@@ -1,5 +1,6 @@
 #include "chatgpt_client.h"
 #include "incident_ai.h"
+#include "memory_credential_store.h"
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -170,7 +171,39 @@ void scenario(const QString& name) {
     boundary.wrongNonce = name == "wrong_nonce";
     boundary.shortLived = name == "refresh";
     boundary.missingDirectScope = name == "reconsent";
-    podlord::ChatGptClient client(directory.filePath("profile"), QUrl(boundary.base()), QUrl(boundary.base()));
+    if (name == "migration") {
+        const auto profile = directory.filePath("profile");
+        require(QDir().mkpath(profile), "Cannot create legacy ChatGPT profile");
+        QFile legacy(QDir(profile).filePath("chatgpt-auth.json"));
+        const auto scopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+        const auto account = [scopes](const QString& id, const QString& email, const QString& token) {
+            return QJsonObject{{"clientId", id}, {"subject", id}, {"email", email}, {"idToken", "old-id"},
+                {"accessToken", "old-access"}, {"refreshToken", token}, {"scopes", scopes},
+                {"expiresAt", QDateTime::currentDateTimeUtc().addSecs(3600).toString(Qt::ISODateWithMs)}};
+        };
+        const auto data = QJsonDocument(QJsonObject{{"version", 1}, {"hostId", "urn:uuid:test-host"},
+            {"activeClientId", "oaiapp_test"}, {"accounts", QJsonArray{
+                account("old-app", "other@example.invalid", "old-refresh"),
+                account("oaiapp_test", "test@example.invalid", "private-refresh")}}}).toJson();
+        require(legacy.open(QIODevice::WriteOnly) && legacy.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
+            && legacy.write(data) == data.size(), "Cannot create legacy ChatGPT credential fixture");
+        legacy.close();
+    }
+    MemoryCredentialStore credentials;
+    podlord::ChatGptClient client(directory.filePath("profile"), QUrl(boundary.base()), QUrl(boundary.base()), nullptr, &credentials);
+    if (name == "migration") {
+        const auto stored = credentials.read(directory.filePath("profile"), "chatgpt");
+        const auto accounts = QJsonDocument::fromJson(stored.data).object().value("accounts").toArray();
+        require(client.connected() && client.activeAccount() == "test@example.invalid"
+            && !QFile::exists(directory.filePath("profile/chatgpt-auth.json")) && accounts.size() == 1
+            && accounts.first().toObject().value("refreshToken") == "private-refresh"
+            && accounts.first().toObject().value("accessToken") == "" && accounts.first().toObject().value("idToken") == "",
+            "Legacy ChatGPT accounts were not minimized and migrated");
+        client.refreshModels();
+        require(QTest::qWaitFor([&] { return client.models().size() == 1 && boundary.refreshes == 1; }, 2000),
+            "Migrated ChatGPT session did not refresh before model discovery");
+        return;
+    }
     require(!client.connected() && client.models().isEmpty(), "ChatGPT connected without sign-in");
     require(client.signIn({}, name == "localized_callback" ? "de" : "en"), "Cannot start ChatGPT sign-in");
     require(QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000), "Browser authorization was not opened");
@@ -196,26 +229,45 @@ void scenario(const QString& name) {
         return;
     }
     if (name == "reconsent") {
-        require(QTest::qWaitFor([&] { return client.accounts().size() == 1; }, 2000)
-            && !client.connected(), "Missing plan permission unexpectedly connected ChatGPT");
+        require(QTest::qWaitFor([&] { return client.activeClientId() == "oaiapp_test"; }, 2000)
+            && !client.connected() && client.activeAccount() == "test@example.invalid",
+            "Missing plan permission hid the account needed for recovery");
         browser.last = QUrl{};
         require(client.signIn("oaiapp_test") && QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000),
             "Cannot repeat ChatGPT authorization");
         require(QUrlQuery(browser.last).queryItemValue("prompt") == "consent",
             "Missing plan permission did not request consent again");
+        client.signOut();
+        require(client.activeAccount().isEmpty() && client.activeClientId().isEmpty() && !client.connected(),
+            "Signing out during reauthorization kept a disconnected account");
         return;
     }
     require(QTest::qWaitFor([&] { return client.connected() && client.models().size() == 1; }, 2000),
         "Validated account or account-specific model catalog unavailable");
     require(client.activeAccount() == "test@example.invalid" && client.models().first().toMap().value("slug") == "gpt-test",
         "Wrong account or hidden model shown");
-    const auto credentials = QDir(directory.filePath("profile")).filePath("chatgpt-auth.json");
-    QFile file(credentials);
-    require(file.open(QIODevice::ReadOnly) && (file.permissions() & (QFile::ReadGroup | QFile::ReadOther)) == 0,
-        "ChatGPT credentials are not private");
+    const auto credentialPath = QDir(directory.filePath("profile")).filePath("chatgpt-auth.json");
+    require(!QFile::exists(credentialPath)
+        && credentials.read(directory.filePath("profile"), "chatgpt").found,
+        "ChatGPT credentials were written as a file or not saved in the credential store");
     if (name == "refresh") {
-        require(boundary.refreshes == 1 && file.readAll().contains("private-refresh-2"),
+        require(boundary.refreshes == 1 && credentials.read(directory.filePath("profile"), "chatgpt").data.contains("private-refresh-2"),
             "Rotating refresh token was not saved before model discovery");
+    }
+    if (name == "sign_out") {
+        credentials.available = false;
+        client.signOut();
+        require(client.connected() && !client.status().isEmpty(),
+            "Failed system-store deletion silently removed the ChatGPT account");
+        credentials.available = true;
+        client.signOut();
+        require(!client.connected() && client.activeClientId().isEmpty() && client.activeAccount().isEmpty(),
+            "Signing out retained an account that the single-account UI cannot manage");
+        browser.last = QUrl{};
+        require(client.signIn() && QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000)
+            && QUrlQuery(browser.last).queryItemValue("client_id") == "dynamic_agent_client",
+            "Signing out did not allow a new single-account authorization");
+        return;
     }
     QString answer, error;
     client.analyze("gpt-test", "Return JSON", "Observed problem code: OOMKilled", [&](QString value, QString failure) {
@@ -230,7 +282,7 @@ void scenario(const QString& name) {
     if (name == "incident") {
         const podlord::IncidentAi::RemoteEndpoints endpoints{QUrl(boundary.base()), QUrl(boundary.base()),
             QUrl(boundary.base()), QUrl(boundary.base())};
-        podlord::IncidentAi ai(directory.filePath("profile"), QUrl(boundary.base()), nullptr, endpoints);
+        podlord::IncidentAi ai(directory.filePath("profile"), QUrl(boundary.base()), nullptr, endpoints, &credentials);
         require(ai.setProvider("chatgpt"), "Cannot choose ChatGPT provider");
         require(QTest::qWaitFor([&] { return ai.models().contains("gpt-test"); }, 2000), "Incident model catalog unavailable");
         require(ai.model().isEmpty() && ai.setModel("gpt-test"), "Incident model was automatic or not selectable");

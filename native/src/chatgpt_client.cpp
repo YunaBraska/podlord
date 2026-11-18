@@ -5,15 +5,12 @@
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRandomGenerator>
-#include <QSaveFile>
 #include <QTcpSocket>
 #include <QTimeZone>
 #include <QUrlQuery>
@@ -58,19 +55,36 @@ void limitReply(QNetworkReply* reply, qint64 maxBytes) {
 }
 } // namespace
 
-ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObject* parent)
-    : QObject(parent), profile_(std::move(profile)), authBase_(std::move(authBase)), apiBase_(std::move(apiBase)) {
+ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObject* parent, CredentialStore* credentials)
+    : QObject(parent), profile_(std::move(profile)), authBase_(std::move(authBase)), apiBase_(std::move(apiBase)),
+      credentials_(credentials ? credentials : &systemCredentials_) {
     loginTimer_.setSingleShot(true);
     connect(&loginTimer_, &QTimer::timeout, this, [this] { finishLogin("ChatGPT sign-in timed out. Try again."); });
     if (!validBase(authBase_) || !validBase(apiBase_)) { writable_ = false; status_ = "Invalid ChatGPT endpoint."; return; }
-    const auto path = QDir(profile_).filePath("chatgpt-auth.json");
-    QFile file(path);
-    if (QFileInfo(path).isSymLink() || (file.exists() && (!file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024
-        || (file.permissions() & (QFile::ReadGroup | QFile::WriteGroup | QFile::ReadOther | QFile::WriteOther))))) {
-        writable_ = false; status_ = "ChatGPT credentials are not private or cannot be read."; return;
-    }
-    if (!file.isOpen()) return;
-    savedBytes_ = file.readAll();
+    const auto loaded = credentials_->readMigrating(profile_, "chatgpt", "chatgpt-auth.json", 2 * 1024 * 1024,
+        [](const QByteArray& legacy) {
+            auto root = QJsonDocument::fromJson(legacy).object();
+            if (root.value("version") != 1 || !root.value("hostId").toString().startsWith("urn:uuid:")
+                || !root.value("activeClientId").isString() || !root.value("accounts").isArray()) return QByteArray{};
+            const auto activeId = root.value("activeClientId").toString();
+            QJsonArray accounts;
+            for (const auto& value : root.value("accounts").toArray()) {
+                auto entry = value.toObject();
+                if (entry.value("clientId").toString() != activeId) continue;
+                if (entry.value("clientId").toString().isEmpty() || entry.value("subject").toString().isEmpty())
+                    return QByteArray{};
+                entry.insert("idToken", "");
+                entry.insert("accessToken", "");
+                accounts.append(entry);
+                break;
+            }
+            if (!activeId.isEmpty() && accounts.isEmpty()) return QByteArray{};
+            root.insert("accounts", accounts);
+            return QJsonDocument(root).toJson(QJsonDocument::Compact);
+        });
+    if (!loaded.ok) { writable_ = false; status_ = loaded.error; return; }
+    if (!loaded.found) return;
+    savedBytes_ = loaded.data;
     const auto document = QJsonDocument::fromJson(savedBytes_);
     const auto root = document.object();
     if (!document.isObject() || root.value("version") != 1 || !root.value("hostId").isString()
@@ -85,6 +99,7 @@ ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObje
         Account account{entry.value("clientId").toString(), entry.value("subject").toString(), entry.value("email").toString(),
             entry.value("idToken").toString(), entry.value("accessToken").toString(), entry.value("refreshToken").toString(),
             entry.value("scopes").toString(), QDateTime::fromString(entry.value("expiresAt").toString(), Qt::ISODateWithMs)};
+        if (account.accessToken.isEmpty()) account.expiresAt = {};
         if (account.clientId.isEmpty() || account.subject.isEmpty()) { writable_ = false; status_ = "ChatGPT account data are invalid."; accounts_.clear(); return; }
         for (const auto& other : accounts_) if (other.clientId == account.clientId) {
             writable_ = false; status_ = "Duplicate ChatGPT account registration."; accounts_.clear(); return;
@@ -102,13 +117,6 @@ const ChatGptClient::Account* ChatGptClient::active() const {
     for (const auto& account : accounts_) if (account.clientId == activeClientId_) return &account;
     return nullptr;
 }
-QVariantList ChatGptClient::accounts() const {
-    QVariantList result;
-    for (const auto& account : accounts_) result.append(QVariantMap{{"clientId", account.clientId},
-        {"label", (account.email.isEmpty() ? account.subject.left(12) : account.email) + " · " + account.clientId.right(6)},
-        {"connected", !account.refreshToken.isEmpty()}});
-    return result;
-}
 QString ChatGptClient::activeAccount() const {
     const auto* account = active();
     return account ? (account->email.isEmpty() ? account->subject.left(12) : account->email) : QString{};
@@ -121,44 +129,23 @@ bool ChatGptClient::connected() const {
 bool ChatGptClient::save() {
     if (!writable_ || profileFailure(profile_) || !QDir().mkpath(profile_)) { status_ = "Cannot save private ChatGPT credentials."; emit changed(); return false; }
     const auto path = QDir(profile_).filePath("chatgpt-auth.json");
-    if (QFileInfo(path).isSymLink()) { status_ = "ChatGPT credential path must not be a symbolic link."; emit changed(); return false; }
     QLockFile lock(path + ".lock"); lock.setStaleLockTime(0);
     if (!lock.tryLock(0)) { status_ = "ChatGPT credentials are in use by another PodLord window."; emit changed(); return false; }
-    QFile current(path);
-    if (current.exists()) {
-        if (!current.open(QIODevice::ReadOnly) || current.readAll() != savedBytes_) {
-            status_ = "ChatGPT credentials changed in another process. Restart PodLord."; emit changed(); return false;
-        }
-    } else if (!savedBytes_.isEmpty()) {
-        status_ = "ChatGPT credentials were removed in another process. Restart PodLord."; emit changed(); return false;
+    const auto current = credentials_->read(profile_, "chatgpt");
+    if (!current.ok || (current.found ? current.data : QByteArray{}) != savedBytes_) {
+        status_ = current.ok ? "ChatGPT credentials changed in another process. Restart PodLord." : current.error;
+        emit changed(); return false;
     }
     QJsonArray accounts;
     for (const auto& account : accounts_) accounts.append(QJsonObject{{"clientId", account.clientId}, {"subject", account.subject},
-        {"email", account.email}, {"idToken", account.idToken}, {"accessToken", account.accessToken},
+        {"email", account.email}, {"idToken", ""}, {"accessToken", ""},
         {"refreshToken", account.refreshToken}, {"scopes", account.scopes},
         {"expiresAt", account.expiresAt.toUTC().toString(Qt::ISODateWithMs)}});
     const auto data = QJsonDocument(QJsonObject{{"version", 1}, {"hostId", hostId_},
         {"activeClientId", activeClientId_}, {"accounts", accounts}}).toJson();
-    QSaveFile output(path); output.setDirectWriteFallback(false);
-    if (!output.open(QIODevice::WriteOnly) || !output.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
-        || output.write(data) != data.size() || !output.commit()) {
-        status_ = "Cannot save private ChatGPT credentials."; emit changed(); return false;
-    }
+    QString error;
+    if (!credentials_->write(profile_, "chatgpt", data, error)) { status_ = error; emit changed(); return false; }
     savedBytes_ = data;
-    return true;
-}
-bool ChatGptClient::selectAccount(const QString& clientId) {
-    if (!writable_) return false;
-    bool found = false;
-    for (const auto& account : accounts_) if (account.clientId == clientId) found = true;
-    if (!found) return false;
-    const auto previous = activeClientId_;
-    activeClientId_ = clientId;
-    if (!save()) { activeClientId_ = previous; return false; }
-    if (refreshReply_) refreshReply_->abort();
-    cancelAnalysis(); models_.clear(); emit changed();
-    if (connected()) refreshModels();
-    else { status_ = "Sign in again to use this ChatGPT account."; emit changed(); }
     return true;
 }
 bool ChatGptClient::signIn(const QString& clientId, const QString& language) {
@@ -303,9 +290,7 @@ void ChatGptClient::acceptTokens(const QJsonObject& tokens, const QString& issue
         Account account{issuedClientId, subject, claims->value("email").toString(), tokens.value("id_token").toString(),
             tokens.value("access_token").toString(), tokens.value("refresh_token").toString(), scopes,
             QDateTime::currentDateTimeUtc().addSecs(seconds)};
-        bool replaced = false;
-        for (auto& existing : accounts_) if (existing.clientId == issuedClientId) { existing = account; replaced = true; break; }
-        if (!replaced) accounts_.append(account);
+        accounts_ = {account};
         activeClientId_ = issuedClientId;
         if (!save()) { accounts_ = prior; activeClientId_ = priorActive; finishLogin(status_); return; }
         retryClientId_.clear();
@@ -323,8 +308,9 @@ void ChatGptClient::ensureAccess(std::function<void(bool)> done) {
     const auto path = QDir(profile_).filePath("chatgpt-auth.json");
     refreshLock_ = std::make_unique<QLockFile>(path + ".refresh.lock");
     refreshLock_->setStaleLockTime(0);
-    QFile current(path);
-    if (!refreshLock_->tryLock(0) || !current.open(QIODevice::ReadOnly) || current.readAll() != savedBytes_) {
+    const bool locked = refreshLock_->tryLock(0);
+    const auto current = locked ? credentials_->read(profile_, "chatgpt") : CredentialStore::ReadResult{};
+    if (!locked || !current.ok || !current.found || current.data != savedBytes_) {
         refreshLock_.reset();
         status_ = "ChatGPT credentials are in use or changed elsewhere. Restart PodLord if this persists."; emit changed();
         auto waiters = std::move(accessWaiters_); accessWaiters_.clear();
@@ -342,6 +328,13 @@ void ChatGptClient::ensureAccess(std::function<void(bool)> done) {
         const bool ok = goodReply(reply, 65536);
         const auto data = reply->read(65537); reply->deleteLater(); refreshReply_ = nullptr;
         const auto tokens = QJsonDocument::fromJson(data).object();
+        if (clientId != activeClientId_) {
+            refreshLock_.reset();
+            auto waiters = std::move(accessWaiters_); accessWaiters_.clear();
+            for (auto& waiter : waiters) waiter(false);
+            if (connected()) refreshModels();
+            return;
+        }
         bool refreshed = false;
         if (ok && clientId == activeClientId_ && !tokens.value("access_token").toString().isEmpty()
             && !tokens.value("refresh_token").toString().isEmpty() && tokens.value("expires_in").toInt() >= 60
@@ -363,7 +356,6 @@ void ChatGptClient::ensureAccess(std::function<void(bool)> done) {
         refreshLock_.reset();
         auto waiters = std::move(accessWaiters_); accessWaiters_.clear();
         for (auto& waiter : waiters) waiter(refreshed);
-        if (clientId != activeClientId_ && connected()) refreshModels();
     });
 }
 void ChatGptClient::refreshModels() {
@@ -468,13 +460,17 @@ void ChatGptClient::analyze(const QString& model, const QString& instructions, c
 void ChatGptClient::signOut() {
     auto* account = active();
     if (!account || !writable_) return;
+    if (!state_.isEmpty()) finishLogin({});
     if (refreshReply_) refreshReply_->abort();
     cancelAnalysis(); models_.clear();
     const auto refreshToken = account->refreshToken;
     const auto clientId = account->clientId;
-    const auto previous = *account;
-    account->accessToken.clear(); account->refreshToken.clear(); account->idToken.clear();
-    if (!save()) { *account = previous; status_ = "Could not clear ChatGPT credentials locally."; emit changed(); return; }
+    const auto previous = accounts_;
+    const auto previousActive = activeClientId_;
+    const auto previousRetry = retryClientId_;
+    accounts_.clear(); activeClientId_.clear(); retryClientId_.clear();
+    if (!save()) { accounts_ = previous; activeClientId_ = previousActive; retryClientId_ = previousRetry;
+        status_ = "Could not clear ChatGPT credentials locally."; emit changed(); return; }
     status_ = "Signed out locally. Checking remote revocation…"; emit changed();
     if (refreshToken.isEmpty()) { status_.clear(); emit changed(); return; }
     revokeReply_ = network_.get(request(authBase_.resolved(QUrl("/.well-known/openid-configuration"))));

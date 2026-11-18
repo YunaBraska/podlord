@@ -1,4 +1,5 @@
 #pragma once
+#include "credential_store.h"
 #include <QNetworkAccessManager>
 #include <QPointer>
 #include <QVariantList>
@@ -10,7 +11,8 @@ class ApiAiClient final : public QObject {
     Q_OBJECT
 public:
     enum class Provider { Claude, OpenRouter };
-    explicit ApiAiClient(QString profile, Provider provider, QUrl base = {}, QObject* parent = nullptr);
+    explicit ApiAiClient(QString profile, Provider provider, QUrl base = {}, QObject* parent = nullptr,
+        CredentialStore* credentials = nullptr);
     bool configured() const { return writable_ && !key_.isEmpty(); }
     QString status() const { return status_; }
     QString identity() const;
@@ -35,5 +37,7 @@ private:
     QPointer<QNetworkReply> modelsReply_, analysisReply_;
     QByteArray savedBytes_;
     bool writable_ = true;
+    SystemCredentialStore systemCredentials_;
+    CredentialStore* credentials_;
 };
 } // namespace podlord

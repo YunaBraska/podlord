@@ -2,14 +2,11 @@
 #include "session_store.h"
 #include <QCryptographicHash>
 #include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QSaveFile>
 #include <QUrlQuery>
 #include <algorithm>
 
@@ -24,21 +21,24 @@ void limitReply(QNetworkReply* reply, qint64 maxBytes) {
 QString ApiAiClient::identity() const {
     return QString::fromLatin1(QCryptographicHash::hash(key_.toUtf8(), QCryptographicHash::Sha256).toHex());
 }
-ApiAiClient::ApiAiClient(QString profile, Provider provider, QUrl base, QObject* parent)
+ApiAiClient::ApiAiClient(QString profile, Provider provider, QUrl base, QObject* parent, CredentialStore* credentials)
     : QObject(parent), profile_(std::move(profile)), provider_(provider),
-      base_(base.isEmpty() ? (provider == Provider::Claude ? QUrl("https://api.anthropic.com") : QUrl("https://openrouter.ai")) : std::move(base)) {
+      base_(base.isEmpty() ? (provider == Provider::Claude ? QUrl("https://api.anthropic.com") : QUrl("https://openrouter.ai")) : std::move(base)),
+      credentials_(credentials ? credentials : &systemCredentials_) {
     if (!base_.isValid() || (base_.scheme() != "https" && !(base_.scheme() == "http" && base_.host() == "127.0.0.1"))
         || base_.host().isEmpty() || !base_.userInfo().isEmpty() || !base_.path().isEmpty() || base_.hasQuery() || base_.hasFragment()) {
         writable_ = false; status_ = "Invalid AI provider endpoint."; return;
     }
-    const auto path = QDir(profile_).filePath(provider_ == Provider::Claude ? "claude-auth.json" : "openrouter-auth.json");
-    QFile file(path);
-    if (QFileInfo(path).isSymLink() || (file.exists() && (!file.open(QIODevice::ReadOnly) || file.size() > 8192
-        || (file.permissions() & (QFile::ReadGroup | QFile::WriteGroup | QFile::ReadOther | QFile::WriteOther))))) {
-        writable_ = false; status_ = "AI provider credentials are not private or cannot be read."; return;
-    }
-    if (!file.isOpen()) return;
-    savedBytes_ = file.readAll();
+    const auto name = provider_ == Provider::Claude ? "claude" : "openrouter";
+    const auto loaded = credentials_->readMigrating(profile_, name, name + QStringLiteral("-auth.json"), 8192,
+        [](const QByteArray& legacy) {
+            const auto document = QJsonDocument::fromJson(legacy);
+            return document.isObject() && document.object().value("version") == 1
+                && document.object().value("key").isString() ? legacy : QByteArray{};
+        });
+    if (!loaded.ok) { writable_ = false; status_ = loaded.error; return; }
+    if (!loaded.found) return;
+    savedBytes_ = loaded.data;
     const auto document = QJsonDocument::fromJson(savedBytes_);
     if (!document.isObject() || document.object().value("version") != 1 || !document.object().value("key").isString()) {
         writable_ = false; status_ = "AI provider credentials are invalid."; return;
@@ -50,24 +50,20 @@ bool ApiAiClient::save() {
         status_ = "Cannot save private AI provider credentials."; emit changed(); return false;
     }
     const auto path = QDir(profile_).filePath(provider_ == Provider::Claude ? "claude-auth.json" : "openrouter-auth.json");
-    if (QFileInfo(path).isSymLink()) { status_ = "AI credential path must not be a symbolic link."; emit changed(); return false; }
     QLockFile lock(path + ".lock"); lock.setStaleLockTime(0);
     if (!lock.tryLock(0)) { status_ = "AI credentials are in use by another PodLord process."; emit changed(); return false; }
-    QFile current(path);
-    if (current.exists()) {
-        if (!current.open(QIODevice::ReadOnly) || current.readAll() != savedBytes_) {
-            status_ = "AI credentials changed in another process. Restart PodLord."; emit changed(); return false;
-        }
-    } else if (!savedBytes_.isEmpty()) {
-        status_ = "AI credentials were removed in another process. Restart PodLord."; emit changed(); return false;
+    const auto name = provider_ == Provider::Claude ? "claude" : "openrouter";
+    const auto current = credentials_->read(profile_, name);
+    if (!current.ok || (current.found ? current.data : QByteArray{}) != savedBytes_) {
+        status_ = current.ok ? "AI credentials changed in another process. Restart PodLord." : current.error;
+        emit changed(); return false;
     }
     const auto data = QJsonDocument(QJsonObject{{"version", 1}, {"key", key_}}).toJson();
-    QSaveFile output(path); output.setDirectWriteFallback(false);
-    if (!output.open(QIODevice::WriteOnly) || !output.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
-        || output.write(data) != data.size() || !output.commit()) {
-        status_ = "Cannot save private AI provider credentials."; emit changed(); return false;
-    }
-    savedBytes_ = data;
+    QString error;
+    const bool saved = key_.isEmpty() ? credentials_->remove(profile_, name, error)
+        : credentials_->write(profile_, name, data, error);
+    if (!saved) { status_ = error; emit changed(); return false; }
+    savedBytes_ = key_.isEmpty() ? QByteArray{} : data;
     return true;
 }
 bool ApiAiClient::setKey(const QString& key) {
