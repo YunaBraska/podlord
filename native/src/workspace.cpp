@@ -3,6 +3,7 @@
 #include "window_host.h"
 #include <QQuickWindow>
 #include "resource_guidance.h"
+#include "ui_language.h"
 #include "runtime_diagnostics.h"
 #include <QDir>
 #include "resource_metrics.h"
@@ -366,6 +367,14 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(&runtime_->typography, &SystemTypography::changed, this, &Workspace::typographyChanged);
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::catalogsChanged, this, [this] { refreshMapContexts(mapContexts_.isEmpty()); });
+    connect(&runtime_->incidentAi, &IncidentAi::changed, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::inspectorPresentationChanged, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::catalogsChanged, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::languageChanged, this, [this] {
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        if (!context.isEmpty() && runtime_->owners.value(active_) == this)
+            runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    });
     connect(this, &Workspace::filterPresetsChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::tableLayoutStatusChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     diagnosticTable_.setSourceModel(&diagnosticRows_); diagnosticTable_.setSortRole(Qt::UserRole + 6);
@@ -449,6 +458,10 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         if (mapPreviewNeeded()) emit mapPreviewRequested(id);
     } });
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
+        if (runtime_->owners.value(id) == this) {
+            const auto context = sessionConfiguration(id).value("contextId").toString();
+            runtime_->incidentAi.observe(context, client_.rows(id), resolvedUiLanguage(settings_.language));
+        }
         preparedSnapshots_.remove(id);
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
@@ -1042,6 +1055,10 @@ bool Workspace::publish() {
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
+    if (sessionChanged && runtime_->owners.value(active_) == this) {
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        runtime_->incidentAi.observe(context, snapshot, resolvedUiLanguage(settings_.language));
+    }
     const auto nav = currentNavigation();
     visibleTable_.setLimit(nav.limit);
     const auto prepared = preparedSnapshots_.constFind(active_);

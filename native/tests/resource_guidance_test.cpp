@@ -3,6 +3,7 @@
 #include "ui_input.h"
 #include "browser_boundary.h"
 #include <QGuiApplication>
+#include <QClipboard>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
@@ -187,6 +188,7 @@ bool ui(const QString& mode) {
     require(QTest::qWaitFor([&] { return item("cell_0_0") != nullptr; }, 2000), "Resource workspace did not present its cached row");
     press("cell_0_0");
     require(QTest::qWaitFor([&] { return workspace.resourceGuidance().size() == 1 && item("resourceGuidanceToggle"); }, 5000), "Accepted detail did not publish cached guidance");
+    require(item("incidentAiEnable") && !workspace.incidentAiEnabled(), "Local AI consent control is missing or enabled without consent");
     const int requests = boundary.requests;
     press("resourceGuidanceToggle");
     if (!QTest::qWaitFor([&] { return item("guidanceTitle_0"); }, 2000)) {
@@ -201,7 +203,23 @@ bool ui(const QString& mode) {
     require(!item("guidanceDetail_0")->property("text").toString().contains("diagnostic-secret"), "Guidance UI exposed untrusted status contents");
     const QString evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
     if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/" + mode + ".png"), "Cannot save actual guidance frame");
-    if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
+    if (mode == "ui_ai_live") {
+        press("incidentAiEnable");
+        require(workspace.incidentAiEnabled(), "AI consent did not activate");
+        const auto completed = QTest::qWaitFor([&] {
+            return !workspace.incidentAiResult().value("summary").toString().isEmpty()
+                || workspace.incidentAiStatus().contains("failed");
+        }, 180000);
+        if (!completed) std::fprintf(stderr, "AI status: %s\n", qPrintable(workspace.incidentAiStatus()));
+        require(completed && !workspace.incidentAiResult().value("summary").toString().isEmpty(), "Local AI result did not arrive in the inspector");
+        require(item("incidentAiSummary") && item("incidentAiSummary")->property("text").toString() == workspace.incidentAiResult().value("summary").toString(),
+            "Inspector did not show the returned AI summary");
+        require(!item("incidentAiSummary")->property("text").toString().contains("diagnostic-secret"), "AI summary exposed untrusted status text");
+        press("incidentAiCopyCommand");
+        require(QGuiApplication::clipboard()->text() == workspace.incidentAiResult().value("command").toString(), "Read-only command copy failed");
+        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
+        require(boundary.requests == requests, "AI analysis caused an extra Kubernetes request");
+    } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
         if (mode == "ui_node_actions") require(!workspace.podInspected() && !item("guidanceLogs_0"), "Non-Pod diagnostic offers an invalid log action");
         const bool yamlAction = mode == "ui_open_yaml" || mode == "ui_action_keyboard";
         const char* action = yamlAction ? "guidanceYaml_0" : "guidanceEvents_0";

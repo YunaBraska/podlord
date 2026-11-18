@@ -14,6 +14,10 @@ cmake --build ../podlord-native-build
 ../podlord-native-build/podlord-native.app/Contents/MacOS/podlord-native --profile /absolute/private/profile
 ```
 
+## Local AI diagnosis
+
+On desktop, start Ollama and install a chat model, for example `ollama pull qwen3.5:9b`. In a resource's Overview, turn on automatic AI diagnosis for the imported context. PodLord discovers installed models and their available reasoning levels. It analyzes recognized cached problems through `127.0.0.1:11434`, without sending logs, free Event messages or Secret values. For a strict local-only guarantee, set `disable_ollama_cloud` to `true` in `~/.ollama/server.json` and restart Ollama, as described in the [Ollama FAQ](https://github.com/ollama/ollama/blob/main/docs/faq.mdx#how-do-i-disable-ollama-cloud-features). Results and consent are stored in the private profile's `incident-ai.json`; remove that file while PodLord is closed to clear both. See [ADR 0053](../doc/adr/0053-local-incident-analysis.md) for request limits and cache identity.
+
 The installer refuses existing destinations. Requires C++20, CMake, Ninja, Python, curl, Git and the Xcode command-line tools. On other desktop systems launch `podlord-native` directly; the macOS installer is not a cross-platform installer. No ambient kubeconfig is imported.
 
 For a filter-only change, run `ctest --test-dir ../podlord-native-build -L behavior -R '^native.field_filter\.' --parallel 6 --output-on-failure`. The `behavior` label excludes duplicate Fusion/Basic runs; `style-variant` retains them for theme/style checks. API-only filter contracts do not load QML and run once, without meaningless style duplicates. Target the affected executable when building. Do not rebuild and run the complete suite for each local UI edit.

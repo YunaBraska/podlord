@@ -118,6 +118,131 @@ Pane {
     Label { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     Label { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     ColumnLayout {
+        id: aiPanel
+        Layout.fillWidth: true
+        visible: workspace.incidentAiSupported && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
+        spacing: 5
+        property string docsError: ""
+        Connections { target: workspace; function onInspectorPresentationChanged() { aiPanel.docsError = "" } }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: workspace.appearanceColors.border }
+        RowLayout {
+            Layout.fillWidth: true
+            Label { text: workspace.uiText["ai.title"]; font.bold: true; color: workspace.appearanceColors.accent }
+            Item { Layout.fillWidth: true }
+            CheckBox {
+                objectName: "incidentAiEnable"
+                text: workspace.uiText["ai.enable"]
+                checked: workspace.incidentAiEnabled
+                Accessible.name: workspace.uiText["ai.enable"]
+                onClicked: workspace.setIncidentAiEnabled(checked)
+            }
+        }
+        Label {
+            Layout.fillWidth: true
+            text: workspace.uiText["ai.scope"]
+            visible: !workspace.incidentAiEnabled
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled
+            ComboBox {
+                objectName: "incidentAiModel"
+                Layout.fillWidth: true
+                model: workspace.incidentAiModels
+                currentIndex: workspace.incidentAiModels.indexOf(workspace.incidentAiModel)
+                Accessible.name: workspace.uiText["ai.model"]
+                onActivated: workspace.setIncidentAiModel(currentText)
+            }
+            Button { objectName: "incidentAiRefresh"; text: workspace.uiText["ai.refresh"]; onClicked: workspace.refreshIncidentAiModels() }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiReasoningOptions.length > 1
+            Label { text: workspace.uiText["ai.reasoning"]; color: workspace.appearanceColors.muted }
+            ComboBox {
+                objectName: "incidentAiReasoning"
+                Layout.fillWidth: true
+                model: workspace.incidentAiReasoningOptions.map(code => ({code: code, label: workspace.uiText["ai.reasoning." + code] || code}))
+                textRole: "label"; valueRole: "code"
+                currentIndex: workspace.incidentAiReasoningOptions.indexOf(workspace.incidentAiReasoning)
+                Accessible.name: workspace.uiText["ai.reasoning"]
+                onActivated: workspace.setIncidentAiReasoning(currentValue)
+            }
+        }
+        Label {
+            objectName: "incidentAiStatus"
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && text !== ""
+            text: workspace.incidentAiStatus
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        Label {
+            objectName: "incidentAiEmpty"
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiStatus === "" && Object.keys(workspace.incidentAiResult).length === 0
+            text: workspace.uiText["ai.noKnownIssue"]
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        Label {
+            objectName: "incidentAiPending"
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.pending === true
+            text: workspace.uiText["ai.pending"] + " (" + workspace.incidentAiResult.code + ")"
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        Label {
+            objectName: "incidentAiSummary"
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.summary !== undefined
+            text: workspace.incidentAiResult.summary || ""
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            font.bold: true
+        }
+        Label {
+            objectName: "incidentAiAction"
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.action !== undefined
+            text: workspace.incidentAiResult.action || ""
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+        }
+        Label {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.summary !== undefined
+            text: workspace.uiText["ai.caution"]
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        Label {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.code !== undefined
+            text: workspace.uiText["ai.evidence"] + ": " + (workspace.incidentAiResult.code || "")
+            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            color: workspace.appearanceColors.muted
+        }
+        Flow {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.summary !== undefined
+            spacing: 6
+            Button { objectName: "incidentAiCopyCommand"; text: workspace.uiText["ai.copyCommand"]; onClicked: workspace.copyIncidentAiCommand() }
+            Button { objectName: "incidentAiDocs"; text: workspace.uiText["ai.docs"]; onClicked: aiPanel.docsError = Qt.openUrlExternally(workspace.incidentAiResult.documentation) ? "" : workspace.uiText["ai.docsError"] }
+        }
+        Label { Layout.fillWidth: true; visible: aiPanel.docsError !== ""; text: aiPanel.docsError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+        TextArea {
+            objectName: "incidentAiCommand"
+            Layout.fillWidth: true
+            visible: workspace.incidentAiEnabled && workspace.incidentAiResult.command !== undefined
+            text: workspace.incidentAiResult.command || ""
+            readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
+            textFormat: TextEdit.PlainText
+            Accessible.name: workspace.uiText["ai.command"]
+        }
+    }
+    ColumnLayout {
             Layout.fillWidth: true
             visible: workspace.inspectorPage === "overview" && workspace.resourceGuidance.length > 0
             ToolButton {
