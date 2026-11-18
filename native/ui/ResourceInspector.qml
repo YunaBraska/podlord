@@ -150,10 +150,10 @@ Pane {
             ComboBox {
                 objectName: "incidentAiModel"
                 Layout.fillWidth: true
-                model: workspace.incidentAiModels
-                currentIndex: workspace.incidentAiModels.indexOf(workspace.incidentAiModel)
+                model: workspace.incidentAiModelChoices; textRole: "label"; valueRole: "slug"
+                currentIndex: workspace.incidentAiModelChoices.findIndex(choice => choice.slug === workspace.incidentAiModel)
                 Accessible.name: workspace.uiText["ai.model"]
-                onActivated: workspace.setIncidentAiModel(currentText)
+                onActivated: workspace.setIncidentAiModel(currentValue)
             }
             Button { objectName: "incidentAiRefresh"; text: workspace.uiText["ai.refresh"]; onClicked: workspace.refreshIncidentAiModels() }
         }

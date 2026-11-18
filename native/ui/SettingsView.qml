@@ -16,7 +16,9 @@ Pane {
     signal sourceFailuresRequested()
     signal renameContextRequested(var context)
     property string section: "alerts"
-    readonly property var sections: ["alerts", "appearance", "diagnostics", "sources", "sync", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
+    readonly property var allSections: ["alerts", "appearance", "ai", "diagnostics", "sources", "sync", "about"]
+        .map(id => ({id: id, label: workspace.uiText["settings." + id]}))
+    readonly property var sections: allSections.filter(entry => entry.id !== "ai" || workspace.incidentAiSupported)
     property string diagnosticTimestamp: ""
     property int pendingMusicVolume: -1
     property int pendingAlertVolume: -1
@@ -98,7 +100,7 @@ Pane {
         if (visible && section === "sync") workspace.refreshCacheUsage()
         yaml.text = workspace.yamlLimitMiB.toString()
     }
-    onSectionChanged: { synchronize(); if (section !== "appearance") volumeFeedback.stop(); if (section === "diagnostics") refreshDiagnostics() }
+    onSectionChanged: { synchronize(); if (section !== "appearance") volumeFeedback.stop(); if (section !== "ai") providerKey.clear(); if (section === "diagnostics") refreshDiagnostics() }
     onVisibleChanged: { if (visible) { synchronize(); if (section === "diagnostics") refreshDiagnostics() } else volumeFeedback.stop() }
     Component.onCompleted: synchronize()
     Connections {
@@ -221,21 +223,22 @@ Pane {
             Layout.fillWidth: true; Layout.minimumWidth: 0
             spacing: 0
             clip: true
-            currentIndex: settings.sections.findIndex(entry => entry.id === settings.section)
-            onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < settings.sections.length) {
-                const destination = settings.sections[currentIndex].id
+            currentIndex: settings.allSections.findIndex(entry => entry.id === settings.section)
+            onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < settings.allSections.length) {
+                const destination = settings.allSections[currentIndex].id
                 if (settings.section !== destination) settings.section = destination
             }
-            visible: settings.width >= 650 * workspace.textScale
+            visible: settings.width >= 850 * workspace.textScale
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
-            SectionButton { objectName: "settingsDiagnosticsSection"; text: settings.sections[2].label; destination: "diagnostics" }
+            SectionButton { objectName: "settingsAiSection"; text: workspace.uiText["settings.ai"]; destination: "ai"; visible: workspace.incidentAiSupported }
+            SectionButton { objectName: "settingsDiagnosticsSection"; text: workspace.uiText["settings.diagnostics"]; destination: "diagnostics" }
             SectionButton { objectName: "settingsSourcesSection"; text: workspace.uiText["settings.sources"]; destination: "sources" }
             SectionButton { objectName: "settingsSyncSection"; text: workspace.uiText["settings.sync"]; destination: "sync" }
             SectionButton { objectName: "settingsAboutSection"; text: workspace.uiText["settings.about"]; destination: "about" }
         }
         ComboBox {
-            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 650 * workspace.textScale
+            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 850 * workspace.textScale
             model: settings.sections; textRole: "label"; valueRole: "id"
             currentIndex: model.findIndex(option => option.id === settings.section)
             Accessible.name: workspace.uiText["settings.title"]
@@ -256,6 +259,96 @@ Pane {
             ColumnLayout {
                 id: settingsFields
                 width: scroll.availableWidth; spacing: 10
+                ColumnLayout {
+                    Layout.fillWidth: true; visible: settings.section === "ai"
+                    SettingRow {
+                        label: workspace.uiText["ai.provider"]; help: workspace.uiText["ai.providerHelp"]
+                        ComboBox {
+                            objectName: "settingsAiProvider"; Layout.fillWidth: true
+                            model: [{code: "ollama", label: "Ollama"}, {code: "chatgpt", label: "ChatGPT"},
+                                {code: "claude", label: "Claude API"}, {code: "openrouter", label: "OpenRouter"}]
+                            textRole: "label"; valueRole: "code"
+                            currentIndex: model.findIndex(choice => choice.code === workspace.incidentAiProvider)
+                            Accessible.name: workspace.uiText["ai.provider"]
+                            onActivated: { providerKey.clear(); workspace.setIncidentAiProvider(currentValue) }
+                        }
+                    }
+                    SettingRow {
+                        visible: workspace.incidentAiProvider === "chatgpt"
+                        label: workspace.uiText["ai.account"]; help: workspace.uiText["ai.accountHelp"]
+                        ComboBox {
+                            objectName: "settingsChatGptAccount"; Layout.fillWidth: true
+                            model: workspace.chatgptAccounts; textRole: "label"; valueRole: "clientId"
+                            currentIndex: workspace.chatgptAccounts.findIndex(account => account.clientId === workspace.chatgptClientId)
+                            Accessible.name: workspace.uiText["ai.account"]
+                            onActivated: workspace.selectChatGptAccount(currentValue)
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Button { objectName: "chatgptContinue"; text: workspace.uiText["ai.chatgptContinue"]; onClicked: workspace.signInChatGpt(workspace.chatgptClientId) }
+                            Button { objectName: "chatgptAddAccount"; text: workspace.uiText["ai.chatgptAdd"]; onClicked: workspace.signInChatGpt("") }
+                            Button { objectName: "chatgptSignOut"; text: workspace.uiText["ai.chatgptSignOut"]; enabled: workspace.chatgptClientId !== ""; onClicked: workspace.signOutChatGpt() }
+                        }
+                        Button { text: workspace.uiText["ai.chatgptUsage"]; onClicked: Qt.openUrlExternally("https://chatgpt.com/settings/usage") }
+                    }
+                    SettingRow {
+                        visible: workspace.incidentAiProvider === "claude" || workspace.incidentAiProvider === "openrouter"
+                        label: workspace.uiText["ai.apiKey"]; help: workspace.incidentAiProvider === "claude"
+                            ? workspace.uiText["ai.claudeKeyHelp"] : workspace.uiText["ai.openrouterKeyHelp"]
+                        TextField {
+                            id: providerKey; objectName: "settingsAiApiKey"; Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: workspace.incidentAiApiKeyConfigured ? workspace.uiText["ai.keySaved"] : workspace.uiText["ai.keyPlaceholder"]
+                            Accessible.name: workspace.uiText["ai.apiKey"]
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Button {
+                                objectName: "settingsAiSaveKey"; text: workspace.uiText["action.save"]
+                                enabled: providerKey.text !== ""
+                                onClicked: if (workspace.setIncidentAiApiKey(providerKey.text)) providerKey.clear()
+                            }
+                            Button {
+                                objectName: "settingsAiRemoveKey"; text: workspace.uiText["ai.removeKey"]
+                                enabled: workspace.incidentAiApiKeyConfigured
+                                onClicked: { workspace.clearIncidentAiApiKey(); providerKey.clear() }
+                            }
+                        }
+                        Button {
+                            text: workspace.uiText["ai.apiDocs"]
+                            onClicked: Qt.openUrlExternally(workspace.incidentAiProvider === "claude"
+                                ? "https://platform.claude.com/docs/en/api/overview"
+                                : "https://openrouter.ai/developers")
+                        }
+                    }
+                    SettingRow {
+                        label: workspace.uiText["ai.model"]; help: workspace.uiText["ai.modelHelp"]
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ComboBox {
+                                objectName: "settingsAiModel"; Layout.fillWidth: true
+                                model: workspace.incidentAiModelChoices; textRole: "label"; valueRole: "slug"
+                                currentIndex: workspace.incidentAiModelChoices.findIndex(choice => choice.slug === workspace.incidentAiModel)
+                                Accessible.name: workspace.uiText["ai.model"]
+                                onActivated: workspace.setIncidentAiModel(currentValue)
+                            }
+                            Button { objectName: "settingsAiRefresh"; text: workspace.uiText["ai.refresh"]; onClicked: workspace.refreshIncidentAiModels() }
+                        }
+                    }
+                    SettingRow {
+                        visible: workspace.incidentAiProvider === "ollama" && workspace.incidentAiReasoningOptions.length > 1
+                        label: workspace.uiText["ai.reasoning"]; help: ""
+                        ComboBox {
+                            objectName: "settingsAiReasoning"; Layout.fillWidth: true
+                            model: workspace.incidentAiReasoningOptions.map(code => ({code: code, label: workspace.uiText["ai.reasoning." + code] || code}))
+                            textRole: "label"; valueRole: "code"
+                            currentIndex: workspace.incidentAiReasoningOptions.indexOf(workspace.incidentAiReasoning)
+                            Accessible.name: workspace.uiText["ai.reasoning"]
+                            onActivated: workspace.setIncidentAiReasoning(currentValue)
+                        }
+                    }
+                    Label { Layout.fillWidth: true; text: workspace.incidentAiStatus; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+                }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
                     VolumeSetting { id: musicVolumeSetting; music: true }
