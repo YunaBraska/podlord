@@ -160,6 +160,7 @@ bool SystemCredentialStore::write(const QString& profile, const QString& name, c
     if (failure) g_error_free(failure);
     return false;
 #else
+    Q_UNUSED(data);
     error = "System password store is unavailable or locked.";
     return false;
 #endif
