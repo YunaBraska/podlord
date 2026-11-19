@@ -311,7 +311,7 @@ Pane {
                                 Menu {
                                     id: aiConnections
                                     MenuItem { objectName: "connectChatGpt"; text: "ChatGPT"; onTriggered: {
-                                        if (workspace.setIncidentAiProvider("chatgpt") && !workspace.chatgptConnected) workspace.signInChatGpt()
+                                        if (workspace.setIncidentAiProvider("chatgpt")) workspace.signInChatGpt()
                                     } }
                                     MenuItem { objectName: "connectClaude"; text: "Claude API"; onTriggered: workspace.setIncidentAiProvider("claude") }
                                     MenuItem { objectName: "connectOpenRouter"; text: "OpenRouter"; onTriggered: {
