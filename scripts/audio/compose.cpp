@@ -181,7 +181,7 @@ struct Score {
 
 // Each entry is an independent score. Note positions and holds are in beats.
 // Harmony uses absolute MIDI pitches. Rhythm cells span two bars, themes four.
-// Deliberate rests and different section orders are part of each composition.
+// Different section orders and dynamics are part of each composition.
 std::vector<Score> scores() {
     using T = Tone;
     std::vector<Score> out;
@@ -673,40 +673,37 @@ Audio render(const Score& score) {
             if (bar%score.chordBars==0) {
                 const double span=score.chordBars*score.meter*spb;
                 const double at=bar*score.meter*spb;
-                const double hold=std::min(span*1.06,score.seconds()-at);
+                const double hold=span*1.25;
                 for (int c=0;c<4;++c)
                     voice(audio,at,hold,chord[std::size_t(c)]+12,score.pad,
-                        (section.layers&Bed?.10:.045)*energy,
+                        (section.layers&Bed?.10:.04)*energy,
                         c%2? .62:-.62,seed+(++event));
             }
         }
         for (int cell=firstBar;cell<lastBar;cell+=2) {
-            const int cycle=(cell-firstBar)/2;
             const double end=lastBar*score.meter;
             const auto stepped=[&](const std::vector<Step>& line,Tone tone,double level,int octave,double pan) {
                 for (const auto& n:line) {
                     double beat=cell*score.meter+n.at;
                     if ((character==1 || character==4) && n.at-std::floor(n.at)>.1) beat+=.11;
-                    if (character==2 && cycle%4==3 && tone==Tone::Sub && n.at==0) continue;
                     if (beat>=end) continue;
                     const auto bar=int(beat/score.meter);
                     const auto& chord=score.harmony[std::size_t(bar/score.chordBars+section.harmonyOffset)%score.harmony.size()];
-                    voice(audio,beat*spb,std::min(n.hold,end-beat)*spb,
+                    voice(audio,beat*spb,n.hold*spb,
                         chord[std::size_t(n.tone)]+octave,tone,level*n.level*energy,pan,seed+(++event));
                 }
             };
-            if (section.layers&Ground) stepped(score.bass,Tone::Sub,.29,-12,0);
-            if (section.layers&Motion) stepped(score.pulse,score.motion,.055,12,-.28);
-            if (section.layers&Beat) for (const auto& d:score.drums) {
+            stepped(score.bass,Tone::Sub,section.layers&Ground?.29:.10,-12,0);
+            stepped(score.pulse,score.motion,section.layers&Motion?.055:.016,12,-.28);
+            for (const auto& d:score.drums) {
                 double beat=cell*score.meter+d.at;
                 if ((character==1 || character==4) && d.at-std::floor(d.at)>.1) beat+=.11;
-                if (character==2 && cycle%4==3 && d.tone==Tone::Kick) continue;
                 if (beat>=end) continue;
                 const bool backbeat=d.tone==Tone::Rim || d.tone==Tone::Snare;
                 const int pitch=d.tone==Tone::Kick?32+score.kit:d.tone==Tone::Tom?42+score.kit:backbeat?51+score.kit*2:70+score.kit;
                 const double duration=d.tone==Tone::Kick?.24:d.tone==Tone::Tom?.28:backbeat?.16:.12;
                 const double level=d.tone==Tone::Kick?.32:d.tone==Tone::Tom?.23:d.tone==Tone::Snare?.25:backbeat?.17:.075;
-                voice(audio,beat*spb,duration,pitch,d.tone,level*d.level*energy*.55,
+                voice(audio,beat*spb,duration,pitch,d.tone,level*d.level*energy*(section.layers&Beat?.55:.11),
                     d.tone==Tone::Metal?.38:d.tone==Tone::Hush?-.42:0,seed+(++event));
             }
         }
@@ -714,19 +711,17 @@ Audio render(const Score& score) {
             for (int phrase=firstBar;phrase<lastBar;phrase+=4) for (const auto& n:line) {
                 const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
                 if (at>=end) continue;
-                voice(audio,at*spb,std::min(n.hold,end-at)*spb,n.pitch,tone,level*n.level*energy,pan,seed+(++event));
+                voice(audio,at*spb,n.hold*spb,n.pitch,tone,level*n.level*energy,pan,seed+(++event));
             }
         };
-        if ((section.layers&Theme) || firstBar < 16) {
-            for (int phrase=firstBar;phrase<lastBar;phrase+=4) {
-                const int variation=section.variant+((phrase-firstBar)/4)+(character%2);
-                const auto& line=variation%2?score.b:score.a;
-                for (const auto& n:line) {
-                    const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
-                    if (at>=end) continue;
-                    voice(audio,at*spb,std::min(n.hold,end-at)*spb,n.pitch,score.lead,
-                        (section.layers&Theme ? .22 : .12)*n.level*energy,.12,seed+(++event));
-                }
+        for (int phrase=firstBar;phrase<lastBar;phrase+=4) {
+            const int variation=section.variant+((phrase-firstBar)/4)+(character%2);
+            const auto& line=variation%2?score.b:score.a;
+            for (const auto& n:line) {
+                const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
+                if (at>=end) continue;
+                voice(audio,at*spb,n.hold*spb,n.pitch,score.lead,
+                    (section.layers&Theme ? .22 : .07)*n.level*energy,.12,seed+(++event));
             }
         }
         if (section.layers&Answer) melodic(score.counter,score.lead==Tone::Glass?Tone::Felt:Tone::Glass,.075,.38);
@@ -766,7 +761,7 @@ void writeWave(const fs::path& path,const Audio& audio) {
 
 struct Metrics {
     int channels=0;
-    double seconds=0, peak=0, rms=0, step=0, seam=0, dc=0;
+    double seconds=0, peak=0, rms=0, step=0, seam=0, dc=0, quietSeconds=0;
     std::uint64_t hash=14695981039346656037ull;
 };
 std::uint32_t readLittle(const std::vector<unsigned char>& data,std::size_t at,int count) {
@@ -805,7 +800,9 @@ Metrics inspectWave(const fs::path& path) {
     }
     require(format && begin>0 && length>0 && length%std::size_t(metrics.channels*2)==0, "Missing PCM data");
     const auto samples=length/2, frames=samples/std::size_t(metrics.channels);
-    double energy=0;
+    double energy=0, windowEnergy=0;
+    std::size_t windowSamples=0;
+    std::vector<double> windowLevels;
     std::array<double,2> sum{},first{},previous{};
     for (std::size_t i=0;i<samples;++i) {
         const auto p=begin+i*2;
@@ -815,12 +812,28 @@ Metrics inspectWave(const fs::path& path) {
         if (i<std::size_t(metrics.channels)) first[channel]=x;
         else metrics.step=std::max(metrics.step,std::abs(x-previous[channel]));
         previous[channel]=x; sum[channel]+=x; energy+=x*x;
+        windowEnergy+=x*x;
+        if (++windowSamples==std::size_t(rate*metrics.channels/2)) {
+            windowLevels.push_back(std::sqrt(windowEnergy/double(windowSamples)));
+            windowEnergy=0; windowSamples=0;
+        }
         metrics.peak=std::max(metrics.peak,std::abs(x));
         metrics.hash=(metrics.hash^data[p])*1099511628211ull;
         metrics.hash=(metrics.hash^data[p+1])*1099511628211ull;
     }
     metrics.seconds=double(frames)/rate;
     metrics.rms=std::sqrt(energy/double(samples));
+    if (!windowLevels.empty()) {
+        auto levels=windowLevels;
+        std::nth_element(levels.begin(),levels.begin()+std::ptrdiff_t(levels.size()/2),levels.end());
+        const double quietLimit=levels[levels.size()/2]*.22;
+        int run=0, longest=0;
+        for (const double level:windowLevels) {
+            run=level<quietLimit?run+1:0;
+            longest=std::max(longest,run);
+        }
+        metrics.quietSeconds=longest*.5;
+    }
     for (int c=0;c<metrics.channels;++c) {
         metrics.dc=std::max(metrics.dc,std::abs(sum[std::size_t(c)]/double(frames)));
         metrics.seam=std::max(metrics.seam,std::abs(previous[std::size_t(c)]-first[std::size_t(c)]));
@@ -847,6 +860,7 @@ void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Score>
         require(m.channels==channels && std::abs(m.seconds-expected)<.08, "Duration/channel mismatch: "+e.id);
         require(m.peak<=(track?.56:.181) && m.rms>=(track?.02:.008) && m.rms<=(track?.09:.036), "Unsafe peak/RMS or silence: "+e.id);
         require(m.step<=(track?.075:.045) && m.seam<=(track?.035:.001) && m.dc<.002, "Transient, seam or DC limit failed: "+e.id);
+        require(!track || m.quietSeconds<=2, "Long dropout in music: "+e.id);
         require(hashes.insert(m.hash).second, "Duplicate rendered PCM: "+e.id);
         const auto bytes=fs::file_size(asset); total+=bytes;
         if (!track) { if (channels==1) ++mono; else ++stereo; }

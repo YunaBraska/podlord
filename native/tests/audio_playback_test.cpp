@@ -6,10 +6,12 @@
 #include <QAudioSink>
 #include <QBuffer>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QGuiApplication>
 #include <QMediaDevices>
 #include <QMediaPlayer>
+#include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
 #include <cstdio>
@@ -47,9 +49,12 @@ int main(int argc, char** argv) {
         app->exit(result);
     };
     if (decode) {
-        // QFile keeps embedded media seekable without FFmpeg's unsupported qrc protocol.
+        // Container formats need a file URL with the native macOS decoder.
         QFile file(":" + first.path());
         if (!file.open(QIODevice::ReadOnly)) return 2;
+        QTemporaryFile container(QDir::tempPath() + "/podlord-audio-XXXXXX.m4a");
+        if (first.path().endsWith(".m4a") && (!container.open() || container.write(file.readAll()) != file.size()
+            || !container.flush())) return 2;
         QAudioDecoder decoder;
         qint64 frames = 0;
         qint64 bytes = 0;
@@ -85,7 +90,8 @@ int main(int argc, char** argv) {
         });
         QTimer::singleShot(0, app.get(), [&] {
             watchdog.start();
-            decoder.setSourceDevice(&file);
+            if (first.path().endsWith(".m4a")) decoder.setSource(QUrl::fromLocalFile(container.fileName()));
+            else decoder.setSourceDevice(&file);
             decoder.start();
         });
         return app->exec();
