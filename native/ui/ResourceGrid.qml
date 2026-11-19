@@ -248,13 +248,13 @@ ColumnLayout {
             onAccepted: grid.selectFindMatch(1)
             Keys.onEscapePressed: { grid.findOpen = false; table.forceActiveFocus() }
         }
-        Label { objectName: grid.prefix + "FindCount"; text: (grid.findIndex + 1) + "/" + grid.findCount; textFormat: Text.PlainText; Accessible.name: "Search match " + text }
+        SelectableText { objectName: grid.prefix + "FindCount"; text: (grid.findIndex + 1) + "/" + grid.findCount; textFormat: Text.PlainText; Accessible.name: "Search match " + text }
         IconButton { objectName: grid.prefix + "FindPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(-1) }
         IconButton { objectName: grid.prefix + "FindNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(1) }
         IconButton { objectName: grid.prefix + "FindClose"; glyph: "Close"; text: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
     }
-    Label { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: grid.colors.danger; Accessible.name: text }
-    Label { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+    SelectableText { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: grid.colors.danger; Accessible.name: text }
+    SelectableText { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
     Menu {
         id: cellMenu
         property string path: ""
@@ -299,7 +299,7 @@ ColumnLayout {
                     fill: grid.colors.accent
                 }
                 Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
-                Label { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small; Accessible.ignored: true }
+                SelectableText { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small; Accessible.ignored: true }
             }
             focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
             Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
@@ -461,19 +461,28 @@ ColumnLayout {
         Accessible.focused: activeFocus
         Accessible.selected: selected
         Accessible.onPressAction: cell.clicked()
-        Text {
+        TextEdit {
             id: cellText
+            readonly property bool truncated: contentWidth > width || contentHeight > height
             Accessible.ignored: true
             anchors.fill: parent
             anchors.margins: cell.padding
             text: grid.accessoryColumns.indexOf(cell.column) < 0 ? cell.text : ""
-            textFormat: Text.PlainText
+            textFormat: TextEdit.PlainText
+            readOnly: true
+            selectByMouse: true
+            selectByKeyboard: true
+            activeFocusOnTab: false
+            clip: true
             font: cell.font
             color: identityColor.a > 0 ? identityColor : grid.colors.text
-            elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
-            wrapMode: grid.wrapCells ? Text.Wrap : Text.NoWrap
-            maximumLineCount: grid.wrapCells ? 3 : 1
+            wrapMode: grid.wrapCells ? TextEdit.Wrap : TextEdit.NoWrap
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                gesturePolicy: TapHandler.DragThreshold
+                onTapped: cell.clicked()
+            }
         }
         color: highlighted || current ? grid.colors.selection : hovered ? grid.colors.raised : grid.colors.inset
         border.color: activeFocus || (current && TableView.view.activeFocus) ? grid.colors.accent : grid.colors.border
@@ -617,14 +626,14 @@ ColumnLayout {
                 sourceSize.width: 440; sourceSize.height: 420; asynchronous: true
                 Accessible.ignored: true
             }
-            Label {
+            SelectableText {
                 id: emptyTitle; visible: grid.prefix === "resource"
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: workspace.uiText[workspace.totalResourceCount > 0 ? "resource.noMatchingTitle" : workspace.loading ? "resource.loadingTitle" : "resource.emptyTitle"]
                 textFormat: Text.PlainText; font.pixelSize: parent.columns === 2 ? workspace.textSizes.subheading : workspace.textSizes.title; font.bold: true
                 color: grid.colors.accent; wrapMode: Text.Wrap
             }
-            Label { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: grid.colors.muted }
+            SelectableText { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: grid.colors.muted }
         }
     }
 }

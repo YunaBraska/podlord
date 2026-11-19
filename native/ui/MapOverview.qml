@@ -73,7 +73,13 @@ Pane {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1
-                        Label { objectName: "contextMapName_" + card.modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; text: card.modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; font.bold: true }
+                        SelectableText {
+                            objectName: "contextMapName_" + card.modelData.id
+                            Layout.fillWidth: true; Layout.minimumWidth: 0
+                            text: card.modelData.name; font.bold: true
+                            wrapMode: TextEdit.NoWrap; clip: true
+                            TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: card.clicked() }
+                        }
                         IconButton {
                             id: openContextOptions
                             objectName: "openMapContextOptions_" + card.modelData.id
@@ -91,7 +97,14 @@ Pane {
                             onClicked: workspace.requestSourceRemoval(card.modelData.id)
                         }
                     }
-                    Label { objectName: "contextMapCluster_" + card.modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1; text: "Cluster: " + card.modelData.cluster; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; color: workspace.appearanceColors.muted }
+                    SelectableText {
+                        objectName: "contextMapCluster_" + card.modelData.id
+                        Layout.fillWidth: true; Layout.minimumWidth: 0
+                        Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1
+                        text: "Cluster: " + card.modelData.cluster
+                        wrapMode: TextEdit.NoWrap; clip: true; color: workspace.appearanceColors.muted
+                        TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: card.clicked() }
+                    }
                 }
             }
         }
@@ -100,7 +113,7 @@ Pane {
         anchors.centerIn: parent; width: Math.min(360, parent.width - 24)
         visible: cards.count === 0 && !workspace.busy
         Image { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 140; Layout.preferredHeight: 120; source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit; asynchronous: true }
-        Label { Layout.fillWidth: true; text: workspace.uiText["context.emptyTitle"]; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
+        SelectableText { Layout.fillWidth: true; text: workspace.uiText["context.emptyTitle"]; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
     }
     BusyIndicator { anchors.centerIn: parent; running: visible; visible: cards.count === 0 && workspace.busy }
 }

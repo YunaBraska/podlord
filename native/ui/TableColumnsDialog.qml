@@ -88,14 +88,14 @@ ModalDialog {
                             ToolTip.visible: hovered || activeFocus
                             onTextEdited: surfaceDialog.change(index, "widthText", text)
                         }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: ""; contentItem: Label { text: "\u2191"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move up"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }
-                            IconButton { objectName: surfaceDialog.tableType + "ColumnLater_" + modelData.id; glyph: ""; contentItem: Label { text: "\u2193"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move down"; enabled: index + 1 < draft.count; Accessible.name: "Move " + modelData.title + " later"; onClicked: draft.move(index, index + 1, 1) }
+                            IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: ""; contentItem: SelectableText { text: "\u2191"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move up"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }
+                            IconButton { objectName: surfaceDialog.tableType + "ColumnLater_" + modelData.id; glyph: ""; contentItem: SelectableText { text: "\u2193"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move down"; enabled: index + 1 < draft.count; Accessible.name: "Move " + modelData.title + " later"; onClicked: draft.move(index, index + 1, 1) }
                         ToolSeparator { orientation: Qt.Horizontal; Layout.fillWidth: true; Layout.columnSpan: layoutColumns; topPadding: 0; bottomPadding: 0 }
                     }
                 }
             }
         }
-        Label { Layout.fillWidth: true; visible: workspace.tableLayoutSaving || workspace.tableLayoutError !== ""; text: workspace.tableLayoutSaving ? "Saving column layout..." : workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { Layout.fillWidth: true; visible: workspace.tableLayoutSaving || workspace.tableLayoutError !== ""; text: workspace.tableLayoutSaving ? "Saving column layout..." : workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     }
     footer: DialogButtonBox {
         implicitHeight: Math.max(defaultsButton.implicitHeight, saveButton.implicitHeight) + topPadding + bottomPadding

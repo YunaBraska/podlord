@@ -114,6 +114,10 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         {"uid", metadata["uid"]}, {"resourceVersion", metadata["resourceVersion"]},
         {"createdAt", metadata["creationTimestamp"]}, {"status", status}, {"activity", false}, {"problemSeverity", 0},
         {"node", spec["nodeName"]}, {"image", images.join(", ")}, {"containers", containers}, {"owners", owners}};
+    if (kind == "CiliumEndpoint") {
+        result["ciliumState"] = state["state"];
+        result["ciliumHealth"] = state["health"].toObject()["overallHealth"];
+    }
     if (version == "v1" && kind == "Pod") {
         QJsonArray claims;
         for (const auto& value : spec["volumes"].toArray()) {

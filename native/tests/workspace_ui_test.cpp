@@ -1215,7 +1215,24 @@ bool execute(const QString& requestedScenario) {
             if (workspace.contexts().first().toMap()["id"]!=first["id"] || workspace.contexts().first().toMap()["context"]!=first["context"]) return false;
             QFile original(source); if (!original.open(QIODevice::ReadOnly) || original.readAll()!=yaml) return false;
         }
-        return workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty() && saveShellFrame(window,scenario);
+        if (!workspace.currentSession().isEmpty() || !workspace.tabs().isEmpty() || !server.requests.isEmpty()
+            || !saveShellFrame(window,scenario)) return false;
+        if (scenario == "map_overview") {
+            auto* title = item(window, "contextMapName_" + first["id"].toString());
+            if (!title || !title->property("selectByMouse").toBool()) return false;
+            const auto from = title->mapToScene(QPointF(5, title->height() / 2)).toPoint();
+            const auto to = title->mapToScene(QPointF(std::min(90.0, title->width() - 5), title->height() / 2)).toPoint();
+            QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, from);
+            QTest::mouseMove(window, to);
+            QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, to);
+            const auto selected = title->property("selectedText").toString();
+            if (selected.isEmpty() || !workspace.currentSession().isEmpty()) return false;
+            QGuiApplication::clipboard()->clear();
+            QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+            if (QGuiApplication::clipboard()->text() != selected || !click(window, title)) return false;
+            return waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); }, 10000);
+        }
+        return true;
     }
     if (scenario == "map_open_options" || scenario == "map_alias_modal") {
         if (!workspace.setWorkspacePage("map") || !workspace.showMapOverview()) return false;

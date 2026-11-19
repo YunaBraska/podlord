@@ -55,7 +55,13 @@ Row {
                             fill: workspace.appearanceColors.inset; stroke: workspace.appearanceColors.text
                             Accessible.ignored: true
                         }
-                        Label { objectName: "pulse_" + metricCard.modelData.id + "_usage"; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight; text: metricCard.modelData.display || metricCard.modelData.usage; font: valueFont.font; maximumLineCount: 1; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        SelectableText {
+                            objectName: "pulse_" + metricCard.modelData.id + "_usage"
+                            Layout.fillWidth: true; horizontalAlignment: Text.AlignRight
+                            text: metricCard.modelData.display || metricCard.modelData.usage
+                            font: valueFont.font; wrapMode: TextEdit.NoWrap; clip: true
+                            TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: metricCard.clicked() }
+                        }
                     }
                     ProgressBar {
                         objectName: "pulse_" + metricCard.modelData.id + "_bar"

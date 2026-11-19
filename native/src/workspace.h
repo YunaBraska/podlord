@@ -186,6 +186,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QStringList incidentAiReasoningOptions READ incidentAiReasoningOptions NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiReasoning READ incidentAiReasoning NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiStatus READ incidentAiStatus NOTIFY incidentAiChanged)
+    Q_PROPERTY(bool incidentAiReady READ incidentAiReady NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantMap incidentAiResult READ incidentAiResult NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantMap incidentAiDiagnostic READ incidentAiDiagnostic NOTIFY incidentAiChanged)
     Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
@@ -443,6 +444,7 @@ public:
     QStringList incidentAiReasoningOptions() const;
     QString incidentAiReasoning() const;
     QString incidentAiStatus() const;
+    bool incidentAiReady() const;
     QVariantMap incidentAiResult() const;
     QVariantMap incidentAiDiagnostic() const;
     Q_INVOKABLE bool setIncidentAiEnabled(bool enabled);
@@ -459,7 +461,7 @@ public:
     Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
     Q_INVOKABLE void ensureIncidentAiModels();
     Q_INVOKABLE bool refreshIncidentAiAnalysis();
-    Q_INVOKABLE bool copyIncidentAiCommand();
+    Q_INVOKABLE bool openIncidentAiEvidence(const QString& path);
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;
     QUrl defaultKubeconfigFolder() const;

@@ -17,6 +17,7 @@ void require(bool condition, const char* message) { if (!condition) throw std::r
 struct OllamaBoundary final : QTcpServer {
     int chats = 0;
     QByteArray submitted;
+    QByteArray answer;
     bool failure = false, malformed = false, hold = false;
     QTcpSocket* held = nullptr;
     OllamaBoundary() {
@@ -43,7 +44,8 @@ struct OllamaBoundary final : QTcpServer {
                 else {
                     ++chats; submitted = bytes->mid(boundary + 4, length);
                     if (hold) { held = socket; return; }
-                    response = {{"message", QJsonObject{{"content", malformed ? "not json" : "{\"summary\":\"Der Image-Abruf scheitert.\",\"cause\":\"Ursache unbekannt.\",\"action\":\"Prüfe Registry und Image-Referenz.\"}"}}}};
+                    response = {{"message", QJsonObject{{"content", malformed ? QString("not json") : answer.isEmpty()
+                        ? QString("{\"summary\":\"Der Image-Abruf scheitert.\",\"cause\":\"Ursache unbekannt.\",\"action\":\"Prüfe Registry und Image-Referenz.\"}") : QString::fromUtf8(answer)}}}};
                 }
                 const auto payload = failure && chat ? QByteArray("failure") : QJsonDocument(response).toJson(QJsonDocument::Compact);
                 socket->write("HTTP/1.1 " + QByteArray(failure && chat ? "503 Failure" : "200 OK")
@@ -263,6 +265,96 @@ void scenario(const QString& name) {
         require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000), "Changed related status reused the stale answer");
         return;
     }
+    if (name == "evidence_graph") {
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["node"] = "worker-a";
+        pod["volumeClaims"] = QJsonArray{"claim-data"};
+        snapshot.replace(2, pod);
+        auto event = snapshot.at(3).toObject();
+        event["name"] = "pull-warning";
+        event["path"] = "/api/v1/namespaces/team/events/pull-warning";
+        event["eventType"] = "Warning";
+        event["eventTargetUid"] = "pod-one";
+        event["eventReason"] = "FailedToRetrieveImagePullSecret";
+        event["eventMessage"] = "private-event-marker unauthorized token=private-value";
+        snapshot.replace(3, event);
+        snapshot.append(QJsonObject{{"uid", "encoded-event"}, {"kind", "Event"}, {"name", "encoded-warning"},
+            {"namespace", "team"}, {"path", "/api/v1/namespaces/team/events/encoded-warning"},
+            {"kubernetesEvent", true}, {"eventType", "Warning"}, {"eventTargetUid", "pod-one"},
+            {"eventReason", "eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop"}, {"eventMessage", "token=private-value"}});
+        snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"path", "/api/v1/nodes/worker-a"}, {"status", "NotReady"}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolumeClaim"}, {"name", "claim-data"}, {"namespace", "team"},
+            {"path", "/api/v1/namespaces/team/persistentvolumeclaims/claim-data"}, {"status", "Pending"}, {"boundVolume", "volume-01"}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolume"}, {"name", "volume-01"},
+            {"path", "/api/v1/persistentvolumes/volume-01"}, {"status", "Released"}});
+        snapshot.append(QJsonObject{{"kind", "CiliumEndpoint"}, {"name", "pod-one"}, {"namespace", "team"},
+            {"path", "/apis/cilium.io/v2/namespaces/team/ciliumendpoints/pod-one"}, {"status", "NotReady"},
+            {"ciliumState", "waiting-for-identity"}, {"ciliumHealth", "Failure"}});
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setEnabled("context", true) && ai.setModel("local-test:9b"), "Evidence model unavailable");
+        ai.observe("context", snapshot, "de");
+        const auto path = pod["path"].toString();
+        require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
+            "Evidence analysis missing");
+        const auto result = ai.result("context", path);
+        const auto evidence = result.value("evidence").toList();
+        require(evidence.size() >= 6 && !result.contains("command"), "Linked evidence or in-app-only action missing");
+        for (const auto& value : evidence) {
+            const auto link = value.toMap();
+            require(!link.value("id").toString().isEmpty() && !link.value("path").toString().isEmpty(), "Evidence cannot be opened");
+            require(server.submitted.contains(link.value("id").toString().toUtf8()), "Evidence ID was omitted from the request");
+            require(!server.submitted.contains(link.value("name").toString().toUtf8()), "Resource name reached the model");
+        }
+        require(server.submitted.contains("CiliumEndpoint") && server.submitted.contains("PersistentVolumeClaim")
+            && server.submitted.contains("FailedToRetrieveImagePullSecret") && server.submitted.contains("registry-auth-rejected")
+            && server.submitted.contains("waiting-for-identity") && server.submitted.contains("networkHealth=Failure")
+            && !server.submitted.contains("private-event-marker") && !server.submitted.contains("private-value")
+            && !server.submitted.contains("eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop"),
+            "Related network, storage, and event facts were not sent safely");
+        server.answer = "{\"summary\":\"Der Abruf scheitert.\",\"cause\":\"Mögliche Netzwerkstörung.\",\"action\":\"Prüfe den Node.\",\"refs\":[\"R2\",\"FAKE\"]}";
+        require(ai.refresh("context", path) && QTest::qWaitFor([&] { return server.chats == 2
+            && ai.result("context", path).value("summary") == "Der Abruf scheitert."; }, 2000), "Explicit cited analysis missing");
+        const auto cited = ai.result("context", path).value("evidence").toList();
+        require(cited.size() == 1 && cited.first().toMap().value("id") == "R2",
+            "Model references were not checked against local evidence");
+        return;
+    }
+    if (name == "node_graph") {
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["node"] = "worker-a";
+        pod["volumeClaims"] = QJsonArray{"claim-data"};
+        snapshot.replace(2, pod);
+        auto event = snapshot.at(3).toObject();
+        event["name"] = "mount-warning";
+        event["path"] = "/api/v1/namespaces/team/events/mount-warning";
+        event["eventType"] = "Warning";
+        event["eventReason"] = "FailedMount";
+        event["eventTargetUid"] = "pod-one";
+        snapshot.replace(3, event);
+        const QString nodePath = "/api/v1/nodes/worker-a";
+        snapshot.append(QJsonObject{{"uid", "node-uid"}, {"kind", "Node"}, {"name", "worker-a"},
+            {"path", nodePath}, {"status", "NotReady"}, {"problemSeverity", 2}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolumeClaim"}, {"name", "claim-data"}, {"namespace", "team"},
+            {"path", "/api/v1/namespaces/team/persistentvolumeclaims/claim-data"}, {"status", "Pending"}, {"boundVolume", "volume-01"}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolume"}, {"name", "volume-01"},
+            {"path", "/api/v1/persistentvolumes/volume-01"}, {"status", "Released"}});
+        snapshot.append(QJsonObject{{"kind", "Pod"}, {"name", "cilium-abc"}, {"namespace", "kube-system"},
+            {"path", "/api/v1/namespaces/kube-system/pods/cilium-abc"}, {"node", "worker-a"}, {"status", "Running"}});
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b"), "Node evidence model unavailable");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Node evidence model not ready");
+        ai.observe("context", snapshot, "de");
+        require(ai.refresh("context", nodePath) && QTest::qWaitFor([&] { return server.chats == 1
+            && !ai.result("context", nodePath).value("summary").toString().isEmpty(); }, 2000), "Node analysis missing");
+        require(server.submitted.contains("affected Pod on node") && server.submitted.contains("mounted claim")
+            && server.submitted.contains("bound volume") && server.submitted.contains("node network agent")
+            && server.submitted.contains("FailedMount"), "Node investigation lost dependent resources");
+        return;
+    }
     if (name == "cluster_context") {
         auto snapshot = rows();
         auto pod = snapshot.at(2).toObject();
@@ -480,7 +572,10 @@ void scenario(const QString& name) {
             ai.observe("context", recreated, "de");
             require(!ai.result("context", recreated.at(2).toObject()["path"].toString()).value("summary").toString().isEmpty()
                 && server.chats == 1, "Pod replacement missed the cached workload analysis");
-            require(ai.result("context", recreated.at(2).toObject()["path"].toString()).value("command").toString().contains("pod-two"), "Read-only command targets wrong Pod");
+            const auto replacement = ai.result("context", recreated.at(2).toObject()["path"].toString());
+            require(!replacement.contains("command") && !replacement.value("evidence").toList().isEmpty()
+                && replacement.value("evidence").toList().first().toMap().value("path").toString() == recreated.at(2).toObject()["path"].toString(),
+                "Cached evidence points to the previous Pod or an external command");
         }
     }
     if (name == "persist") {

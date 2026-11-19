@@ -41,7 +41,7 @@ Pane {
             Layout.fillWidth: true; spacing: 6
             IconButton { glyph: "Service"; text: "Forward selected resource"; visible: workspace.canPortForward; onClicked: workspace.preparePortForward() }
         }
-        Label { Layout.fillWidth: true; visible: workspace.portForwardError !== ""; text: workspace.portForwardError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+        SelectableText { Layout.fillWidth: true; visible: workspace.portForwardError !== ""; text: workspace.portForwardError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         FlatButton { visible: workspace.portForwardError !== "" && workspace.authenticationRequired; text: "Sign in"; onClicked: authenticationRequested() }
         ResourceGrid {
             id: ports

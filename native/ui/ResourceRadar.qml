@@ -63,7 +63,7 @@ Pane {
                 }
                 RowLayout {
                     Layout.fillWidth: !radarPane.expanded
-                    Label { text: "Radar"; font.bold: true; visible: !radarPane.compact }
+                    SelectableText { text: "Radar"; font.bold: true; visible: !radarPane.compact }
                     Item { Layout.fillWidth: true }
                     IconButton {
                         objectName: "mapOverview"
@@ -104,7 +104,7 @@ Pane {
                 }
                 Accessible.name: "Context resource health"
             }
-            Label {
+            SelectableText {
                 objectName: "radarHealthSummary"
                 Layout.fillWidth: true
                 text: (workspace.healthSummary.total || 0) + " resources / " + (workspace.healthSummary.healthy || 0) + " healthy / "
@@ -375,7 +375,7 @@ Pane {
                     resourcePath: grid.currentIndex >= 0 ? grid.source.data(grid.source.index(grid.currentIndex, 0), Qt.UserRole) : ""
                 }
                 ResourceTarget { id: hoverTarget; objectName: "radarHoverTarget" }
-                Label {
+                SelectableText {
                     objectName: "emptyRadar"
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: radarNavigation.height + (grid.height - radarNavigation.height - height) / 2
@@ -464,7 +464,7 @@ Pane {
                         RowLayout {
                             id: infoHeader
                             Layout.fillWidth: true
-                            Label {
+                            SelectableText {
                                 objectName: "radarInfoText"
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
@@ -473,8 +473,7 @@ Pane {
                                 font.bold: true
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
-                                maximumLineCount: 2
-                                elide: Text.ElideRight
+                                clip: true
                                 color: workspace.appearanceColors.text
                                 Accessible.name: text
                             }
@@ -515,7 +514,7 @@ Pane {
                                 id: infoContents
                                 width: infoScroll.availableWidth
                                 spacing: 6
-                                Label {
+                                SelectableText {
                                     objectName: "radarInfoNamespace"
                                     Layout.fillWidth: true
                                     visible: radarInfo.hasDetails
@@ -524,7 +523,7 @@ Pane {
                                     wrapMode: Text.Wrap
                                     color: workspace.appearanceColors.muted
                                 }
-                                Label {
+                                SelectableText {
                                     objectName: "radarInfoStatus"
                                     Layout.fillWidth: true
                                     visible: radarInfo.hasDetails
@@ -534,17 +533,16 @@ Pane {
                                     font.bold: true
                                     color: radarInfo.hasDetails && radarInfo.target.model.statusColor ? radarInfo.target.model.statusColor : workspace.appearanceColors.text
                                 }
-                                Label {
+                                SelectableText {
                                     objectName: "radarInfoIssue"
                                     Layout.fillWidth: true
                                     visible: radarInfo.hasDetails && !!radarInfo.resourceDetails.issue && radarInfo.resourceDetails.issue !== "-"
                                     text: workspace.uiText["alert.field.issue"] + ": " + (radarInfo.resourceDetails.issue || "")
                                     textFormat: Text.PlainText
                                     wrapMode: Text.Wrap
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
+                                    clip: true
                                 }
-                                Label {
+                                SelectableText {
                                     objectName: "radarInfoReadiness"
                                     Layout.fillWidth: true
                                     visible: radarInfo.hasDetails && text !== ""
@@ -558,13 +556,12 @@ Pane {
                                     model: radarInfo.hasDetails ? [{label: workspace.uiText["alert.field.node"], value: radarInfo.resourceDetails.node},
                                         {label: workspace.uiText["alert.field.image"], value: radarInfo.resourceDetails.image}, {label: workspace.uiText["alert.field.owner"], value: radarInfo.resourceDetails.owner}]
                                         .filter(entry => !!entry.value && entry.value !== "-") : []
-                                    Label {
+                                    SelectableText {
                                         required property var modelData
                                         Layout.fillWidth: true
                                         text: modelData.label + ": " + modelData.value
                                         textFormat: Text.PlainText
-                                        maximumLineCount: 1
-                                        elide: Text.ElideRight
+                                        clip: true
                                     }
                                 }
                                 Repeater {
@@ -583,6 +580,6 @@ Pane {
                 }
             }
         }
-        Label { Layout.fillWidth: true; visible: !radarPane.compact; text: "Drag or arrow keys: pan. Scroll or trackpad: zoom. + / -: zoom. 0: reset. Home / End: focus resource. Enter: inspect."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+        SelectableText { Layout.fillWidth: true; visible: !radarPane.compact; text: "Drag or arrow keys: pan. Scroll or trackpad: zoom. + / -: zoom. 0: reset. Home / End: focus resource. Enter: inspect."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
     }
 }

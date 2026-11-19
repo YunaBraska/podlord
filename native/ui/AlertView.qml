@@ -152,7 +152,7 @@ Pane {
         modal: true
         width: Math.min(440, parent.width - 24)
         onClosed: { view.pendingEditorAction = null; if (view.draft) ruleGrid.selectIdentity(view.draft.id, 2) }
-        contentItem: Label { text: workspace.uiText["alert.unsavedMessage"]; wrapMode: Text.Wrap; padding: 16 }
+        contentItem: SelectableText { text: workspace.uiText["alert.unsavedMessage"]; wrapMode: Text.Wrap; padding: 16 }
         footer: DialogButtonBox {
             FlatButton { objectName: "keepAlertChanges"; text: workspace.uiText["alert.keepEditing"]; onClicked: discardAlertChanges.close() }
             FlatButton { objectName: "discardAlertChangesButton"; destructive: true; text: workspace.uiText["alert.discard"]; onClicked: { const action = view.pendingEditorAction; discardAlertChanges.close(); if (action) action() } }
@@ -185,7 +185,7 @@ Pane {
         required property string label
         default property alias controls: values.data
         Layout.fillWidth: true; columns: view.width < 600 ? 1 : 2; columnSpacing: 8; rowSpacing: 4
-        data: [Label { text: parent.label; Layout.fillWidth: parent.columns === 1; Layout.preferredWidth: parent.columns === 1 ? -1 : 130; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted },
+        data: [SelectableText { text: parent.label; Layout.fillWidth: parent.columns === 1; Layout.preferredWidth: parent.columns === 1 ? -1 : 130; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted },
             GridLayout { id: values; Layout.fillWidth: true; Layout.minimumWidth: 0; columns: view.width < 600 ? 1 : 3; columnSpacing: 6; rowSpacing: 6 }]
     }
     component HoldMode: ComboBox {
@@ -208,8 +208,8 @@ Pane {
         width: pageScroll.availableWidth
         height: Math.max(pageScroll.availableHeight, implicitHeight)
         spacing: 8
-        Label { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
-        Label { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+        SelectableText { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+        SelectableText { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
         ResourceGrid {
             id: ruleGrid
             objectName: "alertRulesTable"
@@ -265,14 +265,14 @@ Pane {
                 }
                 FormRow { label: workspace.uiText["alert.name"]; TextField { id: name; objectName: "alertName"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert name" } }
                 FormRow { label: workspace.uiText["alert.description"]; TextField { id: description; objectName: "alertDescription"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert description" } }
-                Label { visible: view.draft !== null && view.draft.draft; text: workspace.uiText["alert.draft"]; color: workspace.appearanceColors.muted; Layout.fillWidth: true }
-                Label { visible: view.draft !== null && view.draft.builtIn; text: workspace.uiText["alert.builtinHelp"]; color: workspace.appearanceColors.muted; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                SelectableText { visible: view.draft !== null && view.draft.draft; text: workspace.uiText["alert.draft"]; color: workspace.appearanceColors.muted; Layout.fillWidth: true }
+                SelectableText { visible: view.draft !== null && view.draft.builtIn; text: workspace.uiText["alert.builtinHelp"]; color: workspace.appearanceColors.muted; Layout.fillWidth: true; wrapMode: Text.Wrap }
                 RowLayout {
                     Layout.fillWidth: true
-                    Label { Layout.fillWidth: true; text: workspace.uiText["alert.matchers"]; font.bold: true; color: workspace.appearanceColors.accent }
+                    SelectableText { Layout.fillWidth: true; text: workspace.uiText["alert.matchers"]; font.bold: true; color: workspace.appearanceColors.accent }
                     ActionButton { id: matcherHelp; objectName: "alertMatcherHelp"; text: workspace.uiText["alert.syntax"]; checkable: true; Accessible.name: text; Accessible.description: workspace.uiText["alert.syntaxHelp"] }
                 }
-                Label { Layout.fillWidth: true; visible: matcherHelp.checked; text: workspace.uiText["alert.syntaxHelp"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted }
+                SelectableText { Layout.fillWidth: true; visible: matcherHelp.checked; text: workspace.uiText["alert.syntaxHelp"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.muted }
                 Repeater {
                     model: criteria
                     ColumnLayout {
@@ -283,14 +283,14 @@ Pane {
                         enabled: form.editable
                         RowLayout {
                             Layout.fillWidth: true; visible: criterion.index === 0 || (criterion.index > 0 && criterion.index < criteria.count && criteria.get(criterion.index - 1).group !== criterion.group)
-                            Label { Layout.fillWidth: true; text: workspace.uiText["alert.all"] + " " + (criterion.group + 1); font.bold: true; color: workspace.appearanceColors.accent }
+                            SelectableText { Layout.fillWidth: true; text: workspace.uiText["alert.all"] + " " + (criterion.group + 1); font.bold: true; color: workspace.appearanceColors.accent }
                             ActionButton { objectName: "addAlertCriterion_" + criterion.group; glyph: "ZoomIn"; showText: false; text: workspace.uiText["alert.addCondition"]; onClicked: view.addCriterion(criterion.group) }
                             ActionButton { objectName: "removeAlertGroup_" + criterion.group; glyph: "Trash"; destructive: true; showText: false; text: "Remove matcher group " + (criterion.group + 1); enabled: criteria.count > 0 && criteria.get(criteria.count - 1).group > 0; onClicked: view.removeGroup(criterion.group) }
                         }
                         GridLayout {
                             Layout.fillWidth: true
                             columns: width < 520 ? 1 : 4
-                            Label { text: workspace.uiText["alert.all"]; color: workspace.appearanceColors.muted }
+                            SelectableText { text: workspace.uiText["alert.all"]; color: workspace.appearanceColors.muted }
                             ComboBox { objectName: "alertField_" + criterion.index; Layout.fillWidth: true; Layout.preferredWidth: 180; Layout.maximumWidth: parent.columns === 1 ? Number.POSITIVE_INFINITY : 220; model: view.fieldOptions; textRole: "label"; valueRole: "id"; currentIndex: model.findIndex(option => option.id === criterion.field); Accessible.name: "Matcher field " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "field", currentValue) }
                             ColumnLayout {
                                 Layout.fillWidth: true
@@ -306,7 +306,7 @@ Pane {
                     ActionButton { objectName: "addAlertAnd"; glyph: "ZoomIn"; showText: false; text: workspace.uiText["alert.addCondition"]; Accessible.name: text; onClicked: view.addCriterion(criteria.count ? criteria.get(criteria.count - 1).group : 0) }
                     ActionButton { objectName: "addAlertOr"; glyph: "ZoomIn"; showText: false; text: workspace.uiText["alert.addAlternative"]; onClicked: criteria.append({group: criteria.count ? criteria.get(criteria.count - 1).group + 1 : 0, field: "name", expression: ""}) }
                 }
-                Label { text: "Per-rule actions"; font.bold: true; color: workspace.appearanceColors.accent }
+                SelectableText { text: "Per-rule actions"; font.bold: true; color: workspace.appearanceColors.accent }
                 FormRow {
                     label: workspace.uiText["alert.color"]; enabled: form.editable
                     GridLayout {
@@ -359,11 +359,11 @@ Pane {
                     RowLayout {
                         Layout.fillWidth: true; visible: zoomEnabled.checked; enabled: form.editable
                         SpinBox { id: zoom; objectName: "alertZoom"; from: 1; to: 200; editable: true; Accessible.name: "Radar zoom percent" }
-                        Label { text: "%" }
+                        SelectableText { text: "%" }
                     }
                     ActionButton { objectName: "previewAlertZoom"; text: "Preview"; Accessible.name: workspace.uiText["alert.autoFocus"] + ": " + text; enabled: !workspace.alerts.busy && !workspace.alerts.zoomPreviewBusy; onClicked: workspace.previewAlertZoom(view.ruleDraft()) }
                 }
-                Label { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                SelectableText { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
                 FormRow {
                     label: workspace.uiText["alert.sound"]
                     WrappingCheckBox {
@@ -380,7 +380,7 @@ Pane {
                     }
                     RowLayout {
                         Layout.fillWidth: true; visible: view.selectedSoundId !== "none"
-                        Label { text: workspace.uiText["alert.minimumMatches"]; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        SelectableText { text: workspace.uiText["alert.minimumMatches"]; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         SpinBox { id: soundMinimum; objectName: "alertSoundMinimum"; from: 1; to: 2147483647; editable: true; enabled: form.editable; Accessible.name: workspace.uiText["alert.minimumMatches"] }
                     }
                 }
@@ -389,7 +389,7 @@ Pane {
             background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }
         }
         Item { Layout.fillHeight: true; visible: !editor.visible }
-        Label { objectName: "alertEmptyState"; text: workspace.uiText[workspace.currentSession === "" ? "alert.emptyContext" : "alert.emptyMatches"]; visible: workspace.alerts.matches.length === 0; color: workspace.appearanceColors.muted }
+        SelectableText { objectName: "alertEmptyState"; text: workspace.uiText[workspace.currentSession === "" ? "alert.emptyContext" : "alert.emptyMatches"]; visible: workspace.alerts.matches.length === 0; color: workspace.appearanceColors.muted }
         Flow {
             Layout.fillWidth: true; Layout.maximumWidth: pageScroll.availableWidth; Layout.preferredHeight: childrenRect.height; spacing: 6
             Repeater { model: workspace.alerts.matches; FlatButton { required property var modelData; required property int index; objectName: "alertMatch_" + index; text: modelData.name + ": " + modelData.count; Accessible.name: text; onClicked: workspace.inspectPath(modelData.path) } }

@@ -83,7 +83,7 @@ Pane {
         spacing: 4
         IconButton { objectName: "inspectorBack"; glyph: "Previous"; text: workspace.uiText["tooltip.previousResource"]; enabled: workspace.canInspectBack; onClicked: workspace.navigateInspector(-1) }
         IconButton { objectName: "inspectorForward"; glyph: "Next"; text: workspace.uiText["tooltip.nextResource"]; enabled: workspace.canInspectForward; onClicked: workspace.navigateInspector(1) }
-        Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; elide: Text.ElideMiddle; Accessible.name: "Inspecting " + text }
+        SelectableText { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; wrapMode: TextEdit.NoWrap; clip: true; Accessible.name: "Inspecting " + text }
         IconButton { objectName: "refreshInspector"; glyph: "Reset"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
         IconButton { objectName: "deleteResource"; glyph: "Trash"; destructive: true; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
         IconButton { objectName: "preparePortForward"; glyph: "Service"; text: "Port forward " + workspace.inspectorName; visible: workspace.canPortForward; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
@@ -135,7 +135,7 @@ Pane {
                 objectName: "incidentAiReanalyze"
                 glyph: "Reset"
                 text: workspace.incidentAiResult.summary === undefined ? workspace.uiText["ai.analyze"] : workspace.uiText["ai.reanalyze"]
-                enabled: workspace.incidentAiModel !== "" && workspace.incidentAiResult.pending !== true
+                enabled: workspace.incidentAiModel !== "" && workspace.incidentAiReady && workspace.incidentAiResult.pending !== true
                     && !workspace.authenticationRequired
                 onClicked: workspace.refreshIncidentAiAnalysis()
             }
@@ -170,19 +170,19 @@ Pane {
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
             visible: workspace.incidentAiResult.summary !== undefined
-            Label { text: workspace.uiText["ai.analysis"]; font.bold: true; color: workspace.appearanceColors.muted }
+            SelectableText { text: workspace.uiText["ai.analysis"]; font.bold: true; color: workspace.appearanceColors.muted }
             SelectableText { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || "" }
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
             visible: (workspace.incidentAiResult.cause || "") !== ""
-            Label { text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.muted }
+            SelectableText { text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.muted }
             SelectableText { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || "" }
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
             visible: workspace.incidentAiResult.action !== undefined
-            Label { text: workspace.uiText["ai.nextStep"]; font.bold: true; color: workspace.appearanceColors.muted }
+            SelectableText { text: workspace.uiText["ai.nextStep"]; font.bold: true; color: workspace.appearanceColors.muted }
             SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
         }
         SelectableText {
@@ -191,44 +191,37 @@ Pane {
             text: workspace.uiText["ai.evidence"] + ": " + (workspace.incidentAiResult.code || "")
             color: workspace.appearanceColors.muted
         }
-        SelectableText {
+        ColumnLayout {
             Layout.fillWidth: true
-            visible: (workspace.incidentAiResult.related || []).length > 0
-            text: workspace.uiText["ai.related"] + ":\n• " + (workspace.incidentAiResult.related || []).map(signal => {
-                if (signal.startsWith("Assigned Node: ")) return workspace.uiText["ai.relatedNode"] + signal.slice(15)
-                if (signal.startsWith("Referenced claim: ")) return workspace.uiText["ai.relatedClaim"] + signal.slice(18)
-                if (signal.startsWith("Bound volume: ")) return workspace.uiText["ai.relatedVolume"] + signal.slice(14)
-                if (signal.startsWith("Observed warning event: ")) return workspace.uiText["ai.relatedEvent"] + signal.slice(24)
-                if (signal.startsWith("Same namespace problem: ")) return workspace.uiText["ai.relatedNamespace"] + signal.slice(24)
-                if (signal === "Resource health: warning") return workspace.uiText["ai.relatedHealthWarning"]
-                if (signal === "Resource health: critical") return workspace.uiText["ai.relatedHealthCritical"]
-                if (signal.startsWith("Pod containers ready: ")) return workspace.uiText["ai.relatedReady"] + signal.slice(22)
-                if (signal === "Container restarts observed") return workspace.uiText["ai.relatedRestarts"]
-                if (signal.startsWith("Resource status: ")) return workspace.uiText["ai.relatedStatus"] + signal.slice(17)
-                if (signal === "Image pull Secret reference: none in Pod spec") return workspace.uiText["ai.pullSecretNone"]
-                if (signal === "Image pull Secret reference: observed in cached resources") return workspace.uiText["ai.pullSecretPresent"]
-                if (signal === "Image pull Secret reference: not verified in cached resources") return workspace.uiText["ai.pullSecretUnverified"]
-                return signal
-            }).join("\n• ")
-            color: workspace.appearanceColors.muted
+            visible: (workspace.incidentAiResult.evidence || []).length > 0
+            spacing: 3
+            SelectableText { text: workspace.uiText["ai.related"]; font.bold: true; color: workspace.appearanceColors.muted }
+            Repeater {
+                model: workspace.incidentAiResult.evidence || []
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    SelectableText {
+                        Layout.fillWidth: true
+                        text: modelData.id + "  " + modelData.kind + "/" + modelData.name
+                            + (modelData.reason || modelData.status || modelData.issue ? " · " + (modelData.reason || modelData.status || modelData.issue) : "")
+                    }
+                    IconButton {
+                        objectName: "incidentAiEvidence_" + modelData.id
+                        glyph: "Next"
+                        text: workspace.uiText["action.open"] + " " + modelData.kind + "/" + modelData.name
+                        onClicked: workspace.openIncidentAiEvidence(modelData.path)
+                    }
+                }
+            }
         }
         Flow {
             Layout.fillWidth: true
             visible: workspace.incidentAiResult.summary !== undefined
             spacing: 6
-            IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["ai.copyCommand"]; visible: workspace.incidentAiResult.summary !== undefined; enabled: (workspace.incidentAiResult.command || "") !== ""; onClicked: workspace.copyIncidentAiCommand() }
             IconButton { objectName: "incidentAiDocs"; glyph: "External"; text: workspace.uiText["ai.docs"]; visible: workspace.incidentAiResult.summary !== undefined; onClicked: aiPanel.docsError = Qt.openUrlExternally(workspace.incidentAiResult.documentation) ? "" : workspace.uiText["ai.docsError"] }
         }
         SelectableText { Layout.fillWidth: true; visible: aiPanel.docsError !== ""; text: aiPanel.docsError; color: workspace.appearanceColors.danger }
-        TextArea {
-            objectName: "incidentAiCommand"
-            Layout.fillWidth: true
-            visible: workspace.incidentAiResult.command !== undefined
-            text: workspace.incidentAiResult.command || ""
-            readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
-            textFormat: TextEdit.PlainText
-            Accessible.name: workspace.uiText["ai.command"]
-        }
     }
     ColumnLayout {
             Layout.fillWidth: true
@@ -295,9 +288,9 @@ Pane {
         RowLayout {
             anchors.fill: parent; anchors.margins: 6
             spacing: 12
-                Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
+                SelectableText { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
+            SelectableText { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
+            SelectableText { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
         }
     }
     ListView {
@@ -338,7 +331,7 @@ Pane {
             anchors.fill: parent; anchors.margins: 4
             RowLayout {
                 Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
-                        Label { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                        SelectableText { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
                         SelectableText {
                             objectName: "overview_" + modelData.id
                             Layout.fillWidth: true

@@ -195,7 +195,7 @@ Pane {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Label { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
+                SelectableText { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
             }
             GridLayout {
                 Layout.fillWidth: true
@@ -296,7 +296,7 @@ Pane {
                 }
             }
             }
-            Label { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
+            SelectableText { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
             FileDialog {
                 id: importPresets
                 objectName: "importFilterPresetsDialog"

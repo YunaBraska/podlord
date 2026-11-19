@@ -55,7 +55,7 @@ ColumnLayout {
             textFormat: Text.PlainText
             elide: Text.ElideMiddle
         }
-        Label {
+        SelectableText {
             objectName: "terminalStatus"
             visible: root.terminal !== null && (root.running || root.terminal.failed)
             text: root.terminal ? (root.terminal.connected ? "\u2713" : root.terminal.active ? "\u2026" : "!") : ""
@@ -106,7 +106,7 @@ ColumnLayout {
         selectByMouse: true
         Accessible.name: "Absolute POSIX shell path"
     }
-    Label {
+    SelectableText {
         objectName: "terminalError"
         Layout.fillWidth: true
         visible: text !== ""
@@ -185,7 +185,7 @@ ColumnLayout {
             enabled: false
             text: terminalTarget.text
             implicitHeight: Math.max(root.controlHeight, contentItem.implicitHeight + 12)
-            contentItem: Label { text: terminalTarget.text; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.text }
+            contentItem: SelectableText { text: terminalTarget.text; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: workspace.appearanceColors.text }
         }
         MenuItem { implicitHeight: root.controlHeight; objectName: "terminalCopy"; text: "Copy selection"; enabled: root.terminal !== null; onTriggered: surface.copySelection() }
         MenuItem { implicitHeight: root.controlHeight; objectName: "terminalPaste"; text: "Paste..."; enabled: root.terminal !== null && root.terminal.connected; onTriggered: pasteReview.open() }
@@ -212,7 +212,7 @@ ColumnLayout {
         header: DialogHeader { dialog: helpDialog }
         modal: true
         width: Math.min(520, root.width)
-        contentItem: Label {
+        contentItem: SelectableText {
             text: "Ctrl+C interrupts. Escape goes to the running program.\nShift+Esc moves focus to the controls.\nShift+Page Up/Down scrolls history. Shift+drag selects text."
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
@@ -229,8 +229,8 @@ ColumnLayout {
         property var reviewedTerminal: null
         onOpened: { const content = surface.clipboardForPaste(); payload = content.text; pasteError = content.error; reviewedTerminal = root.terminal }
         contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: "This text may execute commands. Confirm only trusted content."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            Label { objectName: "terminalPasteError"; Layout.fillWidth: true; visible: text !== ""; text: pasteReview.pasteError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: "This text may execute commands. Confirm only trusted content."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { objectName: "terminalPasteError"; Layout.fillWidth: true; visible: text !== ""; text: pasteReview.pasteError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
             ScrollView {
                 Layout.fillWidth: true; Layout.preferredHeight: 140
                 TextArea { text: pasteReview.payload; readOnly: true; textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; font.family: workspace.monospaceFamily }

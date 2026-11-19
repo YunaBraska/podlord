@@ -196,6 +196,16 @@ bool ui(const QString& mode) {
     require(QTest::qWaitFor([&] { return item("cell_0_0") != nullptr; }, 2000), "Resource workspace did not present its cached row");
     press("cell_0_0");
     require(QTest::qWaitFor([&] { return workspace.resourceGuidance().size() == 1 && item("resourceGuidanceToggle"); }, 5000), "Accepted detail did not publish cached guidance");
+    auto* resourceName = item("inspectorResourceName");
+    require(resourceName && resourceName->property("selectByMouse").toBool()
+        && item("overviewFieldHeader") && item("overviewFieldHeader")->property("selectByMouse").toBool(),
+        "Inspector text cannot be selected outside the AI tab");
+    resourceName->forceActiveFocus();
+    QGuiApplication::clipboard()->clear();
+    QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+    QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+    require(QGuiApplication::clipboard()->text() == resourceName->property("text").toString(),
+        "Resource title could not be copied");
     require(item("inspectorAiButton") && !workspace.incidentAiEnabled(), "Inspector AI tab is missing or analysis started without consent");
     const int requests = boundary.requests;
     press("resourceGuidanceToggle");
@@ -212,6 +222,19 @@ bool ui(const QString& mode) {
     const QString evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
     if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/" + mode + ".png"), "Cannot save actual guidance frame");
     if (mode == "ui_expand") {
+        auto* cell = item("cell_0_0");
+        auto* cellText = cell ? cell->property("contentItem").value<QQuickItem*>() : nullptr;
+        require(cellText && cellText->property("selectByMouse").toBool(), "Table text cannot be selected");
+        const auto from = cellText->mapToScene(QPointF(5, cellText->height() / 2)).toPoint();
+        const auto to = cellText->mapToScene(QPointF(80, cellText->height() / 2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(window, to);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, to);
+        const auto selectedText = cellText->property("selectedText").toString();
+        require(!selectedText.isEmpty(), "Dragging across a table value did not select text");
+        QGuiApplication::clipboard()->clear();
+        QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+        require(QGuiApplication::clipboard()->text() == selectedText, "Selected table text could not be copied");
         press("inspectorAiButton");
         require(workspace.property("inspectorPage").toString() == "ai" && !item("incidentAiEnable")
             && item("incidentAiOpenSettings") && !item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
@@ -254,8 +277,10 @@ bool ui(const QString& mode) {
         press("inspectorAiButton");
         require(QTest::qWaitFor([&] { return !workspace.incidentAiModels().isEmpty(); }, 10000)
             && workspace.setIncidentAiModel(workspace.incidentAiModels().first()), "Cannot select the discovered local model");
+        require(QTest::qWaitFor([&] { return workspace.incidentAiReady(); }, 10000), "Selected local model is not ready");
         require(item("incidentAiReanalyze") && !workspace.incidentAiEnabled(), "Manual AI action enabled automatic analysis");
         press("incidentAiReanalyze");
+        require(boundary.requests == requests, "Starting AI analysis caused an extra Kubernetes request");
         const auto completed = QTest::qWaitFor([&] {
             return !workspace.incidentAiResult().value("summary").toString().isEmpty()
                 || workspace.incidentAiStatus().contains("failed");
@@ -266,15 +291,8 @@ bool ui(const QString& mode) {
             "Inspector did not show the returned AI summary");
         require(!item("incidentAiSummary")->property("text").toString().contains("diagnostic-secret"), "AI summary exposed untrusted status text");
         require(item("incidentAiReanalyze") && item("incidentAiReanalyze")->isEnabled(), "Explicit reanalysis button is missing");
-        require(boundary.requests == requests, "Initial AI analysis caused an extra Kubernetes request");
-        const int beforeReanalysis = boundary.requests;
-        press("incidentAiReanalyze");
-        require(workspace.incidentAiResult().value("summary").toString().isEmpty(), "Explicit reanalysis retained the cached answer");
-        require(boundary.requests == beforeReanalysis, "Reanalysis caused an immediate Kubernetes request");
-        require(QTest::qWaitFor([&] { return !workspace.incidentAiResult().value("summary").toString().isEmpty(); }, 180000),
-            "Explicit reanalysis did not return a new answer");
-        press("incidentAiCopyCommand");
-        require(QGuiApplication::clipboard()->text() == workspace.incidentAiResult().value("command").toString(), "Read-only command copy failed");
+        require(item("incidentAiEvidence_R1") && !workspace.incidentAiResult().contains("command"),
+            "The inspector needs a linked in-app source without a command dependency");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
     } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
         if (mode == "ui_node_actions") {

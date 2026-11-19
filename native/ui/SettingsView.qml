@@ -192,7 +192,7 @@ Pane {
                 }
                 onPressedChanged: if (!pressed && enabled) settings.saveAudioVolume(audioRow.music, value)
             }
-            Label {
+            SelectableText {
                 id: volumeText
                 text: Math.round(volume.value) + "%"
                 Layout.preferredWidth: Math.max(54, percentWidth.advanceWidth)
@@ -215,7 +215,7 @@ Pane {
             Layout.row: 0; Layout.column: 0
             Layout.preferredWidth: settingRow.narrow ? -1 : 240
             Layout.fillWidth: settingRow.narrow
-            Label { Layout.fillWidth: true; text: settingRow.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: settingRow.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
             IconButton {
                 visible: settingRow.help !== ""
                 glyph: "Info"
@@ -351,7 +351,7 @@ Pane {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Label { Layout.fillWidth: true; text: modelData.label; elide: Text.ElideRight }
-                                Label { text: modelData.requests24h + " / 24h"; Accessible.name: modelData.requests24h + " " + workspace.uiText["ai.requests24h"] }
+                                SelectableText { text: modelData.requests24h + " / 24h"; Accessible.name: modelData.requests24h + " " + workspace.uiText["ai.requests24h"] }
                                 IconButton {
                                     objectName: modelData.provider === "chatgpt" ? "chatgptSignOut" : modelData.provider === "openrouter" ? "openRouterSignOut" : "claudeSignOut"
                                     glyph: "SignOut"; text: workspace.uiText["ai.chatgptSignOut"]
@@ -396,7 +396,7 @@ Pane {
                             onActivated: workspace.setIncidentAiReasoning(currentValue)
                         }
                     }
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true; text: workspace.incidentAiStatus; textFormat: Text.PlainText
                         visible: text !== ""
                             && text !== workspace.uiText["ai.status.Choose an installed Ollama chat model to start analysis."]
@@ -417,7 +417,7 @@ Pane {
                     SettingRow { label: workspace.uiText["settings.variant"]; help: ""; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText) } }
                     SettingRow { label: workspace.uiText["settings.language"]; help: ""; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
                     SettingRow { label: workspace.uiText["settings.workspaceRestore"]; help: ""; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: workspace.uiText["settings.restoreTabsOnLaunch"]; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.workspaceRestore"] + ": " + text; onClicked: workspace.saveWorkspaceRestore(checked) } }
-                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: ""; RowLayout { Layout.fillWidth: true; PreferenceSlider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)) } Label { text: (workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0) + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
+                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: ""; RowLayout { Layout.fillWidth: true; PreferenceSlider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)) } SelectableText { text: (workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0) + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
                     SettingRow { label: workspace.uiText["settings.reducedMotion"]; help: ""; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; Accessible.name: workspace.uiText["settings.reducedMotion"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
                 }
                 ColumnLayout {
@@ -425,7 +425,7 @@ Pane {
                     SettingRow { label: workspace.uiText["settings.backgroundRefresh"]; help: workspace.uiText["settings.backgroundRefreshHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.backgroundRefreshMinutes"] } }
                     SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
                     SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceRetentionHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
-                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.resourceDataSizeHelp"] }
+                    SelectableText { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.resourceDataSizeHelp"] }
                     SettingRow { label: workspace.uiText["settings.retainedLogsPerPod"]; help: workspace.uiText["settings.retainedLogsPerPodHelp"]; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; inputMethodHints: Qt.ImhDigitsOnly; onTextEdited: syncAutosave.restart(); Accessible.name: workspace.uiText["settings.retainedLogsPerPodMb"] } }
                 }
                 ColumnLayout {
@@ -475,7 +475,7 @@ Pane {
                     }
                     RowLayout {
                         Layout.fillWidth: true; visible: workspace.sourceImportError !== ""
-                        Label { Layout.fillWidth: true; text: workspace.sourceImportError === workspace.incidentAiDiagnostic.original
+                        SelectableText { Layout.fillWidth: true; text: workspace.sourceImportError === workspace.incidentAiDiagnostic.original
                             ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
                             : workspace.sourceImportError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
                         IconButton { objectName: "sourceErrorAiInfo"; glyph: "Info"
@@ -485,7 +485,7 @@ Pane {
                     }
                     RowLayout {
                         Layout.fillWidth: true; visible: workspace.sourceImportNotice !== ""
-                        Label { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+                        SelectableText { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
                         IconButton { objectName: "settingsSourceImportDetails"; glyph: "Event"; text: workspace.uiText["settings.viewImportFailures"]; visible: workspace.sourceImportIssues.length > 0; onClicked: settings.sourceFailuresRequested() }
                     }
                     ResourceGrid {
@@ -526,8 +526,8 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "diagnostics"
-                    Label { Layout.fillWidth: true; text: workspace.uiText["settings.diagnostics"]; font.bold: true }
-                    Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: workspace.displayDateTime(settings.diagnosticTimestamp); textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                    SelectableText { Layout.fillWidth: true; text: workspace.uiText["settings.diagnostics"]; font.bold: true }
+                    SelectableText { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: workspace.displayDateTime(settings.diagnosticTimestamp); textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
                     ResourceGrid {
                         id: diagnosticGrid
                         Layout.fillWidth: true; Layout.minimumWidth: 0
@@ -542,7 +542,7 @@ Pane {
                         onCopyRequested: (row,column) => workspace.copyDiagnosticCell("diagnostic",pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("diagnostic",identity,column)
                     }
-                    Label { text: workspace.uiText["settings.requestAuditTitle"]; font.bold: true; color: workspace.appearanceColors.accent }
+                    SelectableText { text: workspace.uiText["settings.requestAuditTitle"]; font.bold: true; color: workspace.appearanceColors.accent }
                     ResourceGrid {
                         id: auditGrid
                         objectName: "settingsRequestAudit"

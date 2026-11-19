@@ -20,7 +20,7 @@ ModalDialog {
     closePolicy: workspace.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
     contentItem: ColumnLayout {
         TextField { id: sourceAliasName; objectName: "sourceAliasName"; Layout.fillWidth: true; enabled: !workspace.busy; Accessible.name: workspace.uiText["context.name"]; placeholderText: sourceAliasDialog.canonicalName; onAccepted: sourceAliasDialog.save() }
-        Label { objectName: "sourceAliasError"; Layout.fillWidth: true; visible: text !== ""; text: sourceAliasDialog.failure; maximumLineCount: 3; elide: Text.ElideRight; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "sourceAliasError"; Layout.fillWidth: true; visible: text !== ""; text: sourceAliasDialog.failure; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
     }
     footer: DialogButtonBox {
         IconButton { glyph: "Save"; showText: true; font.bold: true; objectName: "saveSourceAlias"; text: workspace.busy ? workspace.uiText["action.saving"] : workspace.uiText["action.save"]; enabled: !workspace.busy; onClicked: sourceAliasDialog.save() }

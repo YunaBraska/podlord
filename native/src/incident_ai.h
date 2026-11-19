@@ -38,6 +38,7 @@ public:
     QVariantList accounts() const;
     QString model() const { return provider_ == "chatgpt" ? chatgptModel_ : provider_ == "claude" ? claudeModel_
         : provider_ == "openrouter" ? openrouterModel_ : model_; }
+    bool ready() const { return modelReady_; }
     bool setModel(const QString& model);
     bool selectModel(const QString& provider, const QString& model);
     QStringList reasoningOptions() const { return provider_ == "ollama" ? reasoningOptions_ : QStringList{}; }
@@ -80,9 +81,10 @@ signals:
     void changed();
 private:
     struct Incident final {
-        QString key, context, code, kind, name, nameSpace, path, language, provider, model, reasoning, thinkSignature, documentation;
+        QString key, context, code, kind, path, language, provider, model, reasoning, thinkSignature, documentation;
         QStringList related;
         bool manual = false;
+        QJsonArray evidence;
     };
     struct Record final { QJsonObject answer; QDateTime created; };
     bool save();

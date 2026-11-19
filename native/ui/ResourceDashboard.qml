@@ -6,8 +6,8 @@ Pane {
     padding: 12
     background: Rectangle { color: workspace.appearanceColors.inset; border.color: workspace.appearanceColors.border }
     contentItem: ColumnLayout {
-        Label { text: workspace.uiText["dashboard.title"]; font.bold: true }
-        Label { objectName: "dashboardSummary"; Layout.fillWidth: true; text: workspace.dashboardSummary; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { text: workspace.uiText["dashboard.title"]; font.bold: true }
+        SelectableText { objectName: "dashboardSummary"; Layout.fillWidth: true; text: workspace.dashboardSummary; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         ListView {
             id: metricRows
             objectName: "resourceDashboard"
@@ -37,7 +37,7 @@ Pane {
                 }
                 Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
             }
-            Label { anchors.centerIn: parent; width: Math.min(360, parent.width-24); visible: metricRows.count===0; text: workspace.uiText["dashboard.empty"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter }
+            SelectableText { anchors.centerIn: parent; width: Math.min(360, parent.width-24); visible: metricRows.count===0; text: workspace.uiText["dashboard.empty"]; wrapMode: Text.Wrap; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter }
         }
     }
 }

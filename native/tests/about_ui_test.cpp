@@ -79,6 +79,12 @@ bool run(const QString& scenario) {
             const auto firstQuote = quote->property("text").toString();
             if (!click(window, "settingsAppearanceSection") || !click(window, "settingsAboutSection")
                 || !waitFor([&] { return quote->property("text").toString() != firstQuote; })) return false;
+            if (!quote->property("selectByMouse").toBool()) return false;
+            quote->forceActiveFocus();
+            QGuiApplication::clipboard()->clear();
+            QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+            QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+            if (QGuiApplication::clipboard()->text() != quote->property("text").toString()) return false;
         }
         return tagline->property("text").toString() == workspace.uiText()["about.tagline"].toString()
             && click(window, "aboutLiberapay") && browser.urls == QList<QUrl>{QUrl("https://liberapay.com/YunaBraska")}

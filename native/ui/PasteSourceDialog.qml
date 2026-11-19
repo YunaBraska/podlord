@@ -33,7 +33,7 @@ ModalDialog {
         }
     }
     contentItem: ColumnLayout {
-        Label { Layout.fillWidth: true; visible: !workspace.appStore; text: workspace.uiText["context.pasteOrigin"]; wrapMode: Text.Wrap }
+        SelectableText { Layout.fillWidth: true; visible: !workspace.appStore; text: workspace.uiText["context.pasteOrigin"]; wrapMode: Text.Wrap }
         TextField {
             id: origin
             objectName: "pasteSourceOrigin"

@@ -1,8 +1,6 @@
 #include "workspace.h"
 #include "workspace_runtime.h"
 #include "ui_language.h"
-#include <QGuiApplication>
-#include <QClipboard>
 
 namespace podlord {
 bool Workspace::incidentAiSupported() const { return runtime_->incidentAi.supported(); }
@@ -13,6 +11,7 @@ QStringList Workspace::incidentAiModels() const { return runtime_->incidentAi.mo
 QVariantList Workspace::incidentAiModelChoices() const { return runtime_->incidentAi.allModelChoices(); }
 QVariantList Workspace::incidentAiAccounts() const { return runtime_->incidentAi.accounts(); }
 QString Workspace::incidentAiModel() const { return runtime_->incidentAi.model(); }
+bool Workspace::incidentAiReady() const { return runtime_->incidentAi.ready(); }
 QString Workspace::incidentAiProvider() const { return runtime_->incidentAi.provider(); }
 QString Workspace::chatgptAccount() const { return runtime_->incidentAi.chatgptAccount(); }
 bool Workspace::chatgptConnected() const { return runtime_->incidentAi.chatgptConnected(); }
@@ -51,10 +50,10 @@ bool Workspace::refreshIncidentAiAnalysis() {
     runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
     return runtime_->incidentAi.refresh(context, inspectorPath());
 }
-bool Workspace::copyIncidentAiCommand() {
-    const auto command = incidentAiResult().value("command").toString();
-    if (command.isEmpty() || !QGuiApplication::clipboard()) return false;
-    QGuiApplication::clipboard()->setText(command);
-    return true;
+bool Workspace::openIncidentAiEvidence(const QString& path) {
+    if (path.isEmpty() || active_.isEmpty()) return false;
+    for (const auto& value : incidentAiResult().value("evidence").toList())
+        if (value.toMap().value("path") == path) return inspectResource(path);
+    return false;
 }
 } // namespace podlord

@@ -23,12 +23,13 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             visible: !root.inputPriority
-            Label {
+            SelectableText {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 text: workspace.sourceInspection.name || "Source"
                 textFormat: Text.PlainText
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
                 font.bold: true
                 Accessible.name: "Source: " + text
             }
@@ -59,7 +60,7 @@ Pane {
             SourceTab { objectName: "sourceOverviewTab"; text: "Overview" }
             SourceTab { objectName: "sourceYamlTab"; text: "YAML" }
         }
-        Label {
+        SelectableText {
             Layout.fillWidth: true
             visible: workspace.sourceInspectionLoading && !root.inputPriority
             text: "Loading owned kubeconfig..."
@@ -87,7 +88,7 @@ Pane {
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 0
-                        Label { text: modelData.label; font.bold: true; textFormat: Text.PlainText }
+                        SelectableText { text: modelData.label; font.bold: true; textFormat: Text.PlainText }
                         SelectableText {
                             Layout.fillWidth: true
                             text: modelData.value
