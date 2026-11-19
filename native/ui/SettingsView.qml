@@ -5,6 +5,7 @@ import QtQuick.Layouts
 
 Pane {
     id: settings
+    Accessible.name: workspace.uiText["settings.title"]
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
     PasteSourceDialog { id: pasteSourceDialog }
@@ -202,6 +203,7 @@ Pane {
         }
     }
     component SettingRow: GridLayout {
+        id: settingRow
         required property string label
         required property string help
         default property alias controls: editor.data
@@ -209,15 +211,26 @@ Pane {
         Layout.fillWidth: true; columns: narrow ? 1 : 2
         columnSpacing: 14; rowSpacing: 6
         data: [
-        Label { Layout.row: 0; Layout.column: 0; Layout.preferredWidth: parent.narrow ? -1 : 240; text: parent.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
+        RowLayout {
+            Layout.row: 0; Layout.column: 0
+            Layout.preferredWidth: settingRow.narrow ? -1 : 240
+            Layout.fillWidth: settingRow.narrow
+            Label { Layout.fillWidth: true; text: settingRow.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
+            IconButton {
+                visible: settingRow.help !== ""
+                glyph: "Info"
+                glyphColor: workspace.appearanceColors.muted
+                text: settingRow.help
+                Accessible.name: settingRow.label + ": " + settingRow.help
+                onClicked: ToolTip.show(settingRow.help, 8000)
+            }
+        }
         ,ColumnLayout { id: editor; Layout.row: parent.narrow ? 1 : 0; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; Layout.maximumWidth: parent.narrow ? Number.POSITIVE_INFINITY : 420 }
-        ,Label { Layout.row: parent.narrow ? 2 : 1; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; text: parent.help; visible: text !== ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; font.pixelSize: workspace.textSizes.small; wrapMode: Text.Wrap }
-        ,Rectangle { Layout.row: parent.narrow ? 3 : 2; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
+        ,Rectangle { Layout.row: parent.narrow ? 2 : 1; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
         ]
     }
     contentItem: ColumnLayout {
         spacing: 12
-        Label { text: workspace.uiText["settings.title"]; font.pixelSize: workspace.textSizes.heading; font.bold: true; color: workspace.appearanceColors.accent }
         TabBar {
             id: settingsTabs
             Layout.fillWidth: true; Layout.minimumWidth: 0
@@ -288,15 +301,15 @@ Pane {
                                     if (!choice.header && workspace.selectIncidentAiModel(choice.provider, choice.slug)) providerKey.clear()
                                 }
                             }
-                            Button {
+                            IconButton {
                                 id: aiConnectButton
                                 objectName: "settingsAiConnect"
+                                glyph: "Add"
+                                glyphColor: workspace.appearanceColors.success
                                 text: workspace.uiText["ai.connectProvider"]
-                                Accessible.name: text
                                 onClicked: aiConnections.open()
                                 Menu {
                                     id: aiConnections
-                                    MenuItem { objectName: "connectOllama"; text: "Ollama"; onTriggered: workspace.setIncidentAiProvider("ollama") }
                                     MenuItem { objectName: "connectChatGpt"; text: "ChatGPT"; onTriggered: {
                                         if (workspace.setIncidentAiProvider("chatgpt") && !workspace.chatgptConnected) workspace.signInChatGpt()
                                     } }
@@ -309,34 +322,35 @@ Pane {
                         }
                     }
                     SettingRow {
-                        visible: workspace.incidentAiProvider === "chatgpt"
-                        label: workspace.uiText["ai.account"]; help: ""
+                        visible: workspace.incidentAiProvider === "chatgpt" && workspace.chatgptConnected
+                        label: "ChatGPT"; help: ""
                         RowLayout {
                             Layout.fillWidth: true
                             Label { Layout.fillWidth: true; visible: text !== ""; text: workspace.chatgptAccount; elide: Text.ElideRight }
-                            Button { objectName: "chatgptConnect"; visible: !workspace.chatgptConnected; text: workspace.uiText["ai.chatgptConnect"]; onClicked: workspace.signInChatGpt() }
-                            Button { objectName: "chatgptSignOut"; visible: workspace.chatgptAccount !== ""; text: workspace.uiText["ai.chatgptSignOut"]; onClicked: workspace.signOutChatGpt() }
+                            IconButton { objectName: "chatgptSignOut"; glyph: "SignOut"; text: workspace.uiText["ai.chatgptSignOut"]; onClicked: workspace.signOutChatGpt() }
                         }
                     }
                     SettingRow {
                         visible: workspace.incidentAiProvider === "claude"
                         label: workspace.uiText["ai.apiKey"]; help: ""
-                        TextField {
-                            id: providerKey; objectName: "settingsAiApiKey"; Layout.fillWidth: true
-                            echoMode: TextInput.Password
-                            placeholderText: workspace.incidentAiApiKeyConfigured ? workspace.uiText["ai.keySaved"] : workspace.uiText["ai.keyPlaceholder"]
-                            Accessible.name: workspace.uiText["ai.apiKey"]
-                            onAccepted: if (workspace.setIncidentAiApiKey(text)) clear()
-                        }
                         RowLayout {
                             Layout.fillWidth: true
-                            Button {
+                            TextField {
+                                id: providerKey; objectName: "settingsAiApiKey"; Layout.fillWidth: true
+                                echoMode: TextInput.Password
+                                placeholderText: workspace.incidentAiApiKeyConfigured ? workspace.uiText["ai.keySaved"] : workspace.uiText["ai.keyPlaceholder"]
+                                Accessible.name: workspace.uiText["ai.apiKey"]
+                                onAccepted: if (workspace.setIncidentAiApiKey(text)) clear()
+                            }
+                            IconButton {
                                 objectName: "settingsAiSaveKey"; text: workspace.uiText["action.save"]
+                                glyph: "Save"
                                 visible: providerKey.text !== ""
                                 onClicked: if (workspace.setIncidentAiApiKey(providerKey.text)) providerKey.clear()
                             }
-                            Button {
+                            IconButton {
                                 objectName: "settingsAiRemoveKey"; text: workspace.uiText["ai.removeKey"]
+                                glyph: "Trash"
                                 visible: workspace.incidentAiApiKeyConfigured
                                 onClicked: { workspace.clearIncidentAiApiKey(); providerKey.clear() }
                             }
@@ -345,8 +359,9 @@ Pane {
                     SettingRow {
                         visible: workspace.incidentAiProvider === "openrouter" && workspace.incidentAiApiKeyConfigured
                         label: "OpenRouter"; help: ""
-                        Button {
+                        IconButton {
                             objectName: "openRouterSignOut"
+                            glyph: "SignOut"
                             text: workspace.uiText["ai.chatgptSignOut"]
                             onClicked: workspace.clearIncidentAiApiKey()
                         }
@@ -366,6 +381,10 @@ Pane {
                     Label {
                         Layout.fillWidth: true; text: workspace.incidentAiStatus; textFormat: Text.PlainText
                         visible: text !== ""
+                            && text !== workspace.uiText["ai.status.Choose an installed Ollama chat model to start analysis."]
+                            && text !== workspace.uiText["ai.status.Choose a ChatGPT model in AI settings."]
+                            && text !== workspace.uiText["ai.status.Choose a Claude model in AI settings."]
+                            && text !== workspace.uiText["ai.status.Choose an OpenRouter model in AI settings."]
                             && text !== workspace.uiText["ai.status.Connect a ChatGPT account with plan permission first."]
                             && text !== workspace.uiText["ai.status.Enter a Claude API key in AI settings."]
                             && text !== workspace.uiText["ai.status.Enter an OpenRouter API key in AI settings."]

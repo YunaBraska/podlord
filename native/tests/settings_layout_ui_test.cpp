@@ -49,7 +49,8 @@ int main(int argc, char** argv) {
             if (choice.value("provider") != "ollama"
                 || (!choice.value("header").toBool() && choice.value("slug").toString().isEmpty())) return 1;
         }
-        if (!podlord::test::visibleItem(window->contentItem(), "settingsAiConnect")
+        auto* connect = podlord::test::visibleItem(window->contentItem(), "settingsAiConnect");
+        if (!connect || connect->property("glyph") != "Add" || connect->property("showText").toBool()
             || model->property("displayText").toString() != workspace.uiText().value("ai.chooseModel").toString()) return 1;
         const auto frameLanguage = qEnvironmentVariable("PODLORD_AI_SETTINGS_LANG");
         if (!frameLanguage.isEmpty() && (!workspace.saveUiLanguage(frameLanguage)
@@ -66,8 +67,8 @@ int main(int argc, char** argv) {
             window->grabWindow().save(frame);
             if (qEnvironmentVariableIsSet("PODLORD_AI_SETTINGS_OPEN_MODEL")) return 0;
         }
-        auto* claude = window->findChild<QObject*>("connectClaude");
-        if (!claude || !QMetaObject::invokeMethod(claude, "triggered")
+        if (!podlord::test::clickVisible(window, "settingsAiConnect")
+            || !podlord::test::clickVisible(window, "connectClaude")
             || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "claude"; }, 2000)
             || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey") != nullptr; }, 2000)
             || workspace.incidentAiApiKeyConfigured()) return 1;
@@ -78,7 +79,7 @@ int main(int argc, char** argv) {
             || podlord::test::visibleItem(window->contentItem(), "openRouterSignOut")) return 1;
         if (!workspace.setIncidentAiProvider("chatgpt")
             || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "chatgpt"; }, 2000)
-            || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "chatgptConnect") != nullptr; }, 2000)
+            || podlord::test::visibleItem(window->contentItem(), "chatgptConnect")
             || podlord::test::visibleItem(window->contentItem(), "settingsChatGptAccount")
             || podlord::test::visibleItem(window->contentItem(), "chatgptAddAccount")) return 1;
         return workspace.incidentAiProvider() == "chatgpt" ? 0 : 1;

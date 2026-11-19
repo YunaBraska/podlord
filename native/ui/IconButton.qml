@@ -9,6 +9,7 @@ ToolButton {
     required property string glyph
     property bool showText: false
     property bool activeIndicator: false
+    property color glyphColor: workspace.appearanceColors.text
     readonly property int targetSize: Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32
     implicitWidth: Math.max(targetSize, implicitContentWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(targetSize, implicitContentHeight + topPadding + bottomPadding)
@@ -30,7 +31,7 @@ ToolButton {
             visible: control.glyph !== ""
             kind: control.glyph
             fill: workspace.appearanceColors.inset
-            stroke: control.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
+            stroke: control.enabled ? control.glyphColor : workspace.appearanceColors.muted
         }
         Label {
             visible: control.showText
