@@ -119,6 +119,149 @@ Pane {
     Label { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     Label { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
     ColumnLayout {
+            Layout.fillWidth: true
+            visible: workspace.inspectorPage === "overview" && workspace.resourceGuidance.length > 0
+            ToolButton {
+                id: guidanceToggle
+                objectName: "resourceGuidanceToggle"
+                Layout.fillWidth: true
+                text: workspace.uiText["inspector.diagnostics"] + " (" + workspace.resourceGuidance.length + ")"
+                checkable: true
+                checked: false
+                Accessible.name: "Expand or collapse known diagnostic guidance"
+            }
+            Loader {
+                Layout.fillWidth: true
+                Layout.preferredHeight: active ? Math.min(220, inspectorScroll.availableHeight * 0.35) : 0
+                Layout.minimumHeight: 0
+                active: guidanceToggle.checked && workspace.inspectorPage === "overview"
+                visible: active
+                sourceComponent: ScrollView {
+                  id: guidanceScroll
+                  contentWidth: availableWidth
+                  clip: true
+                  ColumnLayout {
+                    width: guidanceScroll.availableWidth
+                  Repeater {
+                    model: workspace.resourceGuidance
+                    ColumnLayout {
+                        required property var modelData
+                        required property int index
+                        property string linkError: ""
+                        Layout.fillWidth: true
+                        Label { objectName: "guidanceTitle_" + index; Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true; color: workspace.appearanceColors[modelData.tone] }
+                        Label { objectName: "guidanceEvidence_" + index; Layout.fillWidth: true; text: modelData.scope + " / " + modelData.code; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+                        TextArea { objectName: "guidanceDetail_" + index; Layout.fillWidth: true; text: modelData.detail; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; padding: 0; background: null; Accessible.name: modelData.title + ": " + modelData.detail }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Button { objectName: "guidanceEvents_" + index; text: workspace.uiText["inspector.events"]; Accessible.name: "Open events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
+                            Button { objectName: "guidanceYaml_" + index; text: workspace.uiText["inspector.yaml"]; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
+                            Button { objectName: "guidanceLogs_" + index; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
+                        }
+                        Button {
+                            objectName: "guidanceDocs_" + index
+                            text: "Kubernetes documentation"
+                            Accessible.name: "Open official documentation for " + modelData.code
+                            onClicked: parent.linkError = Qt.openUrlExternally(modelData.documentation) ? "" : "Could not open documentation. Check your browser and retry explicitly."
+                        }
+                        Label { objectName: "guidanceLinkError_" + index; Layout.fillWidth: true; text: parent.linkError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
+                    }
+                  }
+                  }
+                }
+            }
+    }
+    Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: inspector.width < 600 ? 44 : 38
+        visible: workspace.inspectorPage === "overview"
+        color: workspace.appearanceColors.panel
+        border.color: workspace.appearanceColors.border
+        RowLayout {
+            anchors.fill: parent; anchors.margins: 6
+            spacing: 12
+                Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
+            Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
+            Label { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
+        }
+    }
+    ListView {
+        id: overviewScroll
+        cacheBuffer: 0
+        objectName: "overviewScroll"
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.minimumHeight: Math.min(250, contentHeight)
+        visible: workspace.inspectorPage === "overview"
+        clip: true
+        reuseItems: false
+        model: visible ? workspace.overviewFieldModel : null
+        Accessible.name: "Resource metadata overview"
+        Accessible.description: workspace.inspected
+        ScrollBar.vertical: ScrollBar {}
+        activeFocusOnTab: true
+        Keys.onPressed: function(event) { if (event.key===Qt.Key_End) { positionViewAtIndex(count-1,ListView.End); event.accepted=true } else if (event.key===Qt.Key_Home) { positionViewAtIndex(0,ListView.Beginning); event.accepted=true } }
+        delegate: Rectangle {
+            required property var modelData
+            width: overviewScroll.width
+            height: Math.max(32, overviewRow.implicitHeight + 8)
+            color: workspace.appearanceColors.inset
+            border.color: workspace.appearanceColors.border
+            ColumnLayout {
+            id: overviewRow
+            anchors.fill: parent; anchors.margins: 4
+            RowLayout {
+                Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
+                        Label { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                        TextArea {
+                            objectName: "overview_" + modelData.id
+                            Layout.fillWidth: true
+                            readOnly: true; selectByMouse: true
+                            text: modelData.value
+                            textFormat: TextEdit.PlainText; wrapMode: TextArea.Wrap
+                            padding: 0; background: null
+                            color: { const palette = workspace.appearanceColors; return workspace.inspectorFieldColor(modelData.id) }
+                            Accessible.name: modelData.label + ": " + modelData.value
+                        }
+                        IconButton {
+                            objectName: "overviewFilter_" + modelData.id
+                            Layout.preferredHeight: inspector.width < 600 ? 44 : 24
+                            visible: modelData.filterable === true
+                            enabled: !workspace.busy
+                            glyph: "Filter"
+                            text: workspace.uiText["filters.title"] + ": " + modelData.label + " = " + modelData.value
+                            onClicked: workspace.filterInspectorField(modelData.id)
+                        }
+                Loader {
+                    Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28)
+                    Layout.alignment: Qt.AlignVCenter
+                    active: modelData.readiness !== undefined
+                    visible: active
+                    sourceComponent: ProgressBar {
+                        id: readinessBar
+                        objectName: "overviewReadinessBar"
+                        from: 0; to: 1; value: modelData.readiness.fraction
+                        implicitHeight: 8
+                        Accessible.name: modelData.readiness.description
+                        background: Rectangle { implicitHeight: 8; color: workspace.appearanceColors.inset; radius: 2 }
+                        contentItem: Item {
+                            implicitHeight: 8
+                            Rectangle {
+                                objectName: "overviewReadinessFill"
+                                width: parent.width * readinessBar.visualPosition; height: parent.height; radius: 2
+                                color: workspace.appearanceColors[modelData.readiness.tone]
+                            }
+                        }
+                    }
+                }
+            }
+            Loader { Layout.fillWidth: true; active: modelData.metric!==undefined; sourceComponent: MetricGauge { metric: modelData.metric } }
+            }
+        }
+    }
+    ColumnLayout {
         id: aiPanel
         Layout.fillWidth: true
         visible: workspace.incidentAiSupported && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
@@ -128,12 +271,12 @@ Pane {
         property string docsError: ""
         Connections { target: workspace; function onInspectorPresentationChanged() { aiPanel.docsError = "" } }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: workspace.appearanceColors.border }
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
             Label { text: workspace.uiText["ai.title"]; font.bold: true; color: workspace.appearanceColors.accent }
-            Item { Layout.fillWidth: true }
             CheckBox {
                 objectName: "incidentAiEnable"
+                Layout.maximumWidth: inspector.width
                 text: workspace.uiText["ai.enable"]
                 checked: workspace.incidentAiEnabled
                 Accessible.name: workspace.uiText["ai.enable"]
@@ -266,148 +409,6 @@ Pane {
             readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
             textFormat: TextEdit.PlainText
             Accessible.name: workspace.uiText["ai.command"]
-        }
-    }
-    ColumnLayout {
-            Layout.fillWidth: true
-            visible: workspace.inspectorPage === "overview" && workspace.resourceGuidance.length > 0
-            ToolButton {
-                id: guidanceToggle
-                objectName: "resourceGuidanceToggle"
-                Layout.fillWidth: true
-                text: workspace.uiText["inspector.diagnostics"] + " (" + workspace.resourceGuidance.length + ")"
-                checkable: true
-                checked: false
-                Accessible.name: "Expand or collapse known diagnostic guidance"
-            }
-            Loader {
-                Layout.fillWidth: true
-                Layout.preferredHeight: active ? Math.min(220, inspectorScroll.availableHeight * 0.35) : 0
-                Layout.minimumHeight: 0
-                active: guidanceToggle.checked && workspace.inspectorPage === "overview"
-                visible: active
-                sourceComponent: ScrollView {
-                  id: guidanceScroll
-                  contentWidth: availableWidth
-                  clip: true
-                  ColumnLayout {
-                    width: guidanceScroll.availableWidth
-                  Repeater {
-                    model: workspace.resourceGuidance
-                    ColumnLayout {
-                        required property var modelData
-                        required property int index
-                        property string linkError: ""
-                        Layout.fillWidth: true
-                        Label { objectName: "guidanceTitle_" + index; Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true; color: workspace.appearanceColors[modelData.tone] }
-                        Label { objectName: "guidanceEvidence_" + index; Layout.fillWidth: true; text: modelData.scope + " / " + modelData.code; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-                        TextArea { objectName: "guidanceDetail_" + index; Layout.fillWidth: true; text: modelData.detail; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; padding: 0; background: null; Accessible.name: modelData.title + ": " + modelData.detail }
-                        Flow {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Button { objectName: "guidanceEvents_" + index; text: workspace.uiText["inspector.events"]; Accessible.name: "Open events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
-                            Button { objectName: "guidanceYaml_" + index; text: workspace.uiText["inspector.yaml"]; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
-                            Button { objectName: "guidanceLogs_" + index; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
-                        }
-                        Button {
-                            objectName: "guidanceDocs_" + index
-                            text: "Kubernetes documentation"
-                            Accessible.name: "Open official documentation for " + modelData.code
-                            onClicked: parent.linkError = Qt.openUrlExternally(modelData.documentation) ? "" : "Could not open documentation. Check your browser and retry explicitly."
-                        }
-                        Label { objectName: "guidanceLinkError_" + index; Layout.fillWidth: true; text: parent.linkError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
-                    }
-                  }
-                  }
-                }
-            }
-    }
-    Rectangle {
-        Layout.fillWidth: true
-        implicitHeight: inspector.width < 600 ? 44 : 38
-        visible: workspace.inspectorPage === "overview"
-        color: workspace.appearanceColors.panel
-        border.color: workspace.appearanceColors.border
-        RowLayout {
-            anchors.fill: parent; anchors.margins: 6
-            spacing: 12
-                Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
-        }
-    }
-    ListView {
-        id: overviewScroll
-        cacheBuffer: 0
-        objectName: "overviewScroll"
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        visible: workspace.inspectorPage === "overview"
-        clip: true
-        reuseItems: false
-        model: visible ? workspace.overviewFieldModel : null
-        Accessible.name: "Resource metadata overview"
-        Accessible.description: workspace.inspected
-        ScrollBar.vertical: ScrollBar {}
-        activeFocusOnTab: true
-        Keys.onPressed: function(event) { if (event.key===Qt.Key_End) { positionViewAtIndex(count-1,ListView.End); event.accepted=true } else if (event.key===Qt.Key_Home) { positionViewAtIndex(0,ListView.Beginning); event.accepted=true } }
-        delegate: Rectangle {
-            required property var modelData
-            width: overviewScroll.width
-            height: Math.max(32, overviewRow.implicitHeight + 8)
-            color: workspace.appearanceColors.inset
-            border.color: workspace.appearanceColors.border
-            ColumnLayout {
-            id: overviewRow
-            anchors.fill: parent; anchors.margins: 4
-            RowLayout {
-                Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
-                        Label { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
-                        TextArea {
-                            objectName: "overview_" + modelData.id
-                            Layout.fillWidth: true
-                            readOnly: true; selectByMouse: true
-                            text: modelData.value
-                            textFormat: TextEdit.PlainText; wrapMode: TextArea.Wrap
-                            padding: 0; background: null
-                            color: { const palette = workspace.appearanceColors; return workspace.inspectorFieldColor(modelData.id) }
-                            Accessible.name: modelData.label + ": " + modelData.value
-                        }
-                        IconButton {
-                            objectName: "overviewFilter_" + modelData.id
-                            Layout.preferredHeight: inspector.width < 600 ? 44 : 24
-                            visible: modelData.filterable === true
-                            enabled: !workspace.busy
-                            glyph: "Filter"
-                            text: workspace.uiText["filters.title"] + ": " + modelData.label + " = " + modelData.value
-                            onClicked: workspace.filterInspectorField(modelData.id)
-                        }
-                Loader {
-                    Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28)
-                    Layout.alignment: Qt.AlignVCenter
-                    active: modelData.readiness !== undefined
-                    visible: active
-                    sourceComponent: ProgressBar {
-                        id: readinessBar
-                        objectName: "overviewReadinessBar"
-                        from: 0; to: 1; value: modelData.readiness.fraction
-                        implicitHeight: 8
-                        Accessible.name: modelData.readiness.description
-                        background: Rectangle { implicitHeight: 8; color: workspace.appearanceColors.inset; radius: 2 }
-                        contentItem: Item {
-                            implicitHeight: 8
-                            Rectangle {
-                                objectName: "overviewReadinessFill"
-                                width: parent.width * readinessBar.visualPosition; height: parent.height; radius: 2
-                                color: workspace.appearanceColors[modelData.readiness.tone]
-                            }
-                        }
-                    }
-                }
-            }
-            Loader { Layout.fillWidth: true; active: modelData.metric!==undefined; sourceComponent: MetricGauge { metric: modelData.metric } }
-            }
         }
     }
     InspectorPage {
