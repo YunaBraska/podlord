@@ -24,6 +24,6 @@ permissions:
 
 jobs:
   pages:
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_product_pages.yml@f122a3096e6ac9b674320772242bc6d47cf396c7
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_product_pages.yml@64ded0126229fc7bb53ffa1cbd3b8ce1ce2ed80c
     with:
       publish: ${{ github.event_name != 'pull_request' }}
