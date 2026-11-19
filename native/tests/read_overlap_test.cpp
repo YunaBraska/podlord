@@ -20,6 +20,7 @@ bool waitFor(const std::function<bool()>& ready, int timeoutMs = 16000) {
 class Kubernetes final : public QTcpServer {
 public:
     int active = 0, maximum = 0, requests = 0, podLists = 0, version = 1;
+    QMap<QString, int> pathRequests;
     int allDelay = 0, listDelay = 0, detailDelay = 0, listStatus = 200;
     bool paginatePods = false;
     QByteArray expectedAuthorization;
@@ -47,6 +48,7 @@ public:
                     }
                     const auto url = QUrl::fromEncoded(input->split(' ')[1]);
                     const auto path = url.path();
+                    ++pathRequests[path];
                     const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", podNamespace}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}},
                         {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", podStatus}};
                     QJsonObject body; int delay = allDelay, status = 200;
@@ -57,7 +59,8 @@ public:
                         for (const auto& name : {"configmaps", "secrets", "services", "endpoints", "serviceaccounts", "persistentvolumeclaims"})
                             resources.append(QJsonObject{{"name", name}, {"kind", QString(name)}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}});
                         body = discovery.value_or(QJsonObject{{"resources", resources}});
-                    } else if (path == "/api/v1/pods" || path == "/api/v1/namespaces/default/pods") {
+                    } else if (path == "/api/v1/pods" || path == "/api/v1/namespaces/default/pods"
+                        || path == "/api/v1/namespaces/team/pods") {
                         ++podLists; delay = std::max(delay, listDelay); status = listStatus;
                         auto pagePod = pod;
                         const bool nextPage = paginatePods && QUrlQuery(url).queryItemValue("continue") == "next";
@@ -257,9 +260,10 @@ bool run(const QString& scenario) {
     if (scenario.startsWith("provider_")) return providerScenario(scenario);
     Kubernetes server; if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     auto reference = QDateTime::currentDateTimeUtc();
-    podlord::ResourceClient client(nullptr, [&] { return scenario == "progress_auto" ? reference : QDateTime::currentDateTimeUtc(); });
+    podlord::ResourceClient client(nullptr, [&] { return scenario == "progress_auto" || scenario.startsWith("list_namespaced_fallback") ? reference : QDateTime::currentDateTimeUtc(); });
     podlord::ClusterConnection connection;
     connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); connection.credentialId = "local";
+    if (scenario == "list_namespaced_fallback_preferred") connection.preferredNamespace = "team";
     podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
     settings.requestHardLimitPerMinute = scenario == "limit" ? 60 : 0;
     if (scenario == "discovery_invalid_body") server.discovery = QJsonObject{{"resources", "not-an-array"}};
@@ -290,7 +294,10 @@ bool run(const QString& scenario) {
     if (scenario == "list_invalid_continuation") server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", 7}}}, {"items", QJsonArray{}}});
     if (scenario == "list_page_success") server.paginatePods = true;
     if (scenario == "list_malformed_json") server.responseBytes.insert("/api/v1/pods", "{");
-    if (scenario == "list_forbidden") server.responseStatuses.insert("/api/v1/pods", 403);
+    if (scenario == "list_forbidden" || scenario.startsWith("list_namespaced_fallback"))
+        server.responseStatuses.insert("/api/v1/pods", 403);
+    if (scenario == "list_namespaced_fallback_preferred") server.podNamespace = "team";
+    if (scenario == "list_forbidden" || scenario == "list_namespaced_fallback_denied") server.responseStatuses.insert("/api/v1/namespaces/default/pods", 403);
     if (scenario == "list_redirect") server.responseStatuses.insert("/api/v1/pods", 302);
     if (scenario == "list_rate_limited_invalid_retry_after") {
         server.responseStatuses.insert("/api/v1/pods", 429);
@@ -328,6 +335,26 @@ bool run(const QString& scenario) {
         return waitFor([&] { return !client.loading("session") && !server.active; })
             && client.rows("session").size() == (scenario.startsWith("groups_") ? 1 : 0)
             && client.failureStatus("session").contains(invalidReadMessages.value(scenario));
+    if (scenario.startsWith("list_namespaced_fallback")) {
+        if (!waitFor([&] { return !client.loading("session") && !server.active; })) return false;
+        if (scenario == "list_namespaced_fallback_denied") return client.rows("session").isEmpty() && server.podLists == 2;
+        if (scenario == "list_namespaced_fallback_preferred") return client.rows("session").size() == 1
+            && client.resource("session", "/api/v1/namespaces/team/pods/alpha")["name"] == "alpha"
+            && server.pathRequests.value("/api/v1/namespaces/team/pods") == 1;
+        if (client.rows("session").size() != 1 || server.podLists != 2
+            || client.resource("session", "/api/v1/namespaces/default/pods/alpha")["name"] != "alpha") return false;
+        if (!client.refresh("session") || !waitFor([&] { return !client.loading("session") && !server.active; })) return false;
+        if (server.podLists != 3 || server.pathRequests.value("/api/v1/pods") != 1 || !client.failureStatus("session").isEmpty()) return false;
+        if (scenario == "list_namespaced_fallback_ttl" || scenario == "list_namespaced_fallback_recover") {
+            reference = reference.addSecs(16 * 60);
+            if (scenario == "list_namespaced_fallback_recover") server.responseStatuses.remove("/api/v1/pods");
+            if (!client.refresh("session") || !waitFor([&] { return !client.loading("session") && !server.active; })) return false;
+            if (scenario == "list_namespaced_fallback_recover") return server.podLists == 4
+                && server.pathRequests.value("/api/v1/pods") == 2 && client.rows("session").size() == 1;
+            return server.podLists == 5 && server.pathRequests.value("/api/v1/pods") == 2;
+        }
+        return true;
+    }
     if (scenario == "list_page_success")
         return waitFor([&] { return !client.loading("session") && !server.active; })
             && server.podLists == 2 && client.rows("session").size() == 2

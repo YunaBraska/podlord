@@ -42,7 +42,7 @@ Pane {
             IconButton { glyph: "Service"; text: "Forward selected resource"; visible: workspace.canPortForward; onClicked: workspace.preparePortForward() }
         }
         Label { Layout.fillWidth: true; visible: workspace.portForwardError !== ""; text: workspace.portForwardError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
-        Button { visible: workspace.portForwardError !== "" && workspace.authenticationRequired; text: "Sign in"; onClicked: authenticationRequested() }
+        FlatButton { visible: workspace.portForwardError !== "" && workspace.authenticationRequired; text: "Sign in"; onClicked: authenticationRequested() }
         ResourceGrid {
             id: ports
             Layout.fillWidth: true; Layout.fillHeight: true
@@ -72,7 +72,8 @@ Pane {
                     }
                     IconButton {
                         objectName: "stopConnection_" + connectionRow.token
-                        glyph: "Close"
+                        glyph: "Trash"
+                        destructive: true
                         text: connectionRow.terminal ? "Disconnect terminal" : "Stop port forward"
                         Accessible.name: text + ": " + endpointLabel.text
                         Layout.preferredWidth: ports.rowHeight

@@ -10,7 +10,6 @@ Pane {
     LayoutMirroring.childrenInherit: true
     PasteSourceDialog { id: pasteSourceDialog }
     AwsProfileDialog { id: awsProfileDialog }
-    signal fileRequested()
     signal folderRequested()
     signal ociImportRequested()
     signal gkeImportRequested()
@@ -319,6 +318,14 @@ Pane {
                             }
                         }
                     }
+                    Switch {
+                        objectName: "incidentAiEnable"
+                        visible: workspace.currentSession !== "" && workspace.incidentAiModel !== ""
+                        text: workspace.uiText["ai.auto"]
+                        checked: workspace.incidentAiEnabled
+                        Accessible.name: workspace.uiText["ai.enable"]
+                        onClicked: workspace.setIncidentAiEnabled(checked)
+                    }
                     Repeater {
                         model: workspace.incidentAiAccounts
                         delegate: SettingRow {
@@ -411,7 +418,6 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
-                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText; visible: !workspace.appStore; Layout.fillWidth: true; placeholderText: workspace.uiText["settings.kubeconfigPathPlaceholder"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.kubeconfigPathPlaceholder"]; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: workspace.uiText["action.import"]; enabled: !workspace.busy; onClicked: !workspace.appStore && importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
                     IconButton {
                         id: sourceActionsButton
                         objectName: "sourceActionsMenuButton"
@@ -431,7 +437,7 @@ Pane {
                         height: Math.min(sourceActionItems.implicitHeight + 2 * padding, parent.height - 24)
                         padding: 8; focus: true
                         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                        onOpened: browseSourceFile.forceActiveFocus()
+                        onOpened: (browseSourceFolder.visible ? browseSourceFolder : pasteSourceButton).forceActiveFocus()
                         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
                         contentItem: ScrollView {
                             clip: true
@@ -440,9 +446,8 @@ Pane {
                             id: sourceActionItems
                             width: parent.width
                             spacing: 4
-                            IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: workspace.uiText["settings.browseKubeconfigFile"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
-                            IconButton { objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.browseKubeconfigFolder"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
-                            IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: workspace.uiText["settings.pasteKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
+                            IconButton { id: browseSourceFolder; objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: "Folder"; showText: true; text: workspace.uiText["settings.browseKubeconfigFolder"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
+                            IconButton { id: pasteSourceButton; objectName: "pasteSourceButton"; glyph: ""; showText: true; text: workspace.uiText["settings.pasteKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
                             IconButton { objectName: "importHomeButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.importHomeKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
                             IconButton { objectName: "refreshSourceFilesButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.reimportChangedSources"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
                             IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: workspace.uiText["settings.importOciKey"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
@@ -452,7 +457,16 @@ Pane {
                             }
                         }
                     }
-                    Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+                    RowLayout {
+                        Layout.fillWidth: true; visible: workspace.sourceImportError !== ""
+                        Label { Layout.fillWidth: true; text: workspace.sourceImportError === workspace.incidentAiDiagnostic.original
+                            ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
+                            : workspace.sourceImportError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+                        IconButton { objectName: "sourceErrorAiInfo"; glyph: "Info"
+                            visible: workspace.sourceImportError === workspace.incidentAiDiagnostic.original
+                                && !!workspace.incidentAiDiagnostic.cause
+                            text: workspace.incidentAiDiagnostic.cause + "\n" + workspace.incidentAiDiagnostic.action }
+                    }
                     RowLayout {
                         Layout.fillWidth: true; visible: workspace.sourceImportNotice !== ""
                         Label { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
@@ -482,7 +496,8 @@ Pane {
                                 readonly property string identity: parent.identity
                                 readonly property bool isRemoval: parent.column === 9
                                 objectName: (isRemoval ? "removeSource_" : "renameSource_") + identity
-                                glyph: isRemoval ? "Close" : "Pencil"
+                                glyph: isRemoval ? "Trash" : "Pencil"
+                                destructive: isRemoval
                                 text: (isRemoval ? workspace.uiText["settings.removeSourceContext"] : workspace.uiText["settings.renameSourceContext"]) + parent.resourceName
                                 enabled: !workspace.busy
                                 onClicked: {

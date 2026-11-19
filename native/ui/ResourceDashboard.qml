@@ -24,7 +24,7 @@ Pane {
                 required property var resourceMetrics
                 width: metricRows.width
                 spacing: 8
-                Button { objectName: "dashboardResource_" + index; Layout.fillWidth: true; text: resourceKind + " / " + resourceName + " / " + (resourceNamespace || "Cluster-scoped"); Accessible.name: "Inspect " + text; onClicked: workspace.inspectPath(resourcePath) }
+                FlatButton { objectName: "dashboardResource_" + index; Layout.fillWidth: true; text: resourceKind + " / " + resourceName + " / " + (resourceNamespace || "Cluster-scoped"); Accessible.name: "Inspect " + text; onClicked: workspace.inspectPath(resourcePath) }
                 Repeater {
                     model: resourceMetrics.filter(metric => metric.available || !!metric.presentReferences)
                     MetricGauge {

@@ -134,6 +134,71 @@ void scenario(const QString& name) {
             "Selected model did not analyze the observed problem");
         return;
     }
+    if (name == "manual_healthy") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b"), "Manual model unavailable");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Manual model not ready");
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["issue"] = ""; pod["status"] = "Running"; pod["problemSeverity"] = 1; pod["ready"] = "0/1"; pod["restarts"] = 1;
+        snapshot.replace(2, pod);
+        ai.observe("context", snapshot, "de");
+        QTest::qWait(50);
+        const auto path = pod["path"].toString();
+        require(server.chats == 0 && ai.result("context", path).isEmpty(), "Unapproved automatic analysis ran");
+        require(ai.refresh("context", path), "Explicit analysis was rejected");
+        require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
+            "Explicit analysis did not appear");
+        require(!ai.enabled("context") && server.submitted.contains("Pod containers ready: 0/1")
+            && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
+            "Manual analysis changed consent or leaked private source data");
+        ai.observe("context", snapshot, "de");
+        require(server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(),
+            "Unchanged snapshot lost the cached manual result");
+        pod["restarts"] = 2; snapshot.replace(2, pod);
+        ai.observe("context", snapshot, "de");
+        pod["restarts"] = 3; snapshot.replace(2, pod);
+        ai.observe("context", snapshot, "de");
+        require(server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(),
+            "Repeated restarts invalidated the same manual problem");
+        require(!ai.refresh("context", "/unknown"), "Unknown resource was analyzed");
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000),
+            "Cached manual model unavailable after restart");
+        reopened.observe("context", snapshot, "de");
+        reopened.prepareManual("context", path);
+        require(!reopened.enabled("context") && !reopened.result("context", path).value("summary").toString().isEmpty()
+            && server.chats == 1, "Restart repeated or lost the manual analysis");
+        auto changed = snapshot;
+        pod["status"] = "Failed"; changed.replace(2, pod);
+        reopened.observe("context", changed, "de");
+        require(reopened.result("context", path).isEmpty(), "Changed evidence retained a stale manual analysis");
+        return;
+    }
+    if (name == "diagnostic_exec_env") {
+        const QString message = "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env.";
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b"), "Diagnostic model unavailable");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Diagnostic model not ready");
+        ai.observeDiagnostic(message, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.diagnosticResult().value("summary").toString().isEmpty(); }, 2000),
+            "Diagnostic was not explained");
+        require(server.submitted.contains("exec.env") && !server.submitted.contains(message.toUtf8()),
+            "Diagnostic sent raw error or lost the safe field code");
+        ai.observeDiagnostic(message, "de");
+        require(server.chats == 1, "Unchanged diagnostic repeated the request");
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000),
+            "Diagnostic model unavailable after restart");
+        reopened.observeDiagnostic(message, "de");
+        require(server.chats == 1 && !reopened.diagnosticResult().value("summary").toString().isEmpty(),
+            "Diagnostic cache was lost after restart");
+        reopened.observeDiagnostic("Other, untrusted error: token=private", "de");
+        require(reopened.diagnosticResult().isEmpty() && server.chats == 1, "Unknown diagnostic was transmitted");
+        return;
+    }
     if (name == "related") {
         auto snapshot = rows();
         auto pod = snapshot.at(2).toObject();

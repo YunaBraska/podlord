@@ -21,7 +21,7 @@ ModalDialog {
         Label { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
     }
     footer: DialogButtonBox {
-        IconButton { glyph: ""; showText: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? workspace.uiText["settings.removing"] : workspace.uiText["settings.remove"]; enabled: !workspace.busy; Accessible.name: removal.title; onClicked: workspace.confirmSourceRemoval() }
+        IconButton { glyph: "Trash"; destructive: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? workspace.uiText["settings.removing"] : workspace.uiText["settings.remove"]; enabled: !workspace.busy; Accessible.name: removal.title; onClicked: workspace.confirmSourceRemoval() }
     }
     onAboutToHide: workspace.cancelSourceRemoval()
     Connections {

@@ -179,7 +179,7 @@ Pane {
                     spacing: 4
             RowLayout {
                 Layout.fillWidth: true
-                Button {
+                FlatButton {
                     id: sessionAction
                     objectName: "renameCurrentContext"
                     text: workspace.title
@@ -251,10 +251,10 @@ Pane {
                     Layout.fillWidth: true
                     spacing: 4
                     IconButton { objectName: "reloadFilterPresets"; glyph: "Reset"; text: "Reload saved filters"; enabled: !workspace.filterPresetsBusy; onClicked: workspace.reloadFilterPresets() }
-                    IconButton { objectName: "importFilterPresets"; glyph: "ConfigMap"; text: "Import saved filters..."; enabled: !workspace.filterPresetsBusy; onClicked: importPresets.open() }
+                    IconButton { objectName: "importFilterPresets"; glyph: "Import"; text: "Import saved filters..."; enabled: !workspace.filterPresetsBusy; onClicked: importPresets.open() }
                     Item { Layout.fillWidth: true }
                     IconButton { objectName: "renameFilterPreset"; glyph: "Pencil"; text: "Rename saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: { renamePreset.original = presetName.text; renameText.text = presetName.text; renamePreset.open() } }
-                    IconButton { objectName: "deleteFilterPreset"; glyph: "Trash"; text: "Delete saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: workspace.deleteFilterPreset(presetName.text) }
+                    IconButton { objectName: "deleteFilterPreset"; glyph: "Trash"; destructive: true; text: "Delete saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: workspace.deleteFilterPreset(presetName.text) }
                 }
             ListView {
                 id: savedFilters
@@ -317,7 +317,7 @@ Pane {
                     required property var modelData
                     Layout.fillWidth: true
                     spacing: 0
-                    Button {
+                    FlatButton {
                     id: fieldButton
                     readonly property var modelData: fieldGroup.modelData
                     objectName: "sidebarField_" + modelData.id

@@ -433,7 +433,7 @@ if(BUILD_TESTING)
     endforeach()
     add_executable(incident-ai-test tests/incident_ai_test.cpp)
     target_link_libraries(incident-ai-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario success persist ttl refresh model_choice related cluster_context referenced_keys reasoning events missing_owner rate cancel close resolve failure malformed invalid migration conflict)
+    foreach(scenario success persist ttl refresh model_choice manual_healthy diagnostic_exec_env related cluster_context referenced_keys reasoning events missing_owner rate cancel close resolve failure malformed invalid migration conflict)
         add_test(NAME native.incident_ai.${scenario} COMMAND incident-ai-test ${scenario})
         set_tests_properties(native.incident_ai.${scenario} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
@@ -515,7 +515,7 @@ foreach(file IN LISTS dependency_notice_files)
     set_source_files_properties("${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
 endforeach()
 set(workspace_qml_files
-    ui/Main.qml ui/IconButton.qml ui/DialogHeader.qml ui/ModalDialog.qml ui/WorkspaceTab.qml ui/WrappingCheckBox.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
+    ui/Main.qml ui/IconButton.qml ui/FlatButton.qml ui/DialogHeader.qml ui/ModalDialog.qml ui/WorkspaceTab.qml ui/WrappingCheckBox.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
     ui/ConnectionsView.qml ui/SettingsView.qml ui/AboutView.qml
     ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/FieldFilterEditor.qml
     ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
@@ -737,7 +737,7 @@ if(BUILD_TESTING)
     target_link_libraries(read-overlap-test PRIVATE podlord_workspace Qt6::Test)
     add_test(NAME native.read_boundary.request_audit COMMAND read-overlap-test request_audit)
     set_tests_properties(native.read_boundary.request_audit PROPERTIES TIMEOUT 45)
-    foreach(scenario IN ITEMS discovery_invalid_body discovery_invalid_entry pod_problem_projection namespace_scoped_valid namespace_scoped_mismatch namespace_scoped_retain namespace_all_valid)
+    foreach(scenario IN ITEMS discovery_invalid_body discovery_invalid_entry pod_problem_projection namespace_scoped_valid namespace_scoped_mismatch namespace_scoped_retain namespace_all_valid list_namespaced_fallback list_namespaced_fallback_denied list_namespaced_fallback_ttl list_namespaced_fallback_recover list_namespaced_fallback_preferred)
         add_test(NAME native.read_boundary.${scenario} COMMAND read-overlap-test ${scenario})
         set_tests_properties(native.read_boundary.${scenario} PROPERTIES TIMEOUT 45)
     endforeach()

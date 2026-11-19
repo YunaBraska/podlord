@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <QVariantMap>
 #include <QUrl>
+#include <optional>
 #include "chatgpt_client.h"
 #include "api_ai_client.h"
 
@@ -69,6 +70,9 @@ public:
     void refreshModels();
     void ensureModelsFresh();
     void observe(const QString& context, const QJsonArray& rows, const QString& language);
+    void prepareManual(const QString& context, const QString& path);
+    void observeDiagnostic(const QString& error, const QString& language);
+    QVariantMap diagnosticResult() const;
     bool refresh(const QString& context, const QString& path);
     void retainContexts(const QSet<QString>& contexts);
     QVariantMap result(const QString& context, const QString& path) const;
@@ -88,6 +92,7 @@ private:
     void refreshReasoning();
     void recordRequest(const QString& provider, const QString& identity);
     void stopObserving(const QString& context);
+    std::optional<Incident> manualIncident(const QString& context, const QString& path) const;
     const QString profile_;
     const QUrl endpoint_;
     ChatGptClient chatgpt_;
@@ -104,8 +109,10 @@ private:
     QMap<QString, Record> records_;
     QMap<QString, QList<QDateTime>> requests_;
     QMap<QString, Incident> visible_;
+    QMap<QString, Incident> manualVisible_;
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
+    std::optional<Incident> diagnostic_;
     QMap<QString, QDateTime> retryAfter_;
     QQueue<Incident> queue_;
     QSet<QString> queued_;

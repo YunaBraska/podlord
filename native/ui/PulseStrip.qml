@@ -31,7 +31,7 @@ Row {
     Layout.preferredHeight: cardHeight
         Repeater {
             model: strip.availableMetrics.length
-            delegate: Button {
+            delegate: FlatButton {
                 id: metricCard
                 required property int index
                 readonly property var modelData: strip.availableMetrics[index]

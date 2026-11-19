@@ -177,8 +177,10 @@ bool ui(const QString& mode) {
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
     };
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Saved tab metadata did not restore");
-    press("quickOpenDropdown");
-    const auto activate = QString("quickContext_") + workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+    press("mapWorkspaceButton");
+    if (!workspace.mapOverview()) press("mapOverview");
+    const auto activate = QString("contextMapCard_") + workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+    require(QTest::qWaitFor([&] { return item(qPrintable(activate)) != nullptr; }, 5000), "Context card did not appear");
     press(qPrintable(activate));
     if (!QTest::qWaitFor([&] { return workspace.table()->rowCount() == 1 && !workspace.busy() && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Discovery: rows=%d; requests=%d; active=%s; status=%s\n", workspace.table()->rowCount(), boundary.requests, qPrintable(workspace.currentSession()), qPrintable(workspace.status()));
@@ -205,7 +207,7 @@ bool ui(const QString& mode) {
     if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/" + mode + ".png"), "Cannot save actual guidance frame");
     if (mode == "ui_expand") {
         press("inspectorAiButton");
-        require(workspace.property("inspectorPage").toString() == "ai" && item("incidentAiEnable")
+        require(workspace.property("inspectorPage").toString() == "ai" && !item("incidentAiEnable")
             && item("incidentAiOpenSettings") && !item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
             "Opening the AI tab changed consent or Kubernetes transport");
         press("overviewButton");
@@ -217,11 +219,10 @@ bool ui(const QString& mode) {
             "Missing-model link did not open AI settings");
     } else if (mode == "ui_ai_live") {
         press("inspectorAiButton");
-        require(item("incidentAiEnable"), "AI tab has no consent control");
-        press("incidentAiEnable");
-        require(workspace.incidentAiEnabled(), "AI consent did not activate");
         require(QTest::qWaitFor([&] { return !workspace.incidentAiModels().isEmpty(); }, 10000)
             && workspace.setIncidentAiModel(workspace.incidentAiModels().first()), "Cannot select the discovered local model");
+        require(item("incidentAiReanalyze") && !workspace.incidentAiEnabled(), "Manual AI action enabled automatic analysis");
+        press("incidentAiReanalyze");
         const auto completed = QTest::qWaitFor([&] {
             return !workspace.incidentAiResult().value("summary").toString().isEmpty()
                 || workspace.incidentAiStatus().contains("failed");

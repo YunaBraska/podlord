@@ -91,6 +91,7 @@ struct ExecCommand final {
 struct ClusterConnection final {
     QString contextId;
     QString credentialId;
+    QString preferredNamespace;
     QUrl server;
     QSslConfiguration tls;
     QByteArray authorization;

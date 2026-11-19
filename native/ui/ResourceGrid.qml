@@ -272,7 +272,7 @@ ColumnLayout {
     }
     Component {
         id: headerDelegate
-        Button {
+        FlatButton {
             required property var model
             required property int column
             hoverEnabled: true

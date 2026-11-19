@@ -940,6 +940,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                 ClusterConnection result;
                 result.contextId = contextId;
                 result.credentialId = hash((source.id + '\0' + context.cluster + '\0' + context.user).toUtf8());
+                result.preferredNamespace = context.nameSpace;
                 result.server = QUrl(context.server);
                 result.tls = QSslConfiguration::defaultConfiguration();
                 result.peerName = text(cluster, "tls-server-name");

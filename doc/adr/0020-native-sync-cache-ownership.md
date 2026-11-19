@@ -24,6 +24,8 @@ Background synchronization reuses discovered collection descriptors. While the s
 
 Failed operation paths are not silently retried by central synchronization. Manual refresh authorizes a new attempt for those paths. Authentication remains governed by [the confirmed authentication decision](0019-confirmed-exec-authentication.md), including explicit login confirmation and no automatic browser launch.
 
+If a cluster-wide list of a namespaced kind returns HTTP 403, the client tries that kind in the kubeconfig context's namespace, or `default` when none is set. It records the denied cluster-wide path for 15 minutes only after the namespaced list succeeds. During that interval discovery selects the namespaced route directly. A later foreground refresh can retry the cluster-wide route after expiry. Successful recovery retires the narrower collection; a successful fallback retires any stale cluster-wide collection. The route memory belongs to the session cache and is never persisted or shared across different credentials.
+
 Untrusted resource strings render as plain text. The standard shared tooltip receives escaped content, retaining the native tooltip without allowing resource markup to initiate image requests. This follows [Qt's text-format guidance](https://doc.qt.io/qt-6/qml-qtquick-text.html#textFormat-prop).
 
 Lock contention returns `Busy`; inability to create or write the lock returns `WriteFailed`. A directory occupying the lock path is rejected explicitly before calling Qt, because the local Qt implementation reports that condition as `LockFailedError` even though no writer owns a valid lock. This distinction was reproduced through the real public settings store before correction.

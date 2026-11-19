@@ -34,9 +34,9 @@ Pane {
             }
             IconButton {
                 objectName: "removeInspectedSource"
-                glyph: "Close"
+                glyph: "Trash"
                 text: "Remove"
-                showText: true
+                destructive: true
                 Accessible.name: "Remove imported context"
                 enabled: !workspace.busy && !workspace.sourceEditing
                 onClicked: workspace.requestSourceRemoval(workspace.sourceInspection.contextId)
@@ -115,14 +115,14 @@ Pane {
                 RowLayout {
                     Layout.fillWidth: true
                     visible: !root.inputPriority
-                    Button {
+                    FlatButton {
                         objectName: "editSourceYaml"
                         text: "Edit YAML"
                         visible: !workspace.sourceEditing
                         enabled: !workspace.busy && !workspace.discardPending && workspace.canEditSourceYaml
                         onClicked: if (workspace.beginSourceEdit()) Qt.callLater(editor.forceActiveFocus)
                     }
-                    Button {
+                    FlatButton {
                         objectName: "applySourceYaml"
                         text: "Apply"
                         visible: workspace.sourceEditing

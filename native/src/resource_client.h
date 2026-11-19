@@ -158,6 +158,7 @@ private:
         QJsonArray snapshot;
         QMap<QString, QString> issueByPath;
         QSet<QString> blocked;
+        QMap<QString, QDateTime> deniedClusterLists;
         QSet<QString> unresolvedDeletes;
         QMap<QString, QString> failures;
         QString forwardError;
@@ -177,6 +178,7 @@ private:
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
     struct Task final {
         QString id, path, collection, kind, continuation;
+        QString fallbackFrom;
         Read read = Read::Core;
         bool namespaced = false;
         bool deletable = false;

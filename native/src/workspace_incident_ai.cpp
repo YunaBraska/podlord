@@ -25,10 +25,11 @@ QString Workspace::incidentAiStatus() const {
 QVariantMap Workspace::incidentAiResult() const {
     return runtime_->incidentAi.result(sessionConfiguration(active_).value("contextId").toString(), inspectorPath());
 }
+QVariantMap Workspace::incidentAiDiagnostic() const { return runtime_->incidentAi.diagnosticResult(); }
 bool Workspace::setIncidentAiEnabled(bool enabled) {
     const auto context = sessionConfiguration(active_).value("contextId").toString();
     if (context.isEmpty() || !runtime_->incidentAi.setEnabled(context, enabled)) return false;
-    if (enabled) runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
     emit incidentAiChanged();
     return true;
 }
@@ -45,7 +46,10 @@ void Workspace::refreshIncidentAiUsage() { runtime_->incidentAi.refreshUsage(); 
 bool Workspace::setIncidentAiReasoning(const QString& reasoning) { return runtime_->incidentAi.setReasoning(reasoning); }
 void Workspace::ensureIncidentAiModels() { runtime_->incidentAi.ensureModelsFresh(); }
 bool Workspace::refreshIncidentAiAnalysis() {
-    return runtime_->incidentAi.refresh(sessionConfiguration(active_).value("contextId").toString(), inspectorPath());
+    const auto context = sessionConfiguration(active_).value("contextId").toString();
+    if (context.isEmpty() || inspectorPath().isEmpty()) return false;
+    runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    return runtime_->incidentAi.refresh(context, inspectorPath());
 }
 bool Workspace::copyIncidentAiCommand() {
     const auto command = incidentAiResult().value("command").toString();

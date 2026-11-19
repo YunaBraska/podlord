@@ -64,7 +64,7 @@ ColumnLayout {
             ToolTip.text: root.terminal ? root.terminal.status : ""
             HoverHandler { id: statusHover }
         }
-        Button {
+        FlatButton {
             objectName: "terminalConnect"
             Layout.minimumHeight: root.controlHeight
             visible: !root.inputPriority && !root.running && root.canConfigure
@@ -139,7 +139,7 @@ ColumnLayout {
                     { id: "up", label: "Up", key: Qt.Key_Up, input: "", help: "Send the up arrow key" },
                     { id: "down", label: "Down", key: Qt.Key_Down, input: "", help: "Send the down arrow key" }
                 ]
-                delegate: Button {
+                delegate: FlatButton {
                     required property var modelData
                     objectName: "terminalKey_" + modelData.id
                     text: modelData.label
@@ -237,8 +237,8 @@ ColumnLayout {
             }
         }
         footer: DialogButtonBox {
-            Button { objectName: "terminalPasteConfirm"; implicitHeight: root.controlHeight; text: "Paste"; enabled: pasteReview.pasteError === "" && pasteReview.payload !== "" && pasteReview.reviewedTerminal !== null && pasteReview.reviewedTerminal === root.terminal && pasteReview.reviewedTerminal.connected; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            Button { objectName: "terminalPasteCancel"; implicitHeight: root.controlHeight; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "terminalPasteConfirm"; implicitHeight: root.controlHeight; text: "Paste"; enabled: pasteReview.pasteError === "" && pasteReview.payload !== "" && pasteReview.reviewedTerminal !== null && pasteReview.reviewedTerminal === root.terminal && pasteReview.reviewedTerminal.connected; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            FlatButton { objectName: "terminalPasteCancel"; implicitHeight: root.controlHeight; text: "Cancel"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
             onAccepted: pasteReview.accept()
             onRejected: pasteReview.reject()
         }

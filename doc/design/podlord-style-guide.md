@@ -52,7 +52,11 @@ Minimum practical sizes:
 
 ## Implementation
 
-Use `src/Podlord.App/Assets/Theme/podlord-tokens.json` as the native theme source and `doc/design/podlord-theme.css` as the CSS reference for any future web/docs previews. CSS classes included:
+For the native Qt interface, actions use one flat surface and thin border. Icon-only actions need a concise tooltip and accessible name. Destructive actions use the red danger color and a trash glyph where that glyph describes the action. Confirmation text names the affected resource. The navigation `+` opens the kubeconfig file picker directly. Cluster cards own their open actions; source settings contain only distinct folder, paste, refresh and credential actions. Do not add a second file-import path or a recent-context menu.
+
+AI controls stay short: model selection and automatic analysis belong in Settings; the inspector offers one explicit analysis action and structured results. A manual request never changes automatic consent.
+
+The native Qt interface reads `workspace.appearanceColors`. The older `src/Podlord.App/Assets/Theme/podlord-tokens.json` and `doc/design/podlord-theme.css` remain references for the legacy UI and web previews. CSS classes included:
 
 - `.pl-app-bg`
 - `.pl-panel`

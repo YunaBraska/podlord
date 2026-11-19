@@ -99,7 +99,7 @@ ModalDialog {
     }
     footer: DialogButtonBox {
         implicitHeight: Math.max(defaultsButton.implicitHeight, saveButton.implicitHeight) + topPadding + bottomPadding
-        Button {
+        FlatButton {
             id: defaultsButton
             objectName: surfaceDialog.tableType + "ResetColumns"
             text: "Defaults"

@@ -154,8 +154,8 @@ Pane {
         onClosed: { view.pendingEditorAction = null; if (view.draft) ruleGrid.selectIdentity(view.draft.id, 2) }
         contentItem: Label { text: workspace.uiText["alert.unsavedMessage"]; wrapMode: Text.Wrap; padding: 16 }
         footer: DialogButtonBox {
-            Button { objectName: "keepAlertChanges"; text: workspace.uiText["alert.keepEditing"]; onClicked: discardAlertChanges.close() }
-            Button { objectName: "discardAlertChangesButton"; text: workspace.uiText["alert.discard"]; onClicked: { const action = view.pendingEditorAction; discardAlertChanges.close(); if (action) action() } }
+            FlatButton { objectName: "keepAlertChanges"; text: workspace.uiText["alert.keepEditing"]; onClicked: discardAlertChanges.close() }
+            FlatButton { objectName: "discardAlertChangesButton"; destructive: true; text: workspace.uiText["alert.discard"]; onClicked: { const action = view.pendingEditorAction; discardAlertChanges.close(); if (action) action() } }
         }
     }
     Component {
@@ -260,7 +260,7 @@ Pane {
                     Layout.fillWidth: true
                     Item { Layout.fillWidth: true }
                 ActionButton { objectName: "saveAlert"; glyph: "Save"; showText: false; text: workspace.uiText["action.save"]; visible: view.draft !== null && !view.draft.builtIn; enabled: !workspace.alerts.busy && view.draft !== null; onClicked: view.save() }
-                ActionButton { objectName: "deleteAlert"; glyph: "Delete"; showText: false; text: workspace.uiText["action.delete"]; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; visible: view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
+                ActionButton { objectName: "deleteAlert"; glyph: "Trash"; destructive: true; showText: false; text: workspace.uiText["action.delete"]; enabled: !workspace.alerts.busy && view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; visible: view.draft !== null && !view.draft.builtIn && view.draft.id !== ""; onClicked: view.changeSelection("delete") }
             ActionButton { Layout.alignment: Qt.AlignTop; objectName: "closeAlertEditor"; glyph: "Close"; showText: false; text: workspace.uiText["alert.closeEditor"]; visible: view.draft !== null; enabled: !workspace.alerts.busy; onClicked: view.closeEditor() }
                 }
                 FormRow { label: workspace.uiText["alert.name"]; TextField { id: name; objectName: "alertName"; Layout.fillWidth: true; enabled: form.editable; Accessible.name: "Alert name" } }
@@ -285,7 +285,7 @@ Pane {
                             Layout.fillWidth: true; visible: criterion.index === 0 || (criterion.index > 0 && criterion.index < criteria.count && criteria.get(criterion.index - 1).group !== criterion.group)
                             Label { Layout.fillWidth: true; text: workspace.uiText["alert.all"] + " " + (criterion.group + 1); font.bold: true; color: workspace.appearanceColors.accent }
                             ActionButton { objectName: "addAlertCriterion_" + criterion.group; glyph: "ZoomIn"; showText: false; text: workspace.uiText["alert.addCondition"]; onClicked: view.addCriterion(criterion.group) }
-                            ActionButton { objectName: "removeAlertGroup_" + criterion.group; glyph: "Close"; showText: false; text: "Remove matcher group " + (criterion.group + 1); enabled: criteria.count > 0 && criteria.get(criteria.count - 1).group > 0; onClicked: view.removeGroup(criterion.group) }
+                            ActionButton { objectName: "removeAlertGroup_" + criterion.group; glyph: "Trash"; destructive: true; showText: false; text: "Remove matcher group " + (criterion.group + 1); enabled: criteria.count > 0 && criteria.get(criteria.count - 1).group > 0; onClicked: view.removeGroup(criterion.group) }
                         }
                         GridLayout {
                             Layout.fillWidth: true
@@ -297,7 +297,7 @@ Pane {
                                 ComboBox { objectName: "alertBoolean_" + criterion.index; Layout.fillWidth: true; visible: criterion.booleanField; model: ["true", "false"]; currentIndex: model.indexOf(criterion.expression); Accessible.name: "Boolean matcher " + (criterion.index + 1); onActivated: criteria.setProperty(criterion.index, "expression", currentText) }
                                 TextField { objectName: "alertExpression_" + criterion.index; Layout.fillWidth: true; visible: !criterion.booleanField || !["true", "false"].includes(criterion.expression); text: criterion.expression; placeholderText: workspace.uiText["alert.expressionHint"]; Accessible.name: "Matcher expression " + (criterion.index + 1); onTextEdited: criteria.setProperty(criterion.index, "expression", text) }
                             }
-                            ActionButton { objectName: "removeAlertCriterion_" + criterion.index; glyph: "Close"; showText: false; text: "Remove criterion " + (criterion.index + 1); enabled: view.groupSize(criterion.group) > 1; onClicked: criteria.remove(criterion.index) }
+                            ActionButton { objectName: "removeAlertCriterion_" + criterion.index; glyph: "Trash"; destructive: true; showText: false; text: "Remove criterion " + (criterion.index + 1); enabled: view.groupSize(criterion.group) > 1; onClicked: criteria.remove(criterion.index) }
                         }
                     }
                 }
@@ -392,7 +392,7 @@ Pane {
         Label { objectName: "alertEmptyState"; text: workspace.uiText[workspace.currentSession === "" ? "alert.emptyContext" : "alert.emptyMatches"]; visible: workspace.alerts.matches.length === 0; color: workspace.appearanceColors.muted }
         Flow {
             Layout.fillWidth: true; Layout.maximumWidth: pageScroll.availableWidth; Layout.preferredHeight: childrenRect.height; spacing: 6
-            Repeater { model: workspace.alerts.matches; Button { required property var modelData; required property int index; objectName: "alertMatch_" + index; text: modelData.name + ": " + modelData.count; Accessible.name: text; onClicked: workspace.inspectPath(modelData.path) } }
+            Repeater { model: workspace.alerts.matches; FlatButton { required property var modelData; required property int index; objectName: "alertMatch_" + index; text: modelData.name + ": " + modelData.count; Accessible.name: text; onClicked: workspace.inspectPath(modelData.path) } }
         }
         }
     }

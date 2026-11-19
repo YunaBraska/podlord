@@ -341,7 +341,8 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
         for (auto candidate = states_.begin(); candidate != states_.end(); ++candidate) {
             if (connection.contextId.isEmpty() || candidate->open || candidate->pending != 0
                 || candidate->connection.contextId != connection.contextId || candidate->namespaces != state.namespaces
-                || candidate->connection.server != connection.server || candidate->connection.credentialId != connection.credentialId) continue;
+                || candidate->connection.server != connection.server || candidate->connection.credentialId != connection.credentialId
+                || candidate->connection.preferredNamespace != connection.preferredNamespace) continue;
             if (cached == states_.end() || candidate->lastSync > cached->lastSync) cached = candidate;
         }
         // Reuse a retired tab's cache without moving the destination of sent requests.
@@ -1226,7 +1227,21 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         const auto now = clock_.elapsed();
         backoffUntil_ = delay > std::numeric_limits<qint64>::max() - now ? std::numeric_limits<qint64>::max() : now + delay;
         fail(task, "The server is limiting requests. Waiting before retrying.");
-    } else if (http == 403) fail(task, "Authorization denied; other resource kinds remain available.");
+    } else if (http == 403) {
+        fail(task, "Authorization denied; other resource kinds remain available.");
+        if (task.read == Read::List && task.namespaced && task.fallbackFrom.isEmpty()
+            && !task.path.contains("/namespaces/")) {
+            const auto preferred = segment(state.connection.preferredNamespace) ? state.connection.preferredNamespace : QString("default");
+            Task fallback = task;
+            fallback.path = task.collection.left(task.collection.lastIndexOf('/')) + "/namespaces/" + preferred + '/' + task.collection.section('/', -1);
+            fallback.collection = fallback.path;
+            fallback.fallbackFrom = task.collection;
+            fallback.page = {};
+            fallback.continuation.clear();
+            fallback.tokens.clear();
+            enqueue(std::move(fallback));
+        }
+    }
     else if (http >= 300 && http < 400) fail(task, "Redirect refused; credentials were not forwarded.");
     else if (http >= 400) fail(task, QString("API rejected the %1 (HTTP %2).").arg(task.read == Read::Apply || task.read == Read::Delete ? "write" : "read").arg(http));
     else if (transportError || http == 0) fail(task, transportDetail.isEmpty() ? QString("Could not connect to the server.") : transportDetail.section('\n', 0, 0));
@@ -1292,6 +1307,13 @@ void ResourceClient::collections(const QString& id, const QString& path, const Q
         }
         const bool namespaced = resource["namespaced"].toBool();
         QStringList scopes = namespaced ? states_[id].namespaces : QStringList{};
+        const auto globalPath = path + '/' + name;
+        const auto deniedUntil = states_[id].deniedClusterLists.value(globalPath);
+        if (namespaced && scopes.isEmpty() && deniedUntil > now_()) {
+            const auto preferred = segment(states_[id].connection.preferredNamespace)
+                ? states_[id].connection.preferredNamespace : QString("default");
+            scopes.append(preferred);
+        }
         if (scopes.isEmpty()) scopes.append(QString{});
         for (const auto& scope : scopes) {
             Task task; task.id = id;
@@ -1334,13 +1356,13 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
             const auto suppliedKind = object.value("kind");
             const auto suppliedVersion = object.value("apiVersion");
             if (!resourceName(name) || (task.namespaced && (!segment(ns)
-                || (!state.namespaces.isEmpty() && ns != task.collection.section('/', -2, -2))))
+                || (task.collection.contains("/namespaces/") && ns != task.collection.section('/', -2, -2))))
                 || (!suppliedVersion.isUndefined() && (!suppliedVersion.isString() || suppliedVersion.toString() != apiVersion(task.path)))
                 || (!suppliedKind.isUndefined() && (!suppliedKind.isString() || suppliedKind.toString() != task.kind))) {
                 fail(task, "The server returned an invalid resource."); return;
             }
             QString path = task.collection;
-            if (task.namespaced && state.namespaces.isEmpty()) {
+            if (task.namespaced && !task.collection.contains("/namespaces/")) {
                 const auto slash = path.lastIndexOf('/');
                 path.insert(slash, "/namespaces/" + ns);
             }
@@ -1365,6 +1387,20 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
             const bool known = previousList != state.collections.cend();
             const bool different = known ? previousList->rows != next.page : !next.page.isEmpty();
             state.collections.insert(task.collection, {next.page, now_(), task.kind, task.namespaced, next.received, task.deletable, known && !different});
+            bool retiredCollection = false;
+            if (!task.fallbackFrom.isEmpty()) {
+                retiredCollection = state.collections.remove(task.fallbackFrom) > 0;
+                state.deniedClusterLists.insert(task.fallbackFrom, now_().addSecs(15 * 60));
+                state.failures.remove(task.fallbackFrom);
+                state.blocked.remove(task.fallbackFrom);
+            } else if (task.namespaced && !task.collection.contains("/namespaces/")
+                && state.deniedClusterLists.contains(task.collection)) {
+                const auto preferred = segment(state.connection.preferredNamespace) ? state.connection.preferredNamespace : QString("default");
+                const auto scoped = task.collection.left(task.collection.lastIndexOf('/')) + "/namespaces/" + preferred
+                    + '/' + task.collection.section('/', -1);
+                retiredCollection = state.collections.remove(scoped) > 0;
+                state.deniedClusterLists.remove(task.collection);
+            }
             bool canonicalChanged = false;
             for (const auto& value : next.page) {
                 const auto row = value.toObject();
@@ -1376,7 +1412,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
                 canonicalChanged = canonicalChanged || previous != row;
                 *entry = {row, next.received};
             }
-            if (different || canonicalChanged) publishRows(task.id);
+            if (different || canonicalChanged || retiredCollection) publishRows(task.id);
             emit collectionAccepted(task.id);
         }
     } else {

@@ -368,6 +368,15 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::catalogsChanged, this, [this] { refreshMapContexts(mapContexts_.isEmpty()); });
     connect(&runtime_->incidentAi, &IncidentAi::changed, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::changed, this, [this] {
+        runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
+    });
+    connect(this, &Workspace::incidentAiChanged, this, [this] {
+        runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        if (!context.isEmpty() && !inspectorPath().isEmpty())
+            runtime_->incidentAi.prepareManual(context, inspectorPath());
+    });
     connect(this, &Workspace::inspectorPresentationChanged, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::catalogsChanged, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::languageChanged, this, &Workspace::incidentAiChanged);

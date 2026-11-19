@@ -65,24 +65,21 @@ bool ui(const QString& profile, const QString& directory, bool partial, int widt
     require(QTest::qWaitFor([&] { return !workspace.busy(); },5000), "Initial catalogs did not settle");
     require(podlord::test::clickVisible(window,"settingsWorkspaceButton")
         && podlord::test::selectSettingsSection(window,"sources"), "Cannot open Sources settings");
-    auto* input = podlord::test::visibleItem(window->contentItem(),"settingsSourcePath");
-    auto* import = podlord::test::visibleItem(window->contentItem(),"settingsImportSource");
-    require(input && import, "Source input is unavailable");
+    auto* actions = podlord::test::visibleItem(window->contentItem(),"sourceActionsMenuButton");
+    require(actions && !podlord::test::visibleItem(window->contentItem(),"settingsSourcePath")
+        && !podlord::test::visibleItem(window->contentItem(),"settingsImportSource"), "Duplicate source import control remains");
     if (width > 0) {
-        if (!QTest::qWaitFor([&] { return input->width() >= 160 && import->width() >= 44 && import->height() >= 32; },2000)) {
-            std::fprintf(stderr,"Source geometry: viewport=%d input=%gx%g import=%gx%g\n",width,input->width(),input->height(),import->width(),import->height());
+        if (!QTest::qWaitFor([&] { return actions->width() >= (width < 900 ? 44 : 32) && actions->height() >= 32; },2000)) {
+            std::fprintf(stderr,"Source geometry: viewport=%d actions=%gx%g\n",width,actions->width(),actions->height());
             const auto output=qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
             if (!output.isEmpty()) window->grabWindow().save(output+"/source-layout-failed-"+QString::number(width)+".png");
             require(false,"Source controls are too small");
         }
-        const auto inputBounds = input->mapRectToScene(input->boundingRect());
-        const auto importBounds = import->mapRectToScene(import->boundingRect());
+        const auto actionBounds = actions->mapRectToScene(actions->boundingRect());
         const QRectF viewport(0,0,width,720);
-        require(viewport.contains(inputBounds) && viewport.contains(importBounds) && !inputBounds.intersects(importBounds),"Source controls clip or overlap");
+        require(viewport.contains(actionBounds),"Source actions clip");
     }
-    input->forceActiveFocus();
-    QInputMethodEvent entry; entry.setCommitString(directory); QCoreApplication::sendEvent(input,&entry);
-    require(click(window,import),"Cannot activate public Import button");
+    require(workspace.importFile(directory),"Cannot import source directory");
     require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; },5000),"Source import did not populate Sources");
     require(workspace.currentSession().isEmpty(),"Import unexpectedly opened a context");
     if (partial) {

@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
         const auto home = QDir::home();
         const auto kube = home.filePath(".kube");
         const auto expected = QDir(kube).exists() ? kube : home.absolutePath();
-        for (const auto* name : {"kubeconfigFileDialog", "quickFileDialog", "kubeconfigFolderDialog"}) {
+        for (const auto* name : {"quickFileDialog", "kubeconfigFolderDialog"}) {
             const auto* picker = window->findChild<QObject*>(name);
             if (!picker || picker->property("currentFolder").toUrl().toLocalFile() != expected) {
                 std::fprintf(stderr, "%s did not open in the user's kubeconfig folder.\n", name);
