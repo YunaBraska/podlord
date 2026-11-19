@@ -34,15 +34,12 @@ ResourceGrid {
         target: workspace
         function onInspectorPresentationChanged() { values.copyError = "" }
     }
-    Label {
+    SelectableText {
         objectName: "copyValueError"
         Layout.fillWidth: true
         text: values.copyError
-        textFormat: Text.PlainText
         visible: text !== ""
-        wrapMode: Text.Wrap
         color: workspace.appearanceColors.danger
-        Accessible.name: text
     }
     cellAccessory: Component {
         RowLayout {

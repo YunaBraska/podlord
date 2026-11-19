@@ -293,6 +293,12 @@ void scenario(const QString& name) {
                 && !server.submitted.contains("registry-auth")
                 && !server.submitted.contains("private-event-marker"),
                 "Cluster context omitted evidence or sent private names and messages");
+            const auto messages = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray();
+            const auto instructions = messages.at(0).toObject()["content"].toString();
+            const auto input = messages.at(1).toObject()["content"].toString();
+            require(instructions.contains("semicolons or long dashes") && input.startsWith("Language: de\n")
+                && input.contains("\n- Observed warning event: FailedToRetrieveImagePullSecret")
+                && !input.contains("; "), "AI request lost language, writing guidance, or separated evidence");
             snapshot.append(QJsonObject{{"uid", "replica-two"}, {"kind", "Pod"}, {"name", "replica-two"}, {"namespace", "team"},
                 {"path", "/api/v1/namespaces/team/pods/replica-two"}, {"issue", "ImagePullBackOff"},
                 {"status", "ImagePullBackOff"}, {"problemSeverity", 2}});

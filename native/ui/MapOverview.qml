@@ -17,10 +17,10 @@ Pane {
     }
     ColumnLayout {
         anchors.fill: parent
-        Label {
+        SelectableText {
             objectName: "mapPreviewError"
             Layout.fillWidth: true
-            text: workspace.mapPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap
+            text: workspace.mapPreviewError
             visible: text !== ""; color: workspace.appearanceColors.warning
         }
         GridView {

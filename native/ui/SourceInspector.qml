@@ -65,15 +65,12 @@ Pane {
             text: "Loading owned kubeconfig..."
             Accessible.name: text
         }
-        Label {
+        SelectableText {
             objectName: "sourceInspectorError"
             Layout.fillWidth: true
             visible: text !== ""
             text: workspace.sourceInspectionError
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
             color: workspace.appearanceColors.danger
-            Accessible.name: text
         }
         ScrollView {
             Layout.fillWidth: true
@@ -91,12 +88,9 @@ Pane {
                         Layout.fillWidth: true
                         spacing: 0
                         Label { text: modelData.label; font.bold: true; textFormat: Text.PlainText }
-                        TextArea {
+                        SelectableText {
                             Layout.fillWidth: true
                             text: modelData.value
-                            textFormat: TextEdit.PlainText
-                            readOnly: true
-                            selectByMouse: true
                             wrapMode: TextEdit.WrapAnywhere
                             Accessible.name: modelData.label + ": " + modelData.value
                         }

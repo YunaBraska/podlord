@@ -87,8 +87,8 @@ ColumnLayout {
         IconButton { objectName: "openLogEntry"; glyph: "External"; text: "Open entry"; enabled: lines.currentIndex >= 0; onClicked: panel.openEntry(lines.currentIndex) }
         IconButton { objectName: "copyLogEntry"; glyph: "Copy"; text: "Copy entry"; enabled: lines.currentIndex >= 0; onClicked: workspace.copyLogEntry(lines.currentIndex) }
     }
-    Label { objectName: "logStatus"; Layout.fillWidth: true; text: workspace.logStatus; textFormat: Text.PlainText; visible: text !== ""; wrapMode: Text.Wrap }
-    Label { objectName: "logEvictionNotice"; Layout.fillWidth: true; text: workspace.logPositionNotice; textFormat: Text.PlainText; visible: text !== ""; wrapMode: Text.Wrap }
+    SelectableText { objectName: "logStatus"; Layout.fillWidth: true; text: workspace.logStatus; visible: text !== "" }
+    SelectableText { objectName: "logEvictionNotice"; Layout.fillWidth: true; text: workspace.logPositionNotice; visible: text !== "" }
     ListView {
         id: lines
         objectName: "podLogEntries"

@@ -105,19 +105,16 @@ Pane {
         IconButton { objectName: "expandTerminal"; glyph: "Sidebar"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: inspectorRoot.hostWindow.openContainerTerminal(true) }
         IconButton { objectName: "readBackResourceDelete"; glyph: "Reset"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
     }
-    Label {
+    SelectableText {
         objectName: "inspectorReadStatus"
         Layout.fillWidth: true
         visible: workspace.inspectorPage === "overview" || workspace.inspectorPage === "yaml"
             || workspace.inspectorPage === "values"
         text: workspace.inspectorStatus
-        textFormat: Text.PlainText
-        wrapMode: Text.Wrap
-        Accessible.name: text
         color: workspace.appearanceColors.muted
     }
-    Label { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-    Label { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+    SelectableText { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== "" }
+    SelectableText { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== "" }
     ColumnLayout {
         id: aiPanel
         Layout.fillWidth: true
@@ -142,62 +139,58 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             visible: workspace.incidentAiModel === ""
-            Label { Layout.fillWidth: true; text: workspace.uiText["ai.modelMissing"]; color: workspace.appearanceColors.warning; wrapMode: Text.Wrap }
+            SelectableText { objectName: "incidentAiModelMissing"; Layout.fillWidth: true; text: workspace.uiText["ai.modelMissing"]; color: workspace.appearanceColors.warning }
             IconButton { objectName: "incidentAiOpenSettings"; glyph: "Settings"; text: workspace.uiText["ai.chooseModel"]; onClicked: inspectorRoot.hostWindow.openAiSettings() }
         }
-        Label {
+        SelectableText {
             objectName: "incidentAiStatus"
             Layout.fillWidth: true
             visible: workspace.incidentAiModel !== "" && text !== ""
             text: workspace.incidentAiStatus
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }
-        Label {
+        SelectableText {
             objectName: "incidentAiEmpty"
             Layout.fillWidth: true
             visible: workspace.incidentAiModel !== "" && workspace.incidentAiStatus === "" && Object.keys(workspace.incidentAiResult).length === 0
             text: workspace.uiText["ai.noKnownIssue"]
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }
-        Label {
+        SelectableText {
             objectName: "incidentAiPending"
             Layout.fillWidth: true
             visible: workspace.incidentAiResult.pending === true
             text: workspace.uiText["ai.pending"]
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
             visible: workspace.incidentAiResult.summary !== undefined
             Label { text: workspace.uiText["ai.analysis"]; font.bold: true; color: workspace.appearanceColors.muted }
-            Label { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || "" }
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
             visible: (workspace.incidentAiResult.cause || "") !== ""
             Label { text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.muted }
-            Label { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || "" }
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
             visible: workspace.incidentAiResult.action !== undefined
             Label { text: workspace.uiText["ai.nextStep"]; font.bold: true; color: workspace.appearanceColors.muted }
-            Label { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
         }
-        Label {
+        SelectableText {
             Layout.fillWidth: true
             visible: workspace.incidentAiResult.code !== undefined && workspace.incidentAiResult.code !== "Manual review"
             text: workspace.uiText["ai.evidence"] + ": " + (workspace.incidentAiResult.code || "")
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }
-        Label {
+        SelectableText {
             Layout.fillWidth: true
             visible: (workspace.incidentAiResult.related || []).length > 0
-            text: workspace.uiText["ai.related"] + ": " + (workspace.incidentAiResult.related || []).map(signal => {
+            text: workspace.uiText["ai.related"] + ":\n• " + (workspace.incidentAiResult.related || []).map(signal => {
                 if (signal.startsWith("Assigned Node: ")) return workspace.uiText["ai.relatedNode"] + signal.slice(15)
                 if (signal.startsWith("Referenced claim: ")) return workspace.uiText["ai.relatedClaim"] + signal.slice(18)
                 if (signal.startsWith("Bound volume: ")) return workspace.uiText["ai.relatedVolume"] + signal.slice(14)
@@ -212,8 +205,7 @@ Pane {
                 if (signal === "Image pull Secret reference: observed in cached resources") return workspace.uiText["ai.pullSecretPresent"]
                 if (signal === "Image pull Secret reference: not verified in cached resources") return workspace.uiText["ai.pullSecretUnverified"]
                 return signal
-            }).join("; ")
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            }).join("\n• ")
             color: workspace.appearanceColors.muted
         }
         Flow {
@@ -223,7 +215,7 @@ Pane {
             IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["ai.copyCommand"]; visible: workspace.incidentAiResult.summary !== undefined; enabled: (workspace.incidentAiResult.command || "") !== ""; onClicked: workspace.copyIncidentAiCommand() }
             IconButton { objectName: "incidentAiDocs"; glyph: "External"; text: workspace.uiText["ai.docs"]; visible: workspace.incidentAiResult.summary !== undefined; onClicked: aiPanel.docsError = Qt.openUrlExternally(workspace.incidentAiResult.documentation) ? "" : workspace.uiText["ai.docsError"] }
         }
-        Label { Layout.fillWidth: true; visible: aiPanel.docsError !== ""; text: aiPanel.docsError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+        SelectableText { Layout.fillWidth: true; visible: aiPanel.docsError !== ""; text: aiPanel.docsError; color: workspace.appearanceColors.danger }
         TextArea {
             objectName: "incidentAiCommand"
             Layout.fillWidth: true
@@ -265,9 +257,9 @@ Pane {
                         required property int index
                         property string linkError: ""
                         Layout.fillWidth: true
-                        Label { objectName: "guidanceTitle_" + index; Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true; color: workspace.appearanceColors[modelData.tone] }
-                        Label { objectName: "guidanceEvidence_" + index; Layout.fillWidth: true; text: modelData.scope + " / " + modelData.code; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-                        TextArea { objectName: "guidanceDetail_" + index; Layout.fillWidth: true; text: modelData.detail; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; padding: 0; background: null; Accessible.name: modelData.title + ": " + modelData.detail }
+                        SelectableText { objectName: "guidanceTitle_" + index; Layout.fillWidth: true; text: modelData.title; font.bold: true; color: workspace.appearanceColors[modelData.tone] }
+                        SelectableText { objectName: "guidanceEvidence_" + index; Layout.fillWidth: true; text: modelData.scope + " / " + modelData.code; color: workspace.appearanceColors.muted }
+                        SelectableText { objectName: "guidanceDetail_" + index; Layout.fillWidth: true; text: modelData.detail; Accessible.name: modelData.title + ": " + modelData.detail }
                         Flow {
                             Layout.fillWidth: true
                             spacing: 6
@@ -282,7 +274,7 @@ Pane {
                             Accessible.name: "Open official documentation for " + modelData.code
                             onClicked: parent.linkError = Qt.openUrlExternally(modelData.documentation) ? "" : "Could not open documentation. Check your browser and retry explicitly."
                         }
-                        Label { objectName: "guidanceLinkError_" + index; Layout.fillWidth: true; text: parent.linkError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                        SelectableText { objectName: "guidanceLinkError_" + index; Layout.fillWidth: true; text: parent.linkError; visible: text !== ""; color: workspace.appearanceColors.danger }
                         Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
                     }
                   }
@@ -343,13 +335,10 @@ Pane {
             RowLayout {
                 Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
                         Label { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
-                        TextArea {
+                        SelectableText {
                             objectName: "overview_" + modelData.id
                             Layout.fillWidth: true
-                            readOnly: true; selectByMouse: true
                             text: modelData.value
-                            textFormat: TextEdit.PlainText; wrapMode: TextArea.Wrap
-                            padding: 0; background: null
                             color: { const palette = workspace.appearanceColors; return workspace.inspectorFieldColor(modelData.id) }
                             Accessible.name: modelData.label + ": " + modelData.value
                         }
@@ -479,16 +468,16 @@ Pane {
             FlatButton { objectName: "leaveYamlEdit"; destructive: workspace.yamlDirty; text: workspace.yamlDirty ? "Discard draft" : "Leave editing"; visible: workspace.yamlEditing; onClicked: workspace.leaveYamlEdit() }
             FlatButton { objectName: "checkYaml"; text: workspace.yamlChecking ? "Checking..." : "Check YAML"; visible: workspace.yamlEditing; enabled: !workspace.busy && !workspace.discardPending && !workspace.yamlApplyLocked && !workspace.yamlChecking; Accessible.name: "Check local YAML syntax and resource identity"; onClicked: workspace.checkYamlDraft() }
         }
-        Label { objectName: "yamlDraftStatus"; Layout.fillWidth: true; visible: text !== ""; text: workspace.yamlDraftStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "yamlDraftStatus"; Layout.fillWidth: true; visible: text !== ""; text: workspace.yamlDraftStatus }
     }
-    Label { objectName: "yamlCheckStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlCheckStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+    SelectableText { objectName: "yamlCheckStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlCheckStatus }
     RowLayout {
         visible: workspace.yamlVisible && workspace.yamlEditing
         FlatButton { objectName: "previewYaml"; text: "Preview apply"; enabled: workspace.yamlDraftCredentialsCurrent && !workspace.busy && !workspace.yamlApplyLocked && !workspace.yamlChecking && !workspace.discardPending && !workspace.authenticationRequired && !workspace.authenticationRunning; onClicked: workspace.previewYamlApply() }
         FlatButton { objectName: "readBackYaml"; text: "Read back"; visible: workspace.canReadBackYaml; enabled: !workspace.discardPending && !workspace.authenticationRequired; onClicked: workspace.readBackYaml() }
         FlatButton { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
     }
-    Label { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+    SelectableText { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus }
     InspectorPage {
         id: valuesPage
         Layout.fillWidth: true

@@ -210,6 +210,14 @@ bool ui(const QString& mode) {
         require(workspace.property("inspectorPage").toString() == "ai" && !item("incidentAiEnable")
             && item("incidentAiOpenSettings") && !item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
             "Opening the AI tab changed consent or Kubernetes transport");
+        auto* message = item("incidentAiModelMissing");
+        require(message && message->property("selectByMouse").toBool(), "AI message cannot be selected");
+        message->forceActiveFocus();
+        QGuiApplication::clipboard()->clear();
+        QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+        QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+        require(QGuiApplication::clipboard()->text() == message->property("text").toString(), "AI message could not be copied");
+        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_empty.png"), "Cannot save AI empty state");
         press("overviewButton");
         require(workspace.property("inspectorPage").toString() == "overview" && item("guidanceTitle_0"),
             "Leaving the AI tab did not restore the resource overview");

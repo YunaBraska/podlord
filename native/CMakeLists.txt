@@ -521,7 +521,7 @@ set(workspace_qml_files
     ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
     ui/ContainerTerminalView.qml ui/ContainerTerminalDialog.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
     ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
-    ui/MetricGauge.qml ui/PlainToolTip.qml ui/CommandPalette.qml
+    ui/MetricGauge.qml ui/PlainToolTip.qml ui/SelectableText.qml ui/CommandPalette.qml
     ui/MapOverview.qml ui/SourceAliasDialog.qml ui/SourceInspector.qml ui/ContextRemovalDialog.qml
 )
 foreach(qml_file IN LISTS workspace_qml_files)
