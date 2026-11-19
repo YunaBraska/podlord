@@ -1845,6 +1845,24 @@ bool execute(const QString& requestedScenario) {
                     return item(window,"workspaceFooter")->isVisible() == (size.width() >= 600 && size.height() >= 600);
                 }) || !saveShellFrame(window,scenario+"-"+QString::number(size.width())+"x"+QString::number(size.height()))) return false;
             }
+            window->resize(1440, 920);
+            if (!workspace.showMapOverview() || !waitFor([&] { return !item(window,"workspaceSearchButton")->isVisible(); })) return false;
+            auto* navigation = item(window,"quickOpenDropdown")->parentItem();
+            navigation->ensurePolished();
+            QMap<QString, qreal> navigationPositions;
+            for (const auto* name : {"quickOpenDropdown", "mapWorkspaceButton", "resourcesWorkspaceButton", "settingsWorkspaceButton", "workspaceMusicButton"}) {
+                auto* control = item(window,name);
+                if (!control || !control->isVisible()) return false;
+                navigationPositions.insert(name, control->mapToScene({0, 0}).x());
+            }
+            if (!workspace.setWorkspacePage("resources") || !waitFor([&] { return item(window,"workspaceSearchButton")->isVisible(); })) return false;
+            navigation->ensurePolished();
+            for (auto position = navigationPositions.cbegin(); position != navigationPositions.cend(); ++position) {
+                auto* control = item(window, qPrintable(position.key()));
+                if (!control || qAbs(control->mapToScene({0, 0}).x() - position.value()) > 1) return false;
+            }
+            if (item(window,"workspaceSearchButton")->mapToScene({0, 0}).x()
+                <= item(window,"workspaceMusicButton")->mapToScene({0, 0}).x()) return false;
             window->resize(320,640);
             if (!waitFor([&] { return !item(window,"settingsWorkspaceButton")->isVisible(); })
                 || !click(window,item(window,"settingsWorkspaceButton")) || workspace.workspacePage()!="settings"

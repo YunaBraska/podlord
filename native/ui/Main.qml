@@ -524,7 +524,7 @@ ApplicationWindow {
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
                     spacing: window.touchLayout ? 0 : 4
-                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, musicControl]
+                    readonly property var controls: [quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, musicControl, searchToggle]
                     readonly property real fullWidth: controls.filter(control => control.available !== false)
                         .reduce((total, control) => total + control.implicitWidth + spacing, workspaceActionsButton.implicitWidth)
                     function fits(control) {
@@ -535,16 +535,6 @@ ApplicationWindow {
                             if (candidate === control) return used <= width
                         }
                         return false
-                    }
-                    IconButton {
-                        id: searchToggle
-                        readonly property bool available: searchCommand.enabled
-                        objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
-                        action: searchCommand; visible: available && navigationRow.fits(this)
-                        activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
-                            : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
-                        Accessible.name: "Show or hide current search"
-                        Accessible.description: "Search this view. Hiding search keeps the filter."
                     }
                     IconButton { id: quickOpenControl; readonly property bool available: true; objectName: "quickOpenDropdown"; glyph: "Add"; glyphColor: workspace.appearanceColors.success; action: quickOpenCommand; visible: navigationRow.fits(this) }
                     NavButton { id: mapControl; readonly property bool available: true; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: available && navigationRow.fits(this) }
@@ -559,6 +549,16 @@ ApplicationWindow {
                         action: musicCommand
                         activeIndicator: workspace.music.playing
                         visible: navigationRow.fits(this)
+                    }
+                    IconButton {
+                        id: searchToggle
+                        readonly property bool available: searchCommand.enabled
+                        objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
+                        action: searchCommand; visible: available && navigationRow.fits(this)
+                        activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
+                            : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
+                        Accessible.name: "Show or hide current search"
+                        Accessible.description: "Search this view. Hiding search keeps the filter."
                     }
 
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
