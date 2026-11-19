@@ -319,7 +319,7 @@ Pane {
                         }
                     }
                     SettingRow {
-                        visible: workspace.incidentAiProvider === "claude" || workspace.incidentAiProvider === "openrouter"
+                        visible: workspace.incidentAiProvider === "claude"
                         label: workspace.uiText["ai.apiKey"]; help: ""
                         TextField {
                             id: providerKey; objectName: "settingsAiApiKey"; Layout.fillWidth: true
@@ -340,6 +340,15 @@ Pane {
                                 visible: workspace.incidentAiApiKeyConfigured
                                 onClicked: { workspace.clearIncidentAiApiKey(); providerKey.clear() }
                             }
+                        }
+                    }
+                    SettingRow {
+                        visible: workspace.incidentAiProvider === "openrouter" && workspace.incidentAiApiKeyConfigured
+                        label: "OpenRouter"; help: ""
+                        Button {
+                            objectName: "openRouterSignOut"
+                            text: workspace.uiText["ai.chatgptSignOut"]
+                            onClicked: workspace.clearIncidentAiApiKey()
                         }
                     }
                     SettingRow {

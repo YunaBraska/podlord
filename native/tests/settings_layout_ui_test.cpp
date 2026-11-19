@@ -71,6 +71,11 @@ int main(int argc, char** argv) {
             || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "claude"; }, 2000)
             || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey") != nullptr; }, 2000)
             || workspace.incidentAiApiKeyConfigured()) return 1;
+        if (!workspace.setIncidentAiProvider("openrouter")
+            || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "openrouter"; }, 2000)
+            || !window->findChild<QObject*>("connectOpenRouter")
+            || podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey")
+            || podlord::test::visibleItem(window->contentItem(), "openRouterSignOut")) return 1;
         if (!workspace.setIncidentAiProvider("chatgpt")
             || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "chatgpt"; }, 2000)
             || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "chatgptConnect") != nullptr; }, 2000)
