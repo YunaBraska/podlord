@@ -126,6 +126,7 @@ Pane {
                 alerts: workspace.alerts
                 glyphFill: workspace.appearanceColors.inset
                 inspectedPath: workspace.inspectorPath
+                linkedDepths: workspace.connectedResourceDepths
                 hoveredPath: radarInfo.target && radarInfo.target.hovered && radarInfo.target.wantsInfo ? radarInfo.target.resourcePath : ""
                 focusedPath: {
                     const item = Window.window ? Window.window.activeFocusItem : null

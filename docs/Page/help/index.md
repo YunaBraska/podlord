@@ -35,6 +35,8 @@ Click Map again to return to All Contexts. Context settings are shared when you 
 
 Select a resource to inspect its details, events, YAML, logs and supported actions. ConfigMap and Secret keys are listed separately. Secret values stay hidden until you explicitly reveal or copy them.
 
+The map outlines linked resources when the inspector is open. The outline fades with each relationship. Use Links to open a related resource. For a running Pod or workload, Files lists its containers' files. Select a file to save a copy. Listing and download require Pod exec permission and `/bin/sh` or `cat` inside the container. Downloads are limited to 32 MiB. Podlord connects directly to Kubernetes without `kubectl`.
+
 Wait for current YAML before editing. Applying YAML and deleting resources require confirmation. Changing a filter or column does not change the cluster.
 
 ![YAML inspector for the selected resource]({{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }})

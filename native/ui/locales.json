@@ -494,7 +494,18 @@
     "ai.callbackSuccess": "Sign-in received. PodLord is finishing.",
     "ai.callbackFailure": "Sign-in was not completed.",
     "ai.analyze": "Analyze resource",
-    "error.kubeconfigExecEnv": "Kubeconfig: exec.env must be a list of name/value entries."
+    "error.kubeconfigExecEnv": "Kubeconfig: exec.env must be a list of name/value entries.",
+    "files.tab": "Files",
+    "files.noPod": "No running Pod",
+    "files.up": "Parent folder",
+    "files.refresh": "Refresh",
+    "files.download": "Download",
+    "files.loading": "Loading…",
+    "files.targetChanged": "Pod changed. Refresh.",
+    "files.execFailed": "Could not read files. Check container and exec access.",
+    "files.tooLarge": "File exceeds 32 MB.",
+    "files.saveFailed": "Could not save file.",
+    "files.saved": "Saved."
   },
   "languages": [
     {
@@ -520,7 +531,18 @@
         "ai.requests24h": "Requests in 24 hours",
         "ai.callbackSuccess": "Sign-in received. PodLord is finishing.",
         "ai.callbackFailure": "Sign-in was not completed.",
-        "context.openFile": "Add kubeconfig"
+        "context.openFile": "Add kubeconfig",
+        "files.tab": "Files",
+        "files.noPod": "No running Pod",
+        "files.up": "Parent folder",
+        "files.refresh": "Refresh",
+        "files.download": "Download",
+        "files.loading": "Loading…",
+        "files.targetChanged": "Pod changed. Refresh.",
+        "files.execFailed": "Could not read files. Check container and exec access.",
+        "files.tooLarge": "File exceeds 32 MB.",
+        "files.saveFailed": "Could not save file.",
+        "files.saved": "Saved."
       }
     },
     {
@@ -796,7 +818,18 @@
         "ai.callbackSuccess": "已收到登录信息。PodLord 正在完成连接。",
         "ai.callbackFailure": "登录未完成。",
         "ai.analyze": "分析资源",
-        "error.kubeconfigExecEnv": "Kubeconfig：exec.env 必须是名称/值条目的列表。"
+        "error.kubeconfigExecEnv": "Kubeconfig：exec.env 必须是名称/值条目的列表。",
+        "files.tab": "文件",
+        "files.noPod": "没有运行中的 Pod",
+        "files.up": "上级文件夹",
+        "files.refresh": "刷新",
+        "files.download": "下载",
+        "files.loading": "正在加载…",
+        "files.targetChanged": "Pod 已更改。请刷新。",
+        "files.execFailed": "无法读取文件。请检查容器和 exec 权限。",
+        "files.tooLarge": "文件超过 32 MB。",
+        "files.saveFailed": "无法保存文件。",
+        "files.saved": "已保存。"
       }
     },
     {
@@ -1072,7 +1105,18 @@
         "ai.callbackSuccess": "साइन-इन प्राप्त हुआ। PodLord इसे पूरा कर रहा है।",
         "ai.callbackFailure": "साइन-इन पूरा नहीं हुआ।",
         "ai.analyze": "संसाधन का विश्लेषण करें",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env में नाम/मान प्रविष्टियों की सूची होनी चाहिए।"
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env में नाम/मान प्रविष्टियों की सूची होनी चाहिए।",
+        "files.tab": "फ़ाइलें",
+        "files.noPod": "कोई चालू Pod नहीं",
+        "files.up": "पैरेंट फ़ोल्डर",
+        "files.refresh": "रीफ़्रेश",
+        "files.download": "डाउनलोड",
+        "files.loading": "लोड हो रहा है…",
+        "files.targetChanged": "Pod बदल गया। रीफ़्रेश करें।",
+        "files.execFailed": "फ़ाइलें पढ़ी नहीं जा सकीं। कंटेनर और exec अनुमति जाँचें।",
+        "files.tooLarge": "फ़ाइल 32 MB से बड़ी है।",
+        "files.saveFailed": "फ़ाइल सहेजी नहीं जा सकी।",
+        "files.saved": "सहेजा गया।"
       }
     },
     {
@@ -1345,7 +1389,18 @@
         "ai.callbackSuccess": "Inicio de sesión recibido. PodLord lo está completando.",
         "ai.callbackFailure": "No se completó el inicio de sesión.",
         "ai.analyze": "Analizar recurso",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env debe ser una lista de entradas de nombre y valor."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env debe ser una lista de entradas de nombre y valor.",
+        "files.tab": "Archivos",
+        "files.noPod": "No hay Pods en ejecución",
+        "files.up": "Carpeta superior",
+        "files.refresh": "Actualizar",
+        "files.download": "Descargar",
+        "files.loading": "Cargando…",
+        "files.targetChanged": "El Pod cambió. Actualiza.",
+        "files.execFailed": "No se pudieron leer los archivos. Comprueba el contenedor y el acceso exec.",
+        "files.tooLarge": "El archivo supera 32 MB.",
+        "files.saveFailed": "No se pudo guardar el archivo.",
+        "files.saved": "Guardado."
       }
     },
     {
@@ -1621,7 +1676,18 @@
         "ai.callbackSuccess": "تم استلام تسجيل الدخول. يُكمل PodLord العملية.",
         "ai.callbackFailure": "لم يكتمل تسجيل الدخول.",
         "ai.analyze": "تحليل المورد",
-        "error.kubeconfigExecEnv": "Kubeconfig: يجب أن يكون exec.env قائمة من إدخالات الاسم والقيمة."
+        "error.kubeconfigExecEnv": "Kubeconfig: يجب أن يكون exec.env قائمة من إدخالات الاسم والقيمة.",
+        "files.tab": "الملفات",
+        "files.noPod": "لا يوجد Pod قيد التشغيل",
+        "files.up": "المجلد الأعلى",
+        "files.refresh": "تحديث",
+        "files.download": "تنزيل",
+        "files.loading": "جارٍ التحميل…",
+        "files.targetChanged": "تغيّر Pod. حدّث العرض.",
+        "files.execFailed": "تعذرت قراءة الملفات. تحقق من الحاوية وإذن exec.",
+        "files.tooLarge": "الملف أكبر من 32 ميغابايت.",
+        "files.saveFailed": "تعذر حفظ الملف.",
+        "files.saved": "تم الحفظ."
       }
     },
     {
@@ -1894,7 +1960,18 @@
         "ai.callbackSuccess": "সাইন ইন গ্রহণ করা হয়েছে। PodLord প্রক্রিয়া শেষ করছে।",
         "ai.callbackFailure": "সাইন ইন সম্পূর্ণ হয়নি।",
         "ai.analyze": "রিসোর্স বিশ্লেষণ করুন",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env-এ নাম ও মানের তালিকা থাকতে হবে।"
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env-এ নাম ও মানের তালিকা থাকতে হবে।",
+        "files.tab": "ফাইল",
+        "files.noPod": "চলমান Pod নেই",
+        "files.up": "উপরের ফোল্ডার",
+        "files.refresh": "রিফ্রেশ",
+        "files.download": "ডাউনলোড",
+        "files.loading": "লোড হচ্ছে…",
+        "files.targetChanged": "Pod বদলেছে। রিফ্রেশ করুন।",
+        "files.execFailed": "ফাইল পড়া যায়নি। কনটেইনার ও exec অনুমতি দেখুন।",
+        "files.tooLarge": "ফাইল ৩২ MB-এর বেশি।",
+        "files.saveFailed": "ফাইল সংরক্ষণ করা যায়নি।",
+        "files.saved": "সংরক্ষিত।"
       }
     },
     {
@@ -2164,7 +2241,18 @@
         "ai.callbackSuccess": "Login recebido. O PodLord está finalizando.",
         "ai.callbackFailure": "O login não foi concluído.",
         "ai.analyze": "Analisar recurso",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env deve ser uma lista de pares de nome e valor."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env deve ser uma lista de pares de nome e valor.",
+        "files.tab": "Arquivos",
+        "files.noPod": "Nenhum Pod em execução",
+        "files.up": "Pasta superior",
+        "files.refresh": "Atualizar",
+        "files.download": "Baixar",
+        "files.loading": "Carregando…",
+        "files.targetChanged": "O Pod mudou. Atualize.",
+        "files.execFailed": "Não foi possível ler os arquivos. Verifique o contêiner e o acesso exec.",
+        "files.tooLarge": "O arquivo excede 32 MB.",
+        "files.saveFailed": "Não foi possível salvar o arquivo.",
+        "files.saved": "Salvo."
       }
     },
     {
@@ -2440,7 +2528,18 @@
         "ai.callbackSuccess": "Вход получен. PodLord завершает подключение.",
         "ai.callbackFailure": "Вход не завершён.",
         "ai.analyze": "Анализировать ресурс",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env должен быть списком пар имени и значения."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env должен быть списком пар имени и значения.",
+        "files.tab": "Файлы",
+        "files.noPod": "Нет работающего Pod",
+        "files.up": "Родительская папка",
+        "files.refresh": "Обновить",
+        "files.download": "Скачать",
+        "files.loading": "Загрузка…",
+        "files.targetChanged": "Pod изменился. Обновите.",
+        "files.execFailed": "Не удалось прочитать файлы. Проверьте контейнер и доступ к exec.",
+        "files.tooLarge": "Файл больше 32 МБ.",
+        "files.saveFailed": "Не удалось сохранить файл.",
+        "files.saved": "Сохранено."
       }
     },
     {
@@ -2716,7 +2815,18 @@
         "ai.callbackSuccess": "ログインを受け付けました。PodLord が処理を完了します。",
         "ai.callbackFailure": "ログインは完了しませんでした。",
         "ai.analyze": "リソースを分析",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env は名前と値の項目のリストにしてください。"
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env は名前と値の項目のリストにしてください。",
+        "files.tab": "ファイル",
+        "files.noPod": "実行中の Pod がありません",
+        "files.up": "親フォルダー",
+        "files.refresh": "更新",
+        "files.download": "ダウンロード",
+        "files.loading": "読み込み中…",
+        "files.targetChanged": "Pod が変更されました。更新してください。",
+        "files.execFailed": "ファイルを読み取れません。コンテナーと exec 権限を確認してください。",
+        "files.tooLarge": "ファイルが 32 MB を超えています。",
+        "files.saveFailed": "ファイルを保存できません。",
+        "files.saved": "保存しました。"
       }
     },
     {
@@ -2989,7 +3099,18 @@
         "ai.callbackSuccess": "ਸਾਈਨ-ਇਨ ਮਿਲ ਗਿਆ। PodLord ਇਸ ਨੂੰ ਪੂਰਾ ਕਰ ਰਿਹਾ ਹੈ।",
         "ai.callbackFailure": "ਸਾਈਨ-ਇਨ ਪੂਰਾ ਨਹੀਂ ਹੋਇਆ।",
         "ai.analyze": "ਸਰੋਤ ਦਾ ਵਿਸ਼ਲੇਸ਼ਣ ਕਰੋ",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env ਵਿੱਚ ਨਾਮ ਅਤੇ ਮੁੱਲ ਦੀਆਂ ਐਂਟਰੀਆਂ ਦੀ ਸੂਚੀ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।"
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env ਵਿੱਚ ਨਾਮ ਅਤੇ ਮੁੱਲ ਦੀਆਂ ਐਂਟਰੀਆਂ ਦੀ ਸੂਚੀ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।",
+        "files.tab": "ਫ਼ਾਈਲਾਂ",
+        "files.noPod": "ਕੋਈ ਚੱਲਦਾ Pod ਨਹੀਂ",
+        "files.up": "ਉੱਪਰਲਾ ਫੋਲਡਰ",
+        "files.refresh": "ਤਾਜ਼ਾ ਕਰੋ",
+        "files.download": "ਡਾਊਨਲੋਡ",
+        "files.loading": "ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…",
+        "files.targetChanged": "Pod ਬਦਲ ਗਿਆ। ਤਾਜ਼ਾ ਕਰੋ।",
+        "files.execFailed": "ਫ਼ਾਈਲਾਂ ਨਹੀਂ ਪੜ੍ਹ ਸਕੇ। ਕੰਟੇਨਰ ਅਤੇ exec ਪਹੁੰਚ ਜਾਂਚੋ।",
+        "files.tooLarge": "ਫ਼ਾਈਲ 32 MB ਤੋਂ ਵੱਡੀ ਹੈ।",
+        "files.saveFailed": "ਫ਼ਾਈਲ ਸੰਭਾਲ ਨਹੀਂ ਸਕੇ।",
+        "files.saved": "ਸੰਭਾਲਿਆ।"
       }
     },
     {
@@ -3349,7 +3470,18 @@
         "ai.callbackSuccess": "Anmeldung empfangen. PodLord schließt sie ab.",
         "ai.callbackFailure": "Anmeldung nicht abgeschlossen.",
         "ai.analyze": "Ressource analysieren",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env muss eine Liste aus Name und Wert sein."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env muss eine Liste aus Name und Wert sein.",
+        "files.tab": "Dateien",
+        "files.noPod": "Kein laufender Pod",
+        "files.up": "Übergeordneter Ordner",
+        "files.refresh": "Aktualisieren",
+        "files.download": "Herunterladen",
+        "files.loading": "Lädt…",
+        "files.targetChanged": "Pod geändert. Aktualisieren.",
+        "files.execFailed": "Dateien nicht lesbar. Container und Exec-Zugriff prüfen.",
+        "files.tooLarge": "Datei größer als 32 MB.",
+        "files.saveFailed": "Datei konnte nicht gespeichert werden.",
+        "files.saved": "Gespeichert."
       }
     },
     {
@@ -3613,7 +3745,18 @@
         "ai.callbackSuccess": "Connexion reçue. PodLord la finalise.",
         "ai.callbackFailure": "La connexion n’a pas abouti.",
         "ai.analyze": "Analyser la ressource",
-        "error.kubeconfigExecEnv": "Kubeconfig : exec.env doit être une liste de paires nom/valeur."
+        "error.kubeconfigExecEnv": "Kubeconfig : exec.env doit être une liste de paires nom/valeur.",
+        "files.tab": "Fichiers",
+        "files.noPod": "Aucun Pod en cours",
+        "files.up": "Dossier parent",
+        "files.refresh": "Actualiser",
+        "files.download": "Télécharger",
+        "files.loading": "Chargement…",
+        "files.targetChanged": "Le Pod a changé. Actualisez.",
+        "files.execFailed": "Lecture impossible. Vérifiez le conteneur et l’accès exec.",
+        "files.tooLarge": "Le fichier dépasse 32 Mo.",
+        "files.saveFailed": "Enregistrement impossible.",
+        "files.saved": "Enregistré."
       }
     },
     {
@@ -3886,7 +4029,18 @@
         "ai.callbackSuccess": "سائن اِن موصول ہوا۔ PodLord اسے مکمل کر رہا ہے۔",
         "ai.callbackFailure": "سائن اِن مکمل نہیں ہوا۔",
         "ai.analyze": "وسیلے کا تجزیہ کریں",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env نام اور قدر کے اندراجات کی فہرست ہونا چاہیے۔"
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env نام اور قدر کے اندراجات کی فہرست ہونا چاہیے۔",
+        "files.tab": "فائلیں",
+        "files.noPod": "کوئی چلتا ہوا Pod نہیں",
+        "files.up": "اوپر والا فولڈر",
+        "files.refresh": "تازہ کریں",
+        "files.download": "ڈاؤن لوڈ",
+        "files.loading": "لوڈ ہو رہا ہے…",
+        "files.targetChanged": "Pod بدل گیا۔ تازہ کریں۔",
+        "files.execFailed": "فائلیں پڑھی نہیں جا سکیں۔ کنٹینر اور exec رسائی جانچیں۔",
+        "files.tooLarge": "فائل 32 MB سے بڑی ہے۔",
+        "files.saveFailed": "فائل محفوظ نہیں ہو سکی۔",
+        "files.saved": "محفوظ ہو گیا۔"
       }
     },
     {
@@ -4156,7 +4310,18 @@
         "ai.callbackSuccess": "Login diterima. PodLord sedang menyelesaikannya.",
         "ai.callbackFailure": "Login tidak selesai.",
         "ai.analyze": "Analisis sumber daya",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env harus berupa daftar entri nama dan nilai."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env harus berupa daftar entri nama dan nilai.",
+        "files.tab": "Berkas",
+        "files.noPod": "Tidak ada Pod berjalan",
+        "files.up": "Folder induk",
+        "files.refresh": "Segarkan",
+        "files.download": "Unduh",
+        "files.loading": "Memuat…",
+        "files.targetChanged": "Pod berubah. Segarkan.",
+        "files.execFailed": "Berkas tidak dapat dibaca. Periksa kontainer dan akses exec.",
+        "files.tooLarge": "Berkas melebihi 32 MB.",
+        "files.saveFailed": "Berkas tidak dapat disimpan.",
+        "files.saved": "Tersimpan."
       }
     },
     {
@@ -4430,7 +4595,18 @@
         "ai.callbackSuccess": "Oturum açma alındı. PodLord tamamlıyor.",
         "ai.callbackFailure": "Oturum açma tamamlanmadı.",
         "ai.analyze": "Kaynağı analiz et",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env ad ve değer girişlerinden oluşan bir liste olmalıdır."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env ad ve değer girişlerinden oluşan bir liste olmalıdır.",
+        "files.tab": "Dosyalar",
+        "files.noPod": "Çalışan Pod yok",
+        "files.up": "Üst klasör",
+        "files.refresh": "Yenile",
+        "files.download": "İndir",
+        "files.loading": "Yükleniyor…",
+        "files.targetChanged": "Pod değişti. Yenileyin.",
+        "files.execFailed": "Dosyalar okunamadı. Kapsayıcıyı ve exec erişimini kontrol edin.",
+        "files.tooLarge": "Dosya 32 MB sınırını aşıyor.",
+        "files.saveFailed": "Dosya kaydedilemedi.",
+        "files.saved": "Kaydedildi."
       }
     },
     {
@@ -4706,7 +4882,18 @@
         "ai.callbackSuccess": "로그인을 받았습니다. PodLord가 마무리 중입니다.",
         "ai.callbackFailure": "로그인이 완료되지 않았습니다.",
         "ai.analyze": "리소스 분석",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env는 이름/값 항목의 목록이어야 합니다."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env는 이름/값 항목의 목록이어야 합니다.",
+        "files.tab": "파일",
+        "files.noPod": "실행 중인 Pod 없음",
+        "files.up": "상위 폴더",
+        "files.refresh": "새로 고침",
+        "files.download": "다운로드",
+        "files.loading": "불러오는 중…",
+        "files.targetChanged": "Pod가 변경되었습니다. 새로 고침하세요.",
+        "files.execFailed": "파일을 읽을 수 없습니다. 컨테이너와 exec 권한을 확인하세요.",
+        "files.tooLarge": "파일이 32 MB를 초과합니다.",
+        "files.saveFailed": "파일을 저장할 수 없습니다.",
+        "files.saved": "저장했습니다."
       }
     },
     {
@@ -4981,7 +5168,18 @@
         "ai.callbackSuccess": "Đã nhận đăng nhập. PodLord đang hoàn tất.",
         "ai.callbackFailure": "Đăng nhập chưa hoàn tất.",
         "ai.analyze": "Phân tích tài nguyên",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env phải là danh sách các mục tên và giá trị."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env phải là danh sách các mục tên và giá trị.",
+        "files.tab": "Tệp",
+        "files.noPod": "Không có Pod đang chạy",
+        "files.up": "Thư mục cha",
+        "files.refresh": "Làm mới",
+        "files.download": "Tải xuống",
+        "files.loading": "Đang tải…",
+        "files.targetChanged": "Pod đã thay đổi. Hãy làm mới.",
+        "files.execFailed": "Không thể đọc tệp. Kiểm tra container và quyền exec.",
+        "files.tooLarge": "Tệp vượt quá 32 MB.",
+        "files.saveFailed": "Không thể lưu tệp.",
+        "files.saved": "Đã lưu."
       }
     },
     {
@@ -5252,7 +5450,18 @@
         "ai.callbackSuccess": "Accesso ricevuto. PodLord sta completando.",
         "ai.callbackFailure": "Accesso non completato.",
         "ai.analyze": "Analizza risorsa",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env deve essere un elenco di coppie nome/valore."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env deve essere un elenco di coppie nome/valore.",
+        "files.tab": "File",
+        "files.noPod": "Nessun Pod in esecuzione",
+        "files.up": "Cartella superiore",
+        "files.refresh": "Aggiorna",
+        "files.download": "Scarica",
+        "files.loading": "Caricamento…",
+        "files.targetChanged": "Il Pod è cambiato. Aggiorna.",
+        "files.execFailed": "Impossibile leggere i file. Controlla il container e l’accesso exec.",
+        "files.tooLarge": "Il file supera 32 MB.",
+        "files.saveFailed": "Impossibile salvare il file.",
+        "files.saved": "Salvato."
       }
     },
     {
@@ -5525,7 +5734,18 @@
         "ai.callbackSuccess": "Otrzymano logowanie. PodLord kończy proces.",
         "ai.callbackFailure": "Logowanie nie zostało ukończone.",
         "ai.analyze": "Analizuj zasób",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env musi być listą par nazwa/wartość."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env musi być listą par nazwa/wartość.",
+        "files.tab": "Pliki",
+        "files.noPod": "Brak działającego Poda",
+        "files.up": "Folder nadrzędny",
+        "files.refresh": "Odśwież",
+        "files.download": "Pobierz",
+        "files.loading": "Wczytywanie…",
+        "files.targetChanged": "Pod się zmienił. Odśwież.",
+        "files.execFailed": "Nie można odczytać plików. Sprawdź kontener i dostęp exec.",
+        "files.tooLarge": "Plik przekracza 32 MB.",
+        "files.saveFailed": "Nie można zapisać pliku.",
+        "files.saved": "Zapisano."
       }
     },
     {
@@ -5787,7 +6007,18 @@
         "ai.callbackSuccess": "Aanmelding ontvangen. PodLord rondt af.",
         "ai.callbackFailure": "Aanmelding niet voltooid.",
         "ai.analyze": "Analyseer resource",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env moet een lijst met naam/waarde-paren zijn."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env moet een lijst met naam/waarde-paren zijn.",
+        "files.tab": "Bestanden",
+        "files.noPod": "Geen actieve Pod",
+        "files.up": "Bovenliggende map",
+        "files.refresh": "Vernieuwen",
+        "files.download": "Downloaden",
+        "files.loading": "Laden…",
+        "files.targetChanged": "Pod is gewijzigd. Vernieuw.",
+        "files.execFailed": "Kan bestanden niet lezen. Controleer container en exec-toegang.",
+        "files.tooLarge": "Bestand is groter dan 32 MB.",
+        "files.saveFailed": "Kan bestand niet opslaan.",
+        "files.saved": "Opgeslagen."
       }
     },
     {
@@ -6057,7 +6288,18 @@
         "ai.callbackSuccess": "Inloggning mottagen. PodLord slutför.",
         "ai.callbackFailure": "Inloggningen slutfördes inte.",
         "ai.analyze": "Analysera resurs",
-        "error.kubeconfigExecEnv": "Kubeconfig: exec.env måste vara en lista med namn och värden."
+        "error.kubeconfigExecEnv": "Kubeconfig: exec.env måste vara en lista med namn och värden.",
+        "files.tab": "Filer",
+        "files.noPod": "Ingen körande Pod",
+        "files.up": "Överordnad mapp",
+        "files.refresh": "Uppdatera",
+        "files.download": "Ladda ner",
+        "files.loading": "Läser in…",
+        "files.targetChanged": "Pod har ändrats. Uppdatera.",
+        "files.execFailed": "Kan inte läsa filer. Kontrollera containern och exec-åtkomst.",
+        "files.tooLarge": "Filen är större än 32 MB.",
+        "files.saveFailed": "Kunde inte spara filen.",
+        "files.saved": "Sparad."
       }
     }
   ]

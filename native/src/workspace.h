@@ -2,6 +2,7 @@
 #include <QImage>
 #include "resource_client.h"
 #include "container_terminal.h"
+#include "container_files.h"
 #include "credential_process.h"
 #include "yaml_apply.h"
 #include "appearance.h"
@@ -236,6 +237,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QAbstractItemModel* overviewFieldModel READ overviewFieldModel CONSTANT)
     Q_PROPERTY(QVariantList inspectorEvents READ inspectorEvents NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QVariantList inspectorLinks READ inspectorLinks NOTIFY inspectorRelatedChanged)
+    Q_PROPERTY(QVariantMap connectedResourceDepths READ connectedResourceDepths NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QAbstractItemModel* inspectorEventTable READ inspectorEventTable CONSTANT)
     Q_PROPERTY(QAbstractItemModel* inspectorLinkTable READ inspectorLinkTable CONSTANT)
     Q_PROPERTY(QVariantList inspectorEventColumns READ inspectorEventColumns NOTIFY tableLayoutChanged)
@@ -253,6 +255,9 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool canPortForward READ canPortForward NOTIFY changed)
     Q_PROPERTY(bool canStartTerminal READ canStartTerminal NOTIFY changed)
     Q_PROPERTY(podlord::ContainerTerminal* containerTerminal READ containerTerminal NOTIFY changed)
+    Q_PROPERTY(podlord::ContainerFiles* containerFiles READ containerFiles NOTIFY changed)
+    Q_PROPERTY(bool filesSupported READ filesSupported NOTIFY changed)
+    Q_PROPERTY(QVariantList filePods READ filePods NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QString terminalError READ terminalError NOTIFY changed)
     Q_PROPERTY(QVariantMap terminalConnection READ terminalConnection NOTIFY changed)
     Q_PROPERTY(QStringList terminalContainers READ terminalContainers NOTIFY inspectorPresentationChanged)
@@ -339,6 +344,11 @@ class Workspace final : public QObject {
 public:
     bool canStartTerminal() const;
     ContainerTerminal* containerTerminal() const { return client_.terminal(active_); }
+    ContainerFiles* containerFiles() const { return files_; }
+    bool filesSupported() const;
+    QVariantList filePods() const { return filePods_; }
+    Q_INVOKABLE QStringList fileContainers(const QString& podPath) const;
+    Q_INVOKABLE bool openContainerFiles(const QString& podPath, const QString& container);
     QString terminalError() const;
     QVariantMap terminalConnection() const { return client_.terminalConnection(active_); }
     QStringList terminalContainers() const;
@@ -537,6 +547,7 @@ public:
     QAbstractItemModel* overviewFieldModel() { return &overviewFields_; }
     QVariantList inspectorEvents() const { return inspectorEvents_; }
     QVariantList inspectorLinks() const { return inspectorLinks_; }
+    QVariantMap connectedResourceDepths() const { return connectedResourceDepths_; }
     QAbstractItemModel* inspectorEventTable() { return &inspectorEventsTable_; }
     QAbstractItemModel* inspectorLinkTable() { return &inspectorLinksTable_; }
     QVariantList inspectorEventColumns() const { return tableColumns("inspectorEvent", inspectorEventRows_); }
@@ -932,6 +943,9 @@ private:
     QJsonObject inspectorDocument_, inspectorSummary_;
     InspectorFields overviewFields_;
     QVariantList inspectorEvents_, inspectorLinks_;
+    QVariantMap connectedResourceDepths_;
+    QVariantList filePods_;
+    ContainerFiles* files_ = nullptr;
     QSortFilterProxyModel dashboardRows_;
     QString dashboardSummary_;
     QVariantList pulseMetrics_;

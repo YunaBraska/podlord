@@ -3,6 +3,7 @@
 #include <QSslError>
 #include <QLocale>
 #include "container_terminal.h"
+#include "container_files.h"
 #include "resource_metrics.h"
 #include "port_forward_transport.h"
 #include <QJsonDocument>
@@ -131,18 +132,36 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
             if (!name.isEmpty() && !imagePullSecrets.contains(name) && imagePullSecrets.size() < 12) imagePullSecrets.append(name);
         }
         result["imagePullSecrets"] = imagePullSecrets;
-        QJsonArray secretKeys, configMapKeys;
+        QJsonArray secretKeys, configMapKeys, secretRefs, configMapRefs;
+        const auto addReference = [](QJsonArray& names, const QJsonValue& value) {
+            const auto name = value.toString();
+            if (!name.isEmpty() && !names.contains(name) && names.size() < 24) names.append(name);
+        };
         for (const auto& group : {"containers", "initContainers", "ephemeralContainers"})
-            for (const auto& value : spec[group].toArray())
+            for (const auto& value : spec[group].toArray()) {
+                const auto container = value.toObject();
                 for (const auto& env : value.toObject()["env"].toArray()) {
                     const auto source = env.toObject()["valueFrom"].toObject();
+                    addReference(secretRefs, source["secretKeyRef"].toObject()["name"]);
+                    addReference(configMapRefs, source["configMapKeyRef"].toObject()["name"]);
                     const auto secret = source["secretKeyRef"].toObject()["key"].toString();
                     const auto config = source["configMapKeyRef"].toObject()["key"].toString();
                     if (!secret.isEmpty() && !secretKeys.contains(secret) && secretKeys.size() < 12) secretKeys.append(secret);
                     if (!config.isEmpty() && !configMapKeys.contains(config) && configMapKeys.size() < 12) configMapKeys.append(config);
                 }
+                for (const auto& env : container["envFrom"].toArray()) {
+                    addReference(secretRefs, env.toObject()["secretRef"].toObject()["name"]);
+                    addReference(configMapRefs, env.toObject()["configMapRef"].toObject()["name"]);
+                }
+            }
         for (const auto& value : spec["volumes"].toArray()) {
             const auto volume = value.toObject();
+            addReference(secretRefs, volume["secret"].toObject()["secretName"]);
+            addReference(configMapRefs, volume["configMap"].toObject()["name"]);
+            for (const auto& source : volume["projected"].toObject()["sources"].toArray()) {
+                addReference(secretRefs, source.toObject()["secret"].toObject()["name"]);
+                addReference(configMapRefs, source.toObject()["configMap"].toObject()["name"]);
+            }
             for (const auto& item : volume["secret"].toObject()["items"].toArray()) {
                 const auto key = item.toObject()["key"].toString();
                 if (!key.isEmpty() && !secretKeys.contains(key) && secretKeys.size() < 12) secretKeys.append(key);
@@ -154,6 +173,8 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         }
         result["secretKeys"] = secretKeys;
         result["configMapKeys"] = configMapKeys;
+        result["secretRefs"] = secretRefs;
+        result["configMapRefs"] = configMapRefs;
     } else if (version == "v1" && kind == "PersistentVolumeClaim") {
         result["boundVolume"] = spec["volumeName"];
     }
@@ -386,6 +407,8 @@ bool ResourceClient::close(const QString& id) {
     auto it = states_.find(id);
     if (it == states_.end()) return false;
     it->open = false;
+    if (running_ && running_->id == id && !running_->fileToken.isEmpty() && running_->fileView)
+        running_->fileView->reject("files.targetChanged");
     stopTerminal(id);
     stopSessionForwards(id);
     for (const auto& view : views_.keys()) if (views_.value(view).session == id) showSession({}, view);
@@ -478,7 +501,8 @@ void ResourceClient::discardHiddenReads() {
                 return view.focused && view.session == task.id && view.inspector.path == task.path;
             })) return true;
         return task.read != Read::Verify && task.read != Read::VerifyDelete
-        && (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() ? (!wanted(task.id) || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id))) : !states_[task.id].open); });
+        && (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() && task.fileToken.isEmpty()
+            ? (!wanted(task.id) || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id))) : !states_[task.id].open); });
 }
 bool ResourceClient::showSession(const QString& id, const QString& view) {
     for (auto it = views_.cbegin(); it != views_.cend(); ++it)
@@ -798,6 +822,10 @@ std::optional<ClusterConnection> ResourceClient::connection(const QString& id) c
     const auto found = states_.constFind(id);
     return found == states_.cend() ? std::optional<ClusterConnection>{} : found->connection;
 }
+bool ResourceClient::sessionOpen(const QString& id) const {
+    const auto found = states_.constFind(id);
+    return found != states_.cend() && found->open;
+}
 QString ResourceClient::logKey(const QString& id, const QString& path) const {
     const auto state = states_.constFind(id);
     if (state == states_.cend()) return path + '\n';
@@ -838,6 +866,7 @@ void ResourceClient::dropQueued(const std::function<bool(const Task&)>& obsolete
             const auto terminal = terminals_.constFind(task->terminalToken);
             if (terminal != terminals_.cend()) terminal->screen->reject("Queued exec canceled before sending.");
         }
+        if (!task->fileToken.isEmpty() && task->fileView) task->fileView->reject("files.targetChanged");
         task = queue_.erase(task);
     }
     for (const auto& task : canceledForwards) {
@@ -1036,16 +1065,17 @@ bool ResourceClient::enqueue(Task task) {
     expire();
     auto& state = states_[task.id];
     if (task.read == Read::Log && !logsShown(task.id, task.logKey)) return false;
-    if (!enabled_ || (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() ? (task.read != Read::Verify && task.read != Read::VerifyDelete && !wanted(task.id)) : !state.open) || state.suspended
+    if (!enabled_ || (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() && task.fileToken.isEmpty()
+        ? (task.read != Read::Verify && task.read != Read::VerifyDelete && !wanted(task.id)) : !state.open) || state.suspended
         || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id)) || (!task.foreground && state.blocked.contains(task.path))) return false;
-    if (running_ && running_->read == task.read && running_->id == task.id && running_->path == task.path && running_->continuation == task.continuation && running_->logKey == task.logKey && running_->forwardToken == task.forwardToken && running_->streamToken == task.streamToken && running_->terminalToken == task.terminalToken)
+    if (running_ && running_->read == task.read && running_->id == task.id && running_->path == task.path && running_->continuation == task.continuation && running_->logKey == task.logKey && running_->forwardToken == task.forwardToken && running_->streamToken == task.streamToken && running_->terminalToken == task.terminalToken && running_->fileToken == task.fileToken)
         return task.read != Read::Apply && task.read != Read::Delete && (!task.change || (running_->change && running_->change->token == task.change->token));
     for (auto& active : reads_) if (active.read == task.read && active.id == task.id && active.path == task.path && active.continuation == task.continuation
         && (task.read != Read::Detail || active.revision == state.revision)) {
         active.foreground = active.foreground || task.foreground; return true;
     }
     for (auto& waiting : queue_) {
-        if (waiting.read == task.read && waiting.id == task.id && waiting.path == task.path && waiting.continuation == task.continuation && waiting.logKey == task.logKey && waiting.forwardToken == task.forwardToken && waiting.streamToken == task.streamToken && waiting.terminalToken == task.terminalToken) {
+        if (waiting.read == task.read && waiting.id == task.id && waiting.path == task.path && waiting.continuation == task.continuation && waiting.logKey == task.logKey && waiting.forwardToken == task.forwardToken && waiting.streamToken == task.streamToken && waiting.terminalToken == task.terminalToken && waiting.fileToken == task.fileToken) {
             if (task.change) return waiting.change && waiting.change->token == task.change->token && task.read != Read::Apply && task.read != Read::Delete;
             waiting.foreground = waiting.foreground || task.foreground;
             return true;
@@ -1098,6 +1128,11 @@ void ResourceClient::dispatch() {
         failForward(task.forwardToken, "The originating port-forward server is no longer available.");
         running_.reset(); emit changed(task.id); dispatch(); return;
     }
+    if (!task.fileToken.isEmpty() && (!task.fileView || task.fileServer != states_[task.id].connection.server)) {
+        --states_[task.id].pending; --states_[task.id].resourcePending;
+        if (task.fileView) task.fileView->reject("files.targetChanged");
+        running_.reset(); emit changed(task.id); dispatch(); return;
+    }
     lastStart_ = clock_.elapsed();
     if (task.read == Read::Log && states_[task.id].logs[task.logKey].cycleAt < 0) states_[task.id].logs[task.logKey].cycleAt = lastStart_;
     const auto& connection = task.change ? task.change->connection : states_[task.id].connection;
@@ -1131,6 +1166,19 @@ void ResourceClient::dispatch() {
         const bool sent = terminal.screen->open(request, terminal.container, terminal.shell);
         if (sent) recordRequestStarted(task);
         else terminalHandshakeFinished(task.terminalToken, false, false);
+        return;
+    }
+    if (task.read == Read::FileSocket) {
+        const auto owner = task.fileView;
+        connect(owner, &ContainerFiles::handshakeFinished, this,
+            [this, token = task.fileToken](bool accepted, bool authenticationRequired) {
+                fileHandshakeFinished(token, accepted, authenticationRequired);
+            }, Qt::SingleShotConnection);
+        connect(owner, &QObject::destroyed, this, [this, token = task.fileToken] {
+            fileHandshakeFinished(token, false, false);
+        }, Qt::SingleShotConnection);
+        if (owner->open(request)) recordRequestStarted(task);
+        else owner->reject("files.targetChanged");
         return;
     }
     if (task.read == Read::ForwardSocket) {
@@ -1271,7 +1319,8 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
                     || metadata["uid"].toString().isEmpty() || metadata["resourceVersion"].toString().isEmpty())
                     fail(task, "Malformed read-back resource; draft retained.");
                 else { Task detail = task; detail.read = Read::Detail; consume(detail, root); }
-            } else if (!task.terminalToken.isEmpty()) consumeTerminal(task, document.object());
+            } else if (task.read == Read::FileTarget) consumeFileTarget(task, document.object());
+            else if (!task.terminalToken.isEmpty()) consumeTerminal(task, document.object());
             else if (!task.forwardToken.isEmpty()) consumeForward(task, document.object());
             else if (task.read != Read::Apply) consume(task, document.object());
         }
@@ -1281,6 +1330,8 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
     expire();
     if (!task.forwardToken.isEmpty() && state.failures.contains(task.path)) failForward(task.forwardToken, state.failures.value(task.path));
     if (!task.terminalToken.isEmpty() && state.failures.contains(task.path) && terminals_.contains(task.terminalToken)) terminals_.value(task.terminalToken).screen->reject(state.failures.value(task.path));
+    if (task.read == Read::FileTarget && state.failures.contains(task.path) && task.fileView)
+        task.fileView->reject(http == 404 ? "files.targetChanged" : "files.execFailed");
     if (task.read == Read::Detail) emit detailFinished(task.id, task.path,
         task.revision == state.revision && !state.failures.contains(task.path) && detailRevision(task.id, task.path).has_value());
     if (task.read == Read::Apply) finishApply(task, http, bytes, transportError);

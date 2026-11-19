@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include "background_http.h"
 #include <QSet>
+#include <QPointer>
 #include <QTimer>
 #include <functional>
 #include <QVariantList>
@@ -13,6 +14,7 @@
 namespace podlord {
 class PortForwardTransport;
 class ContainerTerminal;
+class ContainerFiles;
 /** True only for the core v1 Secret/ConfigMap contract, not equal kind names in other APIs. */
 bool isCoreValueResource(const QJsonObject& document);
 /** One rate-limited queue with four read slots and exclusive writes. Sent work keeps its session. */
@@ -53,6 +55,7 @@ public:
     bool initialSyncComplete(const QString& id) const;
     bool authenticationRequired(const QString& id) const;
     std::optional<ClusterConnection> connection(const QString& id) const;
+    bool sessionOpen(const QString& id) const;
     bool authenticate(const ClusterConnection& connection, const QString& session);
     /** Drops retained connection credentials, not resource caches or already dispatched requests. */
     bool forgetCredentials(const QString& credential);
@@ -79,6 +82,8 @@ public:
     /** Existing forwards and active shell streams, without opening another connection. */
     int connectionCount(const QString& id) const;
     bool stopTerminal(const QString& id);
+    /** One explicit read from a listed running Pod. Fresh GET and exec share the request scheduler. */
+    bool startFileRead(const QString& id, const QString& path, const QString& container, ContainerFiles* owner);
     /** Confirmed, target-bound JSON Patch. One send only; no automatic retry. */
     bool applyYaml(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline,
                    const QJsonObject& desired, const QJsonArray& patch, quint64 revision);
@@ -132,6 +137,8 @@ private:
     QMap<QString, Terminal> terminals_;
     void consumeTerminal(const Task& task, const QJsonObject& document);
     void terminalHandshakeFinished(const QString& token, bool accepted, bool authenticationRequired);
+    void consumeFileTarget(const Task& task, const QJsonObject& document);
+    void fileHandshakeFinished(const QString& token, bool accepted, bool authenticationRequired);
     struct Forward final {
         QString session, path, uid, kind, name, nameSpace, podPath;
         QUrl server;
@@ -174,7 +181,7 @@ private:
         QList<QDateTime> requestStarts;
         QDateTime presentationExpiry;
     };
-    enum class Read { Core, Groups, Discovery, List, Detail, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket };
+    enum class Read { Core, Groups, Discovery, List, Detail, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket, FileTarget, FileSocket };
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
     struct Task final {
         QString id, path, collection, kind, continuation;
@@ -189,6 +196,9 @@ private:
         QString logKey, container;
         QString forwardToken, streamToken, selector;
         QString terminalToken;
+        QString fileToken, fileUid;
+        QUrl fileServer;
+        QPointer<ContainerFiles> fileView;
         qint64 received = 0;
         qint64 started = -1;
         std::optional<Change> change;

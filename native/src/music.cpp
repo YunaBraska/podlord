@@ -35,6 +35,18 @@ Music::Music(QObject* parent) : QObject(parent), tracks_(bundledTracks()), platf
     for (int index = 0; index < tracks_.size(); ++index) order_.append(index);
     std::shuffle(order_.begin(), order_.end(), *QRandomGenerator::global());
     if (!order_.isEmpty()) selected_ = order_.first();
+    transition_.setDuration(250);
+    connect(&transition_, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        gain_ = value.toReal();
+        if (output_) output_->setVolume(static_cast<float>(volumePercent_ / 100.0 * gain_));
+    });
+    connect(&transition_, &QVariantAnimation::finished, this, [this] {
+        if (!transitionPending_ || !player_) return;
+        transitionPending_ = false;
+        player_->stop();
+        player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
+        if (requested_) player_->play();
+    });
 }
 Music::~Music() { pause(); }
 QString Music::currentId() const { return tracks_.isEmpty() ? QString{} : tracks_[selected_].toMap()["id"].toString(); }
@@ -50,14 +62,31 @@ bool Music::play() {
     if (!player_) {
         output_ = std::make_unique<QAudioOutput>();
         output_->setMuted(true);
-        output_->setVolume(static_cast<float>(volumePercent_) / 100.0F);
+        output_->setVolume(0);
         player_ = std::make_unique<QMediaPlayer>();
         player_->setAudioOutput(output_.get());
         player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
+        connect(player_.get(), &QMediaPlayer::positionChanged, this, [this](qint64 position) {
+            if (transitionPending_ || !output_) return;
+            const auto duration = player_->duration();
+            const qreal fadeIn = std::clamp(position / 1000.0, 0.0, 1.0);
+            const qreal fadeOut = duration > 0 ? std::clamp((duration - position) / 2000.0, 0.0, 1.0) : 1.0;
+            gain_ = std::min(fadeIn, fadeOut);
+            output_->setVolume(static_cast<float>(volumePercent_ / 100.0 * gain_));
+        });
         connect(player_.get(), &QMediaPlayer::playbackStateChanged, this, &Music::changed);
         connect(player_.get(), &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
             if (status == QMediaPlayer::EndOfMedia && requested_) {
-                next();
+                if (transitionPending_) {
+                    transition_.stop();
+                    transitionPending_ = false;
+                    gain_ = 0;
+                    output_->setVolume(0);
+                    player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
+                    player_->play();
+                } else {
+                    next();
+                }
             }
         });
         connect(player_.get(), &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) {
@@ -85,6 +114,14 @@ bool Music::play() {
 }
 bool Music::pause() {
     requested_ = false;
+    transition_.stop();
+    if (transitionPending_ && player_) {
+        transitionPending_ = false;
+        player_->stop();
+        player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
+        gain_ = 0;
+        if (output_) output_->setVolume(0);
+    }
     if (output_) output_->setMuted(true);
     if (player_) player_->pause();
     platform_->release();
@@ -101,16 +138,27 @@ bool Music::next() {
     }
     selected_ = order_[orderIndex_];
     if (player_) {
-        player_->stop();
-        player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
-        if (requested_) {
-            if (!platform_->update(tracks_[selected_].toMap()["name"].toString())) {
-                pause();
-                error_ = "music.unavailable";
-                emit changed();
-                return false;
+        if (requested_ && !platform_->update(tracks_[selected_].toMap()["name"].toString())) {
+            pause();
+            error_ = "music.unavailable";
+            emit changed();
+            return false;
+        }
+        if (requested_ && player_->mediaStatus() != QMediaPlayer::EndOfMedia) {
+            if (!transitionPending_) {
+                transitionPending_ = true;
+                transition_.setStartValue(gain_);
+                transition_.setEndValue(0.0);
+                transition_.start();
             }
-            player_->play();
+        } else {
+            transition_.stop();
+            transitionPending_ = false;
+            gain_ = 0;
+            output_->setVolume(0);
+            player_->stop();
+            player_->setSource(QUrl(tracks_[selected_].toMap()["asset"].toString()));
+            if (requested_) player_->play();
         }
     }
     emit changed();
@@ -126,7 +174,7 @@ bool Music::setVolumePercent(int percent) {
     if (percent < 0 || percent > 100) return false;
     if (volumePercent_ == percent) return true;
     volumePercent_ = percent;
-    if (output_) output_->setVolume(static_cast<float>(percent) / 100.0F);
+    if (output_) output_->setVolume(static_cast<float>(percent / 100.0 * gain_));
     return true;
 }
 }

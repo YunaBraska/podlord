@@ -409,11 +409,11 @@ if(NOT IOS)
     add_executable(podlord-source src/source_main.cpp)
     target_link_libraries(podlord-source PRIVATE podlord_sources)
 endif()
-add_library(podlord_workspace STATIC src/read_settings.cpp src/table_layout.cpp src/workspace_table_layout.cpp src/view_state.cpp  src/workspace_view_state.cpp src/workspace_field_filters.cpp src/appearance.cpp src/workspace_appearance.cpp src/pod_logs.cpp src/resource_client.cpp src/resource_port_forward.cpp src/port_forward_transport.cpp src/workspace_port_forward.cpp src/workspace.cpp src/resource_filter.cpp src/kind_glyph.cpp src/radar_island.cpp src/map_previews.cpp src/workspace_map.cpp src/alerts.cpp src/resource_metrics.cpp)
+add_library(podlord_workspace STATIC src/read_settings.cpp src/table_layout.cpp src/workspace_table_layout.cpp src/view_state.cpp  src/workspace_view_state.cpp src/workspace_field_filters.cpp src/appearance.cpp src/workspace_appearance.cpp src/pod_logs.cpp src/resource_client.cpp src/resource_graph.cpp src/container_files.cpp src/resource_port_forward.cpp src/port_forward_transport.cpp src/workspace_port_forward.cpp src/workspace.cpp src/resource_filter.cpp src/kind_glyph.cpp src/radar_island.cpp src/map_previews.cpp src/workspace_map.cpp src/alerts.cpp src/resource_metrics.cpp)
 target_link_libraries(podlord_workspace PUBLIC podlord_sources Qt6::Concurrent Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Multimedia Qt6::WebSockets PRIVATE yaml-cpp::yaml-cpp)
 # LLVM can decline unrolling in inlined Qt loops; retain that advisory without weakening correctness warnings.
 set_source_files_properties(src/alerts.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:Clang>:-Wno-error=pass-failed>")
-target_sources(podlord_workspace PRIVATE src/resource_guidance.cpp src/workspace_about.cpp src/container_terminal.cpp src/resource_terminal.cpp src/workspace_terminal.cpp src/workspace_inspector_tables.cpp src/workspace_sources.cpp)
+target_sources(podlord_workspace PRIVATE src/resource_guidance.cpp src/workspace_about.cpp src/container_terminal.cpp src/resource_terminal.cpp src/resource_files.cpp src/workspace_terminal.cpp src/workspace_inspector_tables.cpp src/workspace_sources.cpp)
 target_sources(podlord_workspace PRIVATE src/incident_ai.cpp src/chatgpt_client.cpp src/api_ai_client.cpp src/credential_store.cpp src/workspace_incident_ai.cpp)
 if(APPLE)
     target_link_libraries(podlord_workspace PRIVATE "-framework Security" "-framework CoreFoundation")
@@ -425,6 +425,16 @@ elseif(UNIX AND NOT ANDROID)
     target_link_libraries(podlord_workspace PRIVATE PkgConfig::LIBSECRET)
 endif()
 if(BUILD_TESTING)
+    add_executable(resource-graph-test tests/resource_graph_test.cpp)
+    target_link_libraries(resource-graph-test PRIVATE podlord_workspace)
+    add_test(NAME native.graph.connected_depths COMMAND resource-graph-test)
+    set_tests_properties(native.graph.connected_depths PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(container-files-test tests/container_files_test.cpp)
+    target_link_libraries(container-files-test PRIVATE podlord_workspace Qt6::Test)
+    foreach(scenario listing_download status_disconnect recreated target_forbidden exec_failure)
+        add_test(NAME native.files.${scenario} COMMAND container-files-test ${scenario})
+        set_tests_properties(native.files.${scenario} PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
     add_executable(chatgpt-client-test tests/chatgpt_client_test.cpp)
     target_link_libraries(chatgpt-client-test PRIVATE podlord_workspace Qt6::Test)
     foreach(scenario success wrong_state wrong_nonce refresh reconsent localized_callback sign_out incident migration)
@@ -518,7 +528,7 @@ set(workspace_qml_files
     ui/Main.qml ui/IconButton.qml ui/FlatButton.qml ui/DialogHeader.qml ui/ModalDialog.qml ui/WorkspaceTab.qml ui/WrappingCheckBox.qml ui/ResourceSidebar.qml ui/PulseStrip.qml
     ui/ConnectionsView.qml ui/SettingsView.qml ui/AboutView.qml
     ui/PasteSourceDialog.qml ui/AwsProfileDialog.qml ui/FieldFilterEditor.qml
-    ui/PodLogsView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
+    ui/PodLogsView.qml ui/ContainerFilesView.qml ui/ResourceInspector.qml ui/ResourceValuesView.qml
     ui/ContainerTerminalView.qml ui/ContainerTerminalDialog.qml ui/ResourceRadar.qml ui/ResourceGrid.qml
     ui/TableColumnsDialog.qml ui/AlertView.qml ui/ResourceDashboard.qml
     ui/MetricGauge.qml ui/PlainToolTip.qml ui/SelectableText.qml ui/CommandPalette.qml
@@ -1364,7 +1374,7 @@ if(BUILD_TESTING)
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
     endforeach()
-    foreach(scenario radar_filter radar_empty radar_keyboard radar_sort radar_session radar_hidden radar_many radar_zoom radar_theme radar_refresh_layout inspector_related_overview inspector_related_events inspector_related_wrong_uid inspector_related_links inspector_related_workspace inspector_related_event_sort inspector_related_event_copy inspector_related_event_missing inspector_related_alias_same inspector_related_alias_distinct inspector_related_alias_legacy_time)
+    foreach(scenario radar_filter radar_empty radar_keyboard radar_sort radar_session radar_hidden radar_many radar_zoom radar_theme radar_refresh_layout inspector_related_overview inspector_related_events inspector_related_wrong_uid inspector_related_links inspector_related_files inspector_related_workspace inspector_related_event_sort inspector_related_event_copy inspector_related_event_missing inspector_related_alias_same inspector_related_alias_distinct inspector_related_alias_legacy_time)
         add_test(NAME native.ui.${scenario} COMMAND workspace_ui_test ${scenario})
         set_tests_properties(native.ui.${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()

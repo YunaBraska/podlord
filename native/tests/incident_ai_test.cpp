@@ -270,6 +270,8 @@ void scenario(const QString& name) {
         auto pod = snapshot.at(2).toObject();
         pod["node"] = "worker-a";
         pod["volumeClaims"] = QJsonArray{"claim-data"};
+        pod["secretRefs"] = QJsonArray{"runtime-secret"};
+        pod["configMapRefs"] = QJsonArray{"runtime-config"};
         snapshot.replace(2, pod);
         auto event = snapshot.at(3).toObject();
         event["name"] = "pull-warning";
@@ -291,6 +293,11 @@ void scenario(const QString& name) {
         snapshot.append(QJsonObject{{"kind", "CiliumEndpoint"}, {"name", "pod-one"}, {"namespace", "team"},
             {"path", "/apis/cilium.io/v2/namespaces/team/ciliumendpoints/pod-one"}, {"status", "NotReady"},
             {"ciliumState", "waiting-for-identity"}, {"ciliumHealth", "Failure"}});
+        snapshot.append(QJsonObject{{"kind", "Secret"}, {"name", "runtime-secret"}, {"namespace", "team"},
+            {"path", "/api/v1/namespaces/team/secrets/runtime-secret"}, {"status", "Ready"},
+            {"data", QJsonObject{{"password", "c2VjcmV0LXZhbHVlLXRlc3Q="}}}});
+        snapshot.append(QJsonObject{{"kind", "ConfigMap"}, {"name", "runtime-config"}, {"namespace", "team"},
+            {"path", "/api/v1/namespaces/team/configmaps/runtime-config"}, {"status", "Ready"}});
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
             && ai.setEnabled("context", true) && ai.setModel("local-test:9b"), "Evidence model unavailable");
@@ -300,7 +307,7 @@ void scenario(const QString& name) {
             "Evidence analysis missing");
         const auto result = ai.result("context", path);
         const auto evidence = result.value("evidence").toList();
-        require(evidence.size() >= 6 && !result.contains("command"), "Linked evidence or in-app-only action missing");
+        require(evidence.size() >= 8 && !result.contains("command"), "Linked evidence or in-app-only action missing");
         for (const auto& value : evidence) {
             const auto link = value.toMap();
             require(!link.value("id").toString().isEmpty() && !link.value("path").toString().isEmpty(), "Evidence cannot be opened");
@@ -308,9 +315,13 @@ void scenario(const QString& name) {
             require(!server.submitted.contains(link.value("name").toString().toUtf8()), "Resource name reached the model");
         }
         require(server.submitted.contains("CiliumEndpoint") && server.submitted.contains("PersistentVolumeClaim")
+            && server.submitted.contains("Pod > PersistentVolumeClaim > PersistentVolume")
+            && server.submitted.contains("Secret") && server.submitted.contains("ConfigMap")
             && server.submitted.contains("FailedToRetrieveImagePullSecret") && server.submitted.contains("registry-auth-rejected")
             && server.submitted.contains("waiting-for-identity") && server.submitted.contains("networkHealth=Failure")
             && !server.submitted.contains("private-event-marker") && !server.submitted.contains("private-value")
+            && !server.submitted.contains("runtime-secret") && !server.submitted.contains("runtime-config")
+            && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q=")
             && !server.submitted.contains("eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop"),
             "Related network, storage, and event facts were not sent safely");
         server.answer = "{\"summary\":\"Der Abruf scheitert.\",\"cause\":\"Mögliche Netzwerkstörung.\",\"action\":\"Prüfe den Node.\",\"refs\":[\"R2\",\"FAKE\"]}";
@@ -350,8 +361,8 @@ void scenario(const QString& name) {
         ai.observe("context", snapshot, "de");
         require(ai.refresh("context", nodePath) && QTest::qWaitFor([&] { return server.chats == 1
             && !ai.result("context", nodePath).value("summary").toString().isEmpty(); }, 2000), "Node analysis missing");
-        require(server.submitted.contains("affected Pod on node") && server.submitted.contains("mounted claim")
-            && server.submitted.contains("bound volume") && server.submitted.contains("node network agent")
+        require(server.submitted.contains("Pod on node") && server.submitted.contains("Volume claim")
+            && server.submitted.contains("Volume") && server.submitted.contains("Cilium agent on node")
             && server.submitted.contains("FailedMount"), "Node investigation lost dependent resources");
         return;
     }

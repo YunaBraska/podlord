@@ -234,6 +234,10 @@ void RadarIsland::setInspectedPath(const QString& path) {
     if (inspectedPath_==path) return;
     inspectedPath_=path; update(); emit inspectedPathChanged();
 }
+void RadarIsland::setLinkedDepths(const QVariantMap& depths) {
+    if (linkedDepths_ == depths) return;
+    linkedDepths_ = depths; update(); emit linkedDepthsChanged();
+}
 void RadarIsland::setHoveredPath(const QString& path) {
     if (hoveredPath_==path) return;
     hoveredPath_=path; update(); emit hoveredPathChanged();
@@ -700,7 +704,8 @@ void RadarIsland::paint(QPainter* painter) {
         if (!entry.source.isValid()) continue;
         const bool highlighted=entry.path==hoveredPath_ || entry.path==focusedPath_ || entry.path==inspectedPath_
             || (hasActiveFocus() && entry.path==currentPath_);
-        if (entry.animation==RadarTiles::Animation::None && !entry.glow && !highlighted && side<9) {
+        const int linkedDepth = linkedDepths_.value(entry.path).toInt();
+        if (entry.animation==RadarTiles::Animation::None && !entry.glow && !highlighted && linkedDepth == 0 && side<9) {
             // Ordinary pixels need no per-resource painter state or transform.
             tile(entry.world,entry.color);
             continue;
@@ -721,6 +726,11 @@ void RadarIsland::paint(QPainter* painter) {
         painter->setOpacity(opacity); painter->fillRect(box,entry.color);
         if (highlighted)
             outline(box,QColor("#7DFFC3"),1.2);
+        else if (linkedDepth > 0 && linkedDepth <= 6) {
+            auto color = QColor("#72B8FF");
+            color.setAlpha(std::max(24, 190 / (1 << (linkedDepth - 1))));
+            outline(box.adjusted(-1.5,-1.5,1.5,1.5),color,1.2);
+        }
         if (side>=9) KindGlyph::draw(painter,box,entry.kind,glyphFill_,entry.color);
         if (entry.animation==RadarTiles::Animation::Outline) outline(box.adjusted(-1,-1,1,1),entry.announce,2);
         else if (entry.animation==RadarTiles::Animation::Sweep) {

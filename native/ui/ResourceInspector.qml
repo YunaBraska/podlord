@@ -46,6 +46,7 @@ Pane {
     height: workspace.inspectorPage === "ai" ? implicitHeight : Math.max(implicitHeight, inspectorScroll.availableHeight)
     readonly property int visibleTabCount: 4 + (workspace.incidentAiSupported ? 1 : 0)
         + (workspace.valuesAvailable ? 1 : 0) + (workspace.podInspected ? 1 : 0)
+        + (workspace.filesSupported ? 1 : 0)
         + (workspace.podInspected || workspace.containerTerminal !== null ? 1 : 0)
     property real yamlPosition: 0
     property real overviewPosition: 0
@@ -99,6 +100,7 @@ Pane {
         InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; checked: workspace.inspectorPage === "links"; onClicked: workspace.setInspectorPage("links") }
         InspectorTab { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; checked: workspace.inspectorPage === "values"; visible: workspace.valuesAvailable; onClicked: workspace.setInspectorPage("values") }
         InspectorTab { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; checked: workspace.inspectorPage === "logs"; visible: workspace.podInspected; onClicked: workspace.setLogsVisible(true) }
+        InspectorTab { objectName: "filesButton"; text: workspace.uiText["files.tab"]; checked: workspace.inspectorPage === "files"; visible: workspace.filesSupported; onClicked: workspace.setInspectorPage("files") }
         InspectorTab { objectName: "terminalButton"; text: "Terminal"; checked: workspace.inspectorPage === "terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; onClicked: workspace.setInspectorPage("terminal") }
     }
     Flow {
@@ -488,6 +490,11 @@ Pane {
         id: logsPage
         selected: workspace.logsVisible
         sourceComponent: PodLogsView { Layout.fillWidth: true; Layout.fillHeight: true; visible: workspace.logsVisible }
+    }
+    InspectorPage {
+        id: filesPage
+        selected: workspace.inspectorPage === "files"
+        sourceComponent: ContainerFilesView { Layout.fillWidth: true; Layout.fillHeight: true }
     }
     Loader {
         Layout.fillWidth: true; Layout.fillHeight: true

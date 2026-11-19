@@ -374,6 +374,8 @@ public:
                             auto metadata = object["metadata"].toObject();
                             if (metadata["name"] == "alpha") metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "uid-custom-widget"}, {"name", "custom-widget"}, {"kind", "Widget"}, {"apiVersion", "example.test/v1"}}};
                             if (metadata["name"] == "bravo") metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "uid-alpha"}, {"name", "alpha"}, {"kind", "Pod"}, {"apiVersion", "v1"}}};
+                            if (scenario == "inspector_related_files" && metadata["name"] == "alpha")
+                                object["spec"] = QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
                             object["metadata"] = metadata; return object;
                         };
                         if (document.contains("items") && path != "/api/v1/events") {
@@ -5575,10 +5577,12 @@ bool execute(const QString& requestedScenario) {
                 if (!scenario.endsWith("narrow")) {
                     const auto* links=item(window,"inspectorLinksButton");
                     const auto* logs=item(window,"logsButton");
+                    const auto* files=item(window,"filesButton");
                     const auto* terminal=item(window,"terminalButton");
-                    if (!links || !logs || !terminal
+                    if (!links || !logs || !files || !terminal
                         || qAbs(logs->mapToScene({0,0}).x()-links->mapToScene({links->width(),0}).x())>1
-                        || qAbs(terminal->mapToScene({0,0}).x()-logs->mapToScene({logs->width(),0}).x())>1) return false;
+                        || qAbs(files->mapToScene({0,0}).x()-logs->mapToScene({logs->width(),0}).x())>1
+                        || qAbs(terminal->mapToScene({0,0}).x()-files->mapToScene({files->width(),0}).x())>1) return false;
                 }
                 return back && forward && close && title && overview && field
                     && !back->property("showText").toBool() && !forward->property("showText").toBool()
@@ -5692,10 +5696,18 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "inspector_related_overview") {
             if (text(window, "overview_name") != "alpha" || text(window, "overview_kind") != "Pod" || text(window, "overview_namespace") != "default") return false;
-            if (!waitFor([&] { return text(window,"overview_uid") == "uid-alpha"; }) || relatedChanges.count() != 0) return false;
+            if (!waitFor([&] { return text(window,"overview_uid") == "uid-alpha"; })
+                || !workspace.connectedResourceDepths().contains(workspace.inspectorPath())) return false;
+            const auto graphUpdates = relatedChanges.count();
             if (!click(window, item(window, "inspectorEventsButton"))
                 || !waitFor([&] { return text(window, "inspectorEventCell_0_2") == "Scheduled"; })) return false;
-            return relatedChanges.count() == 1 && server.requests.size() == calls;
+            return relatedChanges.count() >= graphUpdates && server.requests.size() == calls;
+        }
+        if (scenario == "inspector_related_files") {
+            if (workspace.filePods().size() != 1 || !click(window, item(window, "filesButton"))) return false;
+            return waitFor([&] { return workspace.inspectorPage() == "files" && workspace.containerFiles()
+                && item(window, "filesPod") && item(window, "filesContainer") && item(window, "filesList"); })
+                && saveShellFrame(window, scenario, item(window, "workspaceInspector"));
         }
         if (scenario == "inspector_related_events" || scenario == "inspector_related_wrong_uid") {
             if (!click(window, item(window, "inspectorEventsButton"))) return false;
