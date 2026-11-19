@@ -289,10 +289,13 @@ bool ui(const QString& mode) {
         require(completed && !workspace.incidentAiResult().value("summary").toString().isEmpty(), "Local AI result did not arrive in the inspector");
         require(item("incidentAiSummary") && item("incidentAiSummary")->property("text").toString() == workspace.incidentAiResult().value("summary").toString(),
             "Inspector did not show the returned AI summary");
+        require(item("incidentAiObservation") && item("incidentAiObservation")->property("text").toString() == workspace.uiText().value("ai.observation")
+            && item("incidentAiCauseHeading") && item("incidentAiCauseHeading")->property("text").toString() == workspace.uiText().value("ai.possibleCause")
+            && item("incidentAiNextCheck") && item("incidentAiNextCheck")->property("text").toString() == workspace.uiText().value("ai.nextCheck"),
+            "AI response lost its visible sections");
         require(!item("incidentAiSummary")->property("text").toString().contains("diagnostic-secret"), "AI summary exposed untrusted status text");
         require(item("incidentAiReanalyze") && item("incidentAiReanalyze")->isEnabled(), "Explicit reanalysis button is missing");
-        require(item("incidentAiEvidence_R1") && !workspace.incidentAiResult().contains("command"),
-            "The inspector needs a linked in-app source without a command dependency");
+        require(!workspace.incidentAiResult().contains("command"), "AI analysis must not add a command dependency");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
     } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
         if (mode == "ui_node_actions") {

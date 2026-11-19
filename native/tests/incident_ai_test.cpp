@@ -185,7 +185,7 @@ void scenario(const QString& name) {
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Explicit analysis did not appear");
         require(!ai.enabled("context") && server.submitted.contains("Observed signal: Manual review")
-            && server.submitted.contains("what the selected resource kind does")
+            && server.submitted.contains("summary field briefly explains the selected resource kind")
             && server.submitted.contains("call a container image 'Container-Image', never 'Bild'")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")

@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Kubernetes without the tree-walk
-description: Explore your clusters, inspect resources and open container shells in one app.
+description: Explore clusters, analyze problems and browse container files in one app.
 ---
 
 <section class="hero">
@@ -19,10 +19,11 @@ description: Explore your clusters, inspect resources and open container shells 
 
 <section class="section">
   <h2>From a problem to the next useful action.</h2>
-  <p class="section-intro">Move between the map, resource table and inspector. Open a shell when you need one.</p>
+  <p class="section-intro">Follow problems across the map, resource table and inspector.</p>
   <div class="feature-grid">
     <article class="feature"><h3>Your configuration stays yours</h3><p>Import a kubeconfig without changing the original file.</p></article>
-    <article class="feature"><h3>Inspect without hunting</h3><p>Open YAML, logs, metrics, a container shell or a port forward from the selected resource.</p></article>
+    <article class="feature"><h3>Ask for a second look</h3><p>AI connects a resource with related cluster signals and suggests a check. You choose the model.</p></article>
+    <article class="feature"><h3>Inspect without hunting</h3><p>Open YAML, logs, metrics, container files or a shell from the selected resource. Download files without kubectl.</p></article>
     <article class="feature"><h3>Keep sensitive values quiet</h3><p>Secret values are hidden and redacted by default so the information you need does not become the information you expose.</p></article>
   </div>
 </section>

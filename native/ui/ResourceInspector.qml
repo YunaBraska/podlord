@@ -161,23 +161,29 @@ Pane {
             text: workspace.uiText["ai.pending"]
             color: workspace.appearanceColors.muted
         }
-        SelectableText {
-            objectName: "incidentAiSummary"
+        ColumnLayout {
             Layout.fillWidth: true
+            Layout.topMargin: 10
             visible: workspace.incidentAiResult.summary !== undefined
-            text: workspace.incidentAiResult.summary || ""
+            spacing: 4
+            SelectableText { objectName: "incidentAiObservation"; Layout.fillWidth: true; text: workspace.uiText["ai.observation"]; font.bold: true; color: workspace.appearanceColors.accent }
+            SelectableText { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || "" }
         }
-        SelectableText {
-            objectName: "incidentAiCause"
+        ColumnLayout {
             Layout.fillWidth: true
+            Layout.topMargin: 14
             visible: (workspace.incidentAiResult.cause || "") !== ""
-            text: workspace.incidentAiResult.cause || ""
+            spacing: 4
+            SelectableText { objectName: "incidentAiCauseHeading"; Layout.fillWidth: true; text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.accent }
+            SelectableText { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || "" }
         }
-        SelectableText {
-            objectName: "incidentAiAction"
+        ColumnLayout {
             Layout.fillWidth: true
+            Layout.topMargin: 14
             visible: workspace.incidentAiResult.action !== undefined
-            text: workspace.incidentAiResult.action || ""
+            spacing: 4
+            SelectableText { objectName: "incidentAiNextCheck"; Layout.fillWidth: true; text: workspace.uiText["ai.nextCheck"]; font.bold: true; color: workspace.appearanceColors.accent }
+            SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
         }
     }
     ColumnLayout {

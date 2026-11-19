@@ -47,7 +47,7 @@ main { padding: 54px 0 76px; }
 .section { padding: 52px 0; border-top: 1px solid #dfe6ef; }
 .section h2 { max-width: 760px; margin: 0; font-size: clamp(1.7rem, 3.5vw, 2.45rem); line-height: 1.12; letter-spacing: -0.045em; }
 .section-intro { max-width: 670px; margin: 14px 0 0; color: #516174; font-size: 1.05rem; }
-.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 30px; border-top: 1px solid #dfe6ef; border-left: 1px solid #dfe6ef; }
+.feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; margin-top: 30px; border-top: 1px solid #dfe6ef; border-left: 1px solid #dfe6ef; }
 .feature { min-height: 182px; padding: 26px 24px; border-right: 1px solid #dfe6ef; border-bottom: 1px solid #dfe6ef; background: rgba(255, 255, 255, 0.58); }
 .feature h3, .install-option h3 { margin: 0; font-size: 1.05rem; letter-spacing: -0.02em; }
 .feature p, .install-option p { margin: 9px 0 0; color: #516174; }
@@ -109,7 +109,7 @@ pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
 .theme-dark .help-document h2, .theme-dark .help-document img, .theme-dark .help-document th, .theme-dark .help-document td { border-color: #34382f; }
 .theme-dark .help-document th, .theme-dark .help-document :not(pre) > code { color: #f2dfb5; background: #332816; }
 @media (max-width: 760px) {
-  .container { width: min(100% - 32px, 1120px); }
+  .container { width: min(calc(100% - 32px), 1120px); }
   .header-content { min-height: auto; padding: 18px 0; align-items: flex-start; flex-direction: column; gap: 12px; }
   nav { position: relative; gap: 14px; }
   .product-menu { position: static; }
@@ -118,6 +118,7 @@ pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
   .hero { grid-template-columns: 1fr; gap: 30px; padding: 20px 0 48px; }
   .hero h1 { font-size: clamp(2.4rem, 14vw, 3.65rem); }
   .feature-grid, .install-options, .doc-list { grid-template-columns: 1fr; }
+  .feature { min-height: 0; padding: 20px 22px; }
   .screenshot-grid { grid-template-columns: 1fr; }
   .footer-content { align-items: flex-start; flex-direction: column; gap: 10px; }
 }
