@@ -26,11 +26,11 @@ References: [Kubernetes kubeconfig v1](https://kubernetes.io/docs/reference/conf
 
 ## Migration And Rollback
 
-The native format is not a legacy kubeconfig filename or a legacy-store migration. The preserved legacy runtime remains independently usable with its separate profile. Legacy-to-native import, native-to-legacy recovery, relative-path execution evidence and complete old/new parity must be proved before retirement. Malformed native records remain intact for diagnosis; no fallback reads a mutable original file.
+The native format is independent of the kubeconfig filename. Malformed records remain intact for diagnosis; no fallback reads a mutable original file.
 
 ## How are historical virtual sources retained without a CLI integration?
 
-The native product imports standard kubeconfigs. It does not discover local test clusters, look up a K3d executable or invoke a generator. [ADR 0003](0003-k3d-generated-kubeconfig-sources.md) is superseded for production. The removed command, UI action and command-output parsers have no replacement production path.
+The native product imports standard kubeconfigs. It does not discover local test clusters, look up a K3d executable or invoke a generator. Test-cluster generation has no production path.
 
 Previously stored virtual origins remain data under the existing `podlord-generated://<origin>/<name>` namespace. Validate both bounded identity components without dispatching on a generator name. Preserve record bytes, hashes, context identifiers, aliases and session bindings. These records are not watched or refreshed as filesystem paths. Keeping their decoder is data compatibility, not continued CLI support.
 

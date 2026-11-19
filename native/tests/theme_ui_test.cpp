@@ -13,7 +13,6 @@
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
-#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QSignalSpy>
@@ -46,20 +45,16 @@ bool choose(QQuickWindow* window, podlord::Workspace& workspace, const QString& 
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Appearance save did not settle");
     return true;
 }
-QList<QColor> legacyColors(const QString& path, const QString& name, const QString& variant, int& count) {
+QList<QColor> catalogColors(const QString& path, const QString& name, const QString& variant, int& count) {
     QFile source(path);
-    require(source.open(QIODevice::ReadOnly), "Cannot read preserved theme definitions");
-    const QString text = QString::fromUtf8(source.readAll());
-    const QRegularExpression entries(R"theme(Theme\(\s*"([^"]+)"\s*,\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*BuildPalette\(([^)]+)\)\s*,\s*BuildPalette\(([^)]+)\))theme");
-    auto matches = entries.globalMatch(text);
+    require(source.open(QIODevice::ReadOnly), "Cannot read native theme catalog");
+    const auto entries = QJsonDocument::fromJson(source.readAll()).array();
     QList<QColor> result;
-    count = 0;
-    while (matches.hasNext()) {
-        const auto entry = matches.next(); ++count;
-        if (entry.captured(1) != name) continue;
-        const QRegularExpression colors("#[A-Fa-f0-9]{6}");
-        auto values = colors.globalMatch(entry.captured(variant == "light" ? 3 : 2));
-        while (values.hasNext()) result.append(QColor(values.next().captured()));
+    count = entries.size();
+    for (const auto& value : entries) {
+        const auto entry = value.toObject();
+        if (entry.value("name").toString() != name) continue;
+        for (const auto& color : entry.value(variant).toArray()) result.append(QColor(color.toString()));
     }
     require(result.size() == 17, "Expected an exact shipped palette");
     return result;
@@ -70,8 +65,8 @@ QByteArray read(const QString& path) {
     return file.readAll();
 }
 bool exercise(const QStringList& arguments) {
-    require(arguments.size() >= 3, "Expected scenario and preserved theme source");
-    const QString scenario = arguments[1], legacy = arguments[2];
+    require(arguments.size() >= 3, "Expected scenario and native theme catalog");
+    const QString scenario = arguments[1], catalog = arguments[2];
     QTemporaryDir temporary;
     require(temporary.isValid(), "Cannot create isolated appearance profile");
     const QString profile = temporary.filePath("profile");
@@ -149,8 +144,8 @@ bool exercise(const QStringList& arguments) {
     choose(window, workspace, "inlineAppearanceVariant", variant == "light" ? 1 : 0);
     require(workspace.property("themeName").toString() == selected && workspace.property("themeVariant").toString() == variant, "Public selection did not apply appearance settings");
     int count = 0;
-    const auto colors = legacyColors(legacy, selected, variant, count);
-    require(names.size() == count, "Native and legacy theme inventories differ");
+    const auto colors = catalogColors(catalog, selected, variant, count);
+    require(names.size() == count, "Theme inventory differs from the native catalog");
     const auto palette = workspace.property("appearancePalette").value<QPalette>();
     require(palette.color(QPalette::Window) == colors[0] && palette.color(QPalette::Base) == colors[3]
         && palette.color(QPalette::Button) == colors[2] && palette.color(QPalette::Text) == colors[9]

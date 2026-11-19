@@ -53,7 +53,7 @@ Radar preview remains unavailable while synchronization is in progress.
 | Recent change color | `recentlyChanged=true` | fresh color |
 | Active view pulse | `newInView=true` AND `activity=true` | bounded pulse |
 
-The release catalog retains the three shipped C# definitions. This product decision, confirmed on 2026-10-04, replaces the earlier four-rule proposal; there is no additional default restart-spike or CPU-p95 rule. Restart outlier and CPU percentile expressions remain custom-rule capabilities. Built-ins stay enabled and locked by default.
+The release catalog retains the three shipped definitions. This product decision, confirmed on 2026-10-04, replaces the earlier four-rule proposal; there is no additional default restart-spike or CPU-p95 rule. Restart outlier and CPU percentile expressions remain custom-rule capabilities. Built-ins stay enabled and locked by default.
 
 Descriptions explain each action rather than showing a generic built-in marker:
 problem resources receive yellow/red, recent changes receive the agreed green
@@ -89,14 +89,14 @@ Evaluation consumes immutable session snapshots off the UI thread. Changes are c
 
 Public QML tests exercise CRUD, invalid input, locking, restart persistence, whole-session evaluation despite filters, grouped AND/OR criteria, numeric ranges, bounded effects, tab non-replay and regex exhaustion. A separate local Kubernetes UI run exercises a real CrashLoop Pod and filtered-out alarm matching. Exact scenarios and remaining coverage belong to [the test map](k3d-test-map.md).
 
-The previous 117-entry C# audio-catalog comparison is superseded by the user-approved original pack. It remains useful only as a legacy-ID inventory, not a requirement to ship third-party audio or credits. New pack qualification is recorded in the test map.
+The previous 117-entry audio-catalog comparison is superseded by the user-approved original pack. It remains useful only as a legacy-ID inventory, not a requirement to ship third-party audio or credits. New pack qualification is recorded in the test map.
 
 Public lifecycle regressions now cover once/duration/view-entry effects, hidden
 and repeated membership, rejected paths and session closure. Imported sounds,
 complete camera/action semantics, audible physical-device comparison and full
 theme/device/accessibility comparison remain open. These are release gaps, not
 accepted removals; lifecycle and component tests do not establish whole-product
-parity. The preserved C# sound catalog contains bundled sounds only: importing
+parity. The previous sound catalog contains bundled sounds only: importing
 user sounds is a specification capability, not an already shipped reference
 implementation to copy.
 

@@ -724,11 +724,16 @@ void RadarIsland::paint(QPainter* painter) {
         painter->translate(screen(entry.world)); painter->scale(scale,scale);
         if (entry.glow) { painter->setOpacity(opacity*.35); outline(box.adjusted(-1.5,-1.5,1.5,1.5),entry.color,2); }
         painter->setOpacity(opacity); painter->fillRect(box,entry.color);
-        if (highlighted)
+        if (highlighted) {
+            auto color = QColor("#7DFFC3");
+            color.setAlpha(205);
+            painter->fillRect(box, color);
             outline(box,QColor("#7DFFC3"),1.2);
+        }
         else if (linkedDepth > 0 && linkedDepth <= 6) {
             auto color = QColor("#72B8FF");
-            color.setAlpha(std::max(24, 190 / (1 << (linkedDepth - 1))));
+            color.setAlpha(std::max(12, 190 / (1 << (linkedDepth - 1))));
+            painter->fillRect(box, color);
             outline(box.adjusted(-1.5,-1.5,1.5,1.5),color,1.2);
         }
         if (side>=9) KindGlyph::draw(painter,box,entry.kind,glyphFill_,entry.color);

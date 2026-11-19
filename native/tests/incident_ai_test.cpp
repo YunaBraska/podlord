@@ -185,6 +185,7 @@ void scenario(const QString& name) {
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Explicit analysis did not appear");
         require(!ai.enabled("context") && server.submitted.contains("Observed signal: Manual review")
+            && server.submitted.contains("what the selected resource kind does")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
             && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
@@ -210,6 +211,29 @@ void scenario(const QString& name) {
         pod["status"] = "Failed"; changed.replace(2, pod);
         reopened.observe("context", changed, "de");
         require(reopened.result("context", path).isEmpty(), "Changed evidence retained a stale manual analysis");
+        return;
+    }
+    if (name == "draft_error") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b"), "Draft model unavailable");
+        require(QTest::qWaitFor([&] { return ai.ready(); }, 2000), "Draft model not ready");
+        const auto snapshot = rows();
+        const auto path = snapshot.at(2).toObject()["path"].toString();
+        ai.observe("context", snapshot, "de");
+        ai.setDraftError("context", path, "YAML syntax error at line 4, column 2");
+        require(ai.refresh("context", path) && QTest::qWaitFor([&] {
+            return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty();
+        }, 2000),
+            "Local draft error was not analyzed");
+        require(server.submitted.contains("Local YAML draft check: YAML syntax error at line 4, column 2")
+            && !server.submitted.contains("private-") && !server.submitted.contains("c2VjcmV0"),
+            "Draft diagnosis lost the safe error or leaked resource content");
+        ai.setDraftError("context", path, "YAML syntax error at line 4, column 2");
+        require(!ai.result("context", path).value("summary").toString().isEmpty() && server.chats == 1,
+            "Repeating the same draft check lost its cached answer");
+        ai.setDraftError({}, {}, {});
+        require(ai.result("context", path).isEmpty(), "Draft analysis remained after the draft changed");
         return;
     }
     if (name == "manual_model_switch") {

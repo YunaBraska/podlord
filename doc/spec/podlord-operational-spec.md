@@ -36,9 +36,9 @@ It turns Kubernetes from scattered YAML and terminal state into one cache-backed
 ### Radar topology with discovered resource types
 
 The Radar uses every listable resource kind returned by Kubernetes discovery,
-including kinds absent from the C# reference's fixed catalog. All kinds share
+including kinds outside the common built-in catalog. All kinds share
 one deterministic island layout: adding or removing a discovered kind may move
-resources that both versions show. Do not freeze a C#-only subset or maintain a
+other resources. Do not freeze a subset or maintain a
 second topology to preserve old coordinates. With the same resource set and
 context identity, the island remains deterministic across sessions; filters change membership,
 not the full-cache terrain. Real Namespace resources stay selectable.
@@ -72,9 +72,9 @@ The remaining interview uses `Question x/y` numbering, initially estimated at 12
 | 11/14 | Measurable responsiveness and resource-use acceptance criteria | Confirmed and tightened by question 13; PER-001 through PER-013. Infrastructure latency does not authorize request cancellation. |
 | 12/14 | Required device/platform coverage for the C++ rewrite | Confirmed; RWT-004 through RWT-008. Qt accepted; browser application excluded. |
 | 13/14 | UI/framework and distribution constraints; tightened cached interaction budget | Confirmed; Qt Quick with thin QML presentation, RWT-006, and PER-001 through PER-013. Module/distribution evidence remains required. |
-| 14/14 | Final scope/gap reconciliation and the rewrite/test review plan | Confirmed; RWT-009 through RWT-015 require independently runnable old/new comparison and evidenced parity before retirement. |
+| 14/14 | Final scope and test review | Native public behavior and release evidence remain required for each claimed platform. |
 
-Questions 1 through 3 were confirmed on 2026-10-01; questions 4 through 14 were confirmed on 2026-10-02. This interview round is complete. Their owning requirements are referenced in the table above. Question 13 confirms Qt Quick with thin QML presentation and the tightened performance contract. Question 14 confirms the rewrite sequence and adds continuous old/new comparability as a retirement gate. Concrete module/distribution obligations, exact tested OS/architecture support, supported-action inventory, and outstanding behavioral details remain explicit reconciliation/evidence work, not assumed passes. Implementation sequencing is owned by [the roadmap](../ROADMAP.md); comparison scenarios and evidence are tracked in [the existing test map](k3d-test-map.md).
+Questions 1 through 3 were confirmed on 2026-10-01; questions 4 through 14 were confirmed on 2026-10-02. This interview round is complete. Their owning requirements are referenced in the table above. Question 13 confirms Qt Quick with thin QML presentation and the tightened performance contract. Question 14 confirms the native release evidence requirement. Concrete module and distribution obligations, exact tested OS and architecture support, supported actions, and outstanding behavior remain explicit evidence work. Current priorities are in [the roadmap](../ROADMAP.md); verification entrypoints are in [the test map](k3d-test-map.md).
 
 ## Context model clarification (2026-11-13)
 
@@ -92,7 +92,7 @@ streams, cached data and accessible tab presentation.
 | CTX-003 | Closing the last tab for a context MUST preserve its settings. Reopening it MUST restore those settings without restoring old terminals or port-forwards. |
 | CTX-004 | Explicit new-tab or new-window actions MUST open a separate tab for the chosen context. Moving an existing tab MUST retain its identity and streams. Unsaved-draft confirmation MUST retain the requested navigation action. |
 | CTX-005 | The positive context catalog MUST be the sole membership authority. Unlisted source files MUST NOT be rediscovered. Explicit import may re-register contexts. No removed-context list is maintained. |
-| CTX-006 | Native pre-release formats MUST NOT be migrated or backed up automatically. Current tabs, context settings, filter presets, read settings, table layouts and alert rules use only their current formats. Old files remain untouched. This supersedes historical native-format upgrade implementation notes below. Explicit C# imports and supported immutable kubeconfig or credential formats remain separately scoped. |
+| CTX-006 | Native pre-release formats MUST NOT be migrated or backed up automatically. Current tabs, context settings, filter presets, read settings, table layouts and alert rules use only their current formats. Old files remain untouched. This supersedes historical native-format upgrade implementation notes below. Explicit supported imports and immutable kubeconfig or credential formats remain separately scoped. |
 | CTX-007 | Locked, malformed or unwritable current metadata MUST fail explicitly without resetting existing files. Removing catalog membership MUST prevent access even if dependent cleanup fails. |
 | CTX-008 | Removing a context MUST remove its current preference record and close its owned tabs/connections. Late preference writes MUST NOT recreate a removed context. Original kubeconfig files remain unchanged. |
 | CTX-009 | The context overview MUST sort by explicit context usage count descending, then last-use time descending. Opening a context from the overview or switching to another context tab counts. Re-selecting a context already displayed in the active tab, restoring tabs and background refresh MUST NOT count. These are current per-context totals, not old saved-session histories. |
@@ -146,13 +146,13 @@ The native Pod/Service forwarding increment follows SES-020, SES-021 and
 SES-025 through real QML controls, the existing request owner and actual local
 TCP traffic. Pod and named-Service forwarding, stopping and port reuse also
 pass against an owned local Kubernetes cluster. [ADR 0030](../adr/0030-native-port-forward-transport-and-session-ownership.md)
-owns transport/lifecycle decisions; [the test map](k3d-test-map.md#what-proves-native-pod-and-service-port-forwarding)
+owns transport/lifecycle decisions; [the test map](k3d-test-map.md)
 owns execution evidence and remaining gaps. Native detached windows now share
 the same transport owner and preserve active shells and forward endpoints.
 The owned real Kubernetes window-transfer lane verifies SES-023/024 with two
 independent sessions, live TCP traffic and a retained remote shell variable.
 [ADR 0044](../adr/0044-shared-native-window-ownership.md) owns window placement;
-[the window test map](k3d-test-map.md#what-proves-native-window-ownership-and-transfer)
+[the window test map](k3d-test-map.md)
 records public UI, close-failure and shared-preference coverage. Complete upgrade
 error classification, installed-app task-table parity and physical multiwindow
 presentation remain open. These scoped results do not establish full migration
@@ -457,7 +457,7 @@ The default order for each table and any genuine non-sortable columns remain to 
 The resource data-column inventory is Name, Kind, Namespace, Status, Node, Image,
 Cluster, CPU, Memory, Storage, Age, Ready, Restarts and Owner. Issue provides the
 native cache's textual problem explanation in addition to Status. This records the
-existing C# data-column baseline under RWT-009 through RWT-015; it does not close
+existing data-column baseline; it does not close
 the separate Port Forward action or advanced-filter migration.
 
 CPU and byte quantities use canonical measured values for sorting, not their
@@ -739,8 +739,7 @@ pixels of tile width enables a dark-filled, terrain/alert-stroked kind glyph.
 Appearance settings MUST expose one whole-number water speed from 0 through 100,
 default 5. Zero disables waves. There is no separate enable switch. Previously
 disabled settings display zero, and increasing the speed enables waves again.
-The C# 18-pixel water
-pattern and activity-dependent drift are retained. Events retain ordinary
+The 18-pixel water pattern and activity-dependent drift are retained. Events retain ordinary
 terrain/alert tiles without additional water effects. The background MUST NOT
 traverse resources or trigger API requests.
 One water clock MUST serve the visible viewport, stop while hidden, minimized,
@@ -757,8 +756,7 @@ Those checks do not establish complete release readiness. The close-action
 visibility after scrolling, current native performance and remaining device
 checks must be resolved through the open evidence entries there.
 
-The native radar retains the resource glyph catalog from the existing C# shared
-glyph control: 24 known Kubernetes kinds and a diamond for unknown or empty kinds.
+The native radar retains the resource glyph catalog: 24 known Kubernetes kinds and a diamond for unknown or empty kinds.
 Related kinds use their existing shared shapes. Geometry is immutable and reused;
 painting reads the current kind and color without network, storage or refresh
 timers. Accessible resource names, keyboard inspection, alert effects, selection
@@ -1020,7 +1018,7 @@ Infrastructure calls may legitimately take longer, including discovery or retrie
 
 | Requirement | Public scenario | Expected result | Evidence status |
 |---|---|---|---|
-| PER-001 | Repeatedly change filters and sort states in the agreed profile. | Public-action-to-visible-response p95 is at most 100 ms for each interaction class. | 2026-10-09 Cocoa/Metal Release run: filter 43.16 ms, sort 33.02 ms. Scoped pass; see the current [measurement ledger](k3d-test-map.md#2026-10-09-native-catalog-refresh-and-release-measurements). |
+| PER-001 | Repeatedly change filters and sort states in the agreed profile. | Public-action-to-visible-response p95 is at most 100 ms for each interaction class. | 2026-10-09 Cocoa/Metal Release run: filter 43.16 ms, sort 33.02 ms. Scoped pass; see the current [measurement ledger](k3d-test-map.md). |
 | PER-002 | Repeatedly open cached inspector content in the agreed profile. | Public-action-to-visible-content p95 is at most 50 ms. | Same run: 34.22 ms. Scoped pass, not all-device clearance. |
 | PER-003 | Start the release app while cluster connections or login are delayed. | Settings is interactive within 1.5 seconds on the first launch and within 1.0 second on each of nine repeat launches, without waiting for infrastructure readiness. | [ADR 0049](../adr/0049-separate-first-and-repeat-startup-budgets.md) owns the confirmed split budgets. Historical measurements remain historical. The current package and delayed-authentication case still require their own evidence. |
 | PER-004 | Scroll and operate the public UI repeatedly in the agreed profile. | No UI stall longer than 100 ms is reproducible under the recorded protocol. | Planned benchmark; not measured. |
@@ -1043,17 +1041,10 @@ This direction was requested on 2026-10-02. It changes the intended implementati
 | RWT-004 | The target platform families MUST include macOS, Windows, Linux, Android, and iOS, covering desktop computers, phones, and tablets with the broadest practically supportable device coverage. Exact OS-version and CPU-architecture support MUST be documented and evidenced before release claims. |
 | RWT-005 | Podlord MUST be a locally installed application, not a browser application. Its application UI MUST NOT depend on embedded browser rendering, Qt WebEngine, Qt WebView, or Chromium. Opening an external browser for explicitly confirmed authentication remains permitted under ERR-005 and ERR-013. |
 | RWT-006 | The replacement application MUST use C++ and Qt Quick with a thin QML presentation layer. Data models, cache, Kubernetes integration, and business logic MUST be owned by C++, not duplicated as a second application implementation in QML. |
-| RWT-007 | The distributed replacement MUST NOT require a C#/.NET runtime or a permanent .NET companion service to implement core behavior. |
+| RWT-007 | The distributed application MUST run without an external companion service for core behavior. |
 | RWT-008 | Release packages MUST include only the runtime modules, plugins, and resources justified by supported features. Package size MUST be measured per target rather than inferred from the implementation language. |
-| RWT-009 | Before replacement changes can invalidate the reference, Podlord MUST preserve an identifiable, reproducibly buildable old application baseline and its runnable release artifact with recorded version and artifact identity. That reference MUST remain available for comparison after retirement from the production release. |
-| RWT-010 | During the rewrite, the old and new applications MUST be independently buildable and launchable on a common supported comparison platform without one installation replacing the other. |
-| RWT-011 | Old/new comparison MUST isolate each application's local settings, caches, logs, workspace state, and listening ports so neither corrupts or silently migrates the other's data. Migration tests MUST use explicitly designated copies. |
-| RWT-012 | The existing test map MUST account for every inventoried shipped function with its public entrypoint, expected contract, old/new build identities, applicable scenario/test, outcome, and remaining gap. A function without an assigned disposition MUST block claims of complete parity. |
-| RWT-013 | Comparison MUST drive equivalent public scenarios from equivalent preconditions. Reads MAY use the same test cluster; mutations MUST use isolated test-owned resources or a restored equivalent initial state so the first application does not invalidate the second application's scenario. |
-| RWT-014 | Differences MUST be evaluated against the confirmed specification, not blindly copied from old behavior. Known old bugs and explicitly approved changes or removals MUST have recorded dispositions; normalization MUST NOT hide meaningful differences in scope, authorization, errors, side effects, or retained state. |
-| RWT-015 | The old production implementation MUST NOT be removed until required-function parity, migration, rollback, cleanup, and applicable correctness/performance/release evidence are established. Preserving an isolated test reference MUST NOT retain the old runtime as a dependency of the new production release. |
-| RWT-016 | Visual equivalence is part of functional equivalence. Every retained workspace, inspector page and Settings section MUST remain reachable and usable with every shipped theme's dark/light variants. Theme selector and palette tests alone MUST NOT establish this requirement. Review populated old/new screenshots, keyboard operation, readable overflow and responsive layout; exact Avalonia pixels are not required. |
-| RWT-017 | Every discovered comparison discrepancy MUST be mapped to its owning requirement or inventoried capability, with implementation and verification tracked separately. Missing menus or behavior MUST remain release blockers unless removal is explicitly approved. A partial feature package MUST NOT be described as a release-ready replacement. |
+| RWT-016 | Visual equivalence is part of functional equivalence. Every retained workspace, inspector page and Settings section MUST remain reachable and usable with every shipped theme's dark/light variants. Theme selector and palette tests alone MUST NOT establish this requirement. Review populated screenshots, keyboard operation, readable overflow and responsive layout. |
+| RWT-017 | Every native regression or missing required capability MUST be mapped to its owning requirement, fixed and verified at a public boundary before a release claim. |
 | RWT-020 | The first complete C++ release MUST include macOS, Windows, Linux, Android, and iOS. A desktop-only package is an intermediate artifact, not the agreed release. Platform-specific omissions require explicit approval and a recorded requirement change; neither implementation difficulty nor a passing desktop suite waives mobile acceptance. |
 
 Linux portable archives target x86_64 and ARM64 with a shared Ubuntu 24.04
@@ -1088,9 +1079,9 @@ The user approved a 60-second hang watchdog on 2026-11-04. It is not a startup
 performance allowance and does not replace or change the performance gates.
 Every probe must stop its owned process tree and drain its diagnostic streams.
 
-The C++/Qt application is the maintained product and publication target. The .NET/Avalonia application remains separately buildable as the functional and visual comparison reference until RWT-015 is satisfied. It is not a shipped runtime dependency or an alternative publishing pipeline. Its technology ADRs describe the reference implementation. All five native platform families are accepted for the first complete release. Platform-specific differences require explicit approval rather than inference. Authentication integration, deployment obligations and migration still require evidence. No browser version or browser backend is in scope.
+The C++/Qt application is the maintained product and publication target. All five native platform families are accepted for the first complete release. Platform-specific differences require explicit approval rather than inference. Authentication integration, deployment obligations and migration still require evidence. No browser version or browser backend is in scope.
 
-Direct old/new UI comparison applies on platforms where the old application actually runs; it does not pretend an old mobile release exists. Other new targets must exercise the same applicable public behavior against the owning specification and explicit platform capability matrix. A preserved artifact alone is not a reproducible baseline: record required toolchains, dependencies, and build/run commands before relying on it.
+Every supported target must exercise the applicable public behavior against this specification and its platform capability matrix. A preserved artifact alone is not reproducible evidence: record its toolchain, dependencies and build/run commands.
 
 Test cleanup is mandatory on success, failure, interruption, and partial setup. Stop and remove task-owned ephemeral containers and other temporary resources without pruning unrelated resources; retain at most the latest task-owned test image where needed. Coverage gates are 95 percent lines and 85 percent branches overall, with at least 90 percent branch coverage for newly introduced native logic. The current AWS/OIDC implementation is gated per owning source file. Hierarchical Radar/Map logic has an explicit 90-percent aggregate branch gate across RadarIsland synchronization, layout, painting and text-color updates, Workspace view selection, and their local functions. All five owners must be present in the report. Future new logic must be added to an equally explicit gate. Percentage gates do not replace behavioral parity evidence.
 
@@ -1099,7 +1090,7 @@ Test cleanup is mandatory on success, failure, interruption, and partial setup. 
 RWT-016/017 record the visual/functional completion contract requested on
 2026-10-03. The populated desktop comparison exposed omissions below; none is
 an approved scope reduction. The capability inventory owns legacy routes; the
-[test map](k3d-test-map.md#what-did-the-populated-desktop-comparison-on-2026-10-03-establish)
+[test map](k3d-test-map.md)
 owns captures, build identities, executed outcomes and remaining verification.
 
 | Required completion | Owning contract/capability | Acceptance boundary |
@@ -1115,7 +1106,7 @@ owns captures, build identities, executed outcomes and remaining verification.
 | Appearance, synchronization, Alerts, Diagnostics, Graphics, Privacy, Sources, Workspace and About Settings | STR-008/009, SYN-011, RWT-016; LEG-031 through LEG-035 | Operate each retained section with populated data in every theme; validation, failed saves and restart preserve valid values. |
 | Source/session management, import channels, windows and restoration | SES, STR; LEG-001 through LEG-010/032 | Public workflows, changed snapshots, independent windows, lifecycle and restart; no silent interactive login. |
 | Localization, command palette, shortcuts, update checking and links | ACC, STR, ERR; LEG-033 through LEG-037 | Retained routes/options, language fallback, safe commands, failure states and deliberate external actions. |
-| Cache/request lifecycle, performance, migration/rollback, packaging and device coverage | SYN, ERR, PER, RWT-004 through RWT-015 | Public-boundary measurements, enforced coverage gates, clean-device install/run and OS/architecture/license/signing evidence per claimed target. |
+| Cache/request lifecycle, performance, migration/rollback, packaging and device coverage | SYN, ERR, PER, RWT-004 through RWT-008, RWT-016, RWT-017 | Public-boundary measurements, enforced coverage gates, clean-device install/run and OS/architecture/license/signing evidence per claimed target. |
 
 All 19 themes and their dark/light variants remain required. Theme intensity
 was explicitly removed on 2026-10-08, as recorded in ADR 0024. The retained themes
@@ -1146,22 +1137,16 @@ still be reconciled with LEG-027 through LEG-030 before their implementation.
 
 | Requirement | Public scenario | Expected result | Evidence status |
 |---|---|---|---|
-| RWT-003, RWT-004 | Build, install, and exercise the agreed public workflows on each claimed OS/architecture target. | Release claims match tested platform support and confirmed behavior; unverified targets are not presented as supported. | Planned check; implementation not started. |
-| RWT-005, RWT-007 | Install and run a replacement release artifact on a clean supported device. | The local UI works without embedded browser rendering, a .NET runtime, or a .NET companion service. Explicitly confirmed external authentication remains available where supported. | Planned check; implementation not started. |
-| RWT-008, PER-012, PER-013 | Inspect and measure release artifacts per target. | Only necessary runtime dependencies are included; actual download and installed sizes satisfy the confirmed per-target limits. | Planned packaging check; not measured. |
-| RWT-009, RWT-010, RWT-011 | Build and launch the recorded old baseline and new application on the comparison host, then change their local settings independently. | Both remain runnable and their local state and artifacts stay isolated. Repeat after production retirement using the preserved reference. | Planned check; comparison runners not yet implemented. |
-| RWT-012 | Reconcile the shipped-function inventory against requirements and the old/new test ledger. | Every function has an explicit disposition and public evidence or a visible gap; unmapped functions block complete-parity claims. | Planned inventory; not yet established. |
-| RWT-013 | Run equivalent read and mutation scenarios through each application's public boundary. | Reads observe equivalent cluster scope; mutations use isolated or reset preconditions and do not contaminate the other application's result. | Planned comparison checks; not executed. |
-| RWT-014 | Compare a known old bug, an approved removal, and a regression in a required behavior. | The bug is not preserved as intended behavior, the approved removal is explicit, and the required-behavior regression remains a blocking discrepancy. | Planned comparison checks; not executed. |
-| RWT-015 | Evaluate retirement while parity, migration, or release evidence is missing, then after required evidence is complete. | Missing evidence blocks removal; completed replacement can exclude the old runtime while retaining a separately usable test reference. | Planned retirement gate; not evaluated. |
+| RWT-003, RWT-004 | Build, install, and exercise the agreed public workflows on each claimed OS/architecture target. | Release claims match tested platform support and confirmed behavior; unverified targets are not presented as supported. | Required for each release. |
+| RWT-005, RWT-007 | Install and run a replacement release artifact on a clean supported device. | The local UI works without embedded browser rendering or an external companion service. Explicitly confirmed external authentication remains available where supported. | Required for each release. |
+| RWT-008, PER-012, PER-013 | Inspect and measure release artifacts per target. | Only necessary runtime dependencies are included; actual download and installed sizes satisfy the confirmed per-target limits. | Required for each release package. |
 
 ## Safety Model
 
 ### Inspector History Migration Evidence
 
 The native inspector now provides session-local Back/Forward controls, native
-keyboard bindings, a 32-visit bound, consecutive deduplication and the C#
-reference's retained forward branch. Navigation uses current collection-cache
+keyboard bindings, a 32-visit bound, consecutive deduplication and a retained forward branch. Navigation uses current collection-cache
 membership independently of display filters; old detail-only entries are not
 treated as current resources. The existing YAML discard decision binds the
 exact target, and fresh reads remain subject to the confirmed request/auth rules.
@@ -1237,7 +1222,7 @@ The persisted schema uses each real table model's stable header IDs. At least on
 column remains visible; a pinned column must also be visible. Invalid or newer
 stored documents are reported and preserved rather than silently overwritten.
 
-The [test map](k3d-test-map.md#which-native-table-layout-and-package-checks-passed-on-2026-10-03)
+The [test map](k3d-test-map.md)
 records the exact public scenarios, failures, remaining gaps, complete-suite run,
 coverage gate and packaged-binary screenshot identities. All 19 themes have
 scoped dark/light screenshots for Resources, Events and both column dialogs;
@@ -1365,7 +1350,7 @@ them once to local filesystem paths. The resulting snapshot identity, import
 report, authentication behavior and ownership rules are identical to importing
 that path directly. Invalid URL metadata must fail explicitly instead of silently
 selecting another file. Focused macOS CLI and visible-UI evidence is recorded in
-[the test map](k3d-test-map.md#does-source-import-accept-paths-and-file-urls-at-one-public-boundary);
+[the test map](k3d-test-map.md);
 OS-native chooser interaction and actual additional-platform proof remain open.
 
 ## What is required of the shared native application shell?
@@ -1432,16 +1417,15 @@ rules. Partial cached resources remain usable while collections arrive.
 Native presets capture search, implemented field expressions and Problems/Activity,
 not table sort or radar camera. Session views version 5 preserve older supported
 documents on read and upgrade only when a view actually changes. Saved-filter
-import is not a complete C# profile import.
+import does not import a complete application profile.
 
 ### How Must Saved-Filter Migration Behave?
 
-- FLT-018: Import MUST be explicit and accept a regular local JSON file in the native or C# saved-filter format, within the existing 64 KiB bound. It MUST NOT access an ambient reference profile or modify the selected source.
+- FLT-018: Import MUST be explicit and accept a regular local JSON file in a supported saved-filter format, within the existing 64 KiB bound. It MUST NOT access an ambient reference profile or modify the selected source.
 - FLT-019: Import MUST preserve search, Problems/Activity and supported field expressions. Mutually conflicting modes, malformed fields, unsupported fields and case-insensitive name collisions MUST fail without partial replacement. Repeating the same named state MUST be idempotent; differing state MUST NOT silently overwrite an existing name.
 - FLT-020: Import MUST use the existing asynchronous preset owner and private atomic persistence. Failure MUST preserve existing presets and report an error without exposing document contents. Import and applying the resulting filter MUST NOT initiate Kubernetes requests.
 
-C# ApplyPreset clears Id; import does the same rather than inventing a UID
-predicate. Its row-limit is a display cap, not a filter; the native virtualized
+Import clears an obsolete Id field rather than inventing a UID predicate. Its row-limit is a display cap, not a filter; the native virtualized
 view retains all matching cached resources. This bounded compatibility behavior
 and rollback are owned by ADR 0031.
 
@@ -1486,11 +1470,11 @@ UI-TBL-02: Status text follows reference semantics with the selected theme's hea
 
 ## How Are Cluster Islands And Resource Map Views Deterministic?
 
-- RAD-DET-01: Given the same immutable resource projection and imported context identity, native world coordinates and terrain colors MUST be deterministic across independently created sessions and tabs. The seed MUST use the existing immutable context ID, not a session ID, tab ID or local display alias. Topology inputs remain cluster, namespace scope, kind, name, owner and Kubernetes UID. Separated cluster islands and namespace districts replace exact C# world-coordinate equality. Districts retain identity-seeded resource branches rather than invented land. Their actual resources MUST form recognizable silhouettes, not one shared round template differentiated only by colors or labels. Stable coastline guidance and resource families determine the occupied outline. Time, health, metrics, theme and presentation order MUST NOT reseed that outline. Cameras, filters and selection remain session-owned. All discovered resource kinds participate in the same geometry.
+- RAD-DET-01: Given the same immutable resource projection and imported context identity, native world coordinates and terrain colors MUST be deterministic across independently created sessions and tabs. The seed MUST use the existing immutable context ID, not a session ID, tab ID or local display alias. Topology inputs remain cluster, namespace scope, kind, name, owner and Kubernetes UID. Separated cluster islands and namespace districts replace exact historical world-coordinate equality. Districts retain identity-seeded resource branches rather than invented land. Their actual resources MUST form recognizable silhouettes, not one shared round template differentiated only by colors or labels. Stable coastline guidance and resource families determine the occupied outline. Time, health, metrics, theme and presentation order MUST NOT reseed that outline. Cameras, filters and selection remain session-owned. All discovered resource kinds participate in the same geometry.
 - RAD-DET-02: Cluster islands MUST have nonoverlapping bounds and visible water separation, with recognizable, nonoverlapping namespace districts grouped within each cluster. As clarified on 2026-10-28, artificial connector strokes MUST NOT join districts or imply Kubernetes relationships. Cluster-scoped resources, including Nodes and PersistentVolumes, MUST occupy a separate cluster-resource district, not a synthetic Namespace. Placement retains the seven-unit lattice, kind terrain palette and stable identity seed. Unlisted kinds retain their existing grass-color fallback.
 - RAD-DET-03: Actual Namespace resources MUST remain selectable at their district anchor. Decorative cluster/district labels MUST NOT become synthetic Kubernetes resources or change resource counts.
 - RAD-DET-04: Input enumeration, table sorting, presentation filters and camera changes MUST NOT change world coordinates. Filtering retains noninteractive grey excluded terrain. Geometry, projection and painting read public cache models and MUST NOT initiate transport.
-- RAD-DET-05: Exact native geometry comparisons MUST use the same recorded cache projection, context identity and camera settings. C#/C++ comparisons retain behavior, colors and controls while recording the newly approved geometry difference. Comparing changing API snapshots or aggregate counts is insufficient. Isolated renderer captures MUST identify their boundary and MUST NOT be presented as full installed-window, water, animation, every-theme or release-parity evidence.
+- RAD-DET-05: Exact native geometry comparisons MUST use the same recorded cache projection, context identity and camera settings. Visual comparisons retain behavior, colors and controls while recording approved geometry differences. Comparing changing API snapshots or aggregate counts is insufficient. Isolated renderer captures MUST identify their boundary and MUST NOT be presented as full installed-window, water, animation, every-theme or release-parity evidence.
 - RAD-VIEW-01: Map MUST be the first primary workspace tab and selected by default, not an additional session tab. Resources, Events and Connections are offered when the open session has corresponding unfiltered data. An already selected destination stays visible if it becomes empty. The small context Radar MUST remain available outside Map except in the compact landscape layout governed by SHL-012. Automatic hiding MUST preserve the session, query, cache and camera, release its keyboard focus and stop its visual effects. The full Map remains reachable. An opened context map MUST share the existing session cache, filters, selection, inspector, camera and alarm behavior. Selecting a context MUST reuse the ordinary context-opening flow, not a parallel loading or authentication path. Switching workspace tabs with an already loaded session MUST NOT itself fetch resources, authenticate, clear drafts or duplicate the Radar renderer. The first explicit opening of a metadata-only restored tab follows STR-005. The context Map MUST offer All Contexts beside the zoom controls, without map history buttons. Changing sessions retains the existing dirty-YAML Stay/Discard protection. Map and small Radar controls MUST overlay the drawing area rather than reserve a separate section. Keyboard, touch and focus access MUST remain available. This replaces the earlier menu-only, Table-default target.
 - RAD-VIEW-02: Cluster names MUST be visible at overview scale; namespace labels appear when zooming in; existing resource glyphs and interactive details remain available at closer scales. Label work MUST be viewport-bounded, theme-aware and decluttered. Existing wheel/trackpad zoom, drag, focused arrow keys, selection and alert focus remain unchanged. This increment adds no per-cluster status/age panel. Guidance for selection hidden by filters is lower priority, not part of this increment.
 
@@ -1521,7 +1505,7 @@ previously accepted preview with an empty or fabricated map.
 
 - UI-ALT-06: Radar zoom preview evaluates the current editor draft against the existing session cache, without saving or playing sound. It focuses the first visible matching resource, otherwise the first visible resource, with a minimum zoom of 100 percent. Manual preview remains available when automatic focus is off and for read-only built-in rules. Only the zoom setting is hidden when automatic focus is off. A disabled rule can be previewed without enabling it. No session, initial loading, invalid criteria, bounded-regex failure or an empty visible projection reports an inline error. Results from a changed session or cache cannot move the current camera. Explicit preview reveals the Radar sidebar, including its narrow-screen drawer, without navigating away from the draft.
 
-This increment aligns the Alerts arrangement and reachable editing controls. It does not certify all Settings capabilities, populated C#/native framebuffer equality or release readiness. Native default descriptions explain the three retained rules; recent changes explicitly describe the agreed green highlight rather than the reference's outdated cyan description. Matcher summaries use the selected language's existing field labels rather than persistence identifiers; language changes update presentation without changing evaluation or saved criteria. The editor groups color and hold mode, then animation and hold mode, in two columns on desktop and one column in narrow panes. Sound-source and zoom-preview controls have executable focused evidence; installed visual and assistive-technology evidence remain separate. The existing real-cache alarm tests continue to govern behavior independently of this layout.
+This increment aligns the Alerts arrangement and reachable editing controls. It does not certify all Settings capabilities, populated framebuffer equality or release readiness. Native default descriptions explain the three retained rules; recent changes explicitly describe the agreed green highlight rather than the reference's outdated cyan description. Matcher summaries use the selected language's existing field labels rather than persistence identifiers; language changes update presentation without changing evaluation or saved criteria. The editor groups color and hold mode, then animation and hold mode, in two columns on desktop and one column in narrow panes. Sound-source and zoom-preview controls have executable focused evidence; installed visual and assistive-technology evidence remain separate. The existing real-cache alarm tests continue to govern behavior independently of this layout.
 
 ## How Does The Resource Inspector Preserve The Reference Presentation?
 
@@ -1573,7 +1557,6 @@ Ergänzung 2026-10-05, akzeptierter Migrationsumfang:
 - Der Session-Manager zeigt gespeicherte Sessions aus dem Katalog, ohne sie zu aktivieren. Kontext- oder Namespace-Änderungen erzeugen geschlossene Konfigurations-Snapshots derselben Serie. Unveränderte oder bereits vorhandene Konfigurationen erzeugen kein weiteres Duplikat.
 - Unabhängige Kopien übernehmen die gespeicherte Originalkonfiguration, nicht ungespeicherte Eingaben des Managers. Sie erhalten eine neue Serienidentität und keine Nutzungshistorie. Ein leerer Kopienname nutzt die bestehende Unnamed-Nummerierung.
 - Speichern und Kopieren lassen aktive Session, YAML-Entwurf und Port-Forwards unverändert. Öffnen erfolgt ausdrücklich über die gespeicherten Sessions. Ungültige Namespaces, fehlende Kontexte/Sessions und gesperrte Stores scheitern ohne Teiländerungen.
-- Die noch fehlenden C#-Session-Felder Sicherheitsstufe, Farbe und Icon sowie Source-Umbenennung/-Entfernung bleiben offene Migrationspunkte. Die Ergänzung behauptet dafür keine Parität.
 
 ### Wie werden Anzeige-Aliase importierter Kontexte bearbeitet?
 
@@ -1595,7 +1578,7 @@ Kontextidentität, Original-YAML, Credentials, Sessionnamen, Session-Konfigurati
 - Age and UID are cache-only field filters. Age numeric comparisons use cached creation timestamps, not rounded display labels; bare values mean seconds. Whole-number ms/s/m/h/d/w units, reference aliases and compound durations are accepted. Ranges require all comparisons; numeric exact alternatives require one match. Quoted display text, prefix/suffix and bounded regex remain available. Invalid numeric expressions report errors; missing, malformed or future timestamps never match numeric terms. No filter starts a Kubernetes request or a new refresh timer.
 - UID is available to global search, field selection, copying, sorting and the existing column toolbox. It is hidden by default. Layout-v2 migration retains all fifteen prior columns and their user settings, appends hidden UID, and does not rewrite storage until an explicit save. Schema-v3 saving retains the existing conflict/locking behavior.
 - Opening a port-forward endpoint is an explicit user action. Only a Listening task owned by the active session can be opened. The URL is constructed from the locally assigned port and literal IPv4 loopback host; callers cannot supply an arbitrary URL. HTTP and HTTPS are separate choices. The action does not authenticate or retry Kubernetes requests and does not claim the remote server supports the chosen protocol. Closed, foreign-session and unknown tasks fail visibly.
-- About preserves the six existing C# project/support destinations, exposes the actual shipped sound sources/licenses and displays the complete bundled Podlord MIT license without network access. External links open only after a user action, never by visiting About. Browser-launch acceptance is distinct from actual browser availability and network success. Library notices and corresponding source distribution remain a separate release gate.
+- About preserves the six project/support destinations, exposes the actual shipped sound sources/licenses and displays the complete bundled Podlord MIT license without network access. External links open only after a user action, never by visiting About. Browser-launch acceptance is distinct from actual browser availability and network success. Library notices and corresponding source distribution remain a separate release gate.
 
 ### Native Command-Line And Package Boundary Checks (2026-10-06)
 
@@ -1657,7 +1640,7 @@ Token, CA, client-certificate and private-key references share the existing 16 M
 
 ### Which legacy provider credentials can the native app use without running a provider?
 
-Preserve the C# cached-token capability: when no explicit token or token-file value is selected, read `auth-provider.config.access-token`, falling back to `id-token` when absent or empty. Validate the chosen value with the shared bearer-token checks and never expose it in source metadata or errors. Malformed selected provider token/config types fail explicitly. Import and connection resolution remain network- and execution-free.
+When reading cached provider tokens: when no explicit token or token-file value is selected, read `auth-provider.config.access-token`, falling back to `id-token` when absent or empty. Validate the chosen value with the shared bearer-token checks and never expose it in source metadata or errors. Malformed selected provider token/config types fail explicitly. Import and connection resolution remain network- and execution-free.
 
 This is not a legacy provider refresh implementation. Without a cached token, report that the user must refresh externally and explicitly reimport. A 401 suspends automatic requests and does not launch a browser or executable. Reimported inline provider credentials create a new snapshot; old sessions remain bound to the old one. Referenced token files remain externally owned rather than becoming frozen copies. Mixed exec/provider configurations and unsupported impersonation, including `as-uid`, fail explicitly rather than silently changing identity.
 
@@ -1701,7 +1684,7 @@ fail before profile creation; help/version remain side-effect-free. Missing or
 malformed source content uses the existing import error presentation rather than
 terminating the application. [ADR 0040](../adr/0040-explicit-native-startup-source-import.md)
 records this bounded migration and remaining startup-path/device evidence gaps;
-[the test map](k3d-test-map.md#which-bottom-docked-inspector-and-startup-checks-passed-on-2026-10-06)
+[the test map](k3d-test-map.md)
 owns executed results. No complete source-management parity is claimed.
 
 ## How Do Long Log Entries Remain Usable Without Heavy List Rendering?
@@ -1821,7 +1804,7 @@ Confirmed on 2026-10-08: automatic checks are weekly, not daily. See [ADR 0043](
 |---|---|
 | UPD-001 | The native application MUST check the latest stable release anonymously at most once per seven days by default, including across restarts and simultaneous windows/processes. Explicit Check for updates MUST bypass the time interval, but MUST NOT duplicate an in-flight request. |
 | UPD-002 | About MUST render cached status without network activity caused by displaying, scrolling or hovering. It MUST expose an accessible explicit check action and verified release/download actions when applicable. |
-| UPD-003 | A download MUST be offered only for a newer stable version with an uploaded native package matching the running OS and architecture, within the distribution size budget. C# packages and guessed cross-platform installers MUST NOT be offered. |
+| UPD-003 | A download MUST be offered only for a newer stable version with an uploaded native package matching the running OS and architecture, within the distribution size budget. Unrelated packages and guessed cross-platform installers MUST NOT be offered. |
 | UPD-004 | Release/download URLs MUST exactly match the repository and validated version/asset. Redirects MUST NOT be followed. Opening a URL requires deliberate user input; automatic installation and browser login MUST NOT occur. |
 | UPD-005 | Checks MUST have one lifecycle owner, a bounded metadata response and a 10-second metadata deadline. Failures, malformed metadata, authentication failures and rate limits MUST surface a readable error without immediate retries or upstream response-body disclosure. Existing verified update information MUST survive failed checks. |
 | UPD-006 | Attempts/results MUST be stored atomically in a private operational cache without overwriting settings, sessions or sources. Invalid, unsupported or symlinked cache/lock paths MUST fail explicitly without destroying existing data. |
@@ -1851,7 +1834,7 @@ On mobile, `oci ce cluster generate-token` may use a complete imported `exec.env
 
 - `MACSTORE-006`: The macOS Store application is Universal2. Its executable and every shipped Mach-O dependency contain native `arm64` and `x86_64` code. Both thin inputs come from the same revision, preserve the `berlin.yuna.podlord` identity and retain the Store-specific authentication and file-access boundary. Neither architecture may silently fall back to emulation.
 - `MACSTORE-007`: Universal2 composition rejects mismatched resource trees, unsafe archive paths, bundle symlinks escaping the application and an existing output destination. The merged unsigned application is not a distributable release. Signing, package checks and the agreed size gates still apply.
-- `REL-CPP-001`: Native release and Store packaging workflows prepare the C++ application. The C# build remains available as a comparison reference. A prepared candidate is not evidence of full platform, UI, performance or Store readiness and does not itself publish a tag, release or upload.
+- `REL-CPP-001`: Native release and Store packaging workflows prepare the C++ application. A prepared candidate is not evidence of full platform, UI, performance or Store readiness and does not itself publish a tag, release or upload.
 
 - `MACSTORE-008`: Pasted kubeconfigs retain an app-owned private origin in the Store channel. The paste dialog does not offer an external origin-path field there. Direct-download origin entry remains available. Import alone starts neither a Kubernetes request nor an authentication command.
 
@@ -1962,3 +1945,20 @@ indicator. Failed negotiation, invalid input, protocol errors and nonzero exits
 remain visible as contextual failures. A connected shell does not add a redundant
 status-message row beneath its header. Starting another attempt clears the prior
 local validation message before publishing its connecting state.
+
+## AI evidence and local YAML checks
+
+The selected model receives the resource kind, a recognized problem code, safe
+status and event reasons, and bounded facts from resources connected through the
+current graph. Resource and Secret values, raw event messages, logs, YAML content
+and credentials are excluded. The answer explains the resource role in one short
+sentence, distinguishes observed facts from possible causes, and gives a
+read-only next check in the selected UI language.
+
+Checking an edited YAML draft is local. If that check fails and automatic
+analysis is enabled for the context, the AI receives only the fixed check reason
+and, for syntax errors, its line and column. The raw draft is never part of the
+AI request. The result must identify this as a local draft check, not a response
+from the Kubernetes API server. Editing or discarding the draft clears this
+extra evidence. An explicit analysis refresh can analyze the selected resource
+without enabling automatic analysis.

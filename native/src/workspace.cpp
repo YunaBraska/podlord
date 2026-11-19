@@ -637,6 +637,8 @@ bool Workspace::setYamlDraft(const QString& text) {
     if (!yamlDraft_ || pendingLeave_ || yamlDraft_->session != active_ || yamlDraft_->path != inspectorPath()) return false;
     if (yamlDraft_->text == text) return true;
     const bool dirty = yamlDirty(); yamlDraft_->text = text;
+    clearYamlCheck();
+    runtime_->incidentAi.setDraftError({}, {}, {});
     emit yamlTextChanged(); if (dirty != yamlDirty()) emit yamlEditChanged(); return true;
 }
 bool Workspace::clearYamlDraft() {
@@ -654,6 +656,8 @@ bool Workspace::clearYamlDraft() {
         emit yamlApplyChanged();
     }
     if (!yamlDraft_) return true;
+    clearYamlCheck();
+    runtime_->incidentAi.setDraftError({}, {}, {});
     yamlDraft_.reset(); emit yamlTextChanged(); emit yamlEditChanged(); return true;
 }
 bool Workspace::allowLeave(Leave action, const QString& target, int historyIndex) {

@@ -170,8 +170,10 @@ QString analysisSystemText(bool diagnostic) {
     return diagnostic
         ? style + "Explain the fixed kubeconfig validation error. The exec.env field must be a YAML list of name/value entries, or absent. "
             "Do not imply that credentials or cluster data were checked. Return only JSON with summary, cause and one concrete edit in action."
-        : style + "Explain the observed problem in plain words. Connect relevant cluster observations, but distinguish facts from possible causes. "
+        : style + "In summary, first explain what the selected resource kind does in one short sentence, then explain the observed problem. "
+            "If the resource kind is unfamiliar, say its role is unknown. Connect relevant cluster observations, but distinguish facts from possible causes. "
             "A manual review is not proof of a fault. Seeing a Secret does not prove whether the kubelet can use it. "
+            "A local YAML draft check is not a Kubernetes server response. Do not claim that the draft content was read. "
             "Evidence depth is the number of verified resource links from the selected resource. Give nearer facts more weight. "
             "These observations may be incomplete or delayed. An omitted resource is not proof that it is absent from the cluster. "
             "Do not describe how the application stores or collects observations. "
@@ -842,7 +844,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         const auto identity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
             + '\n' + incidentEvidenceText(evidence, false)
             + '\n' + provider_ + '\n' + account
-            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n11";
+            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n12";
         const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
         activeKeys.insert(key);
         const auto kind = row["kind"].toString();
@@ -901,6 +903,8 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         observations.insert("Pod containers ready: " + ready);
     const auto restarts = selected["restarts"].toInt();
     if (kind == "Pod" && restarts > 0 && restarts <= 100000) observations.insert("Container restarts observed");
+    if (draftError_ && draftError_->context == context && draftError_->path == path)
+        observations.insert("Local YAML draft check: " + draftError_->message);
     QMap<QString, QJsonObject> nodes, claims, volumes;
     QSet<QString> secrets;
     for (const auto& value : snapshot->first) {
@@ -957,7 +961,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         evidenceBudgetBytes(snapshot->second, kind, code, related));
     const auto identity = context + '\n' + path + '\n' + code + '\n' + related.join("\n")
         + '\n' + incidentEvidenceText(evidence, false)
-        + '\n' + provider_ + '\n' + account + '\n' + model() + '\n' + thinkSignature + '\n' + snapshot->second + "\nmanual-v5";
+        + '\n' + provider_ + '\n' + account + '\n' + model() + '\n' + thinkSignature + '\n' + snapshot->second + "\nmanual-v6";
     const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
     Incident incident{key, context, code, kind, path, snapshot->second,
         provider_, model(), reasoning(), thinkSignature, related, true, evidence};
@@ -979,7 +983,8 @@ void IncidentAi::prepareManual(const QString& context, const QString& path) {
 bool IncidentAi::refresh(const QString& context, const QString& path) {
     if (!modelReady_) return false;
     const auto found = visible_.constFind(context + '\n' + path);
-    const auto recognized = enabled(context) && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
+    const auto hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
+    const auto recognized = !hasDraftError && enabled(context) && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
     const auto fallback = recognized ? std::optional<Incident>{} : manualIncident(context, path);
     if (!recognized && !fallback) return false;
     const auto incident = recognized ? *found : *fallback;
@@ -1003,6 +1008,16 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
     queue_.prepend(requested); queued_.insert(requested.key);
     dispatch(); emit changed();
     return true;
+}
+void IncidentAi::setDraftError(const QString& context, const QString& path, const QString& error) {
+    const auto old = draftError_;
+    draftError_.reset();
+    if (!context.isEmpty() && !path.isEmpty() && !error.isEmpty() && error.size() <= 200
+        && !error.contains('\n') && !error.contains('\r'))
+        draftError_ = DraftError{context, path, error};
+    if (old) prepareManual(old->context, old->path);
+    if (draftError_) prepareManual(context, path);
+    emit changed();
 }
 void IncidentAi::observeDiagnostic(const QString& error, const QString& language) {
     if (error != kubeconfigExecEnvMessage || !modelReady_) {
@@ -1167,10 +1182,11 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
     const auto found = enabled(context) ? visible_.constFind(context + '\n' + path) : visible_.cend();
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
-    const auto& incident = found == visible_.cend() ? *manual : *found;
+    const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;
+    const auto& incident = (draft && manual != manualVisible_.cend()) || found == visible_.cend() ? *manual : *found;
     const auto record = records_.constFind(incident.key);
     if (record == records_.cend() || record->created.secsTo(QDateTime::currentDateTimeUtc()) >= cacheLifetimeSeconds) {
-        if (found == visible_.cend() && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
+        if ((found == visible_.cend() || draft) && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
         return {{"pending", queued_.contains(incident.key) || inFlight_ == incident.key}};
     }
     return {{"summary", record->answer["summary"].toString()},

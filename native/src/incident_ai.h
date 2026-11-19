@@ -73,6 +73,7 @@ public:
     void observe(const QString& context, const QJsonArray& rows, const QString& language);
     void prepareManual(const QString& context, const QString& path);
     void observeDiagnostic(const QString& error, const QString& language);
+    void setDraftError(const QString& context, const QString& path, const QString& error);
     QVariantMap diagnosticResult() const;
     bool refresh(const QString& context, const QString& path);
     void retainContexts(const QSet<QString>& contexts);
@@ -117,6 +118,8 @@ private:
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
     std::optional<Incident> diagnostic_;
+    struct DraftError final { QString context, path, message; };
+    std::optional<DraftError> draftError_;
     QMap<QString, QDateTime> retryAfter_;
     QQueue<Incident> queue_;
     QSet<QString> queued_;

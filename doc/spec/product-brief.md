@@ -1,106 +1,17 @@
-# Podlord Product Brief
+# Podlord product brief
 
-Podlord is a standalone native Kubernetes control center. The existing C#/.NET and Avalonia application is the functional and visual reference for the C++/Qt migration. It replaces namespace-first Kubernetes GUIs with a flat, cache-first, multi-context, IDE-like workspace. The native migration is not yet release-approved; its acceptance requirements and evidence live in [the operational specification](podlord-operational-spec.md) and [the capability inventory](legacy-capability-inventory.md).
+PodLord is a standalone C++ and Qt Quick Kubernetes console. Its flat resource
+view, map and inspector keep the current context visible while people investigate
+cluster problems. Kubeconfigs are imported into app-owned snapshots. Normal use
+needs no shell Kubernetes client.
 
-Tagline:
+The workspace presents resource health, links, events, logs, YAML and supported
+actions. Reads use a shared cache and request queue. An optional selected AI
+model explains observed problems using redacted cluster facts and linked
+resources. The model must distinguish observations from possible causes.
 
-> Podlord: Rule your clusters before they rule you.
+Secrets and credentials stay protected. The app must not log their values or
+include them in an AI request. Actions remain bound to the selected context.
 
-## Product Principle
-
-Podlord must never hide the battlefield behind a namespace tree.
-
-The user should always know:
-
-- where they are
-- what is alive
-- what changed
-- what is stale
-- which context each action controls
-- how to inspect one thing without losing the bigger picture
-
-## UX Pillars
-
-1. Flat by default: all namespaces are visible until filtered.
-2. Context clarity: every view, tab, log stream, editor, and action shows cluster, context, namespace scope, and freshness.
-3. IDE-style multitasking: tabs, splits, bottom panels, pinned resources, logs, and workspace restore.
-4. Standalone session management: Podlord imports kubeconfigs into an app-owned model and never depends on the user's shell context.
-5. Watch-first state: list-watch, object store, freshness metadata, batching, reconnects, and event history.
-6. Tactical map: a serious 2D pixel-art operational map, not a toy dashboard.
-
-## Reference capability groups
-
-1. App shell and config
-   - Avalonia native app shell
-   - C# core command structure
-   - Settings persistence
-   - Import kubeconfig
-   - Show contexts
-   - Create Podlord sessions
-   - Switch active session
-   - Store session metadata
-
-2. Kubernetes connection
-   - Create Kubernetes client from app-managed config
-   - List namespaces
-   - List pods and deployments across all namespaces
-   - Show flat resource explorer
-   - Add search and filters
-
-3. Watch engine
-   - Watch supervisor
-   - Object store
-   - Real-time UI updates
-   - Freshness states
-   - Reconnect and stale handling
-
-4. Resource focus
-   - Persistent resource tabs
-   - YAML, metadata, conditions, events, owner chain, freshness
-
-5. Logs and actions
-   - Pod logs
-   - Follow logs
-   - Bottom panel
-   - Context-bound actions
-   - Native port forwarding
-
-6. Tactical map
-   - Nodes as bases
-   - Pods as units
-   - Deployments as factories
-   - Services as relay structures
-   - Pan, zoom, inspect, health visuals
-
-7. Guardrails and polish
-   - Production warnings
-   - Dangerous command detection
-   - Workspace restore
-   - Saved filters
-   - Error, loading, and empty states
-
-## Operation Guardrails
-
-Each implementation's core and Kubernetes service layer own all sensitive operations:
-
-- Context binding
-- Kubeconfig isolation
-- Apply confirmation requirements
-- Secret redaction
-- RBAC interpretation
-
-Secrets are metadata-only by default. Raw secret values, kubeconfig tokens, and certificates are not logged or persisted unless a later explicit feature makes that safe.
-
-## C# reference architecture modules
-
-- `Podlord.Core`: domain, errors, time, kubeconfig import/store/export, sessions, settings, filters, health
-- `Podlord.Kubernetes`: Kubernetes API adapter, discovery, future watch supervisor, object store, health, events, relationships, logs, port forwarding
-- `Podlord.App`: Avalonia app shell, explorer, radar, inspector, logs, source/session management
-- future `Podlord.Terminal`: PTY sessions, shell profiles, generated kubeconfig env, command safety
-- future `Podlord.Workspace`: tabs, splits, pins, layouts
-
-## Current Boundaries
-
-The native app uses cache-first list/detail/log requests and implements an interactive container terminal through the Kubernetes streaming API, without kubectl. Current platform evidence and remaining gaps belong to the test map. Watch supervision remains planned separately so the existing request queue and source model stay explicit.
-
-Animated radar alerts belong in the rule system, where users can enable, disable, and customize them.
+The [operational specification](podlord-operational-spec.md) owns detailed
+behavior. [Release channels](../../docs/release-channels.md) owns distribution.

@@ -6,8 +6,7 @@ Status: accepted for the implemented desktop forwarding increment.
 
 Use Qt WebSockets for RFC 6455, TLS and socket buffering. The native transport
 owns only Kubernetes `v4.channel.k8s.io` channel framing and the loopback TCP
-listener. Neither `kubectl`, KubernetesClient nor a .NET companion is required
-by this runtime path. ADR 0005 remains the decision for the retained C# reference.
+listener. The runtime path needs no `kubectl` process or external companion service.
 
 Reuse the existing request owner for authentication material, captured server,
 foreground admission, request limits and backoff. A handshake occupies an

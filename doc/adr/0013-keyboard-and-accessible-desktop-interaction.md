@@ -27,7 +27,7 @@ Later verification must use the real public desktop UI and supported assistive t
 ## How Does Inspector History Preserve Its Target?
 
 The native inspector exposes visible Back/Forward controls and the platform's
-standard keyboard bindings. It retains the reference application's 32-visit
+standard keyboard bindings. It retains the established 32-visit
 bound, consecutive-visit deduplication, and insertion before an existing forward
 branch. History belongs to its session, not to the whole window, and is not
 persisted as a second resource catalogue.

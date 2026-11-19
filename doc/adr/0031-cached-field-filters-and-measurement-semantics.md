@@ -4,7 +4,7 @@ Status: accepted for text-field filtering; typed quantity filters remain pending
 
 ## Which behavior is authoritative?
 
-The retained C# matcher combines alternatives inside an expression with OR and
+The prior filter matcher combines alternatives inside an expression with OR and
 different fields plus global search with AND. The native implementation reuses
 one parser for global search, field expressions and exact-value selection.
 It does not introduce a second expression grammar or fetch resources to filter.
@@ -65,13 +65,13 @@ a request, refresh loop or timer. Missing samples cannot match numeric predicate
 including =0 and >=0; an actual measured zero can.
 
 Range comparisons are conjunctive and exact quantity alternatives are disjunctive,
-matching the reference application's numeric combination behavior. Invalid numeric
+matching the established numeric combination behavior. Invalid numeric
 expressions fail visibly without reverting to an unfiltered view. The dialog shows
 quantity-specific units and combination rules. Its option snapshot contains actual
 canonical measurements formatted without stale/incomplete suffixes, so selection
 cannot reinterpret annotations as units.
 
-The current increment covers numeric predicates. The reference application's
+The current increment covers numeric predicates. The established
 text/regex fallback for quantity display strings remains an explicit migration gap;
 it is not silently treated as complete. Positive storage filtering cannot be claimed
 from a capacity-only volume: the currently integrated Metrics API supplies CPU and
@@ -100,7 +100,7 @@ operators and display-unit spacing are supported without the reference's acciden
 interpretation of a displayed 500 mCPU as 500 cores.
 
 Individual sidebar fields use a nonmodal flyout anchored to their button, matching
-the reference application's interaction. Bounds are clamped to the window; the
+the established interaction. Bounds are clamped to the window; the
 remaining workspace stays operable. Escape, an outside press and session changes
 close the flyout. Text and checkbox edits share the existing cached filter owner;
 opening, searching options and filtering never schedule API requests.
@@ -111,17 +111,17 @@ no second filter model, timer or persistence. Checkbox borders and keyboard focu
 remain visible in the HUD palette. Public UI cases cover placement, keyboard
 selection, cache-only editing, navigation, viewport edges and session isolation.
 
-## How Are Existing C# Saved Filters Imported Without A Second Owner?
+## How Are Older Saved Filters Imported Without A Second Owner?
 
 The sidebar's saved-filter actions expose an explicit local JSON import using
 Qt's file dialog. Import and reload share the existing asynchronous preset owner;
-no timer, ambient C# profile access, authentication action or Kubernetes request
+no timer, ambient profile access, authentication action or Kubernetes request
 is introduced. The public store accepts both the native document and the actual
-camel-case C# array, converts once at the boundary and uses the native canonical
+older camel-case array, converts once at the boundary and uses the native canonical
 validator and conflict-checked atomic save.
 
-Search, Problems/Activity and supported field expressions are preserved. C#'s
-`nameFilter` maps to Name and `age` to the native age field. C# ApplyPreset clears
+Search, Problems/Activity and supported field expressions are preserved. The older
+`nameFilter` maps to Name and `age` to the native age field. The older preset format clears
 Id, so importing its stored Id does not introduce an otherwise absent predicate.
 The row-limit is a display cap, not a resource predicate. The 2026-10-09 reference
 parity correction replaces the earlier unlimited table projection with the
@@ -139,6 +139,6 @@ Selected files must be regular local JSON files within the existing 64 KiB prese
 limit. Import never modifies its source. Invalid, locked or conflicting imports
 retain existing presets and expose a content-free error. An existing private
 legacy array can also be read without rewriting; only an explicit successful edit
-writes the native format. This is saved-filter migration, not complete C# profile
+writes the native format. This is saved-filter migration, not complete profile
 or session migration. Native file-dialog interaction and the full paired filter
 visual matrix still need separate evidence.

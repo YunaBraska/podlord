@@ -8,9 +8,7 @@
 A cache-first Kubernetes console with an RTS-inspired map, resource tables,
 filters, inspector, container terminal and port forwarding.
 
-**C++/Qt Quick is the active implementation. Native release validation is still
-in progress.** C#/.NET/Avalonia remains a separately buildable functional and
-visual reference, not a runtime dependency of the replacement.
+PodLord is built with C++ and Qt Quick. Native release validation is in progress.
 
 **[Product site and user documentation](https://yunabraska.github.io/podlord/)**
 
@@ -28,7 +26,7 @@ cmake --build ../podlord-native-build --target podlord-native --parallel 4
 
 The native guide includes platform launch paths. Kubeconfigs are explicitly
 imported into immutable, app-owned snapshots. Normal use does not modify the
-original file or require `kubectl`, .NET, Docker or a browser frontend. Confirmed
+original file or require `kubectl`, Docker or a browser frontend. Confirmed
 browser authentication opens the system browser.
 
 ## Product And Platform Contract
@@ -61,10 +59,6 @@ targets for new production logic. Misses are reported for review and do not
 hide a functional result or block a release. Counts include meaningful style
 variants, not that many different product features.
 
-The [manual C# reference workflow](.github/workflows/csharp-reference.yml)
-retains its tests and original coverage checks separately. Reference gaps must
-not be disguised as native evidence.
-
 ## Qualification and Release
 
 Every pull request and merge to `main` runs the same native qualification.
@@ -75,8 +69,7 @@ workflow](.github/workflows/app-store.yml) prepares native macOS packaging
 without uploading to the Store.
 
 Existing [published releases](https://github.com/YunaBraska/podlord/releases)
-and installation channels may still contain legacy C# builds. They are not
-proof that the native replacement is released. Native distribution names start
+and installation channels may predate this source tree. Native distribution names start
 with `podlord-native-`. Final platform support and remaining blockers belong in
 the linked specification and test map, not an inferred download promise.
 
@@ -92,13 +85,6 @@ explicit workflow until the first Store delivery is accepted.
 The [resource explorer](docs/Page/assets/screenshots/native-resources.png) and
 [YAML inspector](docs/Page/assets/screenshots/native-inspector-yaml.png) also
 show the C++ application against disposable local Kubernetes data.
-
-## Design Reference
-
-The existing [resource explorer](doc/screenshots/resource-explorer.png) and
-[inspector](doc/screenshots/inspector-settings.png) captures show the C# reference.
-Current native comparisons and their build identities are recorded in the test
-map. Reference screenshots are not presented as native release screenshots.
 
 ## Contributing And Security
 

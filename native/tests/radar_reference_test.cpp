@@ -95,6 +95,39 @@ QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
     }
     return result;
 }
+bool highlightFill() {
+    QJsonArray rows;
+    QStringList paths;
+    for (int index = 0; index < 3; ++index) {
+        const auto name = QString("linked-%1").arg(index);
+        const auto path = "/api/v1/namespaces/default/pods/" + name;
+        paths.append(path);
+        rows.append(QJsonObject{{"path", path}, {"name", name}, {"kind", "Pod"},
+            {"namespace", "default"}, {"uid", name}, {"status", "Running"}});
+    }
+    podlord::ResourceTable table;
+    if (!table.publish(rows, "local")) return false;
+    podlord::RadarIsland radar;
+    radar.setWidth(800); radar.setHeight(800); radar.setSource(&table);
+    if (!QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 3; }, 3000)) return false;
+    const auto positions = coordinates(radar.tiles());
+    const auto capture = [&] {
+        QImage image(800, 800, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QPainter painter(&image); radar.paint(&painter);
+        return image;
+    };
+    const auto before = capture();
+    radar.setInspectedPath(paths[0]);
+    radar.setLinkedDepths({{paths[1], 1}, {paths[2], 3}});
+    const auto after = capture();
+    const auto difference = [&](int index) {
+        const auto point = (QPointF(400, 400) + positions.value(paths[index])).toPoint();
+        const auto a = before.pixelColor(point), b = after.pixelColor(point);
+        return std::abs(a.red() - b.red()) + std::abs(a.green() - b.green()) + std::abs(a.blue() - b.blue());
+    };
+    return difference(0) > 0 && difference(1) > difference(2) && difference(2) > 0
+        || setupFailure("selected and linked resource interiors lack depth-faded fill");
+}
 bool projectionSnapshot() {
     podlord::ResourceTable table;
     const QJsonObject original{{"path", "/api/v1/namespaces/default/pods/old"}, {"name", "old"},
@@ -568,6 +601,7 @@ bool exercise(const QStringList& args) {
     if (args.size() == 2 && args[1] == "projection_identity_direct") return projectionIdentity(false);
     if (args.size() == 2 && args[1] == "projection_identity_proxy") return projectionIdentity(true);
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
+    if (args.size() == 2 && args[1] == "highlight_fill") return highlightFill();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && args[1]=="proxy_metadata") return proxyMetadata();

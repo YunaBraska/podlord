@@ -36,11 +36,10 @@ Default is protected; atomic writes compare the expected catalog before saving.
 A fixed-duration fake loading animation was rejected: it could finish before the
 cluster did. An unbounded parallel scheduler was rejected: it defeats budgets.
 A second filter implementation was rejected: table, radar and counts use one
-proxy over the canonical cache. Native and C# preset file schemas are different;
+proxy over the canonical cache. Saved preset file schemas differ across format versions;
 profile migration requires a separate verified importer.
 
-Rollback may use the preserved reference app with its own profile. Older native
-binaries reject version 3 view documents instead of rewriting them. Keep the
+Older native binaries reject version 3 view documents instead of rewriting them. Keep the
 original profile before any intentional rollback; do not downgrade documents
 by deleting unknown state.
 

@@ -6,7 +6,7 @@ Status: accepted implementation of the isolated-runtime constraint in [ADR 0015]
 
 ## Decision
 
-The first native runtime slice owns local session lifecycle and immutable configuration copies. It exposes a real CLI before integration with Qt Quick. Qt Core supplies JSON, process execution, UUIDs, inter-process locking, and atomic file publication; no second persistence dependency or plugin layer is introduced. C++20 is the language baseline and CMake builds the runtime independently of .NET.
+The first native runtime slice owns local session lifecycle and immutable configuration copies. It exposes a real CLI alongside integration with Qt Quick. Qt Core supplies JSON, process execution, UUIDs, inter-process locking, and atomic file publication; no second persistence dependency or plugin layer is introduced. C++20 is the language baseline and CMake builds the runtime without a separate runtime.
 
 The native catalog is `sessions.json`, schema version 2, in an explicitly selected absolute profile. Legacy `store.json` is neither read nor overwritten. Unknown schema versions, unknown fields, malformed values, duplicate identities or titles, inconsistent replacement sequences, symlink profiles/files, sequence-number exhaustion, and failed writes produce explicit errors. Future migration must be a separate verified copy operation, not implicit fallback parsing. The initial, unreleased schema 1 cannot establish individual usage timestamps or replacement sequences; it is rejected without modifying its data, not guessed into the new model.
 
@@ -47,4 +47,4 @@ migration. Reference: [Qt 6.11 QStandardPaths](https://doc.qt.io/qt-6.11/qstanda
 
 ## Rollback
 
-The preserved legacy application remains independently runnable. Stop the native runtime and select the legacy reference; native files do not modify the legacy store. This is coexistence, not proof that native state can already be migrated back into the old application.
+Rollback must preserve the current profile and use only a compatible native build. Unsupported newer state must fail visibly rather than be overwritten.

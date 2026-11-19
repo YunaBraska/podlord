@@ -23,7 +23,7 @@ One codebase produces two deliberately different distribution channels. The Stor
 The confirmed native boundary is compiled with `PODLORD_MAC_APP_STORE=ON`.
 It retains native OIDC and cloud authentication and explicitly imported private
 keys. It never falls back to an external credential program. This supersedes
-the embedded-token/certificate-only restriction above for C++, not C#.
+the embedded-token/certificate-only restriction above for the native application.
 
 The system picker and paste import app-owned copies. Folder imports, ambient
 home imports, typed-path controls and reimporting original source files are
@@ -53,4 +53,4 @@ downloads and each thin architecture retain their existing 100,000,000 installed
 and 50,000,000 download targets. The distinction neither authorizes publication
 nor clears signing, platform or outstanding measurement evidence.
 
-The native publication workflows prepare C++ candidates. The C# application remains an independently runnable comparison reference, not the implementation shipped by those workflows. Preparing or checking a candidate does not authorize a release, tag or Store upload.
+The native publication workflows prepare C++ candidates. Only qualified native artifacts are shipped by those workflows. Preparing or checking a candidate does not authorize a release, tag or Store upload.

@@ -32,7 +32,7 @@ Modern Kubernetes operations UI with restrained late-1990s strategy-game influen
 
 ## Logo Usage
 
-Use `src/Podlord.App/Assets/Brand/Logo/podlord-logo-transparent.png` on dark metal, royal blue glow, or muted earth backgrounds.
+Use `native/assets/brand/Logo/podlord-logo-transparent.png` on dark metal, royal blue glow, or muted earth backgrounds.
 
 Avoid bright white backgrounds; the mark is designed for dark or muted surfaces.
 
@@ -56,7 +56,7 @@ For the native Qt interface, actions use one flat surface and thin border. Icon-
 
 AI controls stay short: model selection and automatic analysis belong in Settings; the inspector offers one explicit analysis action and structured results. A manual request never changes automatic consent.
 
-The native Qt interface reads `workspace.appearanceColors`. The older `src/Podlord.App/Assets/Theme/podlord-tokens.json` and `doc/design/podlord-theme.css` remain references for the legacy UI and web previews. CSS classes included:
+The native Qt interface reads `workspace.appearanceColors`. The stylesheet `doc/design/podlord-theme.css` is a web preview reference. CSS classes included:
 
 - `.pl-app-bg`
 - `.pl-panel`
