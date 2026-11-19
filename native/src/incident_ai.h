@@ -16,7 +16,7 @@
 #include "api_ai_client.h"
 
 namespace podlord {
-/** Local, opt-in analysis of recognized cached Kubernetes problem codes. */
+/** Cached Kubernetes analysis through one selected provider. */
 class IncidentAi final : public QObject {
     Q_OBJECT
 public:

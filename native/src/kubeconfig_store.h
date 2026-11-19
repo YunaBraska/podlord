@@ -5,6 +5,7 @@
 #include <QUrl>
 
 namespace podlord {
+inline constexpr char kubeconfigExecEnvMessage[] = "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env.";
 struct SourceContext final {
     QString id;
     QString name;

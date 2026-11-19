@@ -36,7 +36,8 @@ struct OllamaBoundary final : QTcpServer {
                 const bool chat = bytes->startsWith("POST /api/chat ");
                 if (!tags && !show && !chat) { socket->disconnectFromHost(); return; }
                 QJsonObject response;
-                if (tags) response = {{"models", QJsonArray{QJsonObject{{"name", "local-test:9b"}, {"size", 7500000000.0}}}}};
+                if (tags) response = {{"models", QJsonArray{QJsonObject{{"name", "local-test:9b"}, {"size", 7500000000.0}},
+                    QJsonObject{{"name", "local-test:10b"}, {"size", 8500000000.0}}}}};
                 else if (show) response = {{"capabilities", QJsonArray{"completion", "thinking"}},
                     {"thinking", QJsonObject{{"values", QJsonArray{"low", "medium", "high"}}, {"default", "high"}}}};
                 else {
@@ -150,7 +151,9 @@ void scenario(const QString& name) {
         require(ai.refresh("context", path), "Explicit analysis was rejected");
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Explicit analysis did not appear");
-        require(!ai.enabled("context") && server.submitted.contains("Pod containers ready: 0/1")
+        require(!ai.enabled("context") && server.submitted.contains("Observed signal: Manual review")
+            && server.submitted.contains("Resource status: Running")
+            && server.submitted.contains("Pod containers ready: 0/1")
             && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
             "Manual analysis changed consent or leaked private source data");
         ai.observe("context", snapshot, "de");
@@ -176,6 +179,28 @@ void scenario(const QString& name) {
         require(reopened.result("context", path).isEmpty(), "Changed evidence retained a stale manual analysis");
         return;
     }
+    if (name == "manual_model_switch") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b") && ai.models().contains("local-test:10b"); }, 2000)
+            && ai.setModel("local-test:9b"), "Manual model unavailable");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Manual model not ready");
+        const auto snapshot = rows();
+        const auto path = snapshot.at(2).toObject()["path"].toString();
+        ai.observe("context", snapshot, "de");
+        require(ai.refresh("context", path) && QTest::qWaitFor([&] {
+            return !ai.result("context", path).value("summary").toString().isEmpty();
+        }, 2000), "First manual answer missing");
+        require(ai.setModel("local-test:10b") && ai.result("context", path).value("summary").toString().isEmpty(),
+            "Old model answer remained visible after selecting a different model");
+        require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "New model not ready");
+        ai.prepareManual("context", path);
+        require(ai.result("context", path).value("summary").toString().isEmpty(), "Old answer returned for new model");
+        require(ai.refresh("context", path) && QTest::qWaitFor([&] { return server.chats == 2; }, 2000),
+            "New model did not receive its own manual request");
+        require(ai.setProvider("claude") && ai.result("context", path).isEmpty(),
+            "Signed-out provider retained a manual answer");
+        return;
+    }
     if (name == "diagnostic_exec_env") {
         const QString message = "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env.";
         podlord::IncidentAi ai(profile, endpoint);
@@ -195,8 +220,15 @@ void scenario(const QString& name) {
         reopened.observeDiagnostic(message, "de");
         require(server.chats == 1 && !reopened.diagnosticResult().value("summary").toString().isEmpty(),
             "Diagnostic cache was lost after restart");
+        require(reopened.setModel("local-test:10b") && reopened.diagnosticResult().isEmpty(),
+            "Old diagnostic remained visible after changing models");
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000),
+            "Replacement diagnostic model was not ready");
+        reopened.observeDiagnostic(message, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000),
+            "Changed model reused another model's diagnostic");
         reopened.observeDiagnostic("Other, untrusted error: token=private", "de");
-        require(reopened.diagnosticResult().isEmpty() && server.chats == 1, "Unknown diagnostic was transmitted");
+        require(reopened.diagnosticResult().isEmpty() && server.chats == 2, "Unknown diagnostic was transmitted");
         return;
     }
     if (name == "related") {
@@ -306,8 +338,16 @@ void scenario(const QString& name) {
         require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000),
             "Referenced-key model unavailable after restart");
         reopened.observe("context", snapshot, "de");
-        require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000)
+        require(QTest::qWaitFor([&] { return server.chats == 2
+            && !reopened.result("context", pod["path"].toString()).value("summary").toString().isEmpty(); }, 2000)
             && server.submitted.contains("NEXT_PASSWORD"), "Changed key references reused a stale analysis");
+        require(reopened.setEnabled("context", false), "Could not disable automatic analysis");
+        reopened.observe("context", snapshot, "de");
+        require(reopened.refresh("context", pod["path"].toString())
+            && QTest::qWaitFor([&] { return server.chats == 3; }, 2000)
+            && server.submitted.contains("NEXT_PASSWORD")
+            && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
+            "Manual analysis lost screened key evidence");
         return;
     }
     if (name == "events") {

@@ -1018,7 +1018,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         command.arguments.append(value);
                     }
                     const auto env = node["env"];
-                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env."};
+                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, kubeconfigExecEnvMessage};
                     QSet<QString> names;
                     if (env) for (const auto& entry : env) {
                         const auto name = text(entry, "name");

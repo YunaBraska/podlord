@@ -1,4 +1,5 @@
 #include "incident_ai.h"
+#include "kubeconfig_store.h"
 #include "session_store.h"
 #include <QCryptographicHash>
 #include <QDir>
@@ -15,7 +16,36 @@
 
 namespace podlord {
 constexpr qint64 cacheLifetimeSeconds = 90LL * 24 * 60 * 60;
-const QString execEnvDiagnostic = "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env.";
+const QStringList resourceProblemCodes{"CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "InvalidImageName",
+    "CreateContainerConfigError", "CreateContainerError", "OOMKilled", "Evicted", "Unschedulable",
+    "ProgressDeadlineExceeded", "NotReady"};
+const QStringList warningProblemCodes{"FailedScheduling", "FailedMount", "FailedAttachVolume",
+    "FailedCreatePodSandBox", "FailedToRetrieveImagePullSecret"};
+const QStringList referencedKeyCodes{"CreateContainerConfigError", "CreateContainerError", "FailedMount", "FailedAttachVolume"};
+QSet<QString> screenedKeySignals(const QJsonObject& row) {
+    static const QRegularExpression safeKey("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$");
+    static const QRegularExpression encodedKey("^[A-Za-z0-9_-]{32,}$");
+    QSet<QString> result;
+    for (const auto& field : {"secretKeys", "configMapKeys"}) {
+        const auto label = QString(field) == "secretKeys" ? "Referenced Secret key: " : "Referenced ConfigMap key: ";
+        int count = 0;
+        for (const auto& reference : row[field].toArray()) {
+            const auto key = reference.toString();
+            if (!safeKey.match(key).hasMatch() || encodedKey.match(key).hasMatch()
+                || key.startsWith("sk-", Qt::CaseInsensitive) || key.startsWith("ghp_", Qt::CaseInsensitive)
+                || key.startsWith("eyJ")) continue;
+            const auto decoded = QByteArray::fromBase64Encoding(key.toLatin1(),
+                QByteArray::Base64UrlEncoding | QByteArray::AbortOnBase64DecodingErrors);
+            if (key.size() >= 8 && decoded && decoded.decoded.size() >= 4
+                && std::all_of(decoded.decoded.cbegin(), decoded.decoded.cend(), [](char byte) {
+                    return byte >= 32 && byte <= 126;
+                })) continue;
+            result.insert(label + key);
+            if (++count == 12) break;
+        }
+    }
+    return result;
+}
 bool IncidentAi::supported() const {
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     return false;
@@ -122,7 +152,7 @@ void IncidentAi::providerChanged() {
         return choice.toMap().value("slug") == model();
     });
     if (!modelReady_) {
-        queue_.clear(); queued_.clear(); visible_.clear(); activeKeys_.clear();
+        queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); activeKeys_.clear(); contextStatus_.clear(); diagnostic_.reset();
         chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
     } else {
         status_.clear();
@@ -171,7 +201,7 @@ bool IncidentAi::setProvider(const QString& provider) {
     if (activeReply_) activeReply_->abort();
     chatgpt_.cancelAnalysis();
     claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
-    dispatchTimer_.stop(); queue_.clear(); queued_.clear(); visible_.clear(); activeKeys_.clear(); contextStatus_.clear();
+    dispatchTimer_.stop(); queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); activeKeys_.clear(); contextStatus_.clear(); diagnostic_.reset();
     modelReady_ = false; status_.clear();
     if (provider_ == "ollama") {
         if (models_.isEmpty()) refreshModels();
@@ -343,7 +373,7 @@ bool IncidentAi::setModel(const QString& model) {
         *selected = model;
         if (!save()) { *selected = previous; return false; }
         chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
-        queue_.clear(); queued_.clear(); visible_.clear(); contextStatus_.clear();
+        queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); contextStatus_.clear(); diagnostic_.reset();
         modelReady_ = provider_ == "chatgpt" ? chatgpt_.connected()
             : provider_ == "claude" ? claude_.configured() : openrouter_.configured();
         const auto snapshots = snapshots_;
@@ -359,7 +389,7 @@ bool IncidentAi::setModel(const QString& model) {
     if (!save()) { model_ = previous; reasoning_ = previousReasoning; return false; }
     if (activeReply_) activeReply_->abort();
     modelReady_ = false;
-    queue_.clear(); queued_.clear(); visible_.clear();
+    queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); diagnostic_.reset();
     contextStatus_.clear();
     refreshReasoning();
     emit changed();
@@ -376,7 +406,7 @@ bool IncidentAi::setReasoning(const QString& reasoning) {
     else if (reasoning_ == "on") thinkValue_ = QJsonValue(true);
     else if (reasoning_ == "off") thinkValue_ = QJsonValue(false);
     else thinkValue_ = QJsonValue(reasoning_);
-    queue_.clear(); queued_.clear(); visible_.clear();
+    queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); diagnostic_.reset();
     contextStatus_.clear();
     const auto snapshots = snapshots_;
     for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
@@ -442,6 +472,7 @@ void IncidentAi::ensureModelsFresh() {
 }
 void IncidentAi::refreshReasoning() {
     modelReady_ = false;
+    reasoningOptions_ = {"auto"};
     queue_.clear(); queued_.clear();
     const auto selected = model_;
     QNetworkRequest request(endpoint_.resolved(QUrl("/api/show")));
@@ -516,11 +547,6 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
     if (!modelReady_) return;
     for (auto item = visible_.begin(); item != visible_.end();) item = item->context == context ? visible_.erase(item) : ++item;
     QSet<QString> activeKeys;
-    static const QStringList recognized{"CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "InvalidImageName",
-        "CreateContainerConfigError", "CreateContainerError", "OOMKilled", "Evicted", "Unschedulable",
-        "ProgressDeadlineExceeded", "NotReady"};
-    static const QStringList recognizedEvents{"FailedScheduling", "FailedMount", "FailedAttachVolume",
-        "FailedCreatePodSandBox", "FailedToRetrieveImagePullSecret"};
     QMap<QString, QJsonObject> byUid;
     QMap<QString, QJsonObject> nodes, claims, volumes;
     QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
@@ -530,7 +556,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         if (!row["uid"].toString().isEmpty()) byUid.insert(row["uid"].toString(), row);
         if (row["kubernetesEvent"].toBool()) {
             if (row["eventType"] == "Warning" && row["problemSeverity"].toInt() > 0
-                && recognizedEvents.contains(row["eventReason"].toString()) && !row["eventTargetUid"].toString().isEmpty())
+                && warningProblemCodes.contains(row["eventReason"].toString()) && !row["eventTargetUid"].toString().isEmpty())
                 warningReasons[row["eventTargetUid"].toString()].insert(row["eventReason"].toString());
             continue;
         }
@@ -544,8 +570,8 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             && QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "PersistentVolumeClaim"}.contains(kind)) {
             QString category;
             for (const auto& issue : row["issue"].toString().split(',', Qt::SkipEmptyParts))
-                if (recognized.contains(issue.trimmed())) { category = issue.trimmed(); break; }
-            if (category.isEmpty() && recognized.contains(row["status"].toString())) category = row["status"].toString();
+                if (resourceProblemCodes.contains(issue.trimmed())) { category = issue.trimmed(); break; }
+            if (category.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) category = row["status"].toString();
             if (!category.isEmpty()) namespaceProblems[row["namespace"].toString()].insert(kind + ' ' + category);
         }
     }
@@ -558,8 +584,8 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         QString code;
         if (row["problemSeverity"].toInt() > 0) {
             const auto issues = row["issue"].toString().split(',', Qt::SkipEmptyParts);
-            for (const auto& issue : issues) if (recognized.contains(issue.trimmed())) { code = issue.trimmed(); break; }
-            if (code.isEmpty() && recognized.contains(row["status"].toString())) code = row["status"].toString();
+            for (const auto& issue : issues) if (resourceProblemCodes.contains(issue.trimmed())) { code = issue.trimmed(); break; }
+            if (code.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) code = row["status"].toString();
         }
         if (code.isEmpty() && !reasons.isEmpty()) { auto ordered = reasons.values(); ordered.sort(); code = ordered.first(); }
         if (code.isEmpty()) continue;
@@ -621,29 +647,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             if (QStringList{"Pending", "Available", "Bound", "Released", "Failed"}.contains(volumeStatus))
                 relatedSignals.insert("Bound volume: " + volumeStatus);
         }
-        if (row["kind"] == "Pod" && QStringList{"CreateContainerConfigError", "CreateContainerError", "FailedMount", "FailedAttachVolume"}.contains(code)) {
-            static const QRegularExpression safeKey("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$");
-            static const QRegularExpression encodedKey("^[A-Za-z0-9_-]{32,}$");
-            for (const auto& field : {"secretKeys", "configMapKeys"}) {
-                const auto label = QString(field) == "secretKeys" ? "Referenced Secret key: " : "Referenced ConfigMap key: ";
-                int count = 0;
-                for (const auto& keyReference : row[field].toArray()) {
-                    const auto keyName = keyReference.toString();
-                    const auto decoded = QByteArray::fromBase64Encoding(keyName.toLatin1(),
-                        QByteArray::Base64UrlEncoding | QByteArray::AbortOnBase64DecodingErrors);
-                    const bool encodedText = keyName.size() >= 8 && decoded && decoded.decoded.size() >= 4
-                        && std::all_of(decoded.decoded.cbegin(), decoded.decoded.cend(), [](char byte) {
-                            return byte >= 32 && byte <= 126;
-                        });
-                    if (!safeKey.match(keyName).hasMatch() || encodedKey.match(keyName).hasMatch()
-                        || encodedText
-                        || keyName.startsWith("sk-", Qt::CaseInsensitive) || keyName.startsWith("ghp_", Qt::CaseInsensitive)
-                        || keyName.startsWith("eyJ")) continue;
-                    relatedSignals.insert(label + keyName);
-                    if (++count == 12) break;
-                }
-            }
-        }
+        if (row["kind"] == "Pod" && referencedKeyCodes.contains(code)) relatedSignals.unite(screenedKeySignals(row));
         QStringList related = relatedSignals.values(); related.sort();
         const auto thinkSignature = provider_ != "ollama" || thinkValue_.isUndefined()
             ? QString("default") : thinkValue_.toVariant().toString();
@@ -698,16 +702,13 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
     const auto name = selected["name"].toString();
     if (kind.isEmpty() || name.isEmpty()) return std::nullopt;
     const auto nameSpace = selected["namespace"].toString();
-    static const QStringList knownCodes{"CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "InvalidImageName",
-        "CreateContainerConfigError", "CreateContainerError", "OOMKilled", "Evicted", "Unschedulable",
-        "ProgressDeadlineExceeded", "NotReady", "FailedMount", "FailedAttachVolume", "FailedScheduling",
-        "FailedCreatePodSandBox", "FailedToRetrieveImagePullSecret"};
+    const auto knownCode = [](const QString& code) { return resourceProblemCodes.contains(code) || warningProblemCodes.contains(code); };
     static const QStringList knownStatuses{"Running", "Pending", "Failed", "Succeeded", "Unknown", "Ready", "NotReady",
         "Available", "Unavailable", "Bound", "Lost", "Released", "Terminating"};
     QString code;
     for (const auto& issue : selected["issue"].toString().split(',', Qt::SkipEmptyParts))
-        if (knownCodes.contains(issue.trimmed())) { code = issue.trimmed(); break; }
-    if (code.isEmpty() && knownCodes.contains(selected["status"].toString())) code = selected["status"].toString();
+        if (knownCode(issue.trimmed())) { code = issue.trimmed(); break; }
+    if (code.isEmpty() && knownCode(selected["status"].toString())) code = selected["status"].toString();
     if (code.isEmpty()) code = "Manual review";
     QSet<QString> observations;
     const auto status = selected["status"].toString();
@@ -726,7 +727,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         const auto row = value.toObject();
         if (row["kubernetesEvent"].toBool()) {
             if (row["eventType"] == "Warning" && row["eventTargetUid"] == selected["uid"]
-                && knownCodes.contains(row["eventReason"].toString()))
+                && knownCode(row["eventReason"].toString()))
                 observations.insert("Observed warning event: " + row["eventReason"].toString());
             continue;
         }
@@ -739,7 +740,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         if (row["path"] != path && !nameSpace.isEmpty() && row["namespace"] == nameSpace
             && row["problemSeverity"].toInt() > 0) {
             for (const auto& issue : row["issue"].toString().split(',', Qt::SkipEmptyParts))
-                if (knownCodes.contains(issue.trimmed())) { observations.insert("Same namespace problem: " + rowKind + ' ' + issue.trimmed()); break; }
+                if (knownCode(issue.trimmed())) { observations.insert("Same namespace problem: " + rowKind + ' ' + issue.trimmed()); break; }
         }
     }
     if (kind == "Pod") {
@@ -763,6 +764,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
             if (seen) observations.insert("Image pull Secret reference: observed in cached resources");
             if (unverified) observations.insert("Image pull Secret reference: not verified in cached resources");
         }
+        if (referencedKeyCodes.contains(code)) observations.unite(screenedKeySignals(selected));
     }
     QStringList related = observations.values(); related.sort();
     if (related.size() > 12) related = related.mid(0, 12);
@@ -823,7 +825,7 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
     return true;
 }
 void IncidentAi::observeDiagnostic(const QString& error, const QString& language) {
-    if (error != execEnvDiagnostic || !modelReady_) {
+    if (error != kubeconfigExecEnvMessage || !modelReady_) {
         if (diagnostic_) {
             const auto old = diagnostic_->key;
             diagnostic_.reset(); queued_.remove(old);
@@ -872,8 +874,8 @@ QVariantMap IncidentAi::diagnosticResult() const {
     if (!diagnostic_) return {};
     const auto record = records_.constFind(diagnostic_->key);
     if (record == records_.cend() || record->created.secsTo(QDateTime::currentDateTimeUtc()) >= cacheLifetimeSeconds)
-        return {{"original", execEnvDiagnostic}, {"pending", queued_.contains(diagnostic_->key) || inFlight_ == diagnostic_->key}};
-    return {{"original", execEnvDiagnostic}, {"summary", record->answer["summary"].toString()}, {"cause", record->answer["cause"].toString()},
+        return {{"original", kubeconfigExecEnvMessage}, {"pending", queued_.contains(diagnostic_->key) || inFlight_ == diagnostic_->key}};
+    return {{"original", kubeconfigExecEnvMessage}, {"summary", record->answer["summary"].toString()}, {"cause", record->answer["cause"].toString()},
         {"action", record->answer["action"].toString()}};
 }
 void IncidentAi::dispatch() {
