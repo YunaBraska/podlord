@@ -25,7 +25,9 @@ Pane {
         Component.onCompleted: if (selected && inspectorOpen) active = true
     }
 
-    component InspectorTab: WorkspaceTab {}
+    component InspectorTab: WorkspaceTab {
+        width: Math.max(44, Math.floor(inspector.width / (inspector.width < 600 ? 4 : 8)))
+    }
     background: Rectangle {
         color: workspace.appearanceColors.panel
         border.width: 1
@@ -78,32 +80,22 @@ Pane {
         IconButton { objectName: "inspectorBack"; glyph: "Previous"; text: workspace.uiText["tooltip.previousResource"]; enabled: workspace.canInspectBack; onClicked: workspace.navigateInspector(-1) }
         IconButton { objectName: "inspectorForward"; glyph: "Next"; text: workspace.uiText["tooltip.nextResource"]; enabled: workspace.canInspectForward; onClicked: workspace.navigateInspector(1) }
         Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; elide: Text.ElideMiddle; Accessible.name: "Inspecting " + text }
-        CheckBox {
-            objectName: "incidentAiEnable"
-            visible: workspace.incidentAiSupported && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
-            text: workspace.uiText["settings.ai"]
-            checked: workspace.incidentAiEnabled
-            Accessible.name: workspace.uiText["ai.enable"]
-            onClicked: workspace.setIncidentAiEnabled(checked)
-        }
         IconButton { objectName: "refreshInspector"; glyph: "Reset"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
         IconButton { objectName: "deleteResource"; glyph: "Trash"; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
         IconButton { objectName: "preparePortForward"; glyph: "Service"; text: "Port forward " + workspace.inspectorName; visible: workspace.canPortForward; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
         IconButton { objectName: "closeInspector"; glyph: "Close"; text: "Close inspector"; onClicked: workspace.closeInspector() }
     }
-    TabBar {
+    Flow {
         spacing: 0
-        implicitWidth: 0
-        Layout.maximumWidth: inspector.width
         Layout.fillWidth: true
-        currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
-        InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
-        InspectorTab { objectName: "yamlButton"; text: workspace.uiText["inspector.yaml"]; onClicked: workspace.setInspectorPage("yaml") }
-        InspectorTab { objectName: "inspectorEventsButton"; text: workspace.uiText["inspector.events"]; onClicked: workspace.setInspectorPage("events") }
-        InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; onClicked: workspace.setInspectorPage("links") }
-        InspectorTab { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; visible: workspace.valuesAvailable; onClicked: workspace.setInspectorPage("values") }
-        InspectorTab { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; onClicked: workspace.setLogsVisible(true) }
-        InspectorTab { objectName: "terminalButton"; text: "Terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; onClicked: workspace.setInspectorPage("terminal") }
+        InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; checked: workspace.inspectorPage === "overview"; onClicked: workspace.setInspectorPage("overview") }
+        InspectorTab { objectName: "inspectorAiButton"; text: workspace.uiText["settings.ai"]; checked: workspace.inspectorPage === "ai"; visible: workspace.incidentAiSupported; onClicked: workspace.setInspectorPage("ai") }
+        InspectorTab { objectName: "yamlButton"; text: workspace.uiText["inspector.yaml"]; checked: workspace.inspectorPage === "yaml"; onClicked: workspace.setInspectorPage("yaml") }
+        InspectorTab { objectName: "inspectorEventsButton"; text: workspace.uiText["inspector.events"]; checked: workspace.inspectorPage === "events"; onClicked: workspace.setInspectorPage("events") }
+        InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; checked: workspace.inspectorPage === "links"; onClicked: workspace.setInspectorPage("links") }
+        InspectorTab { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; checked: workspace.inspectorPage === "values"; visible: workspace.valuesAvailable; onClicked: workspace.setInspectorPage("values") }
+        InspectorTab { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; checked: workspace.inspectorPage === "logs"; visible: workspace.podInspected; onClicked: workspace.setLogsVisible(true) }
+        InspectorTab { objectName: "terminalButton"; text: "Terminal"; checked: workspace.inspectorPage === "terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; onClicked: workspace.setInspectorPage("terminal") }
     }
     Flow {
         Layout.fillWidth: true
@@ -129,19 +121,27 @@ Pane {
     ColumnLayout {
         id: aiPanel
         Layout.fillWidth: true
-        visible: workspace.incidentAiSupported && workspace.incidentAiEnabled && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
+        visible: workspace.incidentAiSupported && workspace.inspectorPage === "ai" && workspace.inspectorPath !== ""
         spacing: 5
         onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
         Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
         property string docsError: ""
         Connections { target: workspace; function onInspectorPresentationChanged() { aiPanel.docsError = "" } }
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: workspace.appearanceColors.border }
-        Label { Layout.fillWidth: true; text: workspace.uiText["ai.title"]; font.bold: true; color: workspace.appearanceColors.accent }
+        RowLayout {
+            Layout.fillWidth: true
+            CheckBox {
+                objectName: "incidentAiEnable"
+                text: workspace.uiText["ai.auto"]
+                checked: workspace.incidentAiEnabled
+                Accessible.name: workspace.uiText["ai.enable"]
+                onClicked: workspace.setIncidentAiEnabled(checked)
+            }
+        }
         ComboBox {
             id: incidentAiModel
             objectName: "incidentAiModel"
             Layout.fillWidth: true
-            visible: workspace.incidentAiEnabled
+            visible: true
             model: workspace.incidentAiModelChoices; textRole: "label"
             currentIndex: model.findIndex(choice => !choice.header && choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
             displayText: currentIndex < 0 ? workspace.uiText["ai.chooseModel"] : model[currentIndex].label
@@ -213,6 +213,11 @@ Pane {
                 if (signal.startsWith("Assigned Node: ")) return workspace.uiText["ai.relatedNode"] + signal.slice(15)
                 if (signal.startsWith("Referenced claim: ")) return workspace.uiText["ai.relatedClaim"] + signal.slice(18)
                 if (signal.startsWith("Bound volume: ")) return workspace.uiText["ai.relatedVolume"] + signal.slice(14)
+                if (signal.startsWith("Observed warning event: ")) return workspace.uiText["ai.relatedEvent"] + signal.slice(24)
+                if (signal.startsWith("Same namespace problem: ")) return workspace.uiText["ai.relatedNamespace"] + signal.slice(24)
+                if (signal === "Image pull Secret reference: none in Pod spec") return workspace.uiText["ai.pullSecretNone"]
+                if (signal === "Image pull Secret reference: observed in cached resources") return workspace.uiText["ai.pullSecretPresent"]
+                if (signal === "Image pull Secret reference: not verified in cached resources") return workspace.uiText["ai.pullSecretUnverified"]
                 return signal
             }).join("; ")
             textFormat: Text.PlainText; wrapMode: Text.Wrap

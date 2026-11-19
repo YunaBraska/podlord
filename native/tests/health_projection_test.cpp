@@ -19,6 +19,7 @@ QJsonObject pod(const QString& name, const QString& phase, const QString& create
     QJsonObject spec{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
     if (name == "running-0") {
         spec["nodeName"] = "worker-a";
+        spec["imagePullSecrets"] = QJsonArray{QJsonObject{{"name", "registry-auth"}}};
         spec["volumes"] = QJsonArray{QJsonObject{{"name", "data"}, {"persistentVolumeClaim", QJsonObject{{"claimName", "claim-data"}}}}};
         const QJsonObject secretRef{{"name", "credentials"}, {"key", "DATABASE_PASSWORD"}};
         const QJsonObject configRef{{"name", "settings"}, {"key", "SERVER_PORT"}};
@@ -162,6 +163,11 @@ void referencedKeys(const QJsonArray& rows) {
         && !QJsonDocument(workload).toJson().contains("settings"),
         "Referenced resource names appeared in the key projection");
 }
+void imagePullSecretReferences(const QJsonArray& rows) {
+    const auto workload = row(rows, "running-0");
+    require(workload["imagePullSecrets"].toArray() == QJsonArray{"registry-auth"},
+        "Pod did not publish its image pull Secret reference for local correlation");
+}
 }
 
 int main(int argc, char* argv[]) {
@@ -184,6 +190,7 @@ int main(int argc, char* argv[]) {
         else if (scenario == "warning_expired") expiredWarning(rows);
         else if (scenario == "storage_references") storageReferences(rows);
         else if (scenario == "referenced_keys") referencedKeys(rows);
+        else if (scenario == "image_pull_secret_refs") imagePullSecretReferences(rows);
         else throw std::invalid_argument("Unknown health scenario");
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr, "%s\n", error.what()); return 1; }

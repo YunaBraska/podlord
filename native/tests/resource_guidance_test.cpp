@@ -188,7 +188,7 @@ bool ui(const QString& mode) {
     require(QTest::qWaitFor([&] { return item("cell_0_0") != nullptr; }, 2000), "Resource workspace did not present its cached row");
     press("cell_0_0");
     require(QTest::qWaitFor([&] { return workspace.resourceGuidance().size() == 1 && item("resourceGuidanceToggle"); }, 5000), "Accepted detail did not publish cached guidance");
-    require(item("incidentAiEnable") && !workspace.incidentAiEnabled(), "Local AI consent control is missing or enabled without consent");
+    require(item("inspectorAiButton") && !workspace.incidentAiEnabled(), "Inspector AI tab is missing or analysis started without consent");
     const int requests = boundary.requests;
     press("resourceGuidanceToggle");
     if (!QTest::qWaitFor([&] { return item("guidanceTitle_0"); }, 2000)) {
@@ -203,7 +203,17 @@ bool ui(const QString& mode) {
     require(!item("guidanceDetail_0")->property("text").toString().contains("diagnostic-secret"), "Guidance UI exposed untrusted status contents");
     const QString evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
     if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/" + mode + ".png"), "Cannot save actual guidance frame");
-    if (mode == "ui_ai_live") {
+    if (mode == "ui_expand") {
+        press("inspectorAiButton");
+        require(workspace.property("inspectorPage").toString() == "ai" && item("incidentAiEnable")
+            && item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
+            "Opening the AI tab changed consent or Kubernetes transport");
+        press("overviewButton");
+        require(workspace.property("inspectorPage").toString() == "overview" && item("guidanceTitle_0"),
+            "Leaving the AI tab did not restore the resource overview");
+    } else if (mode == "ui_ai_live") {
+        press("inspectorAiButton");
+        require(item("incidentAiEnable"), "AI tab has no consent control");
         press("incidentAiEnable");
         require(workspace.incidentAiEnabled(), "AI consent did not activate");
         require(QTest::qWaitFor([&] { return !workspace.incidentAiModels().isEmpty(); }, 10000)

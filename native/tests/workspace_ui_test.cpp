@@ -2944,7 +2944,7 @@ bool execute(const QString& requestedScenario) {
                 window->resize(width,844);
                 if (!waitFor([&] {
                     int visible=0;
-                    for (const auto* name:{"overviewButton","yamlButton","inspectorEventsButton","inspectorLinksButton","valuesButton","logsButton","terminalButton"}) {
+                    for (const auto* name:{"overviewButton","inspectorAiButton","yamlButton","inspectorEventsButton","inspectorLinksButton","valuesButton","logsButton","terminalButton"}) {
                         const auto* tab=item(window,name);
                         if (!tab || !tab->isVisible()) continue;
                         ++visible;
@@ -2953,7 +2953,7 @@ bool execute(const QString& requestedScenario) {
                     }
                     return visible>=5;
                 })) {
-                    for (const auto* name:{"overviewButton","yamlButton","inspectorEventsButton","inspectorLinksButton","valuesButton","logsButton","terminalButton"}) {
+                    for (const auto* name:{"overviewButton","inspectorAiButton","yamlButton","inspectorEventsButton","inspectorLinksButton","valuesButton","logsButton","terminalButton"}) {
                         auto* tab=item(window,name);
                         if (tab && tab->isVisible()) qWarning() << "Tab bounds" << name << tab->size() << tab->mapToScene(QPointF{}) << podlord::test::visibleBounds(window,tab);
                     }
@@ -3356,7 +3356,7 @@ bool execute(const QString& requestedScenario) {
             for (int column = 0; column < workspace.table()->columnCount(); ++column)
                 after.append(workspace.table()->data(workspace.table()->index(row, column)).toString());
         if (before.isEmpty() || after != before || workspace.currentSession() != session || server.requests.size() != requests) return false;
-        for (const auto& label : QList<QPair<QString, QString>>{{"overviewButton", "inspector.overview"}, {"yamlButton", "inspector.yaml"},
+        for (const auto& label : QList<QPair<QString, QString>>{{"overviewButton", "inspector.overview"}, {"inspectorAiButton", "settings.ai"}, {"yamlButton", "inspector.yaml"},
             {"inspectorEventsButton", "inspector.events"}, {"inspectorLinksButton", "inspector.links"}, {"logsButton", "inspector.logs"}}) {
             auto* control = item(window, label.first);
             if (!control || control->property("text") != workspace.uiText()[label.second]) {

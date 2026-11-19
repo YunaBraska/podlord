@@ -121,6 +121,12 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
             if (!name.isEmpty() && !claims.contains(name)) claims.append(name);
         }
         result["volumeClaims"] = claims;
+        QJsonArray imagePullSecrets;
+        for (const auto& value : spec["imagePullSecrets"].toArray()) {
+            const auto name = value.toObject()["name"].toString();
+            if (!name.isEmpty() && !imagePullSecrets.contains(name) && imagePullSecrets.size() < 12) imagePullSecrets.append(name);
+        }
+        result["imagePullSecrets"] = imagePullSecrets;
         QJsonArray secretKeys, configMapKeys;
         for (const auto& group : {"containers", "initContainers", "ephemeralContainers"})
             for (const auto& value : spec[group].toArray())

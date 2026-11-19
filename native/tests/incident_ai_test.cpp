@@ -166,6 +166,55 @@ void scenario(const QString& name) {
         require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000), "Changed related status reused the stale answer");
         return;
     }
+    if (name == "cluster_context") {
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["imagePullSecrets"] = QJsonArray{"registry-auth"};
+        pod["image"] = "private.registry.example/team/secret-image:v1";
+        snapshot.replace(2, pod);
+        auto event = snapshot.at(3).toObject();
+        event["eventType"] = "Warning";
+        event["eventTargetUid"] = "pod-one";
+        event["eventReason"] = "FailedToRetrieveImagePullSecret";
+        event["eventCount"] = 50;
+        snapshot.replace(3, event);
+        snapshot.append(QJsonObject{{"uid", "other-pod"}, {"kind", "Pod"}, {"name", "other-pod"}, {"namespace", "team"},
+            {"path", "/api/v1/namespaces/team/pods/other-pod"}, {"issue", "CrashLoopBackOff"},
+            {"status", "CrashLoopBackOff"}, {"problemSeverity", 2}});
+        {
+            podlord::IncidentAi ai(profile, endpoint);
+            require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+                && ai.setEnabled("context", true) && ai.setModel("local-test:9b"), "Cluster-context model unavailable");
+            ai.observe("context", snapshot, "de");
+            require(QTest::qWaitFor([&] { return server.chats == 1
+                && !ai.result("context", pod["path"].toString()).value("summary").toString().isEmpty(); }, 2000),
+                "Cluster-context incident was not analyzed");
+            require(server.submitted.contains("FailedToRetrieveImagePullSecret")
+                && server.submitted.contains("Same namespace problem: Pod CrashLoopBackOff")
+                && server.submitted.contains("Image pull Secret reference: not verified in cached resources")
+                && !server.submitted.contains("private.registry.example")
+                && !server.submitted.contains("registry-auth")
+                && !server.submitted.contains("private-event-marker"),
+                "Cluster context omitted evidence or sent private names and messages");
+            snapshot.append(QJsonObject{{"uid", "replica-two"}, {"kind", "Pod"}, {"name", "replica-two"}, {"namespace", "team"},
+                {"path", "/api/v1/namespaces/team/pods/replica-two"}, {"issue", "ImagePullBackOff"},
+                {"status", "ImagePullBackOff"}, {"problemSeverity", 2}});
+            ai.observe("context", snapshot, "de");
+            require(server.chats == 1 && !ai.result("context", pod["path"].toString()).value("summary").toString().isEmpty(),
+                "A matching replica invalidated the problem cache");
+        }
+        snapshot.append(QJsonObject{{"uid", "secret-uid"}, {"kind", "Secret"}, {"name", "registry-auth"},
+            {"namespace", "team"}, {"data", QJsonObject{{"private", "c2VjcmV0LXZhbHVlLXRlc3Q="}}}});
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.models().contains("local-test:9b"); }, 2000),
+            "Cluster-context model unavailable after restart");
+        reopened.observe("context", snapshot, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000)
+            && server.submitted.contains("Image pull Secret reference: observed in cached resources")
+            && !server.submitted.contains("registry-auth") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
+            "A newly observed Secret did not update the redacted context");
+        return;
+    }
     if (name == "referenced_keys") {
         auto snapshot = rows();
         auto pod = snapshot.at(2).toObject();

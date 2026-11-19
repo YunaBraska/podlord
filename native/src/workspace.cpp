@@ -850,7 +850,8 @@ bool Workspace::publishRelated() {
 bool Workspace::setInspectorPage(const QString& page) {
     if (inspectorPath().isEmpty()) return false;
     if (page == "logs") return setLogsVisible(true);
-    if (page != "overview" && page != "yaml" && page != "values" && page != "events" && page != "links" && page != "terminal") return false;
+    if (page != "overview" && page != "ai" && page != "yaml" && page != "values" && page != "events" && page != "links" && page != "terminal") return false;
+    if (page == "ai" && !incidentAiSupported()) return false;
     if (page == "terminal" && !podInspected() && !containerTerminal()) return false;
     if (page == "values" && !valuesAvailable()) return false;
     if (currentNavigation().page == page) return true;
