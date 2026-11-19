@@ -26,7 +26,8 @@ Pane {
     }
 
     component InspectorTab: WorkspaceTab {
-        width: Math.max(44, Math.floor(inspector.width / (inspector.width < 600 ? 4 : 8)))
+        width: Math.max(44, Math.floor(inspector.width /
+            (inspector.width < 600 ? Math.min(4, inspector.visibleTabCount) : inspector.visibleTabCount)))
     }
     background: Rectangle {
         color: workspace.appearanceColors.panel
@@ -43,6 +44,9 @@ Pane {
     id: inspector
     width: inspectorScroll.availableWidth
     height: workspace.inspectorPage === "ai" ? implicitHeight : Math.max(implicitHeight, inspectorScroll.availableHeight)
+    readonly property int visibleTabCount: 4 + (workspace.incidentAiSupported ? 1 : 0)
+        + (workspace.valuesAvailable ? 1 : 0) + (workspace.podInspected ? 1 : 0)
+        + (workspace.podInspected || workspace.containerTerminal !== null ? 1 : 0)
     property real yamlPosition: 0
     property real overviewPosition: 0
     property real valuesPosition: 0

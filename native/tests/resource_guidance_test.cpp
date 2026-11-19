@@ -176,6 +176,12 @@ bool ui(const QString& mode) {
         require(podlord::test::scrollIntoView(target->window(), target), "Cannot reveal guidance action for real input");
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
     };
+    const auto tabsFillWidth = [&] {
+        auto* tabs = item("overviewButton")->parentItem();
+        qreal right = 0;
+        for (auto* tab : tabs->childItems()) if (tab->isVisible()) right = qMax(right, tab->x() + tab->width());
+        return tabs->width() - right >= 0 && tabs->width() - right <= 8;
+    };
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Saved tab metadata did not restore");
     press("mapWorkspaceButton");
     if (!workspace.mapOverview()) press("mapOverview");
@@ -232,6 +238,7 @@ bool ui(const QString& mode) {
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_empty.png"), "Cannot save AI empty state");
         window->setWidth(2500); window->setHeight(900); QTest::qWait(50);
         require(aligned(), "Wide AI inspector lost alignment");
+        require(tabsFillWidth(), "Visible inspector tabs leave unused width");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_wide.png"), "Cannot save wide AI state");
         window->setWidth(680); window->setHeight(680); QTest::qWait(50);
         require(aligned(), "Narrow AI inspector lost alignment");
@@ -270,7 +277,12 @@ bool ui(const QString& mode) {
         require(QGuiApplication::clipboard()->text() == workspace.incidentAiResult().value("command").toString(), "Read-only command copy failed");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
     } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
-        if (mode == "ui_node_actions") require(!workspace.podInspected() && !item("guidanceLogs_0"), "Non-Pod diagnostic offers an invalid log action");
+        if (mode == "ui_node_actions") {
+            require(!workspace.podInspected() && !item("guidanceLogs_0"), "Non-Pod diagnostic offers an invalid log action");
+            window->setWidth(2500); QTest::qWait(50);
+            require(tabsFillWidth(), "Non-Pod inspector tabs leave unused width");
+            if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_five_tabs.png"), "Cannot save non-Pod tabs");
+        }
         const bool yamlAction = mode == "ui_open_yaml" || mode == "ui_action_keyboard";
         const char* action = yamlAction ? "guidanceYaml_0" : "guidanceEvents_0";
         if (mode == "ui_action_keyboard") {
