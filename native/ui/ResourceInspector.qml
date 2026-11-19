@@ -78,6 +78,14 @@ Pane {
         IconButton { objectName: "inspectorBack"; glyph: "Previous"; text: workspace.uiText["tooltip.previousResource"]; enabled: workspace.canInspectBack; onClicked: workspace.navigateInspector(-1) }
         IconButton { objectName: "inspectorForward"; glyph: "Next"; text: workspace.uiText["tooltip.nextResource"]; enabled: workspace.canInspectForward; onClicked: workspace.navigateInspector(1) }
         Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; elide: Text.ElideMiddle; Accessible.name: "Inspecting " + text }
+        CheckBox {
+            objectName: "incidentAiEnable"
+            visible: workspace.incidentAiSupported && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
+            text: workspace.uiText["settings.ai"]
+            checked: workspace.incidentAiEnabled
+            Accessible.name: workspace.uiText["ai.enable"]
+            onClicked: workspace.setIncidentAiEnabled(checked)
+        }
         IconButton { objectName: "refreshInspector"; glyph: "Reset"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
         IconButton { objectName: "deleteResource"; glyph: "Trash"; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
         IconButton { objectName: "preparePortForward"; glyph: "Service"; text: "Port forward " + workspace.inspectorName; visible: workspace.canPortForward; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
@@ -121,24 +129,14 @@ Pane {
     ColumnLayout {
         id: aiPanel
         Layout.fillWidth: true
-        visible: workspace.incidentAiSupported && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
+        visible: workspace.incidentAiSupported && workspace.incidentAiEnabled && workspace.inspectorPage === "overview" && workspace.inspectorPath !== ""
         spacing: 5
         onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
         Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
         property string docsError: ""
         Connections { target: workspace; function onInspectorPresentationChanged() { aiPanel.docsError = "" } }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: workspace.appearanceColors.border }
-        RowLayout {
-            Layout.fillWidth: true
-            Label { Layout.fillWidth: true; text: workspace.uiText["ai.title"]; font.bold: true; color: workspace.appearanceColors.accent }
-            CheckBox {
-                objectName: "incidentAiEnable"
-                text: workspace.uiText["ai.auto"]
-                checked: workspace.incidentAiEnabled
-                Accessible.name: workspace.uiText["ai.enable"]
-                onClicked: workspace.setIncidentAiEnabled(checked)
-            }
-        }
+        Label { Layout.fillWidth: true; text: workspace.uiText["ai.title"]; font.bold: true; color: workspace.appearanceColors.accent }
         ComboBox {
             id: incidentAiModel
             objectName: "incidentAiModel"
@@ -322,7 +320,7 @@ Pane {
         objectName: "overviewScroll"
         Layout.fillWidth: true
         Layout.fillHeight: true
-        Layout.minimumHeight: Math.min(160, contentHeight)
+        Layout.minimumHeight: Math.min(250, contentHeight)
         visible: workspace.inspectorPage === "overview"
         clip: true
         reuseItems: false

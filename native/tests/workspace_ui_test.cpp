@@ -3623,7 +3623,7 @@ bool execute(const QString& requestedScenario) {
             };
             if (!waitFor([&] {
                 const bool ready=text(window,"overview_ready")==expected && item(window,"overviewReadinessBar");
-                if (!ready) navigateToField("ready");
+                if (!ready && scenario=="table_overview_metadata") navigateToField("ready");
                 return ready;
             })) {
                 std::fprintf(stderr,"Overview readiness: scenario=%s expected=%s actual=%s keys=%d current=%d count=%d contentY=%g height=%g\n",
