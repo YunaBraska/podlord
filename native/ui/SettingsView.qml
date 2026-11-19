@@ -319,11 +319,27 @@ Pane {
                         }
                     }
                     Switch {
+                        id: aiAutoSwitch
                         objectName: "incidentAiEnable"
                         visible: workspace.currentSession !== "" && workspace.incidentAiModel !== ""
                         text: workspace.uiText["ai.auto"]
                         checked: workspace.incidentAiEnabled
                         Accessible.name: workspace.uiText["ai.enable"]
+                        implicitHeight: settings.Window.window && (settings.Window.window.width < 900
+                            || settings.Window.window.compactLandscape === true) ? 44 : 32
+                        indicator: Rectangle {
+                            implicitWidth: 38; implicitHeight: 20
+                            x: aiAutoSwitch.leftPadding
+                            y: (aiAutoSwitch.height - height) / 2
+                            color: aiAutoSwitch.checked ? workspace.appearanceColors.selection : workspace.appearanceColors.inset
+                            border.color: aiAutoSwitch.checked ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+                            Rectangle {
+                                width: 12; height: 12
+                                x: aiAutoSwitch.checked ? parent.width - width - 4 : 4
+                                y: 4
+                                color: aiAutoSwitch.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
+                            }
+                        }
                         onClicked: workspace.setIncidentAiEnabled(checked)
                     }
                     Repeater {
