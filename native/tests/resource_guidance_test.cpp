@@ -141,7 +141,10 @@ bool ui(const QString& mode) {
     require(boundary.listen(QHostAddress::LocalHost, 0), "Cannot start local Kubernetes HTTP boundary");
     const QString profile = directory.filePath("profile");
     const QString yaml = QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:%1\nusers:\n- name: local\n  user:\n    token: local-boundary-token\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\n").arg(boundary.serverPort());
-    const auto imported = podlord::KubeconfigStore(profile).importText(directory.filePath("origin"), yaml);
+    QFile origin(directory.filePath("origin"));
+    require(origin.open(QIODevice::WriteOnly) && origin.write(yaml.toUtf8()) == yaml.toUtf8().size(), "Cannot write guidance kubeconfig");
+    origin.close();
+    const auto imported = podlord::KubeconfigStore(profile).importFile(origin.fileName());
     require(std::holds_alternative<podlord::SourceSnapshot>(imported), "Cannot import guidance source");
     const podlord::SessionStore sessions(profile);
     const auto created = sessions.openTab(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
@@ -295,7 +298,15 @@ bool ui(const QString& mode) {
             "AI response lost its visible sections");
         require(!item("incidentAiSummary")->property("text").toString().contains("diagnostic-secret"), "AI summary exposed untrusted status text");
         require(item("incidentAiReanalyze") && item("incidentAiReanalyze")->isEnabled(), "Explicit reanalysis button is missing");
-        require(!workspace.incidentAiResult().contains("command"), "AI analysis must not add a command dependency");
+        const auto command = workspace.incidentAiResult().value("command").toString();
+        require(command.startsWith("kubectl ") && command.contains("--kubeconfig ")
+            && command.contains("--context ") && command.contains(" describe pod ")
+            && command.contains("diagnostic") && item("incidentAiCommand") && item("incidentAiCopyCommand"),
+            "The AI next check has no copyable, context-bound read-only command");
+        QGuiApplication::clipboard()->clear();
+        press("incidentAiCopyCommand");
+        require(QGuiApplication::clipboard()->text() == command && boundary.requests == requests,
+            "Copying the AI command changed the cluster or copied another command");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
     } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
         if (mode == "ui_node_actions") {

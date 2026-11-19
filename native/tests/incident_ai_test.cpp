@@ -176,6 +176,7 @@ void scenario(const QString& name) {
         auto snapshot = rows();
         auto pod = snapshot.at(2).toObject();
         pod["issue"] = ""; pod["status"] = "Running"; pod["problemSeverity"] = 1; pod["ready"] = "0/1"; pod["restarts"] = 1;
+        pod["lastTerminations"] = QJsonArray{QJsonObject{{"reason", "OOMKilled"}, {"exitCode", 137}}};
         snapshot.replace(2, pod);
         ai.observe("context", snapshot, "de");
         QTest::qWait(50);
@@ -189,6 +190,8 @@ void scenario(const QString& name) {
             && server.submitted.contains("call a container image 'Container-Image', never 'Bild'")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
+            && server.submitted.contains("restarts=1")
+            && server.submitted.contains("lastTermination=OOMKilled (exit 137)")
             && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
             "Manual analysis changed consent or leaked private source data");
         ai.observe("context", snapshot, "de");
@@ -328,6 +331,9 @@ void scenario(const QString& name) {
         pod["volumeClaims"] = QJsonArray{"claim-data"};
         pod["secretRefs"] = QJsonArray{"runtime-secret"};
         pod["configMapRefs"] = QJsonArray{"runtime-config"};
+        pod["restarts"] = 4;
+        pod["lastTerminations"] = QJsonArray{QJsonObject{{"reason", "OOMKilled"}, {"exitCode", 137}},
+            QJsonObject{{"reason", "token=private-value"}, {"exitCode", 1}}};
         snapshot.replace(2, pod);
         auto event = snapshot.at(3).toObject();
         event["name"] = "pull-warning";
@@ -368,6 +374,7 @@ void scenario(const QString& name) {
             && server.submitted.contains("Secret") && server.submitted.contains("ConfigMap")
             && server.submitted.contains("FailedToRetrieveImagePullSecret") && server.submitted.contains("registry-auth-rejected")
             && server.submitted.contains("waiting-for-identity") && server.submitted.contains("networkHealth=Failure")
+            && server.submitted.contains("restarts=4") && server.submitted.contains("lastTermination=OOMKilled (exit 137)")
             && !server.submitted.contains("private-event-marker") && !server.submitted.contains("private-value")
             && !server.submitted.contains("runtime-secret") && !server.submitted.contains("runtime-config")
             && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q=")

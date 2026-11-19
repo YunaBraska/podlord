@@ -26,4 +26,4 @@ The selected profile contains `incident-ai.json` for provider, models, consent, 
 
 If credential access fails, unlock your macOS login keychain or check that Windows Credential Manager is available under your signed-in account. On Linux, start and unlock a Secret Service implementation such as GNOME Keyring in your desktop session. If migration fails, close other PodLord instances and check that the old file is readable only by its owner. PodLord leaves that file in place until transfer succeeds.
 
-Open a cited resource or Event directly from the AI tab to check the model's claim. Analysis does not require `kubectl`.
+Open a cited resource or Event directly from the AI tab to check the model's claim. Under **Next check**, copy the read-only `kubectl describe` command if you want to inspect the selected resource in a terminal. It uses the selected kubeconfig and context. PodLord does not run it and analysis does not require `kubectl`.

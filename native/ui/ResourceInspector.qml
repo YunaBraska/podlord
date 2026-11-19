@@ -184,6 +184,12 @@ Pane {
             spacing: 4
             SelectableText { objectName: "incidentAiNextCheck"; Layout.fillWidth: true; text: workspace.uiText["ai.nextCheck"]; font.bold: true; color: workspace.appearanceColors.accent }
             SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: (workspace.incidentAiResult.command || "") !== ""
+                SelectableText { objectName: "incidentAiCommand"; Layout.fillWidth: true; text: workspace.incidentAiResult.command || "" }
+                IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["copy.value"]; onClicked: workspace.copyIncidentAiCommand() }
+            }
         }
     }
     ColumnLayout {

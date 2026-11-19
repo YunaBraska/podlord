@@ -193,9 +193,12 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
     const QStringList failureStates{"CrashLoopBackOff", "CreateContainerConfigError", "CreateContainerError", "ErrImagePull", "Error", "Failed", "ImagePullBackOff", "NotReady", "OOMKilled", "Unavailable", "Unknown"};
     if (failureStates.contains(result["status"].toString())) issues.append(result["status"].toString());
     if (version == "v1" && kind == "Pod") {
-        qint64 restarts=0; int ready=0; const auto statuses=state["containerStatuses"].toArray();
-        for (const auto& group : {"containerStatuses", "initContainerStatuses", "ephemeralContainerStatuses"})
-            for (const auto& value : state[group].toArray()) {
+        qint64 restarts=0; int ready=0; bool observedStatuses=false;
+        QJsonArray lastTerminations;
+        for (const auto& group : {"containerStatuses", "initContainerStatuses", "ephemeralContainerStatuses"}) {
+            const auto statuses=state[group].toArray();
+            observedStatuses |= !statuses.isEmpty();
+            for (const auto& value : statuses) {
                 const auto container=value.toObject(); restarts+=container["restartCount"].toInteger();
                 if (QString(group)=="containerStatuses" && container["ready"].toBool()) ++ready;
                 const auto current=container["state"].toObject();
@@ -203,8 +206,15 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
                 const auto terminated=current["terminated"].toObject();
                 if (!waiting.isEmpty() && waiting!="ContainerCreating" && waiting!="PodInitializing") issues.append(waiting);
                 if (terminated["exitCode"].toInt()>0) issues.append(terminated["reason"].toString("Failed"));
+                const auto previous=container["lastState"].toObject()["terminated"].toObject();
+                QJsonObject lastTermination;
+                if (previous["reason"].isString()) lastTermination["reason"]=previous["reason"];
+                if (previous["exitCode"].isDouble()) lastTermination["exitCode"]=previous["exitCode"];
+                if (!lastTermination.isEmpty()) lastTerminations.append(lastTermination);
             }
-        if (!statuses.isEmpty()) result["restarts"]=static_cast<double>(restarts);
+        }
+        if (observedStatuses) result["restarts"]=static_cast<double>(restarts);
+        if (!lastTerminations.isEmpty()) result["lastTerminations"]=lastTerminations;
         if (!spec["containers"].toArray().isEmpty()) result["ready"]=QString::number(ready)+"/"+QString::number(spec["containers"].toArray().size());
         result["readyCount"]=ready;
         result["containerCount"]=spec["containers"].toArray().size();

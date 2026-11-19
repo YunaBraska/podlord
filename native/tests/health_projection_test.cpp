@@ -15,7 +15,12 @@ void require(bool accepted, const char* message) {
 
 QJsonObject pod(const QString& name, const QString& phase, const QString& created, int restarts = 0) {
     QJsonObject status{{"phase", phase}};
-    if (phase == "Running") status["containerStatuses"] = QJsonArray{QJsonObject{{"restartCount", restarts}, {"ready", true}}};
+    if (phase == "Running") {
+        QJsonObject container{{"restartCount", restarts}, {"ready", true}};
+        if (restarts > 0) container["lastState"] = QJsonObject{{"terminated", QJsonObject{
+            {"reason", "OOMKilled"}, {"exitCode", 137}, {"message", "token=private-value"}}}};
+        status["containerStatuses"] = QJsonArray{container};
+    }
     QJsonObject spec{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
     if (name == "running-0") {
         spec["nodeName"] = "worker-a";
@@ -124,6 +129,12 @@ void restartOutlier(const QJsonArray& rows) {
     require(!ordinary["problems"].toBool() && ordinary["activity"].toBool(), "Ordinary running Pod health differs");
     require(outlier["problems"].toBool() && outlier["issue"].toString().contains("Restart outlier")
         && outlier["problemSeverity"].toInt() == 1, "Restart outlier was not marked as a warning");
+    const auto termination = outlier["lastTerminations"].toArray();
+    require(outlier["restarts"] == 8 && termination.size() == 1
+        && termination.first().toObject()["reason"] == "OOMKilled"
+        && termination.first().toObject()["exitCode"] == 137
+        && !QJsonDocument(outlier).toJson().contains("private-value"),
+        "Pod restart count or last termination was lost or leaked a message");
 }
 
 void pendingGrace(const QJsonArray& rows) {
