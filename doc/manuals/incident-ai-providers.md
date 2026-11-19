@@ -18,7 +18,7 @@ Create a workspace-scoped API key in the Claude Console, press **Connect provide
 
 ## OpenRouter
 
-Press **Connect provider → OpenRouter** and finish sign-in in the system browser. OpenRouter issues an API key to PodLord using a local callback and PKCE. You can also paste an existing key into the API key field. Select a text model when the catalog loads. OpenRouter uses its own credits and billing. PodLord reads its current [model catalog](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties) and calls [Chat Completions](https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request). Check the [OpenRouter OAuth guide](https://openrouter.ai/docs/guides/overview/auth/oauth) if browser sign-in fails. PodLord does not invoke an automatic model selector unless you explicitly choose that catalog entry.
+Press **Connect provider → OpenRouter** and finish sign-in in the system browser. OpenRouter issues an API key to PodLord using a local callback and PKCE. Select a text model when the catalog loads. PodLord keeps one OpenRouter connection at a time; **Sign out** removes its key. OpenRouter uses its own credits and billing. PodLord reads its current [model catalog](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties) and calls [Chat Completions](https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request). Check the [OpenRouter OAuth guide](https://openrouter.ai/docs/guides/overview/auth/oauth) if browser sign-in fails. PodLord does not invoke an automatic model selector unless you explicitly choose that catalog entry.
 
 ## Credentials and cache
 
