@@ -50,10 +50,4 @@ bool Workspace::refreshIncidentAiAnalysis() {
     runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
     return runtime_->incidentAi.refresh(context, inspectorPath());
 }
-bool Workspace::openIncidentAiEvidence(const QString& path) {
-    if (path.isEmpty() || active_.isEmpty()) return false;
-    for (const auto& value : incidentAiResult().value("evidence").toList())
-        if (value.toMap().value("path") == path) return inspectResource(path);
-    return false;
-}
 } // namespace podlord

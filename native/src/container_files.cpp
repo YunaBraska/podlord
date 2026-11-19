@@ -94,16 +94,19 @@ bool ContainerFiles::open(QNetworkRequest request) {
     timeout_.start(file_ ? 120000 : 20000);
     auto url = request.url(); url.setScheme(url.scheme() == "https" ? "wss" : "ws");
     QUrlQuery query;
-    query.addQueryItem("container", container_);
-    query.addQueryItem("stdin", "false"); query.addQueryItem("stdout", "true");
-    query.addQueryItem("stderr", "true"); query.addQueryItem("tty", "false");
-    query.addQueryItem("command", "/bin/sh"); query.addQueryItem("command", "-c");
-    query.addQueryItem("command", file_
+    const auto add = [&query](const QString& key, const QString& value) {
+        query.addQueryItem(key, QString::fromLatin1(QUrl::toPercentEncoding(value)));
+    };
+    add("container", container_);
+    add("stdin", "false"); add("stdout", "true");
+    add("stderr", "true"); add("tty", "false");
+    add("command", "/bin/sh"); add("command", "-c");
+    add("command", file_
         ? "[ -f \"$1\" ] && [ ! -L \"$1\" ] && exec cat \"$1\""
         : "for f in \"$1\"/* \"$1\"/.[!.]* \"$1\"/..?*; do [ -e \"$f\" ] || [ -L \"$f\" ] || continue; "
           "if [ -L \"$f\" ]; then t=l; elif [ -d \"$f\" ]; then t=d; elif [ -f \"$f\" ]; then t=f; else t=o; fi; "
           "printf '%s\\000%s\\000' \"$t\" \"${f##*/}\"; done");
-    query.addQueryItem("command", "sh"); query.addQueryItem("command", pendingPath_);
+    add("command", "sh"); add("command", pendingPath_);
     url.setQuery(query); request.setUrl(url); request.setRawHeader("Accept", "*/*");
     auto tls = request.sslConfiguration(); tls.setAllowedNextProtocols({QSslConfiguration::NextProtocolHttp1_1});
     socket_.setSslConfiguration(tls);

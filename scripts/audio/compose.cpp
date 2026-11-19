@@ -563,8 +563,8 @@ void voice(Audio& audio,double start,double duration,int midi,Tone tone,double l
     const double hz=440*std::exp2((midi-69)/12.0);
     const bool pad=tone==Tone::Veil || tone==Tone::Halo;
     const bool drum=tone==Tone::Kick || tone==Tone::Rim || tone==Tone::Hush || tone==Tone::Snare || tone==Tone::Tom;
-    const double attack=std::min(duration*.3,pad?.32:drum?.009:tone==Tone::Sub?.018:.02);
-    const double release=std::min(duration*.4,pad?.65:tone==Tone::Sub?.13:.16);
+    const double attack=std::min(duration*.3,pad?.55:drum?.009:tone==Tone::Sub?.018:.02);
+    const double release=std::min(duration*.4,pad?.9:tone==Tone::Sub?.13:.16);
     const double cutoff=tone==Tone::Sub?650:pad?1050:tone==Tone::Metal?1650:tone==Tone::Hush?3200:tone==Tone::Snare?4600:tone==Tone::Drive||tone==Tone::Brass?3800:2100;
     const double filter=1-std::exp(-2*pi*cutoff/rate);
     const double fall=std::exp(-(tone==Tone::Metal?13:tone==Tone::Pluck?5:tone==Tone::Glass?3.5:drum?16:1.6)/rate);
@@ -670,13 +670,14 @@ Audio render(const Score& score) {
         const double energy=section.energy;
         for (int bar=firstBar;bar<lastBar;++bar) {
             const auto& chord=score.harmony[std::size_t(bar/score.chordBars+section.harmonyOffset)%score.harmony.size()];
-            if ((section.layers&Bed) && bar%score.chordBars==0) {
-                const int articulations=1+((character+bar/score.chordBars)%4);
+            if (bar%score.chordBars==0) {
                 const double span=score.chordBars*score.meter*spb;
-                const double hold=span/double(articulations)*.86;
-                for (int pulse=0;pulse<articulations;++pulse) for (int c=0;c<4;++c)
-                    voice(audio,bar*score.meter*spb+pulse*span/double(articulations),hold,
-                        chord[std::size_t(c)]+12,score.pad,.10*energy,c%2? .62:-.62,seed+(++event));
+                const double at=bar*score.meter*spb;
+                const double hold=std::min(span*1.06,score.seconds()-at);
+                for (int c=0;c<4;++c)
+                    voice(audio,at,hold,chord[std::size_t(c)]+12,score.pad,
+                        (section.layers&Bed?.10:.045)*energy,
+                        c%2? .62:-.62,seed+(++event));
             }
         }
         for (int cell=firstBar;cell<lastBar;cell+=2) {
@@ -695,7 +696,7 @@ Audio render(const Score& score) {
                 }
             };
             if (section.layers&Ground) stepped(score.bass,Tone::Sub,.29,-12,0);
-            if (section.layers&Motion) stepped(score.pulse,score.motion,.11,12,-.28);
+            if (section.layers&Motion) stepped(score.pulse,score.motion,.055,12,-.28);
             if (section.layers&Beat) for (const auto& d:score.drums) {
                 double beat=cell*score.meter+d.at;
                 if ((character==1 || character==4) && d.at-std::floor(d.at)>.1) beat+=.11;
@@ -705,7 +706,7 @@ Audio render(const Score& score) {
                 const int pitch=d.tone==Tone::Kick?32+score.kit:d.tone==Tone::Tom?42+score.kit:backbeat?51+score.kit*2:70+score.kit;
                 const double duration=d.tone==Tone::Kick?.24:d.tone==Tone::Tom?.28:backbeat?.16:.12;
                 const double level=d.tone==Tone::Kick?.32:d.tone==Tone::Tom?.23:d.tone==Tone::Snare?.25:backbeat?.17:.075;
-                voice(audio,beat*spb,duration,pitch,d.tone,level*d.level*energy,
+                voice(audio,beat*spb,duration,pitch,d.tone,level*d.level*energy*.55,
                     d.tone==Tone::Metal?.38:d.tone==Tone::Hush?-.42:0,seed+(++event));
             }
         }
@@ -716,7 +717,7 @@ Audio render(const Score& score) {
                 voice(audio,at*spb,std::min(n.hold,end-at)*spb,n.pitch,tone,level*n.level*energy,pan,seed+(++event));
             }
         };
-        if (section.layers&Theme) {
+        if ((section.layers&Theme) || firstBar < 16) {
             for (int phrase=firstBar;phrase<lastBar;phrase+=4) {
                 const int variation=section.variant+((phrase-firstBar)/4)+(character%2);
                 const auto& line=variation%2?score.b:score.a;
@@ -724,7 +725,7 @@ Audio render(const Score& score) {
                     const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
                     if (at>=end) continue;
                     voice(audio,at*spb,std::min(n.hold,end-at)*spb,n.pitch,score.lead,
-                        .19*n.level*energy,.12,seed+(++event));
+                        (section.layers&Theme ? .22 : .12)*n.level*energy,.12,seed+(++event));
                 }
             }
         }

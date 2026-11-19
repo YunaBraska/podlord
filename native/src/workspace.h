@@ -471,7 +471,6 @@ public:
     Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
     Q_INVOKABLE void ensureIncidentAiModels();
     Q_INVOKABLE bool refreshIncidentAiAnalysis();
-    Q_INVOKABLE bool openIncidentAiEvidence(const QString& path);
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;
     QUrl defaultKubeconfigFolder() const;

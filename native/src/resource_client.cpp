@@ -1100,7 +1100,10 @@ void ResourceClient::dispatch() {
     const qint64 spacing = settings_.requestHardLimitPerMinute > 0 ? std::max<qint64>(400, (60000 + settings_.requestHardLimitPerMinute - 1) / settings_.requestHardLimitPerMinute) : 400;
     const auto wait = std::max(backoffUntil_, lastStart_ < 0 ? qint64{0} : lastStart_ + spacing) - clock_.elapsed();
     if (wait > 0) { gate_.start(static_cast<int>(std::min<qint64>(wait, std::numeric_limits<int>::max()))); return; }
-    auto chosen = std::find_if(queue_.begin(), queue_.end(), [](const auto& task) { return task.change.has_value() || task.read == Read::Detail || (task.read == Read::Log && task.foreground); });
+    auto chosen = std::find_if(queue_.begin(), queue_.end(), [](const auto& task) {
+        return task.change.has_value() || task.read == Read::Detail || task.read == Read::FileTarget
+            || task.read == Read::FileSocket || (task.read == Read::Log && task.foreground);
+    });
     if (chosen == queue_.end()) chosen = std::find_if(queue_.begin(), queue_.end(), [this](const auto& task) {
         if (!task.foreground || task.read != Read::List || !task.path.startsWith("/api/v1/")
             || (task.kind != "Pod" && task.kind != "Node")) return false;

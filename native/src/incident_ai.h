@@ -81,7 +81,7 @@ signals:
     void changed();
 private:
     struct Incident final {
-        QString key, context, code, kind, path, language, provider, model, reasoning, thinkSignature, documentation;
+        QString key, context, code, kind, path, language, provider, model, reasoning, thinkSignature;
         QStringList related;
         bool manual = false;
         QJsonArray evidence;

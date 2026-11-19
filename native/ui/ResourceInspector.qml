@@ -128,8 +128,6 @@ Pane {
         spacing: 5
         onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
         Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
-        property string docsError: ""
-        Connections { target: workspace; function onInspectorPresentationChanged() { aiPanel.docsError = "" } }
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
@@ -145,21 +143,15 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             visible: workspace.incidentAiModel === ""
-            SelectableText { objectName: "incidentAiModelMissing"; Layout.fillWidth: true; text: workspace.uiText["ai.modelMissing"]; color: workspace.appearanceColors.warning }
+            SelectableText { objectName: "incidentAiModelMissing"; text: workspace.uiText["ai.modelMissing"]; color: workspace.appearanceColors.warning }
             IconButton { objectName: "incidentAiOpenSettings"; glyph: "Settings"; text: workspace.uiText["ai.chooseModel"]; onClicked: inspectorRoot.hostWindow.openAiSettings() }
+            Item { Layout.fillWidth: true }
         }
         SelectableText {
             objectName: "incidentAiStatus"
             Layout.fillWidth: true
-            visible: workspace.incidentAiModel !== "" && text !== ""
+            visible: workspace.incidentAiModel !== "" && workspace.incidentAiResult.pending !== true && text !== ""
             text: workspace.incidentAiStatus
-            color: workspace.appearanceColors.muted
-        }
-        SelectableText {
-            objectName: "incidentAiEmpty"
-            Layout.fillWidth: true
-            visible: workspace.incidentAiModel !== "" && workspace.incidentAiStatus === "" && Object.keys(workspace.incidentAiResult).length === 0
-            text: workspace.uiText["ai.noKnownIssue"]
             color: workspace.appearanceColors.muted
         }
         SelectableText {
@@ -169,61 +161,24 @@ Pane {
             text: workspace.uiText["ai.pending"]
             color: workspace.appearanceColors.muted
         }
-        ColumnLayout {
-            Layout.fillWidth: true; spacing: 3
+        SelectableText {
+            objectName: "incidentAiSummary"
+            Layout.fillWidth: true
             visible: workspace.incidentAiResult.summary !== undefined
-            SelectableText { text: workspace.uiText["ai.analysis"]; font.bold: true; color: workspace.appearanceColors.muted }
-            SelectableText { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || "" }
-        }
-        ColumnLayout {
-            Layout.fillWidth: true; spacing: 3
-            visible: (workspace.incidentAiResult.cause || "") !== ""
-            SelectableText { text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.muted }
-            SelectableText { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || "" }
-        }
-        ColumnLayout {
-            Layout.fillWidth: true; spacing: 3
-            visible: workspace.incidentAiResult.action !== undefined
-            SelectableText { text: workspace.uiText["ai.nextStep"]; font.bold: true; color: workspace.appearanceColors.muted }
-            SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
+            text: workspace.incidentAiResult.summary || ""
         }
         SelectableText {
+            objectName: "incidentAiCause"
             Layout.fillWidth: true
-            visible: workspace.incidentAiResult.code !== undefined && workspace.incidentAiResult.code !== "Manual review"
-            text: workspace.uiText["ai.evidence"] + ": " + (workspace.incidentAiResult.code || "")
-            color: workspace.appearanceColors.muted
+            visible: (workspace.incidentAiResult.cause || "") !== ""
+            text: workspace.incidentAiResult.cause || ""
         }
-        ColumnLayout {
+        SelectableText {
+            objectName: "incidentAiAction"
             Layout.fillWidth: true
-            visible: (workspace.incidentAiResult.evidence || []).length > 0
-            spacing: 3
-            SelectableText { text: workspace.uiText["ai.related"]; font.bold: true; color: workspace.appearanceColors.muted }
-            Repeater {
-                model: workspace.incidentAiResult.evidence || []
-                RowLayout {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    SelectableText {
-                        Layout.fillWidth: true
-                        text: modelData.id + "  " + modelData.kind + "/" + modelData.name
-                            + (modelData.reason || modelData.status || modelData.issue ? " · " + (modelData.reason || modelData.status || modelData.issue) : "")
-                    }
-                    IconButton {
-                        objectName: "incidentAiEvidence_" + modelData.id
-                        glyph: "Next"
-                        text: workspace.uiText["action.open"] + " " + modelData.kind + "/" + modelData.name
-                        onClicked: workspace.openIncidentAiEvidence(modelData.path)
-                    }
-                }
-            }
+            visible: workspace.incidentAiResult.action !== undefined
+            text: workspace.incidentAiResult.action || ""
         }
-        Flow {
-            Layout.fillWidth: true
-            visible: workspace.incidentAiResult.summary !== undefined
-            spacing: 6
-            IconButton { objectName: "incidentAiDocs"; glyph: "External"; text: workspace.uiText["ai.docs"]; visible: workspace.incidentAiResult.summary !== undefined; onClicked: aiPanel.docsError = Qt.openUrlExternally(workspace.incidentAiResult.documentation) ? "" : workspace.uiText["ai.docsError"] }
-        }
-        SelectableText { Layout.fillWidth: true; visible: aiPanel.docsError !== ""; text: aiPanel.docsError; color: workspace.appearanceColors.danger }
     }
     ColumnLayout {
             Layout.fillWidth: true

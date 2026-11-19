@@ -117,12 +117,12 @@ void scenario(const QString& name) {
         ai.observe("context", snapshot, "de");
         const auto path = selected["path"].toString();
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).isEmpty(); }, 2000), "Small analysis missing");
-        const auto small = ai.result("context", path).value("evidence").toList().size();
+        const auto small = QString::fromUtf8(server.submitted).count(" (depth ");
         server.showContextTokens = 24000;
         require(ai.setModel("local-test:10b") && QTest::qWaitFor([&] { return ai.ready(); }, 2000)
             && ai.refresh("context", path), "Large model unavailable");
         require(QTest::qWaitFor([&] { return server.chats == 2 && !ai.result("context", path).isEmpty(); }, 2000), "Large analysis missing");
-        const auto large = ai.result("context", path).value("evidence").toList().size();
+        const auto large = QString::fromUtf8(server.submitted).count(" (depth ");
         require(small > 0 && large > small && large > 64, "Evidence did not adapt to the model context");
         return;
     }
@@ -336,15 +336,8 @@ void scenario(const QString& name) {
         const auto path = pod["path"].toString();
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Evidence analysis missing");
-        const auto result = ai.result("context", path);
-        const auto evidence = result.value("evidence").toList();
-        require(evidence.size() >= 8 && !result.contains("command"), "Linked evidence or in-app-only action missing");
-        for (const auto& value : evidence) {
-            const auto link = value.toMap();
-            require(!link.value("id").toString().isEmpty() && !link.value("path").toString().isEmpty(), "Evidence cannot be opened");
-            require(server.submitted.contains(link.value("id").toString().toUtf8()), "Evidence ID was omitted from the request");
-            require(!server.submitted.contains(link.value("name").toString().toUtf8()), "Resource name reached the model");
-        }
+        require(QString::fromUtf8(server.submitted).count(" (depth ") >= 8
+            && !ai.result("context", path).contains("evidence"), "Related facts reached the inspector instead of only the model");
         require(server.submitted.contains("CiliumEndpoint") && server.submitted.contains("PersistentVolumeClaim")
             && server.submitted.contains("Pod > PersistentVolumeClaim > PersistentVolume")
             && server.submitted.contains("Secret") && server.submitted.contains("ConfigMap")
@@ -357,10 +350,8 @@ void scenario(const QString& name) {
             "Related network, storage, and event facts were not sent safely");
         server.answer = "{\"summary\":\"Der Abruf scheitert.\",\"cause\":\"Mögliche Netzwerkstörung.\",\"action\":\"Prüfe den Node.\",\"refs\":[\"R2\",\"FAKE\"]}";
         require(ai.refresh("context", path) && QTest::qWaitFor([&] { return server.chats == 2
-            && ai.result("context", path).value("summary") == "Der Abruf scheitert."; }, 2000), "Explicit cited analysis missing");
-        const auto cited = ai.result("context", path).value("evidence").toList();
-        require(cited.size() == 1 && cited.first().toMap().value("id") == "R2",
-            "Model references were not checked against local evidence");
+            && ai.result("context", path).value("summary") == "Der Abruf scheitert."; }, 2000), "Explicit analysis missing");
+        require(ai.result("context", path).size() == 3, "Inspector exposed data beyond the model answer");
         return;
     }
     if (name == "node_graph") {
@@ -422,7 +413,7 @@ void scenario(const QString& name) {
                 "Cluster-context incident was not analyzed");
             require(server.submitted.contains("FailedToRetrieveImagePullSecret")
                 && server.submitted.contains("Same namespace problem: Pod CrashLoopBackOff")
-                && server.submitted.contains("Image pull Secret reference: not verified in cached resources")
+                && server.submitted.contains("Image pull Secret reference: not verified among observed resources")
                 && !server.submitted.contains("private.registry.example")
                 && !server.submitted.contains("registry-auth")
                 && !server.submitted.contains("private-event-marker"),
@@ -430,7 +421,8 @@ void scenario(const QString& name) {
             const auto messages = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray();
             const auto instructions = messages.at(0).toObject()["content"].toString();
             const auto input = messages.at(1).toObject()["content"].toString();
-            require(instructions.contains("semicolons or long dashes") && input.startsWith("Language: de\n")
+            require(instructions.contains("semicolons or long dashes") && !instructions.contains("cache", Qt::CaseInsensitive)
+                && !input.contains("cache", Qt::CaseInsensitive) && input.startsWith("Language: de\n")
                 && input.contains("\n- Observed warning event: FailedToRetrieveImagePullSecret")
                 && !input.contains("; "), "AI request lost language, writing guidance, or separated evidence");
             snapshot.append(QJsonObject{{"uid", "replica-two"}, {"kind", "Pod"}, {"name", "replica-two"}, {"namespace", "team"},
@@ -447,7 +439,7 @@ void scenario(const QString& name) {
             "Cluster-context model unavailable after restart");
         reopened.observe("context", snapshot, "de");
         require(QTest::qWaitFor([&] { return server.chats == 2; }, 2000)
-            && server.submitted.contains("Image pull Secret reference: observed in cached resources")
+            && server.submitted.contains("Image pull Secret reference: seen among observed resources")
             && !server.submitted.contains("registry-auth") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
             "A newly observed Secret did not update the redacted context");
         return;
@@ -502,7 +494,8 @@ void scenario(const QString& name) {
         ai.observe("context", snapshot, "de");
         require(QTest::qWaitFor([&] { return server.chats == 1; }, 2000), "Warning Event reason was not analyzed");
         require(server.submitted.contains("FailedMount") && !server.submitted.contains("private-event-marker"), "Event sent free message or lost its reason");
-        require(QTest::qWaitFor([&] { return ai.result("context", pod["path"].toString()).value("code") == "FailedMount"; }, 2000), "Event result missing from target resource");
+        require(QTest::qWaitFor([&] { return !ai.result("context", pod["path"].toString()).value("summary").toString().isEmpty(); }, 2000)
+            && server.submitted.contains("FailedMount"), "Event result missing from target resource");
         event["eventCount"] = 100; snapshot.replace(3, event);
         ai.observe("context", snapshot, "de");
         require(server.chats == 1, "Event retry count caused a new analysis");
@@ -615,9 +608,8 @@ void scenario(const QString& name) {
             require(!ai.result("context", recreated.at(2).toObject()["path"].toString()).value("summary").toString().isEmpty()
                 && server.chats == 1, "Pod replacement missed the cached workload analysis");
             const auto replacement = ai.result("context", recreated.at(2).toObject()["path"].toString());
-            require(!replacement.contains("command") && !replacement.value("evidence").toList().isEmpty()
-                && replacement.value("evidence").toList().first().toMap().value("path").toString() == recreated.at(2).toObject()["path"].toString(),
-                "Cached evidence points to the previous Pod or an external command");
+            require(replacement.size() == 3 && !replacement.contains("command"),
+                "Cached analysis exposed internal facts or an external command");
         }
     }
     if (name == "persist") {
