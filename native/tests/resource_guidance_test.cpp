@@ -206,11 +206,15 @@ bool ui(const QString& mode) {
     if (mode == "ui_expand") {
         press("inspectorAiButton");
         require(workspace.property("inspectorPage").toString() == "ai" && item("incidentAiEnable")
-            && item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
+            && item("incidentAiOpenSettings") && !item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
             "Opening the AI tab changed consent or Kubernetes transport");
         press("overviewButton");
         require(workspace.property("inspectorPage").toString() == "overview" && item("guidanceTitle_0"),
             "Leaving the AI tab did not restore the resource overview");
+        press("inspectorAiButton");
+        press("incidentAiOpenSettings");
+        require(workspace.workspacePage() == "settings" && item("settingsAiModel"),
+            "Missing-model link did not open AI settings");
     } else if (mode == "ui_ai_live") {
         press("inspectorAiButton");
         require(item("incidentAiEnable"), "AI tab has no consent control");

@@ -220,7 +220,7 @@ void scenario(const QString& name) {
     }
     const auto callbackResponse = callback(browser.last, boundary);
     if (name == "localized_callback")
-        require(callbackResponse.contains("Sie können") || callbackResponse.contains("Du kannst"),
+        require(callbackResponse.contains("text/html") && callbackResponse.contains("PodLord schließt sie ab"),
             "OAuth callback was not localized to German");
     if (name == "wrong_nonce") {
         require(QTest::qWaitFor([&] { return client.status().contains("verification failed"); }, 2000),

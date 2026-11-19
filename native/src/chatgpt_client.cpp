@@ -121,6 +121,10 @@ QString ChatGptClient::activeAccount() const {
     const auto* account = active();
     return account ? (account->email.isEmpty() ? account->subject.left(12) : account->email) : QString{};
 }
+QString ChatGptClient::activeSubject() const {
+    const auto* account = active();
+    return account ? account->subject : QString{};
+}
 bool ChatGptClient::connected() const {
     const auto* account = active();
     return writable_ && account && !account->refreshToken.isEmpty()
@@ -191,9 +195,8 @@ bool ChatGptClient::signIn(const QString& clientId, const QString& language) {
             const auto code = valid ? query.queryItemValue("code", QUrl::FullyDecoded) : QString{};
             const auto issued = valid ? query.queryItemValue("client_id", QUrl::FullyDecoded) : QString{};
             const auto denied = valid && !query.queryItemValue("error", QUrl::FullyDecoded).isEmpty();
-            const QByteArray body = localizedAiStatus(valid && !denied && !code.isEmpty()
-                ? "You can return to PodLord." : "ChatGPT sign-in did not finish. Return to PodLord.", loginLanguage_).toUtf8();
-            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: "
+            const QByteArray body = localizedAuthCallbackPage(valid && !denied && !code.isEmpty(), loginLanguage_);
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'\r\nContent-Length: "
                 + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
             socket->disconnectFromHost();
             if (!valid) return;
@@ -404,6 +407,7 @@ void ChatGptClient::analyze(const QString& model, const QString& instructions, c
         const auto payload = QJsonDocument(QJsonObject{{"model", model}, {"instructions", instructions},
             {"input", QJsonArray{QJsonObject{{"role", "user"}, {"content", input}}}}, {"store", false}, {"stream", true}}).toJson(QJsonDocument::Compact);
         analysisReply_ = network_.post(req, payload);
+        emit analysisSent(active()->subject);
         auto* reply = analysisReply_.data();
         limitReply(reply, 1024 * 1024);
         connect(reply, &QNetworkReply::finished, this, [this, reply, done = std::move(done)] {

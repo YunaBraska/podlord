@@ -28,6 +28,7 @@ public:
     void cancelAnalysis();
 signals:
     void changed();
+    void analysisSent(const QString& identity);
 private:
     bool save();
     void loadModels(const QString& after, QVariantList collected);

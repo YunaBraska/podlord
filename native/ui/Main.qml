@@ -23,6 +23,9 @@ ApplicationWindow {
         terminalDialog.followsInspector = followsInspector
         terminalDialog.open()
     }
+    function openAiSettings() {
+        if (workspace.setWorkspacePage("settings") && settingsLoader.item) settingsLoader.item.section = "ai"
+    }
     ContainerTerminalDialog { id: terminalDialog; hostWindow: window }
     ContextRemovalDialog {}
     function focusSearchIfOpen() {

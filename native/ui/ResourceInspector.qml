@@ -137,33 +137,16 @@ Pane {
                 onClicked: workspace.setIncidentAiEnabled(checked)
             }
         }
-        ComboBox {
-            id: incidentAiModel
-            objectName: "incidentAiModel"
+        RowLayout {
             Layout.fillWidth: true
-            visible: true
-            model: workspace.incidentAiModelChoices; textRole: "label"
-            currentIndex: model.findIndex(choice => !choice.header && choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
-            displayText: currentIndex < 0 ? workspace.uiText["ai.chooseModel"] : model[currentIndex].label
-            Accessible.name: workspace.uiText["ai.model"]
-            delegate: ItemDelegate {
-                required property var modelData
-                required property int index
-                width: incidentAiModel.popup.width
-                text: modelData.label
-                enabled: !modelData.header
-                font.bold: modelData.header
-                highlighted: incidentAiModel.highlightedIndex === index
-            }
-            onActivated: index => {
-                const choice = model[index]
-                if (!choice.header) workspace.selectIncidentAiModel(choice.provider, choice.slug)
-            }
+            visible: workspace.incidentAiModel === ""
+            Label { Layout.fillWidth: true; text: workspace.uiText["ai.modelMissing"]; color: workspace.appearanceColors.warning; wrapMode: Text.Wrap }
+            IconButton { objectName: "incidentAiOpenSettings"; glyph: "Settings"; text: workspace.uiText["ai.chooseModel"]; onClicked: inspectorRoot.hostWindow.openAiSettings() }
         }
         Label {
             objectName: "incidentAiStatus"
             Layout.fillWidth: true
-            visible: workspace.incidentAiEnabled && text !== ""
+            visible: workspace.incidentAiEnabled && workspace.incidentAiModel !== "" && text !== ""
             text: workspace.incidentAiStatus
             textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
@@ -184,20 +167,23 @@ Pane {
             textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: workspace.appearanceColors.muted
         }
-        Label {
-            objectName: "incidentAiSummary"
-            Layout.fillWidth: true
+        ColumnLayout {
+            Layout.fillWidth: true; spacing: 3
             visible: workspace.incidentAiEnabled && workspace.incidentAiResult.summary !== undefined
-            text: workspace.incidentAiResult.summary || ""
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
-            font.bold: true
+            Label { text: workspace.uiText["ai.analysis"]; font.bold: true; color: workspace.appearanceColors.muted }
+            Label { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
-        Label {
-            objectName: "incidentAiAction"
-            Layout.fillWidth: true
+        ColumnLayout {
+            Layout.fillWidth: true; spacing: 3
+            visible: workspace.incidentAiEnabled && (workspace.incidentAiResult.cause || "") !== ""
+            Label { text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.muted }
+            Label { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+        }
+        ColumnLayout {
+            Layout.fillWidth: true; spacing: 3
             visible: workspace.incidentAiEnabled && workspace.incidentAiResult.action !== undefined
-            text: workspace.incidentAiResult.action || ""
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
+            Label { text: workspace.uiText["ai.nextStep"]; font.bold: true; color: workspace.appearanceColors.muted }
+            Label { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         Label {
             Layout.fillWidth: true
@@ -236,7 +222,6 @@ Pane {
             }
             IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["ai.copyCommand"]; visible: workspace.incidentAiResult.summary !== undefined; enabled: (workspace.incidentAiResult.command || "") !== ""; onClicked: workspace.copyIncidentAiCommand() }
             IconButton { objectName: "incidentAiDocs"; glyph: "External"; text: workspace.uiText["ai.docs"]; visible: workspace.incidentAiResult.summary !== undefined; onClicked: aiPanel.docsError = Qt.openUrlExternally(workspace.incidentAiResult.documentation) ? "" : workspace.uiText["ai.docsError"] }
-            IconButton { glyph: "Info"; glyphColor: workspace.appearanceColors.muted; text: workspace.uiText["ai.caution"]; visible: workspace.incidentAiResult.summary !== undefined; onClicked: ToolTip.show(text, 8000) }
         }
         Label { Layout.fillWidth: true; visible: aiPanel.docsError !== ""; text: aiPanel.docsError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         TextArea {

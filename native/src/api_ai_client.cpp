@@ -90,9 +90,8 @@ bool ApiAiClient::signIn(const QString& language) {
                 && query.queryItemValue("state", QUrl::FullyDecoded) == loginState_;
             const auto code = valid ? query.queryItemValue("code", QUrl::FullyDecoded) : QString{};
             const bool denied = valid && !query.queryItemValue("error", QUrl::FullyDecoded).isEmpty();
-            const QByteArray body = localizedAiStatus(valid && !denied && !code.isEmpty()
-                ? "You can return to PodLord." : "OpenRouter sign-in did not finish. Return to PodLord.", loginLanguage_).toUtf8();
-            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: "
+            const QByteArray body = localizedAuthCallbackPage(valid && !denied && !code.isEmpty(), loginLanguage_);
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'\r\nContent-Length: "
                 + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
             socket->disconnectFromHost();
             if (!valid) return;
@@ -268,6 +267,7 @@ void ApiAiClient::analyze(const QString& model, const QString& instructions, con
         QJsonObject{{"role", "user"}, {"content", input}}});
     const auto key = key_;
     analysisReply_ = network_.post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    emit analysisSent(identity());
     auto* reply = analysisReply_.data();
     limitReply(reply, 65536);
     connect(reply, &QNetworkReply::finished, this, [this, reply, key, done = std::move(done)] {

@@ -178,11 +178,11 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool incidentAiSupported READ incidentAiSupported CONSTANT)
     Q_PROPERTY(QStringList incidentAiModels READ incidentAiModels NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantList incidentAiModelChoices READ incidentAiModelChoices NOTIFY incidentAiChanged)
+    Q_PROPERTY(QVariantList incidentAiAccounts READ incidentAiAccounts NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiModel READ incidentAiModel NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiProvider READ incidentAiProvider NOTIFY incidentAiChanged)
     Q_PROPERTY(QString chatgptAccount READ chatgptAccount NOTIFY incidentAiChanged)
     Q_PROPERTY(bool chatgptConnected READ chatgptConnected NOTIFY incidentAiChanged)
-    Q_PROPERTY(bool incidentAiApiKeyConfigured READ incidentAiApiKeyConfigured NOTIFY incidentAiChanged)
     Q_PROPERTY(QStringList incidentAiReasoningOptions READ incidentAiReasoningOptions NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiReasoning READ incidentAiReasoning NOTIFY incidentAiChanged)
     Q_PROPERTY(QString incidentAiStatus READ incidentAiStatus NOTIFY incidentAiChanged)
@@ -434,11 +434,11 @@ public:
     bool incidentAiSupported() const;
     QStringList incidentAiModels() const;
     QVariantList incidentAiModelChoices() const;
+    QVariantList incidentAiAccounts() const;
     QString incidentAiModel() const;
     QString incidentAiProvider() const;
     QString chatgptAccount() const;
     bool chatgptConnected() const;
-    bool incidentAiApiKeyConfigured() const;
     QStringList incidentAiReasoningOptions() const;
     QString incidentAiReasoning() const;
     QString incidentAiStatus() const;
@@ -450,8 +450,10 @@ public:
     Q_INVOKABLE bool signInChatGpt();
     Q_INVOKABLE bool signInOpenRouter();
     Q_INVOKABLE void signOutChatGpt();
-    Q_INVOKABLE bool setIncidentAiApiKey(const QString& key);
-    Q_INVOKABLE void clearIncidentAiApiKey();
+    Q_INVOKABLE bool setClaudeAiKey(const QString& key);
+    Q_INVOKABLE void clearClaudeAiKey();
+    Q_INVOKABLE void signOutOpenRouter();
+    Q_INVOKABLE void refreshIncidentAiUsage();
     Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
     Q_INVOKABLE void ensureIncidentAiModels();
     Q_INVOKABLE bool refreshIncidentAiAnalysis();

@@ -42,7 +42,7 @@ struct OllamaBoundary final : QTcpServer {
                 else {
                     ++chats; submitted = bytes->mid(boundary + 4, length);
                     if (hold) { held = socket; return; }
-                    response = {{"message", QJsonObject{{"content", malformed ? "not json" : "{\"summary\":\"Der Image-Abruf scheitert.\",\"action\":\"Prüfe Registry und Image-Referenz.\"}"}}}};
+                    response = {{"message", QJsonObject{{"content", malformed ? "not json" : "{\"summary\":\"Der Image-Abruf scheitert.\",\"cause\":\"Ursache unbekannt.\",\"action\":\"Prüfe Registry und Image-Referenz.\"}"}}}};
                 }
                 const auto payload = failure && chat ? QByteArray("failure") : QJsonDocument(response).toJson(QJsonDocument::Compact);
                 socket->write("HTTP/1.1 " + QByteArray(failure && chat ? "503 Failure" : "200 OK")
@@ -303,6 +303,9 @@ void scenario(const QString& name) {
             && !server.submitted.contains("registry-token")
             && server.submitted.contains("ImagePullBackOff") && server.submitted.contains("de"), "AI payload exposed untrusted data or omitted evidence");
         require(QJsonDocument::fromJson(server.submitted).object()["think"] == "medium", "Automatic reasoning did not choose the advertised medium level");
+        if (name == "success")
+            require(QTest::qWaitFor([&] { return ai.result("context", rows().at(2).toObject()["path"].toString()).value("cause") == "Ursache unbekannt."; }, 2000),
+                "Structured cause did not reach the public result");
         if (name == "cancel") {
             require(ai.setEnabled("context", false) && ai.result("context", rows().at(2).toObject()["path"].toString()).isEmpty(), "Opt-out left analysis visible");
             QTest::qWait(50);

@@ -19,6 +19,7 @@ public:
     explicit ChatGptClient(QString profile, QUrl authBase = QUrl("https://auth.openai.com"),
         QUrl apiBase = QUrl("https://api.openai.com"), QObject* parent = nullptr, CredentialStore* credentials = nullptr);
     QString activeAccount() const;
+    QString activeSubject() const;
     QString activeClientId() const { return activeClientId_; }
     QVariantList models() const { return models_; }
     QString status() const { return status_; }
@@ -31,6 +32,7 @@ public:
     void cancelAnalysis();
 signals:
     void changed();
+    void analysisSent(const QString& subject);
 private:
     struct Account {
         QString clientId, subject, email, idToken, accessToken, refreshToken, scopes;

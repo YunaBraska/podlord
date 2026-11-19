@@ -17,6 +17,7 @@ Pane {
     signal sourceFailuresRequested()
     signal renameContextRequested(var context)
     property string section: "alerts"
+    property bool addingClaudeKey: false
     readonly property var allSections: ["alerts", "appearance", "ai", "diagnostics", "sources", "sync", "about"]
         .map(id => ({id: id, label: workspace.uiText["settings." + id]}))
     readonly property var sections: allSections.filter(entry => entry.id !== "ai" || workspace.incidentAiSupported)
@@ -276,6 +277,7 @@ Pane {
                     Layout.fillWidth: true; visible: settings.section === "ai"
                     onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
                     Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
+                    Timer { interval: 60000; repeat: true; running: parent.visible; onTriggered: workspace.refreshIncidentAiUsage() }
                     SettingRow {
                         label: workspace.uiText["ai.model"]; help: ""
                         RowLayout {
@@ -298,7 +300,7 @@ Pane {
                                 }
                                 onActivated: index => {
                                     const choice = model[index]
-                                    if (!choice.header && workspace.selectIncidentAiModel(choice.provider, choice.slug)) providerKey.clear()
+                                    if (!choice.header) workspace.selectIncidentAiModel(choice.provider, choice.slug)
                                 }
                             }
                             IconButton {
@@ -310,60 +312,53 @@ Pane {
                                 onClicked: aiConnections.open()
                                 Menu {
                                     id: aiConnections
-                                    MenuItem { objectName: "connectChatGpt"; text: "ChatGPT"; onTriggered: {
-                                        if (workspace.setIncidentAiProvider("chatgpt")) workspace.signInChatGpt()
-                                    } }
-                                    MenuItem { objectName: "connectClaude"; text: "Claude API"; onTriggered: workspace.setIncidentAiProvider("claude") }
-                                    MenuItem { objectName: "connectOpenRouter"; text: "OpenRouter"; onTriggered: {
-                                        if (workspace.setIncidentAiProvider("openrouter") && !workspace.incidentAiApiKeyConfigured) workspace.signInOpenRouter()
-                                    } }
+                                    MenuItem { objectName: "connectChatGpt"; text: "ChatGPT"; enabled: !workspace.chatgptConnected; onTriggered: workspace.signInChatGpt() }
+                                    MenuItem { objectName: "connectClaude"; text: "Claude API"; enabled: !workspace.incidentAiAccounts.some(account => account.provider === "claude"); onTriggered: settings.addingClaudeKey = true }
+                                    MenuItem { objectName: "connectOpenRouter"; text: "OpenRouter"; enabled: !workspace.incidentAiAccounts.some(account => account.provider === "openrouter"); onTriggered: workspace.signInOpenRouter() }
+                                }
+                            }
+                        }
+                    }
+                    Repeater {
+                        model: workspace.incidentAiAccounts
+                        delegate: SettingRow {
+                            required property var modelData
+                            label: modelData.provider === "chatgpt" ? "ChatGPT" : modelData.provider === "claude" ? "Claude" : "OpenRouter"
+                            help: ""
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label { Layout.fillWidth: true; text: modelData.label; elide: Text.ElideRight }
+                                Label { text: modelData.requests24h + " / 24h"; Accessible.name: modelData.requests24h + " " + workspace.uiText["ai.requests24h"] }
+                                IconButton {
+                                    objectName: modelData.provider === "chatgpt" ? "chatgptSignOut" : modelData.provider === "openrouter" ? "openRouterSignOut" : "claudeSignOut"
+                                    glyph: "SignOut"; text: workspace.uiText["ai.chatgptSignOut"]
+                                    onClicked: {
+                                        if (modelData.provider === "chatgpt") workspace.signOutChatGpt()
+                                        else if (modelData.provider === "claude") workspace.clearClaudeAiKey()
+                                        else workspace.signOutOpenRouter()
+                                    }
                                 }
                             }
                         }
                     }
                     SettingRow {
-                        visible: workspace.incidentAiProvider === "chatgpt" && workspace.chatgptConnected
-                        label: "ChatGPT"; help: ""
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label { Layout.fillWidth: true; visible: text !== ""; text: workspace.chatgptAccount; elide: Text.ElideRight }
-                            IconButton { objectName: "chatgptSignOut"; glyph: "SignOut"; text: workspace.uiText["ai.chatgptSignOut"]; onClicked: workspace.signOutChatGpt() }
-                        }
-                    }
-                    SettingRow {
-                        visible: workspace.incidentAiProvider === "claude"
-                        label: workspace.uiText["ai.apiKey"]; help: ""
+                        visible: settings.addingClaudeKey
+                        label: "Claude API"; help: ""
                         RowLayout {
                             Layout.fillWidth: true
                             TextField {
                                 id: providerKey; objectName: "settingsAiApiKey"; Layout.fillWidth: true
                                 echoMode: TextInput.Password
-                                placeholderText: workspace.incidentAiApiKeyConfigured ? workspace.uiText["ai.keySaved"] : workspace.uiText["ai.keyPlaceholder"]
+                                placeholderText: workspace.uiText["ai.keyPlaceholder"]
                                 Accessible.name: workspace.uiText["ai.apiKey"]
-                                onAccepted: if (workspace.setIncidentAiApiKey(text)) clear()
+                                onAccepted: if (workspace.setClaudeAiKey(text)) { clear(); settings.addingClaudeKey = false }
                             }
                             IconButton {
                                 objectName: "settingsAiSaveKey"; text: workspace.uiText["action.save"]
                                 glyph: "Save"
                                 visible: providerKey.text !== ""
-                                onClicked: if (workspace.setIncidentAiApiKey(providerKey.text)) providerKey.clear()
+                                onClicked: if (workspace.setClaudeAiKey(providerKey.text)) { providerKey.clear(); settings.addingClaudeKey = false }
                             }
-                            IconButton {
-                                objectName: "settingsAiRemoveKey"; text: workspace.uiText["ai.removeKey"]
-                                glyph: "Trash"
-                                visible: workspace.incidentAiApiKeyConfigured
-                                onClicked: { workspace.clearIncidentAiApiKey(); providerKey.clear() }
-                            }
-                        }
-                    }
-                    SettingRow {
-                        visible: workspace.incidentAiProvider === "openrouter" && workspace.incidentAiApiKeyConfigured
-                        label: "OpenRouter"; help: ""
-                        IconButton {
-                            objectName: "openRouterSignOut"
-                            glyph: "SignOut"
-                            text: workspace.uiText["ai.chatgptSignOut"]
-                            onClicked: workspace.clearIncidentAiApiKey()
                         }
                     }
                     SettingRow {

@@ -117,7 +117,7 @@ void oauthScenario() {
     callback(true);
     require(!client.configured() && boundary.oauthSubmitted.isEmpty(), "Wrong OAuth state was accepted");
     const auto response = callback(false);
-    require(response.contains("Du kannst") || response.contains("Sie können"),
+    require(response.contains("text/html") && response.contains("PodLord schließt sie ab"),
         "OpenRouter callback did not use the selected language");
     require(QTest::qWaitFor([&] { return client.configured() && client.models().size() == 1; }, 3000),
         "OpenRouter sign-in did not save key and load catalog");
@@ -173,6 +173,8 @@ void scenario(bool claude) {
         }
         return false;
     }, 2000), "Combined model catalog did not include the configured provider");
+    require(ai.accounts().size() == 1 && ai.accounts().first().toMap().value("requests24h").toInt() == 0,
+        "Connected account is missing from the independent account list");
     const auto choices = ai.allModelChoices();
     int headers = 0, models = 0;
     for (const auto& value : choices) {
@@ -198,6 +200,27 @@ void scenario(bool claude) {
         {"secret", "secret-private-marker"}}}, "de");
     require(QTest::qWaitFor([&] { return !ai.result("cluster-one", resourcePath).value("summary").toString().isEmpty(); }, 2000),
         "API provider did not reach the public incident result");
+    require(ai.accounts().first().toMap().value("requests24h").toInt() == 1,
+        "The 24-hour count did not record the actual analysis request");
+    podlord::IncidentAi reopened(directory.filePath("profile"), QUrl(boundary.base()), nullptr, endpoints, &credentials);
+    require(reopened.accounts().size() == 1 && reopened.accounts().first().toMap().value("requests24h").toInt() == 1,
+        "The 24-hour request count did not survive restart");
+    QFile history(QDir(directory.filePath("profile")).filePath("incident-ai.json"));
+    require(history.open(QIODevice::ReadOnly), "Cannot read request history");
+    auto settings = QJsonDocument::fromJson(history.readAll()).object();
+    history.close();
+    auto requests = settings.value("requests").toArray();
+    require(requests.size() == 1, "Catalog or login calls were counted as analysis requests");
+    auto agedRequest = requests.first().toObject();
+    agedRequest.insert("at", QDateTime::currentDateTimeUtc().addSecs(-86401).toString(Qt::ISODateWithMs));
+    requests.replace(0, agedRequest);
+    settings.insert("requests", requests);
+    require(history.open(QIODevice::WriteOnly | QIODevice::Truncate)
+        && history.write(QJsonDocument(settings).toJson()) > 0, "Cannot age request history");
+    history.close();
+    podlord::IncidentAi aged(directory.filePath("profile"), QUrl(boundary.base()), nullptr, endpoints, &credentials);
+    require(aged.accounts().size() == 1 && aged.accounts().first().toMap().value("requests24h").toInt() == 0,
+        "Expired analysis request remained in the 24-hour count");
     require(!boundary.submitted.contains("secret-private-marker") && boundary.submitted.contains("NotReady"),
         "API provider received unsafe data or lost the problem signal");
     credentials.available = false;
@@ -209,6 +232,35 @@ void scenario(bool claude) {
     require(!client.configured() && client.models().isEmpty()
         && !credentials.read(directory.filePath("profile"), claude ? "claude" : "openrouter").found,
         "Removing API key left provider configured");
+}
+void accountsScenario() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "Cannot create account profile");
+    Boundary claude(true), router(false);
+    require(claude.listen(QHostAddress::LocalHost, 0) && router.listen(QHostAddress::LocalHost, 0),
+        "Cannot start account provider boundaries");
+    MemoryCredentialStore credentials;
+    const auto profile = directory.filePath("profile");
+    podlord::ApiAiClient claudeAccount(profile, podlord::ApiAiClient::Provider::Claude, QUrl(claude.base()), nullptr, &credentials);
+    podlord::ApiAiClient routerAccount(profile, podlord::ApiAiClient::Provider::OpenRouter, QUrl(router.base()), nullptr, &credentials);
+    require(claudeAccount.setKey("private-test-key") && routerAccount.setKey("private-test-key"),
+        "Cannot connect two provider accounts");
+    const podlord::IncidentAi::RemoteEndpoints endpoints{QUrl(claude.base()), QUrl(claude.base()),
+        QUrl(claude.base()), QUrl(router.base())};
+    podlord::IncidentAi ai(profile, QUrl(claude.base()), nullptr, endpoints, &credentials);
+    require(QTest::qWaitFor([&] { return ai.allModelChoices().size() >= 4; }, 2000),
+        "Connected provider models were not loaded");
+    require(ai.provider() == "ollama" && ai.model().isEmpty() && ai.accounts().size() == 2,
+        "Connecting accounts selected a model or hid an account");
+    require(ai.selectModel("claude", "claude-test") && ai.model() == "claude-test", "Cannot select Claude model");
+    ai.signOutOpenRouter();
+    require(ai.provider() == "claude" && ai.model() == "claude-test" && ai.accounts().size() == 1,
+        "Signing out another provider changed the selected model");
+    ai.clearClaudeKey();
+    require(ai.provider() == "claude" && ai.model().isEmpty() && ai.accounts().isEmpty(),
+        "Signing out the selected provider did not clear its model");
+    podlord::IncidentAi reopened(profile, QUrl(claude.base()), nullptr, endpoints, &credentials);
+    require(reopened.model().isEmpty(), "Signed-out model returned after restart");
 }
 void storageScenario(const QString& name) {
     QTemporaryDir directory;
@@ -255,6 +307,7 @@ int main(int argc, char** argv) {
     if (name == "oauth") oauthScenario();
     else if (name == "migration" || name == "unavailable" || name == "conflict" || name == "invalid") storageScenario(name);
     else if (name == "system_store") systemStoreScenario();
+    else if (name == "accounts") accountsScenario();
     else scenario(name == "claude");
 }
 #include "api_ai_client_test.moc"

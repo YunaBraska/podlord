@@ -34,6 +34,7 @@ public:
     QStringList models() const;
     QVariantList modelChoices() const;
     QVariantList allModelChoices() const;
+    QVariantList accounts() const;
     QString model() const { return provider_ == "chatgpt" ? chatgptModel_ : provider_ == "claude" ? claudeModel_
         : provider_ == "openrouter" ? openrouterModel_ : model_; }
     bool setModel(const QString& model);
@@ -60,10 +61,11 @@ public:
     QString chatgptClientId() const { return chatgpt_.activeClientId(); }
     bool chatgptSignIn(const QString& clientId = {}, const QString& language = "en") { return supported() && chatgpt_.signIn(clientId, language); }
     bool openRouterSignIn(const QString& language = "en") { return supported() && openrouter_.signIn(language); }
-    void chatgptSignOut() { if (supported()) chatgpt_.signOut(); }
-    bool setApiKey(const QString& key);
-    void clearApiKey();
-    bool apiKeyConfigured() const;
+    void chatgptSignOut();
+    bool setClaudeKey(const QString& key);
+    void clearClaudeKey();
+    void signOutOpenRouter();
+    void refreshUsage() { emit changed(); }
     void refreshModels();
     void ensureModelsFresh();
     void observe(const QString& context, const QJsonArray& rows, const QString& language);
@@ -84,6 +86,7 @@ private:
     void complete(Incident incident, const QString& answer, const QString& error);
     void providerChanged();
     void refreshReasoning();
+    void recordRequest(const QString& provider, const QString& identity);
     void stopObserving(const QString& context);
     const QString profile_;
     const QUrl endpoint_;
@@ -99,6 +102,7 @@ private:
     QJsonValue thinkValue_{QJsonValue::Undefined};
     bool modelReady_ = false;
     QMap<QString, Record> records_;
+    QMap<QString, QList<QDateTime>> requests_;
     QMap<QString, Incident> visible_;
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;

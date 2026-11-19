@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
         const auto frame = qEnvironmentVariable("PODLORD_AI_SETTINGS_FRAME");
         if (!frame.isEmpty()) {
             if (qEnvironmentVariableIsSet("PODLORD_AI_SETTINGS_OPEN_MODEL")) {
-                QTest::qWaitFor([&] { return workspace.incidentAiModelChoices().size() >= 2; }, 5000);
+                if (!QTest::qWaitFor([&] { return workspace.incidentAiModelChoices().size() >= 2; }, 5000)) return 1;
                 if (!podlord::test::clickVisible(window, "settingsAiModel")) return 1;
                 QTest::qWait(100);
             }
@@ -69,20 +69,10 @@ int main(int argc, char** argv) {
         }
         if (!podlord::test::clickVisible(window, "settingsAiConnect")
             || !podlord::test::clickVisible(window, "connectClaude")
-            || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "claude"; }, 2000)
+            || workspace.incidentAiProvider() != "ollama" || !workspace.incidentAiModel().isEmpty()
             || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey") != nullptr; }, 2000)
-            || workspace.incidentAiApiKeyConfigured()) return 1;
-        if (!workspace.setIncidentAiProvider("openrouter")
-            || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "openrouter"; }, 2000)
-            || !window->findChild<QObject*>("connectOpenRouter")
-            || podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey")
-            || podlord::test::visibleItem(window->contentItem(), "openRouterSignOut")) return 1;
-        if (!workspace.setIncidentAiProvider("chatgpt")
-            || !QTest::qWaitFor([&] { return workspace.incidentAiProvider() == "chatgpt"; }, 2000)
-            || podlord::test::visibleItem(window->contentItem(), "chatgptConnect")
-            || podlord::test::visibleItem(window->contentItem(), "settingsChatGptAccount")
-            || podlord::test::visibleItem(window->contentItem(), "chatgptAddAccount")) return 1;
-        return workspace.incidentAiProvider() == "chatgpt" ? 0 : 1;
+            || !workspace.incidentAiAccounts().isEmpty()) return 1;
+        return window->findChild<QObject*>("connectOpenRouter") && workspace.incidentAiAccounts().isEmpty() ? 0 : 1;
     }
     if (scenario.startsWith("review_")) {
         const auto failed = [&](const char* stage) {
