@@ -172,6 +172,7 @@ QString analysisSystemText(bool diagnostic) {
             "Do not imply that credentials or cluster data were checked. Return only JSON with summary, cause and one concrete edit in action."
         : style + "In summary, first explain what the selected resource kind does in one short sentence, then explain the observed problem. "
             "If the resource kind is unfamiliar, say its role is unknown. Connect relevant cluster observations, but distinguish facts from possible causes. "
+            "Keep Kubernetes terms precise in the requested language. In German, call a container image 'Container-Image', never 'Bild'. "
             "A manual review is not proof of a fault. Seeing a Secret does not prove whether the kubelet can use it. "
             "A local YAML draft check is not a Kubernetes server response. Do not claim that the draft content was read. "
             "Evidence depth is the number of verified resource links from the selected resource. Give nearer facts more weight. "
@@ -844,7 +845,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         const auto identity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
             + '\n' + incidentEvidenceText(evidence, false)
             + '\n' + provider_ + '\n' + account
-            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n12";
+            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n14";
         const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
         activeKeys.insert(key);
         const auto kind = row["kind"].toString();
@@ -961,7 +962,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         evidenceBudgetBytes(snapshot->second, kind, code, related));
     const auto identity = context + '\n' + path + '\n' + code + '\n' + related.join("\n")
         + '\n' + incidentEvidenceText(evidence, false)
-        + '\n' + provider_ + '\n' + account + '\n' + model() + '\n' + thinkSignature + '\n' + snapshot->second + "\nmanual-v6";
+        + '\n' + provider_ + '\n' + account + '\n' + model() + '\n' + thinkSignature + '\n' + snapshot->second + "\nmanual-v8";
     const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
     Incident incident{key, context, code, kind, path, snapshot->second,
         provider_, model(), reasoning(), thinkSignature, related, true, evidence};

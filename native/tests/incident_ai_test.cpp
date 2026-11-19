@@ -186,6 +186,7 @@ void scenario(const QString& name) {
             "Explicit analysis did not appear");
         require(!ai.enabled("context") && server.submitted.contains("Observed signal: Manual review")
             && server.submitted.contains("what the selected resource kind does")
+            && server.submitted.contains("call a container image 'Container-Image', never 'Bild'")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
             && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
