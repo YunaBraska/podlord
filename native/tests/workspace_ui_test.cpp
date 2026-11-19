@@ -808,12 +808,22 @@ bool execute(const QString& requestedScenario) {
     if (scenario == "map_empty" || scenario == "map_empty_phone" || scenario == "accessibility_empty" || scenario == "empty_brand" || scenario == "shell_footer_empty" || scenario == "shell_compact_portrait" || scenario == "shell_compact_empty") {
         if (scenario.endsWith("_phone") || scenario == "shell_compact_portrait") window->resize(320,640);
         if (scenario == "shell_compact_empty") window->resize(640,360);
-        return waitFor([&] { return !workspace.busy() && workspace.workspacePage()=="map" && workspace.mapOverview()
+        const bool emptyVisible = waitFor([&] { return !workspace.busy() && workspace.workspacePage()=="map" && workspace.mapOverview()
             && item(window,"mapImportSource") && displayedWithin(window->contentItem(),item(window,"mapImportSource")); })
             && !item(window,"resourcesWorkspaceButton")->isVisible() && !item(window,"eventsWorkspaceButton")->isVisible()
             && !item(window,"portForwardTasksButton")->isVisible() && !item(window,"mapBack")
             && !item(window,"workspaceFooter")->isVisible()
             && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty() && server.requests.isEmpty() && saveShellFrame(window,scenario);
+        if (!emptyVisible) return false;
+        if (scenario == "map_empty" || scenario == "map_empty_phone") {
+            auto* quick = item(window, "quickOpenDropdown");
+            return quick && displayedWithin(window->contentItem(), quick) && click(window, quick)
+                && waitFor([&] { auto* file = item(window, "quickOpenFile"); return file && file->isVisible(); })
+                && !window->findChild<QObject*>("quickOpenTabMenu")
+                && !window->findChild<QObject*>("quickOpenWindowMenu")
+                && server.requests.isEmpty();
+        }
+        return true;
     }
     if (!waitFor([&] { return !workspace.busy(); })) return false;
     if (scenario == "import_files_empty" || scenario == "import_files_empty_folder") {

@@ -68,7 +68,7 @@ ApplicationWindow {
         Rectangle { anchors.fill: parent; visible: configDrop.containsDrag; color: "transparent"; border.width: 2; border.color: workspace.appearanceColors.accent }
     }
     property string ociImportConfigPath: ""
-    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: workspace.uiText["nav.contexts"], header: true}]
+    readonly property var quickOpenEntries: quickOpenMenu.visible && window.mapContexts.length > 0 ? [{name: workspace.uiText["nav.contexts"], header: true}]
         .concat(window.mapContexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
     function editTabContextAlias(tabId) {
         const contextId = workspace.sessionConfiguration(tabId).contextId
@@ -557,7 +557,7 @@ ApplicationWindow {
                         Accessible.name: "Show or hide current search"
                         Accessible.description: "Search this view. Hiding search keeps the filter."
                     }
-                    IconButton { id: quickOpenControl; readonly property bool available: window.mapContexts.length > 0; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; action: quickOpenCommand; visible: available && navigationRow.fits(this) }
+                    IconButton { id: quickOpenControl; readonly property bool available: true; objectName: "quickOpenDropdown"; glyph: window.mapContexts.length === 0 ? "Add" : "ConfigMap"; glyphColor: window.mapContexts.length === 0 ? workspace.appearanceColors.success : workspace.appearanceColors.text; action: quickOpenCommand; visible: navigationRow.fits(this) }
                     NavButton { id: mapControl; readonly property bool available: true; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: available && navigationRow.fits(this) }
                     NavButton { id: resourcesControl; readonly property bool available: window.hasResources; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: available && navigationRow.fits(this) }
                     NavButton { id: eventsControl; readonly property bool available: window.hasEvents; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: available && navigationRow.fits(this) }
@@ -642,7 +642,7 @@ ApplicationWindow {
         width: Math.min(360, window.width - 24)
         height: Math.min(implicitHeight, window.height - 48)
         MenuItem { objectName: "quickOpenFile"; text: workspace.uiText["context.openFile"]; implicitHeight: window.controlHeight; enabled: !workspace.busy; onTriggered: quickChooser.open() }
-        MenuSeparator {}
+        MenuSeparator { visible: window.mapContexts.length > 0; height: visible ? implicitHeight : 0 }
         Instantiator {
             active: quickOpenMenu.visible
             model: window.quickOpenEntries
@@ -660,7 +660,7 @@ ApplicationWindow {
             onObjectRemoved: (index, object) => quickOpenMenu.removeItem(object)
         }
         Instantiator {
-            model: 1
+            model: window.mapContexts.length > 0 ? 1 : 0
             delegate: Menu {
                 id: quickTabMenu
                 objectName: "quickOpenTabMenu"
@@ -691,7 +691,7 @@ ApplicationWindow {
         }
     }
     Instantiator {
-        model: workspace.windowActionsAvailable ? 1 : 0
+        model: workspace.windowActionsAvailable && window.mapContexts.length > 0 ? 1 : 0
         delegate: Menu {
             id: quickWindowMenu
             objectName: "quickOpenWindowMenu"
