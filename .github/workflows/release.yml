@@ -231,7 +231,7 @@ jobs:
   app_store_upload:
     needs: [mode, app_store_package]
     if: needs.mode.outputs.release == 'true' && needs.app_store_package.result == 'success'
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@64ded0126229fc7bb53ffa1cbd3b8ce1ce2ed80c
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@469372e592d87a003dbfae15ef8d50194bcea7e5
     with:
       app_name: Podlord
     secrets: inherit
@@ -239,7 +239,7 @@ jobs:
   ios_store_upload:
     needs: [mode, ios_store_package]
     if: needs.mode.outputs.release == 'true' && needs.ios_store_package.result == 'success'
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@64ded0126229fc7bb53ffa1cbd3b8ce1ce2ed80c
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@469372e592d87a003dbfae15ef8d50194bcea7e5
     with:
       app_name: Podlord
       artifact_name: ios-app-store-package
@@ -252,7 +252,7 @@ jobs:
     permissions:
       actions: read
       contents: write
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_create_github_release.yml@64ded0126229fc7bb53ffa1cbd3b8ce1ce2ed80c
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_create_github_release.yml@469372e592d87a003dbfae15ef8d50194bcea7e5
     with:
       run_id: ${{ github.run_id }}
       commit_sha: ${{ github.sha }}
@@ -261,7 +261,7 @@ jobs:
   chocolatey:
     needs: [version, release]
     if: needs.release.result == 'success'
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_chocolatey_publish.yml@64ded0126229fc7bb53ffa1cbd3b8ce1ce2ed80c
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_chocolatey_publish.yml@469372e592d87a003dbfae15ef8d50194bcea7e5
     with:
       package_id: podlord
       display_name: PodLord
