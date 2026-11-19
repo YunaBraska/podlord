@@ -231,7 +231,14 @@ void ApiAiClient::loadModels(const QString& after, QVariantList collected) {
                 const auto outputs = item.value("architecture").toObject().value("output_modalities").toArray();
                 if (!outputs.isEmpty() && !outputs.contains("text")) continue;
             }
-            collected.append(QVariantMap{{"slug", id}, {"label", item.value(provider_ == Provider::Claude ? "display_name" : "name").toString(id)}});
+            auto tokens = item.value(provider_ == Provider::Claude ? "max_input_tokens" : "context_length").toInteger();
+            if (provider_ == Provider::OpenRouter) {
+                const auto routed = item.value("top_provider").toObject().value("context_length").toInteger();
+                if (routed > 0 && (tokens <= 0 || routed < tokens)) tokens = routed;
+            }
+            QVariantMap choice{{"slug", id}, {"label", item.value(provider_ == Provider::Claude ? "display_name" : "name").toString(id)}};
+            if (tokens > 0) choice.insert("contextTokens", tokens);
+            collected.append(choice);
         }
         if (provider_ == Provider::Claude && document.object().value("has_more").toBool()) {
             const auto next = document.object().value("last_id").toString();

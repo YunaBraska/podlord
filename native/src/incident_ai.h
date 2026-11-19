@@ -88,6 +88,7 @@ private:
     };
     struct Record final { QJsonObject answer; QDateTime created; };
     bool save();
+    qsizetype evidenceBudgetBytes(const QString& language, const QString& kind, const QString& code, const QStringList& related) const;
     void dispatch();
     void complete(Incident incident, const QString& answer, const QString& error);
     void providerChanged();
@@ -103,6 +104,7 @@ private:
     QTimer dispatchTimer_;
     QMap<QString, QSet<QString>> enabledByProvider_;
     QStringList models_;
+    qint64 ollamaContextTokens_ = 0;
     QStringList reasoningOptions_{"auto"};
     QString provider_ = "ollama", model_, chatgptModel_, claudeModel_, openrouterModel_, reasoning_ = "auto", status_;
     QMap<QString, QString> contextStatus_;

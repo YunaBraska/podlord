@@ -56,8 +56,9 @@ public:
                             && exchange.value("code_challenge_method") == "S256" ? 200 : 400;
                         payload = QJsonDocument(QJsonObject{{"key", "private-test-key"}}).toJson(QJsonDocument::Compact);
                     } else if (firstLine.startsWith("GET /v1/models") || firstLine.startsWith("GET /api/v1/models")) {
-                        const QJsonObject model = claude_ ? QJsonObject{{"id", "claude-test"}, {"display_name", "Claude test"}}
-                            : QJsonObject{{"id", "vendor/model"}, {"name", "Router test"},
+                        const QJsonObject model = claude_ ? QJsonObject{{"id", "claude-test"}, {"display_name", "Claude test"}, {"max_input_tokens", 16000}}
+                            : QJsonObject{{"id", "vendor/model"}, {"name", "Router test"}, {"context_length", 8000},
+                                {"top_provider", QJsonObject{{"context_length", 7000}}},
                                 {"architecture", QJsonObject{{"output_modalities", QJsonArray{"text"}}}}};
                         payload = QJsonDocument(QJsonObject{{"data", QJsonArray{model}}, {"has_more", false}}).toJson(QJsonDocument::Compact);
                     } else if (firstLine.startsWith("POST /v1/messages") || firstLine.startsWith("POST /api/v1/chat/completions")) {
@@ -150,6 +151,8 @@ void scenario(bool claude) {
     require(QTest::qWaitFor([&] { return client.models().size() == 1; }, 2000), "Model catalog was not loaded");
     const auto model = client.models().first().toMap().value("slug").toString();
     require(model == (claude ? "claude-test" : "vendor/model"), "Wrong model in catalog");
+    require(client.models().first().toMap().value("contextTokens").toLongLong() == (claude ? 16000 : 7000),
+        "Provider context capacity was lost");
     const auto path = QDir(directory.filePath("profile")).filePath(claude ? "claude-auth.json" : "openrouter-auth.json");
     require(!QFile::exists(path) && credentials.read(directory.filePath("profile"), claude ? "claude" : "openrouter").found,
         "Provider key was written as a file or not saved in the credential store");

@@ -381,8 +381,12 @@ void ChatGptClient::refreshModels() {
             for (const auto& value : document.object().value("models").toArray()) {
                 const auto entry = value.toObject();
                 const auto slug = entry.value("slug").toString();
-                if (entry.value("visibility") == "list" && !slug.isEmpty()) models.append(QVariantMap{{"slug", slug},
-                    {"label", entry.value("display_name").toString(slug)}});
+                if (entry.value("visibility") == "list" && !slug.isEmpty()) {
+                    QVariantMap choice{{"slug", slug}, {"label", entry.value("display_name").toString(slug)}};
+                    const auto tokens = entry.value("max_input_tokens").toInteger(entry.value("context_length").toInteger());
+                    if (tokens > 0) choice.insert("contextTokens", tokens);
+                    models.append(choice);
+                }
             }
             models_ = models;
             status_ = models_.isEmpty() ? "This ChatGPT account has no available models." : QString{};

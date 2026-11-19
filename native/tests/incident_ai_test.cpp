@@ -16,6 +16,7 @@ namespace {
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 struct OllamaBoundary final : QTcpServer {
     int chats = 0;
+    int showContextTokens = 0;
     QByteArray submitted;
     QByteArray answer;
     bool failure = false, malformed = false, hold = false;
@@ -39,8 +40,11 @@ struct OllamaBoundary final : QTcpServer {
                 QJsonObject response;
                 if (tags) response = {{"models", QJsonArray{QJsonObject{{"name", "local-test:9b"}, {"size", 7500000000.0}},
                     QJsonObject{{"name", "local-test:10b"}, {"size", 8500000000.0}}}}};
-                else if (show) response = {{"capabilities", QJsonArray{"completion", "thinking"}},
-                    {"thinking", QJsonObject{{"values", QJsonArray{"low", "medium", "high"}}, {"default", "high"}}}};
+                else if (show) {
+                    response = {{"capabilities", QJsonArray{"completion", "thinking"}},
+                        {"thinking", QJsonObject{{"values", QJsonArray{"low", "medium", "high"}}, {"default", "high"}}}};
+                    if (showContextTokens > 0) response["parameters"] = QString("num_ctx %1").arg(showContextTokens);
+                }
                 else {
                     ++chats; submitted = bytes->mid(boundary + 4, length);
                     if (hold) { held = socket; return; }
@@ -95,6 +99,33 @@ void scenario(const QString& name) {
     server.hold = name == "cancel" || name == "close" || name == "resolve";
     server.failure = name == "failure";
     server.malformed = name == "malformed";
+    if (name == "capacity") {
+        auto snapshot = rows();
+        auto selected = snapshot.at(2).toObject(); selected["node"] = "worker-a"; snapshot.replace(2, selected);
+        snapshot.append(QJsonObject{{"apiVersion", "v1"}, {"kind", "Node"}, {"name", "worker-a"},
+            {"path", "/api/v1/nodes/worker-a"}, {"status", "Ready"}});
+        for (int index = 0; index < 100; ++index) {
+            const auto name = QString("peer-%1").arg(index);
+            snapshot.append(QJsonObject{{"apiVersion", "v1"}, {"kind", "Pod"}, {"name", name},
+                {"uid", name}, {"namespace", "team"}, {"path", "/api/v1/namespaces/team/pods/" + name},
+                {"node", "worker-a"}, {"status", "Pending"}, {"ready", QString("0/%1").arg(index + 1)}});
+        }
+        server.showContextTokens = 2400;
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && ai.setEnabled("context", true), "Small model unavailable");
+        ai.observe("context", snapshot, "de");
+        const auto path = selected["path"].toString();
+        require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).isEmpty(); }, 2000), "Small analysis missing");
+        const auto small = ai.result("context", path).value("evidence").toList().size();
+        server.showContextTokens = 24000;
+        require(ai.setModel("local-test:10b") && QTest::qWaitFor([&] { return ai.ready(); }, 2000)
+            && ai.refresh("context", path), "Large model unavailable");
+        require(QTest::qWaitFor([&] { return server.chats == 2 && !ai.result("context", path).isEmpty(); }, 2000), "Large analysis missing");
+        const auto large = ai.result("context", path).value("evidence").toList().size();
+        require(small > 0 && large > small && large > 64, "Evidence did not adapt to the model context");
+        return;
+    }
     if (name == "invalid") {
         require(QDir().mkpath(profile), "Cannot prepare profile");
         QFile invalid(QDir(profile).filePath("incident-ai.json"));

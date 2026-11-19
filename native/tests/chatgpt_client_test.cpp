@@ -82,7 +82,7 @@ public:
                     } else if (line.startsWith("GET /v1/models ")) {
                         if (!header.contains("Authorization: Bearer private-access")) { code = 401; payload = "{}"; }
                         else payload = QJsonDocument(QJsonObject{{"models", QJsonArray{
-                            QJsonObject{{"slug", "gpt-test"}, {"display_name", "Test model"}, {"visibility", "list"}},
+                            QJsonObject{{"slug", "gpt-test"}, {"display_name", "Test model"}, {"visibility", "list"}, {"max_input_tokens", 9000}},
                             QJsonObject{{"slug", "hidden"}, {"display_name", "Hidden"}, {"visibility", "hidden"}}}}}).toJson(QJsonDocument::Compact);
                     } else if (line.startsWith("POST /v1/responses ")) {
                         submitted = body;
@@ -246,6 +246,8 @@ void scenario(const QString& name) {
         "Validated account or account-specific model catalog unavailable");
     require(client.activeAccount() == "test@example.invalid" && client.models().first().toMap().value("slug") == "gpt-test",
         "Wrong account or hidden model shown");
+    require(client.models().first().toMap().value("contextTokens").toLongLong() == 9000,
+        "Advertised ChatGPT context capacity was lost");
     const auto credentialPath = QDir(directory.filePath("profile")).filePath("chatgpt-auth.json");
     require(!QFile::exists(credentialPath)
         && credentials.read(directory.filePath("profile"), "chatgpt").found,
