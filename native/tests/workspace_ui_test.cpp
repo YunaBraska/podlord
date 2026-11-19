@@ -1682,7 +1682,7 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "accessibility_settings") return click(window, item(window, "settingsWorkspaceButton"))
             && click(window, item(window, "settingsSourcesSection"))
-            && accessibleName(window,"Kubeconfig file or folder") && server.requests.size() == calls;
+            && accessibleName(window,"More source actions") && server.requests.size() == calls;
         if (scenario == "accessibility_dialog") {
             QTest::keySequence(window, QKeySequence(Qt::CTRL | Qt::Key_K));
             if (!waitFor([&] { return item(window, "commandPaletteSearch")->isVisible(); })
@@ -3596,6 +3596,8 @@ bool execute(const QString& requestedScenario) {
             auto* cell = item(window, "cell_0_" + QString::number(column("name")));
             const auto start = cell->mapToScene({cell->width() / 2, cell->height() / 2}).toPoint();
             const auto previousX = view->property("contentX").toDouble();
+            std::fprintf(stderr, "Table drag setup: width=%g contentWidth=%g interactive=%d start=%d,%d\n",
+                view->width(), view->property("contentWidth").toDouble(), view->property("interactive").toBool(), start.x(), start.y());
             const bool touchInput = scenario == "table_pointer_touch";
             std::unique_ptr<QPointingDevice> touch(touchInput ? QTest::createTouchDevice() : nullptr);
             if (touchInput) QTest::touchEvent(window, touch.get()).press(0, start, window).commit();

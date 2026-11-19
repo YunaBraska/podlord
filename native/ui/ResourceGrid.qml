@@ -482,6 +482,8 @@ ColumnLayout {
                 acceptedButtons: Qt.LeftButton
                 gesturePolicy: TapHandler.DragThreshold
                 onTapped: cell.clicked()
+                onLongPressed: cell.TableView.view.activateOrigin({cell: cell, path: cell.resourcePath,
+                    column: cell.column, scope: grid.contextScope}, point.scenePosition, true)
             }
         }
         color: highlighted || current ? grid.colors.selection : hovered ? grid.colors.raised : grid.colors.inset

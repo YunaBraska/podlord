@@ -159,9 +159,11 @@ void referencedKeys(const QJsonArray& rows) {
     require(workload["secretKeys"].toArray().contains("DATABASE_PASSWORD")
         && workload["configMapKeys"].toArray().contains("SERVER_PORT"),
         "Pod did not publish referenced Secret and ConfigMap key names");
-    require(!QJsonDocument(workload).toJson().contains("credentials")
-        && !QJsonDocument(workload).toJson().contains("settings"),
-        "Referenced resource names appeared in the key projection");
+    require(workload["secretRefs"].toArray() == QJsonArray{"credentials"}
+        && workload["configMapRefs"].toArray() == QJsonArray{"settings"}
+        && !QJsonDocument(workload["secretKeys"].toArray()).toJson().contains("credentials")
+        && !QJsonDocument(workload["configMapKeys"].toArray()).toJson().contains("settings"),
+        "Referenced names must remain separate from key names");
 }
 void imagePullSecretReferences(const QJsonArray& rows) {
     const auto workload = row(rows, "running-0");
