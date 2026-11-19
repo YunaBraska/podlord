@@ -42,7 +42,7 @@ Pane {
     ColumnLayout {
     id: inspector
     width: inspectorScroll.availableWidth
-    height: Math.max(implicitHeight, inspectorScroll.availableHeight)
+    height: workspace.inspectorPage === "ai" ? implicitHeight : Math.max(implicitHeight, inspectorScroll.availableHeight)
     property real yamlPosition: 0
     property real overviewPosition: 0
     property real valuesPosition: 0

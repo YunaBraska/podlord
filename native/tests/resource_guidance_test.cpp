@@ -210,6 +210,18 @@ bool ui(const QString& mode) {
         require(workspace.property("inspectorPage").toString() == "ai" && !item("incidentAiEnable")
             && item("incidentAiOpenSettings") && !item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
             "Opening the AI tab changed consent or Kubernetes transport");
+        const auto aligned = [&] {
+            const auto near = [](QQuickItem* upper, QQuickItem* lower) {
+                const auto gap = lower->mapToScene(QPointF{}).y()
+                    - upper->mapToScene(QPointF(0, upper->height())).y();
+                return gap >= 0 && gap <= 24;
+            };
+            return near(item("inspectorBack"), item("overviewButton"))
+                && near(item("overviewButton"), item("incidentAiReanalyze"))
+                && near(item("incidentAiReanalyze"), item("incidentAiModelMissing"));
+        };
+        QTest::qWait(50);
+        require(aligned(), "AI inspector controls are vertically detached");
         auto* message = item("incidentAiModelMissing");
         require(message && message->property("selectByMouse").toBool(), "AI message cannot be selected");
         message->forceActiveFocus();
@@ -218,6 +230,12 @@ bool ui(const QString& mode) {
         QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
         require(QGuiApplication::clipboard()->text() == message->property("text").toString(), "AI message could not be copied");
         if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_empty.png"), "Cannot save AI empty state");
+        window->setWidth(2500); window->setHeight(900); QTest::qWait(50);
+        require(aligned(), "Wide AI inspector lost alignment");
+        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_wide.png"), "Cannot save wide AI state");
+        window->setWidth(680); window->setHeight(680); QTest::qWait(50);
+        require(aligned(), "Narrow AI inspector lost alignment");
+        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_narrow.png"), "Cannot save narrow AI state");
         press("overviewButton");
         require(workspace.property("inspectorPage").toString() == "overview" && item("guidanceTitle_0"),
             "Leaving the AI tab did not restore the resource overview");
