@@ -363,7 +363,7 @@ QString analysisInputText(const QString& language, const QString& kind, const QS
     return "Language: " + language + "\nResource kind: " + kind
         + "\nObserved signal: " + code + "\nCluster observations:"
         + (related.isEmpty() ? QString(" none") : QString("\n- ") + related.join("\n- "))
-        + "\nLinked resource and Event facts (IDs resolve inside PodLord, names and messages withheld):\n"
+        + "\nLinked resource and Event facts (IDs resolve inside PodLord, names withheld, messages best-effort screened):\n"
         + incidentEvidenceText(evidence, true);
 }
 bool IncidentAi::supported() const {

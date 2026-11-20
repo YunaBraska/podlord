@@ -409,7 +409,8 @@ void scenario(const QString& name) {
                                   "reason=RegistryPolicyDenied", "reporter=kubelet", "HTTP 403", "DiskPressure", "KubeletHasDiskPressure",
                                   "rollout=", "desired", "cpuLimitMilli=500", "cpuLimitCoverage=complete",
                                   "memoryLimitBytes=268435456", "memoryLimitCoverage=partial",
-                                  "accessModes=ReadWriteOnce", "storageRequestBytes=1073741824"})
+                                  "accessModes=ReadWriteOnce", "storageRequestBytes=1073741824",
+                                  "names withheld, messages best-effort screened"})
             require(server.submitted.contains(field), qPrintable(QString("Missing evidence: ") + field));
         for (const auto& field : {"private.registry.example", "private-value", "short-secret", "user@example.org",
                                   "10.1.2.3", "runtime-secret", "runtime-config", "c2VjcmV0LXZhbHVlLXRlc3Q=",
