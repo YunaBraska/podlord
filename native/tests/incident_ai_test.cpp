@@ -100,6 +100,64 @@ void scenario(const QString& name) {
     server.hold = name == "cancel" || name == "close" || name == "resolve";
     server.failure = name == "failure";
     server.malformed = name == "malformed";
+    if (name == "uuid_node_name") {
+        const QString nodeName = "12345678-1234-1234-1234-123456789abc-vs284-worker-9g67q-tbw98";
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["node"] = nodeName;
+        snapshot.replace(2, pod);
+        snapshot.append(QJsonObject{{"kind", "Node"}, {"name", nodeName},
+            {"path", "/api/v1/nodes/" + nodeName}, {"status", "Ready"}});
+        server.answer = QJsonDocument(QJsonObject{
+            {"summary", "The assigned Node " + nodeName + " is Ready."},
+            {"cause", "An unrelated identifier 87654321-4321-4321-4321-cba987654321 is unverified."},
+            {"action", "Inspect the Node."}}).toJson(QJsonDocument::Compact);
+        const auto path = pod["path"].toString();
+        {
+            podlord::IncidentAi ai(profile, endpoint);
+            require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+                && ai.setModel("local-test:9b") && ai.setEnabled("context", true),
+                "Node-name test model unavailable");
+            require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000),
+                "Node-name test model not ready");
+            ai.observe("context", snapshot, "en");
+            require(QTest::qWaitFor([&] {
+                return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty();
+            }, 2000), "Node-name analysis missing");
+            const auto result = ai.result("context", path);
+            require(server.submitted.contains(nodeName.toUtf8())
+                && result.value("summary").toString().contains("Node " + nodeName)
+                && result.value("summaryHtml").toString().contains("href=\"R")
+                && !result.value("summary").toString().contains("[ID]")
+                && result.value("cause").toString().contains("[ID]"),
+                "A known Node name was cut apart by UUID redaction");
+        }
+        QFile cache(QDir(profile).filePath("incident-ai.json"));
+        require(cache.open(QIODevice::ReadOnly), "Cannot read cached analysis");
+        auto saved = QJsonDocument::fromJson(cache.readAll()).object();
+        cache.close();
+        auto records = saved["records"].toArray();
+        require(records.size() == 1, "Expected one cached analysis");
+        auto record = records.first().toObject();
+        auto answer = record["answer"].toObject();
+        answer["summary"] = QString("The assigned Node [ID]-vs284-worker-9g67q-tbw98 is Ready.");
+        record["answer"] = answer;
+        records.replace(0, record);
+        saved["records"] = records;
+        const auto bytes = QJsonDocument(saved).toJson();
+        require(cache.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            && cache.write(bytes) == bytes.size(), "Cannot prepare legacy cached answer");
+        cache.close();
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.reasoningOptions().contains("medium"); }, 2000),
+            "Cached Node-name model unavailable");
+        reopened.observe("context", snapshot, "en");
+        const auto cached = reopened.result("context", path);
+        require(server.chats == 1 && cached.value("summary").toString().contains("Node " + nodeName)
+            && cached.value("summaryHtml").toString().contains("href=\"R"),
+            "Existing cached answer still shows a broken Node name or sent another AI request");
+        return;
+    }
     if (name == "capacity") {
         auto snapshot = rows();
         auto selected = snapshot.at(2).toObject(); selected["node"] = "worker-a"; snapshot.replace(2, selected);

@@ -1521,14 +1521,7 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     QSet<QString> knownIds;
     for (const auto& value : incident.evidence) knownIds.insert(value.toObject()["id"].toString());
     const auto normalize = [&](QString value) {
-        for (const auto& item : incident.evidence) {
-            const auto fact = item.toObject();
-            const auto uid = fact["uid"].toString();
-            if (!uid.isEmpty()) value.replace(uid, "[" + fact["id"].toString() + "]", Qt::CaseInsensitive);
-        }
-        static const QRegularExpression uuid(R"(\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)");
         static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");
-        value.replace(uuid, "[ID]");
         // Answers survive replica replacement. Store references, not the old replica's name.
         for (const auto& item : incident.evidence) {
             const auto fact = item.toObject();
@@ -1555,6 +1548,13 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
             value.replace(QRegularExpression("(?<![A-Za-z0-9_-])" + QRegularExpression::escape(item.key())
                 + "(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])"), "[" + item.value() + "]");
         }
+        for (const auto& item : incident.evidence) {
+            const auto fact = item.toObject();
+            const auto uid = fact["uid"].toString();
+            if (!uid.isEmpty()) value.replace(uid, "[" + fact["id"].toString() + "]", Qt::CaseInsensitive);
+        }
+        static const QRegularExpression uuid(R"(\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)");
+        value.replace(uuid, "[ID]");
         auto matches = citation.globalMatch(value);
         QSet<QString> invalid;
         while (matches.hasNext()) {
@@ -1599,19 +1599,39 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
         return {{"pending", queued_.contains(incident.key) || inFlight_ == incident.key}};
     }
     static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");
-    QSet<QString> cited;
-    for (const auto& field : {"summary", "cause", "action"}) {
-        auto matches = citation.globalMatch(record->answer[field].toString());
-        while (matches.hasNext()) cited.insert(matches.next().captured(1));
-    }
-    QVariantList references;
+    static const QRegularExpression uuid(R"(\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)");
     QMap<QString, QString> labels;
+    QMap<QString, QString> legacyNames;
+    QSet<QString> ambiguousLegacyNames;
     for (const auto& value : incident.evidence) {
         const auto fact = value.toObject();
         const auto id = fact["id"].toString();
         const auto name = fact["name"].toString();
         const auto nameSpace = fact["namespace"].toString();
         labels.insert(id, fact["kind"].toString() + ' ' + (nameSpace.isEmpty() ? name : nameSpace + '/' + name));
+        auto oldName = name;
+        oldName.replace(uuid, "[ID]");
+        if (oldName != name && oldName != "[ID]") {
+            if (legacyNames.contains(oldName) && legacyNames.value(oldName) != id)
+                ambiguousLegacyNames.insert(oldName);
+            legacyNames.insert(oldName, id);
+        }
+    }
+    for (const auto& name : ambiguousLegacyNames) legacyNames.remove(name);
+    const auto resolvedSource = [&](QString source) {
+        for (auto item = legacyNames.cbegin(); item != legacyNames.cend(); ++item)
+            source.replace(QRegularExpression("(?<![A-Za-z0-9_-])" + QRegularExpression::escape(item.key())
+                + "(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])"), "[" + item.value() + "]");
+        return source;
+    };
+    QSet<QString> cited;
+    for (const auto& field : {"summary", "cause", "action"}) {
+        auto matches = citation.globalMatch(resolvedSource(record->answer[field].toString()));
+        while (matches.hasNext()) cited.insert(matches.next().captured(1));
+    }
+    QVariantList references;
+    for (const auto& value : incident.evidence) {
+        const auto fact = value.toObject();
         if (!cited.contains(fact["id"].toString())) continue;
         references.append(QVariantMap{{"id", fact["id"].toString()}, {"kind", fact["kind"].toString()},
             {"name", fact["name"].toString()}, {"namespace", fact["namespace"].toString()},
@@ -1619,7 +1639,7 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
     }
     QVariantMap output;
     for (const auto& field : {"summary", "cause", "action"}) {
-        const auto source = record->answer[field].toString();
+        const auto source = resolvedSource(record->answer[field].toString());
         QString rendered, html;
         qsizetype from = 0;
         auto matches = citation.globalMatch(source);
