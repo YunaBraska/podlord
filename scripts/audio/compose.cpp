@@ -730,6 +730,89 @@ Audio render(const Score& score) {
     finish(audio,true);
     return audio;
 }
+
+// One audition score. Its eight-bar phrases, sustained foundation and section
+// changes are written directly instead of repeating the catalog's two-bar cells.
+Audio renderPrototype() {
+    constexpr int bars = 72;
+    constexpr double secondsPerBeat = 60.0 / 96.0;
+    Audio audio(bars * 4 * secondsPerBeat, 2, false);
+    const auto seed = seedFor("signal-horizon");
+    std::uint32_t event = 0;
+    const std::array<Chord,8> harmony{{
+        {52,55,59,64}, {48,52,55,59}, {43,47,50,55}, {50,54,57,62},
+        {52,55,59,64}, {45,48,52,57}, {48,52,55,59}, {47,51,54,57}
+    }};
+    const std::vector<Note> themeA{{0,64,1.9},{2.5,67,1.1},{4,69,2.5},{7,67,.85},
+        {8.5,64,1.8},{11,62,1},{12.5,59,2.4},{15.5,62,.9},{16.75,64,2.5},
+        {20,67,1.2},{22,71,1.4},{24,69,2.6},{27.25,67,1.2},{29,64,2.2}};
+    const std::vector<Note> themeB{{0,71,1.6},{2,69,1},{3.5,67,2.3},{6.5,64,1.2},
+        {8,62,2.5},{11,64,1.4},{13,67,1.5},{16,69,2.4},{19.5,71,1.1},
+        {21,74,1.5},{23.5,71,1},{25,69,2},{28,67,1.2},{29.5,64,2.2}};
+    const std::vector<Note> themeC{{0,76,2.5},{3,74,1},{4.5,71,2},{7,69,.75},
+        {8.25,67,2.25},{11,69,1},{12.5,71,2.5},{16,74,2},{18.5,76,1.5},
+        {21,74,1},{22.5,71,2.5},{26,69,1.25},{28,67,3}};
+    const auto play = [&](double beat,double hold,int pitch,Tone tone,double level,double pan) {
+        voice(audio,beat*secondsPerBeat,hold*secondsPerBeat,pitch,tone,level,pan,seed+(++event));
+    };
+    const auto intensity = [](int bar) {
+        if (bar < 8) return .55;
+        if (bar < 16) return .75;
+        if (bar < 40) return .92;
+        if (bar < 48) return .61;
+        if (bar < 64) return 1.0;
+        return .68;
+    };
+    for (int bar=0;bar<bars;++bar) {
+        const auto& chord=harmony[std::size_t(bar/4)%harmony.size()];
+        const double beat=bar*4.0, energy=intensity(bar);
+        if (bar%4==0) for (int note=0;note<4;++note)
+            play(beat,17,chord[std::size_t(note)]+12,Tone::Veil,.048*energy,note%2?.56:-.56);
+        if (bar%2==0) play(beat,8.5,chord[0]-12,Tone::Sub,.27*energy,0);
+        if (bar>=8 && bar<64) {
+            const bool quiet=bar>=40 && bar<48;
+            play(beat,.30,36,Tone::Kick,(quiet?.10:.28)*energy,0);
+            if (!quiet) play(beat+2.75,.23,36,Tone::Kick,.18*energy,0);
+            play(beat+2,.22,50,Tone::Snare,(quiet?.11:.24)*energy,.08);
+            if (!quiet) for (int tick=0;tick<8;++tick) {
+                const double offset=tick%2==0 ? 0 : .035;
+                play(beat+tick*.5+offset,.11,76,Tone::Hush,
+                    (tick%2==0?.055:.037)*energy,tick%2==0?-.32:.32);
+            }
+            if (bar%8==7 && !quiet) {
+                play(beat+3.25,.25,47,Tone::Tom,.14*energy,-.15);
+                play(beat+3.70,.21,50,Tone::Snare,.13*energy,.12);
+            }
+        }
+        if ((bar>=16 && bar<40) || (bar>=48 && bar<64)) {
+            if (bar%2==0) {
+                play(beat+1.25,1.6,chord[1]+12,Tone::Felt,.035*energy,-.38);
+                play(beat+3.25,1.5,chord[2]+12,Tone::Felt,.032*energy,.38);
+            }
+        }
+    }
+    for (int phrase=0;phrase<9;++phrase) {
+        const int startBar=phrase*8;
+        const auto& theme=phrase==3 || phrase==7 ? themeB : phrase==4 || phrase==6 ? themeC : themeA;
+        const double level=phrase==0?.09:phrase==5?.11:phrase==8?.12:phrase==1?.16:.21;
+        for (const auto& note:theme) {
+            if ((phrase==0 && note.at<8) || (phrase==5 && note.at>=16) || (phrase==8 && note.at>=20)) continue;
+            play(startBar*4+note.at,note.hold,note.pitch,Tone::Warm,level*intensity(startBar),.04);
+        }
+        if (phrase==6 || phrase==7) {
+            for (const auto& note:std::vector<Note>{{3,76,1.5},{11.5,74,1.2},{18,79,1.7},{26,76,1.5}})
+                play(startBar*4+note.at,note.hold,note.pitch,Tone::Glass,.045,.42);
+        }
+    }
+    finish(audio,true);
+    const auto frames=audio.frames();
+    for (std::size_t frame=0;frame<frames;++frame) {
+        const double gain=smooth(double(frame)/(rate*2.0))*smooth(double(frames-1-frame)/(rate*7.0));
+        audio.pcm[frame*2]*=float(gain);
+        audio.pcm[frame*2+1]*=float(gain);
+    }
+    return audio;
+}
 Audio render(const Cue& cue) {
     Audio audio(cue.seconds,cue.channels,false);
     std::uint32_t seed=seedFor(cue.id);
@@ -879,7 +962,7 @@ void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Score>
 
 int main(int argc,char** argv) {
     try {
-        require(argc>=3, "Usage: compose plan ROOT | render ROOT sfx|music ID OUTPUT.wav | audit ROOT STAGE");
+        require(argc>=3, "Usage: compose plan ROOT | render ROOT sfx|music ID OUTPUT.wav | prototype ROOT OUTPUT.wav | audit ROOT STAGE");
         const auto catalog=CatalogReader(fs::path(argv[2])/"catalog.json").read();
         const auto music=scores(); const auto sounds=cues();
         validate(catalog,music,sounds);
@@ -892,6 +975,9 @@ int main(int argc,char** argv) {
             require(kind=="sfx" || kind=="music", "Unknown render category");
             writeWave(argv[5],kind=="music"?render(findId(music,id)):render(findId(sounds,id)));
             std::cout << "Rendered " << kind << '/' << id << '\n';
+        } else if (mode=="prototype" && argc==4) {
+            writeWave(argv[3],renderPrototype());
+            std::cout << "Rendered Signal Horizon prototype\n";
         } else if (mode=="audit" && argc==4) audit(argv[3],catalog,music,sounds);
         else throw std::runtime_error("Invalid composer arguments");
         return 0;
