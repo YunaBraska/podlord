@@ -1950,8 +1950,11 @@ local validation message before publishing its connecting state.
 
 The selected model receives the resource kind, a recognized problem code, safe
 status and event reasons, and bounded facts from resources connected through the
-current graph. Resource and Secret values, raw event messages, logs, YAML content
-and credentials are excluded. The answer explains the resource role in one short
+current graph. Available creation and Event times, per-container state, conditions,
+Pod QoS and configured limits can provide context. Warning Event, container-state
+and condition messages are sent after best-effort redaction. Arbitrary messages
+can still contain private data after screening. Full resource and Secret objects,
+logs, YAML content and credentials are excluded. The answer explains the resource role in one short
 sentence, distinguishes observed facts from possible causes, and gives a
 read-only next check in the selected UI language.
 

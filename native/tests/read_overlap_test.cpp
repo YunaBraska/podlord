@@ -304,9 +304,13 @@ bool run(const QString& scenario) {
         server.retryAfter = "invalid";
     }
     if (scenario == "namespace_scoped_mismatch" || scenario == "namespace_all_valid") server.podNamespace = "other";
-    if (scenario == "pod_problem_projection") server.podStatus = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{
-        QJsonObject{{"ready", false}, {"restartCount", 3}, {"state", QJsonObject{{"waiting", QJsonObject{{"reason", "CrashLoopBackOff"}}}}}},
-        QJsonObject{{"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
+    if (scenario == "pod_problem_projection") server.podStatus = QJsonObject{{"phase", "Running"}, {"qosClass", "Burstable"},
+        {"conditions", QJsonArray{QJsonObject{{"type", "ContainersReady"}, {"status", "False"},
+            {"reason", "ContainersNotReady"}, {"lastTransitionTime", "2026-11-19T11:54:00Z"}}}},
+        {"containerStatuses", QJsonArray{
+            QJsonObject{{"ready", false}, {"restartCount", 3}, {"state", QJsonObject{{"waiting", QJsonObject{
+                {"reason", "CrashLoopBackOff"}, {"message", "Back-off restarting failed container"}}}}}},
+            QJsonObject{{"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
     if (!client.configure(settings)) return false;
     QList<qint64> starts;
     QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
@@ -395,7 +399,10 @@ bool run(const QString& scenario) {
         const auto row = client.rows("session").first().toObject();
         return row["status"] == "CrashLoopBackOff"
             && row["issue"] == "CrashLoopBackOff, Ready 1/2, Container restarts"
-            && row["problems"] == true && row["restarts"] == 3 && row["ready"] == "1/2";
+            && row["problems"] == true && row["restarts"] == 3 && row["ready"] == "1/2"
+            && row["qosClass"] == "Burstable"
+            && row["conditions"].toArray().first().toObject()["reason"] == "ContainersNotReady"
+            && row["containerStates"].toArray().first().toObject()["message"] == "Back-off restarting failed container";
     }
     if (scenario == "request_audit") {
         const auto path = QString("/api/v1/namespaces/default/pods/alpha");

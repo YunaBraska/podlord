@@ -115,11 +115,22 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         {"uid", metadata["uid"]}, {"resourceVersion", metadata["resourceVersion"]},
         {"createdAt", metadata["creationTimestamp"]}, {"status", status}, {"activity", false}, {"problemSeverity", 0},
         {"node", spec["nodeName"]}, {"image", images.join(", ")}, {"containers", containers}, {"owners", owners}};
+    QJsonArray conditions;
+    for (const auto& value : state["conditions"].toArray()) {
+        const auto condition = value.toObject();
+        QJsonObject fact;
+        for (const auto& field : {"type", "status", "reason", "message", "lastTransitionTime"})
+            if (condition[field].isString()) fact[field] = condition[field];
+        if (!fact.isEmpty()) conditions.append(fact);
+        if (conditions.size() == 12) break;
+    }
+    if (!conditions.isEmpty()) result["conditions"] = conditions;
     if (kind == "CiliumEndpoint") {
         result["ciliumState"] = state["state"];
         result["ciliumHealth"] = state["health"].toObject()["overallHealth"];
     }
     if (version == "v1" && kind == "Pod") {
+        result["qosClass"] = state["qosClass"];
         QJsonArray claims;
         for (const auto& value : spec["volumes"].toArray()) {
             const auto name = value.toObject()["persistentVolumeClaim"].toObject()["claimName"].toString();
@@ -177,6 +188,11 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         result["configMapRefs"] = configMapRefs;
     } else if (version == "v1" && kind == "PersistentVolumeClaim") {
         result["boundVolume"] = spec["volumeName"];
+        result["accessModes"] = spec["accessModes"];
+        result["volumeMode"] = spec["volumeMode"];
+    } else if (version == "v1" && kind == "PersistentVolume") {
+        result["accessModes"] = spec["accessModes"];
+        result["volumeMode"] = spec["volumeMode"];
     }
     QStringList ownerNames;
     for (const auto& value : metadata["ownerReferences"].toArray()) {
@@ -188,18 +204,40 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         result["ready"] = QString::number(ready)+"/"+QString::number(desired);
         result["readyCount"] = static_cast<double>(ready);
         result["containerCount"] = static_cast<double>(desired);
+        QJsonObject rollout;
+        rollout["desired"] = desired;
+        for (const auto& field : {"updatedReplicas", "readyReplicas", "availableReplicas", "unavailableReplicas", "observedGeneration"})
+            if (state[field].isDouble()) rollout[field] = state[field];
+        if (metadata["generation"].isDouble()) rollout["generation"] = metadata["generation"];
+        result["rollout"] = rollout;
     }
     QStringList issues;
     const QStringList failureStates{"CrashLoopBackOff", "CreateContainerConfigError", "CreateContainerError", "ErrImagePull", "Error", "Failed", "ImagePullBackOff", "NotReady", "OOMKilled", "Unavailable", "Unknown"};
     if (failureStates.contains(result["status"].toString())) issues.append(result["status"].toString());
     if (version == "v1" && kind == "Pod") {
         qint64 restarts=0; int ready=0; bool observedStatuses=false;
-        QJsonArray lastTerminations;
+        QJsonArray lastTerminations, containerStates;
         for (const auto& group : {"containerStatuses", "initContainerStatuses", "ephemeralContainerStatuses"}) {
             const auto statuses=state[group].toArray();
             observedStatuses |= !statuses.isEmpty();
             for (const auto& value : statuses) {
                 const auto container=value.toObject(); restarts+=container["restartCount"].toInteger();
+                if (containerStates.size() < 12) {
+                    const QString role = QString(group) == "containerStatuses" ? "app"
+                        : QString(group) == "initContainerStatuses" ? "init" : "ephemeral";
+                    QJsonObject fact{{"role", role}, {"index", containerStates.size()},
+                        {"ready", container["ready"]}, {"restarts", container["restartCount"]}};
+                    const auto currentState = container["state"].toObject();
+                    for (const auto& phase : {"waiting", "running", "terminated"}) {
+                        const auto details = currentState[phase].toObject();
+                        if (details.isEmpty()) continue;
+                        fact["state"] = phase;
+                        for (const auto& field : {"reason", "message", "exitCode", "startedAt", "finishedAt"})
+                            if (details.contains(field)) fact[field] = details[field];
+                        break;
+                    }
+                    containerStates.append(fact);
+                }
                 if (QString(group)=="containerStatuses" && container["ready"].toBool()) ++ready;
                 const auto current=container["state"].toObject();
                 const auto waiting=current["waiting"].toObject()["reason"].toString();
@@ -214,6 +252,7 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
             }
         }
         if (observedStatuses) result["restarts"]=static_cast<double>(restarts);
+        if (!containerStates.isEmpty()) result["containerStates"] = containerStates;
         if (!lastTerminations.isEmpty()) result["lastTerminations"]=lastTerminations;
         if (!spec["containers"].toArray().isEmpty()) result["ready"]=QString::number(ready)+"/"+QString::number(spec["containers"].toArray().size());
         result["readyCount"]=ready;
@@ -237,10 +276,14 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         result["eventTargetUid"] = object[modern ? "regarding" : "involvedObject"].toObject()["uid"];
         result["eventTargetName"] = object[modern ? "regarding" : "involvedObject"].toObject()["name"];
         result["eventType"] = object["type"]; result["eventReason"] = object["reason"];
+        result["eventReporter"] = modern ? object["reportingController"] : object["source"].toObject()["component"];
         result["status"] = object["type"].toString("Observed");
         result["eventMessage"] = object[modern ? "note" : "message"];
         const auto series = object["series"].toObject();
         result["eventCount"] = series.contains("count") ? series["count"] : object[modern ? "deprecatedCount" : "count"];
+        result["eventFirstTime"] = modern ? object["eventTime"] : object["firstTimestamp"];
+        result["eventLastTime"] = series.contains("lastObservedTime") ? series["lastObservedTime"]
+            : object[modern ? "deprecatedLastTimestamp" : "lastTimestamp"];
         QString time = series["lastObservedTime"].toString();
         for (const auto& field : {modern ? "deprecatedLastTimestamp" : "lastTimestamp", "eventTime", modern ? "deprecatedFirstTimestamp" : "firstTimestamp"}) {
             if (!time.isEmpty()) break;

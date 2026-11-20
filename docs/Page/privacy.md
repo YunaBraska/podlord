@@ -20,12 +20,12 @@ description: How PodLord handles cluster data on your device.
 <section class="section">
   <h2>Network connections</h2>
   <p>PodLord does not upload cluster data to YunaBraska. The direct-download edition checks GitHub release metadata weekly and opens a compatible download only on request. It does not automatically install an update. GitHub receives normal connection metadata, such as your IP address. App Store builds do not contact GitHub for updates.</p>
-  <p>If you enable AI analysis for a context and choose a cloud model, PodLord sends a bounded summary of linked resources and Warning Events to the selected provider: ChatGPT, Claude or OpenRouter. It includes resource kinds, screened status and problem codes, relationship depth, UI language and limited Secret or ConfigMap key names when relevant. It excludes kubeconfigs, credentials, Secret values, raw logs, file contents, free Event messages and resource names. Ollama analysis stays on your computer. Answers are cached locally for up to 90 days and can be refreshed on request.</p>
+  <p>When you request AI analysis or enable it automatically for a context, PodLord sends linked resource facts to the selected model. Cloud providers are ChatGPT, Claude and OpenRouter. Facts can include status, problems, conditions, container states, creation and Event times, configured limits, and relevant Secret or ConfigMap key names. Warning Event and status messages are sent after best-effort masking of known names, addresses and common credential patterns. Arbitrary messages can still contain private information that masking misses. PodLord does not deliberately include kubeconfigs, credentials, Secret values, full logs, file contents or YAML. PodLord connects to Ollama on your computer. Ollama's own configuration can route requests elsewhere. Answers are cached locally for up to 90 days and can be refreshed on request.</p>
   <p>The native Mac App Store build imports individual selected files or pasted kubeconfigs into app-owned copies. It does not scan folders, reload original files or run external credential commands. Native sign-in and explicitly imported keys remain available. Certificate and token file references must be replaced with embedded data or an explicit supported key import.</p>
 </section>
 
 <section class="section">
   <h2>Your choices</h2>
   <p>Remove unused imported connections and keys in PodLord. App-owned kubeconfig copies can retain connection data for other contexts. Uninstalling a desktop application does not necessarily remove its local profile. Remove that profile as well when you want to erase all local PodLord data. For help, use <a href="{{ site.support }}">PodLord support</a>. Never post kubeconfigs, tokens or private cluster details in a public issue.</p>
-  <p>Last updated: 19 November 2026.</p>
+  <p>Last updated: 20 November 2026.</p>
 </section>
