@@ -6,12 +6,14 @@ Podlord bundles 20 original short cues and 20 original instrumental pieces. Scor
 
 The alert specification owns playback and migration behavior. Full silent decoding and a few muted device lifecycle tests replace repeated audible asset tests. Qt/FFmpeg and other runtime library notices remain required.
 
-## Signal Horizon audition
+## Music auditions
 
-The standalone three-minute prototype uses the same original synthesizer but a separately written arrangement. It does not change the bundled playlist. From the repository root on macOS:
+The two standalone pieces use the existing synthesizer, with separate themes, bass lines, drum grooves and arrangements. They do not change the bundled playlist. From the repository root on macOS:
 
 ```sh
 clang++ -std=c++20 -O2 -Wall -Wextra -Wpedantic scripts/audio/compose.cpp -o /tmp/podlord-compose
-/tmp/podlord-compose prototype native/assets/audio /tmp/podlord-signal-horizon.wav
-afconvert -f m4af -d aac -b 192000 -q 127 /tmp/podlord-signal-horizon.wav /tmp/podlord-signal-horizon.m4a
+/tmp/podlord-compose prototype native/assets/audio forge /tmp/podlord-forge.wav
+/tmp/podlord-compose prototype native/assets/audio switchyard /tmp/podlord-switchyard.wav
+afconvert -f m4af -d aac -b 192000 -q 127 /tmp/podlord-forge.wav /tmp/podlord-forge.m4a
+afconvert -f m4af -d aac -b 192000 -q 127 /tmp/podlord-switchyard.wav /tmp/podlord-switchyard.m4a
 ```

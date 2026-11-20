@@ -731,83 +731,130 @@ Audio render(const Score& score) {
     return audio;
 }
 
-// One audition score. Its eight-bar phrases, sustained foundation and section
-// changes are written directly instead of repeating the catalog's two-bar cells.
-Audio renderPrototype() {
-    constexpr int bars = 72;
-    constexpr double secondsPerBeat = 60.0 / 96.0;
-    Audio audio(bars * 4 * secondsPerBeat, 2, false);
-    const auto seed = seedFor("signal-horizon");
-    std::uint32_t event = 0;
-    const std::array<Chord,8> harmony{{
-        {52,55,59,64}, {48,52,55,59}, {43,47,50,55}, {50,54,57,62},
-        {52,55,59,64}, {45,48,52,57}, {48,52,55,59}, {47,51,54,57}
-    }};
-    const std::vector<Note> themeA{{0,64,1.9},{2.5,67,1.1},{4,69,2.5},{7,67,.85},
-        {8.5,64,1.8},{11,62,1},{12.5,59,2.4},{15.5,62,.9},{16.75,64,2.5},
-        {20,67,1.2},{22,71,1.4},{24,69,2.6},{27.25,67,1.2},{29,64,2.2}};
-    const std::vector<Note> themeB{{0,71,1.6},{2,69,1},{3.5,67,2.3},{6.5,64,1.2},
-        {8,62,2.5},{11,64,1.4},{13,67,1.5},{16,69,2.4},{19.5,71,1.1},
-        {21,74,1.5},{23.5,71,1},{25,69,2},{28,67,1.2},{29.5,64,2.2}};
-    const std::vector<Note> themeC{{0,76,2.5},{3,74,1},{4.5,71,2},{7,69,.75},
-        {8.25,67,2.25},{11,69,1},{12.5,71,2.5},{16,74,2},{18.5,76,1.5},
-        {21,74,1},{22.5,71,2.5},{26,69,1.25},{28,67,3}};
-    const auto play = [&](double beat,double hold,int pitch,Tone tone,double level,double pan) {
+// Two original audition scores with different rhythm sections and themes.
+// Both use the same synthesizer and stay outside the bundled playlist.
+Audio renderPrototype(std::string_view direction) {
+    const bool forge=direction=="forge";
+    require(forge || direction=="switchyard", "Unknown prototype: "+std::string(direction));
+    constexpr int bars=72;
+    const double secondsPerBeat=60.0/(forge?112.0:118.0);
+    Audio audio(bars*4*secondsPerBeat,2,false);
+    const auto seed=seedFor(direction);
+    std::uint32_t event=0;
+    const auto play=[&](double beat,double hold,int pitch,Tone tone,double level,double pan=0) {
         voice(audio,beat*secondsPerBeat,hold*secondsPerBeat,pitch,tone,level,pan,seed+(++event));
     };
-    const auto intensity = [](int bar) {
-        if (bar < 8) return .55;
-        if (bar < 16) return .75;
-        if (bar < 40) return .92;
-        if (bar < 48) return .61;
-        if (bar < 64) return 1.0;
-        return .68;
-    };
-    for (int bar=0;bar<bars;++bar) {
-        const auto& chord=harmony[std::size_t(bar/4)%harmony.size()];
-        const double beat=bar*4.0, energy=intensity(bar);
-        if (bar%4==0) for (int note=0;note<4;++note)
-            play(beat,17,chord[std::size_t(note)]+12,Tone::Veil,.048*energy,note%2?.56:-.56);
-        if (bar%2==0) play(beat,8.5,chord[0]-12,Tone::Sub,.27*energy,0);
-        if (bar>=8 && bar<64) {
-            const bool quiet=bar>=40 && bar<48;
-            play(beat,.30,36,Tone::Kick,(quiet?.10:.28)*energy,0);
-            if (!quiet) play(beat+2.75,.23,36,Tone::Kick,.18*energy,0);
-            play(beat+2,.22,50,Tone::Snare,(quiet?.11:.24)*energy,.08);
-            if (!quiet) for (int tick=0;tick<8;++tick) {
-                const double offset=tick%2==0 ? 0 : .035;
-                play(beat+tick*.5+offset,.11,76,Tone::Hush,
-                    (tick%2==0?.055:.037)*energy,tick%2==0?-.32:.32);
+    if (forge) {
+        const std::array<int,4> roots{40,43,38,45};
+        const std::array<Note,14> riff{{{0,0,.8},{1,0,.55},{1.75,3,.7},{2.75,0,1.0},
+            {4,0,.85},{5.25,-2,.55},{6,0,.7},{7,3,.85},{8,0,.85},{9,7,1.5},
+            {12,0,.85},{13,3,.7},{14,5,.8},{15,3,.9}}};
+        const std::array<Note,8> hook{{{0,64,2.1},{3,67,1.6},{6,69,2.2},{9,67,1.4},
+            {12,71,2.0},{15,69,1.5},{18,67,2.2},{22,64,3.2}}};
+        for (int bar=0;bar<bars;++bar) {
+            const double beat=bar*4.0;
+            const int root=roots[std::size_t(bar/4)%roots.size()];
+            const bool bridge=bar>=36 && bar<44;
+            const double energy=bar<4?.68:bridge?.72:bar>=64?.76:bar>=44?1.0:.9;
+            // A continuous low foundation keeps the song moving through every change.
+            play(beat,3.9,root,Tone::Sub,.25*energy);
+            play(beat,.34,35,Tone::Kick,.38*energy);
+            play(beat+2,.3,35,Tone::Kick,.29*energy);
+            if (!bridge) play(beat+3.5,.25,35,Tone::Kick,.16*energy);
+            play(beat+(bridge?2:1),.24,49,Tone::Snare,.31*energy,.08);
+            if (!bridge) play(beat+3,.23,49,Tone::Snare,.29*energy,.08);
+            for (int tick=0;tick<8;++tick)
+                play(beat+tick*.5,.13,75,Tone::Hush,(tick%2?.048:.073)*energy,tick%2?.36:-.36);
+            if (bar%8==7) {
+                play(beat+2.5,.31,46,Tone::Tom,.17*energy,-.2);
+                play(beat+3.25,.27,43,Tone::Tom,.2*energy,.2);
             }
-            if (bar%8==7 && !quiet) {
-                play(beat+3.25,.25,47,Tone::Tom,.14*energy,-.15);
-                play(beat+3.70,.21,50,Tone::Snare,.13*energy,.12);
+            if (bar>=4 && !bridge) {
+                for (const auto& note:riff) {
+                    const double at=beat+note.at-4*(bar%4);
+                    if (at<beat || at>=beat+4) continue;
+                    const int pitch=root+12+note.pitch;
+                    play(at,note.hold,pitch,Tone::Drive,.16*energy,-.23);
+                    play(at,note.hold*.92,pitch+7,Tone::Drive,.068*energy,.28);
+                }
             }
-        }
-        if ((bar>=16 && bar<40) || (bar>=48 && bar<64)) {
-            if (bar%2==0) {
-                play(beat+1.25,1.6,chord[1]+12,Tone::Felt,.035*energy,-.38);
-                play(beat+3.25,1.5,chord[2]+12,Tone::Felt,.032*energy,.38);
+            if (bridge) {
+                play(beat,3.9,root+24,Tone::Veil,.045*energy,-.45);
+                if (bar%2==0) play(beat+1,2.5,root+31,Tone::Brass,.09*energy,.3);
             }
+            if ((bar>=20 && bar<36) || (bar>=44 && bar<64)) {
+                const int phrase=(bar>=44?bar-44:bar-20)%8;
+                for (const auto& note:hook) {
+                    const double at=bar*4+note.at-phrase*4;
+                    if (at<beat || at>=beat+4) continue;
+                    play(at,note.hold,note.pitch+(bar>=44?5:0),Tone::Brass,
+                        (bar>=44?.13:.1)*energy,.13);
+                }
+            }
+            if (bar>=44 && bar<64 && bar%2==0)
+                play(beat+2.5,1.2,root+31,Tone::Reed,.06*energy,.4);
         }
-    }
-    for (int phrase=0;phrase<9;++phrase) {
-        const int startBar=phrase*8;
-        const auto& theme=phrase==3 || phrase==7 ? themeB : phrase==4 || phrase==6 ? themeC : themeA;
-        const double level=phrase==0?.09:phrase==5?.11:phrase==8?.12:phrase==1?.16:.21;
-        for (const auto& note:theme) {
-            if ((phrase==0 && note.at<8) || (phrase==5 && note.at>=16) || (phrase==8 && note.at>=20)) continue;
-            play(startBar*4+note.at,note.hold,note.pitch,Tone::Warm,level*intensity(startBar),.04);
-        }
-        if (phrase==6 || phrase==7) {
-            for (const auto& note:std::vector<Note>{{3,76,1.5},{11.5,74,1.2},{18,79,1.7},{26,76,1.5}})
-                play(startBar*4+note.at,note.hold,note.pitch,Tone::Glass,.045,.42);
+    } else {
+        const std::array<int,4> roots{38,41,45,36};
+        const std::array<Note,16> bass{{{0,0,.7},{.75,7,.45},{1.5,0,.6},{2.5,3,.5},
+            {3.25,0,.7},{4,0,.8},{5.25,5,.55},{6,7,.45},{6.75,3,.45},
+            {7.5,0,.42},{8,0,.8},{10,5,1.15},{12,0,.8},{13.25,7,.5},
+            {14,3,.65},{15.25,0,.65}}};
+        const std::array<Note,9> comp{{{.5,0,.7},{2.25,7,.8},{5,0,.9},
+            {7,5,.6},{8,7,.6},{9.75,0,.55},{11.5,3,.5},
+            {12.5,0,1.4},{14.75,7,.7}}};
+        const std::array<Note,9> melody{{{0,62,1.8},{2.5,65,1.25},{4,69,2.2},
+            {7.5,67,1.1},{9,65,1.7},{12,72,1.9},{15,69,1.25},
+            {18,67,2.4},{22,65,3}}};
+        for (int bar=0;bar<bars;++bar) {
+            const double beat=bar*4.0;
+            const int root=roots[std::size_t(bar/4)%roots.size()];
+            const bool breakbeat=bar>=32 && bar<40;
+            const double energy=bar<4?.65:breakbeat?.74:bar>=64?.78:bar>=40?1.0:.88;
+            play(beat,3.9,root+12,Tone::Hollow,.08*energy,-.18);
+            play(beat,.31,33,Tone::Kick,.36*energy);
+            play(beat+(bar%2?2.5:1.75),.25,33,Tone::Kick,.23*energy);
+            play(beat+1,.22,51,Tone::Snare,.26*energy,.04);
+            play(beat+3,.25,51,Tone::Snare,.33*energy,.04);
+            if (bar%2==1) play(beat+2.75,.13,52,Tone::Rim,.08*energy,-.2);
+            for (int tick=0;tick<8;++tick)
+                play(beat+tick*.5+(tick%2?.045:0),.11,79,Tone::Hush,
+                    (tick%2?.04:.062)*energy,tick%2?.4:-.4);
+            if (bar%8==7) {
+                play(beat+2.6,.29,44,Tone::Tom,.18*energy,-.3);
+                play(beat+3.45,.26,48,Tone::Tom,.17*energy,.3);
+            }
+            for (const auto& note:bass) {
+                const double at=beat+note.at-4*(bar%4);
+                if (at<beat || at>=beat+4) continue;
+                play(at,note.hold,root+note.pitch,Tone::Sub,.31*energy);
+            }
+            if (bar>=4 && !breakbeat) {
+                for (const auto& note:comp) {
+                    const double at=beat+note.at-4*(bar%4);
+                    if (at<beat || at>=beat+4) continue;
+                    play(at,note.hold,root+24+note.pitch,Tone::Drive,.10*energy,-.35);
+                    play(at,note.hold*.9,root+31+note.pitch,Tone::Drive,.042*energy,.32);
+                }
+            }
+            if (breakbeat) play(beat,3.9,root+24,Tone::Hollow,.09*energy,.2);
+            if ((bar>=12 && bar<32) || (bar>=40 && bar<64)) {
+                const int phrase=(bar>=40?bar-40:bar-12)%8;
+                for (const auto& note:melody) {
+                    const double at=beat+note.at-phrase*4;
+                    if (at<beat || at>=beat+4) continue;
+                    play(at,note.hold,note.pitch+(bar>=40?5:0),Tone::Reed,
+                        (bar>=40?.15:.12)*energy,.16);
+                }
+            }
+            if (bar>=40 && bar<64 && bar%4==3)
+                play(beat+2.2,1.5,root+36,Tone::Brass,.08*energy,-.12);
         }
     }
     finish(audio,true);
     const auto frames=audio.frames();
     for (std::size_t frame=0;frame<frames;++frame) {
-        const double gain=smooth(double(frame)/(rate*2.0))*smooth(double(frames-1-frame)/(rate*7.0));
+        const double gain=smooth(double(frame)/(rate*1.0))*smooth(double(frames-1-frame)/(rate*5.0));
         audio.pcm[frame*2]*=float(gain);
         audio.pcm[frame*2+1]*=float(gain);
     }
@@ -962,7 +1009,7 @@ void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Score>
 
 int main(int argc,char** argv) {
     try {
-        require(argc>=3, "Usage: compose plan ROOT | render ROOT sfx|music ID OUTPUT.wav | prototype ROOT OUTPUT.wav | audit ROOT STAGE");
+        require(argc>=3, "Usage: compose plan ROOT | render ROOT sfx|music ID OUTPUT.wav | prototype ROOT forge|switchyard OUTPUT.wav | audit ROOT STAGE");
         const auto catalog=CatalogReader(fs::path(argv[2])/"catalog.json").read();
         const auto music=scores(); const auto sounds=cues();
         validate(catalog,music,sounds);
@@ -975,9 +1022,9 @@ int main(int argc,char** argv) {
             require(kind=="sfx" || kind=="music", "Unknown render category");
             writeWave(argv[5],kind=="music"?render(findId(music,id)):render(findId(sounds,id)));
             std::cout << "Rendered " << kind << '/' << id << '\n';
-        } else if (mode=="prototype" && argc==4) {
-            writeWave(argv[3],renderPrototype());
-            std::cout << "Rendered Signal Horizon prototype\n";
+        } else if (mode=="prototype" && argc==5) {
+            writeWave(argv[4],renderPrototype(argv[3]));
+            std::cout << "Rendered " << argv[3] << " prototype\n";
         } else if (mode=="audit" && argc==4) audit(argv[3],catalog,music,sounds);
         else throw std::runtime_error("Invalid composer arguments");
         return 0;
