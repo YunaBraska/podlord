@@ -298,7 +298,8 @@ bool run(const QString& scenario) {
     if (scenario == "related_refresh") {
         server.discovery = QJsonObject{{"resources", QJsonArray{
             QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
-            QJsonObject{{"name", "nodes"}, {"kind", "Node"}, {"namespaced", false}, {"verbs", QJsonArray{"get", "list"}}}}}};
+            QJsonObject{{"name", "nodes"}, {"kind", "Node"}, {"namespaced", false}, {"verbs", QJsonArray{"get", "list"}}},
+            QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}}}};
         const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"},
             {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "uid-alpha"}, {"resourceVersion", "1"}}},
             {"spec", QJsonObject{{"nodeName", "worker-a"}, {"containers", QJsonArray{QJsonObject{{"name", "app"}}}}}},
@@ -308,6 +309,7 @@ bool run(const QString& scenario) {
             {"status", QJsonObject{{"conditions", QJsonArray{QJsonObject{{"type", "Ready"}, {"status", "True"}}}}}}};
         server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}});
         server.responseBodies.insert("/api/v1/nodes", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{node}}});
+        server.responseBodies.insert("/api/v1/events", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{}}});
         auto failedPod = pod;
         auto metadata = failedPod["metadata"].toObject(); metadata["resourceVersion"] = "2"; failedPod["metadata"] = metadata;
         failedPod["status"] = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{QJsonObject{
@@ -557,6 +559,7 @@ bool run(const QString& scenario) {
             return false;
         }
         const auto nodeLists = server.pathRequests.value("/api/v1/nodes");
+        const auto eventLists = server.pathRequests.value("/api/v1/events");
         const auto coreReads = server.pathRequests.value("/api");
         const QString path = "/api/v1/namespaces/default/pods/alpha";
         const bool accepted = client.inspect("session", path)
@@ -565,11 +568,13 @@ bool run(const QString& scenario) {
                 const bool podProblem = std::any_of(rows.cbegin(), rows.cend(), [&](const QJsonValue& value) {
                     const auto row = value.toObject(); return row["path"] == path && row["problemSeverity"].toInt() > 0;
                 });
-                return podProblem && server.pathRequests.value("/api/v1/nodes") == nodeLists + 1 && !client.loading("session");
+                return podProblem && server.pathRequests.value("/api/v1/nodes") == nodeLists + 1
+                    && server.pathRequests.value("/api/v1/events") == eventLists + 1 && !client.loading("session");
             }) && server.pathRequests.value("/api") == coreReads;
-        if (!accepted) std::fprintf(stderr, "Related refresh: nodes=%d/%d core=%d/%d failure=%s\n",
-            server.pathRequests.value("/api/v1/nodes"), nodeLists, server.pathRequests.value("/api"), coreReads,
-            qPrintable(client.failureStatus("session")));
+        if (!accepted) std::fprintf(stderr, "Related refresh: nodes=%d/%d events=%d/%d core=%d/%d failure=%s\n",
+            server.pathRequests.value("/api/v1/nodes"), nodeLists,
+            server.pathRequests.value("/api/v1/events"), eventLists,
+            server.pathRequests.value("/api"), coreReads, qPrintable(client.failureStatus("session")));
         return accepted;
     }
     if (scenario == "snapshot_fields") {

@@ -788,7 +788,7 @@ void ResourceClient::publishRows(const QString& id) {
     }
     for (auto collection=state.collections.cbegin();collection!=state.collections.cend();++collection) {
         if (state.blocked.contains(collection.key())) continue;
-        const bool related=std::any_of(collection->rows.cbegin(), collection->rows.cend(), [&](const QJsonValue& value) {
+        const bool related=collection->kind == "Event" || std::any_of(collection->rows.cbegin(), collection->rows.cend(), [&](const QJsonValue& value) {
             return relatedPaths.contains(value.toObject()["path"].toString());
         });
         if (!related) continue;
