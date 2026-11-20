@@ -5855,7 +5855,10 @@ bool execute(const QString& requestedScenario) {
             };
             const QString pods = "/api/v1/pods", events = "/api/v1/events", widgets = "/apis/example.test/v1/widgets";
             const auto startup = pathsSince(firstRequest);
-            if (!startup.contains(pods) || !startup.contains("/apis/example.test/v1") || startup.indexOf(pods) >= startup.indexOf("/apis/example.test/v1")) return false;
+            if (!startup.contains(pods) || !startup.contains("/apis/example.test/v1") || startup.indexOf(pods) >= startup.indexOf("/apis/example.test/v1")) {
+                std::fprintf(stderr, "Adaptive startup: %s\n", qPrintable(startup.join(',')));
+                return false;
+            }
 
             const auto runSync = [&](int seconds) {
                 reference = reference.addSecs(seconds);
@@ -5864,19 +5867,36 @@ bool execute(const QString& requestedScenario) {
                 return pathsSince(start);
             };
             const auto establishStability = runSync(26);
-            if (!establishStability.contains(widgets) || !establishStability.contains(pods)) return false;
-            const auto liveOnly = runSync(26);
-            if (!liveOnly.contains(pods) || !liveOnly.contains(events) || liveOnly.contains(widgets) || liveOnly.contains("/api")) return false;
+            if (!establishStability.contains(widgets) || !establishStability.contains(pods)) {
+                std::fprintf(stderr, "Adaptive first sync: %s\n", qPrintable(establishStability.join(',')));
+                return false;
+            }
+            const auto deferred = runSync(26);
+            if (deferred.contains(pods) || deferred.contains(widgets) || deferred.contains("/api")) {
+                std::fprintf(stderr, "Adaptive deferred sync: %s\n", qPrintable(deferred.join(',')));
+                return false;
+            }
+            const auto liveOnly = runSync(25);
+            if (!liveOnly.contains(pods) || !liveOnly.contains(events) || liveOnly.contains(widgets) || liveOnly.contains("/api")) {
+                std::fprintf(stderr, "Adaptive second sync: %s\n", qPrintable(liveOnly.join(',')));
+                return false;
+            }
             const auto stableDue = runSync(95);
-            if (!stableDue.contains(widgets) || stableDue.contains("/api")) return false;
+            if (!stableDue.contains(widgets) || stableDue.contains("/api")) {
+                std::fprintf(stderr, "Adaptive later sync: %s\n", qPrintable(stableDue.join(',')));
+                return false;
+            }
 
             reference = reference.addSecs(26);
             const auto reopening = server.requests.size();
             if (!client.close("sync") || !client.open("sync", std::get<podlord::ClusterConnection>(connection), {})
                 || !waitFor([&] { return !client.loading("sync"); })) return false;
             const auto reopened = pathsSince(reopening);
-            return reopened.contains(pods) && !reopened.contains(widgets) && !reopened.contains("/api")
+            const bool accepted = reopened.contains(pods) && !reopened.contains(widgets) && !reopened.contains("/api")
                 && client.rows("sync").size() == 3;
+            if (!accepted) std::fprintf(stderr, "Adaptive reopen: %s rows=%lld\n", qPrintable(reopened.join(',')),
+                static_cast<long long>(client.rows("sync").size()));
+            return accepted;
         }
         reference = reference.addSecs(26);
         const auto roots = server.requests.count("/api");
