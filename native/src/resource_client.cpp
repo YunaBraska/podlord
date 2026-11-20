@@ -779,6 +779,9 @@ void ResourceClient::publishRows(const QString& id) {
     emit rowsChanged(id);
     if (newProblems.isEmpty() || !state.initialized || !wanted(id)) return;
     const ResourceGraph graph(state.snapshot);
+    const bool refreshEvents = std::any_of(newProblems.cbegin(), newProblems.cend(), [](const QString& kind) {
+        return kind != "Event";
+    });
     QSet<QString> relatedPaths;
     for (auto problem=newProblems.cbegin();problem!=newProblems.cend();++problem) for (const auto& value : graph.links(problem.key())) {
         const auto link=value.toObject();
@@ -788,7 +791,7 @@ void ResourceClient::publishRows(const QString& id) {
     }
     for (auto collection=state.collections.cbegin();collection!=state.collections.cend();++collection) {
         if (state.blocked.contains(collection.key())) continue;
-        const bool related=collection->kind == "Event" || std::any_of(collection->rows.cbegin(), collection->rows.cend(), [&](const QJsonValue& value) {
+        const bool related=(collection->kind == "Event" && refreshEvents) || std::any_of(collection->rows.cbegin(), collection->rows.cend(), [&](const QJsonValue& value) {
             return relatedPaths.contains(value.toObject()["path"].toString());
         });
         if (!related) continue;
