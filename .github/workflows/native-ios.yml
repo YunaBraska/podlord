@@ -34,7 +34,7 @@ jobs:
     env:
       PODLORD_VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install public iOS build dependencies
         run: brew install cmake ninja python
       - name: Verify iOS installer contracts before building the SDK
