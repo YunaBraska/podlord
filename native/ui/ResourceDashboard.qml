@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Podlord.Graphics 1.0
 
 Pane {
     padding: 12
@@ -32,7 +33,9 @@ Pane {
                 required property string resourceNamespace
                 required property string resourcePath
                 required property var resourceMetrics
-                readonly property var shownMetrics: resourceMetrics.filter(metric => metric.available || !!metric.presentReferences)
+                required property color resourceKindColor
+                required property int resourceHealth
+                readonly property var shownMetrics: resourceMetrics.filter(metric => metric.available)
                 width: metricRows.width
                 height: implicitHeight
                 spacing: 4
@@ -49,39 +52,55 @@ Pane {
                         border.width: parent.activeFocus ? 1 : 0
                         border.color: workspace.appearanceColors.accent
                     }
-                    contentItem: Text {
-                        text: parent.text
-                        font: parent.font
-                        color: workspace.appearanceColors.text
-                        horizontalAlignment: Text.AlignLeft
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
+                    contentItem: RowLayout {
+                        spacing: 6
+                        KindGlyph {
+                            objectName: "dashboardKindGlyph"
+                            Layout.preferredWidth: 18
+                            Layout.preferredHeight: 18
+                            kind: resourceKind
+                            fill: workspace.appearanceColors.inset
+                            stroke: resourceKindColor
+                            Accessible.ignored: true
+                        }
+                        Text { text: resourceKind; color: resourceKindColor; font: parent.parent.font; Accessible.ignored: true }
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: (resourceNamespace ? resourceNamespace + "/" : "") + resourceName
+                            font: parent.parent.font
+                            color: workspace.appearanceColors.text
+                            elide: Text.ElideRight
+                            Accessible.ignored: true
+                        }
+                        Rectangle {
+                            visible: resourceHealth > 0
+                            Layout.preferredWidth: 7
+                            Layout.preferredHeight: 7
+                            radius: 4
+                            color: resourceHealth > 1 ? workspace.appearanceColors.danger : workspace.appearanceColors.warning
+                            Accessible.ignored: true
+                        }
                     }
                 }
-                Flow {
+                ColumnLayout {
                     Layout.fillWidth: true
                     Layout.leftMargin: 6
-                    Layout.preferredHeight: childrenRect.height
-                    spacing: 12
+                    spacing: 5
                     Repeater {
                         model: shownMetrics
-                        ColumnLayout {
+                        RowLayout {
                             required property var modelData
-                            width: Math.min(320, Math.max(120, metricRows.width - 18))
-                            height: implicitHeight
-                            spacing: 2
-                            RowLayout {
-                                Layout.fillWidth: true
-                                SelectableText { text: modelData.label; color: workspace.appearanceColors.muted }
-                                Item { Layout.fillWidth: true }
-                                SelectableText { text: modelData.usage; font.bold: true }
-                            }
+                            objectName: "dashboardMetric_" + modelData.id
+                            Layout.fillWidth: true
+                            SelectableText { text: modelData.label; color: workspace.appearanceColors.muted }
                             SelectableText {
                                 Layout.fillWidth: true
-                                visible: modelData.presentReferences !== ""
-                                text: modelData.presentReferences
-                                color: workspace.appearanceColors.muted
-                                wrapMode: TextEdit.Wrap
+                                Layout.minimumWidth: 0
+                                text: modelData.usage
+                                font.bold: true
+                                horizontalAlignment: Text.AlignRight
+                                Accessible.description: modelData.presentReferences
                             }
                         }
                     }
@@ -96,6 +115,7 @@ Pane {
                 }
             }
             SelectableText {
+                objectName: "dashboardEmpty"
                 anchors.centerIn: parent
                 width: Math.min(360, parent.width - 24)
                 visible: metricRows.count === 0

@@ -137,7 +137,8 @@ Pane {
             id: reportState
             update: ({
                 scope: JSON.stringify([workspace.currentSession, workspace.inspectorPath,
-                    workspace.incidentAiProvider, workspace.incidentAiModel, workspace.chatgptAccount]),
+                    workspace.incidentAiProvider, workspace.incidentAiModel, workspace.chatgptAccount,
+                    workspace.incidentAiReasoning, workspace.uiLanguage]),
                 result: workspace.incidentAiResult
             })
         }

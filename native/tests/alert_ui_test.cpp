@@ -298,6 +298,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     QTemporaryDir temporary; if (!temporary.isValid()) return setupFailure("temporary-profile");
     Kubernetes server; if (realConfig.isEmpty() && !server.listen(QHostAddress::LocalHost, 0)) return setupFailure("fixture-listen");
     if (scenario.startsWith("metric_")) server.metricScenario=scenario;
+    if (scenario == "dashboard") server.metricScenario="metric_dashboard";
     if (scenario.startsWith("health_")) server.healthScenario=scenario;
     if (scenario.startsWith("radar_")) {
         server.radarScenario=scenario;
@@ -1374,8 +1375,26 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         if (!workspace.refresh() || !waitFor([&] { return server.requests>requests && !workspace.loading(); })) return false;
         return changed.count()==0;
     }
+    if (scenario=="dashboard_empty") {
+        if (!workspace.setWorkspacePage("dashboard")) return false;
+        if (!waitFor([&] { return workspace.dashboardTable()->rowCount()==0
+            && item(window,"dashboardEmpty") && item(window,"dashboardEmpty")->isVisible(); })) return false;
+        const auto capture = qEnvironmentVariable("PODLORD_DASHBOARD_FRAME");
+        return capture.isEmpty() || window->grabWindow().save(capture + "-empty.png");
+    }
     if (scenario=="dashboard") {
-        if (!workspace.setWorkspacePage("dashboard") || !waitFor([&] { return item(window,"dashboardResource_0")!=nullptr; })) return false;
+        if (!workspace.setWorkspacePage("dashboard") || !waitFor([&] {
+            const auto metrics=workspace.dashboardTable()->index(0,0).data(Qt::UserRole+7).toList();
+            return metrics.size()>=2 && metrics.first().toMap().value("available").toBool()
+                && item(window,"dashboardResource_0")!=nullptr;
+        })) return false;
+        const auto* cpu=item(window,"dashboardMetric_cpu");
+        const auto* memory=item(window,"dashboardMetric_memory");
+        const auto* glyph=item(window,"dashboardKindGlyph");
+        if (!cpu || !memory || !glyph || !glyph->isVisible()
+            || memory->mapToScene({0,0}).y() < cpu->mapToScene({0,cpu->height()}).y()
+            || qAbs(memory->mapToScene({0,0}).x()-cpu->mapToScene({0,0}).x())>1
+            || item(window,"dashboardMetric_storage")) return false;
         const auto capture = qEnvironmentVariable("PODLORD_DASHBOARD_FRAME");
         if (!capture.isEmpty()) {
             window->resize(1440, 900);

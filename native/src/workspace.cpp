@@ -131,7 +131,8 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     switch (role) {
     case Qt::UserRole + 5: return appearanceStatus(appearance_, metadata(index.row(), Qt::UserRole + 4));
     case Qt::UserRole + 7: return resourceMetricPresentation(row);
-    case Qt::UserRole + 8: return row.contains("metricReferences"_L1);
+    case Qt::UserRole + 8: return row.contains("metricReferences"_L1)
+        && (row["cpu"_L1].isDouble() || row["memory"_L1].isDouble() || row["storage"_L1].isDouble());
     case Qt::UserRole + 9: return row["problemSeverity"_L1].toInt();
     case Qt::UserRole + 10: return row["activity"_L1].toBool();
     case Qt::UserRole + 13: return row["value"_L1].toString();
@@ -139,6 +140,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     case Qt::UserRole + 15: return QVariantMap{{"issue", row["issue"_L1].toVariant()}, {"ready", row["ready"_L1].toVariant()},
         {"restarts", row["restarts"_L1].toVariant()}, {"node", row["node"_L1].toVariant()},
         {"image", row["image"_L1].toVariant()}, {"owner", row["owner"_L1].toVariant()}};
+    case Qt::UserRole + 16: return appearanceIdentity(appearance_, row["kind"_L1].toString());
     default: break;
     }
     const auto& field = fields_[index.column()];
@@ -208,7 +210,7 @@ QVariant ResourceTable::headerData(int section, Qt::Orientation orientation, int
 QHash<int, QByteArray> ResourceTable::roleNames() const {
     return {{Qt::DisplayRole, "display"}, {Qt::ToolTipRole, "tooltip"}, {Qt::ForegroundRole, "identityColor"}, {Qt::UserRole, "resourcePath"},
         {Qt::UserRole + 1, "resourceName"}, {Qt::UserRole + 2, "resourceKind"}, {Qt::UserRole + 3, "resourceNamespace"},
-        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}, {Qt::UserRole + 15, "resourceDetails"}};
+        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}, {Qt::UserRole + 15, "resourceDetails"}, {Qt::UserRole + 16, "resourceKindColor"}};
 }
 QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index].document : QJsonObject{}; }
 quint64 ResourceTable::populatedColumns(int row) const {
@@ -236,7 +238,8 @@ QString ResourceTable::metadata(int row, int role) const {
 bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (appearance_ == appearance) return true;
     appearance_ = appearance;
-    if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole, Qt::UserRole + 5});
+    if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
+        {Qt::ForegroundRole, Qt::UserRole + 5, Qt::UserRole + 16});
     return true;
 }
 bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool replace) {
@@ -369,6 +372,11 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::catalogsChanged, this, [this] { refreshMapContexts(mapContexts_.isEmpty()); });
     connect(&runtime_->incidentAi, &IncidentAi::changed, this, &Workspace::incidentAiChanged);
+    connect(&runtime_->incidentAi, &IncidentAi::analysisCompleted, this, [this](const QString& context, const QString& path) {
+        if (runtime_->owners.value(active_) == this && inspectorPage() == "ai" && inspectorPath() == path
+            && sessionConfiguration(active_).value("contextId").toString() == context)
+            alerts_.previewSound("complete");
+    });
     connect(this, &Workspace::changed, this, [this] {
         runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
     });

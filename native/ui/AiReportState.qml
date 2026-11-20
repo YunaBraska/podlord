@@ -8,7 +8,7 @@ QtObject {
     readonly property var shown: {
         const result = update.result || ({})
         if (result.summary !== undefined) return result
-        return result.pending === true && lastScope === update.scope && lastAnswer.summary !== undefined
+        return result.failed !== true && lastScope === update.scope && lastAnswer.summary !== undefined
             ? lastAnswer : result
     }
     onUpdateChanged: {
@@ -16,7 +16,7 @@ QtObject {
         if (result.summary !== undefined) {
             lastAnswer = result
             lastScope = update.scope
-        } else if (result.pending !== true || lastScope !== update.scope) {
+        } else if (result.failed === true || lastScope !== update.scope) {
             lastAnswer = ({})
             lastScope = ""
         }

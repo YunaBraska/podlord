@@ -1567,8 +1567,9 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     const auto summary = normalize(answer["summary"].toString());
     const auto cause = normalize(answer["cause"].toString());
     const auto action = normalize(answer["action"].toString());
-    if (error.isEmpty() && !summary.isEmpty() && summary.size() <= 600 && cause.size() <= 600
-        && !action.isEmpty() && action.size() <= 600) {
+    const bool accepted = error.isEmpty() && !summary.isEmpty() && summary.size() <= 600 && cause.size() <= 600
+        && !action.isEmpty() && action.size() <= 600;
+    if (accepted) {
         records_.insert(incident.key, {QJsonObject{{"summary", summary}, {"cause", cause}, {"action", action}}, QDateTime::currentDateTimeUtc()});
         contextStatus_.remove(incident.context); serviceRetryAfterByProvider_.remove(incident.provider); save();
     } else {
@@ -1578,7 +1579,9 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
             ? "AI analysis failed: invalid answer. Retry later or choose another model."
             : error;
     }
-    emit changed(); dispatch();
+    emit changed();
+    if (accepted && incident.path != "diagnostic/exec-env") emit analysisCompleted(incident.context, incident.path);
+    dispatch();
 }
 QVariantMap IncidentAi::result(const QString& context, const QString& path) const {
     const auto found = enabled(context) ? visible_.constFind(context + '\n' + path) : visible_.cend();
@@ -1588,6 +1591,7 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
     const auto& incident = (draft && manual != manualVisible_.cend()) || found == visible_.cend() ? *manual : *found;
     const auto record = records_.constFind(incident.key);
     if (record == records_.cend() || record->created.secsTo(QDateTime::currentDateTimeUtc()) >= cacheLifetimeSeconds) {
+        if (retryAfter_.value(incident.key) > QDateTime::currentDateTimeUtc()) return {{"failed", true}};
         if ((found == visible_.cend() || draft) && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
         return {{"pending", queued_.contains(incident.key) || inFlight_ == incident.key}};
     }

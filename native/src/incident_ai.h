@@ -81,6 +81,7 @@ public:
     QString requestPreview(const QString& context, const QString& path) const;
 signals:
     void changed();
+    void analysisCompleted(const QString& context, const QString& path);
 private:
     struct Incident final {
         QString key, context, code, kind, path, language, provider, model, reasoning, thinkSignature;

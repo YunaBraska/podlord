@@ -151,8 +151,10 @@ bool run(const QString& scenario, const QString& configPath) {
         };
         const bool stable = report("pod-a", {{"summary", "First answer"}}).value("summary") == "First answer"
             && report("pod-a", {{"pending", true}}).value("summary") == "First answer"
+            && report("pod-a", {}).value("summary") == "First answer"
+            && report("pod-a", {{"pending", false}}).value("summary") == "First answer"
             && report("pod-a", {{"summary", "Second answer"}}).value("summary") == "Second answer"
-            && !report("pod-a", {{"pending", false}}).contains("summary")
+            && !report("pod-a", {{"failed", true}}).contains("summary")
             && report("pod-a", {{"summary", "Third answer"}}).value("summary") == "Third answer"
             && !report("pod-b", {{"pending", true}}).contains("summary")
             && !report("pod-b", {}).contains("summary");

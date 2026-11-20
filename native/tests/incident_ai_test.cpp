@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -731,6 +732,7 @@ void scenario(const QString& name) {
     if (name == "persist") server.answer = R"({"summary":"Pod team/pod-one hat ein Problem.","cause":"Ursache unbekannt.","action":"Prüfe Pod team/pod-one."})";
     {
         podlord::IncidentAi ai(profile, endpoint);
+        QSignalSpy completed(&ai, &podlord::IncidentAi::analysisCompleted);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000) && ai.setModel("local-test:9b"), "Local model was not discovered or chosen");
         require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium"); }, 2000), "Local model capabilities were not discovered");
         ai.observe("context", rows(), "de");
@@ -747,6 +749,10 @@ void scenario(const QString& name) {
         if (name == "success")
             require(QTest::qWaitFor([&] { return ai.result("context", rows().at(2).toObject()["path"].toString()).value("cause") == "Ursache unbekannt."; }, 2000),
                 "Structured cause did not reach the public result");
+        if (name == "success")
+            require(completed.size() == 1 && completed.first().at(0).toString() == "context"
+                && completed.first().at(1).toString() == rows().at(2).toObject()["path"].toString(),
+                "Completed analysis did not announce its visible resource once");
         if (name == "cancel") {
             require(ai.setEnabled("context", false) && ai.result("context", rows().at(2).toObject()["path"].toString()).isEmpty(), "Opt-out left analysis visible");
             QTest::qWait(50);
@@ -771,6 +777,9 @@ void scenario(const QString& name) {
         }
         if (name == "failure" || name == "malformed") {
             require(QTest::qWaitFor([&] { return ai.status("context").contains("failed"); }, 2000), "Failed analysis never settled");
+            require(completed.isEmpty(), "Failed analysis announced completion");
+            require(ai.result("context", rows().at(2).toObject()["path"].toString()).value("failed").toBool(),
+                "Failed analysis looked like a temporary empty result");
             ai.observe("context", rows(), "de");
             require(server.chats == 1, "Failed analysis retried without cooldown");
             if (name == "failure") {
@@ -778,6 +787,7 @@ void scenario(const QString& name) {
                 require(ai.refresh("context", rows().at(2).toObject()["path"].toString()), "Explicit retry was rejected");
                 require(QTest::qWaitFor([&] { return server.chats == 2 && !ai.result("context", rows().at(2).toObject()["path"].toString()).value("summary").toString().isEmpty(); }, 2000),
                     "Explicit retry remained blocked by automatic failure cooldown");
+                require(completed.size() == 1, "Successful retry did not announce completion");
             }
             return;
         }
