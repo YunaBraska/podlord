@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -123,15 +124,23 @@ bool run(const QString& scenario, const QString& configPath) {
         return metricHeader && !metricHeader->isVisible() && !back() && !forward() && writes == 0;
     }
     if (scenario == "ai_minimal" || scenario == "ai_minimal_narrow") {
-        if (!workspace.setInspectorPage("ai")) return false;
+        if (workspace.incidentAiConfigured() || workspace.setInspectorPage("ai")) return false;
         const auto frame = qEnvironmentVariable("PODLORD_AI_FRAME");
-        if (!waitFor([&] { return named("incidentAiReanalyze") && named("incidentAiReanalyze")->isVisible(); })
-            || !named("incidentAiResponseTab") || !named("incidentAiRequestTab")
-            || !named("incidentAiResponseTab")->property("checked").toBool()
-            || !click("incidentAiRequestTab") || !named("incidentAiRequestTab")->property("checked").toBool()
-            || !click("incidentAiResponseTab") || !named("incidentAiResponseTab")->property("checked").toBool()) return false;
-        return !named("incidentAiDocs") && !named("incidentAiEmpty") && !named("incidentAiEvidence_R1")
-            && writes == 0 && (frame.isEmpty() || window->grabWindow().save(frame));
+        if (!named("inspectorAiButton") || named("inspectorAiButton")->isVisible()
+            || workspace.inspectorPage() != "overview") return false;
+        QQmlComponent linkedComponent(&engine, QUrl("qrc:/podlord/AiLinkedText.qml"));
+        auto* link = qobject_cast<QQuickItem*>(linkedComponent.createWithInitialProperties(
+            {{"richText", "Open <a href=\"R1\">ConfigMap default/entry-01</a>"},
+             {"references", QVariantList{QVariantMap{{"id", "R1"}, {"path", target(1)}}}}}, engine.rootContext()));
+        if (!link) return false;
+        link->setParentItem(window->contentItem());
+        link->setZ(1000);
+        link->setX(20); link->setY(60); link->setWidth(350); link->setHeight(44);
+        QCoreApplication::processEvents();
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, link->mapToScene(QPointF(125, 12)).toPoint());
+        const bool linked = waitFor([&] { return workspace.inspectorPath() == target(1); }, 2000);
+        link->deleteLater();
+        return linked && writes == 0 && (frame.isEmpty() || window->grabWindow().save(frame));
     }
     if (scenario == "repeat") return open(0) && !back() && !forward() && writes == 0;
     if (!open(1)) return false;

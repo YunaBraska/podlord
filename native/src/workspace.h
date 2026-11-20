@@ -177,6 +177,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantList resourceGuidance READ resourceGuidance NOTIFY inspectorPresentationChanged)
     Q_PROPERTY(bool incidentAiEnabled READ incidentAiEnabled NOTIFY incidentAiChanged)
     Q_PROPERTY(bool incidentAiSupported READ incidentAiSupported CONSTANT)
+    Q_PROPERTY(bool incidentAiConfigured READ incidentAiConfigured NOTIFY incidentAiChanged)
     Q_PROPERTY(QStringList incidentAiModels READ incidentAiModels NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantList incidentAiModelChoices READ incidentAiModelChoices NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantList incidentAiAccounts READ incidentAiAccounts NOTIFY incidentAiChanged)
@@ -445,6 +446,7 @@ public:
     QVariantList resourceGuidance() const;
     bool incidentAiEnabled() const;
     bool incidentAiSupported() const;
+    bool incidentAiConfigured() const;
     QStringList incidentAiModels() const;
     QVariantList incidentAiModelChoices() const;
     QVariantList incidentAiAccounts() const;

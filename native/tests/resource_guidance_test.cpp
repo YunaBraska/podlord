@@ -209,7 +209,8 @@ bool ui(const QString& mode) {
     QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
     require(QGuiApplication::clipboard()->text() == resourceName->property("text").toString(),
         "Resource title could not be copied");
-    require(item("inspectorAiButton") && !workspace.incidentAiEnabled(), "Inspector AI tab is missing or analysis started without consent");
+    require(!item("inspectorAiButton") && !workspace.incidentAiEnabled(),
+        "Inspector AI tab appeared without a connected provider or started analysis without consent");
     const int requests = boundary.requests;
     press("resourceGuidanceToggle");
     if (!QTest::qWaitFor([&] { return item("guidanceTitle_0"); }, 2000)) {
@@ -238,49 +239,18 @@ bool ui(const QString& mode) {
         QGuiApplication::clipboard()->clear();
         QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
         require(QGuiApplication::clipboard()->text() == selectedText, "Selected table text could not be copied");
-        press("inspectorAiButton");
-        require(workspace.property("inspectorPage").toString() == "ai" && !item("incidentAiEnable")
-            && item("incidentAiOpenSettings") && !item("incidentAiModel") && !workspace.incidentAiEnabled() && boundary.requests == requests,
-            "Opening the AI tab changed consent or Kubernetes transport");
-        const auto aligned = [&] {
-            const auto near = [](QQuickItem* upper, QQuickItem* lower) {
-                const auto gap = lower->mapToScene(QPointF{}).y()
-                    - upper->mapToScene(QPointF(0, upper->height())).y();
-                return gap >= 0 && gap <= 24;
-            };
-            return near(item("inspectorBack"), item("overviewButton"))
-                && near(item("overviewButton"), item("incidentAiReanalyze"))
-                && near(item("incidentAiReanalyze"), item("incidentAiModelMissing"));
-        };
-        QTest::qWait(50);
-        require(aligned(), "AI inspector controls are vertically detached");
-        auto* message = item("incidentAiModelMissing");
-        require(message && message->property("selectByMouse").toBool(), "AI message cannot be selected");
-        message->forceActiveFocus();
-        QGuiApplication::clipboard()->clear();
-        QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
-        QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
-        require(QGuiApplication::clipboard()->text() == message->property("text").toString(), "AI message could not be copied");
-        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_empty.png"), "Cannot save AI empty state");
+        require(!workspace.setInspectorPage("ai") && !item("inspectorAiButton")
+            && boundary.requests == requests, "AI tab opened without a connected provider");
         window->setWidth(2500); window->setHeight(900); QTest::qWait(50);
-        require(aligned(), "Wide AI inspector lost alignment");
-        require(tabsFillWidth(), "Visible inspector tabs leave unused width");
-        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_wide.png"), "Cannot save wide AI state");
+        require(tabsFillWidth(), "Wide inspector tabs leave unused width");
         window->setWidth(680); window->setHeight(680); QTest::qWait(50);
-        require(aligned(), "Narrow AI inspector lost alignment");
-        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_narrow.png"), "Cannot save narrow AI state");
-        press("overviewButton");
-        require(workspace.property("inspectorPage").toString() == "overview" && item("guidanceTitle_0"),
-            "Leaving the AI tab did not restore the resource overview");
-        press("inspectorAiButton");
-        press("incidentAiOpenSettings");
-        require(workspace.workspacePage() == "settings" && item("settingsAiModel"),
-            "Missing-model link did not open AI settings");
+        require(tabsFillWidth(), "Narrow inspector tabs leave unused width");
     } else if (mode == "ui_ai_live") {
-        press("inspectorAiButton");
         require(QTest::qWaitFor([&] { return !workspace.incidentAiModels().isEmpty(); }, 10000)
             && workspace.setIncidentAiModel(workspace.incidentAiModels().first()), "Cannot select the discovered local model");
         require(QTest::qWaitFor([&] { return workspace.incidentAiReady(); }, 10000), "Selected local model is not ready");
+        require(item("inspectorAiButton")->isVisible(), "Connected local model did not reveal the AI tab");
+        press("inspectorAiButton");
         require(item("incidentAiReanalyze") && !workspace.incidentAiEnabled(), "Manual AI action enabled automatic analysis");
         press("incidentAiReanalyze");
         require(boundary.requests == requests, "Starting AI analysis caused an extra Kubernetes request");

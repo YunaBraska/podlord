@@ -1376,6 +1376,15 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     }
     if (scenario=="dashboard") {
         if (!workspace.setWorkspacePage("dashboard") || !waitFor([&] { return item(window,"dashboardResource_0")!=nullptr; })) return false;
+        const auto capture = qEnvironmentVariable("PODLORD_DASHBOARD_FRAME");
+        if (!capture.isEmpty()) {
+            window->resize(1440, 900);
+            QCoreApplication::processEvents();
+            if (!window->grabWindow().save(capture + "-wide.png")) return false;
+            window->resize(420, 720);
+            QCoreApplication::processEvents();
+            if (!window->grabWindow().save(capture + "-narrow.png")) return false;
+        }
         const auto requests=server.requests;
         if (!workspace.filter("does-not-match")) return false;
         return workspace.dashboardTable()->rowCount()==0 && workspace.dashboardSummary().contains("0 / 1") && server.requests==requests;

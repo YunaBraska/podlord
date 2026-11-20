@@ -8,6 +8,13 @@
 
 namespace podlord {
 bool Workspace::incidentAiSupported() const { return runtime_->incidentAi.supported(); }
+bool Workspace::incidentAiConfigured() const {
+    if (!incidentAiSupported()) return false;
+    if (!runtime_->incidentAi.accounts().isEmpty()) return true;
+    const auto model = runtime_->incidentAi.model();
+    return runtime_->incidentAi.provider() == "ollama" && !model.isEmpty()
+        && runtime_->incidentAi.models().contains(model);
+}
 bool Workspace::incidentAiEnabled() const {
     return runtime_->incidentAi.enabled(sessionConfiguration(active_).value("contextId").toString());
 }

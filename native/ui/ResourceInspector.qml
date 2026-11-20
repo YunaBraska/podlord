@@ -44,7 +44,7 @@ Pane {
     id: inspector
     width: inspectorScroll.availableWidth
     height: workspace.inspectorPage === "ai" ? implicitHeight : Math.max(implicitHeight, inspectorScroll.availableHeight)
-    readonly property int visibleTabCount: 4 + (workspace.incidentAiSupported ? 1 : 0)
+    readonly property int visibleTabCount: 4 + (workspace.incidentAiConfigured ? 1 : 0)
         + (workspace.valuesAvailable ? 1 : 0) + (workspace.podInspected ? 1 : 0)
         + (workspace.filesSupported ? 1 : 0)
         + (workspace.podInspected || workspace.containerTerminal !== null ? 1 : 0)
@@ -94,7 +94,7 @@ Pane {
         spacing: 0
         Layout.fillWidth: true
         InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; checked: workspace.inspectorPage === "overview"; onClicked: workspace.setInspectorPage("overview") }
-        InspectorTab { objectName: "inspectorAiButton"; text: workspace.uiText["settings.ai"]; checked: workspace.inspectorPage === "ai"; visible: workspace.incidentAiSupported; onClicked: workspace.setInspectorPage("ai") }
+        InspectorTab { objectName: "inspectorAiButton"; text: workspace.uiText["settings.ai"]; checked: workspace.inspectorPage === "ai"; visible: workspace.incidentAiConfigured; onClicked: workspace.setInspectorPage("ai") }
         InspectorTab { objectName: "yamlButton"; text: workspace.uiText["inspector.yaml"]; checked: workspace.inspectorPage === "yaml"; onClicked: workspace.setInspectorPage("yaml") }
         InspectorTab { objectName: "inspectorEventsButton"; text: workspace.uiText["inspector.events"]; checked: workspace.inspectorPage === "events"; onClicked: workspace.setInspectorPage("events") }
         InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; checked: workspace.inspectorPage === "links"; onClicked: workspace.setInspectorPage("links") }
@@ -124,7 +124,7 @@ Pane {
     ColumnLayout {
         id: aiPanel
         Layout.fillWidth: true
-        visible: workspace.incidentAiSupported && workspace.inspectorPage === "ai" && workspace.inspectorPath !== ""
+        visible: workspace.incidentAiConfigured && workspace.inspectorPage === "ai" && workspace.inspectorPath !== ""
         spacing: 5
         property bool showRequest: false
         property string requestPath: workspace.inspectorPath
@@ -191,7 +191,7 @@ Pane {
             visible: !aiPanel.showRequest && workspace.incidentAiResult.summary !== undefined
             spacing: 4
             SelectableText { objectName: "incidentAiObservation"; Layout.fillWidth: true; text: workspace.uiText["ai.observation"]; font.bold: true; color: workspace.appearanceColors.accent }
-            SelectableText { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || "" }
+            AiLinkedText { objectName: "incidentAiSummary"; Layout.fillWidth: true; richText: workspace.incidentAiResult.summaryHtml || ""; references: workspace.incidentAiResult.references || [] }
         }
         ColumnLayout {
             Layout.fillWidth: true
@@ -199,7 +199,7 @@ Pane {
             visible: !aiPanel.showRequest && (workspace.incidentAiResult.cause || "") !== ""
             spacing: 4
             SelectableText { objectName: "incidentAiCauseHeading"; Layout.fillWidth: true; text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.accent }
-            SelectableText { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || "" }
+            AiLinkedText { objectName: "incidentAiCause"; Layout.fillWidth: true; richText: workspace.incidentAiResult.causeHtml || ""; references: workspace.incidentAiResult.references || [] }
         }
         ColumnLayout {
             Layout.fillWidth: true
@@ -207,28 +207,19 @@ Pane {
             visible: !aiPanel.showRequest && workspace.incidentAiResult.action !== undefined
             spacing: 4
             SelectableText { objectName: "incidentAiNextCheck"; Layout.fillWidth: true; text: workspace.uiText["ai.nextCheck"]; font.bold: true; color: workspace.appearanceColors.accent }
-            SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
-            RowLayout {
+            AiLinkedText { objectName: "incidentAiAction"; Layout.fillWidth: true; richText: workspace.incidentAiResult.actionHtml || ""; references: workspace.incidentAiResult.references || [] }
+            Rectangle {
                 Layout.fillWidth: true
                 visible: (workspace.incidentAiResult.command || "") !== ""
-                SelectableText { objectName: "incidentAiCommand"; Layout.fillWidth: true; text: workspace.incidentAiResult.command || "" }
-                IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["copy.value"]; onClicked: workspace.copyIncidentAiCommand() }
-            }
-        }
-        Flow {
-            Layout.fillWidth: true
-            spacing: 6
-            visible: !aiPanel.showRequest && (workspace.incidentAiResult.references || []).length > 0
-            Repeater {
-                model: workspace.incidentAiResult.references || []
-                FlatButton {
-                    required property var modelData
-                    objectName: "incidentAiReference_" + modelData.id
-                    text: modelData.kind + " " + (modelData.namespace ? modelData.namespace + "/" : "") + modelData.name
-                    ToolTip.visible: hovered
-                    ToolTip.text: (modelData.namespace ? modelData.namespace + "/" : "") + modelData.name
-                    Accessible.name: workspace.uiText["inspector.links"] + " " + modelData.kind + " " + ToolTip.text
-                    onClicked: workspace.inspectPath(modelData.path)
+                implicitHeight: commandRow.implicitHeight + 12
+                color: workspace.appearanceColors.inset
+                border.color: workspace.appearanceColors.border
+                RowLayout {
+                    id: commandRow
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    SelectableText { objectName: "incidentAiCommand"; Layout.fillWidth: true; text: workspace.incidentAiResult.command || ""; font.family: workspace.monospaceFamily }
+                    IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["copy.value"]; onClicked: workspace.copyIncidentAiCommand() }
                 }
             }
         }

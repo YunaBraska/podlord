@@ -374,6 +374,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     connect(this, &Workspace::incidentAiChanged, this, [this] {
         runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
+        if (inspectorPage() == "ai" && !incidentAiConfigured()) setInspectorPage("overview");
         const auto context = sessionConfiguration(active_).value("contextId").toString();
         if (!context.isEmpty() && !inspectorPath().isEmpty())
             runtime_->incidentAi.prepareManual(context, inspectorPath());
@@ -880,7 +881,7 @@ bool Workspace::setInspectorPage(const QString& page) {
     if (inspectorPath().isEmpty()) return false;
     if (page == "logs") return setLogsVisible(true);
     if (page != "overview" && page != "ai" && page != "yaml" && page != "values" && page != "events" && page != "links" && page != "terminal" && page != "files") return false;
-    if (page == "ai" && !incidentAiSupported()) return false;
+    if (page == "ai" && !incidentAiConfigured()) return false;
     if (page == "terminal" && !podInspected() && !containerTerminal()) return false;
     if (page == "files" && !filesSupported()) return false;
     if (page == "values" && !valuesAvailable()) return false;
