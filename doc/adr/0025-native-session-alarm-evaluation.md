@@ -57,7 +57,7 @@ The initial native catalog and view-entry semantics do not yet match every legac
 
 ## How is problem-state disagreement prevented?
 
-The release retains the three actual C# built-ins: Problem color, Recent change color and Active view pulse. This confirmed product decision supersedes the four-default proposal in the alarm specification.
+The release retains the three built-in rules: Problem color, Recent change color and Active view pulse. This confirmed product decision supersedes the four-default proposal in the alarm specification.
 
 ResourceClient publishes one canonical cache projection for problem status. Dashboard, tables and alarm evaluation consume that projection; alarm evaluation no longer recalculates Event health or restart problem thresholds independently. The existing cache-expiry timer owns Warning Event recency and Pod startup-grace boundaries. Its next health deadline is retained per session, and deadline transitions publish cached rows without requesting Kubernetes data.
 
@@ -75,7 +75,7 @@ Warning Event health uses the latest available Event timestamp with creation-tim
 
 The three locked definitions describe their actual effect: yellow/red problem
 color, the user-confirmed green freshness highlight, and bounded view-entry
-pulsing. The older C# description mentioning cyan does not override the accepted
+pulsing. An older description mentioning cyan does not override the accepted
 green behavior. Following CTX-006, confirmed on 2026-11-14, only the current native
 version-2 catalog is accepted. The obsolete version-1 reader and generic-description
 normalization are removed. Locked definitions remain validated, custom rules and
@@ -84,13 +84,13 @@ lock, conflict check and atomic writer protect explicit saves.
 
 ## How Are Original Music And Legacy Cue Choices Owned?
 
-Confirmed on 2026-11-10: 20 original cues and 20 independently composed instrumental pieces replace the third-party audio catalog. One shared runtime owns music across windows and tabs. It has no persisted playback intent, automatic startup or network source. The user explicitly requested background playback. Android uses a private media-playback foreground service. iOS uses its native audio session and background audio capability. Qt Multimedia remains the decoder/player. OS interruption and output removal pause playback.
+Confirmed on 2026-11-10: 20 original cues and an original instrumental pack replace the third-party audio catalog. Revised on 2026-11-20: ten distinct pieces replace the earlier twenty formulaic pieces. One shared runtime owns music across windows and tabs. It has no persisted playback intent, automatic startup or network source. The user explicitly requested background playback. Android uses a private media-playback foreground service. iOS uses its native audio session and background audio capability. Qt Multimedia remains the decoder/player. OS interruption and output removal pause playback.
 
-Known legacy sound IDs map by purpose during rule decoding. This does not change enablement or save on read. The existing explicit atomic writer publishes canonical IDs. Removed attribution UI and its obsolete tests are deleted rather than retained as empty compatibility controls. The frozen C# reference may retain its own assets, but the C++ package does not embed them.
+Known legacy sound IDs map by purpose during rule decoding. This does not change enablement or save on read. The existing explicit atomic writer publishes canonical IDs. Removed attribution UI and its obsolete tests are deleted rather than retained as empty compatibility controls. The native package embeds only the current original audio assets.
 
 Clarified on 2026-11-14: keep this replacement mapping, not the old recordings. It resolves cue identities inside the current alert schema. It does not admit obsolete native document versions, copy old audio files or create a settings migration. Unknown cue IDs remain explicit errors.
 
-On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. No manual track-selection UI ships. Each full cycle visits all 20 pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
+On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. No manual track-selection UI ships. Each full cycle visits all ten pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
 
 ## Why Can Android Music Receive Commands In The Background?
 

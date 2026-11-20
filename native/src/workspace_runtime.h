@@ -5,6 +5,7 @@
 #include "map_previews.h"
 #include "system_typography.h"
 #include "music.h"
+#include "incident_ai.h"
 #include "view_state.h"
 #include <QFuture>
 
@@ -22,6 +23,7 @@ public:
     CredentialProcess credentials;
     ReleaseUpdates releases;
     MapPreviews previews{profile};
+    IncidentAi incidentAi{profile};
     SystemTypography typography;
     Music music;
     QList<Workspace*> windows;

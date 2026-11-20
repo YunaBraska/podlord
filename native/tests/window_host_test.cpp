@@ -1089,19 +1089,19 @@ bool run(const QString& scenario) {
         const auto click = [&](const QString& name) {
             return podlord::test::clickVisible(main, name);
         };
-        REQUIRE(click("quickOpenDropdown"));
-        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "quickOpenWindow") != nullptr; }));
-        REQUIRE(click("quickOpenWindow"));
+        openedContextId = primary.sessionConfiguration(a).value("contextId").toString();
+        REQUIRE(primary.showMapOverview() && primary.mapOverview());
+        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "openMapContextOptions_" + openedContextId) != nullptr; }));
+        REQUIRE(click("openMapContextOptions_" + openedContextId));
         REQUIRE(waitFor([&] {
-            auto* menu = main->findChild<QObject*>("quickOpenWindowMenu");
+            auto* menu = main->findChild<QObject*>("contextOpenMenu");
             return menu && menu->property("opened").toBool();
         }));
-        openedContextId = primary.sessionConfiguration(a).value("contextId").toString();
-        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "quickWindowContext_" + openedContextId) != nullptr; }));
-        const QPointer<QQuickItem> entry(podlord::test::visibleItem(main->contentItem(), "quickWindowContext_" + openedContextId));
+        REQUIRE(waitFor([&] { return podlord::test::visibleItem(main->contentItem(), "openMapContextInWindow") != nullptr; }));
+        const QPointer<QQuickItem> entry(podlord::test::visibleItem(main->contentItem(), "openMapContextInWindow"));
         QSignalSpy triggered(entry, SIGNAL(triggered()));
         REQUIRE(triggered.isValid());
-        REQUIRE(click("quickWindowContext_" + openedContextId));
+        REQUIRE(click("openMapContextInWindow"));
         if (!waitFor([&] { return !triggered.isEmpty(); }, 2000)) {
             if (entry) std::fprintf(stderr, "Separate-window menu did not receive the pointer: position=(%g,%g) size=%gx%g sameWindow=%d enabled=%d\n",
                 entry->mapToScene({entry->width()/2, entry->height()/2}).x(), entry->mapToScene({entry->width()/2, entry->height()/2}).y(),

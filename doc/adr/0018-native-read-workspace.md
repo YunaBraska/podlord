@@ -38,7 +38,7 @@ canonical context name and credential identity. Both formats are validated on
 read. The existing source lock and atomic file publication own imports and alias
 updates. Identical reimports preserve metadata; changed content creates a separate
 snapshot. Older native builds reject format 2 instead of silently dropping aliases.
-Resetting all aliases restores format 1. The separate C# reference profile is not
+Resetting all aliases restores format 1. Other profiles are not
 changed. Source deletion across session bindings remains a separate decision.
 
 The test map owns UI, application-CLI and real local Kubernetes evidence and the still-failing whole-native coverage gate. External HTTP tests simulate Kubernetes only; owned stores, request handling and UI are real. The real Kubernetes runner owns one loopback-only k3s container and removes it and its anonymous volumes on success, failure or interruption. It retains the pinned image and never prunes shared Docker state.

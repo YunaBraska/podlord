@@ -1,6 +1,7 @@
 #include "workspace.h"
 #include "ui_input.h"
 #include <QAccessible>
+#include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -8,6 +9,7 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QTest>
+#include <algorithm>
 #include <cstdio>
 
 int main(int argc, char** argv) {
@@ -21,6 +23,57 @@ int main(int argc, char** argv) {
     auto* window = engine.rootObjects().isEmpty() ? nullptr : qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !QTest::qWaitFor([&] { return !workspace.busy(); }, 5000)) return 1;
     const auto scenario = argc == 2 ? QString::fromLocal8Bit(argv[1]) : QString{};
+    if (scenario == "kubeconfig_default_folder") {
+        const auto home = QDir::home();
+        const auto kube = home.filePath(".kube");
+        const auto expected = QDir(kube).exists() ? kube : home.absolutePath();
+        for (const auto* name : {"quickFileDialog", "kubeconfigFolderDialog"}) {
+            const auto* picker = window->findChild<QObject*>(name);
+            if (!picker || picker->property("currentFolder").toUrl().toLocalFile() != expected) {
+                std::fprintf(stderr, "%s did not open in the user's kubeconfig folder.\n", name);
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if (scenario == "ai_provider_settings" || scenario == "ai_provider_settings_compact") {
+        window->resize(scenario == "ai_provider_settings" ? QSize(1200, 800) : QSize(640, 700));
+        if (!podlord::test::clickVisible(window, "settingsWorkspaceButton")
+            || !podlord::test::selectSettingsSection(window, "ai")) return 1;
+        auto* provider = podlord::test::visibleItem(window->contentItem(), "settingsAiProvider");
+        auto* model = podlord::test::visibleItem(window->contentItem(), "settingsAiModel");
+        if (provider || !model || workspace.incidentAiProvider() != "ollama"
+            || podlord::test::visibleItem(window->contentItem(), "settingsAiRefresh")) return 1;
+        for (const auto& value : workspace.incidentAiModelChoices()) {
+            const auto choice = value.toMap();
+            if (choice.value("provider") != "ollama"
+                || (!choice.value("header").toBool() && choice.value("slug").toString().isEmpty())) return 1;
+        }
+        auto* connect = podlord::test::visibleItem(window->contentItem(), "settingsAiConnect");
+        if (!connect || connect->property("glyph") != "Add" || connect->property("showText").toBool()
+            || model->property("displayText").toString() != workspace.uiText().value("ai.chooseModel").toString()) return 1;
+        const auto frameLanguage = qEnvironmentVariable("PODLORD_AI_SETTINGS_LANG");
+        if (!frameLanguage.isEmpty() && (!workspace.saveUiLanguage(frameLanguage)
+            || !QTest::qWaitFor([&] { return workspace.uiLanguage() == frameLanguage; }, 3000))) return 1;
+        const auto frameProvider = qEnvironmentVariable("PODLORD_AI_SETTINGS_PROVIDER");
+        if (!frameProvider.isEmpty() && !workspace.setIncidentAiProvider(frameProvider)) return 1;
+        const auto frame = qEnvironmentVariable("PODLORD_AI_SETTINGS_FRAME");
+        if (!frame.isEmpty()) {
+            if (qEnvironmentVariableIsSet("PODLORD_AI_SETTINGS_OPEN_MODEL")) {
+                if (!QTest::qWaitFor([&] { return workspace.incidentAiModelChoices().size() >= 2; }, 5000)) return 1;
+                if (!podlord::test::clickVisible(window, "settingsAiModel")) return 1;
+                QTest::qWait(100);
+            }
+            window->grabWindow().save(frame);
+            if (qEnvironmentVariableIsSet("PODLORD_AI_SETTINGS_OPEN_MODEL")) return 0;
+        }
+        if (!podlord::test::clickVisible(window, "settingsAiConnect")
+            || !podlord::test::clickVisible(window, "connectClaude")
+            || workspace.incidentAiProvider() != "ollama" || !workspace.incidentAiModel().isEmpty()
+            || !QTest::qWaitFor([&] { return podlord::test::visibleItem(window->contentItem(), "settingsAiApiKey") != nullptr; }, 2000)
+            || !workspace.incidentAiAccounts().isEmpty()) return 1;
+        return window->findChild<QObject*>("connectOpenRouter") && workspace.incidentAiAccounts().isEmpty() ? 0 : 1;
+    }
     if (scenario.startsWith("review_")) {
         const auto failed = [&](const char* stage) {
             std::fprintf(stderr, "Alert review %s failed at %s\n", qPrintable(scenario), stage);

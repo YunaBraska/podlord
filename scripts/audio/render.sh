@@ -57,4 +57,4 @@ while IFS="$tab" read -r kind id; do
         music) mv -f -- "$stage/music/$id.m4a" "$assets/music/$id.m4a" ;;
     esac
 done < "$stage/plan.tsv"
-printf '%s\n' 'Published 20 WAV cues and 20 AAC/M4A tracks. Catalog metadata was not modified.'
+printf '%s\n' 'Published 20 WAV cues and 10 AAC/M4A tracks. Catalog metadata was not modified.'

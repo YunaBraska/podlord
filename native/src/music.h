@@ -2,6 +2,7 @@
 #include <QAudioOutput>
 #include <QMediaPlayer>
 #include <QVariantList>
+#include <QVariantAnimation>
 #include <memory>
 
 namespace podlord {
@@ -38,6 +39,9 @@ private:
     bool muted_ = false;
     bool requested_ = false;
     int volumePercent_ = 35;
+    qreal gain_ = 0;
+    bool transitionPending_ = false;
+    QVariantAnimation transition_;
     QString error_;
     std::unique_ptr<MusicPlatform> platform_;
     std::unique_ptr<QAudioOutput> output_;

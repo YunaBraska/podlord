@@ -940,6 +940,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                 ClusterConnection result;
                 result.contextId = contextId;
                 result.credentialId = hash((source.id + '\0' + context.cluster + '\0' + context.user).toUtf8());
+                result.preferredNamespace = context.nameSpace;
                 result.server = QUrl(context.server);
                 result.tls = QSslConfiguration::defaultConfiguration();
                 result.peerName = text(cluster, "tls-server-name");
@@ -1017,7 +1018,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         command.arguments.append(value);
                     }
                     const auto env = node["env"];
-                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, "The kubeconfig's authentication settings are invalid. Under users[].user.exec.env, use a list of name/value entries or omit env."};
+                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, kubeconfigExecEnvMessage};
                     QSet<QString> names;
                     if (env) for (const auto& entry : env) {
                         const auto name = text(entry, "name");

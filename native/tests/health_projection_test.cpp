@@ -15,11 +15,27 @@ void require(bool accepted, const char* message) {
 
 QJsonObject pod(const QString& name, const QString& phase, const QString& created, int restarts = 0) {
     QJsonObject status{{"phase", phase}};
-    if (phase == "Running") status["containerStatuses"] = QJsonArray{QJsonObject{{"restartCount", restarts}, {"ready", true}}};
+    if (phase == "Running") {
+        QJsonObject container{{"restartCount", restarts}, {"ready", true}};
+        if (restarts > 0) container["lastState"] = QJsonObject{{"terminated", QJsonObject{
+            {"reason", "OOMKilled"}, {"exitCode", 137}, {"message", "token=private-value"}}}};
+        status["containerStatuses"] = QJsonArray{container};
+    }
+    QJsonObject spec{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
+    if (name == "running-0") {
+        spec["nodeName"] = "worker-a";
+        spec["imagePullSecrets"] = QJsonArray{QJsonObject{{"name", "registry-auth"}}};
+        spec["volumes"] = QJsonArray{QJsonObject{{"name", "data"}, {"persistentVolumeClaim", QJsonObject{{"claimName", "claim-data"}}}}};
+        const QJsonObject secretRef{{"name", "credentials"}, {"key", "DATABASE_PASSWORD"}};
+        const QJsonObject configRef{{"name", "settings"}, {"key", "SERVER_PORT"}};
+        const QJsonArray env{QJsonObject{{"name", "DATABASE_PASSWORD"}, {"valueFrom", QJsonObject{{"secretKeyRef", secretRef}}}},
+            QJsonObject{{"name", "SERVER_PORT"}, {"valueFrom", QJsonObject{{"configMapKeyRef", configRef}}}}};
+        spec["containers"] = QJsonArray{QJsonObject{{"name", "main"}, {"env", env}}};
+    }
     return {{"apiVersion", "v1"}, {"kind", "Pod"},
         {"metadata", QJsonObject{{"name", name}, {"namespace", "default"}, {"uid", name},
             {"resourceVersion", "1"}, {"creationTimestamp", created}}},
-        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}}}, {"status", status}};
+        {"spec", spec}, {"status", status}};
 }
 
 QJsonObject event(const QString& name, const QString& at) {
@@ -54,7 +70,8 @@ struct Kubernetes final {
                         {"preferredVersion", QJsonObject{{"groupVersion", "batch/v1"}}}}}}};
                     else if (route == "/api/v1") body = {{"resources", QJsonArray{
                         QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
-                        QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+                        QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
+                        QJsonObject{{"name", "persistentvolumeclaims"}, {"kind", "PersistentVolumeClaim"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
                     else if (route == "/api/v1/pods") body = collection(QJsonArray{
                         pod("running-0", "Running", "2026-10-15T11:40:00Z"),
                         pod("running-1", "Running", "2026-10-15T11:40:00Z"),
@@ -65,6 +82,10 @@ struct Kubernetes final {
                     else if (route == "/api/v1/events") body = collection(QJsonArray{
                         event("warning-new", "2026-10-15T11:59:00Z"),
                         event("warning-old", "2026-10-15T11:00:00Z")});
+                    else if (route == "/api/v1/persistentvolumeclaims") body = collection(QJsonArray{QJsonObject{
+                        {"apiVersion", "v1"}, {"kind", "PersistentVolumeClaim"},
+                        {"metadata", QJsonObject{{"name", "claim-data"}, {"namespace", "default"}, {"uid", "claim-uid"}, {"resourceVersion", "1"}}},
+                        {"spec", QJsonObject{{"volumeName", "volume-01"}}}, {"status", QJsonObject{{"phase", "Bound"}}}}});
                     else if (route == "/apis/batch/v1") body = {{"resources", QJsonArray{QJsonObject{
                         {"name", "cronjobs"}, {"kind", "CronJob"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
                     else if (route == "/apis/batch/v1/cronjobs") body = collection(QJsonArray{QJsonObject{
@@ -108,6 +129,12 @@ void restartOutlier(const QJsonArray& rows) {
     require(!ordinary["problems"].toBool() && ordinary["activity"].toBool(), "Ordinary running Pod health differs");
     require(outlier["problems"].toBool() && outlier["issue"].toString().contains("Restart outlier")
         && outlier["problemSeverity"].toInt() == 1, "Restart outlier was not marked as a warning");
+    const auto termination = outlier["lastTerminations"].toArray();
+    require(outlier["restarts"] == 8 && termination.size() == 1
+        && termination.first().toObject()["reason"] == "OOMKilled"
+        && termination.first().toObject()["exitCode"] == 137
+        && !QJsonDocument(outlier).toJson().contains("private-value"),
+        "Pod restart count or last termination was lost or leaked a message");
 }
 
 void pendingGrace(const QJsonArray& rows) {
@@ -131,6 +158,29 @@ void expiredWarning(const QJsonArray& rows) {
     const auto value = row(rows, "warning-old");
     require(!value["problems"].toBool() && !value["activity"].toBool(), "Expired Warning event stayed active");
 }
+void storageReferences(const QJsonArray& rows) {
+    const auto workload = row(rows, "running-0");
+    const auto claim = row(rows, "claim-data");
+    require(workload["node"] == "worker-a" && workload["volumeClaims"].toArray() == QJsonArray{"claim-data"},
+        "Pod did not publish its Node and claim references");
+    require(claim["boundVolume"] == "volume-01", "Claim did not publish its bound volume reference");
+}
+void referencedKeys(const QJsonArray& rows) {
+    const auto workload = row(rows, "running-0");
+    require(workload["secretKeys"].toArray().contains("DATABASE_PASSWORD")
+        && workload["configMapKeys"].toArray().contains("SERVER_PORT"),
+        "Pod did not publish referenced Secret and ConfigMap key names");
+    require(workload["secretRefs"].toArray() == QJsonArray{"credentials"}
+        && workload["configMapRefs"].toArray() == QJsonArray{"settings"}
+        && !QJsonDocument(workload["secretKeys"].toArray()).toJson().contains("credentials")
+        && !QJsonDocument(workload["configMapKeys"].toArray()).toJson().contains("settings"),
+        "Referenced names must remain separate from key names");
+}
+void imagePullSecretReferences(const QJsonArray& rows) {
+    const auto workload = row(rows, "running-0");
+    require(workload["imagePullSecrets"].toArray() == QJsonArray{"registry-auth"},
+        "Pod did not publish its image pull Secret reference for local correlation");
+}
 }
 
 int main(int argc, char* argv[]) {
@@ -142,7 +192,7 @@ int main(int argc, char* argv[]) {
         const auto now = QDateTime::fromString("2026-10-15T12:00:00Z", Qt::ISODate);
         podlord::ResourceClient client(nullptr, [now] { return now; });
         require(client.open("projection", kubernetes.connection(), {}), "Cannot open Kubernetes request client");
-        require(QTest::qWaitFor([&] { return client.initialSyncComplete("projection") && client.rows("projection").size() == 9; }, 10000),
+        require(QTest::qWaitFor([&] { return client.initialSyncComplete("projection") && client.rows("projection").size() == 10; }, 10000),
             "Kubernetes health scenarios did not reach the public cache");
         const auto rows = client.rows("projection");
         if (scenario == "cronjob_suspended") suspendedCronJob(rows);
@@ -151,6 +201,9 @@ int main(int argc, char* argv[]) {
         else if (scenario == "pending_grace_expired") expiredPendingGrace(rows);
         else if (scenario == "warning_recent") recentWarning(rows);
         else if (scenario == "warning_expired") expiredWarning(rows);
+        else if (scenario == "storage_references") storageReferences(rows);
+        else if (scenario == "referenced_keys") referencedKeys(rows);
+        else if (scenario == "image_pull_secret_refs") imagePullSecretReferences(rows);
         else throw std::invalid_argument("Unknown health scenario");
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr, "%s\n", error.what()); return 1; }

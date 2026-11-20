@@ -43,7 +43,7 @@ bool scenario(const QString& name) {
     const auto path = QDir(profile).filePath("read-settings.json");
     const ReadSettingsStore store(profile);
     if (name == "reject_obsolete_format") {
-        for (int version = 1; version < 10; ++version) {
+        for (int version = 1; version < 9; ++version) {
             QJsonObject root{{"version", version}, {"requestHardLimitPerMinute", 120}, {"inactiveSyncMinutes", 2}};
             if (version >= 2) root["logLimitMb"] = 7;
             if (version >= 3) root["yamlLimitMiB"] = 4;
@@ -57,6 +57,28 @@ bool scenario(const QString& name) {
                 || !failure(store.save({}, {}), StoreError::InvalidData) || read(path) != bytes) return false;
         }
         return true;
+    }
+    if (name == "migrate_v9") {
+        auto expected = ReadSettings{};
+        expected.requestHardLimitPerMinute = 120;
+        expected.language = "de";
+        expected.themeName = "Imperial Ledger";
+        if (!value(store.save(expected, {}), expected)) return false;
+        auto root = QJsonDocument::fromJson(read(path)).object();
+        root["version"] = 9;
+        root.remove("musicVolumePercent");
+        root.remove("alertVolumePercent");
+        const auto oldBytes = QJsonDocument(root).toJson();
+        if (!write(path, oldBytes) || !value(store.load(), expected)
+            || !require(read(path) == oldBytes, "Loading v9 settings changed the existing file")) return false;
+        auto desired = expected;
+        desired.musicVolumePercent = 62;
+        if (!value(store.save(desired, expected), desired) || !value(store.load(), desired)) return false;
+        const auto migrated = QJsonDocument::fromJson(read(path)).object();
+        return require(migrated.value("version") == 10 && migrated.value("musicVolumePercent") == 62
+            && migrated.value("alertVolumePercent") == 100 && migrated.value("requestHardLimitPerMinute") == 120
+            && migrated.value("language") == "de" && migrated.value("themeName") == "Imperial Ledger",
+            "v9 migration lost settings or did not add volume defaults");
     }
     if (name.startsWith("audio_volume_")) {
         const ReadSettings defaults;

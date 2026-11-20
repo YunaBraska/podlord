@@ -78,6 +78,16 @@ const QHash<QString, Glyph>& catalog() {
         polygon({{.86,.28},{.5,.48},{.5,.9},{.86,.7}}); finish({"CustomResourceDefinition"});
         ellipse(.4,.4,.27,.27,Fill::None); line(.6,.6,.9,.9); finish({"Search"});
         line(.2,.2,.8,.8); line(.2,.8,.8,.2); finish({"Close"});
+        line(.5,.16,.5,.84); line(.16,.5,.84,.5); finish({"Add"});
+        line(.5,.1,.5,.62); line(.32,.44,.5,.62); line(.68,.44,.5,.62);
+        line(.16,.66,.16,.88); line(.16,.88,.84,.88); line(.84,.88,.84,.66); finish({"Import", "Download"});
+        line(.5,.66,.5,.14); line(.32,.32,.5,.14); line(.68,.32,.5,.14);
+        line(.16,.66,.16,.88); line(.16,.88,.84,.88); line(.84,.88,.84,.66); finish({"Export", "Upload"});
+        polygon({{.1,.25},{.4,.25},{.5,.38},{.9,.38},{.9,.83},{.1,.83}},Fill::None); finish({"Folder"});
+        rect(.16,.28,.52,.58,Fill::None); rect(.32,.14,.52,.58,Fill::None); finish({"Copy"});
+        rect(.14,.3,.56,.56,Fill::None); line(.48,.52,.86,.14); line(.57,.14,.86,.14); line(.86,.14,.86,.43); finish({"External"});
+        rect(.14,.18,.52,.64,Fill::None); line(.48,.5,.9,.5); line(.7,.3,.9,.5); line(.9,.5,.7,.7); finish({"SignOut"});
+        ellipse(.5,.5,.38,.38,Fill::None); ellipse(.5,.29,.035,.035); line(.5,.45,.5,.7); finish({"Info"});
         polygon({{.16,.12},{.72,.12},{.88,.28},{.88,.88},{.16,.88}},Fill::None);
         rect(.3,.12,.36,.28,Fill::None); rect(.3,.58,.44,.3,Fill::None);
         line(.58,.18,.58,.33); finish({"Save"});

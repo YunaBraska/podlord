@@ -19,7 +19,7 @@ bool run(const QString& scenario, const QString& input) {
     if (alerts.busy() || !alerts.error().isEmpty()) return false;
     const auto sounds = alerts.sounds(), tracks = podlord::bundledTracks();
     if (scenario == "catalog") {
-        if (sounds.size() != 21 || tracks.size() != 20 || sounds.first().toMap()["id"] != "none") return false;
+        if (sounds.size() != 21 || tracks.size() != 10 || sounds.first().toMap()["id"] != "none") return false;
         for (const auto& list : {sounds, tracks}) for (const auto& entry : list) {
             const auto item = entry.toMap();
             if (item["id"].toString().isEmpty() || item["name"].toString().isEmpty()
@@ -44,7 +44,7 @@ bool run(const QString& scenario, const QString& input) {
             if (hashes.contains(hash)) return false;
             hashes.insert(hash);
         }
-        return identities.size() == 41 && hashes.size() == 40;
+        return identities.size() == 31 && hashes.size() == 30;
     }
     if (scenario == "legacy_migration") {
         QFile catalog(":/podlord/audio/catalog.json");

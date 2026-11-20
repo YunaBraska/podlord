@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include "background_http.h"
 #include <QSet>
+#include <QPointer>
 #include <QTimer>
 #include <functional>
 #include <QVariantList>
@@ -13,6 +14,7 @@
 namespace podlord {
 class PortForwardTransport;
 class ContainerTerminal;
+class ContainerFiles;
 /** True only for the core v1 Secret/ConfigMap contract, not equal kind names in other APIs. */
 bool isCoreValueResource(const QJsonObject& document);
 /** One rate-limited queue with four read slots and exclusive writes. Sent work keeps its session. */
@@ -47,12 +49,14 @@ public:
     QString status(const QString& id) const;
     QString failureStatus(const QString& id) const;
     QString syncSummary(const QString& id) const;
+    int requestCountLastMinute(const QString& id) const;
     bool loading(const QString& id) const;
     bool syncLoading(const QString& id) const;
     double loadingProgress(const QString& id) const;
     bool initialSyncComplete(const QString& id) const;
     bool authenticationRequired(const QString& id) const;
     std::optional<ClusterConnection> connection(const QString& id) const;
+    bool sessionOpen(const QString& id) const;
     bool authenticate(const ClusterConnection& connection, const QString& session);
     /** Drops retained connection credentials, not resource caches or already dispatched requests. */
     bool forgetCredentials(const QString& credential);
@@ -79,6 +83,8 @@ public:
     /** Existing forwards and active shell streams, without opening another connection. */
     int connectionCount(const QString& id) const;
     bool stopTerminal(const QString& id);
+    /** One explicit read from a listed running Pod. Fresh GET and exec share the request scheduler. */
+    bool startFileRead(const QString& id, const QString& path, const QString& container, ContainerFiles* owner);
     /** Confirmed, target-bound JSON Patch. One send only; no automatic retry. */
     bool applyYaml(const QString& id, const QString& path, const QString& token, const QJsonObject& baseline,
                    const QJsonObject& desired, const QJsonArray& patch, quint64 revision);
@@ -111,6 +117,8 @@ signals:
     /** Local scheduler admission on this client's monotonic clock, not remote arrival.
      * Path excludes query, authorization and payload; no diagnostic persistence is implied. */
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
+    /** First retryable failure for one path until a successful read clears it. */
+    void transientFailureStarted(const QString& id, const QString& path);
     void changed(const QString& id);
     void rowsChanged(const QString& id);
     void collectionAccepted(const QString& id);
@@ -132,6 +140,8 @@ private:
     QMap<QString, Terminal> terminals_;
     void consumeTerminal(const Task& task, const QJsonObject& document);
     void terminalHandshakeFinished(const QString& token, bool accepted, bool authenticationRequired);
+    void consumeFileTarget(const Task& task, const QJsonObject& document);
+    void fileHandshakeFinished(const QString& token, bool accepted, bool authenticationRequired);
     struct Forward final {
         QString session, path, uid, kind, name, nameSpace, podPath;
         QUrl server;
@@ -145,9 +155,11 @@ private:
     bool failForward(const QString& token, const QString& message);
     void consumeForward(const Task& task, const QJsonObject& document);
     void forwardHandshakeFinished(const QString& token, const QString& stream, bool accepted, bool authenticationRequired);
-    struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; bool unchanged = false; };
+    struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; int stableReads = 0; };
     struct Detail final { QJsonObject value; QDateTime at; QJsonObject document; quint64 revision = 0; };
     struct CachedResource final { QJsonObject value; qint64 received = 0; };
+    enum class Read { Core, Groups, Discovery, List, Detail, Linked, Probe, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket, FileTarget, FileSocket };
+    struct FailedRead final { Read read; QString collection, kind; bool namespaced = false, deletable = false; };
     struct State final {
         ClusterConnection connection;
         QStringList namespaces;
@@ -158,8 +170,10 @@ private:
         QJsonArray snapshot;
         QMap<QString, QString> issueByPath;
         QSet<QString> blocked;
+        QMap<QString, QDateTime> deniedClusterLists;
         QSet<QString> unresolvedDeletes;
         QMap<QString, QString> failures;
+        QMap<QString, FailedRead> retryableFailures;
         QString forwardError;
         bool open = true;
         bool suspended = false;
@@ -173,10 +187,10 @@ private:
         QList<QDateTime> requestStarts;
         QDateTime presentationExpiry;
     };
-    enum class Read { Core, Groups, Discovery, List, Detail, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket };
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
     struct Task final {
         QString id, path, collection, kind, continuation;
+        QString fallbackFrom;
         Read read = Read::Core;
         bool namespaced = false;
         bool deletable = false;
@@ -187,8 +201,12 @@ private:
         QString logKey, container;
         QString forwardToken, streamToken, selector;
         QString terminalToken;
+        QString fileToken, fileUid;
+        QUrl fileServer;
+        QPointer<ContainerFiles> fileView;
         qint64 received = 0;
         qint64 started = -1;
+        QDateTime startedAt;
         std::optional<Change> change;
         QJsonArray patch;
     };

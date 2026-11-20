@@ -23,20 +23,21 @@ Pane {
         RowLayout {
             Layout.fillWidth: true
             visible: !root.inputPriority
-            Label {
+            SelectableText {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 text: workspace.sourceInspection.name || "Source"
                 textFormat: Text.PlainText
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
                 font.bold: true
                 Accessible.name: "Source: " + text
             }
             IconButton {
                 objectName: "removeInspectedSource"
-                glyph: "Close"
+                glyph: "Trash"
                 text: "Remove"
-                showText: true
+                destructive: true
                 Accessible.name: "Remove imported context"
                 enabled: !workspace.busy && !workspace.sourceEditing
                 onClicked: workspace.requestSourceRemoval(workspace.sourceInspection.contextId)
@@ -59,21 +60,18 @@ Pane {
             SourceTab { objectName: "sourceOverviewTab"; text: "Overview" }
             SourceTab { objectName: "sourceYamlTab"; text: "YAML" }
         }
-        Label {
+        SelectableText {
             Layout.fillWidth: true
             visible: workspace.sourceInspectionLoading && !root.inputPriority
             text: "Loading owned kubeconfig..."
             Accessible.name: text
         }
-        Label {
+        SelectableText {
             objectName: "sourceInspectorError"
             Layout.fillWidth: true
             visible: text !== ""
             text: workspace.sourceInspectionError
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
             color: workspace.appearanceColors.danger
-            Accessible.name: text
         }
         ScrollView {
             Layout.fillWidth: true
@@ -90,13 +88,10 @@ Pane {
                         required property var modelData
                         Layout.fillWidth: true
                         spacing: 0
-                        Label { text: modelData.label; font.bold: true; textFormat: Text.PlainText }
-                        TextArea {
+                        SelectableText { text: modelData.label; font.bold: true; textFormat: Text.PlainText }
+                        SelectableText {
                             Layout.fillWidth: true
                             text: modelData.value
-                            textFormat: TextEdit.PlainText
-                            readOnly: true
-                            selectByMouse: true
                             wrapMode: TextEdit.WrapAnywhere
                             Accessible.name: modelData.label + ": " + modelData.value
                         }
@@ -115,14 +110,14 @@ Pane {
                 RowLayout {
                     Layout.fillWidth: true
                     visible: !root.inputPriority
-                    Button {
+                    FlatButton {
                         objectName: "editSourceYaml"
                         text: "Edit YAML"
                         visible: !workspace.sourceEditing
                         enabled: !workspace.busy && !workspace.discardPending && workspace.canEditSourceYaml
                         onClicked: if (workspace.beginSourceEdit()) Qt.callLater(editor.forceActiveFocus)
                     }
-                    Button {
+                    FlatButton {
                         objectName: "applySourceYaml"
                         text: "Apply"
                         visible: workspace.sourceEditing

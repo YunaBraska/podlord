@@ -82,7 +82,7 @@ remain on disk, but contexts must be explicitly imported into the new catalog. C
 and UUID preference files are neither used by workspace restoration nor deleted.
 There is no backup/adoption loop or winner selection between old C++ sessions.
 Current context settings accept their current format only. Migration from the
-C# product remains separately scoped. No startup operation connects or
+Other product work remains separately scoped. No startup operation connects or
 authenticates merely to construct this local catalog.
 
 ## Compatibility and verification

@@ -3,6 +3,7 @@
 #include "ui_input.h"
 #include "browser_boundary.h"
 #include <QGuiApplication>
+#include <QClipboard>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
@@ -140,7 +141,10 @@ bool ui(const QString& mode) {
     require(boundary.listen(QHostAddress::LocalHost, 0), "Cannot start local Kubernetes HTTP boundary");
     const QString profile = directory.filePath("profile");
     const QString yaml = QString("apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:%1\nusers:\n- name: local\n  user:\n    token: local-boundary-token\ncontexts:\n- name: local\n  context:\n    cluster: local\n    user: local\n").arg(boundary.serverPort());
-    const auto imported = podlord::KubeconfigStore(profile).importText(directory.filePath("origin"), yaml);
+    QFile origin(directory.filePath("origin"));
+    require(origin.open(QIODevice::WriteOnly) && origin.write(yaml.toUtf8()) == yaml.toUtf8().size(), "Cannot write guidance kubeconfig");
+    origin.close();
+    const auto imported = podlord::KubeconfigStore(profile).importFile(origin.fileName());
     require(std::holds_alternative<podlord::SourceSnapshot>(imported), "Cannot import guidance source");
     const podlord::SessionStore sessions(profile);
     const auto created = sessions.openTab(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
@@ -175,9 +179,17 @@ bool ui(const QString& mode) {
         require(podlord::test::scrollIntoView(target->window(), target), "Cannot reveal guidance action for real input");
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
     };
+    const auto tabsFillWidth = [&] {
+        auto* tabs = item("overviewButton")->parentItem();
+        qreal right = 0;
+        for (auto* tab : tabs->childItems()) if (tab->isVisible()) right = qMax(right, tab->x() + tab->width());
+        return tabs->width() - right >= 0 && tabs->width() - right <= 8;
+    };
     require(QTest::qWaitFor([&] { return !workspace.busy(); }, 5000), "Saved tab metadata did not restore");
-    press("quickOpenDropdown");
-    const auto activate = QString("quickContext_") + workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+    press("mapWorkspaceButton");
+    if (!workspace.mapOverview()) press("mapOverview");
+    const auto activate = QString("contextMapCard_") + workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+    require(QTest::qWaitFor([&] { return item(qPrintable(activate)) != nullptr; }, 5000), "Context card did not appear");
     press(qPrintable(activate));
     if (!QTest::qWaitFor([&] { return workspace.table()->rowCount() == 1 && !workspace.busy() && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Discovery: rows=%d; requests=%d; active=%s; status=%s\n", workspace.table()->rowCount(), boundary.requests, qPrintable(workspace.currentSession()), qPrintable(workspace.status()));
@@ -187,6 +199,18 @@ bool ui(const QString& mode) {
     require(QTest::qWaitFor([&] { return item("cell_0_0") != nullptr; }, 2000), "Resource workspace did not present its cached row");
     press("cell_0_0");
     require(QTest::qWaitFor([&] { return workspace.resourceGuidance().size() == 1 && item("resourceGuidanceToggle"); }, 5000), "Accepted detail did not publish cached guidance");
+    auto* resourceName = item("inspectorResourceName");
+    require(resourceName && resourceName->property("selectByMouse").toBool()
+        && item("overviewFieldHeader") && item("overviewFieldHeader")->property("selectByMouse").toBool(),
+        "Inspector text cannot be selected outside the AI tab");
+    resourceName->forceActiveFocus();
+    QGuiApplication::clipboard()->clear();
+    QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+    QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+    require(QGuiApplication::clipboard()->text() == resourceName->property("text").toString(),
+        "Resource title could not be copied");
+    require(!item("inspectorAiButton") && !workspace.incidentAiEnabled(),
+        "Inspector AI tab appeared without a connected provider or started analysis without consent");
     const int requests = boundary.requests;
     press("resourceGuidanceToggle");
     if (!QTest::qWaitFor([&] { return item("guidanceTitle_0"); }, 2000)) {
@@ -201,8 +225,66 @@ bool ui(const QString& mode) {
     require(!item("guidanceDetail_0")->property("text").toString().contains("diagnostic-secret"), "Guidance UI exposed untrusted status contents");
     const QString evidence = qEnvironmentVariable("PODLORD_TEST_EVIDENCE_DIR");
     if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/" + mode + ".png"), "Cannot save actual guidance frame");
-    if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
-        if (mode == "ui_node_actions") require(!workspace.podInspected() && !item("guidanceLogs_0"), "Non-Pod diagnostic offers an invalid log action");
+    if (mode == "ui_expand") {
+        auto* cell = item("cell_0_0");
+        auto* cellText = cell ? cell->property("contentItem").value<QQuickItem*>() : nullptr;
+        require(cellText && cellText->property("selectByMouse").toBool(), "Table text cannot be selected");
+        const auto from = cellText->mapToScene(QPointF(5, cellText->height() / 2)).toPoint();
+        const auto to = cellText->mapToScene(QPointF(80, cellText->height() / 2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(window, to);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, to);
+        const auto selectedText = cellText->property("selectedText").toString();
+        require(!selectedText.isEmpty(), "Dragging across a table value did not select text");
+        QGuiApplication::clipboard()->clear();
+        QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+        require(QGuiApplication::clipboard()->text() == selectedText, "Selected table text could not be copied");
+        require(!workspace.setInspectorPage("ai") && !item("inspectorAiButton")
+            && boundary.requests == requests, "AI tab opened without a connected provider");
+        window->setWidth(2500); window->setHeight(900); QTest::qWait(50);
+        require(tabsFillWidth(), "Wide inspector tabs leave unused width");
+        window->setWidth(680); window->setHeight(680); QTest::qWait(50);
+        require(tabsFillWidth(), "Narrow inspector tabs leave unused width");
+    } else if (mode == "ui_ai_live") {
+        require(QTest::qWaitFor([&] { return !workspace.incidentAiModels().isEmpty(); }, 10000)
+            && workspace.setIncidentAiModel(workspace.incidentAiModels().first()), "Cannot select the discovered local model");
+        require(QTest::qWaitFor([&] { return workspace.incidentAiReady(); }, 10000), "Selected local model is not ready");
+        require(item("inspectorAiButton")->isVisible(), "Connected local model did not reveal the AI tab");
+        press("inspectorAiButton");
+        require(item("incidentAiReanalyze") && !workspace.incidentAiEnabled(), "Manual AI action enabled automatic analysis");
+        press("incidentAiReanalyze");
+        require(boundary.requests == requests, "Starting AI analysis caused an extra Kubernetes request");
+        const auto completed = QTest::qWaitFor([&] {
+            return !workspace.incidentAiResult().value("summary").toString().isEmpty()
+                || workspace.incidentAiStatus().contains("failed");
+        }, 180000);
+        if (!completed) std::fprintf(stderr, "AI status: %s\n", qPrintable(workspace.incidentAiStatus()));
+        require(completed && !workspace.incidentAiResult().value("summary").toString().isEmpty(), "Local AI result did not arrive in the inspector");
+        require(item("incidentAiSummary") && item("incidentAiSummary")->property("richText").toString() == workspace.incidentAiResult().value("summaryHtml").toString(),
+            "Inspector did not show the returned AI summary");
+        require(item("incidentAiObservation") && item("incidentAiObservation")->property("text").toString() == workspace.uiText().value("ai.observation")
+            && item("incidentAiCauseHeading") && item("incidentAiCauseHeading")->property("text").toString() == workspace.uiText().value("ai.possibleCause")
+            && item("incidentAiNextCheck") && item("incidentAiNextCheck")->property("text").toString() == workspace.uiText().value("ai.nextCheck"),
+            "AI response lost its visible sections");
+        require(!item("incidentAiSummary")->property("text").toString().contains("diagnostic-secret"), "AI summary exposed untrusted status text");
+        require(item("incidentAiReanalyze") && item("incidentAiReanalyze")->isEnabled(), "Explicit reanalysis button is missing");
+        const auto command = workspace.incidentAiResult().value("command").toString();
+        require(command.startsWith("kubectl ") && command.contains("--kubeconfig ")
+            && command.contains("--context ") && command.contains(" describe pod ")
+            && command.contains("diagnostic") && item("incidentAiCommand") && item("incidentAiCopyCommand"),
+            "The AI next check has no copyable, context-bound read-only command");
+        QGuiApplication::clipboard()->clear();
+        press("incidentAiCopyCommand");
+        require(QGuiApplication::clipboard()->text() == command && boundary.requests == requests,
+            "Copying the AI command changed the cluster or copied another command");
+        if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_ai_live_result.png"), "Cannot save AI result frame");
+    } else if (mode == "ui_open_events" || mode == "ui_open_yaml" || mode == "ui_action_keyboard" || mode == "ui_actions_restore" || mode == "ui_action_narrow" || mode == "ui_node_actions") {
+        if (mode == "ui_node_actions") {
+            require(!workspace.podInspected() && !item("guidanceLogs_0"), "Non-Pod diagnostic offers an invalid log action");
+            window->setWidth(2500); QTest::qWait(50);
+            require(tabsFillWidth(), "Non-Pod inspector tabs leave unused width");
+            if (!evidence.isEmpty()) require(window->grabWindow().save(evidence + "/ui_five_tabs.png"), "Cannot save non-Pod tabs");
+        }
         const bool yamlAction = mode == "ui_open_yaml" || mode == "ui_action_keyboard";
         const char* action = yamlAction ? "guidanceYaml_0" : "guidanceEvents_0";
         if (mode == "ui_action_keyboard") {

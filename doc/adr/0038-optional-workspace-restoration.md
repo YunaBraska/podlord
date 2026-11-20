@@ -4,7 +4,7 @@ Status: accepted
 
 ## Context
 
-The C# reference exposes a workspace restoration preference. Native previously
+The workspace has a restoration preference. Native previously
 displayed a fixed Enabled label despite always adopting saved open-tab placement.
 Restoration must not grant authority for interactive authentication, YAML writes
 or reopening port-forwards. Session catalog data and view preferences have

@@ -1,23 +1,10 @@
-# Feature Inventory
+# Feature inventory
 
-Podlord is a resource-first Kubernetes desktop console. The UI favors global scanning, cache-first operations, explicit source selection, and focused resource inspection.
+PodLord's native workspace includes imported kubeconfig sources, context tabs,
+flat resource tables, filters, a resource map, inspector, YAML editing, events,
+logs, a container terminal, port forwarding, alerts and optional AI analysis.
+The Kubernetes API client owns requests and respects per-context access.
 
-## Implemented in the C# reference
-
-This table describes the reference implementation, not a completed native migration. Native capability gaps and evidence are tracked in [the legacy capability inventory](legacy-capability-inventory.md), [the operational specification](podlord-operational-spec.md), and [the test map](k3d-test-map.md). A component test does not establish complete feature or visual parity.
-
-| Area | Behavior |
-|---|---|
-| Kubeconfig sources | Import home config, custom file, directory scan, or pasted YAML. |
-| Source snapshots | Store app-owned kubeconfig copies by source path and content hash. |
-| Resource explorer | Flat resource table with sorting, resizing, reordering, column visibility, filters, saved filters, and quick search. |
-| Radar | Deterministic resource island, zoom, pan, selection, hover details, activity markers, and optional water animation. |
-| Metrics | CPU/memory from `metrics.k8s.io` where available; namespace-scoped pod metric fallback when cluster-wide metrics are forbidden. |
-| Inspector | Overview, YAML, events, links, logs for pods, values for ConfigMaps/Secrets, delete action, and port-forward action where supported. |
-| YAML | Syntax highlighting, editing, reset, and server-side apply. |
-| Logs | Tail logs for pods through the Kubernetes API. |
-| Port forwarding | Native Kubernetes port-forward stream handling without `kubectl` for normal app use. |
-| Request control | Cache-first snapshots, request queue, rate-limit backoff, audit log, idle sync controls, and optional hard request cap. |
-| Testing | Unit tests, fake Kubernetes HTTP tests, and k3d integration tests with coverage gates. |
-
-Planned work lives in [doc/ROADMAP.md](../ROADMAP.md). This inventory lists what exists now.
+See the [operational specification](podlord-operational-spec.md) for behavior and
+[local test map](k3d-test-map.md) for verification entrypoints. A listed
+capability is not a claim that every platform package has passed release checks.

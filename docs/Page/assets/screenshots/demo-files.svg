@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 580" role="img" aria-labelledby="title description">
+  <title id="title">PodLord file browser with fictional container files</title>
+  <desc id="description">The Files inspector shows a Pod and container selector, a directory path, folders and downloadable files. All names are synthetic.</desc>
+  <rect width="840" height="580" fill="#1b1813"/>
+  <rect x="1" y="1" width="838" height="578" fill="none" stroke="#665945" stroke-width="2"/>
+  <rect x="1" y="1" width="838" height="44" fill="#0b0d0b"/>
+  <text x="20" y="29" fill="#e9d7b9" font-family="Menlo, Consolas, monospace" font-size="16" font-weight="bold">PodLord</text>
+  <text x="116" y="29" fill="#9c957f" font-family="Menlo, Consolas, monospace" font-size="14">Map</text>
+  <text x="176" y="29" fill="#9c957f" font-family="Menlo, Consolas, monospace" font-size="14">Resources</text>
+  <text x="746" y="29" fill="#a9a08f" font-family="Menlo, Consolas, monospace" font-size="13">DEMO</text>
+  <text x="19" y="83" fill="#f0ddbb" font-family="Menlo, Consolas, monospace" font-size="19" font-weight="bold">Pod/shop/checkout-api-7c9d</text>
+  <rect x="18" y="104" width="804" height="42" fill="#080807" stroke="#60543f"/>
+  <rect x="608" y="104" width="95" height="42" fill="#42351f" stroke="#d8ae65"/>
+  <g fill="#d9ccb5" font-family="Menlo, Consolas, monospace" font-size="14" text-anchor="middle">
+    <text x="68" y="131">Overview</text><text x="169" y="131">AI</text>
+    <text x="265" y="131">YAML</text><text x="360" y="131">Events</text>
+    <text x="461" y="131">Links</text><text x="560" y="131">Logs</text>
+    <text x="656" y="131" fill="#f5dfb0" font-weight="bold">Files</text><text x="760" y="131">Terminal</text>
+  </g>
+  <text x="20" y="187" fill="#ad9f86" font-family="Menlo, Consolas, monospace" font-size="14">POD</text>
+  <text x="429" y="187" fill="#ad9f86" font-family="Menlo, Consolas, monospace" font-size="14">CONTAINER</text>
+  <rect x="18" y="199" width="393" height="43" fill="#0a0a09" stroke="#5d5343"/>
+  <rect x="426" y="199" width="396" height="43" fill="#0a0a09" stroke="#5d5343"/>
+  <text x="31" y="226" fill="#f0dfc1" font-family="Menlo, Consolas, monospace" font-size="16">checkout-api-7c9d</text>
+  <text x="396" y="226" fill="#ad9f86" font-family="Menlo, Consolas, monospace" font-size="17" text-anchor="end">⌄</text>
+  <text x="441" y="226" fill="#f0dfc1" font-family="Menlo, Consolas, monospace" font-size="16">app</text>
+  <text x="807" y="226" fill="#ad9f86" font-family="Menlo, Consolas, monospace" font-size="17" text-anchor="end">⌄</text>
+  <rect x="18" y="259" width="45" height="43" fill="#0a0a09" stroke="#5d5343"/>
+  <text x="41" y="287" fill="#e9d7b9" font-family="Menlo, Consolas, monospace" font-size="24" text-anchor="middle">‹</text>
+  <text x="78" y="287" fill="#f0dfc1" font-family="Menlo, Consolas, monospace" font-size="16">/app</text>
+  <rect x="777" y="259" width="45" height="43" fill="#0a0a09" stroke="#5d5343"/>
+  <text x="800" y="287" fill="#e9d7b9" font-family="Menlo, Consolas, monospace" font-size="24" text-anchor="middle">↻</text>
+  <line x1="18" y1="316" x2="822" y2="316" stroke="#5d5343"/>
+  <g font-family="Menlo, Consolas, monospace" font-size="16">
+    <text x="31" y="346" fill="#d8ae65">▸</text><text x="63" y="346" fill="#f0dfc1">config/</text>
+    <text x="31" y="390" fill="#d8ae65">▸</text><text x="63" y="390" fill="#f0dfc1">public/</text>
+    <text x="31" y="434" fill="#83d7c2">↓</text><text x="63" y="434" fill="#f0dfc1">package.json</text>
+    <text x="31" y="478" fill="#83d7c2">↓</text><text x="63" y="478" fill="#f0dfc1">server.js</text>
+    <text x="31" y="522" fill="#83d7c2">↓</text><text x="63" y="522" fill="#f0dfc1">README.md</text>
+  </g>
+  <g stroke="#3d372e">
+    <line x1="18" y1="360" x2="822" y2="360"/><line x1="18" y1="404" x2="822" y2="404"/>
+    <line x1="18" y1="448" x2="822" y2="448"/><line x1="18" y1="492" x2="822" y2="492"/>
+    <line x1="18" y1="536" x2="822" y2="536"/>
+  </g>
+</svg>

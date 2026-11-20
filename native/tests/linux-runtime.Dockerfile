@@ -1,6 +1,6 @@
 ARG RUNTIME_IMAGE=debian:13.7-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 FROM ${RUNTIME_IMAGE}
-# Ordinary OS/display libraries only. No Qt, compiler, SDK, kubectl or .NET.
+# Ordinary OS/display libraries only. No Qt, compiler, SDK or kubectl.
 RUN apt-get update && apt-get install --yes --no-install-recommends \
     ca-certificates fonts-dejavu-core fontconfig libgl1 libegl1 libopengl0 \
     libdbus-1-3 libglib2.0-0t64 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \

@@ -26,13 +26,13 @@ Store the selected UI language in app settings using a `system` default. Add a l
 
 ## How Does The Native Runtime Retain The Reference Catalog?
 
-The native compiled catalog is exported through the retained C# localizer's public
+The native compiled catalog is read from `native/ui/locales.json` through the public
 entrypoint. The real inventory is twenty translated languages plus English and
 the system selection. English fallback is exported once; language-specific
 differences are merged into immutable presentation maps. Native startup and
-language changes do not load .NET, fetch cluster data, change Kubernetes values,
-or run a translation timer. The reference CI regenerates and compares the shipped
-catalog, so its source cannot silently diverge.
+language changes do not fetch cluster data, change Kubernetes values,
+or run a translation timer. The native language catalog test compares shipped translations with the
+public language entrypoint, so the source cannot silently diverge.
 
 The existing private settings owner stores the selected canonical code. Reading
 versions 1 through 6 supplies `system` without rewriting; the next explicit save

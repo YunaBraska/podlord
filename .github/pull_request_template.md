@@ -1,22 +1,15 @@
 ## Summary
 
-<!-- One paragraph: what changes, why now. -->
+<!-- What changed and why? -->
 
-## Changes
+## Verification
 
-<!-- Bullet list of the concrete edits. -->
+- [ ] `sh scripts/test-native.sh`
+- [ ] Relevant native UI or Kubernetes journey checked
+- [ ] Changed documentation and release paths checked
 
-## Test plan
+## Review
 
-- [ ] `dotnet test tests/Podlord.Core.Tests/Podlord.Core.Tests.csproj`
-- [ ] `dotnet test tests/Podlord.App.Tests/Podlord.App.Tests.csproj`
-- [ ] `dotnet test tests/Podlord.App.LayoutTests/Podlord.App.LayoutTests.csproj`
-- [ ] `dotnet test tests/Podlord.Kubernetes.Tests/Podlord.Kubernetes.Tests.csproj` (skip K3d if docker not available)
-- [ ] Manual smoke check on macOS / Linux / Windows where relevant.
-
-## Checklist
-
-- [ ] No personal kubeconfigs / cluster credentials touched by tests; only K3d.
-- [ ] No emojis or AI mentions in commits or code.
-- [ ] New user-facing strings flow through `PodlordLocalizer`.
-- [ ] If you changed a DataGrid, the column-plaque header pattern is preserved.
+- [ ] No credentials or Secret values in code, logs or evidence
+- [ ] UI controls have accessible names and translated text
+- [ ] Task changes reviewed against their public behavior

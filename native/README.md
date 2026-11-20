@@ -14,6 +14,10 @@ cmake --build ../podlord-native-build
 ../podlord-native-build/podlord-native.app/Contents/MacOS/podlord-native --profile /absolute/private/profile
 ```
 
+## Local AI diagnosis
+
+On desktop, choose a model in **Settings → AI**. The choice also selects Ollama, ChatGPT, Claude or OpenRouter. Connect the provider if prompted, then enable automatic analysis for an imported context in a resource's Overview. The [provider setup manual](../doc/manuals/incident-ai-providers.md) covers accounts, billing, data sent, cache, credentials and troubleshooting. [ADR 0053](../doc/adr/0053-local-incident-analysis.md) defines shared analysis behavior; [ADR 0054](../doc/adr/0054-configurable-incident-ai-providers.md) defines provider boundaries.
+
 The installer refuses existing destinations. Requires C++20, CMake, Ninja, Python, curl, Git and the Xcode command-line tools. On other desktop systems launch `podlord-native` directly; the macOS installer is not a cross-platform installer. No ambient kubeconfig is imported.
 
 For a filter-only change, run `ctest --test-dir ../podlord-native-build -L behavior -R '^native.field_filter\.' --parallel 6 --output-on-failure`. The `behavior` label excludes duplicate Fusion/Basic runs; `style-variant` retains them for theme/style checks. API-only filter contracts do not load QML and run once, without meaningless style duplicates. Target the affected executable when building. Do not rebuild and run the complete suite for each local UI edit.

@@ -63,7 +63,7 @@ original schema and extended with the new model IDs. Loading is read-only. The
 next explicit, locked, conflict-checked atomic save writes version 4. Invalid
 layouts remain errors; this is a bounded schema migration, not a general fallback
 or a second layout authority. Version 4 must be supported before an older native
-binary can consume the upgraded file; the preserved C# comparison profile remains
+binary can consume the upgraded file; other profiles remain
 independent.
 
 ### Shared Native Pointer Input
@@ -300,7 +300,7 @@ paint, focus, hover, scrolling, sorting, finding or copying.
 The operating system owns RSS, physical/private memory, cumulative process CPU
 seconds and thread count. Unavailable counters remain unavailable. macOS physical
 footprint is not labeled private virtual memory; cumulative CPU seconds are not
-presented as a utilization percentage. Native code does not invent .NET heap or
+presented as a utilization percentage. Native code does not invent runtime heap or
 GC counters. Cache payload accounting belongs to the existing ResourceClient,
 not another UI counter or persisted index. Explicit Diagnostics snapshots sum
 retained collection JSON, accepted detail documents and UTF-8 log text across

@@ -122,7 +122,7 @@ async function exercise(scenario, mode = 'native-e2e', metadataAudit = false) {
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
         const result = await new Promise((resolve, reject) => {
             const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), mode], {
-                cwd: root, env: { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${socket}`, PODLORD_KUBERNETES_METADATA_AUDIT: metadataAudit?'1':'0', PODLORD_NATIVE_BUILD_DIR: build, PODLORD_VISUAL_EVIDENCE_DIR: path.join(directory, 'evidence'), ...(mode === 'mobile' ? { PODLORD_NATIVE_APP: '/missing/native-app', PODLORD_LEGACY_APP: '/missing/reference-app' } : {}) },
+                cwd: root, env: { ...process.env, DOCKER_CONTEXT: '', DOCKER_HOST: `unix://${socket}`, PODLORD_KUBERNETES_METADATA_AUDIT: metadataAudit?'1':'0', PODLORD_NATIVE_BUILD_DIR: build, PODLORD_VISUAL_EVIDENCE_DIR: path.join(directory, 'evidence') },
                 stdio: ['ignore', 'pipe', 'pipe']
             });
             runner=child;
@@ -305,15 +305,15 @@ test(`visual runner rejects missing ${missing} before Docker access`, { timeout:
 }
 
 for (const value of ['0', '-1', 'nope', '21601', '999999999999999999999', '060']) {
-    test(`visual runner rejects desktop timeout ${value}`, { timeout: 5000 }, async () => {
+    test(`visual runner rejects review timeout ${value}`, { timeout: 5000 }, async () => {
         const result = await new Promise((resolve, reject) => {
-            const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), 'desktop'], {
-                env: { ...process.env, PODLORD_DESKTOP_TIMEOUT_SECONDS: value, PODLORD_NATIVE_BUILD_DIR: build }, stdio: ['ignore', 'pipe', 'pipe']
+            const child = spawn('/bin/sh', [path.join(root, 'scripts/test-native-visual-kubernetes.sh'), 'mobile'], {
+                env: { ...process.env, PODLORD_REVIEW_TIMEOUT_SECONDS: value, PODLORD_NATIVE_BUILD_DIR: build }, stdio: ['ignore', 'pipe', 'pipe']
             });
             let output = ''; child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { output += bytes; });
             child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal, output }));
         });
         assert.equal(result.code, 1); assert.equal(result.signal, null);
-        assert.match(result.output, /Desktop timeout must be a whole number from 60 to 21600 seconds/);
+        assert.match(result.output, /Review timeout must be a whole number from 60 to 21600 seconds/);
     });
 }

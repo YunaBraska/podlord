@@ -5,18 +5,21 @@ import QtQuick.Layouts
 
 Pane {
     id: settings
+    Accessible.name: workspace.uiText["settings.title"]
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
     PasteSourceDialog { id: pasteSourceDialog }
     AwsProfileDialog { id: awsProfileDialog }
-    signal fileRequested()
     signal folderRequested()
     signal ociImportRequested()
     signal gkeImportRequested()
     signal sourceFailuresRequested()
     signal renameContextRequested(var context)
     property string section: "alerts"
-    readonly property var sections: ["alerts", "appearance", "diagnostics", "sources", "sync", "about"].map(id => ({id: id, label: workspace.uiText["settings." + id]}))
+    property bool addingClaudeKey: false
+    readonly property var allSections: ["alerts", "appearance", "ai", "diagnostics", "sources", "sync", "about"]
+        .map(id => ({id: id, label: workspace.uiText["settings." + id]}))
+    readonly property var sections: allSections.filter(entry => entry.id !== "ai" || workspace.incidentAiSupported)
     property string diagnosticTimestamp: ""
     property int pendingMusicVolume: -1
     property int pendingAlertVolume: -1
@@ -98,7 +101,7 @@ Pane {
         if (visible && section === "sync") workspace.refreshCacheUsage()
         yaml.text = workspace.yamlLimitMiB.toString()
     }
-    onSectionChanged: { synchronize(); if (section !== "appearance") volumeFeedback.stop(); if (section === "diagnostics") refreshDiagnostics() }
+    onSectionChanged: { synchronize(); if (section !== "appearance") volumeFeedback.stop(); if (section !== "ai") providerKey.clear(); if (section === "diagnostics") refreshDiagnostics() }
     onVisibleChanged: { if (visible) { synchronize(); if (section === "diagnostics") refreshDiagnostics() } else volumeFeedback.stop() }
     Component.onCompleted: synchronize()
     Connections {
@@ -189,7 +192,7 @@ Pane {
                 }
                 onPressedChanged: if (!pressed && enabled) settings.saveAudioVolume(audioRow.music, value)
             }
-            Label {
+            SelectableText {
                 id: volumeText
                 text: Math.round(volume.value) + "%"
                 Layout.preferredWidth: Math.max(54, percentWidth.advanceWidth)
@@ -200,6 +203,7 @@ Pane {
         }
     }
     component SettingRow: GridLayout {
+        id: settingRow
         required property string label
         required property string help
         default property alias controls: editor.data
@@ -207,35 +211,47 @@ Pane {
         Layout.fillWidth: true; columns: narrow ? 1 : 2
         columnSpacing: 14; rowSpacing: 6
         data: [
-        Label { Layout.row: 0; Layout.column: 0; Layout.preferredWidth: parent.narrow ? -1 : 240; text: parent.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
+        RowLayout {
+            Layout.row: 0; Layout.column: 0
+            Layout.preferredWidth: settingRow.narrow ? -1 : 240
+            Layout.fillWidth: settingRow.narrow
+            SelectableText { Layout.fillWidth: true; text: settingRow.label; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
+            IconButton {
+                visible: settingRow.help !== ""
+                glyph: "Info"
+                glyphColor: workspace.appearanceColors.muted
+                text: settingRow.help
+                Accessible.name: settingRow.label + ": " + settingRow.help
+                onClicked: ToolTip.show(settingRow.help, 8000)
+            }
+        }
         ,ColumnLayout { id: editor; Layout.row: parent.narrow ? 1 : 0; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; Layout.maximumWidth: parent.narrow ? Number.POSITIVE_INFINITY : 420 }
-        ,Label { Layout.row: parent.narrow ? 2 : 1; Layout.column: parent.narrow ? 0 : 1; Layout.fillWidth: true; text: parent.help; visible: text !== ""; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; font.pixelSize: workspace.textSizes.small; wrapMode: Text.Wrap }
-        ,Rectangle { Layout.row: parent.narrow ? 3 : 2; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
+        ,Rectangle { Layout.row: parent.narrow ? 2 : 1; Layout.column: 0; Layout.columnSpan: parent.columns; Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 10; Layout.bottomMargin: 10; color: workspace.appearanceColors.border }
         ]
     }
     contentItem: ColumnLayout {
         spacing: 12
-        Label { text: workspace.uiText["settings.title"]; font.pixelSize: workspace.textSizes.heading; font.bold: true; color: workspace.appearanceColors.accent }
         TabBar {
             id: settingsTabs
             Layout.fillWidth: true; Layout.minimumWidth: 0
             spacing: 0
             clip: true
-            currentIndex: settings.sections.findIndex(entry => entry.id === settings.section)
-            onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < settings.sections.length) {
-                const destination = settings.sections[currentIndex].id
+            currentIndex: settings.allSections.findIndex(entry => entry.id === settings.section)
+            onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < settings.allSections.length) {
+                const destination = settings.allSections[currentIndex].id
                 if (settings.section !== destination) settings.section = destination
             }
-            visible: settings.width >= 650 * workspace.textScale
+            visible: settings.width >= 850 * workspace.textScale
             SectionButton { objectName: "alertsWorkspaceButton"; text: workspace.uiText["settings.alerts"]; destination: "alerts" }
             SectionButton { objectName: "settingsAppearanceSection"; text: workspace.uiText["settings.appearance"]; destination: "appearance" }
-            SectionButton { objectName: "settingsDiagnosticsSection"; text: settings.sections[2].label; destination: "diagnostics" }
+            SectionButton { objectName: "settingsAiSection"; text: workspace.uiText["settings.ai"]; destination: "ai"; visible: workspace.incidentAiSupported }
+            SectionButton { objectName: "settingsDiagnosticsSection"; text: workspace.uiText["settings.diagnostics"]; destination: "diagnostics" }
             SectionButton { objectName: "settingsSourcesSection"; text: workspace.uiText["settings.sources"]; destination: "sources" }
             SectionButton { objectName: "settingsSyncSection"; text: workspace.uiText["settings.sync"]; destination: "sync" }
             SectionButton { objectName: "settingsAboutSection"; text: workspace.uiText["settings.about"]; destination: "about" }
         }
         ComboBox {
-            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 650 * workspace.textScale
+            objectName: "settingsSectionPicker"; Layout.fillWidth: true; visible: settings.width < 850 * workspace.textScale
             model: settings.sections; textRole: "label"; valueRole: "id"
             currentIndex: model.findIndex(option => option.id === settings.section)
             Accessible.name: workspace.uiText["settings.title"]
@@ -257,6 +273,146 @@ Pane {
                 id: settingsFields
                 width: scroll.availableWidth; spacing: 10
                 ColumnLayout {
+                    Layout.fillWidth: true; visible: settings.section === "ai"
+                    onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
+                    Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
+                    Timer { interval: 60000; repeat: true; running: parent.visible; onTriggered: workspace.refreshIncidentAiUsage() }
+                    SettingRow {
+                        label: workspace.uiText["ai.model"]; help: ""
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ComboBox {
+                                id: settingsAiModel
+                                objectName: "settingsAiModel"; Layout.fillWidth: true
+                                model: workspace.incidentAiModelChoices; textRole: "label"
+                                currentIndex: model.findIndex(choice => !choice.header && choice.provider === workspace.incidentAiProvider && choice.slug === workspace.incidentAiModel)
+                                displayText: currentIndex < 0 ? workspace.uiText["ai.chooseModel"] : model[currentIndex].label
+                                Accessible.name: workspace.uiText["ai.model"]
+                                delegate: ItemDelegate {
+                                    required property var modelData
+                                    required property int index
+                                    width: settingsAiModel.popup.width
+                                    text: modelData.label
+                                    enabled: !modelData.header
+                                    font.bold: modelData.header
+                                    highlighted: settingsAiModel.highlightedIndex === index
+                                }
+                                onActivated: index => {
+                                    const choice = model[index]
+                                    if (!choice.header) workspace.selectIncidentAiModel(choice.provider, choice.slug)
+                                }
+                            }
+                            IconButton {
+                                id: aiConnectButton
+                                objectName: "settingsAiConnect"
+                                glyph: "Add"
+                                glyphColor: workspace.appearanceColors.success
+                                text: workspace.uiText["ai.connectProvider"]
+                                onClicked: aiConnections.open()
+                                Menu {
+                                    id: aiConnections
+                                    MenuItem { objectName: "connectChatGpt"; text: "ChatGPT"; enabled: !workspace.chatgptConnected; onTriggered: workspace.signInChatGpt() }
+                                    MenuItem { objectName: "connectClaude"; text: "Claude API"; enabled: !workspace.incidentAiAccounts.some(account => account.provider === "claude"); onTriggered: settings.addingClaudeKey = true }
+                                    MenuItem { objectName: "connectOpenRouter"; text: "OpenRouter"; enabled: !workspace.incidentAiAccounts.some(account => account.provider === "openrouter"); onTriggered: workspace.signInOpenRouter() }
+                                }
+                            }
+                        }
+                    }
+                    Switch {
+                        id: aiAutoSwitch
+                        objectName: "incidentAiEnable"
+                        visible: workspace.currentSession !== "" && workspace.incidentAiModel !== ""
+                        text: workspace.uiText["ai.auto"]
+                        checked: workspace.incidentAiEnabled
+                        Accessible.name: workspace.uiText["ai.enable"]
+                        Accessible.description: workspace.uiText["ai.autoData"]
+                        ToolTip.visible: hovered
+                        ToolTip.text: workspace.uiText["ai.autoData"]
+                        implicitHeight: settings.Window.window && (settings.Window.window.width < 900
+                            || settings.Window.window.compactLandscape === true) ? 44 : 32
+                        indicator: Rectangle {
+                            implicitWidth: 38; implicitHeight: 20
+                            x: aiAutoSwitch.leftPadding
+                            y: (aiAutoSwitch.height - height) / 2
+                            color: aiAutoSwitch.checked ? workspace.appearanceColors.selection : workspace.appearanceColors.inset
+                            border.color: aiAutoSwitch.checked ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+                            Rectangle {
+                                width: 12; height: 12
+                                x: aiAutoSwitch.checked ? parent.width - width - 4 : 4
+                                y: 4
+                                color: aiAutoSwitch.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
+                            }
+                        }
+                        onClicked: workspace.setIncidentAiEnabled(checked)
+                    }
+                    Repeater {
+                        model: workspace.incidentAiAccounts
+                        delegate: SettingRow {
+                            required property var modelData
+                            label: modelData.provider === "chatgpt" ? "ChatGPT" : modelData.provider === "claude" ? "Claude" : "OpenRouter"
+                            help: ""
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label { Layout.fillWidth: true; text: modelData.label; elide: Text.ElideRight }
+                                SelectableText { text: modelData.requests24h + " / 24h"; Accessible.name: modelData.requests24h + " " + workspace.uiText["ai.requests24h"] }
+                                IconButton {
+                                    objectName: modelData.provider === "chatgpt" ? "chatgptSignOut" : modelData.provider === "openrouter" ? "openRouterSignOut" : "claudeSignOut"
+                                    glyph: "SignOut"; text: workspace.uiText["ai.chatgptSignOut"]
+                                    onClicked: {
+                                        if (modelData.provider === "chatgpt") workspace.signOutChatGpt()
+                                        else if (modelData.provider === "claude") workspace.clearClaudeAiKey()
+                                        else workspace.signOutOpenRouter()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SettingRow {
+                        visible: settings.addingClaudeKey
+                        label: "Claude API"; help: ""
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField {
+                                id: providerKey; objectName: "settingsAiApiKey"; Layout.fillWidth: true
+                                echoMode: TextInput.Password
+                                placeholderText: workspace.uiText["ai.keyPlaceholder"]
+                                Accessible.name: workspace.uiText["ai.apiKey"]
+                                onAccepted: if (workspace.setClaudeAiKey(text)) { clear(); settings.addingClaudeKey = false }
+                            }
+                            IconButton {
+                                objectName: "settingsAiSaveKey"; text: workspace.uiText["action.save"]
+                                glyph: "Save"
+                                visible: providerKey.text !== ""
+                                onClicked: if (workspace.setClaudeAiKey(providerKey.text)) { providerKey.clear(); settings.addingClaudeKey = false }
+                            }
+                        }
+                    }
+                    SettingRow {
+                        visible: workspace.incidentAiProvider === "ollama" && workspace.incidentAiReasoningOptions.length > 1
+                        label: workspace.uiText["ai.reasoning"]; help: ""
+                        ComboBox {
+                            objectName: "settingsAiReasoning"; Layout.fillWidth: true
+                            model: workspace.incidentAiReasoningOptions.map(code => ({code: code, label: workspace.uiText["ai.reasoning." + code] || code}))
+                            textRole: "label"; valueRole: "code"
+                            currentIndex: workspace.incidentAiReasoningOptions.indexOf(workspace.incidentAiReasoning)
+                            Accessible.name: workspace.uiText["ai.reasoning"]
+                            onActivated: workspace.setIncidentAiReasoning(currentValue)
+                        }
+                    }
+                    SelectableText {
+                        Layout.fillWidth: true; text: workspace.incidentAiStatus; textFormat: Text.PlainText
+                        visible: text !== ""
+                            && text !== workspace.uiText["ai.status.Choose an installed Ollama chat model to start analysis."]
+                            && text !== workspace.uiText["ai.status.Choose a ChatGPT model in AI settings."]
+                            && text !== workspace.uiText["ai.status.Choose a Claude model in AI settings."]
+                            && text !== workspace.uiText["ai.status.Choose an OpenRouter model in AI settings."]
+                            && text !== workspace.uiText["ai.status.Connect a ChatGPT account with plan permission first."]
+                            && text !== workspace.uiText["ai.status.Enter a Claude API key in AI settings."]
+                            && text !== workspace.uiText["ai.status.Enter an OpenRouter API key in AI settings."]
+                        wrapMode: Text.Wrap; color: workspace.appearanceColors.muted
+                    }
+                }
+                ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "appearance"
                     VolumeSetting { id: musicVolumeSetting; music: true }
                     VolumeSetting { id: alertVolumeSetting; music: false }
@@ -264,7 +420,7 @@ Pane {
                     SettingRow { label: workspace.uiText["settings.variant"]; help: ""; ComboBox { id: variant; objectName: "inlineAppearanceVariant"; Layout.fillWidth: true; model: ["dark", "light"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.variant"]; onActivated: workspace.saveAppearance(workspace.themeName, currentText) } }
                     SettingRow { label: workspace.uiText["settings.language"]; help: ""; ComboBox { id: language; objectName: "inlineUiLanguage"; Layout.fillWidth: true; model: workspace.uiLanguages; textRole: "name"; valueRole: "code"; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.language"]; onActivated: workspace.saveUiLanguage(currentValue) } }
                     SettingRow { label: workspace.uiText["settings.workspaceRestore"]; help: ""; WrappingCheckBox { objectName: "inlineWorkspaceRestore"; text: workspace.uiText["settings.restoreTabsOnLaunch"]; checked: workspace.workspaceRestoreEnabled; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.workspaceRestore"] + ": " + text; onClicked: workspace.saveWorkspaceRestore(checked) } }
-                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: ""; RowLayout { Layout.fillWidth: true; PreferenceSlider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)) } Label { text: (workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0) + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
+                    SettingRow { label: workspace.uiText["settings.radarWaterSpeed"]; help: ""; RowLayout { Layout.fillWidth: true; PreferenceSlider { objectName: "inlineRadarWaterSpeed"; Layout.fillWidth: true; from: 0; to: 100; stepSize: 5; value: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.waterSpeedPercent"]; onMoved: if (!pressed) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)); onPressedChanged: if (!pressed && enabled) workspace.saveRadarWater(Math.round(value) > 0, Math.round(value)) } SelectableText { text: (workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0) + "%"; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight } } }
                     SettingRow { label: workspace.uiText["settings.reducedMotion"]; help: ""; WrappingCheckBox { objectName: "inlineReducedMotion"; text: workspace.uiText["alert.enabledState"]; Accessible.name: workspace.uiText["settings.reducedMotion"]; checked: workspace.alerts.reducedMotion; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(workspace.alerts.muted, checked) } }
                 }
                 ColumnLayout {
@@ -272,7 +428,7 @@ Pane {
                     SettingRow { label: workspace.uiText["settings.backgroundRefresh"]; help: workspace.uiText["settings.backgroundRefreshHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.backgroundRefreshMinutes"] } }
                     SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
                     SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceRetentionHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
-                    Label { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.resourceDataSizeHelp"] }
+                    SelectableText { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.resourceDataSizeHelp"] }
                     SettingRow { label: workspace.uiText["settings.retainedLogsPerPod"]; help: workspace.uiText["settings.retainedLogsPerPodHelp"]; TextField { id: logs; objectName: "inlineLogLimit"; Layout.fillWidth: true; enabled: !workspace.busy; inputMethodHints: Qt.ImhDigitsOnly; onTextEdited: syncAutosave.restart(); Accessible.name: workspace.uiText["settings.retainedLogsPerPodMb"] } }
                 }
                 ColumnLayout {
@@ -281,7 +437,6 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sources"
-                    RowLayout { Layout.fillWidth: true; TextField { id: importPath; objectName: "settingsSourcePath"; inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText; visible: !workspace.appStore; Layout.fillWidth: true; placeholderText: workspace.uiText["settings.kubeconfigPathPlaceholder"]; enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.kubeconfigPathPlaceholder"]; onAccepted: workspace.importFile(text) } IconButton { glyph: ""; showText: true; font.bold: true; objectName: "settingsImportSource"; text: workspace.uiText["action.import"]; enabled: !workspace.busy; onClicked: !workspace.appStore && importPath.text.trim() ? workspace.importFile(importPath.text) : settings.fileRequested() } }
                     IconButton {
                         id: sourceActionsButton
                         objectName: "sourceActionsMenuButton"
@@ -301,7 +456,7 @@ Pane {
                         height: Math.min(sourceActionItems.implicitHeight + 2 * padding, parent.height - 24)
                         padding: 8; focus: true
                         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                        onOpened: browseSourceFile.forceActiveFocus()
+                        onOpened: (browseSourceFolder.visible ? browseSourceFolder : pasteSourceButton).forceActiveFocus()
                         background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
                         contentItem: ScrollView {
                             clip: true
@@ -310,9 +465,8 @@ Pane {
                             id: sourceActionItems
                             width: parent.width
                             spacing: 4
-                            IconButton { id: browseSourceFile; objectName: "browseSourceFile"; glyph: ""; showText: true; text: workspace.uiText["settings.browseKubeconfigFile"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.fileRequested() } }
-                            IconButton { objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.browseKubeconfigFolder"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
-                            IconButton { objectName: "pasteSourceButton"; glyph: ""; showText: true; text: workspace.uiText["settings.pasteKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
+                            IconButton { id: browseSourceFolder; objectName: "browseSourceFolder"; visible: !workspace.appStore; glyph: "Folder"; showText: true; text: workspace.uiText["settings.browseKubeconfigFolder"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); settings.folderRequested() } }
+                            IconButton { id: pasteSourceButton; objectName: "pasteSourceButton"; glyph: ""; showText: true; text: workspace.uiText["settings.pasteKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); pasteSourceDialog.open() } }
                             IconButton { objectName: "importHomeButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.importHomeKubeconfig"]; Layout.fillWidth: true; enabled: !workspace.busy; onClicked: { sourceActions.close(); workspace.importHome() } }
                             IconButton { objectName: "refreshSourceFilesButton"; visible: !workspace.appStore; glyph: ""; showText: true; text: workspace.uiText["settings.reimportChangedSources"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); workspace.refreshSources() } }
                             IconButton { objectName: "importOciKeyFromSettings"; glyph: ""; showText: true; text: workspace.uiText["settings.importOciKey"]; Layout.fillWidth: true; enabled: !workspace.busy && workspace.contexts.length > 0; onClicked: { sourceActions.close(); settings.ociImportRequested() } }
@@ -322,10 +476,19 @@ Pane {
                             }
                         }
                     }
-                    Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+                    RowLayout {
+                        Layout.fillWidth: true; visible: workspace.sourceImportError !== ""
+                        SelectableText { Layout.fillWidth: true; text: workspace.sourceImportError === workspace.incidentAiDiagnostic.original
+                            ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
+                            : workspace.sourceImportError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+                        IconButton { objectName: "sourceErrorAiInfo"; glyph: "Info"
+                            visible: workspace.sourceImportError === workspace.incidentAiDiagnostic.original
+                                && !!workspace.incidentAiDiagnostic.cause
+                            text: workspace.incidentAiDiagnostic.cause + "\n" + workspace.incidentAiDiagnostic.action }
+                    }
                     RowLayout {
                         Layout.fillWidth: true; visible: workspace.sourceImportNotice !== ""
-                        Label { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+                        SelectableText { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
                         IconButton { objectName: "settingsSourceImportDetails"; glyph: "Event"; text: workspace.uiText["settings.viewImportFailures"]; visible: workspace.sourceImportIssues.length > 0; onClicked: settings.sourceFailuresRequested() }
                     }
                     ResourceGrid {
@@ -352,7 +515,8 @@ Pane {
                                 readonly property string identity: parent.identity
                                 readonly property bool isRemoval: parent.column === 9
                                 objectName: (isRemoval ? "removeSource_" : "renameSource_") + identity
-                                glyph: isRemoval ? "Close" : "Pencil"
+                                glyph: isRemoval ? "Trash" : "Pencil"
+                                destructive: isRemoval
                                 text: (isRemoval ? workspace.uiText["settings.removeSourceContext"] : workspace.uiText["settings.renameSourceContext"]) + parent.resourceName
                                 enabled: !workspace.busy
                                 onClicked: {
@@ -365,8 +529,8 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "diagnostics"
-                    Label { Layout.fillWidth: true; text: workspace.uiText["settings.diagnostics"]; font.bold: true }
-                    Label { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: workspace.displayDateTime(settings.diagnosticTimestamp); textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                    SelectableText { Layout.fillWidth: true; text: workspace.uiText["settings.diagnostics"]; font.bold: true }
+                    SelectableText { objectName: "diagnosticSampledAt"; Layout.fillWidth: true; text: workspace.displayDateTime(settings.diagnosticTimestamp); textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
                     ResourceGrid {
                         id: diagnosticGrid
                         Layout.fillWidth: true; Layout.minimumWidth: 0
@@ -381,7 +545,7 @@ Pane {
                         onCopyRequested: (row,column) => workspace.copyDiagnosticCell("diagnostic",pathAt(row),column)
                         onCopyPathRequested: (identity,column) => workspace.copyDiagnosticCell("diagnostic",identity,column)
                     }
-                    Label { text: workspace.uiText["settings.requestAuditTitle"]; font.bold: true; color: workspace.appearanceColors.accent }
+                    SelectableText { text: workspace.uiText["settings.requestAuditTitle"]; font.bold: true; color: workspace.appearanceColors.accent }
                     ResourceGrid {
                         id: auditGrid
                         objectName: "settingsRequestAudit"

@@ -249,14 +249,28 @@ jobs:
   release:
     needs: [version, mode, direct_macos, app_store_package, ios_store_package, app_store_upload, ios_store_upload]
     if: needs.mode.outputs.release == 'true' && needs.direct_macos.result == 'success' && needs.app_store_package.result == 'success' && needs.ios_store_package.result == 'success' && needs.app_store_upload.result == 'success' && needs.ios_store_upload.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       actions: read
       contents: write
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_create_github_release.yml@469372e592d87a003dbfae15ef8d50194bcea7e5
-    with:
-      run_id: ${{ github.run_id }}
-      commit_sha: ${{ github.sha }}
-      version: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-assets-podlord-${{ github.sha }}
+          path: release-assets
+      - name: Publish qualified native release
+        shell: sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -eu
+          test -n "$VERSION"
+          for asset in podlord-native-win-x64.zip podlord-native-linux-x64.tar.gz podlord-native-linux-arm64.tar.gz podlord-native-macos-arm64.zip podlord-native-macos-x64.zip podlord-native-macos-arm64.dmg podlord-native-macos-x64.dmg; do
+            test -s "release-assets/$asset"
+          done
+          gh release create "$VERSION" release-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
 
   chocolatey:
     needs: [version, release]

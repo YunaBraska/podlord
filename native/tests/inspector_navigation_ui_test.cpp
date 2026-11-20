@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -86,7 +87,7 @@ bool run(const QString& scenario, const QString& configPath) {
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
     if (!window || !waitFor([&] { return !workspace.busy(); }) || !workspace.openContext(source->contexts.first().id)
         || !waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); })) return false;
-    if (scenario == "narrow") window->resize(720, 620);
+    if (scenario == "narrow" || scenario == "ai_minimal_narrow") window->resize(720, 620);
     if (!waitFor([&] { return workspace.table()->rowCount() > 1 && !workspace.loading(); }, real ? 120000 : 10000)) return false;
     if (scenario == "keyboard" && !podlord::test::clickVisible(window, "resourcesWorkspaceButton")) return false;
     const QString prefix = real ? "/api/v1/namespaces/visual-a/configmaps/visual-config-" : "/api/v1/namespaces/default/configmaps/entry-";
@@ -121,6 +122,44 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "initial") {
         const auto* metricHeader = named("overviewMetricHeader");
         return metricHeader && !metricHeader->isVisible() && !back() && !forward() && writes == 0;
+    }
+    if (scenario == "ai_minimal" || scenario == "ai_minimal_narrow") {
+        if (workspace.incidentAiConfigured() || workspace.setInspectorPage("ai")) return false;
+        const auto frame = qEnvironmentVariable("PODLORD_AI_FRAME");
+        if (!named("inspectorAiButton") || named("inspectorAiButton")->isVisible()
+            || workspace.inspectorPage() != "overview") return false;
+        QQmlComponent linkedComponent(&engine, QUrl("qrc:/podlord/AiLinkedText.qml"));
+        auto* link = qobject_cast<QQuickItem*>(linkedComponent.createWithInitialProperties(
+            {{"richText", "Open <a href=\"R1\">ConfigMap default/entry-01</a>"},
+             {"references", QVariantList{QVariantMap{{"id", "R1"}, {"path", target(1)}}}}}, engine.rootContext()));
+        if (!link) return false;
+        link->setParentItem(window->contentItem());
+        link->setZ(1000);
+        link->setX(20); link->setY(60); link->setWidth(350); link->setHeight(44);
+        QCoreApplication::processEvents();
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, link->mapToScene(QPointF(125, 12)).toPoint());
+        const bool linked = waitFor([&] { return workspace.inspectorPath() == target(1)
+            && named("inspectorResourceName") && named("inspectorResourceName")->property("text").toString().contains("entry-01"); }, 2000);
+        link->deleteLater();
+        QQmlComponent stateComponent(&engine, QUrl("qrc:/podlord/AiReportState.qml"));
+        auto* state = stateComponent.create(engine.rootContext());
+        if (!state) return false;
+        const auto report = [&](const QString& scope, const QVariantMap& result) {
+            state->setProperty("update", QVariantMap{{"scope", scope}, {"result", result}});
+            QCoreApplication::processEvents();
+            return state->property("shown").toMap();
+        };
+        const bool stable = report("pod-a", {{"summary", "First answer"}}).value("summary") == "First answer"
+            && report("pod-a", {{"pending", true}}).value("summary") == "First answer"
+            && report("pod-a", {}).value("summary") == "First answer"
+            && report("pod-a", {{"pending", false}}).value("summary") == "First answer"
+            && report("pod-a", {{"summary", "Second answer"}}).value("summary") == "Second answer"
+            && !report("pod-a", {{"failed", true}}).contains("summary")
+            && report("pod-a", {{"summary", "Third answer"}}).value("summary") == "Third answer"
+            && !report("pod-b", {{"pending", true}}).contains("summary")
+            && !report("pod-b", {}).contains("summary");
+        state->deleteLater();
+        return linked && stable && writes == 0 && (frame.isEmpty() || window->grabWindow().save(frame));
     }
     if (scenario == "repeat") return open(0) && !back() && !forward() && writes == 0;
     if (!open(1)) return false;

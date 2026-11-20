@@ -17,19 +17,12 @@ coverage.*.xml
 
 # Local toolchains
 .tools/
-.dotnet/
 
 # IDE and editor state
 .idea/
 .vscode/
 .claude/
 .codex/
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-*.sln.DotSettings.user
-*.rsuser
 
 # OS cruft
 .DS_Store

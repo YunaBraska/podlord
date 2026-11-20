@@ -133,7 +133,7 @@ done
     printf '\nArchitecture: '; uname -m
     printf 'Actual X11 and Wayland frames, Basic and Fusion, Qt Quick software rendering: PASS\n'
     printf 'Resolved runtime dependencies and app-local Qt/ICU/FFmpeg origins: PASS\n'
-    printf 'No installed Qt, SDK, kubectl or .NET used. No audio output.\n'
+    printf 'No installed Qt, SDK or kubectl used. No audio output.\n'
     sha256sum "$ARCHIVE"
 } > "$OUTPUT/runtime-evidence.txt"
 cat "$OUTPUT/runtime-evidence.txt"

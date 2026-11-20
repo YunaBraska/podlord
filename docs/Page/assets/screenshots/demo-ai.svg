@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 580" role="img" aria-labelledby="title description">
+  <title id="title">PodLord AI report for a fictional volume problem</title>
+  <desc id="description">A synthetic Pod, claim, Node and warning Event appear in a structured AI report with observation, possible cause and next check.</desc>
+  <rect width="840" height="580" fill="#1b1813"/>
+  <rect x="1" y="1" width="838" height="578" fill="none" stroke="#665945" stroke-width="2"/>
+  <rect x="1" y="1" width="838" height="44" fill="#0b0d0b"/>
+  <text x="20" y="29" fill="#e9d7b9" font-family="Menlo, Consolas, monospace" font-size="16" font-weight="bold">PodLord</text>
+  <text x="116" y="29" fill="#9c957f" font-family="Menlo, Consolas, monospace" font-size="14">Map</text>
+  <text x="176" y="29" fill="#9c957f" font-family="Menlo, Consolas, monospace" font-size="14">Resources</text>
+  <text x="746" y="29" fill="#a9a08f" font-family="Menlo, Consolas, monospace" font-size="13">DEMO</text>
+  <text x="19" y="83" fill="#f0ddbb" font-family="Menlo, Consolas, monospace" font-size="19" font-weight="bold">Pod/shop/checkout-api-7c9d</text>
+  <rect x="18" y="104" width="804" height="42" fill="#080807" stroke="#60543f"/>
+  <rect x="119" y="104" width="100" height="42" fill="#42351f" stroke="#d8ae65"/>
+  <g fill="#d9ccb5" font-family="Menlo, Consolas, monospace" font-size="14" text-anchor="middle">
+    <text x="68" y="131">Overview</text><text x="169" y="131" fill="#f5dfb0" font-weight="bold">AI</text>
+    <text x="265" y="131">YAML</text><text x="360" y="131">Events</text>
+    <text x="461" y="131">Links</text><text x="560" y="131">Logs</text>
+    <text x="656" y="131">Files</text><text x="760" y="131">Terminal</text>
+  </g>
+  <rect x="18" y="163" width="120" height="34" fill="#42351f" stroke="#d8ae65"/>
+  <rect x="138" y="163" width="115" height="34" fill="#090909" stroke="#60543f"/>
+  <text x="78" y="185" fill="#f1d9a8" font-family="Menlo, Consolas, monospace" font-size="14" text-anchor="middle">Response</text>
+  <text x="195" y="185" fill="#bdb4a2" font-family="Menlo, Consolas, monospace" font-size="14" text-anchor="middle">Request</text>
+  <rect x="777" y="163" width="45" height="34" fill="#090909" stroke="#60543f"/>
+  <text x="799" y="186" fill="#e9d7b9" font-family="Menlo, Consolas, monospace" font-size="24" text-anchor="middle">↻</text>
+  <text x="20" y="229" fill="#d8ae65" font-family="Menlo, Consolas, monospace" font-size="16" font-weight="bold">Observation</text>
+  <text x="20" y="259" fill="#f1e4ca" font-family="Menlo, Consolas, monospace" font-size="16">
+    <tspan>Pod </tspan><tspan fill="#83d7c2" text-decoration="underline">shop/checkout-api-7c9d</tspan><tspan> is Pending after FailedMount.</tspan>
+  </text>
+  <text x="20" y="286" fill="#f1e4ca" font-family="Menlo, Consolas, monospace" font-size="16">
+    <tspan>Claim </tspan><tspan fill="#83d7c2" text-decoration="underline">shop/checkout-data</tspan><tspan> is Pending. Node </tspan><tspan fill="#83d7c2" text-decoration="underline">demo-worker-02</tspan><tspan> is Ready.</tspan>
+  </text>
+  <line x1="20" y1="307" x2="820" y2="307" stroke="#51483b"/>
+  <text x="20" y="340" fill="#d8ae65" font-family="Menlo, Consolas, monospace" font-size="16" font-weight="bold">Possible cause</text>
+  <text x="20" y="370" fill="#f1e4ca" font-family="Menlo, Consolas, monospace" font-size="16">The Pod may be waiting for its volume to bind.</text>
+  <text x="20" y="397" fill="#aaa290" font-family="Menlo, Consolas, monospace" font-size="15">The warning does not show why provisioning failed.</text>
+  <line x1="20" y1="416" x2="820" y2="416" stroke="#51483b"/>
+  <text x="20" y="449" fill="#d8ae65" font-family="Menlo, Consolas, monospace" font-size="16" font-weight="bold">Next check</text>
+  <text x="20" y="479" fill="#f1e4ca" font-family="Menlo, Consolas, monospace" font-size="16">
+    <tspan>Open </tspan><tspan fill="#83d7c2" text-decoration="underline">shop/checkout-data</tspan><tspan> Events for the provisioning reason.</tspan>
+  </text>
+  <rect x="19" y="501" width="801" height="55" fill="#090909" stroke="#51483b"/>
+  <text x="32" y="535" fill="#d5c3a2" font-family="Menlo, Consolas, monospace" font-size="14">kubectl -n shop describe pvc checkout-data</text>
+  <rect x="754" y="510" width="54" height="37" fill="#211c14" stroke="#6c5b3d"/>
+  <text x="781" y="534" fill="#e1ca9d" font-family="Menlo, Consolas, monospace" font-size="16" text-anchor="middle">⧉</text>
+</svg>

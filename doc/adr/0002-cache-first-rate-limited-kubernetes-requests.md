@@ -8,7 +8,7 @@ Accepted
 
 Podlord must not spam Kubernetes APIs. The UI should render from a local cache, while background work fills that cache at a controlled pace. User-visible actions such as focusing one resource or tailing logs may request fresher data, but those requests must still respect Kubernetes backoff and API pressure.
 
-Early Avalonia builds could trigger `429 TooManyRequests` against k3d because broad scans and detail/log requests were not coordinated across service instances.
+Early application builds could trigger `429 TooManyRequests` against k3d because broad scans and detail/log requests were not coordinated across service instances.
 
 ## Decision
 

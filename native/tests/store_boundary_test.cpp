@@ -76,7 +76,7 @@ bool run(const QString& scenario) {
         REQUIRE(!podlord::test::visibleItem(window->contentItem(), "browseSourceFolder"));
         REQUIRE(!podlord::test::visibleItem(window->contentItem(), "importHomeButton"));
         REQUIRE(!podlord::test::visibleItem(window->contentItem(), "refreshSourceFilesButton"));
-        REQUIRE(podlord::test::visibleItem(window->contentItem(), "browseSourceFile"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "browseSourceFile"));
         REQUIRE(podlord::test::visibleItem(window->contentItem(), "pasteSourceButton"));
         REQUIRE(podlord::test::visibleItem(window->contentItem(), "importGkeKeyFromSettings"));
         window->close();

@@ -380,6 +380,10 @@ bool execute(const QString& scenario, const QString& realFile = {}) {
             return false;
         }
         if (!click(window, "pauseLogs")) { qWarning() << "Compact logs pause control unavailable"; return false; }
+        for (const auto* name : {"pauseLogs", "liveFollow", "openLogEntry", "copyLogEntry"}) {
+            auto* action = item(window, name);
+            if (!action || action->property("glyph").toString().isEmpty() || action->property("showText").toBool()) return false;
+        }
         window->resize(640, 272);
         if (!waitFor([&] { return item(window, "workspaceToolbar")->isVisible(); })) {
             qWarning() << "Compact logs landscape navigation unavailable:" << window->size();
