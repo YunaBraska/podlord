@@ -3592,11 +3592,12 @@ bool execute(const QString& requestedScenario) {
         };
         const auto value = [&](int row, const QString& field) { return model->data(model->index(row, column(field))).toString(); };
         if (scenario == "table_pointer_drag" || scenario == "table_pointer_touch") {
+            const bool touchInput = scenario == "table_pointer_touch";
             if (!show(column("name"))) return false;
             auto* cell = item(window, "cell_0_" + QString::number(column("name")));
-            const auto start = cell->mapToScene({cell->width() / 2, cell->height() / 2}).toPoint();
+            // Drag the cell padding so desktop text selection remains available.
+            const auto start = cell->mapToScene({3, cell->height() / 2}).toPoint();
             const auto previousX = view->property("contentX").toDouble();
-            const bool touchInput = scenario == "table_pointer_touch";
             std::unique_ptr<QPointingDevice> touch(touchInput ? QTest::createTouchDevice() : nullptr);
             if (touchInput) QTest::touchEvent(window, touch.get()).press(0, start, window).commit();
             else QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, start);
@@ -3609,7 +3610,12 @@ bool execute(const QString& requestedScenario) {
             if (touchInput) QTest::touchEvent(window, touch.get()).release(0, start - QPoint(60, 0), window).commit();
             else QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, start - QPoint(60, 0));
             if (!waitFor([&] { return view->property("contentX").toDouble() > previousX + 20 && !view->property("moving").toBool(); })
-                || !workspace.inspectorPath().isEmpty() || server.requests.size() != requests) return false;
+                || !workspace.inspectorPath().isEmpty() || server.requests.size() != requests) {
+                std::fprintf(stderr, "Table drag: touch=%d before=%g after=%g moving=%d inspector=%s requests=%d/%d\n",
+                    touchInput, previousX, view->property("contentX").toDouble(), view->property("moving").toBool(),
+                    qPrintable(workspace.inspectorPath()), server.requests.size(), requests);
+                return false;
+            }
             if (!show(column("name"))) return false;
             cell = item(window, "cell_0_" + QString::number(column("name")));
             if (touchInput) {
@@ -5270,18 +5276,32 @@ bool execute(const QString& requestedScenario) {
                 const double ratio=double(frame.width())/window->width();
                 auto* tiles=radar->property("tiles").value<QAbstractItemModel*>();
                 if (!tiles) return false;
-                int terrainRole=-1;
+                int renderColorRole=-1;
                 const auto roles=tiles->roleNames();
-                for (auto role=roles.cbegin();role!=roles.cend();++role) if (role.value()=="terrainColor") terrainRole=role.key();
-                QColor terrain;
-                for (int row=0;row<tiles->rowCount();++row) if (tiles->index(row,0).data(Qt::UserRole)==tile->property("resourcePath")) terrain=tiles->index(row,0).data(terrainRole).value<QColor>();
-                if (!terrain.isValid()) return false;
+                for (auto role=roles.cbegin();role!=roles.cend();++role) if (role.value()=="renderColor") renderColorRole=role.key();
+                QColor renderColor;
+                for (int row=0;row<tiles->rowCount();++row) if (tiles->index(row,0).data(Qt::UserRole)==tile->property("resourcePath")) renderColor=tiles->index(row,0).data(renderColorRole).value<QColor>();
+                if (!renderColor.isValid()) return false;
                 QImage expected(frame.size(),QImage::Format_ARGB32_Premultiplied); expected.setDevicePixelRatio(ratio); expected.fill(Qt::transparent);
                 QPainter painter(&expected);
                 const auto origin=tile->mapToScene(QPointF{});
                 const QRectF box(origin,tile->size());
-                painter.fillRect(box,terrain);
-                podlord::KindGlyph::draw(&painter,box,kind,workspace.property("appearanceColors").toMap().value("inset").value<QColor>(),terrain);
+                painter.fillRect(box,renderColor);
+                const auto path=tile->property("resourcePath").toString();
+                const bool highlighted=radar->property("hoveredPath").toString()==path
+                    || radar->property("focusedPath").toString()==path
+                    || radar->property("inspectedPath").toString()==path
+                    || (radar->hasActiveFocus() && radar->property("currentIndex").toInt()==0);
+                if (highlighted) {
+                    auto color=QColor("#7DFFC3"); color.setAlpha(205);
+                    painter.fillRect(box,color);
+                    const QColor outline("#7DFFC3");
+                    painter.fillRect(QRectF(box.left(),box.top(),box.width(),1.2),outline);
+                    painter.fillRect(QRectF(box.left(),box.bottom()-1.2,box.width(),1.2),outline);
+                    painter.fillRect(QRectF(box.left(),box.top()+1.2,1.2,std::max(0.,box.height()-2.4)),outline);
+                    painter.fillRect(QRectF(box.right()-1.2,box.top()+1.2,1.2,std::max(0.,box.height()-2.4)),outline);
+                }
+                podlord::KindGlyph::draw(&painter,box,kind,workspace.property("appearanceColors").toMap().value("inset").value<QColor>(),renderColor);
                 painter.end();
                 const auto area=box.adjusted(2,2,-2,-2);
                 const auto pixels=QRectF(area.topLeft()*ratio,area.size()*ratio).toAlignedRect().intersected(frame.rect());

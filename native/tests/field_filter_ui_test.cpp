@@ -192,7 +192,7 @@ const QStringList fields{"name", "kind", "namespace", "status", "node", "image",
 bool run(const QString& scenario, const QString& referencePresets) {
     QTemporaryDir temporary; KubernetesBoundary server;
     server.extraConfigurations = scenario.startsWith("limit_") ? 1298 : 0;
-    server.delayed = scenario == "loading_silent" || scenario == "loading_parallel";
+    server.delayed = scenario == "loading_alert" || scenario == "loading_parallel";
     server.events = scenario.startsWith("table_keyboard_event_");
     server.valueCopies = scenario.startsWith("value_copy_");
     server.secretValues = scenario.startsWith("value_copy_secret_");
@@ -802,8 +802,9 @@ bool run(const QString& scenario, const QString& referencePresets) {
         if (scenario.startsWith("mode_") || scenario.startsWith("preset_") || scenario.startsWith("loading_")) {
             if (!item(window, "problemsOnly") || !item(window, "activityOnly")) return false;
             if (scenario == "loading_parallel") return server.maximumActive >= 2 && server.maximumActive <= 4;
-            if (scenario == "loading_silent") {
-                if (!waitFor([&] { return !workspace.alerts()->matches().isEmpty(); }) || !sounds.isEmpty() || !focus.isEmpty()
+            if (scenario == "loading_alert") {
+                if (!waitFor([&] { return !workspace.alerts()->matches().isEmpty(); }) || sounds.size() != 1
+                    || sounds.first().at(1).toString() != "default-problem-color" || !focus.isEmpty()
                     || progress.isEmpty() || workspace.property("loadingProgress").toDouble() != 1) return false;
                 bool partial = false; double previous = 0;
                 for (const double value : progress) { if (value < previous || value >= 1) return false; partial = partial || value > 0; previous = value; }

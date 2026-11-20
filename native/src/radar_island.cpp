@@ -16,7 +16,7 @@
 namespace podlord {
 namespace {
 constexpr int ResourceIndex = Qt::UserRole + 20, WorldX = ResourceIndex + 1, WorldY = ResourceIndex + 2;
-constexpr int TerrainColor = ResourceIndex + 3;
+constexpr int TerrainColor = ResourceIndex + 3, RenderColor = ResourceIndex + 5;
 constexpr int AnimationScale = RadarTiles::animationScaleRole;
 constexpr double step = 7;
 constexpr double minimumZoom = .01, maximumZoom = 3.4;
@@ -95,7 +95,7 @@ int RadarTiles::rowCount(const QModelIndex& parent) const { return parent.isVali
 QHash<int,QByteArray> RadarTiles::roleNames() const {
     static const QHash<int,QByteArray> names{{Qt::UserRole,"resourcePath"},{Qt::UserRole+1,"resourceName"},{Qt::UserRole+2,"resourceKind"},
         {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},{Qt::UserRole+5,"statusColor"},{Qt::UserRole+15,"resourceDetails"},
-        {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"}};
+        {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"},{RenderColor,"renderColor"}};
     return names;
 }
 QVariant RadarTiles::data(const QModelIndex& index, int role) const {
@@ -105,6 +105,7 @@ QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     if (role==WorldY) return entry.world.y();
     if (role==AnimationScale) return entry.animation==Animation::Pulse ? oscillation(frameTime_-entry.started,400,.8) : 1.;
     if (role==TerrainColor) return terrainColor(entry.kind);
+    if (role==RenderColor) return entry.color;
     QModelIndex source;
     if (view_ && entry.source.isValid()) {
         const auto* proxy=qobject_cast<QSortFilterProxyModel*>(view_.data());
