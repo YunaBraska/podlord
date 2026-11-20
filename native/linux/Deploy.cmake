@@ -25,6 +25,14 @@ endforeach()
 find_library(PODLORD_LIBSECRET_LIBRARY NAMES secret-1 REQUIRED)
 file(REAL_PATH "${PODLORD_LIBSECRET_LIBRARY}" podlord_libsecret_runtime)
 install(FILES "${podlord_libsecret_runtime}" DESTINATION lib RENAME "libsecret-1.so.0")
+# libsecret's crypto dependency is absent from the minimal Debian runtime.
+foreach(soname IN ITEMS libgcrypt.so.20 libgpg-error.so.0)
+    find_file(podlord_dependency_runtime NAMES "${soname}" PATHS /lib /usr/lib
+        PATH_SUFFIXES "${CMAKE_LIBRARY_ARCHITECTURE}" REQUIRED)
+    file(REAL_PATH "${podlord_dependency_runtime}" podlord_dependency_resolved)
+    install(FILES "${podlord_dependency_resolved}" DESTINATION lib RENAME "${soname}")
+    unset(podlord_dependency_runtime CACHE)
+endforeach()
 install(CODE [[
     # The product uses Fusion and supports Basic. Other styles are not a runtime feature.
     foreach(style IN ITEMS Imagine Material Universal FluentWinUI3 iOS macOS Windows)
