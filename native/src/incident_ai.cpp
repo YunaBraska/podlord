@@ -147,8 +147,8 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
     static const QRegularExpression safeChain("^[A-Za-z][A-Za-z0-9]{0,63}( > [A-Za-z][A-Za-z0-9]{0,63}){0,6}$");
     static const QRegularExpression uuid("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     QMap<int, QMap<QString, QJsonObject>> candidates;
-    for (const auto& value : rows) {
-        const auto row = value.toObject();
+    for (const auto& rowValue : rows) {
+        const auto row = rowValue.toObject();
         const auto kind = row["kind"].toString(), name = row["name"].toString();
         const auto relation = row["graphRelation"].toString();
         const int depth = row["graphDepth"].toInt();
@@ -395,8 +395,8 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
 }
 QString incidentEvidenceText(const QJsonArray& evidence, bool includeVolatileCounts = true) {
     QStringList lines;
-    for (const auto& value : evidence) {
-        const auto fact = value.toObject();
+    for (const auto& factValue : evidence) {
+        const auto fact = factValue.toObject();
         QStringList details;
         for (const auto& field : {"uid", "linkedTo", "containerId", "status", "issue", "reason", "action", "hint", "type", "reporter", "count", "ready", "restarts", "lastTermination", "networkState", "networkHealth",
                                   "createdAt", "eventFirst", "eventLast", "message", "qosClass", "cpuLimitMilli", "cpuLimitCoverage",
@@ -1009,8 +1009,8 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         for (const auto& item : row["containers"].toArray()) if (!item.toString().isEmpty()) names.insert(item.toString());
     }
     QJsonArray safeRows;
-    for (const auto& value : rows) {
-        const auto row = value.toObject();
+    for (const auto& rowValue : rows) {
+        const auto row = rowValue.toObject();
         QJsonObject safe;
         for (const auto& field : {"uid", "kind", "name", "namespace", "path", "owners", "owner", "issue", "status", "problemSeverity", "ready", "restarts", "lastTerminations", "image",
                                   "node", "volumeClaims", "boundVolume", "imagePullSecrets", "secretKeys", "configMapKeys",

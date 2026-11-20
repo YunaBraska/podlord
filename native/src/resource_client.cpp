@@ -237,8 +237,8 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
                         {"ready", container["ready"]}, {"restarts", container["restartCount"]}};
                     const auto specGroup = QString(group) == "containerStatuses" ? "containers"
                         : QString(group) == "initContainerStatuses" ? "initContainers" : "ephemeralContainers";
-                    for (const auto& value : spec[specGroup].toArray()) {
-                        const auto declared = value.toObject();
+                    for (const auto& declaredValue : spec[specGroup].toArray()) {
+                        const auto declared = declaredValue.toObject();
                         if (declared["name"] != container["name"]) continue;
                         if (declared["imagePullPolicy"].isString()) fact["imagePullPolicy"] = declared["imagePullPolicy"];
                         if (declared["image"].isString()) fact["image"] = declared["image"];
