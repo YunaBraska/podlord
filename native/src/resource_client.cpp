@@ -5,6 +5,7 @@
 #include "container_terminal.h"
 #include "container_files.h"
 #include "resource_metrics.h"
+#include "resource_graph.h"
 #include "port_forward_transport.h"
 #include <QJsonDocument>
 #include <QNetworkReply>
@@ -385,19 +386,30 @@ bool isCoreValueResource(const QJsonObject& document) {
     return document.value("apiVersion") == "v1" && (kind == "Secret" || kind == "ConfigMap");
 }
 QVariantList ResourceClient::requestAudit(const QString& id) const {
-    QVariantList result;
+    QVariantList result, completed;
+    const auto state = states_.constFind(id);
+    QSet<QString> promotedFailures;
+    for (auto it=completedRequests_.crbegin();it!=completedRequests_.crend();++it) {
+        auto record=it->toMap();
+        if (record.take("session").toString()!=id) continue;
+        const auto path=record.value("path").toString();
+        if (state!=states_.cend() && state->failures.contains(path) && record.value("status")=="Failed"
+            && !promotedFailures.contains(path)) {
+            result.append(record);
+            promotedFailures.insert(path);
+        } else completed.append(record);
+    }
     const auto live=[&](const Task& task,const QString& status) {
         if (task.id!=id) return;
-        result.append(QVariantMap{{"time",QString("-")},{"method",task.read==Read::Apply ? "PATCH" : task.read==Read::Delete ? "DELETE" : "GET"},
+        result.append(QVariantMap{{"time",status=="Running" && task.startedAt.isValid() ? task.startedAt.toString(Qt::ISODateWithMs) : QString("-")},
+            {"method",task.read==Read::Apply ? "PATCH" : task.read==Read::Delete ? "DELETE" : "GET"},
             {"path",task.path},{"priority",task.foreground || task.read==Read::Detail || task.change ? "Foreground" : "Background"},
             {"status",status},{"duration",task.started<0 ? QString("-") : QString::number(clock_.elapsed()-task.started)+" ms"},{"outcome",QString("-")}});
     };
     if (running_) live(*running_,"Running");
     for (const auto& task:reads_) live(task,"Running");
     for (const auto& task:queue_) live(task,backoffUntil_>clock_.elapsed() ? "Backoff" : "Queued");
-    for (auto it=completedRequests_.crbegin();it!=completedRequests_.crend();++it) {
-        auto record=it->toMap(); if (record.take("session").toString()==id) result.append(record);
-    }
+    result.append(completed);
     return result;
 }
 ResourceClient::ResourceClient(QObject* parent, std::function<QDateTime()> now) : QObject(parent), now_(std::move(now)) {
@@ -517,17 +529,26 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
     if (!it->initialized) it->progress = 0;
     if (!foreground && !it->collections.isEmpty()) {
         const auto now = now_();
-        const bool visible = isVisible(id);
         for (auto collection = it->collections.cbegin(); collection != it->collections.cend(); ++collection) {
-            // Keep the cadence of status, event and metric feeds independent of list stability.
             const auto& kind = collection->kind;
             const bool live = kind == "Pod" || kind == "Node" || kind == "Event" || kind == "PodMetrics" || kind == "NodeMetrics";
-            const int seconds = visible && collection->unchanged && !live ? 120 : 25;
-            if (collection->at.secsTo(now) < seconds) continue;
+            const int stability = std::min(collection->stableReads, 5);
+            const int seconds = stability == 0 ? 25 : std::min(live ? 180 : 900, (live ? 25 : 60) * (1 << stability));
+            if (it->retryableFailures.contains(collection.key()) || collection->at.secsTo(now) < seconds) continue;
             Task task; task.id = id; task.path = collection.key(); task.collection = task.path; task.kind = collection->kind;
             task.namespaced = collection->namespaced; task.deletable = collection->deletable; task.read = Read::List; enqueue(task);
         }
+        for (auto failure = it->retryableFailures.cbegin(); failure != it->retryableFailures.cend(); ++failure) {
+            Task task; task.id = id; task.path = failure.key(); task.collection = failure->collection;
+            task.kind = failure->kind; task.namespaced = failure->namespaced; task.deletable = failure->deletable;
+            task.read = failure->read == Read::Detail || failure->read == Read::Linked ? Read::Linked
+                : failure->read == Read::List ? Read::List : Read::Probe;
+            it->blocked.remove(task.path);
+            enqueue(task);
+        }
     } else {
+        if (!foreground) for (auto failure = it->retryableFailures.cbegin(); failure != it->retryableFailures.cend(); ++failure)
+            it->blocked.remove(failure.key());
         Task core; core.id = id; core.path = "/api"; core.foreground = foreground;
         enqueue(core);
         Task groups = core; groups.path = "/apis"; groups.read = Read::Groups; enqueue(groups);
@@ -630,10 +651,11 @@ qint64 ResourceClient::syncInterval(const QString& id, const State& state) const
     const bool available = !state.snapshot.isEmpty();
     const auto view = std::find_if(views_.cbegin(), views_.cend(), [&](const View& candidate) { return candidate.session == id; });
     if (view == views_.cend()) return static_cast<qint64>(settings_.inactiveSyncMinutes) * 60000;
-    if (!view->focused) return available ? 240000 : 45000;
+    if (!view->focused) return !state.retryableFailures.isEmpty() ? 30000 : available ? 240000 : 45000;
     if (!available) return state.failures.isEmpty() ? 12000 : 25000;
     const auto idle = clock_.elapsed() - view->activityAt;
-    return idle < 30000 ? 20000 : idle < 300000 ? 45000 : 120000;
+    const auto interval = idle < 30000 ? 20000 : idle < 300000 ? 45000 : 120000;
+    return state.retryableFailures.isEmpty() ? interval : std::min<qint64>(interval, 30000);
 }
 bool ResourceClient::synchronize() {
     expire();
@@ -741,6 +763,13 @@ void ResourceClient::publishRows(const QString& id) {
     const bool different = snapshot != state.snapshot;
     state.resources = std::move(resources);
     if (!different) return;
+    QMap<QString,QString> newProblems;
+    for (const auto& value : snapshot) {
+        const auto row=value.toObject();
+        const auto path=row["path"].toString();
+        if (row["problemSeverity"].toInt()>0 && previous.value(path)["problemSeverity"].toInt()==0)
+            newProblems.insert(path, row["kind"].toString());
+    }
     state.issueByPath.clear();
     for (const auto& value : snapshot) {
         const auto row=value.toObject(); state.issueByPath.insert(row["path"].toString(), row["issue"].toString());
@@ -748,6 +777,25 @@ void ResourceClient::publishRows(const QString& id) {
     state.snapshot = std::move(snapshot);
     reconcileLogs(id);
     emit rowsChanged(id);
+    if (newProblems.isEmpty() || !state.initialized || !wanted(id)) return;
+    const ResourceGraph graph(state.snapshot);
+    QSet<QString> relatedPaths;
+    for (auto problem=newProblems.cbegin();problem!=newProblems.cend();++problem) for (const auto& value : graph.links(problem.key())) {
+        const auto link=value.toObject();
+        if (link["toPath"] == problem.key() || link["relation"] == "Cilium endpoint" || link["relation"] == "Cilium node"
+            || (link["relation"] == "Dependent" && QStringList{"Deployment", "ReplicaSet", "StatefulSet", "DaemonSet"}
+                .contains(problem.value()))) relatedPaths.insert(link["path"].toString());
+    }
+    for (auto collection=state.collections.cbegin();collection!=state.collections.cend();++collection) {
+        if (state.blocked.contains(collection.key())) continue;
+        const bool related=std::any_of(collection->rows.cbegin(), collection->rows.cend(), [&](const QJsonValue& value) {
+            return relatedPaths.contains(value.toObject()["path"].toString());
+        });
+        if (!related) continue;
+        Task task; task.id=id; task.path=collection.key(); task.collection=task.path; task.kind=collection->kind;
+        task.namespaced=collection->namespaced; task.deletable=collection->deletable; task.read=Read::List;
+        enqueue(task);
+    }
 }
 void ResourceClient::reconcileLogs(const QString& id) {
     auto& state = states_[id];
@@ -825,7 +873,7 @@ QString ResourceClient::syncSummary(const QString& id) const {
     const auto state = states_.constFind(id);
     if (state == states_.cend()) return "API: 0/min  Synced: never";
     const auto now = now_();
-    const auto calls = std::count_if(state->requestStarts.cbegin(), state->requestStarts.cend(), [&](const auto& at) { return at > now.addSecs(-60) && at <= now; });
+    const auto calls = requestCountLastMinute(id);
     QDateTime latest;
     for (const auto& collection : state->collections)
         if (!latest.isValid() || collection.at > latest) latest = collection.at;
@@ -836,6 +884,14 @@ QString ResourceClient::syncSummary(const QString& id) const {
         since += " ago";
     }
     return QString("API: %1/min  Synced: %2").arg(calls).arg(since);
+}
+int ResourceClient::requestCountLastMinute(const QString& id) const {
+    const auto state = states_.constFind(id);
+    if (state == states_.cend()) return 0;
+    const auto now = now_();
+    return std::count_if(state->requestStarts.cbegin(), state->requestStarts.cend(), [&](const auto& at) {
+        return at > now.addSecs(-60) && at <= now;
+    });
 }
 void ResourceClient::recordRequestStarted(const Task& task) {
     const auto now = now_();
@@ -879,7 +935,7 @@ bool ResourceClient::initialSyncComplete(const QString& id) const {
     return state != states_.cend() && state->initialized;
 }
 bool ResourceClient::collectionRead(Read read) { return read == Read::Core || read == Read::Groups || read == Read::Discovery || read == Read::List; }
-bool ResourceClient::parallelRead(const Task& task) { return !task.change && task.forwardToken.isEmpty() && (collectionRead(task.read) || task.read == Read::Detail); }
+bool ResourceClient::parallelRead(const Task& task) { return !task.change && task.forwardToken.isEmpty() && (collectionRead(task.read) || task.read == Read::Detail || task.read == Read::Linked || task.read == Read::Probe); }
 void ResourceClient::updateProgress(const QString& id) {
     auto& state = states_[id];
     if (!state.syncTotal) return;
@@ -1191,6 +1247,7 @@ void ResourceClient::dispatch() {
     if (!running_->change) running_->revision = states_[running_->id].revision;
     if (!running_->received) running_->received = clock_.nsecsElapsed();
     running_->started=clock_.elapsed();
+    running_->startedAt=now_();
     if (resetConnections_ && reads_.isEmpty()) { network_.clearConnectionCache(); resetConnections_ = false; }
     const Task task = *running_;
     if (!task.terminalToken.isEmpty() && (!terminals_.contains(task.terminalToken) || terminals_.value(task.terminalToken).server != states_[task.id].connection.server)) {
@@ -1386,7 +1443,11 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
             state.failures.remove(task.path);
             state.blocked.remove(task.path);
             if (task.revision == state.revision && !state.suspended) state.failures.remove("/authentication");
-            if (task.read == Read::Verify) {
+            if (task.read == Read::Probe) {
+                const auto root = document.object();
+                const auto field = task.path == "/api" ? "versions" : task.path == "/apis" ? "groups" : "resources";
+                if (!root[field].isArray()) fail(task, "Invalid discovery response.");
+            } else if (task.read == Read::Verify) {
                 const auto root = document.object(), metadata = root["metadata"].toObject();
                 const auto baseline = task.change->baseline, identity = baseline["metadata"].toObject();
                 if (root["apiVersion"] != baseline["apiVersion"] || root["kind"] != baseline["kind"]
@@ -1418,13 +1479,25 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         finishVerify(task);
     }
     if (task.read == Read::Log && logsShown(task.id, task.logKey)) emit logsChanged(task.id, state.logs[task.logKey].path);
+    if ((task.read == Read::Detail || task.read == Read::Linked) && !state.resources.contains(task.path)) {
+        state.failures.remove(task.path);
+        state.blocked.remove(task.path);
+    }
+    const bool retryableRead = task.read == Read::Core || task.read == Read::Groups || task.read == Read::Discovery
+        || task.read == Read::List || task.read == Read::Detail || task.read == Read::Linked || task.read == Read::Probe;
+    const bool retryableFailure = retryableRead && (transportError || http == 0 || http == 429 || http >= 500)
+        && state.failures.contains(task.path);
+    if (retryableFailure) {
+        if (!state.retryableFailures.contains(task.path)) emit transientFailureStarted(task.id, task.path);
+        state.retryableFailures.insert(task.path, {task.read, task.collection, task.kind, task.namespaced, task.deletable});
+    } else state.retryableFailures.remove(task.path);
     completedRequests_.append(QVariantMap{{"session",task.id},{"time",now_().toString(Qt::ISODateWithMs)},
         {"method",task.read==Read::Apply ? "PATCH" : task.read==Read::Delete ? "DELETE" : "GET"},{"path",task.path},
         {"priority",task.foreground || task.read==Read::Detail || task.change ? "Foreground" : "Background"},
         {"status",transportError || http>=400 || state.failures.contains(task.path) ? "Failed" : "Success"},
         {"duration",QString::number(std::max<qint64>(0,clock_.elapsed()-task.started))+" ms"},
-        {"outcome",!transportDetail.isEmpty() ? transportDetail : http>0 ? QString("HTTP %1").arg(http) : QString("Connection failed")}});
-    if (completedRequests_.size()>200) completedRequests_.removeFirst();
+        {"outcome",http>0 ? QString("HTTP %1").arg(http) : !transportDetail.isEmpty() ? transportDetail : QString("Connection failed")}});
+    if (completedRequests_.size()>256) completedRequests_.removeFirst();
 }
 void ResourceClient::collections(const QString& id, const QString& path, const QJsonObject& document, bool foreground) {
     if (!document["resources"].isArray()) { Task task; task.id = id; task.path = path; fail(task, "Invalid discovery response."); return; }
@@ -1516,7 +1589,19 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
             const auto previousList = state.collections.constFind(task.collection);
             const bool known = previousList != state.collections.cend();
             const bool different = known ? previousList->rows != next.page : !next.page.isEmpty();
-            state.collections.insert(task.collection, {next.page, now_(), task.kind, task.namespaced, next.received, task.deletable, known && !different});
+            const int stableReads = known && !different ? std::min(previousList->stableReads + 1, 5) : 0;
+            if (known && different) {
+                QSet<QString> currentPaths;
+                for (const auto& value : next.page) currentPaths.insert(value.toObject()["path"].toString());
+                for (const auto& value : previousList->rows) {
+                    const auto path = value.toObject()["path"].toString();
+                    if (currentPaths.contains(path)) continue;
+                    state.retryableFailures.remove(path);
+                    state.failures.remove(path);
+                    state.blocked.remove(path);
+                }
+            }
+            state.collections.insert(task.collection, {next.page, now_(), task.kind, task.namespaced, next.received, task.deletable, stableReads});
             bool retiredCollection = false;
             if (!task.fallbackFrom.isEmpty()) {
                 retiredCollection = state.collections.remove(task.fallbackFrom) > 0;
@@ -1558,8 +1643,11 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
         previous.remove("fetchedAt");
         const bool different = previous != row;
         row.insert("fetchedAt", now_().toString(Qt::ISODateWithMs));
-        if (entry != state.resources.end() && entry->received > task.received) { fail(task, "A newer version is available. Reopen the inspector to edit it."); return; }
-        state.details.insert(task.path, {row, now_(), document, task.revision});
+        if (entry != state.resources.end() && entry->received > task.received) {
+            if (task.read == Read::Linked) return;
+            fail(task, "A newer version is available. Reopen the inspector to edit it."); return;
+        }
+        if (task.read != Read::Linked) state.details.insert(task.path, {row, now_(), document, task.revision});
         state.unresolvedDeletes.remove(task.path);
         if (entry != state.resources.end()) {
             *entry = {row, task.received};

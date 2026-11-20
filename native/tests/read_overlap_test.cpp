@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QJsonDocument>
+#include <QSignalSpy>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTcpServer>
@@ -260,7 +261,8 @@ bool run(const QString& scenario) {
     if (scenario.startsWith("provider_")) return providerScenario(scenario);
     Kubernetes server; if (!server.listen(QHostAddress::LocalHost, 0)) return false;
     auto reference = QDateTime::currentDateTimeUtc();
-    podlord::ResourceClient client(nullptr, [&] { return scenario == "progress_auto" || scenario.startsWith("list_namespaced_fallback") ? reference : QDateTime::currentDateTimeUtc(); });
+    podlord::ResourceClient client(nullptr, [&] { return scenario == "progress_auto" || scenario == "recovery_passive" || scenario == "recovery_bootstrap" || scenario == "adaptive_sync"
+        || scenario.startsWith("list_namespaced_fallback") ? reference : QDateTime::currentDateTimeUtc(); });
     podlord::ClusterConnection connection;
     connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); connection.credentialId = "local";
     if (scenario == "list_namespaced_fallback_preferred") connection.preferredNamespace = "team";
@@ -293,12 +295,33 @@ bool run(const QString& scenario) {
     }
     if (scenario == "list_invalid_continuation") server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", 7}}}, {"items", QJsonArray{}}});
     if (scenario == "list_page_success") server.paginatePods = true;
+    if (scenario == "related_refresh") {
+        server.discovery = QJsonObject{{"resources", QJsonArray{
+            QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
+            QJsonObject{{"name", "nodes"}, {"kind", "Node"}, {"namespaced", false}, {"verbs", QJsonArray{"get", "list"}}}}}};
+        const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"},
+            {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", "default"}, {"uid", "uid-alpha"}, {"resourceVersion", "1"}}},
+            {"spec", QJsonObject{{"nodeName", "worker-a"}, {"containers", QJsonArray{QJsonObject{{"name", "app"}}}}}},
+            {"status", QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{QJsonObject{{"name", "app"}, {"ready", true}, {"restartCount", 0}}}}}}};
+        const QJsonObject node{{"apiVersion", "v1"}, {"kind", "Node"},
+            {"metadata", QJsonObject{{"name", "worker-a"}, {"uid", "uid-node"}, {"resourceVersion", "1"}}},
+            {"status", QJsonObject{{"conditions", QJsonArray{QJsonObject{{"type", "Ready"}, {"status", "True"}}}}}}};
+        server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{pod}}});
+        server.responseBodies.insert("/api/v1/nodes", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{node}}});
+        auto failedPod = pod;
+        auto metadata = failedPod["metadata"].toObject(); metadata["resourceVersion"] = "2"; failedPod["metadata"] = metadata;
+        failedPod["status"] = QJsonObject{{"phase", "Running"}, {"containerStatuses", QJsonArray{QJsonObject{
+            {"name", "app"}, {"ready", false}, {"restartCount", 1},
+            {"state", QJsonObject{{"waiting", QJsonObject{{"reason", "CrashLoopBackOff"}}}}}}}}};
+        server.responseBodies.insert("/api/v1/namespaces/default/pods/alpha", failedPod);
+    }
     if (scenario == "list_malformed_json") server.responseBytes.insert("/api/v1/pods", "{");
     if (scenario == "list_forbidden" || scenario.startsWith("list_namespaced_fallback"))
         server.responseStatuses.insert("/api/v1/pods", 403);
     if (scenario == "list_namespaced_fallback_preferred") server.podNamespace = "team";
     if (scenario == "list_forbidden" || scenario == "list_namespaced_fallback_denied") server.responseStatuses.insert("/api/v1/namespaces/default/pods", 403);
     if (scenario == "list_redirect") server.responseStatuses.insert("/api/v1/pods", 302);
+    if (scenario == "recovery_bootstrap") server.responseStatuses.insert("/api/v1/pods", 503);
     if (scenario == "list_rate_limited_invalid_retry_after") {
         server.responseStatuses.insert("/api/v1/pods", 429);
         server.retryAfter = "invalid";
@@ -356,6 +379,16 @@ bool run(const QString& scenario) {
         return waitFor([&] { return !client.loading("session") && !server.active; })
             && client.rows("session").size() == (scenario.startsWith("groups_") ? 1 : 0)
             && client.failureStatus("session").contains(invalidReadMessages.value(scenario));
+    if (scenario == "recovery_bootstrap") {
+        if (!waitFor([&] { return !client.loading("session") && !server.active
+            && client.failureStatus("session").contains("/api/v1/pods"); })) return false;
+        const auto before = server.pathRequests.value("/api/v1/pods");
+        server.responseStatuses.remove("/api/v1/pods");
+        reference = reference.addSecs(61);
+        return client.setFocused(true) && waitFor([&] { return !client.loading("session") && !server.active
+            && client.rows("session").size() == 1 && client.failureStatus("session").isEmpty(); })
+            && server.pathRequests.value("/api/v1/pods") == before + 1;
+    }
     if (scenario.startsWith("list_namespaced_fallback")) {
         if (!waitFor([&] { return !client.loading("session") && !server.active; })) return false;
         if (scenario == "list_namespaced_fallback_denied") return client.rows("session").isEmpty() && server.podLists == 2;
@@ -403,7 +436,7 @@ bool run(const QString& scenario) {
         return waitFor([&] { return !client.loading("session") && !server.active; })
             && client.rows("session").isEmpty() && client.failureStatus("session").contains("Invalid discovery response");
     if (!waitFor([&] { return !client.loading("session")
-        && client.rows("session").size() == (scenario == "pod_problem_projection" ? 3 : 1); })) return false;
+        && client.rows("session").size() == (scenario == "pod_problem_projection" ? 3 : scenario == "related_refresh" ? 2 : 1); })) return false;
     if (scenario == "list_repeated_continuation") {
         const auto previous = client.rows("session");
         server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", "repeat"}}}, {"items", QJsonArray{}}});
@@ -443,16 +476,101 @@ bool run(const QString& scenario) {
         for (const auto& value : client.requestAudit("session")) {
             const auto record = value.toMap();
             if (record.value("path") == path && record.value("status") == "Running"
-                && record.value("method") == "GET" && record.value("priority") == "Foreground") running = true;
+                && record.value("method") == "GET" && record.value("priority") == "Foreground"
+                && QDateTime::fromString(record.value("time").toString(), Qt::ISODateWithMs).isValid()) running = true;
         }
         if (!running || !client.requestAudit("other").isEmpty()
             || !waitFor([&] { return !client.document("session", path).isEmpty(); })) return false;
+        bool completed = false;
         for (const auto& value : client.requestAudit("session")) {
             const auto record = value.toMap();
             if (record.value("path") == path && record.value("status") == "Success"
-                && record.value("outcome") == "HTTP 200" && !record.contains("authorization")) return true;
+                && record.value("outcome") == "HTTP 200" && !record.contains("authorization")) completed = true;
         }
-        return false;
+        if (!completed) return false;
+        server.responseStatuses.insert(path, 503);
+        if (!client.inspect("session", path) || !waitFor([&] { return client.failureStatus("session").contains(path); })) return false;
+        const auto audit = client.requestAudit("session");
+        if (audit.isEmpty()) return false;
+        const auto latest = audit.first().toMap();
+        return latest.value("path") == path && latest.value("status") == "Failed"
+            && latest.value("outcome") == "HTTP 503"
+            && QDateTime::fromString(latest.value("time").toString(), Qt::ISODateWithMs).isValid();
+    }
+    if (scenario == "recovery_passive") {
+        const auto failed = [&](const char* stage) {
+            std::fprintf(stderr, "Recovery stage %s: failure=%s core=%d detail=%d active=%d loading=%d\n",
+                stage, qPrintable(client.failureStatus("session")), server.pathRequests.value("/api"),
+                server.pathRequests.value("/api/v1/namespaces/default/pods/alpha"), server.active, client.loading("session"));
+            return false;
+        };
+        if (!waitFor([&] { return !client.loading("session") && !server.active && !client.rows("session").isEmpty(); })) return failed("initial");
+        QSignalSpy failures(&client, &podlord::ResourceClient::transientFailureStarted);
+        server.responseStatuses.insert("/api", 503);
+        if (!client.refresh("session") || !waitFor([&] { return client.failureStatus("session").contains("/api:")
+            && !client.loading("session") && !server.active; })) return failed("core failure");
+        if (failures.size() != 1 || failures.first().at(1) != "/api") return failed("failure signal");
+        server.responseStatuses.remove("/api");
+        const auto beforeCore = server.pathRequests.value("/api");
+        reference = reference.addSecs(61);
+        if (!client.setFocused(true) || !waitFor([&] { return !client.failureStatus("session").contains("/api:"); })) return failed("core recovery");
+        if (server.pathRequests.value("/api") != beforeCore + 1) return failed("core probe count");
+        const QString path = "/api/v1/namespaces/default/pods/alpha";
+        server.responseStatuses.insert(path, 503);
+        if (!client.inspect("session", path) || !waitFor([&] { return client.failureStatus("session").contains(path)
+            && !client.loading("session") && !server.active; })) return failed("detail failure");
+        server.responseStatuses.remove(path);
+        const auto beforeDetail = server.pathRequests.value(path);
+        reference = reference.addSecs(61);
+        if (!client.setFocused(true) || !waitFor([&] { return !client.failureStatus("session").contains(path); })) return failed("detail recovery");
+        if (server.pathRequests.value(path) != beforeDetail + 1 || failures.size() != 2) return failed("detail recovery count");
+        server.responseStatuses.insert(path, 503);
+        if (!client.inspect("session", path) || !waitFor([&] { return client.failureStatus("session").contains(path)
+            && !client.loading("session") && !server.active; })) return failed("removed detail failure");
+        server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{}}});
+        return client.refresh("session") && waitFor([&] { return !client.loading("session") && !server.active
+            && client.rows("session").isEmpty() && client.failureStatus("session").isEmpty(); });
+    }
+    if (scenario == "adaptive_sync") {
+        if (!waitFor([&] { return !client.loading("session") && !server.active && server.pathRequests.value("/api/v1/pods") == 1; })) return false;
+        const auto podLists = [&] { return server.pathRequests.value("/api/v1/pods"); };
+        reference = reference.addSecs(30);
+        if (!client.setFocused(true) || !waitFor([&] { return podLists() == 2 && !client.loading("session"); })) return false;
+        reference = reference.addSecs(30);
+        if (!client.setFocused(true)) return false;
+        QTest::qWait(100);
+        if (podLists() != 2) return false;
+        reference = reference.addSecs(25);
+        if (!client.setFocused(true) || !waitFor([&] { return podLists() == 3 && !client.loading("session"); })) return false;
+        reference = reference.addSecs(60);
+        if (!client.setFocused(true)) return false;
+        QTest::qWait(100);
+        if (podLists() != 3) return false;
+        reference = reference.addSecs(45);
+        return client.setFocused(true) && waitFor([&] { return podLists() == 4 && !client.loading("session"); });
+    }
+    if (scenario == "related_refresh") {
+        if (!waitFor([&] { return !client.loading("session") && !server.active && client.rows("session").size() == 2; })) {
+            std::fprintf(stderr, "Related initial: nodes=%d pods=%d rows=%lld failure=%s\n",
+                server.pathRequests.value("/api/v1/nodes"), server.pathRequests.value("/api/v1/pods"),
+                static_cast<long long>(client.rows("session").size()), qPrintable(client.failureStatus("session")));
+            return false;
+        }
+        const auto nodeLists = server.pathRequests.value("/api/v1/nodes");
+        const auto coreReads = server.pathRequests.value("/api");
+        const QString path = "/api/v1/namespaces/default/pods/alpha";
+        const bool accepted = client.inspect("session", path)
+            && waitFor([&] {
+                const auto rows = client.rows("session");
+                const bool podProblem = std::any_of(rows.cbegin(), rows.cend(), [&](const QJsonValue& value) {
+                    const auto row = value.toObject(); return row["path"] == path && row["problemSeverity"].toInt() > 0;
+                });
+                return podProblem && server.pathRequests.value("/api/v1/nodes") == nodeLists + 1 && !client.loading("session");
+            }) && server.pathRequests.value("/api") == coreReads;
+        if (!accepted) std::fprintf(stderr, "Related refresh: nodes=%d/%d core=%d/%d failure=%s\n",
+            server.pathRequests.value("/api/v1/nodes"), nodeLists, server.pathRequests.value("/api"), coreReads,
+            qPrintable(client.failureStatus("session")));
+        return accepted;
     }
     if (scenario == "snapshot_fields") {
         const auto snapshot = client.rows("session");

@@ -49,6 +49,7 @@ public:
     QString status(const QString& id) const;
     QString failureStatus(const QString& id) const;
     QString syncSummary(const QString& id) const;
+    int requestCountLastMinute(const QString& id) const;
     bool loading(const QString& id) const;
     bool syncLoading(const QString& id) const;
     double loadingProgress(const QString& id) const;
@@ -116,6 +117,8 @@ signals:
     /** Local scheduler admission on this client's monotonic clock, not remote arrival.
      * Path excludes query, authorization and payload; no diagnostic persistence is implied. */
     void requestStarted(const QString& id, const QString& path, qint64 monotonicMs);
+    /** First retryable failure for one path until a successful read clears it. */
+    void transientFailureStarted(const QString& id, const QString& path);
     void changed(const QString& id);
     void rowsChanged(const QString& id);
     void collectionAccepted(const QString& id);
@@ -152,9 +155,11 @@ private:
     bool failForward(const QString& token, const QString& message);
     void consumeForward(const Task& task, const QJsonObject& document);
     void forwardHandshakeFinished(const QString& token, const QString& stream, bool accepted, bool authenticationRequired);
-    struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; bool unchanged = false; };
+    struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; int stableReads = 0; };
     struct Detail final { QJsonObject value; QDateTime at; QJsonObject document; quint64 revision = 0; };
     struct CachedResource final { QJsonObject value; qint64 received = 0; };
+    enum class Read { Core, Groups, Discovery, List, Detail, Linked, Probe, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket, FileTarget, FileSocket };
+    struct FailedRead final { Read read; QString collection, kind; bool namespaced = false, deletable = false; };
     struct State final {
         ClusterConnection connection;
         QStringList namespaces;
@@ -168,6 +173,7 @@ private:
         QMap<QString, QDateTime> deniedClusterLists;
         QSet<QString> unresolvedDeletes;
         QMap<QString, QString> failures;
+        QMap<QString, FailedRead> retryableFailures;
         QString forwardError;
         bool open = true;
         bool suspended = false;
@@ -181,7 +187,6 @@ private:
         QList<QDateTime> requestStarts;
         QDateTime presentationExpiry;
     };
-    enum class Read { Core, Groups, Discovery, List, Detail, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket, FileTarget, FileSocket };
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
     struct Task final {
         QString id, path, collection, kind, continuation;
@@ -201,6 +206,7 @@ private:
         QPointer<ContainerFiles> fileView;
         qint64 received = 0;
         qint64 started = -1;
+        QDateTime startedAt;
         std::optional<Change> change;
         QJsonArray patch;
     };

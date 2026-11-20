@@ -733,6 +733,7 @@ bool execute(const QString& requestedScenario) {
         QGuiApplication::setFont(font);
     }
     podlord::Workspace workspace(profile, nullptr, [&] { return reference; });
+    QSignalSpy requestSounds(workspace.alerts(), &podlord::Alerts::soundRequested);
     if ((scenario == "session_tabs_controls" || scenario.startsWith("radar_") || scenario.startsWith("map_") || scenario=="inspector_malformed")
         && !podlord::test::muteAlerts(workspace.alerts())) return false;
     QList<qint64> dispatched;
@@ -2480,7 +2481,34 @@ bool execute(const QString& requestedScenario) {
         return workspace.resourceCount()==(problem ? 1 : 0) && (!problem || workspace.table()->data(workspace.table()->index(0,0),Qt::UserRole+1)=="target") && server.requests.size()==calls;
     }
     if (scenario == "repeated_page") return waitFor([&] { return text(window, "syncProblemMessage").contains("repeated a resource page"); });
-    if (scenario == "rate_limit") return waitFor([&] { return text(window, "syncProblemMessage").contains("limiting requests"); });
+    if (scenario == "rate_limit") {
+        if (!waitFor([&] { return text(window, "syncProblemMessage").contains("limiting requests"); })) {
+            std::fputs("Rate limit message missing.\n", stderr); return false;
+        }
+        if (std::count_if(requestSounds.cbegin(), requestSounds.cend(), [](const auto& event) { return event.at(1) == "request-failure"; }) != 1) {
+            std::fprintf(stderr, "Rate limit sounds: %lld.\n", static_cast<long long>(requestSounds.size())); return false;
+        }
+        if (!click(window, item(window, "settingsWorkspaceButton"))
+            || !podlord::test::selectSettingsSection(window, "diagnostics")) {
+            std::fputs("Diagnostics section unavailable.\n", stderr); return false;
+        }
+        auto* audit = workspace.property("requestAuditTable").value<QAbstractItemModel*>();
+        if (!audit || !waitFor([&] {
+            for (int row = 0; row < audit->rowCount(); ++row)
+                if (audit->index(row,4).data() == "Failed" && audit->index(row,6).data() == "HTTP 429"
+                    && !audit->index(row,0).data().toString().isEmpty()) return true;
+            return false;
+        })) {
+            std::fprintf(stderr, "Rate limit audit missing 429 record in %d rows.\n", audit ? audit->rowCount() : -1); return false;
+        }
+        const auto metrics = workspace.settingsDiagnostics()["metrics"].toList();
+        const bool counted = std::any_of(metrics.cbegin(), metrics.cend(), [](const QVariant& value) {
+            const auto metric = value.toMap();
+            return metric.value("label") == "API calls / min" && metric.value("value").toInt() > 0;
+        });
+        if (!counted) std::fputs("API call metric missing.\n", stderr);
+        return counted;
+    }
     if (scenario == "priority") {
         if (!waitFor([&] { const auto* cell = item(window, "cell_0_0"); return workspace.table()->rowCount() > 0 && cell && cell->width() > 0 && cell->height() > 0; })) return false;
         if (!click(window, item(window, "cell_0_0")) || !waitFor([&] { return workspace.inspected().contains("fetchedAt"); })) {

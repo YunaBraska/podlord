@@ -73,6 +73,10 @@ Use Connections to return to an open shell or stop a port forward. Closing its t
 
 Use **Settings → Alerts** for built-in or custom resource warnings. Focus a matching resource on the map or play an alert sound when a new problem appears. Music is optional and has its own volume control. Muting alerts does not remove the visual warning.
 
+Temporary connection failures play one alert sound per short burst. The sound obeys the alert mute and volume settings.
+
 ## Resolve a connection problem
 
 Errors identify the affected context or resource. Authentication failures do not trigger automatic sign-in attempts. Choose Sign in when you want to retry. Access to resources, logs and metrics depends on the cluster's permissions and installed APIs. Missing measurements are not reported as zero usage.
+
+PodLord slows refreshes for unchanged resource kinds and checks related resources when a new problem appears. Temporary read failures are retried without restarting the app. **Settings → Diagnostics** shows request times, results and calls in the past minute. Manual refresh skips the passive interval but still respects server backoff.

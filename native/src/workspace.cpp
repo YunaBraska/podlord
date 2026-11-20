@@ -431,6 +431,9 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     if (restore) client_.enableRequests(false);
     connect(&client_, &ResourceClient::requestStarted, this, &Workspace::requestStarted);
+    connect(&client_, &ResourceClient::transientFailureStarted, this, [this](const QString& id, const QString&) {
+        alerts_.notifyRequestFailure(id);
+    });
     const auto connectionsChanged = [this](const QString& id) {
         if (id == active_) publishPorts();
         if (id == active_ || runtime_->owners.value(id) == this) emit changed();
@@ -746,6 +749,7 @@ QVariantMap Workspace::settingsDiagnostics() const {
         QVariantMap{{"label","Cached Events"},{"value",eventRows_.rowCount()},{"description","Canonical Events, without duplicate API aliases"}},
         QVariantMap{{"label","Open tabs"},{"value",tabs().size()},{"description","Closed tabs do not refresh"}},
         QVariantMap{{"label","Sync progress"},{"value",QString::number(loadingProgress()*100,'f',0)+"%"},{"description",status()}},
+        QVariantMap{{"label","API calls / min"},{"value",client_.requestCountLastMinute(active_)},{"description","Requests started for this context in the past 60 seconds"}},
         QVariantMap{{"label","Request limit"},{"value",settings_.requestHardLimitPerMinute},{"description","Per minute. 0 disables the extra limit. Reads are spaced at least 400 ms apart."}},
         QVariantMap{{"label","Retained logs"},{"value",QString::number(settings_.logLimitMb)+" MB / Pod"},{"description","Bounded in-memory log retention"}}};
     metrics = runtimeDiagnostics() + metrics;
