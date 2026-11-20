@@ -221,8 +221,8 @@ void scenario(const QString& name) {
             && preview["user"] == manualInput, "Preview differs from the actual model content");
         require(!ai.enabled("context") && manualInput["observedSignal"] == "Manual review"
             && manualInput["selectedResource"].toObject()["name"] == "pod-one"
-            && server.submitted.contains("Analyze the selected Kubernetes resource using only the supplied observations")
-            && server.submitted.contains("Do not invent resources, events, logs, metrics, commands or repairs")
+            && server.submitted.contains("Analyze an incomplete snapshot of the selected Kubernetes resource and its linked resources")
+            && server.submitted.contains("Do not invent facts or commands")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
             && manualInput["resources"].toArray().first().toObject()["restarts"] == "1"

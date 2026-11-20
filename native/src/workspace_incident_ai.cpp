@@ -1,9 +1,7 @@
 #include "workspace.h"
 #include "workspace_runtime.h"
 #include "ui_language.h"
-#include <QClipboard>
 #include <QDir>
-#include <QGuiApplication>
 #include <QRegularExpression>
 
 namespace podlord {
@@ -69,12 +67,6 @@ QString Workspace::incidentAiRequest() const {
     return runtime_->incidentAi.requestPreview(context, inspectorPath());
 }
 QVariantMap Workspace::incidentAiDiagnostic() const { return runtime_->incidentAi.diagnosticResult(); }
-bool Workspace::copyIncidentAiCommand() {
-    const auto command = incidentAiResult().value("command").toString();
-    if (command.isEmpty() || !QGuiApplication::clipboard()) return false;
-    QGuiApplication::clipboard()->setText(command);
-    return true;
-}
 bool Workspace::setIncidentAiEnabled(bool enabled) {
     const auto context = sessionConfiguration(active_).value("contextId").toString();
     if (context.isEmpty() || !runtime_->incidentAi.setEnabled(context, enabled)) return false;

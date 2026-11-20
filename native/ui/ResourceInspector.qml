@@ -127,10 +127,20 @@ Pane {
         visible: workspace.incidentAiConfigured && workspace.inspectorPage === "ai" && workspace.inspectorPath !== ""
         spacing: 5
         property bool showRequest: false
+        readonly property var liveResult: reportState.update.result
+        readonly property var report: reportState.shown
         property string requestPath: workspace.inspectorPath
         onRequestPathChanged: showRequest = false
         onVisibleChanged: if (visible) { showRequest = false; workspace.ensureIncidentAiModels() }
         Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
+        AiReportState {
+            id: reportState
+            update: ({
+                scope: JSON.stringify([workspace.currentSession, workspace.inspectorPath,
+                    workspace.incidentAiProvider, workspace.incidentAiModel, workspace.chatgptAccount]),
+                result: workspace.incidentAiResult
+            })
+        }
         RowLayout {
             Layout.fillWidth: true
             FlatButton {
@@ -138,21 +148,21 @@ Pane {
                 text: workspace.uiText["ai.response"]
                 checkable: true
                 checked: !aiPanel.showRequest
-                onClicked: aiPanel.showRequest = false
+                onClicked: { aiPanel.showRequest = false; inspectorScroll.contentItem.contentY = 0 }
             }
             FlatButton {
                 objectName: "incidentAiRequestTab"
                 text: workspace.uiText["ai.request"]
                 checkable: true
                 checked: aiPanel.showRequest
-                onClicked: aiPanel.showRequest = true
+                onClicked: { aiPanel.showRequest = true; inspectorScroll.contentItem.contentY = 0 }
             }
             Item { Layout.fillWidth: true }
             IconButton {
                 objectName: "incidentAiReanalyze"
                 glyph: "Reset"
-                text: workspace.incidentAiResult.summary === undefined ? workspace.uiText["ai.analyze"] : workspace.uiText["ai.reanalyze"]
-                enabled: workspace.incidentAiModel !== "" && workspace.incidentAiReady && workspace.incidentAiResult.pending !== true
+                text: aiPanel.report.summary === undefined ? workspace.uiText["ai.analyze"] : workspace.uiText["ai.reanalyze"]
+                enabled: workspace.incidentAiModel !== "" && workspace.incidentAiReady && aiPanel.liveResult.pending !== true
                     && !workspace.authenticationRequired
                 onClicked: workspace.refreshIncidentAiAnalysis()
             }
@@ -169,7 +179,7 @@ Pane {
             Layout.fillWidth: true
             text: workspace.incidentAiStatus
             color: workspace.appearanceColors.muted
-            visible: !aiPanel.showRequest && workspace.incidentAiModel !== "" && workspace.incidentAiResult.pending !== true && text !== ""
+            visible: !aiPanel.showRequest && workspace.incidentAiModel !== "" && aiPanel.liveResult.pending !== true && text !== ""
         }
         SelectableText {
             objectName: "incidentAiRequest"
@@ -181,36 +191,36 @@ Pane {
         SelectableText {
             objectName: "incidentAiPending"
             Layout.fillWidth: true
-            visible: !aiPanel.showRequest && workspace.incidentAiResult.pending === true
+            visible: !aiPanel.showRequest && aiPanel.liveResult.pending === true
             text: workspace.uiText["ai.pending"]
             color: workspace.appearanceColors.muted
         }
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 10
-            visible: !aiPanel.showRequest && workspace.incidentAiResult.summary !== undefined
+            visible: !aiPanel.showRequest && aiPanel.report.summary !== undefined
             spacing: 4
             SelectableText { objectName: "incidentAiObservation"; Layout.fillWidth: true; text: workspace.uiText["ai.observation"]; font.bold: true; color: workspace.appearanceColors.accent }
-            AiLinkedText { objectName: "incidentAiSummary"; Layout.fillWidth: true; richText: workspace.incidentAiResult.summaryHtml || ""; references: workspace.incidentAiResult.references || [] }
+            AiLinkedText { objectName: "incidentAiSummary"; Layout.fillWidth: true; richText: aiPanel.report.summaryHtml || ""; references: aiPanel.report.references || [] }
         }
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 14
-            visible: !aiPanel.showRequest && (workspace.incidentAiResult.cause || "") !== ""
+            visible: !aiPanel.showRequest && (aiPanel.report.cause || "") !== ""
             spacing: 4
             SelectableText { objectName: "incidentAiCauseHeading"; Layout.fillWidth: true; text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.accent }
-            AiLinkedText { objectName: "incidentAiCause"; Layout.fillWidth: true; richText: workspace.incidentAiResult.causeHtml || ""; references: workspace.incidentAiResult.references || [] }
+            AiLinkedText { objectName: "incidentAiCause"; Layout.fillWidth: true; richText: aiPanel.report.causeHtml || ""; references: aiPanel.report.references || [] }
         }
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 14
-            visible: !aiPanel.showRequest && workspace.incidentAiResult.action !== undefined
+            visible: !aiPanel.showRequest && aiPanel.report.action !== undefined
             spacing: 4
             SelectableText { objectName: "incidentAiNextCheck"; Layout.fillWidth: true; text: workspace.uiText["ai.nextCheck"]; font.bold: true; color: workspace.appearanceColors.accent }
-            AiLinkedText { objectName: "incidentAiAction"; Layout.fillWidth: true; richText: workspace.incidentAiResult.actionHtml || ""; references: workspace.incidentAiResult.references || [] }
+            AiLinkedText { objectName: "incidentAiAction"; Layout.fillWidth: true; richText: aiPanel.report.actionHtml || ""; references: aiPanel.report.references || [] }
             Rectangle {
                 Layout.fillWidth: true
-                visible: (workspace.incidentAiResult.command || "") !== ""
+                visible: (aiPanel.report.command || "") !== ""
                 implicitHeight: commandRow.implicitHeight + 12
                 color: workspace.appearanceColors.inset
                 border.color: workspace.appearanceColors.border
@@ -218,8 +228,13 @@ Pane {
                     id: commandRow
                     anchors.fill: parent
                     anchors.margins: 6
-                    SelectableText { objectName: "incidentAiCommand"; Layout.fillWidth: true; text: workspace.incidentAiResult.command || ""; font.family: workspace.monospaceFamily }
-                    IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["copy.value"]; onClicked: workspace.copyIncidentAiCommand() }
+                    SelectableText { id: incidentAiCommand; objectName: "incidentAiCommand"; Layout.fillWidth: true; text: aiPanel.report.command || ""; font.family: workspace.monospaceFamily }
+                    IconButton {
+                        objectName: "incidentAiCopyCommand"
+                        glyph: "Copy"
+                        text: workspace.uiText["copy.value"]
+                        onClicked: { incidentAiCommand.selectAll(); incidentAiCommand.copy(); incidentAiCommand.deselect() }
+                    }
                 }
             }
         }

@@ -138,9 +138,26 @@ bool run(const QString& scenario, const QString& configPath) {
         link->setX(20); link->setY(60); link->setWidth(350); link->setHeight(44);
         QCoreApplication::processEvents();
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, link->mapToScene(QPointF(125, 12)).toPoint());
-        const bool linked = waitFor([&] { return workspace.inspectorPath() == target(1); }, 2000);
+        const bool linked = waitFor([&] { return workspace.inspectorPath() == target(1)
+            && named("inspectorResourceName") && named("inspectorResourceName")->property("text").toString().contains("entry-01"); }, 2000);
         link->deleteLater();
-        return linked && writes == 0 && (frame.isEmpty() || window->grabWindow().save(frame));
+        QQmlComponent stateComponent(&engine, QUrl("qrc:/podlord/AiReportState.qml"));
+        auto* state = stateComponent.create(engine.rootContext());
+        if (!state) return false;
+        const auto report = [&](const QString& scope, const QVariantMap& result) {
+            state->setProperty("update", QVariantMap{{"scope", scope}, {"result", result}});
+            QCoreApplication::processEvents();
+            return state->property("shown").toMap();
+        };
+        const bool stable = report("pod-a", {{"summary", "First answer"}}).value("summary") == "First answer"
+            && report("pod-a", {{"pending", true}}).value("summary") == "First answer"
+            && report("pod-a", {{"summary", "Second answer"}}).value("summary") == "Second answer"
+            && !report("pod-a", {{"pending", false}}).contains("summary")
+            && report("pod-a", {{"summary", "Third answer"}}).value("summary") == "Third answer"
+            && !report("pod-b", {{"pending", true}}).contains("summary")
+            && !report("pod-b", {}).contains("summary");
+        state->deleteLater();
+        return linked && stable && writes == 0 && (frame.isEmpty() || window->grabWindow().save(frame));
     }
     if (scenario == "repeat") return open(0) && !back() && !forward() && writes == 0;
     if (!open(1)) return false;

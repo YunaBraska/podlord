@@ -461,7 +461,6 @@ public:
     QVariantMap incidentAiResult() const;
     QString incidentAiRequest() const;
     QVariantMap incidentAiDiagnostic() const;
-    Q_INVOKABLE bool copyIncidentAiCommand();
     Q_INVOKABLE bool setIncidentAiEnabled(bool enabled);
     Q_INVOKABLE bool setIncidentAiModel(const QString& model);
     Q_INVOKABLE bool selectIncidentAiModel(const QString& provider, const QString& model);

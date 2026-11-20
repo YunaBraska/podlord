@@ -8,9 +8,11 @@ TextEdit {
     textFormat: TextEdit.RichText
     wrapMode: TextEdit.Wrap
     selectByMouse: true
+    selectByKeyboard: true
     color: workspace.appearanceColors.text
     onLinkActivated: function(link) {
         const resource = references.find(item => item.id === link)
-        if (resource) workspace.inspectPath(resource.path)
+        if (resource && !workspace.inspectPath(resource.path) && resource.kind === "Event")
+            workspace.inspectEventPath(resource.path)
     }
 }
