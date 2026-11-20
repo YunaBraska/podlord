@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A cache-first Kubernetes console with an RTS-inspired map, resource tables,
-filters, inspector, container terminal and port forwarding.
+filters, an inspector, AI analysis, container files, a terminal and port forwarding.
 
 PodLord is built with C++ and Qt Quick. Native release validation is in progress.
 
@@ -84,7 +84,10 @@ explicit workflow until the first Store delivery is accepted.
 
 The [resource explorer](docs/Page/assets/screenshots/native-resources.png) and
 [YAML inspector](docs/Page/assets/screenshots/native-inspector-yaml.png) also
-show the C++ application against disposable local Kubernetes data.
+show the C++ application against disposable local Kubernetes data. The
+[AI report](docs/Page/assets/screenshots/demo-ai.svg) and
+[file browser](docs/Page/assets/screenshots/demo-files.svg) are illustrative
+examples with fictional resources.
 
 ## Contributing And Security
 

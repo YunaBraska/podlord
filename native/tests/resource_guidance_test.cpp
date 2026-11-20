@@ -260,7 +260,7 @@ bool ui(const QString& mode) {
         }, 180000);
         if (!completed) std::fprintf(stderr, "AI status: %s\n", qPrintable(workspace.incidentAiStatus()));
         require(completed && !workspace.incidentAiResult().value("summary").toString().isEmpty(), "Local AI result did not arrive in the inspector");
-        require(item("incidentAiSummary") && item("incidentAiSummary")->property("text").toString() == workspace.incidentAiResult().value("summary").toString(),
+        require(item("incidentAiSummary") && item("incidentAiSummary")->property("richText").toString() == workspace.incidentAiResult().value("summaryHtml").toString(),
             "Inspector did not show the returned AI summary");
         require(item("incidentAiObservation") && item("incidentAiObservation")->property("text").toString() == workspace.uiText().value("ai.observation")
             && item("incidentAiCauseHeading") && item("incidentAiCauseHeading")->property("text").toString() == workspace.uiText().value("ai.possibleCause")
