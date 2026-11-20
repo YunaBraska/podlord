@@ -152,300 +152,98 @@ public:
         } while (take(','));
         expect('}'); take(' ');
         require(at == text.size() && fields.size() == 4, "Incomplete catalog or trailing content");
-        require(out.sounds.size() == 20 && out.tracks.size() == 20, "Catalog must contain 20 sounds and 20 tracks");
+        require(out.sounds.size() == 20 && out.tracks.size() == 10, "Catalog must contain 20 sounds and 10 tracks");
         return out;
     }
 };
 
 enum class Tone { Felt, Pluck, Reed, Glass, Hollow, Warm, Sub, Veil, Halo, Metal, Kick, Rim, Hush, Drive, Brass, Snare, Tom };
 struct Note { double at; int pitch; double hold; double level = 1; };
-struct Step { double at; int tone; double hold; double level = 1; };
+struct BassNote { double at, hold; int interval; double level = 1; };
 struct Drum { double at; Tone tone; double level; };
-using Chord = std::array<int, 4>;
-enum Layer { Bed=1, Ground=2, Motion=4, Theme=8, Answer=16, Beat=32 };
-constexpr int full = Bed|Ground|Motion|Theme|Answer|Beat;
-struct Section { int bars, layers, variant; double energy; int harmonyOffset = 0; };
-struct Score {
+
+// Each song has its own harmony, groove and returning phrase. The form values
+// are the first chord, first theme, bridge, return and coda bars respectively.
+struct Song {
     std::string id;
-    int bpm, meter, chordBars;
-    Tone lead, motion, pad;
-    std::vector<Chord> harmony = {};
-    std::vector<Note> a = {}, b = {}, counter = {};
-    std::vector<Step> bass = {}, pulse = {};
-    std::vector<Drum> drums = {};
-    std::vector<Section> form = {};
-    int kit = 0;
-    int bars() const { int n=0; for (const auto& s:form) n+=s.bars; return n; }
-    double seconds() const { return bars()*meter*60.0/bpm; }
+    int bpm, bars, chordBars;
+    Tone chord, lead;
+    std::array<int,4> roots;
+    std::array<int,5> form;
+    std::vector<Note> theme;
+    std::vector<BassNote> bass;
+    std::vector<Drum> drums;
+    double hatStep, swing, chordLevel, leadLevel;
+    double seconds() const { return bars*4*60.0/bpm; }
 };
 
-// Each entry is an independent score. Note positions and holds are in beats.
-// Harmony uses absolute MIDI pitches. Rhythm cells span two bars, themes four.
-// Different section orders and dynamics are part of each composition.
-std::vector<Score> scores() {
-    using T = Tone;
-    std::vector<Score> out;
-    {
-        // D minor: an upward fifth answered by a falling, offbeat second.
-        Score s{"quiet-perimeter",104,4,2,T::Reed,T::Pluck,T::Veil};
-        s.harmony={{50,53,57,64},{46,53,57,60},{48,55,58,62},{45,52,55,61}};
-        s.a={{0,62,1.25},{1.75,69,.5},{2.5,67,.75},{4,65,1.5},{6.25,64,.5},{7,62,.75},{8.5,72,1},{10,70,.75},{11.25,69,.5},{12.5,65,1.5},{15,64,.5}};
-        s.b={{.5,69,.75},{1.75,72,.75},{3,74,1},{5,70,1.5},{7.25,69,.5},{8,67,1.5},{10.5,64,.75},{12,65,1},{13.5,62,1.75}};
-        s.counter={{3.5,77,.5},{6,76,.75},{10.75,74,.5},{14,69,1}};
-        s.bass={{0,0,1.25},{1.75,2,.5},{3,0,.75},{4.5,0,1.5},{6.5,3,.5}};
-        s.pulse={{.5,1,.4},{2.25,2,.3},{3.5,3,.4},{5,2,.5},{6.75,1,.3}};
-        s.drums={{0,T::Kick,.8},{1.5,T::Hush,.3},{2,T::Rim,.42},{3.5,T::Kick,.4},{4,T::Kick,.7},{5.5,T::Hush,.25},{6,T::Rim,.38},{7.25,T::Metal,.16}};
-        s.form={{8,Bed|Motion,0,.65},{8,Bed|Ground|Theme|Beat,0,.86},{8,full,0,1},{4,Bed|Answer,0,.62},{8,full,1,.93},{8,full,0,.88},{4,Bed|Ground,0,.62}};
-        out.push_back(s);
-    }
-    {
-        // A minor, spacious broken sixths with a delayed high response.
-        Score s{"copper-horizon",96,4,2,T::Felt,T::Hollow,T::Halo};
-        s.harmony={{45,52,55,59},{41,48,52,57},{48,52,55,62},{43,50,53,57},{40,47,52,56},{45,52,59,60}};
-        s.a={{.75,64,1},{2,72,1.5},{4.5,71,.5},{5.5,67,1},{7.25,64,.5},{8.75,62,1.5},{11,60,.75},{12.25,64,1.75},{15,67,.5}};
-        s.b={{0,69,2},{2.75,67,.75},{4,64,1.25},{6,62,.5},{7,59,.75},{9,60,1.5},{11.25,64,.5},{12.5,67,1},{14,69,1.5}};
-        s.counter={{1,76,.75},{6.5,74,.5},{10,71,.75},{14.5,72,.5}};
-        s.bass={{0,0,2},{2.75,2,.65},{4,0,1.5},{6.25,1,.65},{7.25,2,.5}};
-        s.pulse={{1.25,1,.7},{3,3,.6},{4.75,2,.7},{6,1,.5},{7.5,3,.3}};
-        s.drums={{0,T::Kick,.65},{1.75,T::Metal,.16},{3,T::Rim,.3},{4.5,T::Kick,.5},{6,T::Hush,.3},{7,T::Rim,.26}};
-        s.form={{4,Bed,0,.6},{8,Bed|Ground|Motion|Beat,0,.78},{12,full,0,.94},{8,Bed|Ground|Theme,1,.76},{8,full,1,.94},{4,Bed|Motion|Answer,0,.72},{4,Bed,0,.58}};
-        s.kit=1; out.push_back(s);
-    }
-    {
-        // F-sharp minor, five beats grouped 3+2. Angular theme, soft metal reply.
-        Score s{"signal-weave",112,5,1,T::Hollow,T::Metal,T::Veil};
-        s.harmony={{42,49,54,57},{40,47,52,56},{38,45,49,54},{37,44,49,56},{45,52,56,61}};
-        s.a={{0,66,.75},{1,69,.5},{2,73,1.25},{3.75,71,.5},{5.5,68,1},{7,66,.5},{8.5,64,1},{10,61,1.5},{12.25,66,.75},{14,68,.5},{15.5,69,1.25},{18,66,1.25}};
-        s.b={{.5,73,1},{2,76,.5},{3,73,.75},{5,71,1.5},{7.5,68,.75},{9,64,.5},{10.5,66,2},{13.25,69,.75},{15,68,1},{17,66,2}};
-        s.counter={{4,78,.5},{8,76,.75},{13.5,73,.5},{18.75,71,.5}};
-        s.bass={{0,0,1},{2.5,2,.6},{3.5,0,1},{5,0,1.5},{7,3,.6},{8.5,2,.8}};
-        s.pulse={{.75,1,.3},{2,3,.4},{4,2,.35},{5.75,3,.4},{7.5,1,.3},{9.25,2,.3}};
-        s.drums={{0,T::Kick,.7},{1.5,T::Hush,.3},{3,T::Rim,.4},{4.25,T::Metal,.22},{5,T::Kick,.6},{7.5,T::Kick,.35},{8,T::Rim,.38},{9.5,T::Hush,.28}};
-        s.form={{4,Bed|Motion,0,.63},{8,Bed|Ground|Theme|Beat,0,.85},{8,full,0,.98},{4,Bed|Answer,0,.62},{8,full,1,1},{4,Bed|Ground|Theme,0,.77},{4,Bed|Motion,0,.6}};
-        s.kit=2; out.push_back(s);
-    }
-    {
-        // E minor, low-register logistics pulse and long, separated phrases.
-        Score s{"night-logistics",90,4,2,T::Warm,T::Reed,T::Veil};
-        s.harmony={{40,47,54,55},{36,43,50,52},{43,50,54,59},{38,45,52,54},{47,54,57,62},{40,47,52,55}};
-        s.a={{0,59,2.5},{3.25,62,.75},{5,64,1.5},{7.5,62,.5},{9,57,2},{12,59,1.25},{14.5,55,1}};
-        s.b={{1,64,1.75},{3.5,67,1},{5.25,66,.75},{7,62,1.5},{10,59,2},{13,57,.75},{14.25,59,1.25}};
-        s.counter={{2,71,1},{6.5,69,.5},{11,67,1.25}};
-        s.bass={{0,0,2.75},{3.5,2,.4},{4.75,0,2},{7,1,.5}};
-        s.pulse={{.5,2,.6},{2.75,1,.5},{5.5,3,.65},{7.5,2,.3}};
-        s.drums={{0,T::Kick,.6},{2.75,T::Rim,.25},{4.75,T::Kick,.5},{6,T::Hush,.25},{7.5,T::Metal,.12}};
-        s.form={{8,Bed|Ground,0,.62},{8,Bed|Ground|Motion|Beat,0,.8},{8,full,0,.9},{8,Bed|Theme|Answer,1,.7},{8,full,1,.93},{8,Bed|Ground|Motion,0,.64}};
-        s.kit=3; out.push_back(s);
-    }
-    {
-        // C suspended-major waltz. Bell fragments interlock rather than march.
-        Score s{"glass-relay",100,3,2,T::Glass,T::Felt,T::Halo};
-        s.harmony={{48,55,62,64},{53,60,64,69},{50,57,60,65},{43,50,55,62}};
-        s.a={{.25,76,.5},{1.5,72,.75},{3.25,67,.5},{4.5,74,1},{6.5,71,.5},{7.25,67,.75},{9,69,1},{10.5,72,.75}};
-        s.b={{0,79,.75},{1.25,76,.5},{2.25,74,.5},{3.5,72,1},{5,69,.75},{6.75,65,1},{8.25,67,.5},{9.5,71,1.5}};
-        s.counter={{2,64,.5},{5.25,62,.5},{8,60,.75},{11,67,.5}};
-        s.bass={{0,0,1.4},{2,2,.6},{3.5,0,1.2},{5,3,.6}};
-        s.pulse={{.75,1,.5},{2.5,3,.3},{3.75,2,.4},{5.5,1,.25}};
-        s.drums={{0,T::Kick,.45},{1.5,T::Hush,.22},{2.5,T::Metal,.16},{3.5,T::Kick,.4},{5,T::Rim,.25}};
-        s.form={{8,Bed|Motion,0,.65},{8,Bed|Ground|Theme,0,.85},{16,full,0,.96},{8,Bed|Answer|Beat,0,.67},{8,full,1,.94},{8,Bed|Theme|Motion,1,.78},{8,Bed|Ground,0,.6}};
-        out.push_back(s);
-    }
-    {
-        // B minor, compound six-beat breathing with a wide descending answer.
-        Score s{"low-orbit",84,6,2,T::Reed,T::Hollow,T::Halo};
-        s.harmony={{47,54,57,61},{43,50,54,59},{38,45,49,56},{45,52,55,59},{42,49,52,58},{47,54,59,62}};
-        s.a={{1,66,2},{4,62,1},{6.5,61,1.5},{9,59,2},{12,54,2.5},{15.5,57,1},{18,61,1.5},{21,59,2}};
-        s.b={{0,71,2.5},{3.5,69,1},{6,66,2},{9.5,62,1},{12.5,64,2},{16,61,1},{18.5,57,2},{22,59,1.5}};
-        s.counter={{5,74,1},{10.75,73,.75},{17,71,1.25},{23,66,.5}};
-        s.bass={{0,0,2.5},{3.5,2,1},{6,0,2},{9,3,1},{11,2,.5}};
-        s.pulse={{1.5,1,.7},{4.5,3,.7},{7.5,2,.75},{10,1,.6}};
-        s.drums={{0,T::Kick,.52},{3,T::Rim,.3},{5,T::Hush,.2},{6,T::Kick,.5},{9.5,T::Rim,.25},{11,T::Metal,.15}};
-        s.form={{4,Bed,0,.57},{4,Bed|Ground|Motion,0,.75},{8,full,0,.92},{4,Bed|Theme,1,.7},{8,full,1,.94},{4,Bed|Motion|Answer,0,.6}};
-        s.kit=1; out.push_back(s);
-    }
-    {
-        // D Dorian, clipped anticipations and a brighter, sustained middle.
-        Score s{"amber-vector",118,4,1,T::Brass,T::Pluck,T::Veil};
-        s.harmony={{50,53,57,59},{43,50,53,59},{48,52,55,62},{45,52,55,62},{47,53,57,62},{50,57,60,64}};
-        s.a={{0,65,.5},{.75,69,.5},{1.75,71,.75},{3,67,.5},{4.25,65,.75},{5.5,62,.5},{7,64,.5},{8,69,1},{9.5,72,.5},{10.25,71,.75},{12,67,1},{13.5,65,.5},{14.75,62,.75}};
-        s.b={{.25,74,1.25},{2,72,.75},{3.25,69,.5},{4.5,71,1.5},{6.5,67,.75},{8,65,2},{10.75,64,.75},{12.25,62,1},{14,65,1.5}};
-        s.counter={{2.5,77,.5},{6,76,.75},{11.25,74,.5},{15,71,.5}};
-        s.bass={{0,0,.75},{1.5,2,.5},{2.75,0,.75},{4,0,.75},{5.25,1,.5},{6.5,2,.75},{7.5,3,.3}};
-        s.pulse={{.5,1,.25},{2,3,.3},{3.5,2,.25},{4.75,1,.3},{6,3,.3},{7.25,2,.25}};
-        s.drums={{0,T::Kick,.9},{.75,T::Hush,.38},{1.5,T::Kick,.42},{2,T::Snare,.65},{2.75,T::Hush,.28},{3.5,T::Kick,.51},{4.75,T::Kick,.65},{5.5,T::Hush,.36},{6,T::Snare,.72},{7.25,T::Tom,.38}};
-        s.form={{4,Motion|Beat,0,.74},{8,Ground|Theme|Beat,0,.94},{8,full,0,1},{8,Bed|Answer,0,.54},{8,Ground|Motion|Theme|Beat,1,1},{8,full,0,.92},{4,Motion|Beat,0,.66}};
-        s.kit=2; out.push_back(s);
-    }
-    {
-        // C minor, seven beats grouped 2+2+3; droplets answer low reed calls.
-        Score s{"iron-rain",108,7,1,T::Drive,T::Metal,T::Veil};
-        s.harmony={{48,55,58,62},{44,51,55,60},{41,48,51,58},{43,50,53,59},{46,53,56,60},{48,51,58,63},{39,46,50,55}};
-        s.a={{0,60,1},{2.5,63,.75},{4.25,67,1.5},{7.5,65,1},{10,62,1},{12,60,.75},{14.75,58,1.25},{17,62,.75},{19.5,63,1.5},{22,67,1},{24.5,65,.75},{26,60,1.25}};
-        s.b={{1,72,1.5},{3.5,70,1},{6,67,.75},{8,63,2},{11,65,1},{14,62,1.5},{16.5,58,1},{19,60,2},{22.5,63,1},{25,62,1.5}};
-        s.counter={{3.5,79,.5},{9,77,.6},{15.5,74,.5},{21,75,.75},{27,72,.5}};
-        s.bass={{0,0,1.5},{2.25,2,1},{4.5,0,1.5},{7,0,1.5},{9.5,3,1},{12,2,1}};
-        s.pulse={{1,1,.4},{3.5,3,.35},{5.75,2,.5},{8.25,1,.35},{10.75,3,.4},{13,2,.4}};
-        s.drums={{0,T::Kick,.9},{1.5,T::Metal,.32},{2,T::Snare,.62},{3,T::Kick,.58},{4.5,T::Tom,.5},{5.5,T::Kick,.53},{6,T::Snare,.57},{7,T::Kick,.78},{8.5,T::Tom,.55},{9,T::Snare,.62},{10.5,T::Metal,.28},{11,T::Kick,.51},{12.5,T::Snare,.7},{13.5,T::Tom,.44}};
-        s.form={{4,Ground|Beat,0,.72},{8,Ground|Theme|Beat,0,1},{4,full,0,.96},{4,Bed|Motion|Answer,0,.55},{8,Ground|Theme|Beat,1,1},{4,full,1,.91},{4,Ground|Beat,0,.61}};
-        s.kit=3; out.push_back(s);
-    }
-    {
-        // F Lydian, sparse high-fourth melody over slow, nonfunctional harmony.
-        Score s{"silent-cartography",80,4,2,T::Felt,T::Glass,T::Halo};
-        s.harmony={{41,48,52,59},{45,52,55,60},{43,50,54,57},{48,55,59,64},{40,47,52,57}};
-        s.a={{.5,69,2},{3.25,71,1},{5.5,76,2},{8.5,72,1.5},{11,67,1},{13,69,2}};
-        s.b={{0,77,2.5},{3.5,76,1},{5.25,71,1.75},{8,69,2},{11.25,67,.75},{13,64,2}};
-        s.counter={{2,60,1.5},{7,62,1},{10,64,1.25},{15,59,.5}};
-        s.bass={{0,0,3},{4.5,2,2.5},{7.5,0,.4}};
-        s.pulse={{1.75,3,.8},{3.5,1,.7},{6.25,2,1}};
-        s.drums={{0,T::Kick,.4},{3.5,T::Metal,.12},{5,T::Hush,.18},{7,T::Rim,.2}};
-        s.form={{4,Bed,0,.58},{8,Bed|Motion|Theme,0,.77},{8,full,0,.87},{4,Bed|Answer,0,.6},{8,Bed|Ground|Theme|Beat,1,.85},{4,full,1,.88},{4,Bed,0,.55}};
-        out.push_back(s);
-    }
-    {
-        // G minor, rolling triplet undercurrent against an uneven long melody.
-        Score s{"clockwork-tide",110,4,2,T::Hollow,T::Pluck,T::Veil};
-        s.harmony={{43,50,53,57},{46,53,57,60},{41,48,53,55},{48,55,58,62},{38,45,50,54},{43,50,58,62}};
-        s.a={{0,67,1.5},{2,65,.75},{3.25,62,.5},{4.5,58,1.25},{6.25,62,.75},{8,65,2},{10.75,69,.5},{12,70,1.25},{14,67,1.5}};
-        s.b={{.5,74,.75},{1.75,70,1.25},{3.5,69,.75},{5,65,1},{7,62,.5},{8.5,63,1.5},{11,65,.75},{12.5,69,1},{14.5,67,1}};
-        s.counter={{1,79,.5},{5.75,77,.5},{9.75,74,.75},{13.75,72,.5}};
-        s.bass={{0,0,1},{1.6667,2,.55},{3.3333,0,.5},{4,0,1.25},{6,3,.6},{7.3333,2,.4}};
-        s.pulse={{.6667,1,.3},{2,2,.3},{2.6667,3,.3},{4.6667,2,.3},{5.3333,1,.3},{6.6667,3,.3}};
-        s.drums={{0,T::Kick,.62},{1.3333,T::Hush,.2},{2,T::Rim,.35},{3.6667,T::Metal,.14},{4,T::Kick,.6},{5.3333,T::Kick,.3},{6,T::Rim,.35},{7.3333,T::Hush,.2}};
-        s.form={{8,Bed|Ground|Motion,0,.68},{8,Bed|Ground|Theme|Beat,0,.85},{8,full,0,.97},{4,Bed|Motion|Answer,0,.64},{8,full,1,.96},{8,Bed|Ground|Theme,1,.78},{8,full,0,.9},{4,Bed|Ground,0,.58}};
-        s.kit=1; out.push_back(s);
-    }
-    {
-        // E-flat major, a gentle three-beat memory with bass on the second bar.
-        Score s{"field-memory",92,3,2,T::Warm,T::Felt,T::Halo};
-        s.harmony={{39,46,50,53},{48,55,58,62},{44,51,55,58},{46,53,56,60},{41,48,51,55},{43,50,53,58}};
-        s.a={{0,67,1.75},{2.25,65,.5},{3.5,63,1},{5,70,.75},{6.25,68,1.25},{8.25,67,.75},{9.5,62,1.75}};
-        s.b={{.5,75,1},{2,74,.75},{3.25,70,1.25},{5.25,67,.5},{6.5,65,1.5},{9,63,2}};
-        s.counter={{1.5,58,.75},{4.5,60,.75},{8,55,.75},{11.25,58,.5}};
-        s.bass={{.5,0,1.75},{3,0,1},{4.5,2,.8}};
-        s.pulse={{0,1,.5},{1.75,3,.5},{3.75,2,.5},{5.25,1,.4}};
-        s.drums={{.5,T::Kick,.43},{2.25,T::Hush,.17},{3,T::Kick,.4},{4,T::Metal,.12},{5,T::Rim,.24}};
-        s.form={{8,Bed,0,.57},{8,Bed|Ground|Theme,0,.78},{8,full,0,.91},{8,Bed|Ground|Motion|Beat,0,.73},{8,Bed|Theme|Answer,1,.75},{16,full,1,.91},{8,Bed|Motion,0,.58}};
-        s.kit=2; out.push_back(s);
-    }
-    {
-        // B Phrygian, five-beat 2+3 cells and downward semitone questions.
-        Score s{"mesh-transit",120,5,1,T::Pluck,T::Brass,T::Veil};
-        s.harmony={{47,54,57,60},{48,55,59,64},{45,52,55,59},{43,50,54,57},{40,47,52,55}};
-        s.a={{.25,72,.5},{1.25,71,.75},{3,66,1},{5,64,.5},{6,60,1.25},{8.25,59,.75},{10.5,64,1},{12.25,66,.5},{14,69,1.25},{16,67,.75},{18,64,1.5}};
-        s.b={{0,71,1},{1.75,74,.5},{3.5,72,1},{5.5,67,.75},{7,66,1},{9,64,.5},{10,60,1.5},{12.5,59,.75},{14.25,62,1},{16.25,64,1.75},{19,59,.5}};
-        s.counter={{2.5,78,.5},{7.75,76,.5},{13.5,79,.75},{18.75,76,.5}};
-        s.bass={{0,0,.7},{1.5,2,.5},{3,0,1},{5,0,.7},{6.5,1,.5},{8,3,1}};
-        s.pulse={{.5,1,.25},{2.25,3,.3},{4.25,2,.3},{5.75,2,.25},{7.25,1,.3},{9,3,.4}};
-        s.drums={{0,T::Kick,.82},{1,T::Hush,.34},{1.75,T::Snare,.56},{2.5,T::Kick,.47},{3.75,T::Snare,.44},{4.5,T::Hush,.36},{5,T::Kick,.81},{6.5,T::Tom,.45},{7,T::Snare,.62},{8.25,T::Kick,.54},{9,T::Snare,.61},{9.75,T::Hush,.38}};
-        s.form={{4,Bed|Motion|Beat,0,.66},{8,Bed|Ground|Theme|Beat,0,.86},{8,full,0,.98},{4,Bed|Ground|Answer,0,.67},{8,full,1,.97},{8,full,0,.9},{4,Bed|Motion,0,.6}};
-        s.kit=3; out.push_back(s);
-    }
-    {
-        // C-sharp minor, a slow pedal with staggered metal notes, not a drone.
-        Score s{"distant-machinery",86,4,2,T::Reed,T::Metal,T::Halo};
-        s.harmony={{37,44,51,52},{45,52,56,61},{42,49,52,56},{40,47,51,56},{44,51,54,60},{37,44,49,52}};
-        s.a={{1.25,61,1.5},{4,64,2.25},{7,63,.75},{8.75,56,1.5},{11,59,1},{13.25,61,2}};
-        s.b={{0,68,2},{3,66,1.25},{5.5,64,1},{7.25,61,.75},{9,63,2},{12,59,1},{14,56,1.5}};
-        s.counter={{2,73,1},{6.5,71,.75},{10.25,68,1},{15,64,.5}};
-        s.bass={{0,0,3.25},{4,0,2.5},{7,2,.65}};
-        s.pulse={{.75,2,.65},{3.25,3,.5},{5.75,1,.7},{7.5,2,.3}};
-        s.drums={{0,T::Tom,.58},{1.25,T::Metal,.21},{2.75,T::Tom,.32},{3.75,T::Hush,.19},{4.5,T::Tom,.53},{6.25,T::Metal,.32},{7.5,T::Rim,.26}};
-        s.form={{8,Bed|Motion,0,.59},{8,Bed|Ground|Theme,0,.78},{8,full,0,.9},{4,Bed|Answer,0,.6},{8,Bed|Ground|Theme|Beat,1,.83},{8,full,1,.92},{4,Bed,0,.55}};
-        s.kit=1; out.push_back(s);
-    }
-    {
-        // A Mixolydian, six-beat interleaved steps and a broad major answer.
-        Score s{"northern-array",106,6,1,T::Brass,T::Reed,T::Veil};
-        s.harmony={{45,52,55,61},{38,45,49,56},{43,50,54,57},{47,54,57,61},{40,47,52,56},{45,52,59,61}};
-        s.a={{0,69,1.5},{2,73,.75},{3.75,76,1},{6.25,74,1.5},{8.5,71,.75},{10,67,1},{12.25,64,1.5},{14.5,67,.75},{16,69,1.25},{18.5,73,1},{21,71,1.5}};
-        s.b={{.75,76,1},{2.25,79,.75},{4,76,1},{6,73,2},{9,71,1},{11,69,.5},{12.75,67,1.5},{15.25,64,.75},{17,66,1},{19,67,1.5},{22,69,1}};
-        s.counter={{1,57,1},{5,59,.75},{9.75,61,.75},{16.75,62,.75},{23,64,.5}};
-        s.bass={{0,0,1.5},{2.75,2,.8},{4.5,0,1},{6,0,1.5},{8.5,3,.75},{10.25,2,1}};
-        s.pulse={{1,1,.4},{3.5,3,.4},{5.5,2,.3},{7.5,1,.5},{9.5,2,.3},{11.5,3,.3}};
-        s.drums={{0,T::Tom,.62},{1,T::Tom,.37},{2,T::Kick,.61},{3,T::Snare,.46},{4.5,T::Metal,.21},{6,T::Kick,.68},{7.5,T::Tom,.59},{8.5,T::Tom,.38},{9,T::Snare,.46},{11,T::Hush,.27}};
-        s.form={{4,Bed|Ground,0,.62},{8,Bed|Ground|Theme|Beat,0,.83},{8,full,0,.95},{4,Bed|Motion|Answer,0,.65},{8,full,1,.96},{4,Bed|Motion,0,.58}};
-        s.kit=2; out.push_back(s);
-    }
-    {
-        // G Dorian, repeated-note opening develops into a stepwise answer.
-        Score s{"steady-watch",98,4,2,T::Felt,T::Reed,T::Veil};
-        s.harmony={{43,50,53,57},{48,55,58,64},{46,53,57,60},{41,48,52,57},{45,52,55,60},{43,50,57,58}};
-        s.a={{0,62,.75},{1.25,62,.5},{2.5,65,1},{4.25,67,1.25},{6.5,69,.75},{8,67,1},{9.75,65,.75},{11.25,64,.5},{12.5,62,1.75},{15,57,.5}};
-        s.b={{.5,70,1.25},{2.25,69,.75},{4,67,1},{5.75,65,.75},{7.25,64,.5},{8.5,62,1},{10.25,60,.75},{12,57,1.5},{14.5,62,1}};
-        s.counter={{3.5,74,.5},{7,76,.5},{10.75,77,.5},{14,74,.5}};
-        s.bass={{0,0,1.75},{2.5,2,.75},{4.25,0,1.5},{6.75,1,.7}};
-        s.pulse={{.75,3,.35},{2,1,.45},{3.75,2,.3},{5.5,3,.4},{7.25,1,.35}};
-        s.drums={{0,T::Kick,.55},{1.75,T::Hush,.2},{2.5,T::Rim,.3},{4.25,T::Kick,.5},{6,T::Rim,.3},{7.25,T::Metal,.13}};
-        s.form={{8,Bed|Motion,0,.62},{8,Bed|Ground|Theme,0,.82},{8,full,0,.92},{8,Bed|Ground|Answer|Beat,0,.72},{8,full,1,.94},{4,Bed|Theme,0,.72},{4,Bed,0,.56}};
-        s.kit=3; out.push_back(s);
-    }
-    {
-        // F minor, tight offbeat low pulses with a spacious upper-register arc.
-        Score s{"basalt-channel",116,4,1,T::Warm,T::Drive,T::Halo};
-        s.harmony={{41,48,51,55},{37,44,48,53},{44,51,55,58},{39,46,49,56},{46,53,56,60},{48,55,58,64}};
-        s.a={{.5,68,.75},{1.75,72,.5},{3,75,1.5},{5.25,73,.75},{6.75,70,.5},{8.25,67,1.25},{10,65,.75},{11.5,68,1},{13.25,70,.75},{14.75,65,.75}};
-        s.b={{0,77,1.5},{2.25,75,.75},{3.75,72,1},{5.5,68,1.25},{7.5,67,.5},{9,65,1.5},{11.25,63,.75},{13,60,1},{14.5,65,1}};
-        s.counter={{2.75,80,.5},{6,79,.5},{10.75,77,.5},{15.25,75,.5}};
-        s.bass={{.25,0,.75},{1.75,2,.5},{3.25,0,.5},{4.5,0,.75},{6,1,.5},{7.25,3,.5}};
-        s.pulse={{0,1,.25},{1,2,.25},{2.5,3,.3},{4,2,.25},{5.25,1,.3},{6.75,3,.3}};
-        s.drums={{0,T::Kick,.95},{1.5,T::Hush,.34},{2,T::Snare,.75},{3.25,T::Kick,.6},{4,T::Kick,.7},{5,T::Tom,.44},{6,T::Snare,.8},{7.5,T::Tom,.42}};
-        s.form={{4,Ground|Motion,0,.7},{8,Ground|Motion|Beat,0,.91},{8,full,0,1},{4,Ground|Beat,0,.68},{8,Theme|Ground|Motion|Beat,1,1},{8,full,1,.93},{4,Bed|Ground,0,.54}};
-        out.push_back(s);
-    }
-    {
-        // E minor, seven beats grouped 3+2+2. A short call and displaced answer.
-        Score s{"silver-switchyard",102,7,1,T::Glass,T::Reed,T::Veil};
-        s.harmony={{40,47,55,59},{43,50,54,59},{45,52,55,60},{38,45,52,54},{36,43,50,55},{47,54,57,63},{40,47,54,55}};
-        s.a={{.5,71,1},{2,67,.75},{4,64,1.5},{7,66,1},{9.25,69,.75},{11,71,1},{14,74,1.75},{16.5,71,.75},{18.25,67,1},{21.5,66,1.25},{24,64,2}};
-        s.b={{0,76,1.25},{2.5,74,1},{5,71,.75},{7.5,69,1.25},{10,67,1},{12,64,1},{15,62,1.5},{18,66,1},{20.5,67,1.25},{23,71,1},{25.5,64,1.5}};
-        s.counter={{3,59,1},{8.5,62,.75},{13,64,.75},{19.5,62,.5},{26.5,59,.75}};
-        s.bass={{0,0,1.5},{3,2,1},{5,0,1},{7.25,0,1.5},{10,1,1},{12,2,1}};
-        s.pulse={{1.5,3,.5},{4,1,.5},{6.25,2,.4},{8.75,1,.4},{11,3,.5},{13.25,2,.4}};
-        s.drums={{0,T::Kick,.53},{2,T::Hush,.18},{3,T::Rim,.28},{5,T::Kick,.3},{7.25,T::Kick,.5},{10,T::Metal,.14},{12,T::Rim,.28},{13.5,T::Hush,.18}};
-        s.form={{4,Bed|Motion,0,.61},{4,Bed|Ground|Theme,0,.8},{4,full,0,.92},{4,Bed|Ground|Answer|Beat,0,.69},{4,full,1,.93},{4,Bed|Theme|Motion,1,.77},{4,Bed,0,.55}};
-        s.kit=1; out.push_back(s);
-    }
-    {
-        // B-flat major, broad sustained melody and a low, delayed counterline.
-        Score s{"blue-foundation",88,4,2,T::Reed,T::Felt,T::Halo};
-        s.harmony={{46,53,57,60},{43,50,53,58},{39,46,50,55},{41,48,53,57},{48,55,58,62},{46,53,60,62}};
-        s.a={{0,65,2.25},{3,62,1},{5,60,1.75},{8,58,2},{10.75,62,.75},{12.5,65,2},{15.25,67,.5}};
-        s.b={{1,70,1.5},{3.5,69,1},{5.5,65,1.5},{8.5,62,1.25},{10.5,60,1},{12.25,58,2},{15,62,.5}};
-        s.counter={{2,53,1.25},{6.75,55,.75},{11.5,57,.75},{14.5,53,.5}};
-        s.bass={{0,0,2.5},{3.25,2,.5},{4.75,0,2},{7.25,3,.5}};
-        s.pulse={{1,1,.75},{3,3,.65},{5.75,2,.6},{7.5,1,.3}};
-        s.drums={{0,T::Kick,.45},{2.25,T::Rim,.24},{4.75,T::Kick,.42},{6.5,T::Hush,.18},{7.5,T::Metal,.11}};
-        s.form={{8,Bed,0,.57},{8,Bed|Ground|Theme,0,.78},{8,full,0,.9},{4,Bed|Motion|Answer,0,.61},{8,full,1,.91},{8,Bed|Ground|Theme|Beat,0,.8},{4,Bed,0,.55}};
-        s.kit=2; out.push_back(s);
-    }
-    {
-        // C Lydian, three-beat syncopation and upward fourths, lightly articulated.
-        Score s{"radar-garden",114,3,1,T::Pluck,T::Glass,T::Veil};
-        s.harmony={{48,55,59,64},{50,57,60,66},{43,50,54,59},{45,52,55,60},{41,48,52,59},{48,55,62,66}};
-        s.a={{.5,64,.5},{1.25,69,.75},{3,71,.5},{4,74,1},{5.5,72,.5},{6.5,66,.75},{8,67,.5},{9.25,71,1},{11,64,.75}};
-        s.b={{0,76,.5},{1,74,.75},{2.25,71,.5},{3.5,69,1},{5.25,66,.5},{6.25,67,1.25},{8.25,64,.75},{9.5,62,.75},{11,64,.75}};
-        s.counter={{2,79,.5},{4.75,78,.5},{7.75,76,.5},{10.75,74,.5}};
-        s.bass={{0,0,.8},{1.75,2,.6},{3.25,0,1},{5,1,.5}};
-        s.pulse={{.75,1,.3},{2.5,3,.25},{4,2,.35},{5.5,1,.25}};
-        s.drums={{0,T::Kick,.5},{1.25,T::Hush,.16},{2,T::Rim,.28},{3.25,T::Kick,.46},{4.5,T::Metal,.13},{5.5,T::Hush,.18}};
-        s.form={{8,Bed|Motion,0,.62},{8,Bed|Ground|Theme|Beat,0,.82},{16,full,0,.94},{8,Bed|Ground|Answer,0,.67},{8,full,1,.94},{8,Bed|Theme|Beat,0,.79},{8,Bed|Motion,0,.57}};
-        s.kit=3; out.push_back(s);
-    }
-    {
-        // D major with a borrowed flat seventh, an unhurried opening-out phrase.
-        Score s{"first-light-protocol",94,4,2,T::Warm,T::Pluck,T::Halo};
-        s.harmony={{50,57,61,64},{43,50,54,59},{47,54,57,62},{45,52,55,62},{48,55,59,64},{50,57,62,66}};
-        s.a={{.25,62,1.5},{2.5,66,.75},{4,69,2},{7,71,.5},{8.5,74,1.25},{10.5,73,.75},{12,69,1.5},{14.25,66,1.25}};
-        s.b={{0,76,1.75},{2.75,74,.75},{4.25,71,1.25},{6.25,69,.75},{8,67,1.5},{10.25,66,.75},{12,64,1},{13.5,62,2}};
-        s.counter={{1.25,57,1},{5.5,59,1},{9.75,61,.75},{15,57,.5}};
-        s.bass={{0,0,2},{2.75,2,.65},{4.5,0,1.75},{7,3,.6}};
-        s.pulse={{1,1,.5},{3.5,3,.4},{5.5,2,.6},{7.5,1,.3}};
-        s.drums={{0,T::Kick,.48},{2.5,T::Rim,.27},{4.5,T::Kick,.45},{6,T::Hush,.19},{7.25,T::Metal,.12}};
-        s.form={{4,Bed,0,.55},{8,Bed|Ground|Motion,0,.7},{8,Bed|Ground|Theme|Beat,0,.84},{8,full,0,.93},{4,Bed|Theme,1,.67},{8,full,1,.94},{4,Bed|Motion|Answer,0,.67},{4,Bed,0,.54}};
-        out.push_back(s);
-    }
-    return out;
+std::vector<Song> songs() {
+    using T=Tone;
+    return {
+        // Syncopated bass and dry backbeat.
+        {"switchyard",118,72,4,T::Hollow,T::Reed,{38,41,36,43},{4,12,32,40,64},
+            {{0,62,7.9},{8,65,7.9},{16,60,7.9},{24,62,7.9}},
+            {{0,1.3,0},{1.75,.6,7},{3,1.0,0},{4,1.4,0},{6.25,.6,7},{7.25,.7,0}},
+            {{0,T::Kick,1},{1.75,T::Kick,.65},{1,T::Snare,.72},{3,T::Snare,.85},
+             {4,T::Kick,1},{6.5,T::Kick,.6},{5,T::Snare,.7},{7,T::Snare,.9}},
+            .5,.045,.095,.105},
+        // Fast electronic march, with a held minor-key answer.
+        {"iron-circuit",124,76,2,T::Drive,T::Brass,{35,38,42,40},{4,16,36,44,68},
+            {{0,59,7.9},{8,62,3.9},{12,66,3.9},{16,64,7.9},{24,59,7.9}},
+            {{0,1.8,0},{2.5,.8,7},{4,1.8,0},{6.5,.8,7}},
+            {{0,T::Kick,1},{1.5,T::Kick,.65},{2,T::Snare,.8},{3.5,T::Kick,.55},
+             {4,T::Kick,1},{5.5,T::Kick,.65},{6,T::Snare,.9},{7.5,T::Tom,.45}},
+            .5,0,.13,.085},
+        // Heavy, spacious trip-hop with a descending phrase.
+        {"night-transit",96,68,4,T::Hollow,T::Warm,{36,32,39,31},{8,16,36,44,60},
+            {{0,63,5.9},{6,67,5.9},{12,65,6.9},{19,63,6.9},{26,60,5.9}},
+            {{0,2.5,0},{3.25,.7,7},{4.5,2.4,0},{7.25,.5,7}},
+            {{0,T::Kick,1},{3.5,T::Kick,.48},{2,T::Snare,.78},
+             {4.5,T::Kick,.8},{6,T::Snare,.85},{7.5,T::Tom,.45}},
+            1,0,.085,.115},
+        // Bright Mixolydian funk, led by the bass rather than upper notes.
+        {"copper-wire",110,72,2,T::Reed,T::Hollow,{45,43,38,40},{4,16,36,44,68},
+            {{0,57,7.9},{8,61,7.9},{16,64,7.9},{24,67,7.9}},
+            {{0,.95,0},{1.25,.6,7},{2.75,.9,0},{4,1.1,0},{5.5,.6,7},{6.75,.9,0}},
+            {{0,T::Kick,1},{2.75,T::Kick,.7},{1,T::Snare,.65},{3.5,T::Snare,.9},
+             {4,T::Kick,1},{5.25,T::Kick,.55},{5,T::Snare,.65},{7,T::Snare,.9}},
+            .5,.065,.075,.09},
+        // Slow, wide chords and a tom-led half-time pulse.
+        {"cold-front",92,64,4,T::Veil,T::Brass,{38,34,41,36},{8,20,36,44,56},
+            {{0,57,7.9},{8,62,7.9},{16,65,7.9},{24,64,7.9}},
+            {{0,3.3,0},{3.5,.4,7},{4,3.3,0},{7.5,.4,7}},
+            {{0,T::Kick,1},{2,T::Snare,.7},{3.5,T::Tom,.45},
+             {4,T::Kick,.85},{6,T::Snare,.85},{7.25,T::Tom,.5}},
+            1,0,.075,.085},
+        // Rolling toms and a low, upward mechanical motif.
+        {"dust-route",106,72,2,T::Drive,T::Warm,{42,38,33,40},{8,16,36,44,64},
+            {{0,54,7.9},{8,57,7.9},{16,61,7.9},{24,59,7.9}},
+            {{0,1.7,0},{2.25,1.0,7},{4,1.7,0},{6.25,1.0,7}},
+            {{0,T::Kick,1},{1.5,T::Tom,.5},{3,T::Snare,.76},
+             {4,T::Kick,1},{5,T::Tom,.43},{6.5,T::Kick,.55},{7,T::Snare,.9}},
+            .5,0,.11,.10},
+        // Quick breakbeat with a long, open response.
+        {"pulse-engine",132,80,2,T::Drive,T::Reed,{43,34,41,38},{2,10,30,38,70},
+            {{0,67,3.9},{4,70,3.9},{8,74,7.9},{16,72,7.9},{24,67,7.9}},
+            {{0,1.0,0},{1.5,.55,7},{3,.8,0},{4,1.0,0},{5.5,.55,7},{7,.8,0}},
+            {{0,T::Kick,1},{1.5,T::Kick,.68},{2,T::Snare,.9},{3,T::Kick,.6},
+             {4,T::Kick,1},{5.5,T::Kick,.68},{6,T::Snare,.92},{7,T::Kick,.6}},
+            .25,.025,.095,.075},
+        // Weighty half-time rhythm with sparse power chords.
+        {"concrete-sky",122,76,4,T::Drive,T::Hollow,{37,33,40,35},{4,12,34,42,68},
+            {{0,61,7.9},{8,64,7.9},{16,68,7.9},{24,59,7.9}},
+            {{0,2.0,0},{2.75,.7,7},{4,2.0,0},{6.75,.7,7}},
+            {{0,T::Kick,1},{1,T::Kick,.55},{2.5,T::Snare,.9},{3.75,T::Tom,.43},
+             {4,T::Kick,1},{5,T::Kick,.55},{6.5,T::Snare,.92},{7.5,T::Tom,.45}},
+            .5,0,.12,.09},
+        // Open Mixolydian rock pulse with a rising refrain.
+        {"waypoint",116,72,4,T::Drive,T::Warm,{38,36,43,45},{4,12,32,40,64},
+            {{0,62,5.9},{6,66,5.9},{12,69,5.9},{18,72,5.9},{24,69,7.9}},
+            {{0,2.0,0},{2.5,1.0,7},{4,2.0,0},{6.5,1.0,7}},
+            {{0,T::Kick,1},{1,T::Snare,.75},{2,T::Kick,.65},{3,T::Snare,.85},
+             {4,T::Kick,1},{5,T::Snare,.75},{6.5,T::Kick,.65},{7,T::Snare,.9}},
+            .5,0,.10,.11}
+    };
 }
 
 struct CueNote { double at, hold; int pitch; Tone tone; double level, pan = 0; };
@@ -479,52 +277,69 @@ std::vector<Cue> cues() {
 
 std::string contour(const std::vector<Note>& notes) {
     std::ostringstream out;
-    out << std::fixed << std::setprecision(4);
-    for (const auto& n:notes) out << n.at << ':' << n.pitch-notes.front().pitch << ':' << n.hold << ';';
+    for (const auto& note:notes)
+        out << note.at << ':' << note.pitch-notes.front().pitch << ':' << note.hold << ';';
     return out.str();
 }
 
-void validate(const Catalog& catalog, const std::vector<Score>& music, const std::vector<Cue>& sounds) {
-    require(music.size()==20 && sounds.size()==20, "Expected twenty explicit scores and cues");
-    std::set<std::string> scoreIds, cueIds, shapes;
-    for (const auto& s:music) {
-        require(scoreIds.insert(s.id).second, "Duplicate score ID");
-        require(s.bpm>=40 && s.bpm<=160 && s.meter>=3 && s.meter<=7 && s.chordBars>0, "Invalid score timing: "+s.id);
-        require(s.seconds()>=90 && s.seconds()<=150, "Score duration outside 90-150 seconds: "+s.id);
-        require(!s.harmony.empty() && s.a.size()>=6 && s.b.size()>=6 && !s.counter.empty(), "Incomplete composition: "+s.id);
-        require(shapes.insert(contour(s.a)).second, "Transposed or tempo-only duplicate opening theme: "+s.id);
-        require(contour(s.a)!=contour(s.b), "Answer repeats the opening theme: "+s.id);
-        for (const auto* line:{&s.a,&s.b,&s.counter}) for (const auto& n:*line)
-            require(n.at>=0 && n.hold>0 && n.at+n.hold<=s.meter*4 && n.pitch>=36 && n.pitch<=88, "Invalid theme event: "+s.id);
-        for (const auto* line:{&s.bass,&s.pulse}) for (const auto& n:*line)
-            require(n.at>=0 && n.hold>0 && n.at+n.hold<=s.meter*2 && n.tone>=0 && n.tone<4, "Invalid rhythm event: "+s.id);
-        for (const auto& d:s.drums) require(d.at>=0 && d.at<s.meter*2 && d.level>0 && d.level<=1, "Invalid percussion event: "+s.id);
-        for (const auto& chord:s.harmony) for (const int pitch:chord) require(pitch>=24 && pitch<=80, "Invalid harmony: "+s.id);
-        for (const auto& section:s.form) require(section.bars>0 && section.layers>0 && section.layers<=full
-            && section.variant>=0 && section.variant<=1 && section.energy>0 && section.energy<=1, "Invalid section: "+s.id);
+void validate(const Catalog& catalog,const std::vector<Song>& music,const std::vector<Cue>& sounds) {
+    require(music.size()==9 && sounds.size()==20, "Expected nine scored songs, Forge and twenty cues");
+    std::set<std::string> songIds{"forge"}, cueIds, themes;
+    for (const auto& song:music) {
+        require(songIds.insert(song.id).second, "Duplicate song ID: "+song.id);
+        require(song.bpm>=80 && song.bpm<=140 && song.bars>=64 && song.bars<=80
+            && (song.chordBars==2 || song.chordBars==4) && song.seconds()>=120 && song.seconds()<=190,
+            "Invalid song timing: "+song.id);
+        require(song.form[0]<song.form[1] && song.form[1]<song.form[2]
+            && song.form[2]<song.form[3] && song.form[3]<song.form[4]
+            && song.form[4]<song.bars && song.form[0]>=0, "Invalid song form: "+song.id);
+        require(song.theme.size()>=4 && song.theme.size()<=8 && song.bass.size()>=4
+            && song.drums.size()>=5 && themes.insert(contour(song.theme)).second,
+            "Missing or repeated song material: "+song.id);
+        for (const auto& note:song.theme)
+            require(note.at>=0 && note.hold>=2 && note.at+note.hold<=32.1
+                && note.pitch>=48 && note.pitch<=76 && note.level>0 && note.level<=1,
+                "Invalid song phrase: "+song.id);
+        for (const auto& note:song.bass)
+            require(note.at>=0 && note.at+note.hold<=8 && note.hold>0
+                && (note.interval==0 || note.interval==7 || note.interval==12)
+                && note.level>0 && note.level<=1, "Invalid bass part: "+song.id);
+        for (const auto& note:song.drums)
+            require(note.at>=0 && note.at<8 && note.level>0 && note.level<=1
+                && (note.tone==Tone::Kick || note.tone==Tone::Snare || note.tone==Tone::Rim
+                    || note.tone==Tone::Tom || note.tone==Tone::Metal), "Invalid drum part: "+song.id);
+        for (const int root:song.roots) require(root>=28 && root<=48, "Invalid harmony: "+song.id);
+        require((song.hatStep==.25 || song.hatStep==.5 || song.hatStep==1)
+            && song.swing>=0 && song.swing<=.1 && song.chordLevel>0 && song.chordLevel<=.2
+            && song.leadLevel>0 && song.leadLevel<=.2, "Invalid song mix: "+song.id);
     }
     for (const auto& cue:sounds) {
         require(cueIds.insert(cue.id).second, "Duplicate cue ID");
         require(cue.seconds>=.1 && cue.seconds<=2 && (cue.channels==1 || cue.channels==2) && !cue.notes.empty(), "Invalid cue: "+cue.id);
-        for (const auto& n:cue.notes) require(n.at>=0 && n.hold>0 && n.at+n.hold<=cue.seconds && n.pitch>=36
-            && n.pitch<=88 && std::abs(n.pan)<=1 && n.level>0 && n.level<=1, "Invalid cue note: "+cue.id);
+        for (const auto& note:cue.notes)
+            require(note.at>=0 && note.hold>0 && note.at+note.hold<=cue.seconds
+                && note.pitch>=36 && note.pitch<=88 && std::abs(note.pan)<=1
+                && note.level>0 && note.level<=1, "Invalid cue note: "+cue.id);
     }
-    const auto entries = [](const std::vector<Entry>& items, const std::set<std::string>& ids, bool sound) {
+    const auto entries=[](const std::vector<Entry>& items,const std::set<std::string>& ids,bool sound) {
         std::set<std::string> found;
-        for (const auto& e:items) {
-            require(ids.count(e.id)==1 && found.insert(e.id).second, "Catalog/score ID mismatch: "+e.id);
-            require(!e.id.empty() && e.id.front()!='-' && e.id.back()!='-', "Invalid asset ID");
+        for (const auto& entry:items) {
+            require(ids.count(entry.id)==1 && found.insert(entry.id).second, "Catalog/score ID mismatch: "+entry.id);
+            require(!entry.id.empty() && entry.id.front()!='-' && entry.id.back()!='-', "Invalid asset ID");
             char previous=0;
-            for (const char c:e.id) {
+            for (const char c:entry.id) {
                 require((c>='a'&&c<='z') || (c>='0'&&c<='9') || (c=='-'&&previous!='-'), "Unsafe asset ID");
                 previous=c;
             }
-            require(e.asset=="qrc:/podlord/audio/"+std::string(sound?"sfx/":"music/")+e.id+(sound?".wav":".m4a"), "Unexpected asset path: "+e.id);
+            require(entry.asset=="qrc:/podlord/audio/"+std::string(sound?"sfx/":"music/")
+                +entry.id+(sound?".wav":".m4a"), "Unexpected asset path: "+entry.id);
         }
         require(found==ids, "Catalog omits a composition");
     };
-    entries(catalog.sounds,cueIds,true); entries(catalog.tracks,scoreIds,false);
-    for (const auto& [old,target]:catalog.legacy) require(!old.empty() && cueIds.count(target)==1, "Invalid legacy sound alias: "+old);
+    entries(catalog.sounds,cueIds,true);
+    entries(catalog.tracks,songIds,false);
+    for (const auto& [old,target]:catalog.legacy)
+        require(!old.empty() && cueIds.count(target)==1, "Invalid legacy sound alias: "+old);
 }
 
 const std::array<double,16384>& sineTable() {
@@ -658,187 +473,7 @@ void finish(Audio& audio,bool music) {
     for (float& x:audio.pcm) x*=float(gain);
 }
 
-Audio render(const Score& score) {
-    Audio audio(score.seconds(),2,true);
-    const double spb=60.0/score.bpm;
-    const auto seed=seedFor(score.id);
-    const int character=int(seed%5);
-    std::uint32_t event=0;
-    int firstBar=0;
-    for (const auto& section:score.form) {
-        const int lastBar=firstBar+section.bars;
-        const double energy=section.energy;
-        for (int bar=firstBar;bar<lastBar;++bar) {
-            const auto& chord=score.harmony[std::size_t(bar/score.chordBars+section.harmonyOffset)%score.harmony.size()];
-            if (bar%score.chordBars==0) {
-                const double span=score.chordBars*score.meter*spb;
-                const double at=bar*score.meter*spb;
-                const double hold=span*1.25;
-                for (int c=0;c<4;++c)
-                    voice(audio,at,hold,chord[std::size_t(c)]+12,score.pad,
-                        (section.layers&Bed?.10:.04)*energy,
-                        c%2? .62:-.62,seed+(++event));
-            }
-        }
-        for (int cell=firstBar;cell<lastBar;cell+=2) {
-            const double end=lastBar*score.meter;
-            const auto stepped=[&](const std::vector<Step>& line,Tone tone,double level,int octave,double pan) {
-                for (const auto& n:line) {
-                    double beat=cell*score.meter+n.at;
-                    if ((character==1 || character==4) && n.at-std::floor(n.at)>.1) beat+=.11;
-                    if (beat>=end) continue;
-                    const auto bar=int(beat/score.meter);
-                    const auto& chord=score.harmony[std::size_t(bar/score.chordBars+section.harmonyOffset)%score.harmony.size()];
-                    voice(audio,beat*spb,n.hold*spb,
-                        chord[std::size_t(n.tone)]+octave,tone,level*n.level*energy,pan,seed+(++event));
-                }
-            };
-            stepped(score.bass,Tone::Sub,section.layers&Ground?.29:.10,-12,0);
-            stepped(score.pulse,score.motion,section.layers&Motion?.055:.016,12,-.28);
-            for (const auto& d:score.drums) {
-                double beat=cell*score.meter+d.at;
-                if ((character==1 || character==4) && d.at-std::floor(d.at)>.1) beat+=.11;
-                if (beat>=end) continue;
-                const bool backbeat=d.tone==Tone::Rim || d.tone==Tone::Snare;
-                const int pitch=d.tone==Tone::Kick?32+score.kit:d.tone==Tone::Tom?42+score.kit:backbeat?51+score.kit*2:70+score.kit;
-                const double duration=d.tone==Tone::Kick?.24:d.tone==Tone::Tom?.28:backbeat?.16:.12;
-                const double level=d.tone==Tone::Kick?.32:d.tone==Tone::Tom?.23:d.tone==Tone::Snare?.25:backbeat?.17:.075;
-                voice(audio,beat*spb,duration,pitch,d.tone,level*d.level*energy*(section.layers&Beat?.55:.11),
-                    d.tone==Tone::Metal?.38:d.tone==Tone::Hush?-.42:0,seed+(++event));
-            }
-        }
-        const auto melodic=[&](const std::vector<Note>& line,Tone tone,double level,double pan) {
-            for (int phrase=firstBar;phrase<lastBar;phrase+=4) for (const auto& n:line) {
-                const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
-                if (at>=end) continue;
-                voice(audio,at*spb,n.hold*spb,n.pitch,tone,level*n.level*energy,pan,seed+(++event));
-            }
-        };
-        for (int phrase=firstBar;phrase<lastBar;phrase+=4) {
-            const int variation=section.variant+((phrase-firstBar)/4)+(character%2);
-            const auto& line=variation%2?score.b:score.a;
-            for (const auto& n:line) {
-                const double at=phrase*score.meter+n.at, end=lastBar*score.meter;
-                if (at>=end) continue;
-                voice(audio,at*spb,n.hold*spb,n.pitch,score.lead,
-                    (section.layers&Theme ? .22 : .07)*n.level*energy,.12,seed+(++event));
-            }
-        }
-        if (section.layers&Answer) melodic(score.counter,score.lead==Tone::Glass?Tone::Felt:Tone::Glass,.075,.38);
-        firstBar=lastBar;
-    }
-    finish(audio,true);
-    return audio;
-}
-
-// Two original audition scores with different rhythm sections and themes.
-// Both use the same synthesizer and stay outside the bundled playlist.
-Audio renderPrototype(std::string_view direction) {
-    const bool forge=direction=="forge";
-    require(forge || direction=="switchyard", "Unknown prototype: "+std::string(direction));
-    constexpr int bars=72;
-    const double secondsPerBeat=60.0/(forge?112.0:118.0);
-    Audio audio(bars*4*secondsPerBeat,2,false);
-    const auto seed=seedFor(direction);
-    std::uint32_t event=0;
-    const auto play=[&](double beat,double hold,int pitch,Tone tone,double level,double pan=0) {
-        voice(audio,beat*secondsPerBeat,hold*secondsPerBeat,pitch,tone,level,pan,seed+(++event));
-    };
-    if (forge) {
-        const std::array<int,4> roots{40,43,38,45};
-        // One returning phrase in E minor. The repeated E is its anchor.
-        const std::array<Note,8> hook{{{0,64,4.1},{4,64,4.1},{8,67,4.1},{12,64,4.1},
-            {16,62,4.1},{20,64,4.1},{24,59,4.1},{28,64,4.1}}};
-        for (int bar=0;bar<bars;++bar) {
-            const double beat=bar*4.0;
-            const int root=roots[std::size_t(bar/4)%roots.size()];
-            const bool bridge=bar>=36 && bar<44;
-            const double energy=bar<4?.68:bridge?.72:bar>=64?.76:bar>=44?1.0:.9;
-            // A continuous low foundation keeps the song moving through every change.
-            play(beat,3.9,root,Tone::Sub,.25*energy);
-            play(beat,.34,35,Tone::Kick,.38*energy);
-            play(beat+2,.3,35,Tone::Kick,.29*energy);
-            if (!bridge) play(beat+3.5,.25,35,Tone::Kick,.16*energy);
-            play(beat+(bridge?2:1),.24,49,Tone::Snare,.31*energy,.08);
-            if (!bridge) play(beat+3,.23,49,Tone::Snare,.29*energy,.08);
-            for (int tick=0;tick<8;++tick)
-                play(beat+tick*.5,.13,75,Tone::Hush,(tick%2?.048:.073)*energy,tick%2?.36:-.36);
-            if (bar%8==7) {
-                play(beat+2.5,.31,46,Tone::Tom,.17*energy,-.2);
-                play(beat+3.25,.27,43,Tone::Tom,.2*energy,.2);
-            }
-            if (bar>=4 && !bridge && bar%2==0) {
-                play(beat,8.1,root+12,Tone::Drive,.13*energy,-.23);
-                play(beat,8.1,root+19,Tone::Drive,.055*energy,.28);
-            }
-            if (bridge && bar%2==0)
-                play(beat,8.1,root+24,Tone::Veil,.045*energy,-.45);
-            if ((bar>=20 && bar<36) || (bar>=44 && bar<64)) {
-                const int phrase=(bar>=44?bar-44:bar-20)%8;
-                for (const auto& note:hook) {
-                    const double at=bar*4+note.at-phrase*4;
-                    if (at<beat || at>=beat+4) continue;
-                    play(at,note.hold,note.pitch,Tone::Warm,.105*energy,.13);
-                }
-            }
-        }
-    } else {
-        const std::array<int,4> roots{38,41,45,36};
-        const std::array<Note,16> bass{{{0,0,.7},{.75,7,.45},{1.5,0,.6},{2.5,3,.5},
-            {3.25,0,.7},{4,0,.8},{5.25,5,.55},{6,7,.45},{6.75,3,.45},
-            {7.5,0,.42},{8,0,.8},{10,5,1.15},{12,0,.8},{13.25,7,.5},
-            {14,3,.65},{15.25,0,.65}}};
-        const std::array<Note,9> comp{{{.5,0,.7},{2.25,7,.8},{5,0,.9},
-            {7,5,.6},{8,7,.6},{9.75,0,.55},{11.5,3,.5},
-            {12.5,0,1.4},{14.75,7,.7}}};
-        const std::array<Note,9> melody{{{0,62,1.8},{2.5,65,1.25},{4,69,2.2},
-            {7.5,67,1.1},{9,65,1.7},{12,72,1.9},{15,69,1.25},
-            {18,67,2.4},{22,65,3}}};
-        for (int bar=0;bar<bars;++bar) {
-            const double beat=bar*4.0;
-            const int root=roots[std::size_t(bar/4)%roots.size()];
-            const bool breakbeat=bar>=32 && bar<40;
-            const double energy=bar<4?.65:breakbeat?.74:bar>=64?.78:bar>=40?1.0:.88;
-            play(beat,3.9,root+12,Tone::Hollow,.08*energy,-.18);
-            play(beat,.31,33,Tone::Kick,.36*energy);
-            play(beat+(bar%2?2.5:1.75),.25,33,Tone::Kick,.23*energy);
-            play(beat+1,.22,51,Tone::Snare,.26*energy,.04);
-            play(beat+3,.25,51,Tone::Snare,.33*energy,.04);
-            if (bar%2==1) play(beat+2.75,.13,52,Tone::Rim,.08*energy,-.2);
-            for (int tick=0;tick<8;++tick)
-                play(beat+tick*.5+(tick%2?.045:0),.11,79,Tone::Hush,
-                    (tick%2?.04:.062)*energy,tick%2?.4:-.4);
-            if (bar%8==7) {
-                play(beat+2.6,.29,44,Tone::Tom,.18*energy,-.3);
-                play(beat+3.45,.26,48,Tone::Tom,.17*energy,.3);
-            }
-            for (const auto& note:bass) {
-                const double at=beat+note.at-4*(bar%4);
-                if (at<beat || at>=beat+4) continue;
-                play(at,note.hold,root+note.pitch,Tone::Sub,.31*energy);
-            }
-            if (bar>=4 && !breakbeat) {
-                for (const auto& note:comp) {
-                    const double at=beat+note.at-4*(bar%4);
-                    if (at<beat || at>=beat+4) continue;
-                    play(at,note.hold,root+24+note.pitch,Tone::Drive,.10*energy,-.35);
-                    play(at,note.hold*.9,root+31+note.pitch,Tone::Drive,.042*energy,.32);
-                }
-            }
-            if (breakbeat) play(beat,3.9,root+24,Tone::Hollow,.09*energy,.2);
-            if ((bar>=12 && bar<32) || (bar>=40 && bar<64)) {
-                const int phrase=(bar>=40?bar-40:bar-12)%8;
-                for (const auto& note:melody) {
-                    const double at=beat+note.at-phrase*4;
-                    if (at<beat || at>=beat+4) continue;
-                    play(at,note.hold,note.pitch+(bar>=40?5:0),Tone::Reed,
-                        (bar>=40?.15:.12)*energy,.16);
-                }
-            }
-            if (bar>=40 && bar<64 && bar%4==3)
-                play(beat+2.2,1.5,root+36,Tone::Brass,.08*energy,-.12);
-        }
-    }
+void finishTrack(Audio& audio) {
     finish(audio,true);
     const auto frames=audio.frames();
     for (std::size_t frame=0;frame<frames;++frame) {
@@ -846,8 +481,112 @@ Audio renderPrototype(std::string_view direction) {
         audio.pcm[frame*2]*=float(gain);
         audio.pcm[frame*2+1]*=float(gain);
     }
+}
+
+Audio renderForge() {
+    constexpr int bars=72;
+    constexpr double secondsPerBeat=60.0/112.0;
+    Audio audio(bars*4*secondsPerBeat,2,false);
+    const auto seed=seedFor("forge");
+    std::uint32_t event=0;
+    const auto play=[&](double beat,double hold,int pitch,Tone tone,double level,double pan=0) {
+        voice(audio,beat*secondsPerBeat,hold*secondsPerBeat,pitch,tone,level,pan,seed+(++event));
+    };
+    const std::array<int,4> roots{40,43,38,45};
+    const std::array<Note,8> hook{{{0,64,4.1},{4,64,4.1},{8,67,4.1},{12,64,4.1},
+        {16,62,4.1},{20,64,4.1},{24,59,4.1},{28,64,4.1}}};
+    for (int bar=0;bar<bars;++bar) {
+        const double beat=bar*4.0;
+        const int root=roots[std::size_t(bar/4)%roots.size()];
+        const bool bridge=bar>=36 && bar<44;
+        const double energy=bar<4?.68:bridge?.72:bar>=64?.76:bar>=44?1.0:.9;
+        play(beat,3.9,root,Tone::Sub,.25*energy);
+        play(beat,.34,35,Tone::Kick,.38*energy);
+        play(beat+2,.3,35,Tone::Kick,.29*energy);
+        if (!bridge) play(beat+3.5,.25,35,Tone::Kick,.16*energy);
+        play(beat+(bridge?2:1),.24,49,Tone::Snare,.31*energy,.08);
+        if (!bridge) play(beat+3,.23,49,Tone::Snare,.29*energy,.08);
+        for (int tick=0;tick<8;++tick)
+            play(beat+tick*.5,.13,75,Tone::Hush,(tick%2?.048:.073)*energy,tick%2?.36:-.36);
+        if (bar%8==7) {
+            play(beat+2.5,.31,46,Tone::Tom,.17*energy,-.2);
+            play(beat+3.25,.27,43,Tone::Tom,.2*energy,.2);
+        }
+        if (bar>=4 && !bridge && bar%2==0) {
+            play(beat,8.1,root+12,Tone::Drive,.13*energy,-.23);
+            play(beat,8.1,root+19,Tone::Drive,.055*energy,.28);
+        }
+        if (bridge && bar%2==0)
+            play(beat,8.1,root+24,Tone::Veil,.045*energy,-.45);
+        if ((bar>=20 && bar<36) || (bar>=44 && bar<64)) {
+            const int phrase=(bar>=44?bar-44:bar-20)%8;
+            for (const auto& note:hook) {
+                const double at=beat+note.at-phrase*4;
+                if (at<beat || at>=beat+4) continue;
+                play(at,note.hold,note.pitch,Tone::Warm,.105*energy,.13);
+            }
+        }
+    }
+    finishTrack(audio);
     return audio;
 }
+
+Audio render(const Song& song) {
+    const double secondsPerBeat=60.0/song.bpm;
+    Audio audio(song.seconds(),2,false);
+    const auto seed=seedFor(song.id);
+    std::uint32_t event=0;
+    const auto play=[&](double beat,double hold,int pitch,Tone tone,double level,double pan=0) {
+        voice(audio,beat*secondsPerBeat,hold*secondsPerBeat,pitch,tone,level,pan,seed+(++event));
+    };
+    for (int bar=0;bar<song.bars;++bar) {
+        const double beat=bar*4.0;
+        const int root=song.roots[std::size_t(bar/song.chordBars)%song.roots.size()];
+        const bool bridge=bar>=song.form[2] && bar<song.form[3];
+        const bool theme=(bar>=song.form[1] && bar<song.form[2])
+            || (bar>=song.form[3] && bar<song.form[4]);
+        const double energy=bar<song.form[0]?.68:bridge?.72:bar>=song.form[4]?.7:theme?1.0:.86;
+        play(beat,4.05,root,Tone::Sub,.13*energy);
+        if (bar>=song.form[0] && bar%song.chordBars==0) {
+            const double hold=song.chordBars*4+.1;
+            if (bridge) play(beat,hold,root+24,Tone::Veil,.045*energy,-.3);
+            else {
+                play(beat,hold,root+12,song.chord,song.chordLevel*energy,-.27);
+                play(beat,hold,root+19,song.chord,song.chordLevel*.42*energy,.31);
+            }
+        }
+        for (const auto& note:song.bass) {
+            const double at=beat+note.at-4*(bar%2);
+            if (at>=beat && at<beat+4)
+                play(at,note.hold,root+note.interval,Tone::Sub,.28*note.level*energy);
+        }
+        for (const auto& hit:song.drums) {
+            const double at=beat+hit.at-4*(bar%2);
+            if (at<beat || at>=beat+4) continue;
+            const int pitch=hit.tone==Tone::Kick?35:hit.tone==Tone::Tom?45:hit.tone==Tone::Metal?73:50;
+            const double hold=hit.tone==Tone::Kick?.32:hit.tone==Tone::Tom?.3:.23;
+            const double volume=hit.tone==Tone::Kick?.36:hit.tone==Tone::Snare?.29:
+                hit.tone==Tone::Tom?.2:hit.tone==Tone::Rim?.15:.08;
+            play(at,hold,pitch,hit.tone,volume*hit.level*energy);
+        }
+        const int ticks=int(4/song.hatStep);
+        for (int tick=0;tick<ticks;++tick)
+            play(beat+tick*song.hatStep+(tick%2?song.swing:0),.11,77,Tone::Hush,
+                (song.hatStep==.25?.026:tick%2?.038:.058)*energy,tick%2?.35:-.35);
+        if (theme) {
+            const int start=bar<song.form[2]?song.form[1]:song.form[3];
+            const int phrase=(bar-start)%8;
+            for (const auto& note:song.theme) {
+                const double at=beat+note.at-phrase*4;
+                if (at>=beat && at<beat+4)
+                    play(at,note.hold,note.pitch,song.lead,song.leadLevel*note.level*energy,.12);
+            }
+        }
+    }
+    finishTrack(audio);
+    return audio;
+}
+
 Audio render(const Cue& cue) {
     Audio audio(cue.seconds,cue.channels,false);
     std::uint32_t seed=seedFor(cue.id);
@@ -964,7 +703,7 @@ template<class T> const T& findId(const std::vector<T>& values,const std::string
     require(found!=values.end(), "Unknown score: "+id); return *found;
 }
 
-void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Score>& music,const std::vector<Cue>& sounds) {
+void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Song>& music,const std::vector<Cue>& sounds) {
     std::set<std::uint64_t> hashes;
     std::uintmax_t total=0;
     int mono=0,stereo=0;
@@ -973,7 +712,8 @@ void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Score>
         const auto pcm=stage/(track?"decoded":"sfx")/(e.id+".wav");
         const auto asset=stage/(track?"music":"sfx")/(e.id+(track?".m4a":".wav"));
         const auto m=inspectWave(pcm);
-        const double expected=track?findId(music,e.id).seconds():findId(sounds,e.id).seconds;
+        const double expected=track?(e.id=="forge"?72*4*60.0/112:findId(music,e.id).seconds())
+            :findId(sounds,e.id).seconds;
         const int channels=track?2:findId(sounds,e.id).channels;
         require(m.channels==channels && std::abs(m.seconds-expected)<.08, "Duration/channel mismatch: "+e.id);
         require(m.peak<=(track?.56:.181) && m.rms>=(track?.02:.008) && m.rms<=(track?.09:.036), "Unsafe peak/RMS or silence: "+e.id);
@@ -990,16 +730,16 @@ void audit(const fs::path& stage,const Catalog& catalog,const std::vector<Score>
     for (const auto& e:catalog.sounds) checked(e,false);
     for (const auto& e:catalog.tracks) checked(e,true);
     require(findId(sounds,"soft-confirm").channels==1 && findId(sounds,"critical").channels==2, "Required lifecycle formats changed");
-    require(mono>0 && stereo>0 && hashes.size()==40, "Incomplete format/uniqueness coverage");
-    std::cout << "PASS: 40 unique PCM assets; 20 distinct tempo/transposition-independent opening themes; "
+    require(mono>0 && stereo>0 && hashes.size()==30, "Incomplete format/uniqueness coverage");
+    std::cout << "PASS: 30 unique PCM assets; 10 original songs; "
         << mono << " mono and " << stereo << " stereo cues; " << total << " asset bytes\n";
 }
 
 int main(int argc,char** argv) {
     try {
-        require(argc>=3, "Usage: compose plan ROOT | render ROOT sfx|music ID OUTPUT.wav | prototype ROOT forge|switchyard OUTPUT.wav | audit ROOT STAGE");
+        require(argc>=3, "Usage: compose plan ROOT | render ROOT sfx|music ID OUTPUT.wav | audit ROOT STAGE");
         const auto catalog=CatalogReader(fs::path(argv[2])/"catalog.json").read();
-        const auto music=scores(); const auto sounds=cues();
+        const auto music=songs(); const auto sounds=cues();
         validate(catalog,music,sounds);
         const std::string mode=argv[1];
         if (mode=="plan" && argc==3) {
@@ -1008,11 +748,9 @@ int main(int argc,char** argv) {
         } else if (mode=="render" && argc==6) {
             const std::string kind=argv[3],id=argv[4];
             require(kind=="sfx" || kind=="music", "Unknown render category");
-            writeWave(argv[5],kind=="music"?render(findId(music,id)):render(findId(sounds,id)));
+            writeWave(argv[5],kind=="music"?(id=="forge"?renderForge():render(findId(music,id)))
+                :render(findId(sounds,id)));
             std::cout << "Rendered " << kind << '/' << id << '\n';
-        } else if (mode=="prototype" && argc==5) {
-            writeWave(argv[4],renderPrototype(argv[3]));
-            std::cout << "Rendered " << argv[3] << " prototype\n";
         } else if (mode=="audit" && argc==4) audit(argv[3],catalog,music,sounds);
         else throw std::runtime_error("Invalid composer arguments");
         return 0;

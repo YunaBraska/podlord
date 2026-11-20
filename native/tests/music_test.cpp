@@ -35,7 +35,7 @@ bool click(QQuickWindow* window, const QString& name) {
 bool run(const QString& scenario) {
     podlord::Music music;
     const auto tracks = podlord::bundledTracks();
-    if (tracks.size() != 20 || music.playing() || music.currentId().isEmpty()) return false;
+    if (tracks.size() != 10 || music.playing() || music.currentId().isEmpty()) return false;
     if (scenario == "startup") { QTest::qWait(100); podlord::Music restarted; return !restarted.playing() && !restarted.currentId().isEmpty(); }
     if (scenario == "shuffle") {
         QSet<QString> expected;

@@ -124,104 +124,54 @@
   ],
   "tracks": [
     {
-      "id": "quiet-perimeter",
-      "name": "Quiet Perimeter",
-      "asset": "qrc:/podlord/audio/music/quiet-perimeter.m4a"
+      "id": "forge",
+      "name": "Forge",
+      "asset": "qrc:/podlord/audio/music/forge.m4a"
     },
     {
-      "id": "copper-horizon",
-      "name": "Copper Horizon",
-      "asset": "qrc:/podlord/audio/music/copper-horizon.m4a"
+      "id": "switchyard",
+      "name": "Switchyard",
+      "asset": "qrc:/podlord/audio/music/switchyard.m4a"
     },
     {
-      "id": "signal-weave",
-      "name": "Signal Weave",
-      "asset": "qrc:/podlord/audio/music/signal-weave.m4a"
+      "id": "iron-circuit",
+      "name": "Iron Circuit",
+      "asset": "qrc:/podlord/audio/music/iron-circuit.m4a"
     },
     {
-      "id": "night-logistics",
-      "name": "Night Logistics",
-      "asset": "qrc:/podlord/audio/music/night-logistics.m4a"
+      "id": "night-transit",
+      "name": "Night Transit",
+      "asset": "qrc:/podlord/audio/music/night-transit.m4a"
     },
     {
-      "id": "glass-relay",
-      "name": "Glass Relay",
-      "asset": "qrc:/podlord/audio/music/glass-relay.m4a"
+      "id": "copper-wire",
+      "name": "Copper Wire",
+      "asset": "qrc:/podlord/audio/music/copper-wire.m4a"
     },
     {
-      "id": "low-orbit",
-      "name": "Low Orbit",
-      "asset": "qrc:/podlord/audio/music/low-orbit.m4a"
+      "id": "cold-front",
+      "name": "Cold Front",
+      "asset": "qrc:/podlord/audio/music/cold-front.m4a"
     },
     {
-      "id": "amber-vector",
-      "name": "Amber Vector",
-      "asset": "qrc:/podlord/audio/music/amber-vector.m4a"
+      "id": "dust-route",
+      "name": "Dust Route",
+      "asset": "qrc:/podlord/audio/music/dust-route.m4a"
     },
     {
-      "id": "iron-rain",
-      "name": "Iron Rain",
-      "asset": "qrc:/podlord/audio/music/iron-rain.m4a"
+      "id": "pulse-engine",
+      "name": "Pulse Engine",
+      "asset": "qrc:/podlord/audio/music/pulse-engine.m4a"
     },
     {
-      "id": "silent-cartography",
-      "name": "Silent Cartography",
-      "asset": "qrc:/podlord/audio/music/silent-cartography.m4a"
+      "id": "concrete-sky",
+      "name": "Concrete Sky",
+      "asset": "qrc:/podlord/audio/music/concrete-sky.m4a"
     },
     {
-      "id": "clockwork-tide",
-      "name": "Clockwork Tide",
-      "asset": "qrc:/podlord/audio/music/clockwork-tide.m4a"
-    },
-    {
-      "id": "field-memory",
-      "name": "Field Memory",
-      "asset": "qrc:/podlord/audio/music/field-memory.m4a"
-    },
-    {
-      "id": "mesh-transit",
-      "name": "Mesh Transit",
-      "asset": "qrc:/podlord/audio/music/mesh-transit.m4a"
-    },
-    {
-      "id": "distant-machinery",
-      "name": "Distant Machinery",
-      "asset": "qrc:/podlord/audio/music/distant-machinery.m4a"
-    },
-    {
-      "id": "northern-array",
-      "name": "Northern Array",
-      "asset": "qrc:/podlord/audio/music/northern-array.m4a"
-    },
-    {
-      "id": "steady-watch",
-      "name": "Steady Watch",
-      "asset": "qrc:/podlord/audio/music/steady-watch.m4a"
-    },
-    {
-      "id": "basalt-channel",
-      "name": "Basalt Channel",
-      "asset": "qrc:/podlord/audio/music/basalt-channel.m4a"
-    },
-    {
-      "id": "silver-switchyard",
-      "name": "Silver Switchyard",
-      "asset": "qrc:/podlord/audio/music/silver-switchyard.m4a"
-    },
-    {
-      "id": "blue-foundation",
-      "name": "Blue Foundation",
-      "asset": "qrc:/podlord/audio/music/blue-foundation.m4a"
-    },
-    {
-      "id": "radar-garden",
-      "name": "Radar Garden",
-      "asset": "qrc:/podlord/audio/music/radar-garden.m4a"
-    },
-    {
-      "id": "first-light-protocol",
-      "name": "First Light Protocol",
-      "asset": "qrc:/podlord/audio/music/first-light-protocol.m4a"
+      "id": "waypoint",
+      "name": "Waypoint",
+      "asset": "qrc:/podlord/audio/music/waypoint.m4a"
     }
   ],
   "legacySounds": {
