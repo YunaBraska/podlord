@@ -325,6 +325,9 @@ Pane {
                         text: workspace.uiText["ai.auto"]
                         checked: workspace.incidentAiEnabled
                         Accessible.name: workspace.uiText["ai.enable"]
+                        Accessible.description: workspace.uiText["ai.autoData"]
+                        ToolTip.visible: hovered
+                        ToolTip.text: workspace.uiText["ai.autoData"]
                         implicitHeight: settings.Window.window && (settings.Window.window.width < 900
                             || settings.Window.window.compactLandscape === true) ? 44 : 32
                         indicator: Rectangle {

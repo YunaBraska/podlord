@@ -57,6 +57,10 @@ QVariantMap Workspace::incidentAiResult() const {
     }
     return result;
 }
+QString Workspace::incidentAiRequest() const {
+    const auto context = sessionConfiguration(active_).value("contextId").toString();
+    return runtime_->incidentAi.requestPreview(context, inspectorPath());
+}
 QVariantMap Workspace::incidentAiDiagnostic() const { return runtime_->incidentAi.diagnosticResult(); }
 bool Workspace::copyIncidentAiCommand() {
     const auto command = incidentAiResult().value("command").toString();

@@ -126,10 +126,27 @@ Pane {
         Layout.fillWidth: true
         visible: workspace.incidentAiSupported && workspace.inspectorPage === "ai" && workspace.inspectorPath !== ""
         spacing: 5
-        onVisibleChanged: if (visible) workspace.ensureIncidentAiModels()
+        property bool showRequest: false
+        property string requestPath: workspace.inspectorPath
+        onRequestPathChanged: showRequest = false
+        onVisibleChanged: if (visible) { showRequest = false; workspace.ensureIncidentAiModels() }
         Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
         RowLayout {
             Layout.fillWidth: true
+            FlatButton {
+                objectName: "incidentAiResponseTab"
+                text: workspace.uiText["ai.response"]
+                checkable: true
+                checked: !aiPanel.showRequest
+                onClicked: aiPanel.showRequest = false
+            }
+            FlatButton {
+                objectName: "incidentAiRequestTab"
+                text: workspace.uiText["ai.request"]
+                checkable: true
+                checked: aiPanel.showRequest
+                onClicked: aiPanel.showRequest = true
+            }
             Item { Layout.fillWidth: true }
             IconButton {
                 objectName: "incidentAiReanalyze"
@@ -150,21 +167,28 @@ Pane {
         SelectableText {
             objectName: "incidentAiStatus"
             Layout.fillWidth: true
-            visible: workspace.incidentAiModel !== "" && workspace.incidentAiResult.pending !== true && text !== ""
             text: workspace.incidentAiStatus
             color: workspace.appearanceColors.muted
+            visible: !aiPanel.showRequest && workspace.incidentAiModel !== "" && workspace.incidentAiResult.pending !== true && text !== ""
+        }
+        SelectableText {
+            objectName: "incidentAiRequest"
+            Layout.fillWidth: true
+            visible: aiPanel.showRequest && text !== ""
+            text: aiPanel.showRequest ? workspace.incidentAiRequest : ""
+            font.family: workspace.monospaceFamily
         }
         SelectableText {
             objectName: "incidentAiPending"
             Layout.fillWidth: true
-            visible: workspace.incidentAiResult.pending === true
+            visible: !aiPanel.showRequest && workspace.incidentAiResult.pending === true
             text: workspace.uiText["ai.pending"]
             color: workspace.appearanceColors.muted
         }
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 10
-            visible: workspace.incidentAiResult.summary !== undefined
+            visible: !aiPanel.showRequest && workspace.incidentAiResult.summary !== undefined
             spacing: 4
             SelectableText { objectName: "incidentAiObservation"; Layout.fillWidth: true; text: workspace.uiText["ai.observation"]; font.bold: true; color: workspace.appearanceColors.accent }
             SelectableText { objectName: "incidentAiSummary"; Layout.fillWidth: true; text: workspace.incidentAiResult.summary || "" }
@@ -172,7 +196,7 @@ Pane {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 14
-            visible: (workspace.incidentAiResult.cause || "") !== ""
+            visible: !aiPanel.showRequest && (workspace.incidentAiResult.cause || "") !== ""
             spacing: 4
             SelectableText { objectName: "incidentAiCauseHeading"; Layout.fillWidth: true; text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.accent }
             SelectableText { objectName: "incidentAiCause"; Layout.fillWidth: true; text: workspace.incidentAiResult.cause || "" }
@@ -180,7 +204,7 @@ Pane {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 14
-            visible: workspace.incidentAiResult.action !== undefined
+            visible: !aiPanel.showRequest && workspace.incidentAiResult.action !== undefined
             spacing: 4
             SelectableText { objectName: "incidentAiNextCheck"; Layout.fillWidth: true; text: workspace.uiText["ai.nextCheck"]; font.bold: true; color: workspace.appearanceColors.accent }
             SelectableText { objectName: "incidentAiAction"; Layout.fillWidth: true; text: workspace.incidentAiResult.action || "" }
@@ -194,13 +218,13 @@ Pane {
         Flow {
             Layout.fillWidth: true
             spacing: 6
-            visible: (workspace.incidentAiResult.references || []).length > 0
+            visible: !aiPanel.showRequest && (workspace.incidentAiResult.references || []).length > 0
             Repeater {
                 model: workspace.incidentAiResult.references || []
                 FlatButton {
                     required property var modelData
                     objectName: "incidentAiReference_" + modelData.id
-                    text: modelData.id + " · " + modelData.kind
+                    text: modelData.kind + " " + (modelData.namespace ? modelData.namespace + "/" : "") + modelData.name
                     ToolTip.visible: hovered
                     ToolTip.text: (modelData.namespace ? modelData.namespace + "/" : "") + modelData.name
                     Accessible.name: workspace.uiText["inspector.links"] + " " + modelData.kind + " " + ToolTip.text

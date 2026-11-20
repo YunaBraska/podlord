@@ -241,6 +241,7 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
                         const auto declared = value.toObject();
                         if (declared["name"] != container["name"]) continue;
                         if (declared["imagePullPolicy"].isString()) fact["imagePullPolicy"] = declared["imagePullPolicy"];
+                        if (declared["image"].isString()) fact["image"] = declared["image"];
                         break;
                     }
                     const auto currentState = container["state"].toObject();

@@ -189,6 +189,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString incidentAiStatus READ incidentAiStatus NOTIFY incidentAiChanged)
     Q_PROPERTY(bool incidentAiReady READ incidentAiReady NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantMap incidentAiResult READ incidentAiResult NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiRequest READ incidentAiRequest NOTIFY incidentAiChanged)
     Q_PROPERTY(QVariantMap incidentAiDiagnostic READ incidentAiDiagnostic NOTIFY incidentAiChanged)
     Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
     Q_PROPERTY(QVariantMap sourceRemoval READ sourceRemoval NOTIFY sourceRemovalChanged)
@@ -456,6 +457,7 @@ public:
     QString incidentAiStatus() const;
     bool incidentAiReady() const;
     QVariantMap incidentAiResult() const;
+    QString incidentAiRequest() const;
     QVariantMap incidentAiDiagnostic() const;
     Q_INVOKABLE bool copyIncidentAiCommand();
     Q_INVOKABLE bool setIncidentAiEnabled(bool enabled);

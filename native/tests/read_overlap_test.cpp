@@ -50,7 +50,7 @@ public:
                     const auto path = url.path();
                     ++pathRequests[path];
                     const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", podNamespace}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}},
-                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}, {"imagePullPolicy", "Always"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", podStatus}};
+                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}, {"image", "private.registry.example/team/app:v1"}, {"imagePullPolicy", "Always"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", podStatus}};
                     QJsonObject body; int delay = allDelay, status = 200;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", QJsonArray{}}};
@@ -424,8 +424,10 @@ bool run(const QString& scenario) {
             && row["issue"] == "CrashLoopBackOff, Ready 1/2, Container restarts"
             && row["problems"] == true && row["restarts"] == 3 && row["ready"] == "1/2"
             && row["qosClass"] == "Burstable"
+            && row["image"] == "private.registry.example/team/app:v1"
             && row["conditions"].toArray().first().toObject()["reason"] == "ContainersNotReady"
             && row["containerStates"].toArray().first().toObject()["message"] == "Back-off restarting failed container"
+            && row["containerStates"].toArray().first().toObject()["image"] == "private.registry.example/team/app:v1"
             && row["containerStates"].toArray().first().toObject()["imagePullPolicy"] == "Always"
             && secret["secretType"] == "kubernetes.io/dockerconfigjson"
             && secret["registryAuthKeyPresent"] == true

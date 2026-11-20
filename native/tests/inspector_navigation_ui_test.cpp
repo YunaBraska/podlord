@@ -125,8 +125,12 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "ai_minimal" || scenario == "ai_minimal_narrow") {
         if (!workspace.setInspectorPage("ai")) return false;
         const auto frame = qEnvironmentVariable("PODLORD_AI_FRAME");
-        return waitFor([&] { return named("incidentAiReanalyze") && named("incidentAiReanalyze")->isVisible(); })
-            && !named("incidentAiDocs") && !named("incidentAiEmpty") && !named("incidentAiEvidence_R1")
+        if (!waitFor([&] { return named("incidentAiReanalyze") && named("incidentAiReanalyze")->isVisible(); })
+            || !named("incidentAiResponseTab") || !named("incidentAiRequestTab")
+            || !named("incidentAiResponseTab")->property("checked").toBool()
+            || !click("incidentAiRequestTab") || !named("incidentAiRequestTab")->property("checked").toBool()
+            || !click("incidentAiResponseTab") || !named("incidentAiResponseTab")->property("checked").toBool()) return false;
+        return !named("incidentAiDocs") && !named("incidentAiEmpty") && !named("incidentAiEvidence_R1")
             && writes == 0 && (frame.isEmpty() || window->grabWindow().save(frame));
     }
     if (scenario == "repeat") return open(0) && !back() && !forward() && writes == 0;

@@ -147,16 +147,36 @@ void scenario(const QString& name) {
         require(legacy.open(QIODevice::WriteOnly) && legacy.write(data) == data.size(), "Cannot prepare legacy consent");
         legacy.close();
         podlord::IncidentAi ai(profile, endpoint);
-        require(ai.enabled("context"), "Legacy Ollama consent was not retained");
+        require(!ai.enabled("context"), "Legacy consent silently covered resource-name disclosure");
         require(ai.setProvider("chatgpt") && !ai.enabled("context"), "Local consent authorized ChatGPT analysis");
         require(ai.setProvider("claude") && !ai.enabled("context"), "Local consent authorized Claude analysis");
         require(ai.setProvider("openrouter") && !ai.enabled("context"), "Local consent authorized OpenRouter analysis");
-        require(ai.setProvider("ollama") && ai.enabled("context"), "Provider switch lost local consent");
+        require(ai.setProvider("ollama") && !ai.enabled("context") && ai.setEnabled("context", true),
+            "Fresh consent could not be recorded");
         QFile stored(QDir(profile).filePath("incident-ai.json"));
         require(stored.open(QIODevice::ReadOnly), "Cannot read migrated settings");
         const auto root = QJsonDocument::fromJson(stored.readAll()).object();
-        require(root.value("version") == 3 && root.value("enabledByProvider").toObject().value("ollama").toArray().contains("context")
+        require(root.value("version") == 4 && root.value("enabledByProvider").toObject().value("ollama").toArray().contains("context")
             && root.value("enabledByProvider").toObject().value("chatgpt").toArray().isEmpty(), "Consent migration is invalid");
+        return;
+    }
+    if (name == "consent_upgrade") {
+        require(QDir().mkpath(profile), "Cannot prepare previous profile");
+        QFile previous(QDir(profile).filePath("incident-ai.json"));
+        const auto data = QJsonDocument(QJsonObject{{"version", 3}, {"enabledByProvider", QJsonObject{{"ollama", QJsonArray{"context"}},
+            {"chatgpt", QJsonArray{"context"}}}}, {"provider", "ollama"}, {"model", "local-test:9b"},
+            {"reasoning", "auto"}, {"records", QJsonArray{}}}).toJson();
+        require(previous.open(QIODevice::WriteOnly) && previous.write(data) == data.size(), "Cannot prepare previous consent");
+        previous.close();
+        podlord::IncidentAi ai(profile, endpoint);
+        require(ai.model() == "local-test:9b" && !ai.enabled("context") && ai.setProvider("chatgpt") && !ai.enabled("context"),
+            "Existing automatic consent was reused after widening model input");
+        require(ai.setProvider("ollama") && ai.setEnabled("context", true), "Fresh automatic consent failed");
+        QFile migrated(QDir(profile).filePath("incident-ai.json"));
+        require(migrated.open(QIODevice::ReadOnly), "Cannot read upgraded profile");
+        const auto root = QJsonDocument::fromJson(migrated.readAll()).object();
+        require(root["version"] == 4 && root["enabledByProvider"].toObject()["ollama"].toArray().contains("context")
+            && root["enabledByProvider"].toObject()["chatgpt"].toArray().isEmpty(), "Fresh consent was not isolated by provider");
         return;
     }
     if (name == "model_choice") {
@@ -186,11 +206,18 @@ void scenario(const QString& name) {
         QTest::qWait(50);
         const auto path = pod["path"].toString();
         require(server.chats == 0 && ai.result("context", path).isEmpty(), "Unapproved automatic analysis ran");
+        ai.prepareManual("context", path);
+        const auto preview = QJsonDocument::fromJson(ai.requestPreview("context", path).toUtf8()).object();
+        require(server.chats == 0 && preview["model"] == "local-test:9b" && preview["system"].isString()
+            && preview["user"].toObject()["resources"].toArray().first().toObject()["name"] == "pod-one"
+            && !ai.requestPreview("context", "/unknown").size(), "Request preview was unavailable before sending");
         require(ai.refresh("context", path), "Explicit analysis was rejected");
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Explicit analysis did not appear");
         const auto manualInput = QJsonDocument::fromJson(QJsonDocument::fromJson(server.submitted).object()["messages"].toArray()
             .at(1).toObject()["content"].toString().toUtf8()).object();
+        require(preview["system"] == QJsonDocument::fromJson(server.submitted).object()["messages"].toArray().first().toObject()["content"]
+            && preview["user"] == manualInput, "Preview differs from the actual model content");
         require(!ai.enabled("context") && manualInput["observedSignal"] == "Manual review"
             && manualInput["includedEventCount"] == 0
             && server.submitted.contains("summary field briefly explains the selected resource kind")
@@ -200,7 +227,7 @@ void scenario(const QString& name) {
             && server.submitted.contains("Pod containers ready: 0/1")
             && manualInput["resources"].toArray().first().toObject()["restarts"] == "1"
             && server.submitted.contains("OOMKilled (exit 137)")
-            && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
+            && !server.submitted.contains("private-") && server.submitted.contains("pod-one"),
             "Manual analysis changed consent or leaked private source data");
         ai.observe("context", snapshot, "de");
         require(server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(),
@@ -305,10 +332,11 @@ void scenario(const QString& name) {
         auto pod = snapshot.at(2).toObject();
         pod["node"] = "worker-a"; pod["volumeClaims"] = QJsonArray{"claim-data"};
         pod["secretKeys"] = QJsonArray{"DATABASE_PASSWORD"}; snapshot.replace(2, pod);
-        snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"status", "NotReady"}});
+        snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"path", "/api/v1/nodes/worker-a"}, {"status", "NotReady"}});
         snapshot.append(QJsonObject{{"kind", "PersistentVolumeClaim"}, {"name", "claim-data"}, {"namespace", "team"},
+            {"path", "/api/v1/namespaces/team/persistentvolumeclaims/claim-data"},
             {"status", "Pending"}, {"boundVolume", "volume-01"}, {"data", "c2VjcmV0LXZhbHVlLXRlc3Q="}});
-        snapshot.append(QJsonObject{{"kind", "PersistentVolume"}, {"name", "volume-01"}, {"status", "Released"}});
+        snapshot.append(QJsonObject{{"kind", "PersistentVolume"}, {"name", "volume-01"}, {"path", "/api/v1/persistentvolumes/volume-01"}, {"status", "Released"}});
         {
             podlord::IncidentAi ai(profile, endpoint);
             require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000), "Related-context model unavailable");
@@ -318,9 +346,13 @@ void scenario(const QString& name) {
                 "Related incident was not analyzed");
             require(server.submitted.contains("NotReady") && server.submitted.contains("Pending") && server.submitted.contains("Released"),
                 "Related Node, claim, and volume statuses were omitted");
-            require(!server.submitted.contains("worker-a") && !server.submitted.contains("claim-data")
-                && !server.submitted.contains("volume-01") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
-                "Related resource names or values reached the model");
+            const auto sent = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray().at(1).toObject()["content"].toString();
+            QStringList sentNames;
+            for (const auto& value : QJsonDocument::fromJson(sent.toUtf8()).object()["resources"].toArray())
+                sentNames.append(value.toObject()["name"].toString());
+            require(server.submitted.contains("worker-a") && server.submitted.contains("claim-data")
+                && server.submitted.contains("volume-01") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q="),
+                qPrintable(QString("Related resource names were missing or a value reached the model: ") + sentNames.join(", ")));
             require(!server.submitted.contains("DATABASE_PASSWORD"), "Irrelevant Secret key reached an ImagePullBackOff analysis");
         }
         auto node = snapshot.at(4).toObject(); node["status"] = "Ready"; snapshot.replace(4, node);
@@ -357,13 +389,14 @@ void scenario(const QString& name) {
         pod["createdAt"] = "2026-11-19T11:54:00Z";
         pod["qosClass"] = "Burstable";
         pod["containers"] = QJsonArray{"web"};
+        pod["image"] = "private.registry.example/team/app:tag";
         pod["metricReferences"] = QJsonObject{{"cpu", QJsonObject{{"limit", 500}, {"limitComplete", true}}},
             {"memory", QJsonObject{{"limit", 268435456}, {"limitComplete", false}}}};
         pod["conditions"] = QJsonArray{QJsonObject{{"type", "PodScheduled"}, {"status", "True"},
             {"reason", "Scheduled"}, {"lastTransitionTime", "2026-11-19T11:54:02Z"}}};
         pod["containerStates"] = QJsonArray{QJsonObject{{"role", "app"}, {"index", 0}, {"name", "web"},
             {"ready", false}, {"restarts", 4}, {"state", "waiting"}, {"reason", "ImagePullBackOff"},
-            {"imagePullPolicy", "Always"},
+            {"imagePullPolicy", "Always"}, {"image", "private.registry.example/team/app:tag"},
             {"message", "Failed to pull image https://private.registry.example/team/app:tag: HTTP 401 token=private-value"}}};
         pod["lastTerminations"] = QJsonArray{QJsonObject{{"reason", "OOMKilled"}, {"exitCode", 137}},
             QJsonObject{{"reason", "token=private-value"}, {"exitCode", 1}}};
@@ -424,8 +457,8 @@ void scenario(const QString& name) {
         QString secretId;
         for (const auto& value : resources) {
             const auto resource = value.toObject();
-            require(!resource.contains("name") && !resource.contains("path") && !resource.contains("namespace"),
-                "Private resource identifiers reached the model");
+            require(resource.contains("name") && !resource.contains("path"),
+                "Resource name missing or local API path reached the model");
             if (resource["kind"] == "Event" && resource["reason"] == "FailedToRetrieveImagePullSecret") {
                 eventLinked = resource["linkedTo"] == "R1" && resource["action"] == "Pulling"
                     && resource["containerId"] == "C1";
@@ -437,14 +470,18 @@ void scenario(const QString& name) {
             }
             if (resource["kind"] == "Pod")
                 containerDescribed = resource["uid"] == podUid
+                    && resource["name"] == "pod-one" && resource["namespace"] == "team"
+                    && resource["images"].toArray().contains("private.registry.example/team/app:tag")
                     && resource["containerStates"].toArray().first().toObject()["imagePullPolicy"] == "Always"
                     && resource["containerStates"].toArray().first().toObject()["containerId"] == "C1"
-                    && !resource["containerStates"].toArray().first().toObject().contains("name");
+                    && resource["containerStates"].toArray().first().toObject()["name"] == "web"
+                    && resource["containerStates"].toArray().first().toObject()["image"] == "private.registry.example/team/app:tag";
         }
         require(eventLinked && secretDescribed && containerDescribed, "Critical linked evidence was omitted");
         require(!ai.result("context", path).value("cause").toString().contains("11111111-2222-4333-8444-555555555555")
-            && ai.result("context", path).value("cause").toString().contains("[" + secretId + "]"),
-            "Raw resource UID was copied into a reusable answer");
+            && ai.result("context", path).value("cause").toString().contains("Secret team/runtime-secret")
+            && !ai.result("context", path).value("cause").toString().contains("[" + secretId + "]"),
+            "Resource citation did not resolve to its real name");
         const auto references = ai.result("context", path).value("references").toList();
         require(!references.isEmpty() && references.first().toMap().value("id") == "R1"
             && references.first().toMap().value("path") == path, "Model citation did not resolve to the inspected resource");
@@ -462,8 +499,8 @@ void scenario(const QString& name) {
                                   "memoryLimitBytes", "268435456", "memoryLimitCoverage", "partial",
                                   "ReadWriteOnce", "storageRequestBytes", "1073741824"})
             require(server.submitted.contains(field), qPrintable(QString("Missing evidence: ") + field));
-        for (const auto& field : {"private.registry.example", "private-value", "short-secret", "user@example.org",
-                                  "10.1.2.3", "runtime-secret", "runtime-config", "c2VjcmV0LXZhbHVlLXRlc3Q=",
+        for (const auto& field : {"private-value", "short-secret", "user@example.org",
+                                  "10.1.2.3", "c2VjcmV0LXZhbHVlLXRlc3Q=",
                                   "eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop"})
             require(!server.submitted.contains(field), qPrintable(QString("Leaked evidence: ") + field));
         event["eventLastTime"] = "2026-11-19T12:08:00Z";
@@ -541,7 +578,7 @@ void scenario(const QString& name) {
             require(server.submitted.contains("FailedToRetrieveImagePullSecret")
                 && server.submitted.contains("Same namespace problem: Pod CrashLoopBackOff")
                 && server.submitted.contains("Image pull Secret reference: not verified among observed resources")
-                && !server.submitted.contains("private.registry.example")
+                && server.submitted.contains("private.registry.example/team/secret-image:v1")
                 && !server.submitted.contains("registry-auth")
                 && !server.submitted.contains("private-event-marker"),
                 "Cluster context omitted evidence or sent private names and messages");
@@ -654,6 +691,7 @@ void scenario(const QString& name) {
         require(!stale.setEnabled("other", true) && !stale.enabled("other"), "Stale writer overwrote context consent");
         return;
     }
+    if (name == "persist") server.answer = R"({"summary":"Der Pod team/pod-one hat ein Problem [R1].","cause":"Ursache unbekannt.","action":"Prüfe pod-one [R1]."})";
     {
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000) && ai.setModel("local-test:9b"), "Local model was not discovered or chosen");
@@ -664,7 +702,7 @@ void scenario(const QString& name) {
         require(ai.setEnabled("context", true), "Cannot enable this context");
         ai.observe("context", rows(), "de");
         require(QTest::qWaitFor([&] { return server.chats == 1; }, 2000), "Problem did not reach local model");
-        require(!server.submitted.contains("private-") && !server.submitted.contains("pod-one")
+        require(!server.submitted.contains("private-") && server.submitted.contains("pod-one")
             && !server.submitted.contains("sk_test_0123456789") && !server.submitted.contains("c2VjcmV0LXZhbHVlLXRlc3Q=")
             && !server.submitted.contains("registry-token")
             && server.submitted.contains("ImagePullBackOff") && server.submitted.contains("de"), "AI payload exposed untrusted data or omitted evidence");
@@ -736,7 +774,7 @@ void scenario(const QString& name) {
             require(!ai.result("context", recreated.at(2).toObject()["path"].toString()).value("summary").toString().isEmpty()
                 && server.chats == 1, "Pod replacement missed the cached workload analysis");
             const auto replacement = ai.result("context", recreated.at(2).toObject()["path"].toString());
-            require(replacement.size() == 3 && !replacement.contains("command"),
+            require(replacement.size() <= 4 && !replacement.contains("evidence") && !replacement.contains("command"),
                 "Cached analysis exposed internal facts or an external command");
         }
     }
@@ -748,6 +786,10 @@ void scenario(const QString& name) {
         reopened.observe("context", recreated, "de");
         require(!reopened.result("context", recreated.at(2).toObject()["path"].toString()).value("summary").toString().isEmpty()
             && server.chats == 1, "Restart repeated a cached analysis");
+        require(reopened.result("context", recreated.at(2).toObject()["path"].toString()).value("summary").toString().contains("Pod team/pod-two")
+            && !reopened.result("context", recreated.at(2).toObject()["path"].toString()).value("summary").toString().contains("pod-one")
+            && !reopened.result("context", recreated.at(2).toObject()["path"].toString()).value("action").toString().contains("pod-one"),
+            "Cached citation did not resolve against the current Pod name");
     }
     if (name == "reasoning") {
         podlord::IncidentAi reopened(profile, endpoint);

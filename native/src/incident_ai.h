@@ -78,6 +78,7 @@ public:
     bool refresh(const QString& context, const QString& path);
     void retainContexts(const QSet<QString>& contexts);
     QVariantMap result(const QString& context, const QString& path) const;
+    QString requestPreview(const QString& context, const QString& path) const;
 signals:
     void changed();
 private:
