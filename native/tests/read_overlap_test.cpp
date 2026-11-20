@@ -561,6 +561,11 @@ bool run(const QString& scenario) {
         const auto nodeLists = server.pathRequests.value("/api/v1/nodes");
         const auto eventLists = server.pathRequests.value("/api/v1/events");
         const auto coreReads = server.pathRequests.value("/api");
+        const QJsonObject warning{{"apiVersion", "v1"}, {"kind", "Event"},
+            {"metadata", QJsonObject{{"name", "restart-warning"}, {"namespace", "default"}, {"uid", "event-1"},
+                {"creationTimestamp", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}}},
+            {"type", "Warning"}, {"reason", "BackOff"}, {"involvedObject", QJsonObject{{"uid", "uid-alpha"}}}};
+        server.responseBodies.insert("/api/v1/events", QJsonObject{{"metadata", QJsonObject{}}, {"items", QJsonArray{warning}}});
         const QString path = "/api/v1/namespaces/default/pods/alpha";
         const bool accepted = client.inspect("session", path)
             && waitFor([&] {
@@ -571,11 +576,22 @@ bool run(const QString& scenario) {
                 return podProblem && server.pathRequests.value("/api/v1/nodes") == nodeLists + 1
                     && server.pathRequests.value("/api/v1/events") == eventLists + 1 && !client.loading("session");
             }) && server.pathRequests.value("/api") == coreReads;
+        QTest::qWait(700);
+        const auto rows = client.rows("session");
+        const bool warningVisible = std::any_of(rows.cbegin(), rows.cend(), [](const QJsonValue& value) {
+            const auto row = value.toObject();
+            return row["kind"] == "Event" && row["problemSeverity"].toInt() > 0;
+        });
+        const bool stable = server.pathRequests.value("/api/v1/events") == eventLists + 1
+            && rows.size() == 3 && warningVisible;
         if (!accepted) std::fprintf(stderr, "Related refresh: nodes=%d/%d events=%d/%d core=%d/%d failure=%s\n",
             server.pathRequests.value("/api/v1/nodes"), nodeLists,
             server.pathRequests.value("/api/v1/events"), eventLists,
             server.pathRequests.value("/api"), coreReads, qPrintable(client.failureStatus("session")));
-        return accepted;
+        if (!stable) std::fprintf(stderr, "Related refresh: Events reads=%d rows=%lld warning=%d.\n",
+            server.pathRequests.value("/api/v1/events") - eventLists,
+            static_cast<long long>(rows.size()), warningVisible);
+        return accepted && stable;
     }
     if (scenario == "snapshot_fields") {
         const auto snapshot = client.rows("session");
