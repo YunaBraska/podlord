@@ -159,6 +159,11 @@ bool scenario(const QStringList& args) {
         require(requestFailure.startsWith("ChatGPT-Anfrage fehlgeschlagen (HTTP 429): rate_limit [request_123]")
             && requestFailure.endsWith("Prüfe ChatGPT-Einstellungen → Nutzung."),
             "Detailed ChatGPT request failure was not localized without losing diagnostics");
+        require(podlord::localizedAiStatus("ChatGPT session could not be renewed. Retry later.", "de")
+                == "Die ChatGPT-Sitzung konnte nicht erneuert werden. Später erneut versuchen."
+            && podlord::localizedAiStatus("ChatGPT session expired. Sign in again.", "de")
+                == "Die ChatGPT-Sitzung ist abgelaufen. Erneut anmelden.",
+            "Temporary and expired ChatGPT sessions need different translated actions");
         QSignalSpy changed(&workspace, &podlord::Workspace::incidentAiChanged);
         return require(workspace.saveUiLanguage("en")
             && QTest::qWaitFor([&] { return workspace.uiLanguage() == "en"; }, 3000)

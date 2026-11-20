@@ -64,7 +64,11 @@ public:
                             && fields.queryItemValue("refresh_token") == "private-refresh"
                             && fields.queryItemValue("resource") == "https://api.openai.com/v1") {
                             ++refreshes;
-                            payload = QJsonDocument(QJsonObject{{"access_token", "private-access-2"},
+                            if (refreshFailure == "temporary") {
+                                code = 503; payload = R"({"error":"server_error"})";
+                            } else if (refreshFailure == "expired") {
+                                code = 400; payload = R"({"error":"invalid_grant"})";
+                            } else payload = QJsonDocument(QJsonObject{{"access_token", "private-access-2"},
                                 {"refresh_token", "private-refresh-2"}, {"scope", "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"},
                                 {"token_type", "Bearer"}, {"expires_in", 3600}}).toJson(QJsonDocument::Compact);
                         } else if (fields.queryItemValue("grant_type") != "authorization_code"
@@ -110,6 +114,7 @@ public:
     bool wrongNonce = false;
     bool shortLived = false;
     bool missingDirectScope = false;
+    QString refreshFailure;
     int refreshes = 0;
 private:
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> signingKey_{nullptr, EVP_PKEY_free};
@@ -169,7 +174,9 @@ void scenario(const QString& name) {
     ChatGptBoundary boundary;
     require(boundary.listen(QHostAddress::LocalHost, 0), "Cannot start OAuth boundary");
     boundary.wrongNonce = name == "wrong_nonce";
-    boundary.shortLived = name == "refresh";
+    boundary.shortLived = name == "refresh" || name == "refresh_transient" || name == "refresh_expired";
+    if (name == "refresh_transient") boundary.refreshFailure = "temporary";
+    if (name == "refresh_expired") boundary.refreshFailure = "expired";
     boundary.missingDirectScope = name == "reconsent";
     if (name == "migration") {
         const auto profile = directory.filePath("profile");
@@ -240,6 +247,27 @@ void scenario(const QString& name) {
         client.signOut();
         require(client.activeAccount().isEmpty() && client.activeClientId().isEmpty() && !client.connected(),
             "Signing out during reauthorization kept a disconnected account");
+        return;
+    }
+    if (name == "refresh_transient") {
+        require(QTest::qWaitFor([&] { return client.status() == "ChatGPT session could not be renewed. Retry later."; }, 2000)
+            && client.connected() && boundary.refreshes == 1,
+            "A temporary refresh failure lost the account or asked for sign-in");
+        boundary.refreshFailure.clear();
+        client.refreshModels();
+        require(QTest::qWaitFor([&] { return client.models().size() == 1 && boundary.refreshes == 2; }, 2000)
+            && client.status().isEmpty(),
+            "ChatGPT did not recover after a temporary refresh failure");
+        return;
+    }
+    if (name == "refresh_expired") {
+        require(QTest::qWaitFor([&] { return client.status() == "ChatGPT session expired. Sign in again."; }, 2000)
+            && !client.connected() && client.activeAccount() == "test@example.invalid",
+            "An unusable refresh token did not request account reconnection");
+        browser.last = QUrl{};
+        require(client.signIn(client.activeClientId()) && QTest::qWaitFor([&] { return browser.last.isValid(); }, 1000)
+            && QUrlQuery(browser.last).queryItemValue("client_id") == "oaiapp_test",
+            "The saved client registration could not reconnect after expiry");
         return;
     }
     require(QTest::qWaitFor([&] { return client.connected() && client.models().size() == 1; }, 2000),

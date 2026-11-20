@@ -222,7 +222,7 @@ void scenario(const QString& name) {
             && preview["user"] == manualInput, "Preview differs from the actual model content");
         require(!ai.enabled("context") && manualInput["observedSignal"] == "Manual review"
             && manualInput["selectedResource"].toObject()["name"] == "pod-one"
-            && server.submitted.contains("Analyze an incomplete snapshot of the selected Kubernetes resource and its linked resources")
+            && server.submitted.contains("Then analyze the selected Kubernetes resource and its linked resources")
             && server.submitted.contains("Do not invent facts or commands")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
@@ -624,7 +624,11 @@ void scenario(const QString& name) {
             const auto instructions = messages.at(0).toObject()["content"].toString();
             const auto input = messages.at(1).toObject()["content"].toString();
             const auto inputObject = QJsonDocument::fromJson(input.toUtf8()).object();
-            require(instructions.contains("semicolons or long dashes") && !instructions.contains("cache", Qt::CaseInsensitive)
+            require(instructions.contains("semicolons or long dashes")
+                && instructions.contains("Explain what the selected resource does")
+                && instructions.contains("likely workload role")
+                && instructions.contains("Do not mention snapshots")
+                && !instructions.contains("cache", Qt::CaseInsensitive)
                 && !input.contains("cache", Qt::CaseInsensitive) && inputObject["language"] == "de"
                 && inputObject["clusterObservations"].toArray().contains("Observed warning event: FailedToRetrieveImagePullSecret")
                 && inputObject["resources"].isArray(), "AI request lost language, writing guidance, or separated evidence");

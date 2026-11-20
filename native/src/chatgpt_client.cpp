@@ -339,6 +339,8 @@ void ChatGptClient::ensureAccess(std::function<void(bool)> done) {
             return;
         }
         bool refreshed = false;
+        bool saveFailed = false;
+        bool permissionLost = false;
         if (ok && clientId == activeClientId_ && !tokens.value("access_token").toString().isEmpty()
             && !tokens.value("refresh_token").toString().isEmpty() && tokens.value("expires_in").toInt() >= 60
             && tokens.value("token_type").toString().compare("Bearer", Qt::CaseInsensitive) == 0) {
@@ -348,15 +350,26 @@ void ChatGptClient::ensureAccess(std::function<void(bool)> done) {
             account->refreshToken = tokens.value("refresh_token").toString();
             if (tokens.value("scope").isString()) account->scopes = tokens.value("scope").toString();
             account->expiresAt = QDateTime::currentDateTimeUtc().addSecs(tokens.value("expires_in").toInt());
-            if (save()) refreshed = connected(); else *account = previous;
+            if (save()) { refreshed = connected(); permissionLost = !refreshed; }
+            else { *account = previous; saveFailed = true; }
         }
         if (!refreshed) {
-            if (clientId == activeClientId_ && tokens.value("error").toString() == "invalid_grant" && active()) {
-                active()->accessToken.clear(); active()->refreshToken.clear(); active()->idToken.clear(); save();
+            const auto errorCode = tokens.value("error").toString();
+            const bool expired = QStringList{"invalid_grant", "invalid_refresh_token", "token_expired",
+                "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"}.contains(errorCode);
+            if (!saveFailed && expired && active()) {
+                auto* account = active();
+                const auto previous = *account;
+                account->accessToken.clear(); account->refreshToken.clear(); account->idToken.clear();
+                if (save()) status_ = "ChatGPT session expired. Sign in again.";
+                else *account = previous;
+            } else if (!saveFailed) {
+                status_ = permissionLost ? "ChatGPT plan permission was not granted. Reauthorize from settings."
+                    : "ChatGPT session could not be renewed. Retry later.";
             }
-            status_ = "ChatGPT session could not be renewed. Sign in again or retry later."; emit changed();
-        }
+        } else status_.clear();
         refreshLock_.reset();
+        emit changed();
         auto waiters = std::move(accessWaiters_); accessWaiters_.clear();
         for (auto& waiter : waiters) waiter(refreshed);
     });
