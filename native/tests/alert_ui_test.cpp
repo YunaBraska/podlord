@@ -1385,6 +1385,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             QCoreApplication::processEvents();
             if (!window->grabWindow().save(capture + "-narrow.png")) return false;
         }
+        if (!click(window, "dashboardResource_0")
+            || !waitFor([&] { return workspace.inspectorPath() == "/api/v1/namespaces/default/pods/alpha"; })) return false;
         const auto requests=server.requests;
         if (!workspace.filter("does-not-match")) return false;
         return workspace.dashboardTable()->rowCount()==0 && workspace.dashboardSummary().contains("0 / 1") && server.requests==requests;

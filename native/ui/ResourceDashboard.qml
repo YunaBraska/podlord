@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 Pane {
     padding: 12
-    background: Rectangle { color: workspace.appearanceColors.panel; border.color: workspace.appearanceColors.border }
+    background: Rectangle { color: workspace.appearanceColors.panel }
     contentItem: ColumnLayout {
         spacing: 8
         SelectableText { text: workspace.uiText["dashboard.title"]; font.bold: true }
@@ -23,9 +23,9 @@ Pane {
             clip: true
             reuseItems: true
             cacheBuffer: 0
-            spacing: 6
+            spacing: 0
             ScrollBar.vertical: ScrollBar {}
-            delegate: Rectangle {
+            delegate: ColumnLayout {
                 required property int index
                 required property string resourceName
                 required property string resourceKind
@@ -34,62 +34,65 @@ Pane {
                 required property var resourceMetrics
                 readonly property var shownMetrics: resourceMetrics.filter(metric => metric.available || !!metric.presentReferences)
                 width: metricRows.width
-                height: card.implicitHeight + 12
-                color: workspace.appearanceColors.inset
-                border.color: workspace.appearanceColors.border
-                ColumnLayout {
-                    id: card
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    spacing: 5
-                    FlatButton {
-                        objectName: "dashboardResource_" + index
-                        Layout.fillWidth: true
-                        text: resourceKind + "  " + (resourceNamespace ? resourceNamespace + "/" : "") + resourceName
-                        Accessible.name: "Inspect " + text
-                        onClicked: workspace.inspectPath(resourcePath)
-                        contentItem: Text {
-                            text: parent.text
-                            font: parent.font
-                            color: workspace.appearanceColors.text
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
+                height: implicitHeight
+                spacing: 4
+                FlatButton {
+                    objectName: "dashboardResource_" + index
+                    Layout.fillWidth: true
+                    text: resourceKind + "  " + (resourceNamespace ? resourceNamespace + "/" : "") + resourceName
+                    Accessible.name: "Inspect " + text
+                    onClicked: workspace.inspectPath(resourcePath)
+                    background: Rectangle {
+                        color: parent.down || workspace.inspectorPath === resourcePath
+                            ? workspace.appearanceColors.selection
+                            : parent.hovered ? workspace.appearanceColors.raised : "transparent"
+                        border.width: parent.activeFocus ? 1 : 0
+                        border.color: workspace.appearanceColors.accent
                     }
-                    Flow {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: childrenRect.height
-                        spacing: 6
-                        Repeater {
-                            model: shownMetrics
-                            Rectangle {
-                                required property var modelData
-                                width: Math.min(320, Math.max(120, metricRows.width - 12))
-                                height: modelData.presentReferences ? 82 : 44
-                                color: workspace.appearanceColors.panel
-                                border.color: workspace.appearanceColors.border
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 5
-                                    spacing: 0
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        SelectableText { text: modelData.label; color: workspace.appearanceColors.muted }
-                                        Item { Layout.fillWidth: true }
-                                        SelectableText { text: modelData.usage; font.bold: true }
-                                    }
-                                    SelectableText {
-                                        Layout.fillWidth: true
-                                        visible: modelData.presentReferences !== ""
-                                        text: modelData.presentReferences
-                                        color: workspace.appearanceColors.muted
-                                        wrapMode: TextEdit.Wrap
-                                    }
-                                }
+                    contentItem: Text {
+                        text: parent.text
+                        font: parent.font
+                        color: workspace.appearanceColors.text
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 6
+                    Layout.preferredHeight: childrenRect.height
+                    spacing: 12
+                    Repeater {
+                        model: shownMetrics
+                        ColumnLayout {
+                            required property var modelData
+                            width: Math.min(320, Math.max(120, metricRows.width - 18))
+                            height: implicitHeight
+                            spacing: 2
+                            RowLayout {
+                                Layout.fillWidth: true
+                                SelectableText { text: modelData.label; color: workspace.appearanceColors.muted }
+                                Item { Layout.fillWidth: true }
+                                SelectableText { text: modelData.usage; font.bold: true }
+                            }
+                            SelectableText {
+                                Layout.fillWidth: true
+                                visible: modelData.presentReferences !== ""
+                                text: modelData.presentReferences
+                                color: workspace.appearanceColors.muted
+                                wrapMode: TextEdit.Wrap
                             }
                         }
                     }
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    Layout.bottomMargin: 8
+                    implicitHeight: 1
+                    color: workspace.appearanceColors.border
+                    visible: index < metricRows.count - 1
                 }
             }
             SelectableText {
