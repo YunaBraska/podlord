@@ -889,9 +889,9 @@ int ResourceClient::requestCountLastMinute(const QString& id) const {
     const auto state = states_.constFind(id);
     if (state == states_.cend()) return 0;
     const auto now = now_();
-    return std::count_if(state->requestStarts.cbegin(), state->requestStarts.cend(), [&](const auto& at) {
+    return static_cast<int>(std::count_if(state->requestStarts.cbegin(), state->requestStarts.cend(), [&](const auto& at) {
         return at > now.addSecs(-60) && at <= now;
-    });
+    }));
 }
 void ResourceClient::recordRequestStarted(const Task& task) {
     const auto now = now_();
