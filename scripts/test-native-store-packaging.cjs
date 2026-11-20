@@ -355,7 +355,15 @@ test('pull requests and snapshots reuse the same native qualification', async ()
     const request = await fs.readFile(path.join(root, '.github/workflows/build-pr.yml'), 'utf8');
     const snapshot = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
     const pullRequest = request.split('  pull_request:\n')[1].split('\n  workflow_dispatch:')[0];
-    assert.doesNotMatch(pullRequest, /paths|branches|if:/);
+    const snapshotPush = snapshot.split('  push:\n')[1].split('\n  workflow_dispatch:')[0];
+    const productPagePaths = '    paths-ignore:\n' +
+        '      - README.md\n' +
+        '      - docs/**\n' +
+        '      - doc/**\n' +
+        '      - .github/workflows/product-pages.yml';
+    assert.doesNotMatch(pullRequest, /branches|if:/);
+    assert.match(pullRequest, new RegExp(productPagePaths.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(snapshotPush, new RegExp(productPagePaths.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     for (const event of ['opened', 'synchronize', 'reopened'])
         assert.ok(pullRequest.includes('      - ' + event));
     assert.doesNotMatch(workflow, /  pull_request:|  push:/);
