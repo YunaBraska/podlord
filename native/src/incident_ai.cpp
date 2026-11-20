@@ -120,12 +120,17 @@ QJsonArray graphEvidence(const ResourceGraph& graph, const ProblemIndex& problem
     return rows;
 }
 QString incidentEvidenceText(const QJsonArray& evidence, bool includeVolatileCounts);
+QJsonObject modelFact(QJsonObject fact) {
+    for (const auto& field : {"name", "namespace", "path", "parentPath"}) fact.remove(field);
+    return fact;
+}
 QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
     static const QSet<QString> statuses{"Running", "Pending", "Failed", "Succeeded", "Unknown", "Ready", "NotReady",
         "Available", "Unavailable", "Bound", "Lost", "Released", "Terminating", "Error", "ImagePullBackOff",
         "ErrImagePull", "CrashLoopBackOff", "OOMKilled", "Unschedulable", "ProgressDeadlineExceeded"};
     static const QRegularExpression safeKind("^[A-Za-z][A-Za-z0-9]{0,63}$");
     static const QRegularExpression safeChain("^[A-Za-z][A-Za-z0-9]{0,63}( > [A-Za-z][A-Za-z0-9]{0,63}){0,6}$");
+    static const QRegularExpression uuid("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     QMap<int, QMap<QString, QJsonObject>> candidates;
     for (const auto& value : rows) {
         const auto row = value.toObject();
@@ -141,6 +146,8 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
         }
         QJsonObject fact{{"kind", kind}, {"name", name}, {"namespace", row["namespace"]},
             {"path", row["path"]}, {"relation", relation}, {"depth", depth}};
+        if (uuid.match(row["uid"].toString()).hasMatch()) fact["uid"] = row["uid"];
+        if (!row["graphParentPath"].toString().isEmpty()) fact["parentPath"] = row["graphParentPath"];
         const auto chain = row["graphChain"].toString();
         if (safeChain.match(chain).hasMatch()) fact["chain"] = chain;
         const auto status = row["status"].toString();
@@ -153,6 +160,9 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
                 || (safeKind.match(reason).hasMatch() && !encodedReason.match(reason).hasMatch())) fact["reason"] = reason;
             fact["type"] = row["eventType"] == "Warning" ? "Warning" : "Normal";
             const auto reporter = row["eventReporter"].toString().toLower();
+            if (safeKind.match(row["eventAction"].toString()).hasMatch()) fact["action"] = row["eventAction"];
+            static const QRegularExpression containerId("^C[1-9][0-9]{0,2}$");
+            if (containerId.match(row["eventContainerId"].toString()).hasMatch()) fact["containerId"] = row["eventContainerId"];
             if (reporter.contains("kubelet")) fact["reporter"] = "kubelet";
             else if (reporter.contains("scheduler")) fact["reporter"] = "scheduler";
             else if (reporter.contains("csi")) fact["reporter"] = "CSI";
@@ -173,6 +183,11 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
         if (created.isValid()) fact["createdAt"] = created.toUTC().toString(Qt::ISODate);
         if (kind == "Pod" && QStringList{"Guaranteed", "Burstable", "BestEffort"}.contains(row["qosClass"].toString()))
             fact["qosClass"] = row["qosClass"];
+        if (kind == "Secret") {
+            static const QSet<QString> registryTypes{"kubernetes.io/dockerconfigjson", "kubernetes.io/dockercfg", "Opaque"};
+            if (registryTypes.contains(row["secretType"].toString())) fact["secretType"] = row["secretType"];
+            if (row["registryAuthKeyPresent"].isBool()) fact["registryAuthKeyPresent"] = row["registryAuthKeyPresent"];
+        }
         if (kind == "Pod") {
             const auto references = row["metricReferences"].toObject();
             for (const auto& metric : {"cpu", "memory"}) {
@@ -229,7 +244,11 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
                 const auto role = item["role"].toString(), state = item["state"].toString();
                 if (!QStringList{"app", "init", "ephemeral"}.contains(role)) continue;
                 QJsonObject container{{"role", role}, {"index", item["index"].toInt()}, {"ready", item["ready"].toBool()}};
+                static const QRegularExpression containerId("^C[1-9][0-9]{0,2}$");
+                if (containerId.match(item["containerId"].toString()).hasMatch()) container["containerId"] = item["containerId"];
                 if (QStringList{"waiting", "running", "terminated"}.contains(state)) container["state"] = state;
+                if (QStringList{"Always", "IfNotPresent", "Never"}.contains(item["imagePullPolicy"].toString()))
+                    container["imagePullPolicy"] = item["imagePullPolicy"];
                 if (safeKind.match(item["reason"].toString()).hasMatch()) container["reason"] = item["reason"];
                 const auto exit = item["exitCode"].toInt(-1);
                 if (item["exitCode"].isDouble() && exit >= 0 && exit <= 65535) container["exitCode"] = exit;
@@ -287,11 +306,21 @@ QJsonArray incidentEvidence(const QJsonArray& rows, qsizetype byteBudget) {
         for (auto item = depth->cbegin(); item != depth->cend(); ++item) {
             auto fact = item.value();
             fact["id"] = QString("R%1").arg(evidence.size() + 1);
-            const auto lineBytes = incidentEvidenceText(QJsonArray{fact}, true).toUtf8().size() + 1;
+            auto budgetFact = modelFact(fact);
+            if (fact.contains("parentPath")) budgetFact["linkedTo"] = "R512";
+            const auto lineBytes = QJsonDocument(budgetFact).toJson(QJsonDocument::Compact).size() + 1;
             if (byteBudget >= 0 && usedBytes + lineBytes > byteBudget && !evidence.isEmpty()) continue;
             evidence.append(fact);
             usedBytes += lineBytes;
         }
+    QMap<QString, QString> ids;
+    for (const auto& value : evidence) ids.insert(value.toObject()["path"].toString(), value.toObject()["id"].toString());
+    for (qsizetype index = 0; index < evidence.size(); ++index) {
+        auto fact = evidence.at(index).toObject();
+        const auto parentId = ids.value(fact["parentPath"].toString());
+        if (!parentId.isEmpty()) fact["linkedTo"] = parentId;
+        evidence.replace(index, fact);
+    }
     return evidence;
 }
 QString incidentEvidenceText(const QJsonArray& evidence, bool includeVolatileCounts = true) {
@@ -299,17 +328,18 @@ QString incidentEvidenceText(const QJsonArray& evidence, bool includeVolatileCou
     for (const auto& value : evidence) {
         const auto fact = value.toObject();
         QStringList details;
-        for (const auto& field : {"status", "issue", "reason", "hint", "type", "reporter", "count", "ready", "restarts", "lastTermination", "networkState", "networkHealth",
+        for (const auto& field : {"uid", "linkedTo", "containerId", "status", "issue", "reason", "action", "hint", "type", "reporter", "count", "ready", "restarts", "lastTermination", "networkState", "networkHealth",
                                   "createdAt", "eventFirst", "eventLast", "message", "qosClass", "cpuLimitMilli", "cpuLimitCoverage",
                                   "memoryLimitBytes", "memoryLimitCoverage",
-                                  "accessModes", "volumeMode", "storageRequestBytes", "storageCapacityBytes"}) {
+                                  "accessModes", "volumeMode", "storageRequestBytes", "storageCapacityBytes", "secretType", "registryAuthKeyPresent"}) {
             const auto key = QString(field);
-            if (!includeVolatileCounts && QStringList{"count", "createdAt", "eventFirst", "eventLast"}.contains(key)) continue;
+            if (!includeVolatileCounts && QStringList{"uid", "count", "createdAt", "eventFirst", "eventLast"}.contains(key)) continue;
             if (!includeVolatileCounts && key == "restarts") {
                 if (fact[field].isString()) details.append("restarts=" + QString(fact[field].toString().toInt() > 0 ? "observed" : "0"));
                 continue;
             }
-            const auto value = !includeVolatileCounts && key == "message" ? stableMessage(fact[field].toString()) : fact[field].toString();
+            const auto value = fact[field].isBool() ? (fact[field].toBool() ? QString("true") : QString("false"))
+                : !includeVolatileCounts && key == "message" ? stableMessage(fact[field].toString()) : fact[field].toString();
             if (!value.isEmpty()) details.append(key + '=' + value);
         }
         for (const auto& field : {"conditions", "containerStates"}) if (fact[field].isArray()) {
@@ -348,6 +378,10 @@ QString analysisSystemText(bool diagnostic) {
             "A manual review is not proof of a fault. Seeing a Secret does not prove whether the kubelet can use it. "
             "A local YAML draft check is not a Kubernetes server response. Do not claim that the draft content was read. "
             "Evidence depth is the number of verified resource links from the selected resource. Give nearer facts more weight. "
+            "The input is JSON. Each resources entry is one separate object. linkedTo identifies the exact observed parent resource. "
+            "An Event containerId identifies a Pod container only when the Event field path matched it. Without that ID, its container or image is unverified. "
+            "Cite supporting resources as [R1], [R2] in summary, cause and action. Use only IDs present in resources. "
+            "Do not repeat raw Kubernetes UIDs. A linked resource or Event is not necessarily a cause. "
             "These observations may be incomplete or delayed. An omitted resource is not proof that it is absent from the cluster. "
             "Pod restart counts are observed totals, not causes. They can change without reanalysis, so do not quote an exact count in the answer. A last termination describes an earlier container exit. "
             "Timestamps and event counts may be reused from an earlier answer. Explain their order only when it matters. "
@@ -360,11 +394,13 @@ QString analysisSystemText(bool diagnostic) {
 }
 QString analysisInputText(const QString& language, const QString& kind, const QString& code,
                          const QStringList& related, const QJsonArray& evidence) {
-    return "Language: " + language + "\nResource kind: " + kind
-        + "\nObserved signal: " + code + "\nCluster observations:"
-        + (related.isEmpty() ? QString(" none") : QString("\n- ") + related.join("\n- "))
-        + "\nLinked resource and Event facts (IDs resolve inside PodLord, names withheld, messages best-effort screened):\n"
-        + incidentEvidenceText(evidence, true);
+    QJsonArray resources, observations;
+    for (const auto& value : evidence) resources.append(modelFact(value.toObject()));
+    for (const auto& item : related) observations.append(item);
+    const QJsonObject input{{"language", language}, {"resourceKind", kind}, {"observedSignal", code},
+        {"selectedId", evidence.isEmpty() ? QString{} : evidence.first().toObject()["id"].toString()},
+        {"clusterObservations", observations}, {"resources", resources}};
+    return QString::fromUtf8(QJsonDocument(input).toJson(QJsonDocument::Compact));
 }
 bool IncidentAi::supported() const {
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
@@ -873,14 +909,17 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         {"registry-unreachable", QRegularExpression("connection refused|no route to host|network unreachable")}
     };
     QSet<QString> names;
+    QMap<QString, QJsonObject> podsByUid;
     for (const auto& value : rows) {
         const auto row = value.toObject();
+        if (row["kind"] == "Pod" && !row["uid"].toString().isEmpty()) podsByUid.insert(row["uid"].toString(), row);
         for (const auto& field : {"name", "namespace", "node", "boundVolume", "image"}) {
             const auto name = row[field].toString();
             if (!name.isEmpty()) names.insert(name);
         }
         for (const auto& field : {"volumeClaims", "imagePullSecrets", "secretRefs", "configMapRefs"})
             for (const auto& item : row[field].toArray()) if (!item.toString().isEmpty()) names.insert(item.toString());
+        for (const auto& item : row["containers"].toArray()) if (!item.toString().isEmpty()) names.insert(item.toString());
     }
     QJsonArray safeRows;
     for (const auto& value : rows) {
@@ -889,13 +928,23 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         for (const auto& field : {"uid", "kind", "name", "namespace", "path", "owners", "owner", "issue", "status", "problemSeverity", "ready", "restarts", "lastTerminations",
                                   "node", "volumeClaims", "boundVolume", "imagePullSecrets", "secretKeys", "configMapKeys",
                                   "secretRefs", "configMapRefs", "apiVersion",
-                                  "kubernetesEvent", "eventType", "eventReason", "eventReporter", "eventTargetUid", "eventCount", "ciliumState", "ciliumHealth",
+                                  "kubernetesEvent", "eventType", "eventReason", "eventAction", "eventReporter", "eventTargetUid", "eventCount", "ciliumState", "ciliumHealth",
                                   "createdAt", "eventFirstTime", "eventLastTime", "qosClass", "metricReferences", "rollout", "accessModes", "volumeMode"})
+            if (row.contains(field)) safe.insert(field, row.value(field));
+        if (row["kind"] == "Secret") for (const auto& field : {"secretType", "registryAuthKeyPresent"})
             if (row.contains(field)) safe.insert(field, row.value(field));
         for (const auto& field : {"conditions", "containerStates"}) {
             QJsonArray facts;
             for (const auto& value : row[field].toArray()) {
                 auto item = value.toObject();
+                if (QString(field) == "containerStates") {
+                    const auto containerName = item.take("name").toString();
+                    const auto declared = row["containers"].toArray();
+                    for (qsizetype index = 0; index < declared.size() && index < 999; ++index)
+                        if (!containerName.isEmpty() && declared.at(index) == containerName) {
+                            item["containerId"] = QString("C%1").arg(index + 1); break;
+                        }
+                }
                 if (item["message"].isString()) item["message"] = screenedMessage(item["message"].toString(), names);
                 facts.append(item);
                 if (facts.size() == 12) break;
@@ -903,6 +952,26 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             if (!facts.isEmpty()) safe[field] = facts;
         }
         if (row["kubernetesEvent"].toBool()) {
+            static const QRegularExpression containerId("^C[1-9][0-9]{0,2}$");
+            if (containerId.match(row["eventContainerId"].toString()).hasMatch())
+                safe["eventContainerId"] = row["eventContainerId"];
+            const auto subject = podsByUid.value(row["eventTargetUid"].toString());
+            const auto fieldPath = row["eventTargetFieldPath"].toString();
+            static const QRegularExpression namedContainer(R"(^spec\.(?:containers|initContainers|ephemeralContainers)\{([A-Za-z0-9.-]{1,63})\}$)");
+            static const QRegularExpression indexedContainer(R"(^spec\.containers\[([0-9]{1,3})\]$)");
+            const auto nameMatch = namedContainer.match(fieldPath);
+            const auto indexMatch = indexedContainer.match(fieldPath);
+            const auto declared = subject["containers"].toArray();
+            QString containerName = nameMatch.captured(1);
+            if (containerName.isEmpty() && indexMatch.hasMatch()) {
+                const auto index = indexMatch.captured(1).toInt();
+                if (index < subject["appContainerCount"].toInt() && index < declared.size())
+                    containerName = declared.at(index).toString();
+            }
+            for (qsizetype index = 0; index < declared.size() && index < 999; ++index)
+                if (!containerName.isEmpty() && declared.at(index) == containerName) {
+                    safe["eventContainerId"] = QString("C%1").arg(index + 1); break;
+                }
             const auto message = row["eventMessage"].toString().toLower();
             if (row["eventType"] == "Warning" && !message.isEmpty())
                 safe["eventMessage"] = screenedMessage(row["eventMessage"].toString(), names);
@@ -1043,7 +1112,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         const auto identity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
             + '\n' + incidentEvidenceText(evidence, false)
             + '\n' + provider_ + '\n' + account
-            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n16";
+            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n17";
         const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
         activeKeys.insert(key);
         const auto kind = row["kind"].toString();
@@ -1160,7 +1229,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         evidenceBudgetBytes(snapshot->second, kind, code, related));
     const auto identity = context + '\n' + path + '\n' + code + '\n' + related.join("\n")
         + '\n' + incidentEvidenceText(evidence, false)
-        + '\n' + provider_ + '\n' + account + '\n' + model() + '\n' + thinkSignature + '\n' + snapshot->second + "\nmanual-v10";
+        + '\n' + provider_ + '\n' + account + '\n' + model() + '\n' + thinkSignature + '\n' + snapshot->second + "\nmanual-v11";
     const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
     Incident incident{key, context, code, kind, path, snapshot->second,
         provider_, model(), reasoning(), thinkSignature, related, true, evidence};
@@ -1361,9 +1430,32 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
         || provider_ != incident.provider || model() != incident.model || reasoning() != incident.reasoning
         || currentThink != incident.thinkSignature) { dispatch(); return; }
     const auto answer = QJsonDocument::fromJson(rawAnswer.toUtf8()).object();
-    const auto summary = answer["summary"].toString().trimmed();
-    const auto cause = answer["cause"].toString().trimmed();
-    const auto action = answer["action"].toString().trimmed();
+    QSet<QString> knownIds;
+    for (const auto& value : incident.evidence) knownIds.insert(value.toObject()["id"].toString());
+    const auto normalize = [&](QString value) {
+        for (const auto& item : incident.evidence) {
+            const auto fact = item.toObject();
+            const auto uid = fact["uid"].toString();
+            if (!uid.isEmpty()) value.replace(uid, "[" + fact["id"].toString() + "]", Qt::CaseInsensitive);
+        }
+        static const QRegularExpression uuid(R"(\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)");
+        static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");
+        value.replace(uuid, "[ID]");
+        auto matches = citation.globalMatch(value);
+        QSet<QString> invalid;
+        while (matches.hasNext()) {
+            const auto id = matches.next().captured(1);
+            if (!knownIds.contains(id)) invalid.insert(id);
+        }
+        for (const auto& id : invalid) {
+            value.replace(" [" + id + "]", "");
+            value.replace("[" + id + "]", "");
+        }
+        return value.trimmed();
+    };
+    const auto summary = normalize(answer["summary"].toString());
+    const auto cause = normalize(answer["cause"].toString());
+    const auto action = normalize(answer["action"].toString());
     if (error.isEmpty() && !summary.isEmpty() && summary.size() <= 600 && cause.size() <= 600
         && !action.isEmpty() && action.size() <= 600) {
         records_.insert(incident.key, {QJsonObject{{"summary", summary}, {"cause", cause}, {"action", action}}, QDateTime::currentDateTimeUtc()});
@@ -1388,8 +1480,24 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
         if ((found == visible_.cend() || draft) && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
         return {{"pending", queued_.contains(incident.key) || inFlight_ == incident.key}};
     }
-    return {{"summary", record->answer["summary"].toString()},
+    static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");
+    QSet<QString> cited;
+    for (const auto& field : {"summary", "cause", "action"}) {
+        auto matches = citation.globalMatch(record->answer[field].toString());
+        while (matches.hasNext()) cited.insert(matches.next().captured(1));
+    }
+    QVariantList references;
+    for (const auto& value : incident.evidence) {
+        const auto fact = value.toObject();
+        if (!cited.contains(fact["id"].toString())) continue;
+        references.append(QVariantMap{{"id", fact["id"].toString()}, {"kind", fact["kind"].toString()},
+            {"name", fact["name"].toString()}, {"namespace", fact["namespace"].toString()},
+            {"path", fact["path"].toString()}});
+    }
+    QVariantMap output{{"summary", record->answer["summary"].toString()},
         {"cause", record->answer["cause"].toString()},
         {"action", record->answer["action"].toString()}};
+    if (!references.isEmpty()) output["references"] = references;
+    return output;
 }
 } // namespace podlord

@@ -77,7 +77,7 @@ QList<ResourceGraph::Reached> ResourceGraph::reach(const QString& path, int maxD
     if (!rows_.contains(path) || maxDepth < 0 || maxCount < 1) return result;
     QSet<QString> seen{path};
     QQueue<Reached> pending;
-    pending.enqueue({path, "selected", rows_.value(path)["kind"].toString(), 0});
+    pending.enqueue({path, "selected", rows_.value(path)["kind"].toString(), 0, {}});
     while (!pending.isEmpty() && result.size() < maxCount) {
         const auto current = pending.dequeue();
         result.append(current);
@@ -86,7 +86,7 @@ QList<ResourceGraph::Reached> ResourceGraph::reach(const QString& path, int maxD
             if (seen.contains(edge.target)) continue;
             seen.insert(edge.target);
             const auto next = Reached{edge.target, edge.relation,
-                current.chain + " > " + rows_.value(edge.target)["kind"].toString(), current.depth + 1};
+                current.chain + " > " + rows_.value(edge.target)["kind"].toString(), current.depth + 1, current.path};
             if (edge.traverse) pending.enqueue(next);
             else if (current.depth == 0 && result.size() < maxCount) result.append(next);
         }
@@ -100,6 +100,7 @@ QJsonArray ResourceGraph::evidence(const QString& path, int maxDepth, int maxCou
         row["graphDepth"] = reached.depth;
         row["graphRelation"] = reached.relation;
         row["graphChain"] = reached.chain;
+        if (!reached.parentPath.isEmpty()) row["graphParentPath"] = reached.parentPath;
         result.append(row);
     }
     return result;

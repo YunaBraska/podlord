@@ -50,7 +50,7 @@ public:
                     const auto path = url.path();
                     ++pathRequests[path];
                     const QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", "alpha"}, {"namespace", podNamespace}, {"uid", "uid-alpha"}, {"resourceVersion", QString::number(version)}}},
-                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", podStatus}};
+                        {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "alpha"}, {"imagePullPolicy", "Always"}}, QJsonObject{{"name", "beta"}}}}}}, {"status", podStatus}};
                     QJsonObject body; int delay = allDelay, status = 200;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", QJsonArray{}}};
@@ -304,13 +304,30 @@ bool run(const QString& scenario) {
         server.retryAfter = "invalid";
     }
     if (scenario == "namespace_scoped_mismatch" || scenario == "namespace_all_valid") server.podNamespace = "other";
-    if (scenario == "pod_problem_projection") server.podStatus = QJsonObject{{"phase", "Running"}, {"qosClass", "Burstable"},
+    if (scenario == "pod_problem_projection") {
+        server.discovery = QJsonObject{{"resources", QJsonArray{
+            QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
+            QJsonObject{{"name", "secrets"}, {"kind", "Secret"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
+            QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}}}}};
+        const QJsonObject registrySecret{{"apiVersion", "v1"}, {"kind", "Secret"},
+            {"metadata", QJsonObject{{"name", "registry"}, {"namespace", "default"}, {"uid", "secret-uid"}}},
+            {"type", "kubernetes.io/dockerconfigjson"}, {"data", QJsonObject{{".dockerconfigjson", "e30="}}}};
+        server.responseBodies.insert("/api/v1/secrets", QJsonObject{{"metadata", QJsonObject{}},
+            {"items", QJsonArray{registrySecret}}});
+        const QJsonObject pullEvent{{"apiVersion", "v1"}, {"kind", "Event"},
+            {"metadata", QJsonObject{{"name", "pull-warning"}, {"namespace", "default"}, {"uid", "event-uid"}}},
+            {"type", "Warning"}, {"reason", "Failed"}, {"action", "Pulling"},
+            {"involvedObject", QJsonObject{{"uid", "uid-alpha"}, {"fieldPath", "spec.containers{alpha}"}}}};
+        server.responseBodies.insert("/api/v1/events", QJsonObject{{"metadata", QJsonObject{}},
+            {"items", QJsonArray{pullEvent}}});
+        server.podStatus = QJsonObject{{"phase", "Running"}, {"qosClass", "Burstable"},
         {"conditions", QJsonArray{QJsonObject{{"type", "ContainersReady"}, {"status", "False"},
             {"reason", "ContainersNotReady"}, {"lastTransitionTime", "2026-11-19T11:54:00Z"}}}},
         {"containerStatuses", QJsonArray{
-            QJsonObject{{"ready", false}, {"restartCount", 3}, {"state", QJsonObject{{"waiting", QJsonObject{
+            QJsonObject{{"name", "alpha"}, {"ready", false}, {"restartCount", 3}, {"state", QJsonObject{{"waiting", QJsonObject{
                 {"reason", "CrashLoopBackOff"}, {"message", "Back-off restarting failed container"}}}}}},
-            QJsonObject{{"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
+            QJsonObject{{"name", "beta"}, {"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
+    }
     if (!client.configure(settings)) return false;
     QList<qint64> starts;
     QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
@@ -385,7 +402,8 @@ bool run(const QString& scenario) {
     if (scenario == "discovery_invalid_body")
         return waitFor([&] { return !client.loading("session") && !server.active; })
             && client.rows("session").isEmpty() && client.failureStatus("session").contains("Invalid discovery response");
-    if (!waitFor([&] { return !client.loading("session") && client.rows("session").size() == 1; })) return false;
+    if (!waitFor([&] { return !client.loading("session")
+        && client.rows("session").size() == (scenario == "pod_problem_projection" ? 3 : 1); })) return false;
     if (scenario == "list_repeated_continuation") {
         const auto previous = client.rows("session");
         server.responseBodies.insert("/api/v1/pods", QJsonObject{{"metadata", QJsonObject{{"continue", "repeat"}}}, {"items", QJsonArray{}}});
@@ -396,13 +414,23 @@ bool run(const QString& scenario) {
     if (scenario == "discovery_invalid_entry")
         return client.failureStatus("session").contains("Invalid resource discovery entry") && server.podLists == 1;
     if (scenario == "pod_problem_projection") {
-        const auto row = client.rows("session").first().toObject();
+        QJsonObject row, secret, event;
+        for (const auto& value : client.rows("session")) {
+            if (value.toObject()["kind"] == "Pod") row = value.toObject();
+            if (value.toObject()["kind"] == "Secret") secret = value.toObject();
+            if (value.toObject()["kind"] == "Event") event = value.toObject();
+        }
         return row["status"] == "CrashLoopBackOff"
             && row["issue"] == "CrashLoopBackOff, Ready 1/2, Container restarts"
             && row["problems"] == true && row["restarts"] == 3 && row["ready"] == "1/2"
             && row["qosClass"] == "Burstable"
             && row["conditions"].toArray().first().toObject()["reason"] == "ContainersNotReady"
-            && row["containerStates"].toArray().first().toObject()["message"] == "Back-off restarting failed container";
+            && row["containerStates"].toArray().first().toObject()["message"] == "Back-off restarting failed container"
+            && row["containerStates"].toArray().first().toObject()["imagePullPolicy"] == "Always"
+            && secret["secretType"] == "kubernetes.io/dockerconfigjson"
+            && secret["registryAuthKeyPresent"] == true
+            && event["eventAction"] == "Pulling" && event["eventTargetUid"] == "uid-alpha"
+            && event["eventTargetFieldPath"] == "spec.containers{alpha}";
     }
     if (scenario == "request_audit") {
         const auto path = QString("/api/v1/namespaces/default/pods/alpha");

@@ -129,8 +129,16 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         result["ciliumState"] = state["state"];
         result["ciliumHealth"] = state["health"].toObject()["overallHealth"];
     }
+    if (version == "v1" && kind == "Secret") {
+        result["secretType"] = object["type"];
+        if (object["data"].isObject()) {
+            const auto data = object["data"].toObject();
+            result["registryAuthKeyPresent"] = data.contains(".dockerconfigjson") || data.contains(".dockercfg");
+        }
+    }
     if (version == "v1" && kind == "Pod") {
         result["qosClass"] = state["qosClass"];
+        result["appContainerCount"] = spec["containers"].toArray().size();
         QJsonArray claims;
         for (const auto& value : spec["volumes"].toArray()) {
             const auto name = value.toObject()["persistentVolumeClaim"].toObject()["claimName"].toString();
@@ -225,8 +233,16 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
                 if (containerStates.size() < 12) {
                     const QString role = QString(group) == "containerStatuses" ? "app"
                         : QString(group) == "initContainerStatuses" ? "init" : "ephemeral";
-                    QJsonObject fact{{"role", role}, {"index", containerStates.size()},
+                    QJsonObject fact{{"role", role}, {"index", containerStates.size()}, {"name", container["name"]},
                         {"ready", container["ready"]}, {"restarts", container["restartCount"]}};
+                    const auto specGroup = QString(group) == "containerStatuses" ? "containers"
+                        : QString(group) == "initContainerStatuses" ? "initContainers" : "ephemeralContainers";
+                    for (const auto& value : spec[specGroup].toArray()) {
+                        const auto declared = value.toObject();
+                        if (declared["name"] != container["name"]) continue;
+                        if (declared["imagePullPolicy"].isString()) fact["imagePullPolicy"] = declared["imagePullPolicy"];
+                        break;
+                    }
                     const auto currentState = container["state"].toObject();
                     for (const auto& phase : {"waiting", "running", "terminated"}) {
                         const auto details = currentState[phase].toObject();
@@ -275,7 +291,9 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         result["kubernetesEvent"] = true;
         result["eventTargetUid"] = object[modern ? "regarding" : "involvedObject"].toObject()["uid"];
         result["eventTargetName"] = object[modern ? "regarding" : "involvedObject"].toObject()["name"];
+        result["eventTargetFieldPath"] = target["fieldPath"];
         result["eventType"] = object["type"]; result["eventReason"] = object["reason"];
+        result["eventAction"] = object["action"];
         result["eventReporter"] = modern ? object["reportingController"] : object["source"].toObject()["component"];
         result["status"] = object["type"].toString("Observed");
         result["eventMessage"] = object[modern ? "note" : "message"];

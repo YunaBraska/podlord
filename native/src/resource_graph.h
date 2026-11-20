@@ -11,6 +11,7 @@ public:
     struct Reached final {
         QString path, relation, chain;
         int depth = 0;
+        QString parentPath;
     };
     explicit ResourceGraph(const QJsonArray& rows);
     QList<Reached> reach(const QString& path, int maxDepth = 6, int maxCount = 512) const;

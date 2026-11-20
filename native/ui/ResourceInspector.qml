@@ -191,6 +191,23 @@ Pane {
                 IconButton { objectName: "incidentAiCopyCommand"; glyph: "Copy"; text: workspace.uiText["copy.value"]; onClicked: workspace.copyIncidentAiCommand() }
             }
         }
+        Flow {
+            Layout.fillWidth: true
+            spacing: 6
+            visible: (workspace.incidentAiResult.references || []).length > 0
+            Repeater {
+                model: workspace.incidentAiResult.references || []
+                FlatButton {
+                    required property var modelData
+                    objectName: "incidentAiReference_" + modelData.id
+                    text: modelData.id + " · " + modelData.kind
+                    ToolTip.visible: hovered
+                    ToolTip.text: (modelData.namespace ? modelData.namespace + "/" : "") + modelData.name
+                    Accessible.name: workspace.uiText["inspector.links"] + " " + modelData.kind + " " + ToolTip.text
+                    onClicked: workspace.inspectPath(modelData.path)
+                }
+            }
+        }
     }
     ColumnLayout {
             Layout.fillWidth: true

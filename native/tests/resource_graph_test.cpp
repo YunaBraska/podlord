@@ -44,6 +44,7 @@ bool run() {
     const auto evidence = graph.evidence("/Pod/app-1");
     for (const auto& value : evidence) if (value.toObject()["path"] == "/PersistentVolume/disk")
         return value.toObject()["graphDepth"] == 2
+            && value.toObject()["graphParentPath"] == "/PersistentVolumeClaim/claim"
             && value.toObject()["graphChain"].toString().contains("Pod > PersistentVolumeClaim > PersistentVolume");
     return false;
 }

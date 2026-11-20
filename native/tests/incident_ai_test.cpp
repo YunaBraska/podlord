@@ -117,12 +117,16 @@ void scenario(const QString& name) {
         ai.observe("context", snapshot, "de");
         const auto path = selected["path"].toString();
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).isEmpty(); }, 2000), "Small analysis missing");
-        const auto small = QString::fromUtf8(server.submitted).count(" (depth ");
+        const auto submittedResources = [&] {
+            const auto messages = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray();
+            return QJsonDocument::fromJson(messages.at(1).toObject()["content"].toString().toUtf8()).object()["resources"].toArray().size();
+        };
+        const auto small = submittedResources();
         server.showContextTokens = 24000;
         require(ai.setModel("local-test:10b") && QTest::qWaitFor([&] { return ai.ready(); }, 2000)
             && ai.refresh("context", path), "Large model unavailable");
         require(QTest::qWaitFor([&] { return server.chats == 2 && !ai.result("context", path).isEmpty(); }, 2000), "Large analysis missing");
-        const auto large = QString::fromUtf8(server.submitted).count(" (depth ");
+        const auto large = submittedResources();
         require(small > 0 && large > small && large > 64, "Evidence did not adapt to the model context");
         return;
     }
@@ -185,13 +189,15 @@ void scenario(const QString& name) {
         require(ai.refresh("context", path), "Explicit analysis was rejected");
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Explicit analysis did not appear");
-        require(!ai.enabled("context") && server.submitted.contains("Observed signal: Manual review")
+        const auto manualInput = QJsonDocument::fromJson(QJsonDocument::fromJson(server.submitted).object()["messages"].toArray()
+            .at(1).toObject()["content"].toString().toUtf8()).object();
+        require(!ai.enabled("context") && manualInput["observedSignal"] == "Manual review"
             && server.submitted.contains("summary field briefly explains the selected resource kind")
             && server.submitted.contains("call a container image 'Container-Image', never 'Bild'")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
-            && server.submitted.contains("restarts=1")
-            && server.submitted.contains("lastTermination=OOMKilled (exit 137)")
+            && manualInput["resources"].toArray().first().toObject()["restarts"] == "1"
+            && server.submitted.contains("OOMKilled (exit 137)")
             && !server.submitted.contains("private-") && !server.submitted.contains("pod-one"),
             "Manual analysis changed consent or leaked private source data");
         ai.observe("context", snapshot, "de");
@@ -326,6 +332,7 @@ void scenario(const QString& name) {
     }
     if (name == "evidence_graph") {
         auto snapshot = rows();
+        const QString podUid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         auto deployment = snapshot.at(0).toObject();
         deployment["apiVersion"] = "apps/v1";
         deployment["path"] = "/apis/apps/v1/namespaces/team/deployments/web";
@@ -338,6 +345,7 @@ void scenario(const QString& name) {
         replica["owners"] = QJsonArray{QJsonObject{{"uid", "deploy-uid"}, {"kind", "Deployment"}, {"apiVersion", "apps/v1"}}};
         snapshot.replace(1, replica);
         auto pod = snapshot.at(2).toObject();
+        pod["uid"] = podUid;
         pod["owners"] = QJsonArray{QJsonObject{{"uid", "replica-uid"}, {"kind", "ReplicaSet"}, {"apiVersion", "apps/v1"}}};
         pod["node"] = "worker-a";
         pod["volumeClaims"] = QJsonArray{"claim-data"};
@@ -346,12 +354,14 @@ void scenario(const QString& name) {
         pod["restarts"] = 4;
         pod["createdAt"] = "2026-11-19T11:54:00Z";
         pod["qosClass"] = "Burstable";
+        pod["containers"] = QJsonArray{"web"};
         pod["metricReferences"] = QJsonObject{{"cpu", QJsonObject{{"limit", 500}, {"limitComplete", true}}},
             {"memory", QJsonObject{{"limit", 268435456}, {"limitComplete", false}}}};
         pod["conditions"] = QJsonArray{QJsonObject{{"type", "PodScheduled"}, {"status", "True"},
             {"reason", "Scheduled"}, {"lastTransitionTime", "2026-11-19T11:54:02Z"}}};
-        pod["containerStates"] = QJsonArray{QJsonObject{{"role", "app"}, {"index", 0},
+        pod["containerStates"] = QJsonArray{QJsonObject{{"role", "app"}, {"index", 0}, {"name", "web"},
             {"ready", false}, {"restarts", 4}, {"state", "waiting"}, {"reason", "ImagePullBackOff"},
+            {"imagePullPolicy", "Always"},
             {"message", "Failed to pull image https://private.registry.example/team/app:tag: HTTP 401 token=private-value"}}};
         pod["lastTerminations"] = QJsonArray{QJsonObject{{"reason", "OOMKilled"}, {"exitCode", 137}},
             QJsonObject{{"reason", "token=private-value"}, {"exitCode", 1}}};
@@ -360,21 +370,23 @@ void scenario(const QString& name) {
         event["name"] = "pull-warning";
         event["path"] = "/api/v1/namespaces/team/events/pull-warning";
         event["eventType"] = "Warning";
-        event["eventTargetUid"] = "pod-one";
+        event["eventTargetUid"] = podUid;
         event["eventReason"] = "FailedToRetrieveImagePullSecret";
         event["eventReporter"] = "kubelet";
+        event["eventAction"] = "Pulling";
+        event["eventTargetFieldPath"] = "spec.containers{web}";
         event["eventMessage"] = "Failed to pull image \"private.registry.example/team/app:tag\": HTTP 401 unauthorized token=private-value for runtime-secret AWS_SECRET_ACCESS_KEY=short-secret user@example.org 10.1.2.3 c2VjcmV0LXZhbHVlLXRlc3Q=";
         event["eventFirstTime"] = "2026-11-19T11:55:00Z";
         event["eventLastTime"] = "2026-11-19T12:07:00Z";
         snapshot.replace(3, event);
         snapshot.append(QJsonObject{{"uid", "custom-event"}, {"kind", "Event"}, {"name", "custom-warning"},
             {"namespace", "team"}, {"path", "/api/v1/namespaces/team/events/custom-warning"},
-            {"kubernetesEvent", true}, {"eventType", "Warning"}, {"eventTargetUid", "pod-one"},
+            {"kubernetesEvent", true}, {"eventType", "Warning"}, {"eventTargetUid", podUid},
             {"eventReason", "RegistryPolicyDenied"}, {"eventReporter", "custom-controller"},
             {"eventMessage", "Registry returned HTTP 403 for private.registry.example"}});
         snapshot.append(QJsonObject{{"uid", "encoded-event"}, {"kind", "Event"}, {"name", "encoded-warning"},
             {"namespace", "team"}, {"path", "/api/v1/namespaces/team/events/encoded-warning"},
-            {"kubernetesEvent", true}, {"eventType", "Warning"}, {"eventTargetUid", "pod-one"},
+            {"kubernetesEvent", true}, {"eventType", "Warning"}, {"eventTargetUid", podUid},
             {"eventReason", "eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop"}, {"eventMessage", "token=private-value"}});
         snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"path", "/api/v1/nodes/worker-a"}, {"status", "NotReady"},
             {"conditions", QJsonArray{QJsonObject{{"type", "DiskPressure"}, {"status", "True"}, {"reason", "KubeletHasDiskPressure"}}}}});
@@ -387,11 +399,13 @@ void scenario(const QString& name) {
         snapshot.append(QJsonObject{{"kind", "CiliumEndpoint"}, {"name", "pod-one"}, {"namespace", "team"},
             {"path", "/apis/cilium.io/v2/namespaces/team/ciliumendpoints/pod-one"}, {"status", "NotReady"},
             {"ciliumState", "waiting-for-identity"}, {"ciliumHealth", "Failure"}});
-        snapshot.append(QJsonObject{{"kind", "Secret"}, {"name", "runtime-secret"}, {"namespace", "team"},
+        snapshot.append(QJsonObject{{"uid", "11111111-2222-4333-8444-555555555555"}, {"kind", "Secret"}, {"name", "runtime-secret"}, {"namespace", "team"},
             {"path", "/api/v1/namespaces/team/secrets/runtime-secret"}, {"status", "Ready"},
+            {"secretType", "kubernetes.io/dockerconfigjson"}, {"registryAuthKeyPresent", true},
             {"data", QJsonObject{{"password", "c2VjcmV0LXZhbHVlLXRlc3Q="}}}});
         snapshot.append(QJsonObject{{"kind", "ConfigMap"}, {"name", "runtime-config"}, {"namespace", "team"},
             {"path", "/api/v1/namespaces/team/configmaps/runtime-config"}, {"status", "Ready"}});
+        server.answer = R"({"summary":"Der Image-Pull scheitert [R1].","cause":"Prüfe Secret 11111111-2222-4333-8444-555555555555.","action":"Prüfe den Pull-Secret-Bezug [R1]."})";
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
             && ai.setEnabled("context", true) && ai.setModel("local-test:9b"), "Evidence model unavailable");
@@ -399,18 +413,51 @@ void scenario(const QString& name) {
         const auto path = pod["path"].toString();
         require(QTest::qWaitFor([&] { return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
             "Evidence analysis missing");
-        require(QString::fromUtf8(server.submitted).count(" (depth ") >= 8
-            && !ai.result("context", path).contains("evidence"), "Related facts reached the inspector instead of only the model");
+        const auto userText = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray().at(1).toObject()["content"].toString();
+        const auto input = QJsonDocument::fromJson(userText.toUtf8()).object();
+        const auto resources = input["resources"].toArray();
+        require(input["selectedId"] == "R1" && resources.size() >= 8, "Structured resource evidence is missing");
+        bool eventLinked = false, secretDescribed = false, containerDescribed = false;
+        QString secretId;
+        for (const auto& value : resources) {
+            const auto resource = value.toObject();
+            require(!resource.contains("name") && !resource.contains("path") && !resource.contains("namespace"),
+                "Private resource identifiers reached the model");
+            if (resource["kind"] == "Event" && resource["reason"] == "FailedToRetrieveImagePullSecret") {
+                eventLinked = resource["linkedTo"] == "R1" && resource["action"] == "Pulling"
+                    && resource["containerId"] == "C1";
+            }
+            if (resource["kind"] == "Secret") {
+                secretId = resource["id"].toString();
+                secretDescribed = resource["uid"] == "11111111-2222-4333-8444-555555555555"
+                    && resource["secretType"] == "kubernetes.io/dockerconfigjson" && resource["registryAuthKeyPresent"] == true;
+            }
+            if (resource["kind"] == "Pod")
+                containerDescribed = resource["uid"] == podUid
+                    && resource["containerStates"].toArray().first().toObject()["imagePullPolicy"] == "Always"
+                    && resource["containerStates"].toArray().first().toObject()["containerId"] == "C1"
+                    && !resource["containerStates"].toArray().first().toObject().contains("name");
+        }
+        require(eventLinked && secretDescribed && containerDescribed, "Critical linked evidence was omitted");
+        require(!ai.result("context", path).value("cause").toString().contains("11111111-2222-4333-8444-555555555555")
+            && ai.result("context", path).value("cause").toString().contains("[" + secretId + "]"),
+            "Raw resource UID was copied into a reusable answer");
+        const auto references = ai.result("context", path).value("references").toList();
+        require(!references.isEmpty() && references.first().toMap().value("id") == "R1"
+            && references.first().toMap().value("path") == path, "Model citation did not resolve to the inspected resource");
+        require(references.size() >= 2 && references.last().toMap().value("id") == secretId
+            && references.last().toMap().value("path") == "/api/v1/namespaces/team/secrets/runtime-secret",
+            "Cited Secret did not resolve to its local resource");
+        require(!ai.result("context", path).contains("evidence"), "Raw evidence reached the inspector");
         for (const auto& field : {"CiliumEndpoint", "PersistentVolumeClaim", "Pod > PersistentVolumeClaim > PersistentVolume",
-                                  "Secret", "ConfigMap", "reason=FailedToRetrieveImagePullSecret", "registry-auth-rejected",
-                                  "waiting-for-identity", "networkHealth=Failure", "restarts=4", "lastTermination=OOMKilled (exit 137)",
-                                  "createdAt=2026-11-19T11:54:00Z", "qosClass=Burstable", "PodScheduled", "2026-11-19T11:54:02Z",
-                                  "ImagePullBackOff", "HTTP 401", "eventFirst=2026-11-19T11:55:00Z", "eventLast=2026-11-19T12:07:00Z",
-                                  "reason=RegistryPolicyDenied", "reporter=kubelet", "HTTP 403", "DiskPressure", "KubeletHasDiskPressure",
-                                  "rollout=", "desired", "cpuLimitMilli=500", "cpuLimitCoverage=complete",
-                                  "memoryLimitBytes=268435456", "memoryLimitCoverage=partial",
-                                  "accessModes=ReadWriteOnce", "storageRequestBytes=1073741824",
-                                  "names withheld, messages best-effort screened"})
+                                  "Secret", "ConfigMap", "FailedToRetrieveImagePullSecret", "registry-auth-rejected",
+                                  "waiting-for-identity", "networkHealth", "Failure", "restarts", "lastTermination", "OOMKilled (exit 137)",
+                                  "createdAt", "2026-11-19T11:54:00Z", "qosClass", "Burstable", "PodScheduled", "2026-11-19T11:54:02Z",
+                                  "ImagePullBackOff", "HTTP 401", "eventFirst", "2026-11-19T11:55:00Z", "eventLast", "2026-11-19T12:07:00Z",
+                                  "RegistryPolicyDenied", "kubelet", "HTTP 403", "DiskPressure", "KubeletHasDiskPressure",
+                                  "rollout", "desired", "cpuLimitMilli", "500", "cpuLimitCoverage", "complete",
+                                  "memoryLimitBytes", "268435456", "memoryLimitCoverage", "partial",
+                                  "ReadWriteOnce", "storageRequestBytes", "1073741824"})
             require(server.submitted.contains(field), qPrintable(QString("Missing evidence: ") + field));
         for (const auto& field : {"private.registry.example", "private-value", "short-secret", "user@example.org",
                                   "10.1.2.3", "runtime-secret", "runtime-config", "c2VjcmV0LXZhbHVlLXRlc3Q=",
@@ -425,7 +472,7 @@ void scenario(const QString& name) {
         snapshot.replace(3, event);
         ai.observe("context", snapshot, "de");
         require(!ai.result("context", path).contains("summary"), "Changed Event cause reused the old analysis");
-        server.answer = "{\"summary\":\"Der Abruf scheitert.\",\"cause\":\"Mögliche Netzwerkstörung.\",\"action\":\"Prüfe den Node.\",\"refs\":[\"R2\",\"FAKE\"]}";
+        server.answer = "{\"summary\":\"Der Abruf scheitert [R999].\",\"cause\":\"Mögliche Netzwerkstörung.\",\"action\":\"Prüfe den Node.\",\"refs\":[\"R2\",\"FAKE\"]}";
         require(ai.refresh("context", path) && QTest::qWaitFor([&] { return server.chats == 2
             && ai.result("context", path).value("summary") == "Der Abruf scheitert."; }, 2000), "Explicit analysis missing");
         require(ai.result("context", path).size() == 3, "Inspector exposed data beyond the model answer");
@@ -498,10 +545,11 @@ void scenario(const QString& name) {
             const auto messages = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray();
             const auto instructions = messages.at(0).toObject()["content"].toString();
             const auto input = messages.at(1).toObject()["content"].toString();
+            const auto inputObject = QJsonDocument::fromJson(input.toUtf8()).object();
             require(instructions.contains("semicolons or long dashes") && !instructions.contains("cache", Qt::CaseInsensitive)
-                && !input.contains("cache", Qt::CaseInsensitive) && input.startsWith("Language: de\n")
-                && input.contains("\n- Observed warning event: FailedToRetrieveImagePullSecret")
-                && !input.contains("; "), "AI request lost language, writing guidance, or separated evidence");
+                && !input.contains("cache", Qt::CaseInsensitive) && inputObject["language"] == "de"
+                && inputObject["clusterObservations"].toArray().contains("Observed warning event: FailedToRetrieveImagePullSecret")
+                && inputObject["resources"].isArray(), "AI request lost language, writing guidance, or separated evidence");
             snapshot.append(QJsonObject{{"uid", "replica-two"}, {"kind", "Pod"}, {"name", "replica-two"}, {"namespace", "team"},
                 {"path", "/api/v1/namespaces/team/pods/replica-two"}, {"issue", "ImagePullBackOff"},
                 {"status", "ImagePullBackOff"}, {"problemSeverity", 2}});
