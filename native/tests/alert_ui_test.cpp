@@ -299,6 +299,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     Kubernetes server; if (realConfig.isEmpty() && !server.listen(QHostAddress::LocalHost, 0)) return setupFailure("fixture-listen");
     if (scenario.startsWith("metric_")) server.metricScenario=scenario;
     if (scenario == "dashboard") server.metricScenario="metric_dashboard";
+    if (scenario == "baseline_problem_sound") server.phase="Failed";
+    if (scenario == "baseline_warning_sound") server.healthScenario="health_pod_not_ready";
     if (scenario.startsWith("health_")) server.healthScenario=scenario;
     if (scenario.startsWith("radar_")) {
         server.radarScenario=scenario;
@@ -1001,6 +1003,15 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return groups.size()==1 && groups.first().toList().size()==1 && groups.first().toList().first().toMap()["expression"]=="third" && server.requests==0;
     }
     if (scenario == "empty") return item(window, "alertEmptyState") && item(window, "alertEmptyState")->isVisible();
+    if (scenario == "baseline_problem_sound" || scenario == "baseline_warning_sound") {
+        QSignalSpy sounds(workspace.alerts(), &podlord::Alerts::soundRequested);
+        if (!loadSession() || !waitFor([&] { return !workspace.alerts()->matches().isEmpty(); })) return false;
+        if (sounds.size() != 1 || sounds.first().at(2).toString() != "attention") return false;
+        const auto requests=server.requests;
+        if (!workspace.refresh() || !waitFor([&] { return server.requests>requests && !workspace.loading(); })) return false;
+        QTest::qWait(100);
+        return sounds.size()==1;
+    }
     const auto expression=scenario.startsWith("radar_") ? "\"not-a-radar-resource\"" : scenario=="exact" ? "\"alpha\"" : scenario=="prefix" ? "~alp" : scenario=="suffix" ? "pha~" : scenario=="regex" ? "/^alp.*$/" : realConfig.isEmpty() ? "alpha" : "\"visual-crash-loop\"";
     if (!click(window, "addAlert") || !type(window, "alertName", "Alpha rule") || !type(window, "alertExpression_0", expression)) return false;
     if (scenario == "invalid") {

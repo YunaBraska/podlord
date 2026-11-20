@@ -597,7 +597,7 @@ bool Alerts::dispatch() {
                 if (animation != "none") startHold(animationMode, animationSeconds, baseline, state.animationUntil);
             }
             if (count) matches.append(QVariantMap{{"id", id}, {"name", rule.value["name"].toString()}, {"count", count}, {"path", first}});
-            if (!baseline && changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
+            if (changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
             if (!baseline && !focusPath.isEmpty() && rule.value["zoom"].toInt()>0) emit focusRequested(session, focusPath, rule.value["zoom"].toInt());
             if (!rule.value["enabled"].toBool()) continue;
             const bool hasColor=color!="none" && (colorMode=="no-match" ? count>0 : !state.colorUntil.isEmpty());

@@ -17,10 +17,12 @@ Progress is a monotonic work indicator, not a prediction of undiscovered work or
 elapsed time; authentication has no invented percentage. The strip grows upwards
 and shows red/yellow/green from top to bottom.
 
-Alerts use a silent initial baseline and pause effects during collection loading.
-Afterwards, known problem colors remain visible without replaying notification
-or focus events. New real changes are evaluated against the prior completed
-snapshot. Activity classification has one owner in the canonical session cache.
+Alerts pause effects during collection loading. Once the initial snapshot is
+complete, a matching sound-enabled rule plays once so an existing problem is
+audible when the context opens. The initial snapshot remains a baseline for
+zoom and animation. Unchanged later refreshes do not replay sounds. New real
+changes are evaluated against the prior completed snapshot. Activity
+classification has one owner in the canonical session cache.
 
 A single scheduler admits up to four independent reads while retaining minimum
 start spacing, hard-limit and backoff. Mutations and forward handshakes remain
@@ -46,7 +48,8 @@ by deleting unknown state.
 ## Verification
 
 Public UI checks cover exclusivity, reset, filter composition, session isolation,
-preset load/overwrite/delete/restart, silent initial alarms, monotonic progress
+preset load/overwrite/delete/restart, one initial sound for matching audible
+rules, monotonic progress
 and overlapping external HTTP reads. Store checks cover atomic conflict/busy,
 private permissions, protected default, malformed/future documents, symbolic
 links and size limits. Broader scheduler, inspector and mutation regressions
