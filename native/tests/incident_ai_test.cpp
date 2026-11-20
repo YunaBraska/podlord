@@ -192,7 +192,9 @@ void scenario(const QString& name) {
         const auto manualInput = QJsonDocument::fromJson(QJsonDocument::fromJson(server.submitted).object()["messages"].toArray()
             .at(1).toObject()["content"].toString().toUtf8()).object();
         require(!ai.enabled("context") && manualInput["observedSignal"] == "Manual review"
+            && manualInput["includedEventCount"] == 0
             && server.submitted.contains("summary field briefly explains the selected resource kind")
+            && server.submitted.contains("Cite included Events instead of suggesting a generic search in Events")
             && server.submitted.contains("call a container image 'Container-Image', never 'Bild'")
             && server.submitted.contains("Resource status: Running")
             && server.submitted.contains("Pod containers ready: 0/1")
@@ -416,7 +418,8 @@ void scenario(const QString& name) {
         const auto userText = QJsonDocument::fromJson(server.submitted).object()["messages"].toArray().at(1).toObject()["content"].toString();
         const auto input = QJsonDocument::fromJson(userText.toUtf8()).object();
         const auto resources = input["resources"].toArray();
-        require(input["selectedId"] == "R1" && resources.size() >= 8, "Structured resource evidence is missing");
+        require(input["selectedId"] == "R1" && resources.size() >= 8 && input["includedEventCount"].toInt() >= 2,
+            "Structured resource and Event evidence is missing");
         bool eventLinked = false, secretDescribed = false, containerDescribed = false;
         QString secretId;
         for (const auto& value : resources) {
