@@ -746,11 +746,9 @@ Audio renderPrototype(std::string_view direction) {
     };
     if (forge) {
         const std::array<int,4> roots{40,43,38,45};
-        const std::array<Note,14> riff{{{0,0,.8},{1,0,.55},{1.75,3,.7},{2.75,0,1.0},
-            {4,0,.85},{5.25,-2,.55},{6,0,.7},{7,3,.85},{8,0,.85},{9,7,1.5},
-            {12,0,.85},{13,3,.7},{14,5,.8},{15,3,.9}}};
-        const std::array<Note,8> hook{{{0,64,2.1},{3,67,1.6},{6,69,2.2},{9,67,1.4},
-            {12,71,2.0},{15,69,1.5},{18,67,2.2},{22,64,3.2}}};
+        // One returning phrase in E minor. The repeated E is its anchor.
+        const std::array<Note,8> hook{{{0,64,4.1},{4,64,4.1},{8,67,4.1},{12,64,4.1},
+            {16,62,4.1},{20,64,4.1},{24,59,4.1},{28,64,4.1}}};
         for (int bar=0;bar<bars;++bar) {
             const double beat=bar*4.0;
             const int root=roots[std::size_t(bar/4)%roots.size()];
@@ -769,30 +767,20 @@ Audio renderPrototype(std::string_view direction) {
                 play(beat+2.5,.31,46,Tone::Tom,.17*energy,-.2);
                 play(beat+3.25,.27,43,Tone::Tom,.2*energy,.2);
             }
-            if (bar>=4 && !bridge) {
-                for (const auto& note:riff) {
-                    const double at=beat+note.at-4*(bar%4);
-                    if (at<beat || at>=beat+4) continue;
-                    const int pitch=root+12+note.pitch;
-                    play(at,note.hold,pitch,Tone::Drive,.16*energy,-.23);
-                    play(at,note.hold*.92,pitch+7,Tone::Drive,.068*energy,.28);
-                }
+            if (bar>=4 && !bridge && bar%2==0) {
+                play(beat,8.1,root+12,Tone::Drive,.13*energy,-.23);
+                play(beat,8.1,root+19,Tone::Drive,.055*energy,.28);
             }
-            if (bridge) {
-                play(beat,3.9,root+24,Tone::Veil,.045*energy,-.45);
-                if (bar%2==0) play(beat+1,2.5,root+31,Tone::Brass,.09*energy,.3);
-            }
+            if (bridge && bar%2==0)
+                play(beat,8.1,root+24,Tone::Veil,.045*energy,-.45);
             if ((bar>=20 && bar<36) || (bar>=44 && bar<64)) {
                 const int phrase=(bar>=44?bar-44:bar-20)%8;
                 for (const auto& note:hook) {
                     const double at=bar*4+note.at-phrase*4;
                     if (at<beat || at>=beat+4) continue;
-                    play(at,note.hold,note.pitch+(bar>=44?5:0),Tone::Brass,
-                        (bar>=44?.13:.1)*energy,.13);
+                    play(at,note.hold,note.pitch,Tone::Warm,.105*energy,.13);
                 }
             }
-            if (bar>=44 && bar<64 && bar%2==0)
-                play(beat+2.5,1.2,root+31,Tone::Reed,.06*energy,.4);
         }
     } else {
         const std::array<int,4> roots{38,41,45,36};
