@@ -527,7 +527,7 @@ public:
 #endif
     }
     QVariantList donationLinks() const {
-#ifdef PODLORD_MAC_APP_STORE
+#if defined(PODLORD_MAC_APP_STORE) || defined(Q_OS_IOS)
         return {};
 #else
         return {
