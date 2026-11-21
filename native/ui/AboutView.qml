@@ -9,7 +9,7 @@ ColumnLayout {
     spacing: 10
     property string linkError: ""
     property int quoteIndex: -1
-    readonly property var quotes: [
+    readonly property var directQuotes: [
         "kubectl shouts. etcd whispers. Podlord listens.\nBuilt with heart, not equity.\nStar the repo if it survived your Monday. Fuel me if it survived your week.",
         "Pods come and go. Your sanity should not.\nOne human built this between deploys and despair.\nStar it. Donate when it spares you another describe.",
         "YAML stands for Yet Another Misindented Line.\nPodlord stands for whatever you needed it to.\nHit the star if we agree. Coffee link is right there.",
@@ -43,6 +43,15 @@ ColumnLayout {
         "OOMKilled: out of memory, killed.\nMaintainer of Podlord: out of money, still alive.\nA donation keeps the second statement true.",
         "If Kubernetes were easy, you would not be reading this.\nThis console makes hard things visible.\nStar it. Fuel it. Send it to a friend."
     ]
+    readonly property var storeQuotes: [
+        "kubectl shouts. etcd whispers. Podlord listens.",
+        "Pods come and go. Your sanity should not.",
+        "YAML stands for Yet Another Misindented Line.\nPodlord makes it visible.",
+        "The control plane is fine. It said so itself.\nPodlord checks anyway.",
+        "Kubernetes has no developer experience.\nPodlord helps make it usable.",
+        "Logs are mostly noise. Podlord helps find the truth."
+    ]
+    readonly property var quotes: workspace.appStore() ? storeQuotes : directQuotes
     function rotateQuote() {
         let next = Math.floor(Math.random() * quotes.length)
         if (next === quoteIndex) next = (next + 1) % quotes.length
@@ -101,13 +110,14 @@ ColumnLayout {
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutReleasePage"; visible: workspace.releaseUpdates.state.releaseUrl !== ""; text: "Release notes"; Accessible.description: "Open the verified project release page; does not install software"; onClicked: workspace.releaseUpdates.openRelease() }
     }
     SelectableText { objectName: "aboutUpdateCheckedAt"; Layout.fillWidth: true; visible: workspace.releaseUpdates.state.lastCheckedAt !== ""; text: workspace.uiText["update.lastChecked"] + ": " + workspace.displayDateTime(workspace.releaseUpdates.state.lastCheckedAt); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-    SelectableText { text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
+    SelectableText { visible: !workspace.appStore(); text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
     Flow {
+        visible: !workspace.appStore()
         Layout.fillWidth: true
         Layout.minimumWidth: 0
         spacing: 6
         Repeater {
-            model: about.visible ? [
+            model: about.visible && !workspace.appStore() ? [
                 {id: "Sponsors", text: workspace.uiText["about.sponsors"], url: "https://github.com/sponsors/YunaBraska"},
                 {id: "Coffee", text: workspace.uiText["about.bmc"], url: "https://buymeacoffee.com/YunaBraska"},
                 {id: "Kofi", text: workspace.uiText["about.kofi"], url: "https://ko-fi.com/YunaBraska"},
