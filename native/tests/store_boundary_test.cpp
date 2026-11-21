@@ -57,6 +57,7 @@ bool run(const QString& scenario) {
     if (scenario == "sources" || scenario == "ui") {
         podlord::Workspace workspace(profile.path());
         REQUIRE(workspace.appStore());
+        REQUIRE(workspace.donationLinks().isEmpty());
         REQUIRE(!workspace.importHome() && !workspace.refreshSources());
         REQUIRE(workspace.defaultSourceOrigin().startsWith(profile.path() + '/'));
         if (scenario == "sources") return true;

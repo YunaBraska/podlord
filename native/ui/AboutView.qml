@@ -110,19 +110,14 @@ ColumnLayout {
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutReleasePage"; visible: workspace.releaseUpdates.state.releaseUrl !== ""; text: "Release notes"; Accessible.description: "Open the verified project release page; does not install software"; onClicked: workspace.releaseUpdates.openRelease() }
     }
     SelectableText { objectName: "aboutUpdateCheckedAt"; Layout.fillWidth: true; visible: workspace.releaseUpdates.state.lastCheckedAt !== ""; text: workspace.uiText["update.lastChecked"] + ": " + workspace.displayDateTime(workspace.releaseUpdates.state.lastCheckedAt); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-    SelectableText { visible: !workspace.appStore(); text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
+    SelectableText { visible: workspace.donationLinks.length > 0; text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
     Flow {
-        visible: !workspace.appStore()
+        visible: workspace.donationLinks.length > 0
         Layout.fillWidth: true
         Layout.minimumWidth: 0
         spacing: 6
         Repeater {
-            model: about.visible && !workspace.appStore() ? [
-                {id: "Sponsors", text: workspace.uiText["about.sponsors"], url: "https://github.com/sponsors/YunaBraska"},
-                {id: "Coffee", text: workspace.uiText["about.bmc"], url: "https://buymeacoffee.com/YunaBraska"},
-                {id: "Kofi", text: workspace.uiText["about.kofi"], url: "https://ko-fi.com/YunaBraska"},
-                {id: "Liberapay", text: workspace.uiText["about.liberapay"], url: "https://liberapay.com/YunaBraska"}
-            ] : []
+            model: about.visible ? workspace.donationLinks : []
             LinkButton {}
         }
     }
