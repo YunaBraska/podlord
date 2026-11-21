@@ -43,6 +43,12 @@ done < "$DIST/frameworks.txt"
 rm "$DIST/frameworks.txt"
 /usr/bin/codesign --force --entitlements "$ENTITLEMENTS" --options runtime --timestamp --sign "$MACOS_APP_STORE_APPLICATION_IDENTITY" "$APP"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+for forbidden_domain in github.com/sponsors buymeacoffee.com ko-fi.com liberapay.com; do
+    if find "$APP/Contents" -type f ! -path '*/_CodeSignature/*' ! -name embedded.provisionprofile -exec strings {} + | grep -Fq "$forbidden_domain"; then
+        printf 'Store app must not contain %s.\n' "$forbidden_domain" >&2
+        exit 1
+    fi
+done
 find "$APP" -type f -exec /usr/bin/stat -f '%z' '{}' + > "$DIST/installed-bytes.txt"
 INSTALLED=$(awk '
     $0 !~ /^[0-9]+$/ || $0 + 0 > 9007199254740991 - total { invalid = 1; exit }
