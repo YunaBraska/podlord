@@ -51,7 +51,7 @@ ColumnLayout {
         "Kubernetes has no developer experience.\nPodlord helps make it usable.",
         "Logs are mostly noise. Podlord helps find the truth."
     ]
-    readonly property var quotes: workspace.appStore() ? storeQuotes : directQuotes
+    readonly property var quotes: workspace.appStore ? storeQuotes : directQuotes
     function rotateQuote() {
         let next = Math.floor(Math.random() * quotes.length)
         if (next === quoteIndex) next = (next + 1) % quotes.length
