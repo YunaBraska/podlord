@@ -6,6 +6,11 @@ on:
       - opened
       - synchronize
       - reopened
+    paths-ignore:
+      - README.md
+      - docs/**
+      - doc/**
+      - .github/workflows/product-pages.yml
   workflow_dispatch:
 
 permissions:
