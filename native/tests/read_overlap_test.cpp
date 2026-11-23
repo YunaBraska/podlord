@@ -149,7 +149,7 @@ bool providerScenario(const QString& scenario) {
         if (newContext == context) return false;
         const auto oldConnection = store.connection(context), newConnection = store.connection(newContext);
         if (!std::holds_alternative<podlord::ClusterConnection>(oldConnection) || !std::holds_alternative<podlord::ClusterConnection>(newConnection)) return false;
-        if (std::get<podlord::ClusterConnection>(oldConnection).authorization != "Bearer private-access-token") return false;
+        if (std::get<podlord::ClusterConnection>(oldConnection).authorization != "Bearer private-new-token") return false;
         connection = std::get<podlord::ClusterConnection>(newConnection); expected = "private-new-token";
     }
     server.expectedAuthorization = "Bearer " + expected;

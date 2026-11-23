@@ -1480,7 +1480,7 @@ bool execute(const QString& requestedScenario) {
             const auto changed=yaml+"\n# new source revision\n";
             if (!original.open(QIODevice::WriteOnly|QIODevice::Truncate) || original.write(changed)!=changed.size()) return false;
             original.close();
-            if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==6; })
+            if (!workspace.refreshSources() || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==3; })
                 || !workspace.showMapOverview() || !waitFor([&] { return item(window,"contextMapCards"); })) return false;
             window->grabWindow();
             if (item(window,"contextMapCards")->property("count").toInt()!=3) {
@@ -1530,13 +1530,13 @@ bool execute(const QString& requestedScenario) {
                 restoredEngine.load(QUrl("qrc:/podlord/Main.qml"));
                 if (restoredEngine.rootObjects().isEmpty()) return false;
                 auto* restoredWindow=qobject_cast<QQuickWindow*>(restoredEngine.rootObjects().first());
-                return waitFor([&] { auto* cards=item(restoredWindow,"contextMapCards"); return !restored.busy() && restored.contexts().size()==3 && cards && cards->property("count").toInt()==0; })
+                return waitFor([&] { auto* cards=item(restoredWindow,"contextMapCards"); return !restored.busy() && restored.contexts().isEmpty() && cards && cards->property("count").toInt()==0; })
                     && restored.currentSession()==session && restored.mapOverview() && server.requests.size()==calls;
             }
             if (!waitFor([&] { return QDateTime::currentDateTimeUtc()>latest.importedAt; })
                 || !original.open(QIODevice::WriteOnly|QIODevice::Truncate) || original.write(yaml)!=yaml.size()) return false;
             original.close();
-            if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==6; })) return false;
+            if (!workspace.refreshSources() || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==3; })) return false;
             const auto savedSessions=podlord::SessionStore(profile).list();
             if (!std::holds_alternative<podlord::SessionCatalog>(savedSessions)) return false;
             const auto& sessions=std::get<podlord::SessionCatalog>(savedSessions).sessions;
@@ -4248,10 +4248,13 @@ bool execute(const QString& requestedScenario) {
         const auto directory = temporary.filePath("partial-import");
         if (!QDir().mkpath(directory) || !QFile::copy(temporary.filePath("source.config"), directory + "/config")) return false;
         QFile broken(directory + "/broken.config");
-        const QByteArray invalid("not kubeconfig: [\n");
+        const QByteArray invalid("contexts: [\n");
         if (!broken.open(QIODevice::WriteOnly) || broken.write(invalid) != invalid.size()) return false;
         broken.close();
-        if (!workspace.importFile(directory) || !waitFor([&] { return !workspace.busy() && !workspace.sourceImportIssues().isEmpty(); })
+        if (!workspace.importFile(directory) || !waitFor([&] { return !workspace.busy() && workspace.sourceImportChoices().size() == 1; })) return false;
+        const auto choice = workspace.sourceImportChoices().first().toMap();
+        if (!workspace.resolveSourceImport({QVariantMap{{"candidateId", choice.value("candidateId")}, {"targetId", QString{}}}})
+            || !waitFor([&] { return !workspace.busy() && !workspace.sourceImportIssues().isEmpty(); })
             || !click(window, item(window, "settingsSourceImportDetails"))) return false;
         auto* details = window->findChild<QObject*>("sourceImportDetails");
         return details && waitFor([&] { return details->property("opened").toBool(); })
@@ -5913,9 +5916,9 @@ bool execute(const QString& requestedScenario) {
             reveal.evaluate();
             return !reveal.hasError() && waitFor([&] { return text(window, "inspectorEventCell_0_4") == "Local event message"; }) && server.requests.size() == calls;
         }
-        if (!click(window, item(window, "inspectorLinksButton")) || !waitFor([&] { return item(window, "inspectorLinkCell_0_2") && item(window, "inspectorLinkCell_1_2"); })) return false;
+        if (!click(window, item(window, "inspectorLinksButton")) || !waitFor([&] { return item(window, "inspectorLinkCell_0_5") && item(window, "inspectorLinkCell_1_5"); })) return false;
         if (server.requests.size() != calls) return false;
-        return click(window, item(window, "inspectorLinkCell_0_2")) && waitFor([&] { return workspace.inspectorName() == "bravo"; });
+        return click(window, item(window, "inspectorLinkCell_1_5")) && waitFor([&] { return workspace.inspectorName() == "bravo"; });
     }
     if (scenario == "forbidden") return text(window, "syncProblemMessage").contains("Authorization denied");
     if (scenario == "relative_token") return server.authorization == "Bearer local-test-token";

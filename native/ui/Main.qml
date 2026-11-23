@@ -458,6 +458,7 @@ ApplicationWindow {
             target: workspace
             function onChanged() {
                 if (workspace.sourceImportChoices.length > 0 && !sourceConflictDialog.visible) sourceConflictDialog.open()
+                else if (workspace.sourceImportChoices.length === 0 && sourceConflictDialog.visible) sourceConflictDialog.close()
             }
         }
     }
